@@ -87,7 +87,7 @@ function AssociationsRailSection({
   return (
     <>
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
+        <h3 className="text-[12.5px] font-semibold uppercase tracking-wide text-foreground/70">
           {title}
           {count > 0 && <span className="ml-1.5 font-normal">{count}</span>}
         </h3>
@@ -102,7 +102,7 @@ function AssociationsRailSection({
       </div>
 
       {count === 0 ? (
-        <p className="mt-1 py-0.5 text-[11px] italic text-muted-foreground">{emptyState}</p>
+        <p className="mt-1 py-0.5 text-xs italic text-muted-foreground">{emptyState}</p>
       ) : (
         <>
           <div className="mt-1 space-y-0.5">{children}</div>
@@ -312,7 +312,7 @@ export function AssociationsPanel({
         {visibleSupportConversations.map((item) => (
           <div
             key={`${item.object_type}-${item.object_id}`}
-            className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+            className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] transition-colors hover:bg-muted/40"
           >
             <button
               type="button"
@@ -369,7 +369,7 @@ export function AssociationsPanel({
           return (
             <div
               key={`${item.object_type}-${item.object_id}`}
-              className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+              className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] transition-colors hover:bg-muted/40"
             >
               <button
                 type="button"
@@ -421,7 +421,7 @@ export function AssociationsPanel({
             {visibleDocs.map((item) => (
               <div
                 key={`${item.object_type}-${item.object_id}`}
-                className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+                className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px] transition-colors hover:bg-muted/40"
               >
                 <button
                   type="button"

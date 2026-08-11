@@ -18,11 +18,11 @@ describe('task detail optional section labels', () => {
     };
 
     expect(files.checklist).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
-    expect(files.relationships).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
-    expect(files.externalLinks).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
+    expect(files.relationships).toContain('className="text-[12.5px] font-semibold text-foreground/70 uppercase tracking-wide"');
+    expect(files.externalLinks).toContain('className="text-[12.5px] font-semibold text-foreground/70 uppercase tracking-wide"');
     expect(files.attachments).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
     expect(files.panel).toContain('cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-foreground/70');
-    expect(files.associations).toContain('className="text-xs font-semibold uppercase tracking-wide text-foreground/70"');
+    expect(files.associations).toContain('className="text-[12.5px] font-semibold uppercase tracking-wide text-foreground/70"');
     expect(files.agentRuns).toContain('className="text-xs font-semibold uppercase tracking-wide text-foreground/70"');
   });
 

@@ -23,6 +23,8 @@ const associations: GroupedAssociations = {
   docs: [],
 };
 
+const openTaskRouteMock = vi.hoisted(() => vi.fn());
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="#">{children}</a>,
   useLocation: () => ({ pathname: '/w/acme/pm/tasks' }),
@@ -42,6 +44,10 @@ vi.mock('@/components/pm/CreateTaskModal', () => ({
   CreateTaskModal: () => null,
 }));
 
+vi.mock('@/components/pm/task-detail/taskRouteNavigation', () => ({
+  openTaskRoute: openTaskRouteMock,
+}));
+
 vi.mock('@/hooks/queries', () => ({
   useTaskAssociations: () => ({ data: associations, isLoading: false, error: null }),
   useWorkflows: () => ({ data: [{ workflow: { id: 'workflow-1', default_state_id: 'state-1' }, states: [{ id: 'state-1' }] }] }),
@@ -56,6 +62,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  openTaskRouteMock.mockReset();
   associations.task_relationships.relates_to = [];
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -226,5 +233,38 @@ describe('TaskRelationshipsSection', () => {
     expect(container.querySelectorAll('[data-testid="related-task-row"]')).toHaveLength(4);
     expect(container.textContent).toContain('Related task 4');
     expect(container.textContent).toContain('Show less');
+  });
+
+  it('opens a related task in the existing task panel instead of using a page link', () => {
+    associations.task_relationships.relates_to = [
+      {
+        relationship_id: 'rel-1',
+        link_type: 'relates_to',
+        is_active: true,
+        task: {
+          object_type: 'task',
+          object_id: 'task-2',
+          title: 'Review launch copy',
+          task_key: 'MKT-12',
+        },
+      },
+    ];
+    renderSection({ flat: true, hideDocs: true });
+
+    const taskButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Review launch copy',
+    );
+    expect(taskButton).toBeTruthy();
+
+    act(() => {
+      taskButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(openTaskRouteMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'acme',
+      'task-2',
+    );
   });
 });

@@ -115,7 +115,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
         <div className={flat ? 'flex items-center justify-between' : 'flex items-center justify-between border-b border-border/40 px-3 py-2'}>
           <div className="flex items-center gap-1.5">
             {!flat && <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />}
-            <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
+            <span className="text-[12.5px] font-semibold text-foreground/70 uppercase tracking-wide">
               External Links
             </span>
             {links.length > 0 ? (
