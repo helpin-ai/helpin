@@ -675,7 +675,7 @@ describe('AskAgentsDock', () => {
     await act(async () => { runButton?.click(); });
     expect(useDockStore.getState()).toMatchObject({ collapsed: false, tab: 'agents', activeRunId: 'agent-run-1' });
 
-    const closeButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Close agent dock"]');
+    const closeButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Minimize"]');
     await act(async () => {
       closeButton?.click();
       await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -702,6 +702,16 @@ describe('AskAgentsDock', () => {
     expect(header?.querySelector('[aria-label="Conversation actions"]')).not.toBeNull();
   });
 
+  it('presents the dock close control as a minimized action with a tooltip', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const minimizeButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Minimize"]');
+    expect(minimizeButton).not.toBeNull();
+    expect(minimizeButton?.getAttribute('data-slot')).toBe('tooltip-trigger');
+    expect(document.body.querySelector('[data-dock-header] [aria-label="Close agent dock"]')).toBeNull();
+  });
+
   it('restores focus to the segment that opened the dock', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();
@@ -713,7 +723,7 @@ describe('AskAgentsDock', () => {
     await waitForComposerFocus();
     expect(document.body.style.overflow).toBe('hidden');
 
-    const closeButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Close agent dock"]');
+    const closeButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Minimize"]');
     await act(async () => {
       closeButton?.click();
       await new Promise((resolve) => window.setTimeout(resolve, 0));
