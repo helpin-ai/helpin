@@ -102,10 +102,10 @@ function AssociationsRailSection({
       </div>
 
       {count === 0 ? (
-        <p className="mt-2 py-2 text-[11px] italic text-muted-foreground">{emptyState}</p>
+        <p className="mt-1 py-0.5 text-[11px] italic text-muted-foreground">{emptyState}</p>
       ) : (
         <>
-          <div className="mt-2 space-y-1">{children}</div>
+          <div className="mt-1 space-y-0.5">{children}</div>
           {canToggle && (
             <button
               type="button"
@@ -299,7 +299,7 @@ export function AssociationsPanel({
     'Search documents';
 
   return (
-    <div className={cn(section ? 'py-2' : 'px-3 py-4', className)}>
+    <div className={cn(section ? 'py-1' : 'px-3 py-4', className)}>
       {(!section || section === 'support') && (
       <AssociationsRailSection
         title="Support"

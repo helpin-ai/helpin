@@ -130,7 +130,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
               <div
                 key={link.id}
                 data-testid="external-link-row"
-                className={flat ? 'group flex items-center gap-2 px-1 py-2 transition-colors hover:bg-muted/30' : 'group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted/30'}
+                className={flat ? 'group flex items-center gap-2 px-1 py-1.5 transition-colors hover:bg-muted/30' : 'group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-muted/30'}
               >
                 <Favicon
                   url={link.url}
@@ -169,7 +169,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
         ) : null}
 
         {addingLink ? (
-          <div className={flat ? 'flex items-center gap-2 px-1 py-2' : 'flex items-center gap-2 border-t border-border/40 px-3 py-2'}>
+          <div className={flat ? 'flex items-center gap-2 px-1 py-1.5' : 'flex items-center gap-2 border-t border-border/40 px-3 py-2'}>
             <LinkSquare01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
             <input
               ref={inputRef}
@@ -217,7 +217,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
         ) : (
           <button
             type="button"
-            className={flat ? 'flex items-center gap-1.5 px-1 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer' : 'flex items-center gap-1.5 border-t border-border/40 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer'}
+            className={flat ? 'flex items-center gap-1.5 px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer' : 'flex items-center gap-1.5 border-t border-border/40 px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer'}
             onClick={() => setAddingLink(true)}
           >
             <PlusSignIcon className="h-3 w-3" />

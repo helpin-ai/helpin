@@ -27,6 +27,8 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(supportIndex).toBeGreaterThan(externalLinksIndex);
     expect(crmIndex).toBeGreaterThan(supportIndex);
     expect(panelSource).not.toContain('<TabsList variant="line"');
+    expect(panelSource).toContain('<div className="mt-3 space-y-0">');
+    expect(panelSource).toContain('<div className="my-2 h-px bg-border/60" />');
     expect(panelSource).toContain('hideDocs');
     expect(panelSource).toContain('flat');
     expect(panelSource).toContain('excludeDocs');

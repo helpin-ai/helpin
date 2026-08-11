@@ -1653,7 +1653,7 @@ function TaskDetailPanelBody({
             <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-foreground/70">
               Related
             </summary>
-            <div className="mt-4 space-y-4">
+            <div className="mt-3 space-y-0">
               <TaskRelationshipsSection
                 workspaceId={workspaceId}
                 taskId={taskDetail.task.id}
@@ -1677,7 +1677,7 @@ function TaskDetailPanelBody({
                 visible
               />
 
-              <div className="h-px bg-border/60" />
+              <div className="my-2 h-px bg-border/60" />
               <AssociationsPanel
                 objectType="task"
                 objectId={taskDetail.task.id}
@@ -1685,7 +1685,7 @@ function TaskDetailPanelBody({
                 section="docs"
               />
 
-              <div className="h-px bg-border/60" />
+              <div className="my-2 h-px bg-border/60" />
               <ExternalLinks
                 workspaceId={workspaceId}
                 entityType="task"
@@ -1693,7 +1693,7 @@ function TaskDetailPanelBody({
                 flat
               />
 
-              <div className="h-px bg-border/60" />
+              <div className="my-2 h-px bg-border/60" />
               <AssociationsPanel
                 objectType="task"
                 objectId={taskDetail.task.id}
@@ -1702,7 +1702,7 @@ function TaskDetailPanelBody({
                 section="support"
               />
 
-              <div className="h-px bg-border/60" />
+              <div className="my-2 h-px bg-border/60" />
               <AssociationsPanel
                 objectType="task"
                 objectId={taskDetail.task.id}
