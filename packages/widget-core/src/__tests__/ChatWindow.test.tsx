@@ -633,7 +633,7 @@ describe('ChatWindow', () => {
   });
 
   it('hides talk to human while AI is thinking', () => {
-    const { queryByText } = render(
+    const { container, getByRole, queryByText } = render(
       <ChatWindow
         config={{
           ...baseConfig,
@@ -656,6 +656,10 @@ describe('ChatWindow', () => {
     );
 
     expect(queryByText('Talk to a human')).toBeNull();
+    expect(getByRole('status').textContent).toContain('Preparing an answer');
+    expect(container.querySelector('.helpin-ai-thinking-icon svg')).toBeTruthy();
+    expect(container.querySelectorAll('.helpin-ai-thinking-line')).toHaveLength(2);
+    expect(queryByText('Thinking')).toBeNull();
   });
 
   it('hides talk to human while an agent is typing', () => {

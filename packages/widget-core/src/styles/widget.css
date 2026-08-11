@@ -1601,7 +1601,8 @@
   .helpin-help-drilldown-view,
   .helpin-message-list--smooth-enter,
   .helpin-help-link-skeleton-icon,
-  .helpin-help-link-skeleton-line {
+  .helpin-help-link-skeleton-line,
+  .helpin-ai-thinking-line {
     animation: none;
     transform: none;
     clip-path: none;
@@ -2900,48 +2901,52 @@
 .helpin-ai-thinking {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  color: var(--helpin-primary);
-  font-size: 13px;
-  font-weight: 500;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 16px 12px;
 }
 
 .helpin-ai-thinking-icon {
-  display: flex;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   align-items: center;
-  animation: helpin-ai-pulse 2s ease-in-out infinite;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--helpin-primary) 14%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--helpin-primary) 9%, var(--helpin-bg));
+  color: var(--helpin-primary);
 }
 
-.helpin-ai-thinking-text {
-  letter-spacing: 0.01em;
+.helpin-ai-thinking-shimmer {
+  display: flex;
+  width: min(58%, 190px);
+  flex-direction: column;
+  gap: 7px;
 }
 
-.helpin-ai-thinking-dots span {
-  animation: helpin-ai-dot-fade 1.4s infinite ease-in-out;
-  opacity: 0.3;
+.helpin-ai-thinking-line {
+  display: block;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--helpin-primary) 8%, var(--helpin-bg)),
+    color-mix(in srgb, var(--helpin-primary) 20%, var(--helpin-bg)),
+    color-mix(in srgb, var(--helpin-primary) 8%, var(--helpin-bg))
+  );
+  background-size: 200% 100%;
+  animation: helpin-skeleton-pulse 1.25s ease-in-out infinite;
 }
 
-.helpin-ai-thinking-dots span:nth-child(1) {
-  animation-delay: 0s;
+.helpin-ai-thinking-line--primary {
+  width: 100%;
 }
 
-.helpin-ai-thinking-dots span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.helpin-ai-thinking-dots span:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes helpin-ai-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-@keyframes helpin-ai-dot-fade {
-  0%, 80%, 100% { opacity: 0.3; }
-  40% { opacity: 1; }
+.helpin-ai-thinking-line--secondary {
+  width: 68%;
+  animation-delay: 90ms;
 }
 
 /* CSAT Rating */
