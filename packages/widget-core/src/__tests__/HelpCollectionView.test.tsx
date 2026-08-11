@@ -1,10 +1,34 @@
-import { fireEvent, render, waitFor } from '@testing-library/preact';
+import { act, fireEvent, render, waitFor } from '@testing-library/preact';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HelpCollectionView } from '../components/HelpCollectionView';
 
 describe('HelpCollectionView', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('shows shimmer cards when article loading takes longer than a moment', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+
+    const { getByRole, queryByRole } = render(
+      <HelpCollectionView
+        host="docs.helpin.ai"
+        widgetKey="wk_123"
+        collectionSlug="getting-started"
+        onBack={() => {}}
+        onSelectArticle={() => {}}
+      />,
+    );
+
+    expect(queryByRole('status', { name: 'Loading articles' })).toBeNull();
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+
+    const loadingState = getByRole('status', { name: 'Loading articles' });
+    expect(loadingState.querySelectorAll('.helpin-help-link-skeleton')).toHaveLength(3);
   });
 
   it('passes the canonical article key when an article is selected', async () => {

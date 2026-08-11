@@ -119,7 +119,7 @@ export const HelpSpaceView: FunctionComponent<HelpSpaceViewProps> = ({
           <p className="helpin-help-empty">No published collections are available yet.</p>
         )}
         {!isLoading && !error && topLevelNodes.length > 0 && (
-          <div className="helpin-help-list">
+          <div className="helpin-help-list helpin-stagger-list">
             {topLevelNodes.map((node) => {
               const totalArticles = sumDescendantArticles(node);
               const childCount = node.children.length;

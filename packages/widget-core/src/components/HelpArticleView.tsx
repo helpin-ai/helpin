@@ -20,6 +20,7 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
 }) => {
   const [article, setArticle] = useState<HelpArticle | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showLoadingSkeleton, setShowLoadingSkeleton] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const articleExternalURL = article?.public_path
     ? (article.public_path.startsWith('http://') || article.public_path.startsWith('https://')
@@ -29,7 +30,15 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
 
   useEffect(() => {
     let cancelled = false;
+    const loadingSkeletonTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        setShowLoadingSkeleton(true);
+      }
+    }, 150);
+
+    setArticle(null);
     setIsLoading(true);
+    setShowLoadingSkeleton(false);
     setError(null);
 
     fetchHelpArticle(host, widgetKey, articleKey)
@@ -44,13 +53,16 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
         }
       })
       .finally(() => {
+        window.clearTimeout(loadingSkeletonTimer);
         if (!cancelled) {
           setIsLoading(false);
+          setShowLoadingSkeleton(false);
         }
       });
 
     return () => {
       cancelled = true;
+      window.clearTimeout(loadingSkeletonTimer);
     };
   }, [articleKey, host, widgetKey]);
 
@@ -86,7 +98,18 @@ export const HelpArticleView: FunctionComponent<HelpArticleViewProps> = ({
         </div>
       </div>
       <div className="helpin-article-content">
-        {isLoading && <p className="helpin-help-empty">Loading article...</p>}
+        {isLoading && !showLoadingSkeleton && (
+          <div className="helpin-article-loading-reserve" aria-hidden="true" />
+        )}
+        {isLoading && showLoadingSkeleton && (
+          <div className="helpin-article-skeleton" role="status" aria-label="Loading article">
+            <span className="helpin-help-link-skeleton-line helpin-article-skeleton-title" />
+            <span className="helpin-help-link-skeleton-line helpin-article-skeleton-line helpin-article-skeleton-line--long" />
+            <span className="helpin-help-link-skeleton-line helpin-article-skeleton-line" />
+            <span className="helpin-help-link-skeleton-line helpin-article-skeleton-line helpin-article-skeleton-line--short" />
+            <span className="helpin-help-link-skeleton-line helpin-article-skeleton-line helpin-article-skeleton-line--long" />
+          </div>
+        )}
         {!isLoading && error && <p className="helpin-help-empty">{error}</p>}
         {!isLoading && !error && article?.content_html && (
           <div dangerouslySetInnerHTML={{ __html: article.content_html }} />

@@ -39,6 +39,15 @@ describe('widget scroll styles', () => {
     expect(css).toContain('translateX(0)');
   });
 
+  it('animates destination views and reveals loaded rows', () => {
+    expect(ruleBody('.helpin-view-enter')).toContain('animation: helpin-view-enter 0.24s');
+    expect(css).toContain('@keyframes helpin-view-enter');
+    expect(css).toContain('.helpin-stagger-list > .helpin-help-link,');
+    expect(css).toContain('.helpin-stagger-list > .helpin-conversation-item {');
+    expect(css).toContain('animation: helpin-list-item-enter 0.26s');
+    expect(css).toContain('@keyframes helpin-list-item-enter');
+  });
+
   it('reveals the message thread without adding per-message stagger', () => {
     expect(css).toContain('.helpin-message-list--smooth-enter {\n  animation: helpin-message-list-in');
     expect(ruleBody('.helpin-message-row')).toContain('animation: helpin-bubble-in');
@@ -48,6 +57,7 @@ describe('widget scroll styles', () => {
 
   it('honors reduced motion for widget entry animations', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(css).toContain('.helpin-view-enter,');
     expect(css).toContain('.helpin-help-drilldown-view,');
     expect(css).toContain('.helpin-message-list--smooth-enter,');
     expect(css).toContain('.helpin-help-link-skeleton-icon,');
