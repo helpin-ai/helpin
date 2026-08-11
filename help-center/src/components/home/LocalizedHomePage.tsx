@@ -87,7 +87,7 @@ export function LocalizedHomePage() {
         )
       )}
 
-      <main className="min-w-0 flex-1 pt-[41px] lg:pl-8 lg:pt-0">
+      <main className="min-w-0 flex-1 pt-[41px] lg:pt-0">
         <div className="mx-auto w-full max-w-3xl px-8 pb-16 pt-24">
           <div className="text-center">
             <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
