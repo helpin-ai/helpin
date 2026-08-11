@@ -660,7 +660,7 @@ export function TaskRelationshipsSection({
               {(relatedTask.task_key || relatedTask.display_id) ? (
                 <span
                   data-testid="related-task-id"
-                  className="absolute right-1 bg-muted/40 pl-3 text-[10px] text-muted-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200 group-focus-within:opacity-100"
+                  className="absolute right-1 bg-background pl-3 text-[10px] text-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200 group-focus-within:opacity-100"
                 >
                   {relatedTask.task_key ?? `#${relatedTask.display_id}`}
                 </span>

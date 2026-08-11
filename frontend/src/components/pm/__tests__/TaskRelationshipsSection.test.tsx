@@ -202,6 +202,8 @@ describe('TaskRelationshipsSection', () => {
 
     const taskId = container.querySelector('[data-testid="related-task-id"]');
     expect(taskId?.className).toContain('absolute');
+    expect(taskId?.className).toContain('bg-background');
+    expect(taskId?.className).toContain('text-foreground');
     expect(taskId?.className).toContain('group-hover:opacity-100');
     expect(taskId?.className).toContain('opacity-0');
 
