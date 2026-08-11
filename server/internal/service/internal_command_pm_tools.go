@@ -1055,7 +1055,7 @@ func (s *InternalCommandService) executeAddPMComment(ctx context.Context, meta m
 	if normalized := normalizeTaskDescriptionRichText(&content); normalized != nil {
 		content = *normalized
 	}
-	comment, err := s.commentService.Create(ctx, model.CreateCommentRequest{EntityType: entityType, EntityID: entityID, Body: content}, fallbackActor(meta), meta.WorkspaceID)
+	comment, err := s.commentService.Create(ctx, s.withAgentCommentAttribution(ctx, meta, model.CreateCommentRequest{EntityType: entityType, EntityID: entityID, Body: content}), fallbackActor(meta), meta.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}

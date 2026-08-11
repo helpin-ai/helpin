@@ -8,6 +8,9 @@ type PMComment struct {
 	EntityType string     `json:"entity_type" gorm:"not null"`
 	EntityID   string     `json:"entity_id" gorm:"type:uuid;not null;index"`
 	AuthorID   string     `json:"author_id" gorm:"type:uuid;not null;index"`
+	AgentID    *string    `json:"agent_id,omitempty" gorm:"type:uuid;index"`
+	AgentName  string     `json:"agent_name,omitempty"`
+	AgentRunID *string    `json:"agent_run_id,omitempty" gorm:"type:uuid;index"`
 	Body       string     `json:"body" gorm:"not null"`
 	ParentID   *string    `json:"parent_id" gorm:"type:uuid;index"`
 	BlockID    *string    `json:"block_id,omitempty" gorm:"type:uuid;index"`
@@ -49,6 +52,9 @@ type CreateCommentRequest struct {
 	Range         JSONB    `json:"range,omitempty"`
 	AnchorText    string   `json:"anchor_text,omitempty"`
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
+	AgentID       *string  `json:"-"`
+	AgentName     string   `json:"-"`
+	AgentRunID    *string  `json:"-"`
 }
 
 // UpdateCommentRequest is the payload for updating comments.

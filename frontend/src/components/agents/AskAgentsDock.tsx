@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { Cancel01Icon, Maximize01Icon, MoreHorizontalIcon } from '@/lib/icons';
+import { Cancel01Icon, Maximize01Icon, MoreVerticalIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AskAgentAvatar, type AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
 import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
@@ -11,6 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDockStore } from '@/stores/dockStore';
@@ -666,7 +667,7 @@ function DockPaneHeader({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" aria-label="Conversation actions" className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
-              <MoreHorizontalIcon className="h-3.5 w-3.5" />
+              <MoreVerticalIcon className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="z-[70]">
@@ -675,9 +676,14 @@ function DockPaneHeader({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
-      <button type="button" onClick={onClose} aria-label="Close agent dock" className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
-        <Cancel01Icon className="h-3.5 w-3.5" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" onClick={onClose} aria-label="Minimize" className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
+            <Cancel01Icon className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top">Minimize</TooltipContent>
+      </Tooltip>
     </header>
   );
 }
