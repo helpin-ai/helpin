@@ -148,6 +148,10 @@ export const supportService = {
     api.get<SupportEmailRoute[]>(`/support/inbox/email-routes${qs(workspaceId)}`),
   createEmailRoute: (workspaceId: string, payload: CreateSupportEmailRouteRequest) =>
     api.post<SupportEmailRoute>(`/support/inbox/email-routes${qs(workspaceId)}`, payload),
+  sendEmailRouteTest: (workspaceId: string, routeId: string, sourceAddress: string) =>
+    api.post<SupportEmailRoute>(`/support/inbox/email-routes/${routeId}/send-test${qs(workspaceId)}`, {
+      source_address: sourceAddress,
+    }),
   disableEmailRoute: (workspaceId: string, routeId: string) =>
     api.post(`/support/inbox/email-routes/${routeId}/disable${qs(workspaceId)}`, {}),
   listEmailSenders: (workspaceId: string) =>

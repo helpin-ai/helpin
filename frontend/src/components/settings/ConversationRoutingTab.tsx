@@ -126,17 +126,17 @@ export function getWorkspaceDefaultSender<T extends Pick<SupportEmailSender, 'de
   return senders.find((sender) => sender.active && sender.default_scope === 'workspace') ?? null;
 }
 
-export function getEmailForwardingStatus(route: Pick<SupportEmailRoute, 'active' | 'last_inbound_at'> | null | undefined) {
+export function getEmailForwardingStatus(route: Pick<SupportEmailRoute, 'active' | 'forwarding_verified_at'> | null | undefined) {
   if (!route?.active) return null;
-  if (!route.last_inbound_at) {
+  if (!route.forwarding_verified_at) {
     return {
-      label: 'Awaiting email',
+      label: 'Setup incomplete',
       tone: 'warning' as const,
-      tooltip: 'Forwarding is enabled. Send or forward a test email to finish verification.',
+      tooltip: 'Confirm forwarding in your email provider, then run an end-to-end test.',
     };
   }
   return {
-    label: 'On',
+    label: 'Verified',
     tone: 'success' as const,
     tooltip: null,
   };

@@ -849,6 +849,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/mailboxes/{mailboxId}/members", h.SupportInbox.ListMailboxMembers)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-routes", h.SupportInbox.ListEmailRoutes)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-routes", h.SupportInbox.CreateEmailRoute)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-routes/{routeId}/send-test", h.SupportInbox.SendEmailRouteTest)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-routes/{routeId}/disable", h.SupportInbox.DisableEmailRoute)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-senders", h.SupportInbox.ListEmailSenders)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders", h.SupportInbox.CreateEmailSender)

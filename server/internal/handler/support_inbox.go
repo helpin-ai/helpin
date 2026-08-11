@@ -765,6 +765,23 @@ func (h *SupportInboxHandler) DisableEmailRoute(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// SendEmailRouteTest starts end-to-end verification for an email forwarding route.
+func (h *SupportInboxHandler) SendEmailRouteTest(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	routeID := chi.URLParam(r, "routeId")
+	var req model.SendSupportEmailRouteTestRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	route, err := h.supportService.SendEmailRouteTest(r.Context(), workspaceID, routeID, req.SourceAddress)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, route)
+}
+
 func (h *SupportInboxHandler) ListEmailSenders(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	senders, err := h.supportService.ListEmailSenders(r.Context(), workspaceID)

@@ -18,9 +18,9 @@
 - Modify: `server/internal/service/testdb_test.go`
 - Test: `server/internal/service/support_email_route_test.go`
 
-- [ ] Write a failing route-state repository/service test.
-- [ ] Add route verification fields and scoped repository updates.
-- [ ] Run the focused Go tests.
+- [x] Write a failing route-state repository/service test.
+- [x] Add route verification fields and scoped repository updates.
+- [x] Run the focused Go tests.
 
 ### Task 2: Send and complete a round-trip test
 
@@ -32,11 +32,11 @@
 - Test: `server/internal/service/support_email_route_test.go`
 - Test: `server/internal/service/email_fallback_test.go`
 
-- [ ] Write failing tests for sending a tagged message and consuming its returned payload.
-- [ ] Add the admin endpoint and service orchestration.
-- [ ] Detect confirmation messages without treating them as verified.
-- [ ] Verify qualifying real mail while preserving normal processing.
-- [ ] Run the focused Go tests.
+- [x] Write failing tests for sending a tagged message and consuming its returned payload.
+- [x] Add the admin endpoint and service orchestration.
+- [x] Detect confirmation messages without treating them as verified.
+- [x] Verify qualifying real mail while preserving normal processing.
+- [x] Run the focused Go tests.
 
 ### Task 3: Show truthful status and next steps
 
@@ -49,13 +49,13 @@
 - Test: `frontend/src/components/settings/__tests__/conversationRoutingStatus.test.ts`
 - Test: `frontend/src/components/settings/__tests__/supportEmailForwardingVerification.test.ts`
 
-- [ ] Write failing status and checklist tests.
-- [ ] Add the send-test client mutation and temporary polling.
-- [ ] Render orange incomplete state, checklist, and verified timestamp.
-- [ ] Run focused Vitest and ESLint checks.
+- [x] Write failing status and checklist tests.
+- [x] Add the send-test client mutation and temporary polling.
+- [x] Render orange incomplete state, checklist, and verified timestamp.
+- [x] Run focused Vitest and ESLint checks.
 
 ### Task 4: Verify and commit
 
-- [ ] Run focused backend and frontend verification.
-- [ ] Run `git diff --check` and inspect the final diff.
+- [x] Run focused backend and frontend verification.
+- [x] Run `git diff --check` and inspect the final diff.
 - [ ] Commit the complete scoped change on `waqar-fixes`.

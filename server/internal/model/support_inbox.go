@@ -567,18 +567,23 @@ type SupportMailboxMember struct {
 }
 
 type SupportEmailRoute struct {
-	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	MailboxID      *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
-	RouteKey       string     `json:"route_key" gorm:"not null;uniqueIndex"`
-	InboundAddress string     `json:"inbound_address" gorm:"not null;uniqueIndex"`
-	SourceAddress  *string    `json:"source_address,omitempty"`
-	ProviderType   string     `json:"provider_type" gorm:"not null;default:'forwarding'"`
-	Active         bool       `json:"active" gorm:"not null;default:true"`
-	LastInboundAt  *time.Time `json:"last_inbound_at,omitempty"`
-	CreatedByID    string     `json:"created_by_id" gorm:"type:uuid;not null"`
-	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                 string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	MailboxID                   *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
+	RouteKey                    string     `json:"route_key" gorm:"not null;uniqueIndex"`
+	InboundAddress              string     `json:"inbound_address" gorm:"not null;uniqueIndex"`
+	SourceAddress               *string    `json:"source_address,omitempty"`
+	ProviderType                string     `json:"provider_type" gorm:"not null;default:'forwarding'"`
+	Active                      bool       `json:"active" gorm:"not null;default:true"`
+	LastInboundAt               *time.Time `json:"last_inbound_at,omitempty"`
+	ConfirmationReceivedAt      *time.Time `json:"confirmation_received_at,omitempty"`
+	VerificationSentAt          *time.Time `json:"verification_sent_at,omitempty"`
+	ForwardingVerifiedAt        *time.Time `json:"forwarding_verified_at,omitempty"`
+	ForwardingVerificationToken string     `json:"-"`
+	ForwardingLastError         *string    `json:"forwarding_last_error,omitempty"`
+	CreatedByID                 string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt                   time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 
 	MailboxName   *string `json:"mailbox_name,omitempty" gorm:"->"`
 	MailboxHandle *string `json:"mailbox_handle,omitempty" gorm:"->"`
@@ -590,6 +595,11 @@ func (SupportEmailRoute) TableName() string { return "support_email_routes" }
 type CreateSupportEmailRouteRequest struct {
 	MailboxID     *string `json:"mailbox_id"`
 	SourceAddress *string `json:"source_address"`
+}
+
+// SendSupportEmailRouteTestRequest identifies the external inbox Helpin should test.
+type SendSupportEmailRouteTestRequest struct {
+	SourceAddress string `json:"source_address"`
 }
 
 type DisableSupportEmailRouteRequest struct{}
