@@ -514,10 +514,11 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 					redirect.TargetCollectionSlug = cs
 				}
 			}
-			if err := s.redirectRepo.Create(ctx, redirect); err != nil {
+			redirectCreated, err := s.redirectRepo.UpsertImported(ctx, redirect)
+			if err != nil {
 				s.logger.Error("nextra import: create redirect failed",
 					"job_id", jobID, "source_route", ia.SourceRoute, "error", err)
-			} else {
+			} else if redirectCreated {
 				summary.RedirectsCreated++
 			}
 		}

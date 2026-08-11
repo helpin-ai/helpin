@@ -224,6 +224,69 @@ func (r *DocsRedirectRepository) Create(ctx context.Context, redirect *model.Doc
 	return nil
 }
 
+// UpsertImported inserts an imported redirect or refreshes its destination
+// when the same source object is imported again. Redirects owned by a user or
+// by a different import source are preserved.
+func (r *DocsRedirectRepository) UpsertImported(ctx context.Context, redirect *model.DocsRedirect) (bool, error) {
+	normalizeDocsRedirectRecord(redirect)
+	if redirect.Type != model.RedirectTypeImported {
+		return false, fmt.Errorf("UpsertImported requires an imported redirect, got %q", redirect.Type)
+	}
+
+	created := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "workspace_id"}, {Name: "source_path"}},
+			DoNothing: true,
+		}).Create(redirect)
+		if result.Error != nil {
+			return fmt.Errorf("insert imported docs redirect: %w", result.Error)
+		}
+		if result.RowsAffected == 1 {
+			created = true
+			return nil
+		}
+
+		var existing model.DocsRedirect
+		if err := tx.
+			Where("workspace_id = ? AND source_path = ?", redirect.WorkspaceID, redirect.SourcePath).
+			First(&existing).Error; err != nil {
+			return fmt.Errorf("load existing imported docs redirect: %w", err)
+		}
+		if existing.Type != model.RedirectTypeImported || !sameImportedRedirectSource(existing, *redirect) {
+			return nil
+		}
+
+		updates := map[string]interface{}{
+			"target_collection_slug": redirect.TargetCollectionSlug,
+			"target_article_slug":    redirect.TargetArticleSlug,
+			"target_path":            redirect.TargetPath,
+			"source_system":          redirect.SourceSystem,
+			"source_object_type":     redirect.SourceObjectType,
+			"source_object_id":       redirect.SourceObjectID,
+		}
+		if err := tx.Model(&model.DocsRedirect{}).
+			Where("id = ?", existing.ID).
+			Updates(updates).Error; err != nil {
+			return fmt.Errorf("refresh imported docs redirect: %w", err)
+		}
+		return nil
+	})
+	return created, err
+}
+
+func sameImportedRedirectSource(existing, incoming model.DocsRedirect) bool {
+	if existing.SourceSystem != nil && incoming.SourceSystem != nil &&
+		!strings.EqualFold(strings.TrimSpace(*existing.SourceSystem), strings.TrimSpace(*incoming.SourceSystem)) {
+		return false
+	}
+	if existing.SourceObjectID != nil && incoming.SourceObjectID != nil &&
+		strings.TrimSpace(*existing.SourceObjectID) != strings.TrimSpace(*incoming.SourceObjectID) {
+		return false
+	}
+	return true
+}
+
 // isAutoRedirectType reports whether a redirect type is one of the
 // automatic kinds emitted by the tree rollout. Manual and imported
 // redirects are preserved across automatic moves/renames so that
