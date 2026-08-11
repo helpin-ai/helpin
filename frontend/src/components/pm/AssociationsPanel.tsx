@@ -128,6 +128,7 @@ interface AssociationsPanelProps {
   objectId: string;
   className?: string;
   includeTaskRelationships?: boolean;
+  excludeDocs?: boolean;
 }
 
 export function AssociationsPanel({
@@ -135,6 +136,7 @@ export function AssociationsPanel({
   objectType,
   objectId,
   className,
+  excludeDocs = false,
 }: AssociationsPanelProps) {
   const navigate = useNavigate();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
@@ -399,45 +401,48 @@ export function AssociationsPanel({
         })}
       </AssociationsRailSection>
 
-      <div className="my-4 h-px bg-border/60" />
-
-      <AssociationsRailSection
-        title="Docs"
-        count={docs.length}
-        emptyState="No linked docs"
-        expanded={expandedSections.docs}
-        onToggle={() => setExpandedSections((current) => ({ ...current, docs: !current.docs }))}
-        onAdd={() => setPickerSection('docs')}
-      >
-        {visibleDocs.map((item) => (
-          <div
-            key={`${item.object_type}-${item.object_id}`}
-            className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
+      {!excludeDocs && (
+        <>
+          <div className="my-4 h-px bg-border/60" />
+          <AssociationsRailSection
+            title="Docs"
+            count={docs.length}
+            emptyState="No linked docs"
+            expanded={expandedSections.docs}
+            onToggle={() => setExpandedSections((current) => ({ ...current, docs: !current.docs }))}
+            onAdd={() => setPickerSection('docs')}
           >
-            <button
-              type="button"
-              className="flex min-w-0 flex-1 items-center gap-2 text-left"
-              onClick={() => handleNavigate(item)}
-            >
-              <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="truncate font-medium">{item.title}</span>
-              {item.display_id && (
-                <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
-              )}
-            </button>
-            {item.association_id ? (
-              <button
-                type="button"
-                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
-                onClick={() => deleteDocAssociation.mutate(item.association_id!)}
-                aria-label="Remove document association"
+            {visibleDocs.map((item) => (
+              <div
+                key={`${item.object_type}-${item.object_id}`}
+                className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-muted/40"
               >
-                <Delete01Icon className="h-3 w-3" />
-              </button>
-            ) : null}
-          </div>
-        ))}
-      </AssociationsRailSection>
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  onClick={() => handleNavigate(item)}
+                >
+                  <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  <span className="truncate font-medium">{item.title}</span>
+                  {item.display_id && (
+                    <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
+                  )}
+                </button>
+                {item.association_id ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
+                    onClick={() => deleteDocAssociation.mutate(item.association_id!)}
+                    aria-label="Remove document association"
+                  >
+                    <Delete01Icon className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </AssociationsRailSection>
+        </>
+      )}
 
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
         <DialogContent className="sm:max-w-xl">

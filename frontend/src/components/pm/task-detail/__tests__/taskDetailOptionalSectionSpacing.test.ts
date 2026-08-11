@@ -6,55 +6,44 @@ import { describe, expect, it } from 'vitest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 describe('TaskDetailPanel optional section spacing', () => {
-  it('uses one conditional stack gap for relationships, checklist, and external links', () => {
+  it('keeps overview essentials visible and consolidates linked context in Related', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
-    const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
-    const checklistIndex = panelSource.indexOf('{/* Checklist */}');
+    const overviewIndex = panelSource.indexOf("activeView === 'overview'");
+    const checklistIndex = panelSource.indexOf('<ChecklistItems');
+    const relatedIndex = panelSource.indexOf('<details id="task-related-section"');
     const relationshipsIndex = panelSource.indexOf('<TaskRelationshipsSection');
-    const externalLinksIndex = panelSource.indexOf('{/* External Links */}');
-    const checklistBlock = panelSource.slice(checklistIndex, externalLinksIndex);
-    const externalLinksBlock = panelSource.slice(externalLinksIndex, panelSource.indexOf('{/* Attachments */}', externalLinksIndex));
+    const externalLinksIndex = panelSource.indexOf('<ExternalLinks');
+    const associationsIndex = panelSource.indexOf('<AssociationsPanel');
 
-    expect(panelSource).toContain('const hasOptionalTaskSections = relationshipsToggleActive || showChecklist || showExternalLinks;');
-    expect(panelSource).toContain('{hasOptionalTaskSections && (');
-    expect(panelSource).toContain('className="mt-8 space-y-8"');
-    expect(panelSource).toContain('associationsService.listByTask(workspaceId, taskDetail.task.id)');
-    expect(panelSource).toContain('const hasRelationshipContent = hasVisibleTaskAssociations(associationsRes.data);');
-    expect(panelSource).toContain('if (hasRelationshipContent) setShowRelationships(true);');
-    expect(relationshipsSource).toContain('className={className}');
-    expect(checklistIndex).toBeGreaterThan(-1);
-    expect(relationshipsIndex).toBeGreaterThan(checklistIndex);
-    expect(checklistBlock).not.toContain('className="mt-8"');
-    expect(checklistBlock).not.toContain('className="mt-6"');
-    expect(externalLinksBlock).not.toContain('className="mt-8"');
-    expect(externalLinksBlock).not.toContain('className="mt-6"');
+    expect(overviewIndex).toBeGreaterThan(-1);
+    expect(panelSource).toContain('<TaskStandingBriefCard');
+    expect(checklistIndex).toBeGreaterThan(overviewIndex);
+    expect(relatedIndex).toBeGreaterThan(checklistIndex);
+    expect(relationshipsIndex).toBeGreaterThan(relatedIndex);
+    expect(externalLinksIndex).toBeGreaterThan(relationshipsIndex);
+    expect(associationsIndex).toBeGreaterThan(externalLinksIndex);
+    expect(panelSource).toContain('excludeDocs');
   });
 
-  it('uses shared subtle action pills and locks populated optional sections', () => {
+  it('uses the three task views and existing shared task components', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
-    const createTaskSource = readFileSync(resolve(__dirname, '../../CreateTaskModal.tsx'), 'utf8');
-    const globalCreateSource = readFileSync(resolve(__dirname, '../../GlobalCreateModals.tsx'), 'utf8');
-    const pillSource = readFileSync(resolve(__dirname, '../../optionalSectionActionPill.ts'), 'utf8');
 
-    expect(pillSource).toContain("export type OptionalSectionActionState = 'available' | 'open' | 'locked';");
-    expect(pillSource).toContain('border-primary/20 bg-primary/[0.025] text-primary/75');
-    expect(pillSource).toContain('cursor-default border-border/60 bg-muted/35 text-muted-foreground/80');
-    expect(panelSource).toContain('disabled={hasChecklistItems}');
-    expect(panelSource).toContain('disabled={hasRelationshipItems}');
-    expect(panelSource).toContain('disabled={hasExternalLinkItems}');
-    expect(createTaskSource).toContain('getOptionalSectionActionClass(form.checklist_items.length > 0 ?');
-    expect(createTaskSource).toContain('disabled={form.external_links.length > 0}');
-    expect(globalCreateSource).toContain('getOptionalSectionActionClass(epicExternalLinks.length > 0 ?');
-    expect(globalCreateSource).toContain('disabled={pendingFiles.length > 0}');
+    expect(panelSource).toContain("(['overview', 'updates', 'delivery'] as TaskDetailView[])");
+    expect(panelSource).toContain('<TaskUpdatesView');
+    expect(panelSource).toContain('<AgentRunPanel');
+    expect(panelSource).toContain('<TaskGitPanel');
+    expect(panelSource).toContain('<ChecklistItems');
+    expect(panelSource).toContain('<Attachments');
   });
 
-  it('keeps comments separated after removing the standalone comments divider', () => {
+  it('keeps comments and history out of Overview', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
-    const commentsIndex = panelSource.indexOf('{/* Comments + Activity */}');
-    const commentsBlock = panelSource.slice(commentsIndex, panelSource.indexOf('{/* Comments card */}', commentsIndex));
+    const overviewStart = panelSource.indexOf("activeView === 'overview'");
+    const deliveryStart = panelSource.indexOf("activeView === 'delivery'");
+    const overviewBlock = panelSource.slice(overviewStart, deliveryStart);
 
-    expect(commentsIndex).toBeGreaterThan(-1);
-    expect(panelSource).not.toContain('<Separator className="my-6 bg-border/60" />');
-    expect(commentsBlock).toContain('className="mt-6"');
+    expect(overviewBlock).not.toContain('<TaskUpdatesView');
+    expect(overviewBlock).not.toContain('<AgentRunPanel');
+    expect(panelSource.indexOf('<TaskUpdatesView')).toBeGreaterThan(deliveryStart);
   });
 });

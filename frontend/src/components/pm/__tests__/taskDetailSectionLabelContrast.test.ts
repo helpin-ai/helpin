@@ -21,8 +21,7 @@ describe('task detail optional section labels', () => {
     expect(files.relationships).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
     expect(files.externalLinks).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
     expect(files.attachments).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
-    expect(files.panel).toContain('className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70"');
-    expect(files.panel).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
+    expect(files.panel).toContain('cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-foreground/70');
     expect(files.associations).toContain('className="text-xs font-semibold uppercase tracking-wide text-foreground/70"');
     expect(files.agentRuns).toContain('className="text-xs font-semibold uppercase tracking-wide text-foreground/70"');
   });
@@ -33,9 +32,8 @@ describe('task detail optional section labels', () => {
     const agentRunPanelIndex = panel.indexOf('<AgentRunPanel');
     const combinedGateIndex = panel.indexOf('{hasGitIntegration && fieldVis.dev_history && (');
 
-    expect(gitPanelIndex).toBeGreaterThan(combinedGateIndex);
     expect(agentRunPanelIndex).toBeGreaterThan(-1);
-    expect(agentRunPanelIndex).toBeGreaterThan(gitPanelIndex);
-    expect(agentRunPanelIndex).toBeGreaterThan(panel.indexOf(')}', gitPanelIndex));
+    expect(combinedGateIndex).toBeGreaterThan(agentRunPanelIndex);
+    expect(gitPanelIndex).toBeGreaterThan(combinedGateIndex);
   });
 });

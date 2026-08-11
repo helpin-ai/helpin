@@ -14,14 +14,18 @@ describe('TaskDetailSectionHeading', () => {
     expect(source).toContain('text-xs font-semibold uppercase tracking-wide text-foreground/75');
   });
 
-  it('is used for comments and activity while compact optional sections use block headers', () => {
+  it('unifies comments and activity in Updates while compact sections retain their own headers', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
+    const updatesSource = readFileSync(resolve(__dirname, '../TaskUpdatesView.tsx'), 'utf8');
     const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
     const checklistSource = readFileSync(resolve(__dirname, '../../ChecklistItems.tsx'), 'utf8');
     const externalLinksSource = readFileSync(resolve(__dirname, '../../ExternalLinks.tsx'), 'utf8');
 
-    expect(panelSource).toContain('<TaskDetailSectionHeading title="Comments" icon={Message01Icon}');
-    expect(panelSource).toContain('<TaskDetailSectionHeading title="Activity" icon={Activity01Icon}');
+    expect(panelSource).toContain('<TaskUpdatesView');
+    expect(updatesSource).toContain('<CommentThread');
+    expect(updatesSource).toContain("(['all', 'discussion', 'changes'] as TaskUpdateFilter[])");
+    expect(panelSource).not.toContain('<TaskDetailSectionHeading title="Comments"');
+    expect(panelSource).not.toContain('<TaskDetailSectionHeading title="Activity"');
     expect(relationshipsSource).toContain('Task Relationships');
     expect(checklistSource).toContain('Checklist');
     expect(externalLinksSource).toContain('External Links');

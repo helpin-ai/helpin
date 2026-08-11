@@ -3,11 +3,8 @@ import { useTitle } from '@/hooks/useTitle';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  Activity01Icon,
   ArchiveIcon,
-  ArrowLeftRightIcon,
   ArrowUpRight01Icon,
-  BotIcon,
   Copy01Icon,
   DashboardSpeed01Icon,
   File01Icon,
@@ -15,12 +12,9 @@ import {
   HexagonIcon,
   Layers01Icon,
   LayoutGridIcon,
-  CheckmarkSquare02Icon,
   ArrowRight01Icon,
-  GitBranchIcon,
   Link01Icon,
   Loading01Icon,
-  Message01Icon,
   MoreVerticalIcon,
   AttachmentIcon,
   PencilEdit01Icon,
@@ -43,8 +37,6 @@ import {
   TASK_TYPE_CONFIG,
   TaskTypeIcon,
 } from '@/lib/pmConstants';
-import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
-import { repositoryDefaultBranchLabel } from '@/lib/branchLabels';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -71,9 +63,6 @@ import { useTaskDelivery } from '@/components/pm/TaskDeliveryPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
 import { cn } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
-import { pmChecklistService } from '@/lib/services/pmChecklistService';
-import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
-import { associationsService } from '@/lib/services/associationsService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
@@ -94,32 +83,26 @@ import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { TaskSidebarIdRow } from '@/components/pm/TaskSidebarIdRow';
-import { Badge } from '@/components/ui/badge';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow, useWorkspaceAccess, usePermissions, useWorkflows } from '@/hooks/queries';
+import { useInitializeTaskUpdatesRead, useTaskUpdates, useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow, useWorkspaceAccess, usePermissions, useWorkflows } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { buildTaskCopyUrl, buildTaskPath } from '@/lib/pmTaskLinks';
-import { CommentThread } from '@/components/pm/CommentThread';
-import { ActivityTimeline } from '@/components/pm/ActivityTimeline';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { TaskRelationshipsSection } from '@/components/pm/TaskRelationshipsSection';
-import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
-import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-detail/taskOverlayDismiss';
 import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
 import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
-import { hasVisibleTaskAssociations } from '@/components/pm/task-detail/taskRelationshipVisibility';
 import { queryKeys } from '@/lib/queryKeys';
 import { isSprintOpenForPlanning } from '@/lib/pmSprintOptions';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
+import { TaskStandingBriefCard } from '@/components/pm/task-detail/TaskStandingBriefCard';
+import { TaskUpdatesView } from '@/components/pm/task-detail/TaskUpdatesView';
 import { resolveTaskTeamWorkflow, resolveTaskWorkflowStates } from '@/components/pm/task-detail/taskWorkflowResolution';
 import {
   isEpicSelectableForTaskTeam,
@@ -132,7 +115,6 @@ import {
   shouldNotifyAgentAutoRunStateChange,
 } from '@/components/pm/agentAutoRunNotification';
 import type {
-  ActivityLogEntry,
   CommentWithAuthor,
   EpicWithStats,
   AttachmentResponse,
@@ -144,6 +126,8 @@ import type {
   TaskDetail,
   TaskRecurringSummary,
   TaskType,
+  TaskDetailView,
+  TaskStandingBriefSuggestion,
   UpdateTaskRequest,
   WorkflowState,
 } from '@/lib/pmTypes';
@@ -304,10 +288,52 @@ function TaskDetailPanelBody({
   const permissions = usePermissions(workspaceAccess);
   const { canEdit } = permissions;
   const taskId = taskDetail.task.id;
+  const [activeView, setActiveView] = useState<TaskDetailView>(() => {
+    const value = new URLSearchParams(window.location.search).get('task_view');
+    return value === 'updates' || value === 'delivery' ? value : 'overview';
+  });
+  const updatesSummary = useTaskUpdates(workspaceId, taskId, 'all');
+  const initializeUpdatesRead = useInitializeTaskUpdatesRead(workspaceId, taskId);
   const canSaveAsTemplate = permissions.isAdmin || (!!taskDetail.task.team_id && permissions.isTeamManager(taskDetail.task.team_id));
   const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState(taskDetail.task.name);
   const [saveTemplateSaving, setSaveTemplateSaving] = useState(false);
+
+  const selectView = useCallback((view: TaskDetailView) => {
+    setActiveView(view);
+    const url = new URL(window.location.href);
+    if (view === 'overview') url.searchParams.delete('task_view');
+    else url.searchParams.set('task_view', view);
+    window.history.replaceState({}, '', url.toString());
+  }, []);
+
+  const openDelivery = useCallback((runId?: string | null) => {
+    setActiveView('delivery');
+    navigate({
+      to: '.',
+      search: (previous: Record<string, unknown>) => ({
+        ...previous,
+        task_view: 'delivery',
+        run: runId || undefined,
+      }),
+      replace: true,
+    } as any);
+  }, [navigate]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const value = new URLSearchParams(window.location.search).get('task_view');
+      setActiveView(value === 'updates' || value === 'delivery' ? value : 'overview');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    const updates = updatesSummary.data;
+    if (!updates?.high_water || updates.read_initialized || initializeUpdatesRead.isPending) return;
+    initializeUpdatesRead.mutate(updates.high_water);
+  }, [initializeUpdatesRead, updatesSummary.data]);
 
   useEffect(() => {
     pendingPatchRef.current = pendingPatch;
@@ -393,7 +419,6 @@ function TaskDetailPanelBody({
 
   // ── Delivery (sidebar rows) ──────────────────────────────────────
   const delivery = useTaskDelivery(workspaceId, taskDetail, onTaskUpdated);
-  const { checkRef: checkDeliveryTruncation, isTruncated: isDeliveryTruncated } = useTruncationDetection();
 
   // Re-sync form when taskDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(taskDetail.task.updated_at);
@@ -405,26 +430,10 @@ function TaskDetailPanelBody({
 
   const currentUser = useAuthStore((s) => s.user);
 
-  const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
-  const [activityLoading, setActivityLoading] = useState(true);
-
   const [epics, setEpics] = useState<EpicWithStats[]>([]);
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [allLabels, setAllLabels] = useState<Label[]>([]);
-  const [showAllActivity, setShowAllActivity] = useState(false);
-  const [showChecklist, setShowChecklist] = useState(false);
-  const [showExternalLinks, setShowExternalLinks] = useState(false);
-  const [showRelationships, setShowRelationships] = useState(false);
-  const [hasChecklistItems, setHasChecklistItems] = useState(false);
-  const [hasExternalLinkItems, setHasExternalLinkItems] = useState(false);
-  const [hasRelationshipItems, setHasRelationshipItems] = useState(false);
-  const [checklistSummary, setChecklistSummary] = useState({ completed: 0, total: 0 });
-  const [externalLinkCount, setExternalLinkCount] = useState(0);
-  const [relationshipCount, setRelationshipCount] = useState(0);
   const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
-  const relationshipButtonRef = useRef<HTMLButtonElement>(null);
-  const relationshipsToggleActive = showRelationships || relationshipComposerOpen;
-  const hasOptionalTaskSections = relationshipsToggleActive || showChecklist || showExternalLinks;
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const memberNameMap = useMemo(
@@ -455,10 +464,8 @@ function TaskDetailPanelBody({
   }, [workspaceId, taskDetail.task.id]);
 
   const reloadActivity = useCallback(async () => {
-    const res = await pmTaskService.listActivity(workspaceId, taskDetail.task.id, 1, 30);
-    setActivity(res.data?.data ?? []);
-    setActivityLoading(false);
-  }, [workspaceId, taskDetail.task.id]);
+    await queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks', taskDetail.task.id, 'updates'] });
+  }, [queryClient, workspaceId, taskDetail.task.id]);
 
   useEffect(() => {
     reloadComments();
@@ -547,8 +554,6 @@ function TaskDetailPanelBody({
     }
     return ids;
   }, [pipelineRules]);
-  const hasPipeline = automatedStateIds.size > 0;
-
   const notifyAgentAutoRunStateChange = useCallback((fromStateId: string | null | undefined, toStateId: string | null | undefined) => {
     if (!shouldNotifyAgentAutoRunStateChange({ fromStateId, toStateId, automatedStateIds })) return;
     if (!toStateId) return;
@@ -701,70 +706,6 @@ function TaskDetailPanelBody({
       }
     }
   }, [form.team_id, form.epic_id, form.sprint_id, epics, sprints]);
-
-  const syncOptionalSectionContent = useCallback(async () => {
-    const [clRes, elRes, associationsRes] = await Promise.all([
-      pmChecklistService.list(workspaceId, taskDetail.task.id),
-      pmExternalLinkService.list(workspaceId, taskDetail.task.id),
-      associationsService.listByTask(workspaceId, taskDetail.task.id),
-    ]);
-
-    const hasChecklistContent = (clRes.data?.length ?? 0) > 0;
-    const hasExternalLinkContent = (elRes.data?.length ?? 0) > 0;
-    const taskRelationships = associationsRes.data?.task_relationships;
-    const relationshipItemCount = (
-      taskRelationships
-        ? Object.values(taskRelationships).reduce((total, group) => total + group.length, 0)
-        : 0
-    ) + (associationsRes.data?.docs.length ?? 0);
-    const hasRelationshipContent = hasVisibleTaskAssociations(associationsRes.data);
-
-    setHasChecklistItems(hasChecklistContent);
-    setHasExternalLinkItems(hasExternalLinkContent);
-    setHasRelationshipItems(hasRelationshipContent);
-    setChecklistSummary({
-      completed: (clRes.data ?? []).filter((item) => item.completed).length,
-      total: clRes.data?.length ?? 0,
-    });
-    setExternalLinkCount(elRes.data?.length ?? 0);
-    setRelationshipCount(relationshipItemCount);
-
-    if (hasChecklistContent) setShowChecklist(true);
-    if (hasExternalLinkContent) setShowExternalLinks(true);
-    if (hasRelationshipContent) setShowRelationships(true);
-  }, [workspaceId, taskDetail.task.id]);
-
-  // ── Auto-show optional sections if items exist ────────
-  useEffect(() => {
-    void syncOptionalSectionContent();
-  }, [syncOptionalSectionContent]);
-
-  const handleChecklistContentChange = useCallback((hasContent: boolean) => {
-    setHasChecklistItems(hasContent);
-    if (hasContent) setShowChecklist(true);
-  }, []);
-
-  const handleChecklistStatsChange = useCallback((stats: { completed: number; total: number }) => {
-    setChecklistSummary(stats);
-  }, []);
-
-  const handleRelationshipContentChange = useCallback((hasContent: boolean) => {
-    setHasRelationshipItems(hasContent);
-    if (hasContent) setShowRelationships(true);
-  }, []);
-
-  const handleRelationshipCountChange = useCallback((count: number) => {
-    setRelationshipCount(count);
-  }, []);
-
-  const handleExternalLinkContentChange = useCallback((hasContent: boolean) => {
-    setHasExternalLinkItems(hasContent);
-    if (hasContent) setShowExternalLinks(true);
-  }, []);
-
-  const handleExternalLinkCountChange = useCallback((count: number) => {
-    setExternalLinkCount(count);
-  }, []);
 
   // ── Auto-save debounce ─────────────────────────────────────────
   useEffect(() => {
@@ -1005,6 +946,24 @@ function TaskDetailPanelBody({
     });
   }, [form?.team_id, onTaskUpdated, taskDetail.task.id, taskLabels, workspaceId]);
 
+  const handleBriefSuggestion = (suggestion: TaskStandingBriefSuggestion) => {
+    if (suggestion.action.type === 'reply_to_comment') {
+      selectView('updates');
+      return;
+    }
+    if (suggestion.action.type === 'add_checklist_item') {
+      selectView('overview');
+      return;
+    }
+    if (suggestion.action.type === 'retry_run') {
+      openDelivery(suggestion.action.run_id);
+      return;
+    }
+    if (suggestion.action.type === 'open_related_object') {
+      document.getElementById('task-related-section')?.scrollIntoView({ block: 'nearest' });
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
@@ -1073,6 +1032,16 @@ function TaskDetailPanelBody({
 
         <div className="ml-2 flex shrink-0 items-center gap-1">
           <SaveIndicator saving={isSaving} error={saveError} />
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="gap-1.5"
+            onClick={() => openDelivery(taskDetail.task.latest_run_id)}
+          >
+            <PlayIcon className="h-3 w-3" />
+            {taskDetail.task.latest_run_id ? 'Open run' : 'Run agent'}
+          </Button>
           {linkCopied ? (
             <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
               <Tick01Icon className="h-3.5 w-3.5" />
@@ -1189,46 +1158,41 @@ function TaskDetailPanelBody({
         </div>
       ) : null}
 
+      <div className="grid grid-cols-[1fr_300px] border-b border-border/60">
+        <div role="tablist" aria-label="Task detail views" className="flex items-center gap-6 px-10">
+          {(['overview', 'updates', 'delivery'] as TaskDetailView[]).map((view) => (
+            <button
+              key={view}
+              type="button"
+              role="tab"
+              aria-selected={activeView === view}
+              className={cn(
+                '-mb-px flex items-center gap-2 border-b-2 px-0.5 py-3 text-sm font-medium capitalize transition-colors',
+                activeView === view ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+              onClick={() => selectView(view)}
+            >
+              {view}
+              {view === 'updates' && (updatesSummary.data?.unread_count ?? 0) > 0 && (
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                  {updatesSummary.data!.unread_count}
+                </span>
+              )}
+              {view === 'delivery' && taskDetail.task.latest_run_status === 'failed' && (
+                <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Latest agent run failed" />
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="border-l border-border/60 bg-muted/10" aria-hidden />
+      </div>
+
       {/* ── Two-column grid ─────────────────────────────────────── */}
       <div className="relative grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
         {/* ── Left column (main content) ────────────────────────── */}
         <div className="min-h-0 overflow-y-auto px-10 py-5 pb-40">
-          {/* Pipeline step indicator */}
-          {hasPipeline && (
-            <div className="mb-4 flex items-center gap-0">
-              {effectiveStates.map((state, idx) => {
-                const currentIdx = effectiveStates.findIndex((s) => s.id === form.workflow_state_id);
-                const isPast = idx < currentIdx;
-                const isCurrent = idx === currentIdx;
-                const isAutomated = automatedStateIds.has(state.id);
-                return (
-                  <div key={state.id} className="flex items-center">
-                    {idx > 0 && (
-                      <div className={`h-[2px] w-4 ${isPast || isCurrent ? 'bg-primary' : 'bg-border'}`} />
-                    )}
-                    <QuickTooltip label={`${state.name}${isAutomated ? ' (automated)' : ''}`}>
-                      <div className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${
-                        isCurrent
-                          ? 'border-primary bg-primary text-primary-foreground'
-                          : isPast
-                            ? 'border-primary bg-primary/20 text-primary'
-                            : 'border-border bg-background text-muted-foreground'
-                      }`}>
-                        {isPast ? (
-                          <Tick01Icon className="h-2.5 w-2.5" />
-                        ) : isAutomated ? (
-                          <BotIcon className="h-2.5 w-2.5" />
-                        ) : (
-                          <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                        )}
-                      </div>
-                    </QuickTooltip>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
+          {activeView === 'overview' && (
+          <>
           {/* Title */}
           <input
             type="text"
@@ -1304,143 +1268,23 @@ function TaskDetailPanelBody({
             )}
           </div>
 
-          {/* Action bar — "Add to Task" */}
-          <div className="border-t border-border/60 pt-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className={getOptionalSectionActionClass(hasChecklistItems ? 'locked' : showChecklist ? 'open' : 'available')}
-                disabled={hasChecklistItems}
-                onClick={() => setShowChecklist((v) => !v)}
-              >
-                <CheckmarkSquare02Icon className="h-3 w-3" />
-                Checklist
-                {hasChecklistItems ? (
-                  <span className="text-[10px] opacity-70">
-                    {checklistSummary.completed}/{checklistSummary.total}
-                  </span>
-                ) : null}
-              </button>
-              <button
-                ref={relationshipButtonRef}
-                type="button"
-                className={getOptionalSectionActionClass(hasRelationshipItems ? 'locked' : relationshipsToggleActive ? 'open' : 'available')}
-                disabled={hasRelationshipItems}
-                onClick={() => {
-                  setShowRelationships((open) => {
-                    const nextOpen = !open;
-                    if (!nextOpen) {
-                      setRelationshipComposerOpen(false);
-                    }
-                    return nextOpen;
-                  });
-                }}
-              >
-                <ArrowLeftRightIcon className="h-3 w-3" />
-                Relationships
-                {hasRelationshipItems ? (
-                  <span className="text-[10px] opacity-70">{relationshipCount}</span>
-                ) : null}
-              </button>
-              <button
-                type="button"
-                className={getOptionalSectionActionClass(hasExternalLinkItems ? 'locked' : showExternalLinks ? 'open' : 'available')}
-                disabled={hasExternalLinkItems}
-                onClick={() => setShowExternalLinks((v) => !v)}
-              >
-                <Link01Icon className="h-3 w-3" />
-                External Links
-                {hasExternalLinkItems ? (
-                  <span className="text-[10px] opacity-70">{externalLinkCount}</span>
-                ) : null}
-              </button>
-              <button
-                type="button"
-                className={getOptionalSectionActionClass('available')}
-                onClick={() => openFilePickerRef.current?.()}
-              >
-                <AttachmentIcon className="h-3 w-3" />
-                Attach Files
-              </button>
-            </div>
+          <div className="mt-7">
+            <TaskStandingBriefCard
+              workspaceId={workspaceId}
+              taskId={taskDetail.task.id}
+              canEdit={canEdit}
+              onSuggestion={handleBriefSuggestion}
+            />
           </div>
 
-          {/* Recurring info card */}
-          {taskDetail.task.recurring_template_id && recurringSummary ? (
-            <button
-              type="button"
-              className="mt-4 flex w-full items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
-              onClick={() => void openRecurringDialog()}
-            >
-              <ArrowReloadHorizontalIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="font-medium">{recurringSummary.rule_summary}</span>
-                  <Badge variant="outline" className={cn('text-[10px] capitalize', recurringSummary.status === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200' : recurringSummary.status === 'paused' ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200' : 'border-border')}>
-                    {recurringSummary.status}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {recurringSummary.occurrence_number ? `#${recurringSummary.occurrence_number} in series` : ''}{recurringSummary.occurrence_number && recurringSummary.generated_count ? ' · ' : ''}{recurringSummary.generated_count ? `${recurringSummary.generated_count} generated` : ''}
-                </p>
-              </div>
-              <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            </button>
-          ) : null}
-
-          {hasOptionalTaskSections && (
-            <div className="mt-8 space-y-8">
-              {/* Checklist */}
-              {showChecklist && (
-                <div>
-                  <ChecklistItems
-                    workspaceId={workspaceId}
-                    taskId={taskDetail.task.id}
-                    members={assignableMembers}
-                    teams={mentionTeams}
-                    onContentChange={handleChecklistContentChange}
-                    onStatsChange={handleChecklistStatsChange}
-                  />
-                </div>
-              )}
-
-              <TaskRelationshipsSection
-                workspaceId={workspaceId}
-                taskId={taskDetail.task.id}
-                taskName={taskDetail.task.name}
-                taskDisplayId={taskDetail.task.display_id}
-                workflowId={taskDetail.task.workflow_id}
-                workflowStateId={taskDetail.task.workflow_state_id}
-                epicId={taskDetail.task.epic_id}
-                sprintId={taskDetail.task.sprint_id}
-                teamId={taskDetail.task.team_id}
-                taskType={taskDetail.task.task_type}
-                priority={taskDetail.task.priority}
-                severity={taskDetail.task.severity}
-                externalBlocker={form.blocker}
-                onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
-                composerOpen={relationshipComposerOpen}
-                onComposerOpenChange={setRelationshipComposerOpen}
-                visible={showRelationships}
-                externalTriggerRef={relationshipButtonRef}
-                onContentChange={handleRelationshipContentChange}
-                onCountChange={handleRelationshipCountChange}
-              />
-
-              {/* External Links */}
-              {showExternalLinks && (
-                <div>
-                  <ExternalLinks
-                    workspaceId={workspaceId}
-                    entityType="task"
-                    entityId={taskDetail.task.id}
-                    onContentChange={handleExternalLinkContentChange}
-                    onCountChange={handleExternalLinkCountChange}
-                  />
-                </div>
-              )}
-            </div>
-          )}
+          <div className="mt-8">
+            <ChecklistItems
+              workspaceId={workspaceId}
+              taskId={taskDetail.task.id}
+              members={assignableMembers}
+              teams={mentionTeams}
+            />
+          </div>
 
           {/* Attachments */}
           <div className="mt-6" id="attachments-section">
@@ -1453,79 +1297,43 @@ function TaskDetailPanelBody({
               onFilePickerReady={(fn) => { openFilePickerRef.current = fn; }}
             />
           </div>
-
-          {/* Development */}
-          {hasGitIntegration && fieldVis.dev_history && (
-            <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
+          </>
           )}
 
-          {/* Agent Runs */}
-          <AgentRunPanel
-            taskId={taskDetail.task.id}
-            workspaceId={workspaceId}
-            taskTeamId={taskDetail.task.team_id}
-            latestRunAgentId={taskDetail.task.latest_run_agent_id}
-            delivery={delivery}
-            canEditDelivery={canEdit && fieldVis.delivery}
-          />
+          {activeView === 'delivery' && (
+            <div className="space-y-6">
+              <AgentRunPanel
+                taskId={taskDetail.task.id}
+                workspaceId={workspaceId}
+                taskTeamId={taskDetail.task.team_id}
+                latestRunAgentId={taskDetail.task.latest_run_agent_id}
+                delivery={delivery}
+                canEditDelivery={canEdit && fieldVis.delivery}
+              />
+              {hasGitIntegration && fieldVis.dev_history && (
+                <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
+              )}
+            </div>
+          )}
 
-          {/* Comments + Activity */}
-          <div className="mt-6">
-            {/* Comments card */}
-            {commentsLoading ? (
-              <div className="space-y-3 rounded-lg border border-border/60 p-4">
-                {[1, 2].map((i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <Skeleton className="h-8 w-8 rounded-full shrink-0" />
-                    <div className="flex-1 space-y-2">
-                      <Skeleton className="h-3 w-32" />
-                      <Skeleton className="h-3 w-full" />
-                    </div>
-                  </div>
-                ))}
+          {activeView === 'updates' && (
+            commentsLoading ? (
+              <div className="space-y-3 py-4">
+                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
               </div>
             ) : (
-              <>
-                <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70" />
-              <CommentThread
+              <TaskUpdatesView
                 workspaceId={workspaceId}
-                entityType="task"
-                entityId={taskDetail.task.id}
+                taskId={taskDetail.task.id}
                 comments={comments}
+                onCommentsChange={setComments}
                 currentUserId={currentUser?.id}
                 teams={mentionTeams}
                 members={assignableMembers}
-                onCommentsChange={setComments}
-                hideEmptyState
+                onOpenDelivery={openDelivery}
               />
-              </>
-            )}
-
-            {/* Activity section */}
-            {activityLoading ? (
-              <div className="mt-6 space-y-3">
-                <Skeleton className="h-3 w-20" />
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <Skeleton className="h-4 w-4 rounded-full shrink-0" />
-                    <Skeleton className="h-3 w-48" />
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {!activityLoading && activity.length > 0 && (
-              <div className="mt-6">
-                <TaskDetailSectionHeading title="Activity" icon={Activity01Icon} className="text-xs font-semibold text-foreground/70 uppercase tracking-wide" />
-                <ActivityTimeline
-                  activity={activity}
-                  states={effectiveStates}
-                  showAll={showAllActivity}
-                  onShowAll={() => setShowAllActivity(true)}
-                  entityLabel="task"
-                />
-              </div>
-            )}
-          </div>
+            )
+          )}
         </div>
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
@@ -1818,116 +1626,43 @@ function TaskDetailPanelBody({
             </MetadataRow>
             )}
 
-            {/* ── Delivery ── */}
-            {hasGitIntegration && fieldVis.delivery && !delivery.hidden && !delivery.loading && (
-              <>
-                <div className="col-span-3 h-px bg-border/40 my-1" />
-
-                <MetadataRow icon={GitBranchIcon} label="Repository">
-                  <SidebarPopoverSelect
-                    value={delivery.repositoryId || '__none__'}
-                    options={[
-                      { value: '__none__', label: 'None' },
-                      ...delivery.repositories.map((r) => ({ value: r.id, label: r.full_name })),
-                    ]}
-                    onChange={(v) => {
-                      const val = v === '__none__' ? '' : v;
-                      delivery.handleRepoChange(val);
-                    }}
-                    renderTrigger={() => (
-                      <span className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">
-                        {delivery.selectedRepository?.full_name ?? 'None'}
-                      </span>
-                    )}
-                  />
-                </MetadataRow>
-
-            <MetadataRow icon={GitBranchIcon} label="Base branch">
-              <RepositoryBranchPicker
-                workspaceId={workspaceId}
-                repositoryId={delivery.repositoryId || undefined}
-                value={delivery.baseBranch}
-                onChange={(value) => {
-                  void delivery.handleBaseBranchChange(value);
-                }}
-                placeholder={delivery.selectedRepository?.default_branch || 'main'}
-                emptyLabel={repositoryDefaultBranchLabel(delivery.selectedRepository?.default_branch)}
-                extraOptions={
-                  delivery.branchOptions
-                }
-                disabled={delivery.savingTarget}
-                variant="sidebar"
-                width="w-72"
-                triggerLabel={(
-                  <Tooltip open={isDeliveryTruncated('delivery-base') ? undefined : false}>
-                    <TooltipTrigger asChild>
-                      <span
-                        ref={(el) => checkDeliveryTruncation('delivery-base', el)}
-                        className="block min-w-0 truncate font-mono"
-                      >
-                        {delivery.resolvedBaseBranch}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent align="start">{delivery.resolvedBaseBranch}</TooltipContent>
-                  </Tooltip>
-                )}
-              />
-                </MetadataRow>
-
-                <MetadataRow icon={GitBranchIcon} label="Task branch">
-                  <Tooltip open={isDeliveryTruncated('delivery-branch') ? undefined : false}>
-                    <TooltipTrigger asChild>
-                      <span
-                        ref={(el) => checkDeliveryTruncation('delivery-branch', el)}
-                        className="block min-w-0 truncate font-mono text-xs px-1.5 py-0.5"
-                      >
-                        {delivery.branchPreview}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent align="start">{delivery.branchPreview}</TooltipContent>
-                  </Tooltip>
-                </MetadataRow>
-
-                {delivery.deliveryStateCfg && (
-                  <MetadataRow icon={PlayIcon} label="Status">
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${delivery.deliveryStateCfg.className}`}>
-                      {delivery.deliveryStateCfg.label}
-                    </span>
-                  </MetadataRow>
-                )}
-
-                <MetadataRow icon={GitBranchIcon} label="Source">
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${delivery.sourceClassName}`}>
-                    {delivery.sourceLabel}
-                  </span>
-                </MetadataRow>
-
-                {delivery.canUseEpicTarget && (
-                  <MetadataRow icon={GitBranchIcon} label="Epic branch">
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="outline"
-                      onClick={() => void delivery.handleUseEpicTarget()}
-                      disabled={delivery.savingTarget}
-                    >
-                      {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <GitBranchIcon className="h-3 w-3" />}
-                      Use epic branch
-                    </Button>
-                  </MetadataRow>
-                )}
-              </>
-            )}
+            <div className="col-span-3 h-px bg-border/40 my-1" />
+            <MetadataRow icon={ArrowReloadHorizontalIcon} label="Recurrence">
+              <button type="button" className="truncate rounded px-1.5 py-0.5 text-left hover:bg-accent" onClick={() => void openRecurringDialog()}>
+                {recurringSummary?.rule_summary ?? 'None'}
+              </button>
+            </MetadataRow>
 
           </div>
 
-          <AssociationsPanel
-            objectType="task"
-            objectId={taskDetail.task.id}
-            workspaceId={workspaceId}
-            includeTaskRelationships={false}
-            className="-mx-4 mt-4 border-t border-border/60"
-          />
+          <details id="task-related-section" className="-mx-4 mt-4 border-t border-border/60 px-4 pt-4" open>
+            <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-foreground/70">
+              Related
+            </summary>
+            <div className="mt-4 space-y-4">
+            <TaskRelationshipsSection
+              workspaceId={workspaceId}
+              taskId={taskDetail.task.id}
+              taskName={taskDetail.task.name}
+              taskDisplayId={taskDetail.task.display_id}
+              workflowId={taskDetail.task.workflow_id}
+              workflowStateId={taskDetail.task.workflow_state_id}
+              epicId={taskDetail.task.epic_id}
+              sprintId={taskDetail.task.sprint_id}
+              teamId={taskDetail.task.team_id}
+              taskType={taskDetail.task.task_type}
+              priority={taskDetail.task.priority}
+              severity={taskDetail.task.severity}
+              externalBlocker={form.blocker}
+              onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
+              composerOpen={relationshipComposerOpen}
+              onComposerOpenChange={setRelationshipComposerOpen}
+              visible
+            />
+            <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
+            <AssociationsPanel objectType="task" objectId={taskDetail.task.id} workspaceId={workspaceId} excludeDocs className="-mx-3 border-t border-border/60" />
+            </div>
+          </details>
         </aside>
       </div>
 
