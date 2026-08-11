@@ -1286,7 +1286,7 @@ function TaskDetailPanelBody({
           </div>
 
           {/* Attachments */}
-          <div className="mt-6" id="attachments-section">
+          <div className="mt-6 border-t border-border/60 pt-6" id="attachments-section">
             <Attachments
               workspaceId={workspaceId}
               entityType="task"
