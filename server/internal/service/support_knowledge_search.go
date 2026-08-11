@@ -509,6 +509,8 @@ func (s *SupportAIService) publishTypingIndicator(_ context.Context, workspaceID
 	action := "ai_thinking_started"
 	if !isThinking {
 		action = "ai_thinking_stopped"
+	} else {
+		s.publishProgress(workspaceID, conversationID, supportAIProgressLooking)
 	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      action,

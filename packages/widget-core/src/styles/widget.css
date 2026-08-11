@@ -1891,7 +1891,10 @@
   .helpin-stagger-list > .helpin-conversation-item,
   .helpin-help-link-skeleton-icon,
   .helpin-help-link-skeleton-line,
-  .helpin-ai-thinking-line {
+  .helpin-ai-thinking-line,
+  .helpin-ai-thinking-label,
+  .helpin-ai-thinking-mark-arm,
+  .helpin-streaming-cursor {
     animation: none;
     transform: none;
     clip-path: none;
@@ -3196,28 +3199,95 @@
 }
 
 .helpin-ai-thinking-icon {
+  position: relative;
   display: inline-flex;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   align-items: center;
   justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--helpin-primary) 14%, transparent);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--helpin-primary) 9%, var(--helpin-bg));
+  border: 1px solid color-mix(in srgb, var(--helpin-primary) 16%, var(--helpin-border));
+  border-radius: 10px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--helpin-primary) 12%, var(--helpin-bg)),
+    color-mix(in srgb, var(--helpin-primary) 4%, var(--helpin-bg))
+  );
   color: var(--helpin-primary);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--helpin-primary) 9%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 74%, transparent);
+}
+
+.helpin-ai-thinking-mark {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+
+.helpin-ai-thinking-mark-arm {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: helpin-ai-mark-wave 1.6s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.helpin-ai-thinking-mark-arm--top {
+  animation-delay: 0ms;
+}
+
+.helpin-ai-thinking-mark-arm--right {
+  animation-delay: -1.2s;
+}
+
+.helpin-ai-thinking-mark-arm--bottom {
+  animation-delay: -800ms;
+}
+
+.helpin-ai-thinking-mark-arm--left {
+  animation-delay: -400ms;
+}
+
+.helpin-ai-thinking-status {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 6px;
+  height: 6px;
+  border: 2px solid var(--helpin-bg);
+  border-radius: 999px;
+  background: var(--helpin-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--helpin-primary) 12%, transparent);
 }
 
 .helpin-ai-thinking-shimmer {
   display: flex;
-  width: min(58%, 190px);
+  width: min(72%, 210px);
+  flex-direction: column;
+  gap: 5px;
+}
+
+.helpin-ai-thinking-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   flex-direction: column;
   gap: 7px;
 }
 
+.helpin-ai-thinking-label {
+  overflow: hidden;
+  color: var(--helpin-text-secondary);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: helpin-progress-label-in 180ms ease-out;
+}
+
 .helpin-ai-thinking-line {
   display: block;
-  height: 10px;
+  height: 6px;
   border-radius: 999px;
   background: linear-gradient(
     90deg,
@@ -3239,15 +3309,15 @@
 }
 
 .helpin-theme-dark .helpin-ai-thinking-icon {
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: color-mix(in srgb, var(--helpin-primary) 32%, rgba(255, 255, 255, 0.12));
   background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--helpin-primary) 82%, #ffffff),
-    var(--helpin-primary)
+    145deg,
+    color-mix(in srgb, var(--helpin-primary) 18%, var(--helpin-bg)),
+    color-mix(in srgb, var(--helpin-primary) 7%, var(--helpin-bg))
   );
-  color: #ffffff;
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--helpin-primary) 24%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  color: color-mix(in srgb, var(--helpin-primary) 62%, #ffffff);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--helpin-primary) 14%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .helpin-theme-dark .helpin-ai-thinking-line {
@@ -3258,6 +3328,32 @@
     rgba(255, 255, 255, 0.08)
   );
   background-size: 200% 100%;
+}
+
+@keyframes helpin-progress-label-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes helpin-ai-mark-wave {
+  0%, 55%, 100% { opacity: 0.68; transform: scale(0.94); }
+  20% { opacity: 1; transform: scale(1); }
+}
+
+.helpin-streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  vertical-align: -0.12em;
+  animation: helpin-streaming-cursor-pulse 760ms ease-in-out infinite;
+}
+
+@keyframes helpin-streaming-cursor-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.9; }
 }
 
 /* CSAT Rating */

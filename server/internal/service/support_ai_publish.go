@@ -122,7 +122,7 @@ func (s *SupportAIService) publishAIReply(
 		return nil, fmt.Errorf("create AI message: %w", err)
 	}
 
-	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, aiMsg, "ai:"+agentID))
+	publishSupportAIMessageStream(s.wsPublisher, workspaceID, aiMsg, "ai:"+agentID)
 
 	pending := "pending"
 	_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{

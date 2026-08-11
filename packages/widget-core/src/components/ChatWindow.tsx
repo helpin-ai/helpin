@@ -33,6 +33,7 @@ interface ChatWindowProps {
   onPreChatSubmit: (data: { phone: string; email: string }) => void;
   isTyping?: boolean;
   isAIThinking?: boolean;
+  aiProgressLabel?: string;
   typingAgentName?: string;
   typingAgentAvatar?: string;
   activeTeammate?: ActiveTeammate;
@@ -74,6 +75,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   onPreChatSubmit,
   isTyping = false,
   isAIThinking = false,
+  aiProgressLabel,
   typingAgentName,
   typingAgentAvatar,
   activeTeammate,
@@ -370,6 +372,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onTyping={onTyping}
             isTyping={isTyping}
             isAIThinking={isAIThinking}
+            aiProgressLabel={aiProgressLabel}
             onEscalateToHuman={onEscalateToHuman ? () => {
               setHumanSupportRequested(true);
               onEscalateToHuman();
