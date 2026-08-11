@@ -18,24 +18,35 @@ describe('task detail optional section labels', () => {
     };
 
     expect(files.checklist).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
-    expect(files.relationships).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
-    expect(files.externalLinks).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
+    expect(files.relationships).toContain('className="text-[12.5px] font-semibold text-foreground/70 uppercase tracking-wide"');
+    expect(files.externalLinks).toContain('className="text-[12.5px] font-semibold text-foreground/70 uppercase tracking-wide"');
     expect(files.attachments).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
-    expect(files.panel).toContain('className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70"');
-    expect(files.panel).toContain('className="text-xs font-semibold text-foreground/70 uppercase tracking-wide"');
-    expect(files.associations).toContain('className="text-xs font-semibold uppercase tracking-wide text-foreground/70"');
+    expect(files.panel).toContain('cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-foreground/70');
+    expect(files.associations).toContain('className="text-[12.5px] font-semibold uppercase tracking-wide text-foreground/70"');
     expect(files.agentRuns).toContain('className="text-xs font-semibold uppercase tracking-wide text-foreground/70"');
   });
 
-  it('does not hide agent runs behind development history visibility', () => {
+  it('keeps agent runs visible while gating Git activity inside the unified delivery view', () => {
     const panel = readFileSync(resolve(__dirname, '../TaskDetailPanel.tsx'), 'utf8');
-    const gitPanelIndex = panel.indexOf('<TaskGitPanel');
     const agentRunPanelIndex = panel.indexOf('<AgentRunPanel');
-    const combinedGateIndex = panel.indexOf('{hasGitIntegration && fieldVis.dev_history && (');
 
-    expect(gitPanelIndex).toBeGreaterThan(combinedGateIndex);
     expect(agentRunPanelIndex).toBeGreaterThan(-1);
-    expect(agentRunPanelIndex).toBeGreaterThan(gitPanelIndex);
-    expect(agentRunPanelIndex).toBeGreaterThan(panel.indexOf(')}', gitPanelIndex));
+    expect(panel).toContain('showDevelopmentHistory={hasGitIntegration && fieldVis.dev_history}');
+    expect(panel).not.toContain('<TaskGitPanel');
+  });
+
+  it('softens attached item titles only in light mode across tasks and epics', () => {
+    const relationships = readFileSync(resolve(__dirname, '../TaskRelationshipsSection.tsx'), 'utf8');
+    const associations = readFileSync(resolve(__dirname, '../AssociationsPanel.tsx'), 'utf8');
+    const externalLinks = readFileSync(resolve(__dirname, '../ExternalLinks.tsx'), 'utf8');
+    const taskPanel = readFileSync(resolve(__dirname, '../TaskDetailPanel.tsx'), 'utf8');
+    const epicDetail = readFileSync(resolve(__dirname, '../../../pages/pm/EpicDetail.tsx'), 'utf8');
+
+    expect(relationships).toContain('font-medium text-foreground/75 dark:text-foreground');
+    expect(associations).toContain('font-medium text-foreground/75 dark:text-foreground');
+    expect(externalLinks).toContain('font-medium text-foreground/75');
+    expect(externalLinks).toContain('dark:text-foreground/80');
+    expect(taskPanel).toContain('<AssociationsPanel');
+    expect(epicDetail).toContain('<AssociationsPanel');
   });
 });

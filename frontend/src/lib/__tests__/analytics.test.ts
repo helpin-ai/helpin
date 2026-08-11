@@ -291,6 +291,37 @@ describe('app analytics', () => {
     expect(clients.usermaven.track).not.toHaveBeenCalled();
   });
 
+  it('does not resend unchanged Usermaven identities after query refetches', () => {
+    const clients = makeClients();
+    const options = { hostname: 'app.helpin.ai', clients };
+    const workspaces = [baseWorkspace];
+
+    identifyAnalyticsUser(baseUser, undefined, options);
+    identifyAnalyticsUser({ ...baseUser }, undefined, options);
+    identifyAnalyticsOrganization(baseOrganization, baseUser, options, workspaces);
+    identifyAnalyticsOrganization(
+      { ...baseOrganization },
+      { ...baseUser },
+      options,
+      workspaces.map((workspace) => ({ ...workspace })),
+    );
+
+    expect(clients.usermaven.id).toHaveBeenCalledTimes(2);
+  });
+
+  it('resends a Usermaven organization identity when meaningful traits change', () => {
+    const clients = makeClients();
+    const options = { hostname: 'app.helpin.ai', clients };
+
+    identifyAnalyticsOrganization(baseOrganization, baseUser, options, [baseWorkspace]);
+    identifyAnalyticsOrganization(baseOrganization, baseUser, options, [
+      baseWorkspace,
+      { ...baseWorkspace, id: 'ws-2' },
+    ]);
+
+    expect(clients.usermaven.id).toHaveBeenCalledTimes(2);
+  });
+
   it('builds billing lifecycle event properties for Usermaven', () => {
     expect(buildAnalyticsBillingEventProperties('workspace_billing_checkout_confirmed', 'ws-1', baseWorkspace.billing!)).toMatchObject({
       event_name: 'workspace_billing_checkout_confirmed',

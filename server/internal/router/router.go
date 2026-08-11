@@ -40,6 +40,7 @@ type Handlers struct {
 	PMEpic              *handler.PMEpicHandler
 	PMSprint            *handler.PMSprintHandler
 	PMTask              *handler.PMTaskHandler
+	PMTaskInsights      *handler.PMTaskInsightsHandler
 	PMComment           *handler.PMCommentHandler
 	PMAttachment        *handler.PMAttachmentHandler
 	PMObjective         *handler.PMObjectiveHandler
@@ -1077,6 +1078,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/relationships", h.Associations.CreateTaskRelationship)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/task-relationships/{id}", h.Associations.DeleteTaskRelationship)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/activity", h.PMTask.ListActivity)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/updates", h.PMTaskInsights.ListUpdates)
+				r.With(requirePerm(authorization.PermPMRead)).Put("/tasks/{id}/updates/read-state", h.PMTaskInsights.UpdateReadState)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/standing-brief", h.PMTaskInsights.GetStandingBrief)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/standing-brief/refresh", h.PMTaskInsights.RefreshStandingBrief)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/standing-brief/suggestions/{key}/dismiss", h.PMTaskInsights.DismissStandingBriefSuggestion)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/git-links", h.Git.GetTaskGitLinks)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/delivery-target", h.Git.GetTaskDeliveryTarget)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}/delivery-target", h.Git.UpdateTaskDeliveryTarget)

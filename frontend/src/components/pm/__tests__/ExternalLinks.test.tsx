@@ -83,4 +83,22 @@ describe('ExternalLinks', () => {
     expect(newTabLink?.href).toBe('https://github.com/helpin-ai/helpin/pull/31')
     expect(container?.querySelector('[data-slot="tooltip-trigger"]')).toBeTruthy()
   })
+
+  it('opens the link input from the heading action', async () => {
+    await renderExternalLinks([])
+
+    const addButton = container?.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add external link"]',
+    )
+    expect(addButton?.textContent).toBe('+')
+    expect(container?.textContent).toContain('No external links')
+    expect(container?.querySelector('input[type="url"]')).toBeNull()
+
+    act(() => {
+      addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container?.querySelector('input[type="url"]')).toBeTruthy()
+    expect(container?.textContent).not.toContain('No external links')
+  })
 })

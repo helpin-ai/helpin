@@ -21,6 +21,7 @@ const (
 	BillingFeatureSupportReplyRewrite     = "support_reply_rewrite"
 	BillingFeatureDealAutomationInference = "deal_automation_inference"
 	BillingFeatureCRMSummary              = "crm_summary"
+	BillingFeatureTaskStandingBrief       = "task_standing_brief"
 	BillingFeatureSupportTaskDraft        = "support_task_draft"
 	BillingFeatureDocsArticleTranslation  = "docs_article_translation"
 	BillingFeatureDocsArticleGeneration   = "docs_article_generation"
@@ -133,6 +134,7 @@ var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
 	BillingFeatureSupportReplyRewrite:     {FeatureKey: BillingFeatureSupportReplyRewrite, Label: "Support reply rewrite", Category: "Support AI", FloorUnits: 4, Chargeable: true},
 	BillingFeatureDealAutomationInference: {FeatureKey: BillingFeatureDealAutomationInference, Label: "Deal automation inference", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
 	BillingFeatureCRMSummary:              {FeatureKey: BillingFeatureCRMSummary, Label: "CRM summary", Category: "CRM AI", FloorUnits: 6, Chargeable: true},
+	BillingFeatureTaskStandingBrief:       {FeatureKey: BillingFeatureTaskStandingBrief, Label: "Task standing brief", Category: "Project AI", FloorUnits: 6, Chargeable: true},
 	BillingFeatureSupportAIReply:          {FeatureKey: BillingFeatureSupportAIReply, Label: "Support reply draft", Category: "Support AI", FloorUnits: 8, Chargeable: true},
 	BillingFeatureSupportTaskDraft:        {FeatureKey: BillingFeatureSupportTaskDraft, Label: "Support task draft", Category: "Support AI", FloorUnits: 8, Chargeable: true},
 	BillingFeatureDocsGeneration:          {FeatureKey: BillingFeatureDocsGeneration, Label: "Document generation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},

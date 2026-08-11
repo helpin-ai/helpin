@@ -190,6 +190,9 @@ func main() {
 			&model.PMComment{},
 			&model.PMCommentReaction{},
 			&model.PMActivityLog{},
+			&model.PMTaskUpdateRead{},
+			&model.PMTaskStandingBrief{},
+			&model.PMTaskBriefSuggestionDismissal{},
 			&model.PMAttachment{},
 			&model.PMObjective{},
 			&model.PMKeyResult{},
@@ -730,6 +733,7 @@ func main() {
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
+	pmTaskInsightsRepo := repository.NewPMTaskInsightsRepository(db)
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
@@ -1238,6 +1242,7 @@ func main() {
 	}
 
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
+	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo)
@@ -1661,6 +1666,7 @@ func main() {
 		PMRoadmap:           handler.NewPMRoadmapHandler(pmRoadmapService),
 		PMSprint:            handler.NewPMSprintHandler(pmSprintService),
 		PMTask:              handler.NewPMTaskHandler(pmTaskService),
+		PMTaskInsights:      handler.NewPMTaskInsightsHandler(pmTaskInsightsService),
 		PMComment:           handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment:        handler.NewPMAttachmentHandler(pmAttachmentService),
 		PMObjective:         handler.NewPMObjectiveHandler(pmObjectiveService),
@@ -1695,7 +1701,7 @@ func main() {
 		CRMCompany:          handler.NewCRMCompanyHandler(crmCompanyService),
 		CRMDeal:             handler.NewCRMDealHandler(crmDealService),
 		CRMAssociation:      handler.NewCRMAssociationHandler(crmAssociationService),
-		Associations:        handler.NewAssociationsHandler(associationsService),
+		Associations:        handler.NewAssociationsHandler(associationsService, authzService),
 		CRMActivity:         handler.NewCRMActivityHandler(crmActivityService),
 		CRMImport:           handler.NewCRMImportHandler(crmImportService),
 		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),

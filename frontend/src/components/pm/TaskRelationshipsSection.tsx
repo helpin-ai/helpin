@@ -1,8 +1,8 @@
-import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { type ReactNode, type RefObject, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   ArrowLeftRightIcon,
-  Tick01Icon,
+  ArrowRight01Icon,
   Copy01Icon,
   File01Icon,
   Loading01Icon,
@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +29,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   useCreateDocAssociation,
   useCreateTask,
@@ -44,7 +52,6 @@ import type {
   Task,
   TaskRelationshipAction,
 } from '@/lib/pmTypes';
-import { TaskTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
@@ -66,13 +73,17 @@ interface TaskRelationshipsSectionProps {
   composerOpen: boolean;
   onComposerOpenChange: (open: boolean) => void;
   visible?: boolean;
-  /** Ref to an external trigger (e.g. the action-bar "Relationships" button).
-   *  When set, clicking that element opens the popover anchored there instead of inline. */
+  /** Retained for callers that use an external relationship trigger. */
   externalTriggerRef?: RefObject<HTMLElement | null>;
   className?: string;
   onContentChange?: (hasContent: boolean) => void;
   onCountChange?: (count: number) => void;
+  hideDocs?: boolean;
+  flat?: boolean;
+  showExternalBlocker?: boolean;
 }
+
+const RELATIONSHIP_PREVIEW_LIMIT = 3;
 
 const RELATIONSHIP_OPTIONS: Array<{
   value: TaskRelationshipAction;
@@ -124,98 +135,19 @@ const RELATIONSHIP_COLORS: Record<TaskRelationshipAction, { active: string; icon
 function getRelationshipMeta(linkType: string) {
   switch (linkType) {
     case 'blocks':
-      return { label: 'Blocks', icon: Alert01Icon, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/40' };
+      return { label: 'Blocks', icon: Alert01Icon, color: 'text-amber-600 dark:text-amber-400' };
     case 'is_blocked_by':
-      return { label: 'Blocked by', icon: Shield02Icon, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-950/40' };
+      return { label: 'Blocked by', icon: Shield02Icon, color: 'text-red-600 dark:text-red-400' };
     case 'relates_to':
     case 'related_by':
-      return { label: 'Relates to', icon: ArrowLeftRightIcon, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/40' };
+      return { label: 'Relates to', icon: ArrowLeftRightIcon, color: 'text-blue-600 dark:text-blue-400' };
     case 'duplicates':
-      return { label: 'Duplicates', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
+      return { label: 'Duplicates', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400' };
     case 'is_duplicated_by':
-      return { label: 'Duplicated by', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/40' };
+      return { label: 'Duplicated by', icon: Copy01Icon, color: 'text-violet-600 dark:text-violet-400' };
     default:
-      return { label: linkType, icon: ArrowLeftRightIcon, color: 'text-muted-foreground', bg: 'bg-muted/60' };
+      return { label: linkType, icon: ArrowLeftRightIcon, color: 'text-muted-foreground' };
   }
-}
-
-/* ------------------------------------------------------------------ */
-/*  Floating popover rendered via a portal, positioned to an anchor   */
-/* ------------------------------------------------------------------ */
-
-function FloatingPopover({
-  open,
-  onOpenChange,
-  anchorEl,
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  anchorEl: HTMLElement | null;
-  children: ReactNode;
-}) {
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
-
-  // Track anchor position on scroll / resize
-  useEffect(() => {
-    if (!open || !anchorEl) return;
-    const update = () => {
-      const rect = anchorEl.getBoundingClientRect();
-      setPos({ top: rect.bottom + 4, left: rect.left });
-    };
-    update();
-    // Listen on the nearest scrollable ancestor + window resize
-    const scrollParent = anchorEl.closest('[class*="overflow"]') ?? window;
-    scrollParent.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update, { passive: true });
-    return () => {
-      scrollParent.removeEventListener('scroll', update);
-      window.removeEventListener('resize', update);
-    };
-  }, [open, anchorEl]);
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node) &&
-        anchorEl &&
-        !anchorEl.contains(e.target as Node)
-      ) {
-        onOpenChange(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open, anchorEl, onOpenChange]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false);
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [open, onOpenChange]);
-
-  if (!open || !anchorEl) return null;
-
-  return (
-    <div
-      ref={popoverRef}
-      className="fixed z-50 w-[min(38rem,calc(100vw-2rem))] rounded-xl border border-border/60 bg-popover text-popover-foreground shadow-lg ring-1 ring-black/[0.04] dark:ring-white/[0.04] animate-in fade-in-0 zoom-in-95 slide-in-from-top-2"
-      style={{
-        top: pos.top,
-        left: pos.left,
-      }}
-    >
-      {children}
-    </div>
-  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -240,14 +172,16 @@ export function TaskRelationshipsSection({
   composerOpen,
   onComposerOpenChange,
   visible = false,
-  externalTriggerRef,
   className,
   onContentChange,
   onCountChange,
+  hideDocs = false,
+  flat = false,
+  showExternalBlocker = true,
 }: TaskRelationshipsSectionProps) {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
-  const inlineAddRef = useRef<HTMLButtonElement>(null);
-  const [anchorSource, setAnchorSource] = useState<'external' | 'inline'>('inline');
+  const navigate = useNavigate();
+  const location = useLocation();
   const [popoverTab, setPopoverTab] = useState<'tasks' | 'docs'>('tasks');
   const [query, setQuery] = useState('');
   const [relationshipType, setRelationshipType] = useState<TaskRelationshipAction>('relates_to');
@@ -257,6 +191,7 @@ export function TaskRelationshipsSection({
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [createRelatedTaskOpen, setCreateRelatedTaskOpen] = useState(false);
   const [createRelatedTaskInitialName, setCreateRelatedTaskInitialName] = useState('');
+  const [relationshipsExpanded, setRelationshipsExpanded] = useState(false);
 
   const associationsQuery = useTaskAssociations(workspaceId, taskId);
   const workflowsQuery = useWorkflows(workspaceId);
@@ -266,17 +201,6 @@ export function TaskRelationshipsSection({
   const createTask = useCreateTask(workspaceId);
   const createDocAssociation = useCreateDocAssociation(workspaceId, 'task', taskId);
   const deleteDocAssociation = useDeleteDocAssociation(workspaceId, 'task', taskId);
-
-  // Detect which trigger opened the popover
-  useEffect(() => {
-    if (composerOpen) {
-      const active = document.activeElement;
-      if (externalTriggerRef?.current && externalTriggerRef.current.contains(active as Node)) {
-        setAnchorSource('external');
-      }
-      // "inline" is set explicitly in the onClick handler
-    }
-  }, [composerOpen, externalTriggerRef]);
 
   useEffect(() => {
     if (!composerOpen) {
@@ -323,7 +247,18 @@ export function TaskRelationshipsSection({
   }, [data]);
 
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
-  const relationshipContentCount = allRelationships.length + linkedDocs.length;
+  const displayableRelationships = useMemo(
+    () => allRelationships.filter((relationship) => relationship.task),
+    [allRelationships],
+  );
+  const visibleRelationships = relationshipsExpanded
+    ? displayableRelationships
+    : displayableRelationships.slice(0, RELATIONSHIP_PREVIEW_LIMIT);
+  const hiddenRelationshipCount = Math.max(
+    displayableRelationships.length - RELATIONSHIP_PREVIEW_LIMIT,
+    0,
+  );
+  const relationshipContentCount = displayableRelationships.length + (hideDocs ? 0 : linkedDocs.length);
   const hasRelationshipContent = relationshipContentCount > 0;
 
   useEffect(() => {
@@ -388,20 +323,16 @@ export function TaskRelationshipsSection({
     createDocAssociation.isPending ||
     deleteDocAssociation.isPending;
 
-  // Resolve the popover anchor element
-  const anchorEl =
-    anchorSource === 'external' && externalTriggerRef?.current
-      ? externalTriggerRef.current
-      : inlineAddRef.current;
   const createWorkflow = useMemo(
     () => workflowsQuery.data?.find((item) => item.workflow.id === workflowId),
     [workflowId, workflowsQuery.data],
   );
 
-  const popoverBody: ReactNode = (
+  const composerBody: ReactNode = (
     <>
-      <div className="border-b border-border/60 bg-muted/20 px-3 pt-2.5 pb-2">
-        <Tabs
+      {!hideDocs && (
+        <div>
+          <Tabs
           value={popoverTab}
           onValueChange={(v) => {
             setPopoverTab(v as 'tasks' | 'docs');
@@ -424,10 +355,11 @@ export function TaskRelationshipsSection({
               Docs
             </TabsTrigger>
           </TabsList>
-        </Tabs>
-      </div>
+          </Tabs>
+        </div>
+      )}
 
-      <div className="space-y-2.5 px-3 py-2.5">
+      <div className="space-y-2.5">
         {popoverTab === 'tasks' ? (
           <>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">This Task...</p>
@@ -538,25 +470,36 @@ export function TaskRelationshipsSection({
     </>
   );
 
-  // The action-bar toggle controls section visibility; the inline button controls the composer.
+  // The action-bar toggle controls section visibility; the heading action controls the composer.
   if (!visible && !composerOpen) {
     return null;
   }
 
   return (
     <section id="task-relationships-section" className={className}>
-      <div className="rounded-lg border border-border/60 bg-card">
-        <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
+      <div className={cn(!flat && 'rounded-lg border border-border/60 bg-card')}>
+        <div className={cn('flex items-center justify-between', !flat && 'border-b border-border/40 px-3 py-2')}>
           <div className="flex items-center gap-1.5">
-            <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
-              Task Relationships
+            {!flat && <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />}
+            <span className="text-[12.5px] font-semibold text-foreground/70 uppercase tracking-wide">
+              {flat ? 'Tasks' : 'Task Relationships'}
             </span>
             {relationshipContentCount > 0 ? (
               <span className="text-xs font-normal text-muted-foreground">
                 ({relationshipContentCount})
               </span>
             ) : null}
+          </div>
+          <div className="flex items-center gap-1">
+            {busy ? <Loading01Icon className="h-3 w-3 animate-spin text-muted-foreground" /> : null}
+            <button
+              type="button"
+              className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              onClick={() => onComposerOpenChange(true)}
+              aria-label="Add task relationship"
+            >
+              <span className="text-sm leading-none">+</span>
+            </button>
           </div>
         </div>
 
@@ -567,8 +510,8 @@ export function TaskRelationshipsSection({
         ) : null}
 
         {relationshipContentCount > 0 ? (
-          <div className="divide-y divide-border/40">
-        {allRelationships.map((item) => {
+          <div className={flat ? 'mt-1 space-y-0.5' : 'divide-y divide-border/40'}>
+        {visibleRelationships.map((item) => {
           const meta = getRelationshipMeta(item.link_type);
           const Icon = meta.icon;
           const resolved = item.link_type === 'blocks' && !item.is_active;
@@ -579,83 +522,99 @@ export function TaskRelationshipsSection({
           return (
             <div
               key={item.relationship_id}
+              data-testid="related-task-row"
               className={cn(
-                'group flex items-center gap-1.5 px-3 py-2 transition-colors hover:bg-muted/30',
+                'flex items-center gap-2 px-1 py-1 text-[12.5px]',
                 resolved && 'opacity-50',
               )}
             >
-              <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <Icon className={cn('h-3.5 w-3.5 shrink-0', meta.color)} />
-                <span className={cn('shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium', meta.bg, meta.color)}>{meta.label}</span>
-                {workspace?.slug ? (
-                  <Link
-                    to="/w/$slug/pm/tasks/$taskId"
-                    params={{ slug: workspace.slug, taskId: relatedTask.object_id }}
-                    search={{ team: undefined, run: undefined }}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="min-w-0 truncate text-ui font-medium text-foreground transition-colors hover:text-primary"
-                  >
-                    {relatedTask.title}
-                  </Link>
-                ) : (
-                  <span className="min-w-0 truncate text-ui font-medium text-foreground">
+              {workspace?.slug ? (
+                <button
+                  type="button"
+                  data-testid="related-task-link"
+                  onClick={() =>
+                    openTaskRoute(
+                      navigate as never,
+                      location as never,
+                      workspace.slug,
+                      relatedTask.object_id,
+                    )
+                  }
+                  className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
+                >
+                  {(relatedTask.task_key || relatedTask.display_id) ? (
+                    <span data-testid="related-task-id" className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                      {relatedTask.task_key ?? relatedTask.display_id}
+                    </span>
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">
                     {relatedTask.title}
                   </span>
-                )}
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                {(relatedTask.task_key || relatedTask.display_id) ? (
-                  <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium gap-1">
-                    {relatedTask.task_type ? (
-                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3.5 w-3.5" />
-                    ) : null}
-                    {relatedTask.task_key ?? relatedTask.display_id}
-                    {(relatedTask.completed || resolved) ? (
-                      <Tick01Icon className="h-3 w-3 text-green-600" />
-                    ) : null}
-                  </Badge>
-                ) : null}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
-                    >
-                      <MoreHorizontalIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuLabel className="text-xs">Update Relationship Type</DropdownMenuLabel>
-                    {UPDATE_TYPE_OPTIONS.map((opt) => {
-                      const OptIcon = opt.icon;
-                      return (
-                        <DropdownMenuItem
-                          key={opt.value}
-                          onClick={() => handleUpdateRelationshipType(item.relationship_id, relatedTask.object_id, opt.value)}
-                        >
-                          <OptIcon className="mr-2 h-3.5 w-3.5" />
-                          {opt.label}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => deleteRelationship.mutate(item.relationship_id)}
-                    >
-                      <Delete01Icon className="mr-2 h-3.5 w-3.5" />
-                      Remove relationship
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                </button>
+              ) : (
+                <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                  {(relatedTask.task_key || relatedTask.display_id) ? (
+                    <span data-testid="related-task-id" className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                      {relatedTask.task_key ?? relatedTask.display_id}
+                    </span>
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">
+                    {relatedTask.title}
+                  </span>
+                </span>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
+                    aria-label={`Change relationship: ${meta.label}`}
+                    title={`${meta.label} — change relationship`}
+                  >
+                    <Icon className={cn('h-3.5 w-3.5', meta.color)} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuLabel className="text-xs">Update Relationship Type</DropdownMenuLabel>
+                  {UPDATE_TYPE_OPTIONS.map((opt) => {
+                    const OptIcon = opt.icon;
+                    return (
+                      <DropdownMenuItem
+                        key={opt.value}
+                        onClick={() => handleUpdateRelationshipType(item.relationship_id, relatedTask.object_id, opt.value)}
+                      >
+                        <OptIcon className="mr-2 h-3.5 w-3.5" />
+                        {opt.label}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => deleteRelationship.mutate(item.relationship_id)}
+                  >
+                    <Delete01Icon className="mr-2 h-3.5 w-3.5" />
+                    Remove relationship
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           );
         })}
 
+        {hiddenRelationshipCount > 0 ? (
+          <button
+            type="button"
+            className="mt-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            onClick={() => setRelationshipsExpanded((current) => !current)}
+          >
+            <ArrowRight01Icon className={cn('h-3 w-3 transition-transform', relationshipsExpanded && 'rotate-90')} />
+            {relationshipsExpanded ? 'Show less' : `Show ${hiddenRelationshipCount} more`}
+          </button>
+        ) : null}
+
         {/* Linked docs */}
-        {linkedDocs.map((doc) => (
+        {!hideDocs && linkedDocs.map((doc) => (
           <div
             key={`doc-${doc.object_id}-${doc.association_id ?? 'f'}`}
             className="group flex items-center gap-1.5 px-3 py-2 transition-colors hover:bg-muted/30"
@@ -667,7 +626,7 @@ export function TaskRelationshipsSection({
             >
               <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
-              <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.title}</span>
+              <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground/75 dark:text-foreground">{doc.title}</span>
             </button>
             {doc.association_id ? (
               <div className="ml-auto flex shrink-0 items-center">
@@ -697,33 +656,19 @@ export function TaskRelationshipsSection({
           </div>
         ) : null}
 
-      {/* + Add Relationship */}
-      <div className="flex items-center gap-2 border-t border-border/40 px-3 py-2">
-        <button
-          ref={inlineAddRef}
-          type="button"
-          className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
-          onClick={() => {
-            setAnchorSource('inline');
-            onComposerOpenChange(true);
-          }}
-        >
-          <PlusSignIcon className="h-3 w-3" />
-          Add relationship
-        </button>
-
-        {busy ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loading01Icon className="h-3 w-3 animate-spin" />
-          </span>
-        ) : null}
-      </div>
       </div>
 
-      {/* Floating popover — anchored to whichever trigger was clicked */}
-      <FloatingPopover open={composerOpen} onOpenChange={onComposerOpenChange} anchorEl={anchorEl}>
-        {popoverBody}
-      </FloatingPopover>
+      <Dialog open={composerOpen} onOpenChange={onComposerOpenChange}>
+        <DialogContent className="gap-4 sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Add relationship</DialogTitle>
+            <DialogDescription>
+              Link an existing task or create a related task.
+            </DialogDescription>
+          </DialogHeader>
+          {composerBody}
+        </DialogContent>
+      </Dialog>
 
       {createWorkflow ? (
         <CreateTaskModal
@@ -755,7 +700,7 @@ export function TaskRelationshipsSection({
       />
 
       {/* External blocker */}
-      {externalBlocker || allRelationships.some((r) => r.link_type === 'is_blocked_by') ? (
+      {showExternalBlocker && (externalBlocker || allRelationships.some((r) => r.link_type === 'is_blocked_by')) ? (
         <div className="mt-4 space-y-1.5">
           <div className="flex items-center gap-1.5">
             <Shield02Icon className="h-3.5 w-3.5 text-muted-foreground" />

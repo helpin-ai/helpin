@@ -39,6 +39,23 @@ let defaultSdkPromise: Promise<void> | null = null;
 let pendingUsermavenOptions: UsermavenInitOptions | null = null;
 let pendingCustomerIoSettings: { writeKey: string } | null = null;
 let customerIoLoaded = false;
+const usermavenIdentityFingerprints = new WeakMap<AnalyticsClients['usermaven'], Map<string, string>>();
+
+function identifyUsermavenWhenChanged(
+  client: AnalyticsClients['usermaven'],
+  scope: string,
+  traits: AnalyticsTraits,
+) {
+  const fingerprint = JSON.stringify(traits);
+  let fingerprints = usermavenIdentityFingerprints.get(client);
+  if (!fingerprints) {
+    fingerprints = new Map();
+    usermavenIdentityFingerprints.set(client, fingerprints);
+  }
+  if (fingerprints.get(scope) === fingerprint) return;
+  fingerprints.set(scope, fingerprint);
+  void client.id(traits);
+}
 
 function ensureDefaultSdkClients() {
   if (!defaultSdkPromise) {
@@ -235,8 +252,7 @@ export function buildAnalyticsOrganizationTraits(organization: OrganizationWithR
       paid_workspace_count: paid.length,
       trialing_workspace_count: trialing.length,
       organization_trialing: trialing.length > 0,
-      organization_plan_mix: [...new Set(workspaces.map((workspace) => getWorkspaceAnalyticsPlan(workspace)))],
-      aggregates_updated_at: new Date().toISOString(),
+      organization_plan_mix: [...new Set(workspaces.map((workspace) => getWorkspaceAnalyticsPlan(workspace)))].sort(),
     };
   }
   return traits;
@@ -395,7 +411,7 @@ export function identifyAnalyticsUser(
   if (!user || !shouldEnableAppAnalytics(hostFor(options))) return;
   const traits = buildAnalyticsUserTraits(user, organization);
   const clients = clientsFor(options);
-  void clients.usermaven.id(traits);
+  identifyUsermavenWhenChanged(clients.usermaven, `user:${user.id}`, traits);
   void clients.customerio.identify(user.id, traits);
 }
 
@@ -421,7 +437,11 @@ export function identifyAnalyticsOrganization(
   if (!organization || !shouldEnableAppAnalytics(hostFor(options))) return;
   const clients = clientsFor(options);
   if (user) {
-    void clients.usermaven.id(buildAnalyticsUserTraits(user, organization, workspaces));
+    identifyUsermavenWhenChanged(
+      clients.usermaven,
+      `organization:${organization.id}:user:${user.id}`,
+      buildAnalyticsUserTraits(user, organization, workspaces),
+    );
   }
 }
 
@@ -451,6 +471,7 @@ export function trackWorkspaceBillingEvent(
 export function resetAnalytics(options?: AnalyticsOptions) {
   if (!shouldEnableAppAnalytics(hostFor(options))) return;
   const clients = clientsFor(options);
+  usermavenIdentityFingerprints.delete(clients.usermaven);
   void clients.usermaven.reset();
   clients.customerio.reset();
 }
