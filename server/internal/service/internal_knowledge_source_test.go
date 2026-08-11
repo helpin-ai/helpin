@@ -24,6 +24,45 @@ func (internalKnowledgeEmbeddingProvider) CreateEmbeddings(_ context.Context, re
 	return &llm.EmbeddingResponse{Vectors: vectors}, nil
 }
 
+type recordingBatchEmbeddingProvider struct {
+	batchSizes []int
+	failures   int
+}
+
+func (p *recordingBatchEmbeddingProvider) CreateEmbeddings(_ context.Context, req llm.EmbeddingRequest) (*llm.EmbeddingResponse, error) {
+	p.batchSizes = append(p.batchSizes, len(req.Inputs))
+	if p.failures > 0 {
+		p.failures--
+		return nil, fmt.Errorf("temporary embedding failure")
+	}
+	vectors := make([][]float32, len(req.Inputs))
+	for idx := range vectors {
+		vectors[idx] = []float32{float32(idx)}
+	}
+	return &llm.EmbeddingResponse{Vectors: vectors}, nil
+}
+
+func TestDocsEmbeddingServiceBatchesAndRetriesEmbeddingRequests(t *testing.T) {
+	provider := &recordingBatchEmbeddingProvider{failures: 1}
+	service := &DocsEmbeddingService{embedder: provider, embeddingModel: defaultDocsEmbeddingModel}
+	inputs := make([]string, 130)
+	for idx := range inputs {
+		inputs[idx] = fmt.Sprintf("chunk-%d", idx)
+	}
+
+	vectors, err := service.createEmbeddingsBatched(context.Background(), inputs)
+	if err != nil {
+		t.Fatalf("createEmbeddingsBatched returned error: %v", err)
+	}
+	if len(vectors) != len(inputs) {
+		t.Fatalf("vector count = %d, want %d", len(vectors), len(inputs))
+	}
+	wantBatchSizes := []int{64, 64, 64, 2}
+	if fmt.Sprint(provider.batchSizes) != fmt.Sprint(wantBatchSizes) {
+		t.Fatalf("batch sizes = %v, want %v", provider.batchSizes, wantBatchSizes)
+	}
+}
+
 func TestAgentKnowledgeSourceServiceAllowsInternalAndHelpCenterSpaces(t *testing.T) {
 	db := newInternalKnowledgeTestDB(t)
 	ctx := context.Background()

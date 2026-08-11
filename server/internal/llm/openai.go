@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const maxOpenAIEmbeddingsResponseBytes = 32 << 20
+
 // OpenAIProvider implements Provider for OpenAI-compatible APIs.
 type OpenAIProvider struct {
 	apiKey     string
@@ -249,13 +251,19 @@ func (p *OpenAIProvider) CreateEmbeddings(ctx context.Context, req EmbeddingRequ
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxOpenAIEmbeddingsResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read embeddings response: %w", err)
+	}
+	if len(respBody) > maxOpenAIEmbeddingsResponseBytes {
+		return nil, fmt.Errorf("embeddings response exceeded %d byte limit", maxOpenAIEmbeddingsResponseBytes)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("openai embeddings API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+	if len(bytes.TrimSpace(respBody)) == 0 {
+		return nil, fmt.Errorf("openai embeddings API returned an empty response")
 	}
 
 	var result struct {
@@ -264,7 +272,7 @@ func (p *OpenAIProvider) CreateEmbeddings(ctx context.Context, req EmbeddingRequ
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("parse embeddings response: %w", err)
+		return nil, fmt.Errorf("parse embeddings response (%d bytes): %w", len(respBody), err)
 	}
 
 	vectors := make([][]float32, 0, len(result.Data))
