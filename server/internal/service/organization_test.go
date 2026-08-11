@@ -219,3 +219,61 @@ func TestOrganizationServiceTransferOwnershipRejectsNonCanonicalOwner(t *testing
 		t.Fatalf("TransferOwnership() error = %v, want canonical-owner rejection", err)
 	}
 }
+
+func TestOrganizationServiceTransferOwnershipRepairsDriftedOwnerMembership(t *testing.T) {
+	tests := []struct {
+		name  string
+		drift func(context.Context, *repository.OrganizationRepository, string) error
+	}{
+		{
+			name: "wrong role",
+			drift: func(ctx context.Context, repo *repository.OrganizationRepository, orgID string) error {
+				return repo.UpdateMemberRole(ctx, orgID, "owner-1", model.RoleMember)
+			},
+		},
+		{
+			name: "missing membership",
+			drift: func(ctx context.Context, repo *repository.OrganizationRepository, orgID string) error {
+				return repo.RemoveMember(ctx, orgID, "owner-1")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			orgRepo := repository.NewOrganizationRepository(db)
+			svc := NewOrganizationService(orgRepo)
+			ctx := context.Background()
+
+			org, err := svc.Create(ctx, model.CreateOrganizationRequest{Name: "Drift Repair Org", Slug: "drift-repair-org"}, "owner-1")
+			if err != nil {
+				t.Fatalf("Create() error = %v", err)
+			}
+			if _, err := orgRepo.AddMember(ctx, org.ID, "member-1", model.RoleMember); err != nil {
+				t.Fatalf("AddMember(new owner) error = %v", err)
+			}
+			if err := tt.drift(ctx, orgRepo, org.ID); err != nil {
+				t.Fatalf("create owner drift: %v", err)
+			}
+
+			if err := svc.TransferOwnership(ctx, org.ID, "owner-1", model.TransferOrganizationOwnershipRequest{NewOwnerID: "member-1"}); err != nil {
+				t.Fatalf("TransferOwnership() error = %v", err)
+			}
+			outgoingRole, err := orgRepo.GetMemberRole(ctx, org.ID, "owner-1")
+			if err != nil {
+				t.Fatalf("GetMemberRole(outgoing owner) error = %v", err)
+			}
+			if outgoingRole != model.RoleAdmin {
+				t.Fatalf("outgoing owner role = %q, want admin", outgoingRole)
+			}
+			newOwnerRole, err := orgRepo.GetMemberRole(ctx, org.ID, "member-1")
+			if err != nil {
+				t.Fatalf("GetMemberRole(new owner) error = %v", err)
+			}
+			if newOwnerRole != model.RoleOwner {
+				t.Fatalf("new owner role = %q, want owner", newOwnerRole)
+			}
+		})
+	}
+}

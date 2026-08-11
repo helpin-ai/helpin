@@ -210,13 +210,6 @@ func (s *OrganizationService) TransferOwnership(ctx context.Context, orgID, acto
 	if req.NewOwnerID == actorID {
 		return fmt.Errorf("new owner must be another organization member")
 	}
-	actorRole, err := s.orgRepo.GetMemberRole(ctx, orgID, actorID)
-	if err != nil {
-		return err
-	}
-	if actorRole != model.RoleOwner {
-		return fmt.Errorf("only the current organization owner can transfer ownership")
-	}
 	if err := s.orgRepo.TransferOwnership(ctx, orgID, actorID, req.NewOwnerID); err != nil {
 		return err
 	}

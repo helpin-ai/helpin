@@ -198,6 +198,17 @@ func (r *OrganizationRepository) TransferOwnership(ctx context.Context, orgID, c
 			Update("role", model.RoleAdmin).Error; err != nil {
 			return fmt.Errorf("demote existing organization owners: %w", err)
 		}
+		outgoingOwner := &model.OrganizationMember{
+			OrganizationID: orgID,
+			UserID:         currentOwnerID,
+			Role:           model.RoleAdmin,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "organization_id"}, {Name: "user_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"role", "updated_at"}),
+		}).Create(outgoingOwner).Error; err != nil {
+			return fmt.Errorf("repair outgoing organization owner membership: %w", err)
+		}
 		if err := tx.Model(&model.OrganizationMember{}).
 			Where("organization_id = ? AND user_id = ?", orgID, newOwnerID).
 			Update("role", model.RoleOwner).Error; err != nil {
