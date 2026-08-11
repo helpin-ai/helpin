@@ -30,7 +30,7 @@ export function TableOfContents({ items, activeId }: TableOfContentsProps) {
                 href={`#${item.id}`}
                 onClick={(e) => {
                   e.preventDefault()
-                  document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' })
+                  document.getElementById(item.id)?.scrollIntoView({ behavior: 'auto', block: 'start' })
                 }}
                 className={cn(
                   'block min-w-0 break-words border-l-2 py-1 text-[13px] leading-snug transition-colors',
