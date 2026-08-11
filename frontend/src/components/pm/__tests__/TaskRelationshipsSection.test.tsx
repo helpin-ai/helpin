@@ -182,4 +182,40 @@ describe('TaskRelationshipsSection', () => {
 
     expect(document.body.textContent).toContain('Update Relationship Type');
   });
+
+  it('shows three compact task rows before revealing the remaining relationships', () => {
+    associations.task_relationships.relates_to = Array.from({ length: 4 }, (_, index) => ({
+      relationship_id: `rel-${index + 1}`,
+      link_type: 'relates_to',
+      is_active: true,
+      task: {
+        object_type: 'task',
+        object_id: `task-${index + 2}`,
+        title: `Related task ${index + 1}`,
+        task_key: `MKT-${index + 1}`,
+      },
+    }));
+    renderSection({ flat: true, hideDocs: true });
+
+    expect(container.querySelectorAll('[data-testid="related-task-row"]')).toHaveLength(3);
+    expect(container.textContent).not.toContain('Related task 4');
+
+    const taskId = container.querySelector('[data-testid="related-task-id"]');
+    expect(taskId?.className).toContain('absolute');
+    expect(taskId?.className).toContain('group-hover:opacity-100');
+    expect(taskId?.className).toContain('opacity-0');
+
+    const moreButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Show 1 more',
+    );
+    expect(moreButton).toBeTruthy();
+
+    act(() => {
+      moreButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.querySelectorAll('[data-testid="related-task-row"]')).toHaveLength(4);
+    expect(container.textContent).toContain('Related task 4');
+    expect(container.textContent).toContain('Show less');
+  });
 });

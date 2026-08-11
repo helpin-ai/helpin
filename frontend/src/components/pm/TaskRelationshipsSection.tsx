@@ -2,7 +2,7 @@ import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } 
 import { Link } from '@tanstack/react-router';
 import {
   ArrowLeftRightIcon,
-  Tick01Icon,
+  ArrowRight01Icon,
   Copy01Icon,
   File01Icon,
   Loading01Icon,
@@ -44,7 +44,6 @@ import type {
   Task,
   TaskRelationshipAction,
 } from '@/lib/pmTypes';
-import { TaskTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
@@ -76,6 +75,8 @@ interface TaskRelationshipsSectionProps {
   flat?: boolean;
   showExternalBlocker?: boolean;
 }
+
+const RELATIONSHIP_PREVIEW_LIMIT = 3;
 
 const RELATIONSHIP_OPTIONS: Array<{
   value: TaskRelationshipAction;
@@ -263,6 +264,7 @@ export function TaskRelationshipsSection({
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [createRelatedTaskOpen, setCreateRelatedTaskOpen] = useState(false);
   const [createRelatedTaskInitialName, setCreateRelatedTaskInitialName] = useState('');
+  const [relationshipsExpanded, setRelationshipsExpanded] = useState(false);
 
   const associationsQuery = useTaskAssociations(workspaceId, taskId);
   const workflowsQuery = useWorkflows(workspaceId);
@@ -329,7 +331,18 @@ export function TaskRelationshipsSection({
   }, [data]);
 
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
-  const relationshipContentCount = allRelationships.length + (hideDocs ? 0 : linkedDocs.length);
+  const displayableRelationships = useMemo(
+    () => allRelationships.filter((relationship) => relationship.task),
+    [allRelationships],
+  );
+  const visibleRelationships = relationshipsExpanded
+    ? displayableRelationships
+    : displayableRelationships.slice(0, RELATIONSHIP_PREVIEW_LIMIT);
+  const hiddenRelationshipCount = Math.max(
+    displayableRelationships.length - RELATIONSHIP_PREVIEW_LIMIT,
+    0,
+  );
+  const relationshipContentCount = displayableRelationships.length + (hideDocs ? 0 : linkedDocs.length);
   const hasRelationshipContent = relationshipContentCount > 0;
 
   useEffect(() => {
@@ -575,8 +588,8 @@ export function TaskRelationshipsSection({
         ) : null}
 
         {relationshipContentCount > 0 ? (
-          <div className="divide-y divide-border/40">
-        {allRelationships.map((item) => {
+          <div className={flat ? 'mt-1 space-y-0.5' : 'divide-y divide-border/40'}>
+        {visibleRelationships.map((item) => {
           const meta = getRelationshipMeta(item.link_type);
           const Icon = meta.icon;
           const resolved = item.link_type === 'blocks' && !item.is_active;
@@ -587,8 +600,9 @@ export function TaskRelationshipsSection({
           return (
             <div
               key={item.relationship_id}
+              data-testid="related-task-row"
               className={cn(
-                'group flex items-center gap-2 px-1 py-2.5 transition-colors hover:bg-muted/30',
+                'group relative flex items-center gap-1.5 rounded-md px-1 py-1 text-xs transition-colors hover:bg-muted/40',
                 resolved && 'opacity-50',
               )}
             >
@@ -596,11 +610,11 @@ export function TaskRelationshipsSection({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-colors hover:bg-accent"
                     aria-label={`Change relationship: ${meta.label}`}
                     title={`${meta.label} — change relationship`}
                   >
-                    <Icon className={cn('h-4 w-4', meta.color)} />
+                    <Icon className={cn('h-3.5 w-3.5', meta.color)} />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48">
@@ -627,38 +641,44 @@ export function TaskRelationshipsSection({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <div className="min-w-0 flex-1">
-                {workspace?.slug ? (
-                  <Link
-                    to="/w/$slug/pm/tasks/$taskId"
-                    params={{ slug: workspace.slug, taskId: relatedTask.object_id }}
-                    search={{ team: undefined, run: undefined }}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block truncate text-sm font-medium text-foreground transition-colors hover:text-primary"
-                  >
-                    {relatedTask.title}
-                  </Link>
-                ) : (
-                  <span className="block truncate text-sm font-medium text-foreground">
-                    {relatedTask.title}
-                  </span>
-                )}
-                {(relatedTask.task_key || relatedTask.display_id) ? (
-                  <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    {relatedTask.task_type ? (
-                      <TaskTypeIcon taskType={relatedTask.task_type} className="h-3 w-3" />
-                    ) : null}
-                    <span>{relatedTask.task_key ?? relatedTask.display_id}</span>
-                    {(relatedTask.completed || resolved) ? (
-                      <Tick01Icon className="h-3 w-3 text-green-600" />
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
+              {workspace?.slug ? (
+                <Link
+                  to="/w/$slug/pm/tasks/$taskId"
+                  params={{ slug: workspace.slug, taskId: relatedTask.object_id }}
+                  search={{ team: undefined, run: undefined }}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 flex-1 truncate font-medium text-foreground transition-colors hover:text-primary"
+                >
+                  {relatedTask.title}
+                </Link>
+              ) : (
+                <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                  {relatedTask.title}
+                </span>
+              )}
+              {(relatedTask.task_key || relatedTask.display_id) ? (
+                <span
+                  data-testid="related-task-id"
+                  className="absolute right-1 bg-muted/40 pl-3 text-[10px] text-muted-foreground opacity-0 transition-opacity delay-0 group-hover:opacity-100 group-hover:delay-200 group-focus-within:opacity-100"
+                >
+                  {relatedTask.task_key ?? `#${relatedTask.display_id}`}
+                </span>
+              ) : null}
             </div>
           );
         })}
+
+        {hiddenRelationshipCount > 0 ? (
+          <button
+            type="button"
+            className="mt-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+            onClick={() => setRelationshipsExpanded((current) => !current)}
+          >
+            <ArrowRight01Icon className={cn('h-3 w-3 transition-transform', relationshipsExpanded && 'rotate-90')} />
+            {relationshipsExpanded ? 'Show less' : `Show ${hiddenRelationshipCount} more`}
+          </button>
+        ) : null}
 
         {/* Linked docs */}
         {!hideDocs && linkedDocs.map((doc) => (
@@ -704,7 +724,7 @@ export function TaskRelationshipsSection({
         ) : null}
 
       {/* + Add Relationship */}
-      <div className={cn('flex items-center gap-2 py-2', flat ? 'px-1' : 'border-t border-border/40 px-3')}>
+      <div className={cn('flex items-center gap-2', flat ? 'px-1 py-1' : 'border-t border-border/40 px-3 py-2')}>
         <button
           ref={inlineAddRef}
           type="button"
