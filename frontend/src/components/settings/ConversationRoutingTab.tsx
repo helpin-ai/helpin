@@ -1070,7 +1070,7 @@ export function ConversationRoutingTab({
                       mailbox={mailbox}
                       mailboxRules={rulesByMailbox.get(mailbox.id) ?? []}
                       emailRoute={emailRouteByMailbox.get(mailbox.id) ?? null}
-                      emailSender={emailSenderByMailbox.get(mailbox.id) ?? null}
+                      emailSender={emailSenderByMailbox.get(mailbox.id) ?? workspaceDefaultSender}
                       onEdit={openEditMailbox}
                       onArchive={handleArchiveMailbox}
                       onRestore={handleRestoreMailbox}
@@ -1085,7 +1085,7 @@ export function ConversationRoutingTab({
                       mailbox={mailbox}
                       mailboxRules={rulesByMailbox.get(mailbox.id) ?? []}
                       emailRoute={emailRouteByMailbox.get(mailbox.id) ?? null}
-                      emailSender={emailSenderByMailbox.get(mailbox.id) ?? null}
+                      emailSender={emailSenderByMailbox.get(mailbox.id) ?? workspaceDefaultSender}
                       onEdit={openEditMailbox}
                       onArchive={handleArchiveMailbox}
                       onRestore={handleRestoreMailbox}
