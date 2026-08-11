@@ -178,6 +178,11 @@ type Config struct {
 	CustomerIOWorkspaceObjectTypeID    string
 	CustomerIOOrganizationObjectTypeID string
 
+	// Usermaven Events API (optional — backend product analytics disabled if unset)
+	UsermavenAPIKey      string
+	UsermavenServerToken string
+	UsermavenEndpoint    string
+
 	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
 	AgentPreviewDebug bool
 
@@ -373,6 +378,9 @@ func Load() (*Config, error) {
 		CustomerIORegion:                       strings.TrimSpace(firstNonEmpty(os.Getenv("CUSTOMER_IO_REGION"), "us")),
 		CustomerIOWorkspaceObjectTypeID:        strings.TrimSpace(firstNonEmpty(os.Getenv("CUSTOMER_IO_WORKSPACE_OBJECT_TYPE_ID"), "1")),
 		CustomerIOOrganizationObjectTypeID:     strings.TrimSpace(firstNonEmpty(os.Getenv("CUSTOMER_IO_ORGANIZATION_OBJECT_TYPE_ID"), "2")),
+		UsermavenAPIKey:                        strings.TrimSpace(os.Getenv("USERMAVEN_API_KEY")),
+		UsermavenServerToken:                   strings.TrimSpace(os.Getenv("USERMAVEN_SERVER_TOKEN")),
+		UsermavenEndpoint:                      strings.TrimSpace(os.Getenv("USERMAVEN_ENDPOINT")),
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 		TLSAskExtraAllowedDomains:              parseCSV(os.Getenv("TLS_ASK_EXTRA_ALLOWED_DOMAINS")),

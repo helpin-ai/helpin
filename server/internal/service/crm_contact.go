@@ -12,6 +12,7 @@ import (
 
 // CRMContactService contains CRM contact business logic.
 type CRMContactService struct {
+	productAnalyticsEmitter
 	contactRepo    *repository.CRMContactRepository
 	entitlementSvc *EntitlementService
 }
@@ -121,6 +122,12 @@ func (s *CRMContactService) Create(ctx context.Context, req model.CreateCRMConta
 	if err := s.contactRepo.Create(ctx, contact); err != nil {
 		return nil, err
 	}
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "crm_contact_created:" + contact.ID,
+		WorkspaceID: contact.WorkspaceID, Name: "crm_contact_created", Source: "api",
+		OccurredAt: contact.CreatedAt,
+		Attributes: map[string]any{"entity_id": contact.ID, "lifecycle_stage": contact.LifecycleStage, "module": "crm"},
+	})
 	return contact, nil
 }
 

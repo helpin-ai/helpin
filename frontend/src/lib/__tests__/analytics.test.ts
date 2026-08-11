@@ -16,7 +16,6 @@ import {
   resetAnalytics,
   shouldEnableAppAnalytics,
   trackAnalyticsEvent,
-  trackWorkspaceActivationEvent,
   type AnalyticsClients,
 } from '../analytics';
 
@@ -289,11 +288,7 @@ describe('app analytics', () => {
       plan: 'growth',
       relationshipAttributes: expect.objectContaining({ workspace_role: 'owner' }),
     }));
-    expect(clients.usermaven.track).toHaveBeenCalledWith('organization_identified', expect.objectContaining({
-      organization_id: 'org-1',
-      organization_role: 'owner',
-      user_id: 'user-1',
-    }));
+    expect(clients.usermaven.track).not.toHaveBeenCalled();
   });
 
   it('builds billing lifecycle event properties for Usermaven', () => {
@@ -329,31 +324,4 @@ describe('app analytics', () => {
     expect(clients.customerio.reset).toHaveBeenCalled();
   });
 
-  it('tracks activation events with workspace and membership context', () => {
-    const clients = makeClients();
-
-    trackWorkspaceActivationEvent(
-      'module_first_value',
-      baseWorkspace,
-      baseAccess,
-      baseOrganization,
-      { module: 'support', milestone: 'first_reply_sent' },
-      { hostname: 'app.helpin.ai', clients },
-    );
-
-    expect(clients.usermaven.track).toHaveBeenCalledWith('module_first_value', expect.objectContaining({
-      workspace_id: 'ws-1',
-      organization_id: 'org-1',
-      workspace_role: 'owner',
-      module: 'support',
-      milestone: 'first_reply_sent',
-    }));
-    expect(clients.customerio.track).toHaveBeenCalledWith('module_first_value', expect.objectContaining({
-      workspace_id: 'ws-1',
-      organization_id: 'org-1',
-      workspace_role: 'owner',
-      module: 'support',
-      milestone: 'first_reply_sent',
-    }));
-  });
 });

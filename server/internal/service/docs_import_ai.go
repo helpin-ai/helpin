@@ -103,10 +103,11 @@ func (s *DocsImportService) convertHelpScoutHTML(
 	title string,
 	rawHTML string,
 ) (*docsimport.ConversionResult, []docsimport.Warning, error) {
-	// Markdown cannot represent playable iframe media losslessly. Route articles
-	// with supported videos through the deterministic converter so the source
-	// position and native videoEmbed block survive import and reconversion.
-	if docsimport.ContainsSupportedVideoEmbed(rawHTML) {
+	// Route media that the AI/Markdown path can silently omit or flatten through
+	// the deterministic converter so its source position and native node survive
+	// import and later formatting repairs.
+	if docsimport.ContainsSupportedVideoEmbed(rawHTML) ||
+		docsimport.ContainsGIFImage(rawHTML) {
 		return convertHelpScoutHTML(rawHTML)
 	}
 	if !s.aiConversion.Enabled {

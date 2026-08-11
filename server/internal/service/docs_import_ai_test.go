@@ -197,6 +197,40 @@ func TestDocsImportAIConversionUsesDeterministicConverterForVideo(t *testing.T) 
 	}
 }
 
+func TestDocsImportAIConversionUsesDeterministicConverterForGIF(t *testing.T) {
+	provider := &docsImportAIStub{response: `{"markdown":"GIF omitted"}`}
+	service := &DocsImportService{
+		llmProvider:  provider,
+		aiConversion: DocsImportAIConversionConfig{Enabled: true}.withDefaults(),
+		logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	result, warnings, err := service.convertHelpScoutHTML(
+		context.Background(),
+		"workspace-1",
+		"article-gif",
+		"GIF article",
+		`<h2>Walkthrough</h2><img src="https://assets.example.com/demo.gif" alt="Demo">`,
+	)
+	if err != nil {
+		t.Fatalf("convertHelpScoutHTML() error = %v", err)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("provider calls = %d, want deterministic conversion without AI", provider.calls)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", warnings)
+	}
+	encoded, err := json.Marshal(result.Doc)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"type":"resizableImage"`) ||
+		!strings.Contains(string(encoded), `"src":"https://assets.example.com/demo.gif"`) {
+		t.Fatalf("expected GIF image to survive conversion, got: %s", encoded)
+	}
+}
+
 func TestParseDocsImportAIResponseAcceptsJSONFence(t *testing.T) {
 	markdown, err := parseDocsImportAIResponse("```json\n{\"markdown\":\"## Setup\"}\n```")
 	if err != nil {

@@ -24,7 +24,8 @@ var workspaceKeyPattern = regexp.MustCompile(`^[A-Z]{2,5}$`)
 
 // WorkspaceService handles workspace business logic.
 type WorkspaceService struct {
-	workspaceRepo       *repository.WorkspaceRepository
+	workspaceRepo *repository.WorkspaceRepository
+	productAnalyticsEmitter
 	attachmentRepo      *repository.PMAttachmentRepository
 	s3Client            *storage.S3Client
 	defaultsInitializer WorkspaceDefaultsInitializer
@@ -225,6 +226,12 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 		s.customerIOIdentity.SyncWorkspace(ctx, ws.ID, "")
 	}
 
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "workspace_created:" + ws.ID, UserID: ownerID,
+		WorkspaceID: ws.ID, Name: "workspace_created", Source: "api",
+		OccurredAt: ws.CreatedAt,
+		Attributes: map[string]any{"entity_id": ws.ID, "organization_id": req.OrganizationID, "setup_goals": req.SetupGoals},
+	})
 	return &model.WorkspaceWithRole{
 		Workspace: *ws,
 		Role:      "owner",

@@ -626,7 +626,9 @@ func main() {
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
 	billingRepo := repository.NewBillingRepository(db)
 	customerIOOutboxRepo := repository.NewCustomerIOLifecycleOutboxRepository(db)
+	productAnalyticsOutboxRepo := repository.NewProductAnalyticsOutboxRepository(db)
 	supportTagRepo := repository.NewSupportTagRepository(db)
+	productAnalytics := service.NewProductAnalyticsService(productAnalyticsOutboxRepo)
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
@@ -656,11 +658,30 @@ func main() {
 	billingService.SetCustomerIOIdentityService(customerIOIdentityService)
 	billingService.SetCustomerIOLifecycleOutboxRepository(customerIOOutboxRepo)
 	customerIOOutboxWorker := service.NewCustomerIOLifecycleOutboxWorker(customerIOOutboxRepo, workspaceRepo, customerIOIdentityService)
+	billingService.SetProductAnalyticsService(productAnalytics)
 	customerIOOutboxCtx, customerIOOutboxCancel := context.WithCancel(context.Background())
 	customerIOOutboxDone := make(chan struct{})
 	go func() {
 		defer close(customerIOOutboxDone)
 		customerIOOutboxWorker.Run(customerIOOutboxCtx, 15*time.Second)
+	}()
+	productAnalyticsWorker := service.NewProductAnalyticsOutboxWorker(
+		productAnalyticsOutboxRepo,
+		userRepo,
+		workspaceRepo,
+		orgRepo,
+		billingRepo,
+		service.NewUsermavenClient(service.UsermavenConfig{
+			APIKey:      cfg.UsermavenAPIKey,
+			ServerToken: cfg.UsermavenServerToken,
+			Endpoint:    cfg.UsermavenEndpoint,
+		}),
+	)
+	productAnalyticsCtx, productAnalyticsCancel := context.WithCancel(context.Background())
+	productAnalyticsDone := make(chan struct{})
+	go func() {
+		defer close(productAnalyticsDone)
+		productAnalyticsWorker.Run(productAnalyticsCtx, 15*time.Second)
 	}()
 	aiUsageMeter := service.NewAIUsageMeter(billingService)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
@@ -735,6 +756,7 @@ func main() {
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
 	authService.SetCustomerIOIdentityService(customerIOIdentityService)
+	authService.SetProductAnalyticsService(productAnalytics)
 	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
@@ -749,12 +771,15 @@ func main() {
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
 	pmTaskService := service.NewPMTaskService(pmTaskRepo, workspaceRepo, pmWorkflowRepo, pmEpicRepo, pmSprintRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmAttachmentRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
+	pmTaskService.SetProductAnalyticsService(productAnalytics)
 	pmTaskService.SetTaskTemplateRepository(pmTaskTemplateRepo)
 	pmRoadmapRepo := repository.NewPMRoadmapRepository(db)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmTaskRepo, pmLabelRepo, gitRepositoryRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmEpicService.SetProductAnalyticsService(productAnalytics)
 	pmRoadmapService := service.NewPMRoadmapService(pmEpicService, pmRoadmapRepo)
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmTaskRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, settingsRepo, pmActivityService, wsPublisher, notificationService, pmSprintCloseoutRepo)
 	pmCommentService := service.NewPMCommentService(pmCommentRepo, pmTaskRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo, s3Client)
+	pmCommentService.SetProductAnalyticsService(productAnalytics)
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
 	docsImageEditService := service.NewDocsImageEditService(cfg.FalAPIKey, pmAttachmentService)
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
@@ -773,6 +798,7 @@ func main() {
 		SetMessageRepo(supportMessageRepo).
 		SetUserRepo(userRepo)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
+	supportInboxService.SetProductAnalyticsService(productAnalytics)
 	supportInboxService.SetDocsSearchRepository(docsSearchRepo)
 	supportInboxService.SetCRMCompanyRepository(crmCompanyRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)
@@ -941,6 +967,7 @@ func main() {
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
 	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+	agentService.SetProductAnalyticsService(productAnalytics)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
@@ -1020,6 +1047,7 @@ func main() {
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
 	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
+	docsDocumentService.SetProductAnalyticsService(productAnalytics)
 	docsDocumentService.SetRuleEngine(ruleEngine)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsContentService.SetMentionNotificationDependencies(notificationService, workspaceRepo)
@@ -1171,7 +1199,10 @@ func main() {
 
 	crmContactService := service.NewCRMContactService(crmContactRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
+	crmContactService.SetProductAnalyticsService(productAnalytics)
+	crmCompanyService.SetProductAnalyticsService(productAnalytics)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
+	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
@@ -1277,6 +1308,7 @@ func main() {
 			ruleEngine,
 			wsPublisher,
 		).SetRepositoryDeliveryService(gitService).SetCommandBarPlanAdvancer(agentService)
+		runFinalizers.SetProductAnalyticsService(productAnalytics)
 		agentRuntimeProjectionService = service.NewAgentRuntimeProjectionService(agentRunRepo, cfg.AgentRuntimeAppID).
 			SetEventProtocol(cfg.AgentRuntimeEventProtocol).
 			SetOverageDependencies(agentRepo, aiUsageMeter, agentRuntimeClient).
@@ -1424,6 +1456,7 @@ func main() {
 	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
+	workspaceService.SetProductAnalyticsService(productAnalytics)
 	setupService := service.NewSetupService(setupRepo)
 	setupSuccessEnabled := strings.EqualFold(strings.TrimSpace(os.Getenv("SETUP_SUCCESS_ENABLED")), "true")
 	if setupSuccessEnabled {
@@ -1466,6 +1499,7 @@ func main() {
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, appEmailClient, cfg.AppBaseURL, jwtManager)
 	inviteService.SetBillingService(billingService)
 	inviteService.SetCustomerIOIdentityService(customerIOIdentityService)
+	inviteService.SetProductAnalyticsService(productAnalytics)
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
@@ -1916,10 +1950,16 @@ func main() {
 	realtimeCancel()
 	agentRuntimeProjectionCancel()
 	customerIOOutboxCancel()
+	productAnalyticsCancel()
 	select {
 	case <-customerIOOutboxDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("customer.io outbox worker did not stop before shutdown timeout")
+	}
+	select {
+	case <-productAnalyticsDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("product analytics outbox worker did not stop before shutdown timeout")
 	}
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()

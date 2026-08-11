@@ -14,7 +14,8 @@ import (
 
 // PMEpicService contains epic business logic.
 type PMEpicService struct {
-	epicRepo            *repository.PMEpicRepository
+	epicRepo *repository.PMEpicRepository
+	productAnalyticsEmitter
 	taskRepo            *repository.PMTaskRepository
 	labelRepo           *repository.PMLabelRepository
 	gitRepo             *repository.GitRepositoryRepository
@@ -285,6 +286,12 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 		}
 	}
 
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "epic_created:" + epic.ID, UserID: actorID,
+		WorkspaceID: epic.WorkspaceID, Name: "epic_created", Source: "api",
+		OccurredAt: epic.CreatedAt,
+		Attributes: map[string]any{"entity_id": epic.ID, "team_id": epic.TeamID, "health": epic.Health, "module": "pm"},
+	})
 	return s.getWithSuggestedHealth(ctx, epic.ID)
 }
 

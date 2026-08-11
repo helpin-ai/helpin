@@ -130,6 +130,18 @@ function hostFor(options?: AnalyticsOptions) {
   return options?.hostname ?? currentHostname();
 }
 
+export function getUsermavenAnonymousId() {
+  if (typeof document === 'undefined') return undefined;
+  const cookie = document.cookie.split('; ').find((entry) => entry.startsWith('__eventn_id_'));
+  if (!cookie) return undefined;
+  const value = cookie.slice(cookie.indexOf('=') + 1);
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function shouldEnableAppAnalytics(hostname = currentHostname()) {
   return hostname === APP_ANALYTICS_HOST;
 }
@@ -411,18 +423,6 @@ export function identifyAnalyticsOrganization(
   if (user) {
     void clients.usermaven.id(buildAnalyticsUserTraits(user, organization, workspaces));
   }
-  clients.usermaven.track('organization_identified', {
-    organization_id: organization.id,
-    organization_name: organization.name,
-    organization_slug: organization.slug,
-    organization_role: organization.role,
-    owner_user_id: organization.owner_id,
-    user_id: user?.id,
-    has_logo: !!organization.logo_url,
-    workspace_count: workspaces?.length,
-    paid_workspace_count: workspaces?.filter((workspace) => workspace.billing?.status === 'active').length,
-    trialing_workspace_count: workspaces?.filter((workspace) => workspace.billing?.trialing).length,
-  });
 }
 
 export function trackAnalyticsEvent(
@@ -436,68 +436,6 @@ export function trackAnalyticsEvent(
   void clients.customerio.track(eventName, properties);
 }
 
-export function buildAnalyticsWorkspaceEventProperties(
-  eventName: string,
-  workspace: Workspace,
-  access?: WorkspaceAccess | null,
-  organization?: OrganizationWithRole | null,
-  extra?: Record<string, unknown>,
-) {
-  return {
-    ...buildAnalyticsBillingEventProperties(eventName, workspace.id, workspace.billing, {
-      workspace_name: workspace.name,
-      workspace_slug: workspace.slug,
-      workspace_key: workspace.workspace_key,
-      organization_id: workspace.organization_id,
-      organization_name: organization?.name,
-      organization_slug: organization?.slug,
-      workspace_role: access?.membership?.role ?? workspace.role,
-      membership_status: access?.membership?.status,
-      enabled_modules: access?.modules ?? [],
-      module_count: access?.modules?.length ?? 0,
-      ...extra,
-    }),
-  };
-}
-
-export function trackWorkspaceActivationEvent(
-  eventName: string,
-  workspace: Workspace | null | undefined,
-  access?: WorkspaceAccess | null,
-  organization?: OrganizationWithRole | null,
-  extra?: Record<string, unknown>,
-  options?: AnalyticsOptions,
-) {
-  if (!workspace) return;
-  trackAnalyticsEvent(
-    eventName,
-    buildAnalyticsWorkspaceEventProperties(eventName, workspace, access, organization, extra),
-    options,
-  );
-}
-
-export function trackWorkspaceFirstValueOnce(
-  workspaceId: string,
-  module: string,
-  milestone: string,
-  properties?: Record<string, unknown>,
-  options?: AnalyticsOptions,
-) {
-  if (!workspaceId) return;
-  const storageKey = `helpin:activation:${workspaceId}:${module}:${milestone}`;
-  try {
-    if (localStorage.getItem(storageKey)) return;
-    localStorage.setItem(storageKey, new Date().toISOString());
-  } catch {
-    // Analytics remains best-effort when browser storage is unavailable.
-  }
-  trackAnalyticsEvent('module_first_value', {
-    workspace_id: workspaceId,
-    module,
-    milestone,
-    ...properties,
-  }, options);
-}
 
 export function trackWorkspaceBillingEvent(
   eventName: string,

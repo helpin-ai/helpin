@@ -12,6 +12,7 @@ import (
 // CRMCompanyService contains CRM company business logic.
 type CRMCompanyService struct {
 	companyRepo *repository.CRMCompanyRepository
+	productAnalyticsEmitter
 }
 
 // NewCRMCompanyService creates a new CRMCompanyService.
@@ -68,6 +69,12 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 	if err := s.companyRepo.Create(ctx, company); err != nil {
 		return nil, err
 	}
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "crm_company_created:" + company.ID,
+		WorkspaceID: company.WorkspaceID, Name: "crm_company_created", Source: "api",
+		OccurredAt: company.CreatedAt,
+		Attributes: map[string]any{"entity_id": company.ID, "industry": company.Industry, "module": "crm"},
+	})
 	return company, nil
 }
 

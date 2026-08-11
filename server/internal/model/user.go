@@ -28,9 +28,10 @@ func (User) TableName() string { return "users" }
 
 // SignupRequest is the payload for POST /api/auth/signup.
 type SignupRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	FullName string `json:"full_name"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	FullName    string `json:"full_name"`
+	AnonymousID string `json:"anonymous_id,omitempty"`
 }
 
 // SigninRequest is the payload for POST /api/auth/signin.
