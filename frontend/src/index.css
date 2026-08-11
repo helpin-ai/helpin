@@ -275,6 +275,25 @@
 .ask-agent-avatar[data-state="error"] .ask-agent-face,
 .ask-agent-avatar[data-state="error"] .ask-agent-body-group { animation: ask-agent-shake .34s ease-in-out 2; }
 
+/* Echo the Ask Agent mark's feathered plate for the selected workspace module. */
+.sidebar-rail-active-plate {
+  isolation: isolate;
+}
+.sidebar-rail-active-plate::before {
+  content: "";
+  position: absolute;
+  inset: 2px 3px;
+  z-index: 0;
+  border-radius: 0.45rem;
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--foreground) 82%, var(--background)),
+    var(--foreground)
+  );
+  filter: blur(2px);
+  pointer-events: none;
+}
+
 @keyframes ask-agent-open-l {
   0%, 25.9% { opacity: 1; } 26%, 28.4% { opacity: 0; }
   28.5%, 31.9% { opacity: 1; } 32%, 34.4% { opacity: 0; }
