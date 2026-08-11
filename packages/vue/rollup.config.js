@@ -1,0 +1,25 @@
+import typescript from '@rollup/plugin-typescript';
+import commonjs from '@rollup/plugin-commonjs';
+import resolve from '@rollup/plugin-node-resolve';
+import external from 'rollup-plugin-peer-deps-external';
+
+import pkg from './package.json';
+
+export default {
+  input: 'src/index.ts',
+  output: [
+    {
+      file: pkg.module,
+      format: 'es',
+      exports: 'named',
+      sourcemap: false,
+    },
+  ],
+  plugins: [
+    external(),
+    resolve({ resolveOnly: [/^(?!@helpin-ai\/)/] }),
+    typescript(),
+    commonjs({ extensions: ['.js', '.ts'] }),
+  ],
+  external: [/@helpin-ai\//],
+};
