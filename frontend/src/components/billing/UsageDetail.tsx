@@ -108,7 +108,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
           {points.map((p) => (
             <div
               key={p.date}
-              className="group relative flex flex-1 flex-col justify-end"
+              className="group relative flex h-full flex-1 flex-col justify-end"
               title={`${dayjs(p.date).format('MMM D')}: ${formatNumber(p.total)} usage units`}
             >
               <div className="flex w-full flex-col-reverse" style={{ height: `${(p.total / max) * 100}%` }}>
