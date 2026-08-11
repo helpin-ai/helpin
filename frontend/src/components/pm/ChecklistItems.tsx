@@ -352,7 +352,7 @@ export function ChecklistItems({
         <div>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-              <div className="space-y-0.5">
+              <div className="space-y-0.5 border-t border-border/50" data-testid="checklist-items">
                 {items.map((item) => (
                   <SortableItem
                     key={item.id}

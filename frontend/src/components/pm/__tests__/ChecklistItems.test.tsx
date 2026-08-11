@@ -196,12 +196,14 @@ describe('ChecklistItems', () => {
 
     const table = container?.querySelector<HTMLElement>('[data-testid="checklist-table"]')
     const header = container?.querySelector<HTMLElement>('[data-testid="checklist-table-header"]')
+    const items = container?.querySelector<HTMLElement>('[data-testid="checklist-items"]')
     const row = container?.querySelector<HTMLElement>('[data-testid="checklist-table-row"]')
 
     expect(table).toBeTruthy()
     expect(table?.className).not.toContain('border')
     expect(table?.className).not.toContain('rounded-lg')
     expect(header).toBeNull()
+    expect(items?.className).toContain('border-t')
     expect(row?.className).toContain('border-b')
     expect(row?.className).not.toContain('last:border-b-0')
   })
