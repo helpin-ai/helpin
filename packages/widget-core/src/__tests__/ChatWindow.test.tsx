@@ -216,6 +216,8 @@ describe('ChatWindow', () => {
     expect(attribution?.querySelector('.helpin-brand-attribution-brand')).not.toBeNull();
     const mark = attribution?.querySelector('.helpin-brand-attribution-icon');
     expect(mark).not.toBeNull();
+    expect(mark?.tagName.toLowerCase()).toBe('svg');
+    expect(mark?.getAttribute('fill')).toBe('currentColor');
     expect(mark?.getAttribute('aria-hidden')).toBe('true');
   });
 

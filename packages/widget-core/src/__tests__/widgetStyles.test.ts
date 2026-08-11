@@ -28,7 +28,7 @@ describe('widget scroll styles', () => {
     expect(ruleBody('.helpin-brand-attribution-brand')).toContain('gap: 2px');
     expect(ruleBody('.helpin-brand-attribution-name')).toContain('background-size: 0 1px');
     expect(ruleBody('.helpin-brand-attribution-icon')).not.toContain('transform: scale(1.25)');
-    expect(ruleBody('.helpin-theme-dark .helpin-brand-attribution-icon')).toContain('filter: brightness(0) invert(1)');
+    expect(ruleBody('.helpin-brand-attribution-icon')).toContain('color: var(--helpin-fg-secondary)');
     expect(ruleBody('.helpin-brand-attribution:hover .helpin-brand-attribution-name')).toContain('background-size: 100% 1px');
   });
 
@@ -58,7 +58,10 @@ describe('widget scroll styles', () => {
     expect(ruleBody('.helpin-theme-dark')).toContain('--helpin-bg: #121419');
     expect(ruleBody('.helpin-theme-dark')).toContain('--helpin-card-bg: #1b1f26');
     expect(ruleBody('.helpin-chat-window.helpin-theme-dark')).toContain('border: 1px solid rgba(255, 255, 255, 0.1)');
-    expect(ruleBody('.helpin-theme-dark .helpin-bottom-nav-item--active')).toContain('var(--helpin-primary) 18%');
+    expect(ruleBody('.helpin-theme-dark .helpin-bottom-nav-item--active')).not.toContain('border-radius');
+    expect(ruleBody('.helpin-theme-dark .helpin-bottom-nav-item--active .helpin-bottom-nav-icon')).toContain('var(--helpin-nav-active-color) 22%');
+    expect(css).toContain('.helpin-bottom-nav-icon {\n  display: inline-flex;');
+    expect(css).toContain('  border-radius: 9px;\n  transition: background 0.16s ease');
     expect(ruleBody('.helpin-theme-dark .helpin-ai-thinking-line')).toContain('rgba(255, 255, 255, 0.24)');
   });
 

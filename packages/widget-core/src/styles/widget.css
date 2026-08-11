@@ -135,10 +135,12 @@
 }
 
 .helpin-theme-dark .helpin-bottom-nav-item--active {
-  color: #ffffff !important;
-  background: color-mix(in srgb, var(--helpin-primary) 18%, #242832);
-  border-radius: 18px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  color: color-mix(in srgb, var(--helpin-nav-active-color) 72%, #ffffff) !important;
+}
+
+.helpin-theme-dark .helpin-bottom-nav-item--active .helpin-bottom-nav-icon {
+  background: color-mix(in srgb, var(--helpin-nav-active-color) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--helpin-nav-active-color) 32%, transparent);
 }
 
 .helpin-theme-dark .helpin-home-input:focus {
@@ -1315,14 +1317,15 @@
 
 .helpin-bottom-nav-item {
   display: flex;
+  flex: 1;
+  min-width: 0;
   flex-direction: column;
   align-items: center;
   gap: 3px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 0;
+  padding: 2px 4px;
   color: var(--helpin-fg-muted);
   transition: color 0.15s;
   font-family: inherit;
@@ -1334,6 +1337,25 @@
 
 .helpin-bottom-nav-item--active {
   color: var(--helpin-fg);
+}
+
+.helpin-bottom-nav-icon {
+  display: inline-flex;
+  width: 36px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  transition: background 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.helpin-bottom-nav-item:not(.helpin-bottom-nav-item--active):hover .helpin-bottom-nav-icon {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.helpin-bottom-nav-item--active .helpin-bottom-nav-icon {
+  background: color-mix(in srgb, var(--helpin-nav-active-color) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--helpin-nav-active-color) 16%, transparent);
 }
 
 .helpin-bottom-nav-label {
@@ -1378,14 +1400,13 @@
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
-}
-
-.helpin-theme-dark .helpin-brand-attribution-icon {
-  filter: brightness(0) invert(1);
+  color: var(--helpin-fg-secondary);
   opacity: 0.82;
+  transition: color 0.18s ease, opacity 0.18s ease;
 }
 
-.helpin-theme-dark .helpin-brand-attribution:hover .helpin-brand-attribution-icon {
+.helpin-brand-attribution:hover .helpin-brand-attribution-icon {
+  color: var(--helpin-fg);
   opacity: 1;
 }
 
@@ -3271,9 +3292,7 @@
   }
 
   .helpin-bottom-nav-item {
-    min-width: 0;
-    flex: 1;
-    padding: 6px 4px;
+    padding: 2px 4px;
   }
 
   .helpin-powered-by {
