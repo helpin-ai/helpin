@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { GitBranchIcon, Loading01Icon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,7 +8,7 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useMarkTaskUpdatesRead, useTaskUpdates } from '@/hooks/queries';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 import type { AgentRun, CommentWithAuthor, TaskUpdateEntry, TaskUpdateFilter } from '@/lib/pmTypes';
-import { taskUpdateAgentPresentation, taskUpdateEventLabel } from './taskUpdateEventLabel';
+import { filterRedundantAgentLifecycleEntries, taskUpdateAgentPresentation, taskUpdateEventLabel } from './taskUpdateEventLabel';
 
 interface TaskUpdatesViewProps {
   workspaceId: string;
@@ -30,6 +30,22 @@ const UPDATE_FILTERS: Array<{ value: TaskUpdateFilter; label: string }> = [
 function activityRunId(entry: TaskUpdateEntry) {
   const value = entry.activity?.metadata?.run_id;
   return typeof value === 'string' ? value : '';
+}
+
+function compactUpdateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 5_000) return 'now';
+  const relative = formatDistanceToNowStrict(date, { addSuffix: false })
+    .replace(/ seconds?/, 's')
+    .replace(/ minutes?/, 'm')
+    .replace(/ hours?/, 'h')
+    .replace(/ days?/, 'd')
+    .replace(/ weeks?/, 'w')
+    .replace(/ months?/, 'mo')
+    .replace(/ years?/, 'y');
+  return `${relative} ago`;
 }
 
 function escapeRegExp(value: string) {
@@ -103,8 +119,8 @@ function TaskSystemUpdateRow({
         {agentActivity?.detail ? <span className="text-muted-foreground"> — {agentActivity.detail}</span> : null}
       </span>
       {agentActivity?.runId ? <span className="shrink-0 text-xs text-muted-foreground">View run →</span> : null}
-      <time className="w-16 shrink-0 text-right text-xs text-muted-foreground">
-        {formatDistanceToNow(new Date(entry.occurred_at), { addSuffix: true })}
+      <time className="w-16 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">
+        {compactUpdateTime(entry.occurred_at)}
       </time>
     </>
   );
@@ -136,7 +152,9 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
   }, [data?.high_water]);
 
   const entries = useMemo(() => {
-    const systemEntries = (data?.data ?? []).filter((entry) => entry.kind !== 'comment');
+    const systemEntries = filterRedundantAgentLifecycleEntries(
+      (data?.data ?? []).filter((entry) => entry.kind !== 'comment'),
+    );
     const commentEntries: TaskUpdateEntry[] = filter === 'changes' ? [] : props.comments.map((comment) => ({
       id: `comment:${comment.comment.id}`,
       kind: 'comment',

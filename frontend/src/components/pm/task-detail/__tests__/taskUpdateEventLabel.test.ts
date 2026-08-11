@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentRun, TaskUpdateEntry } from '@/lib/pmTypes';
-import { taskUpdateAgentPresentation, taskUpdateEventLabel } from '../taskUpdateEventLabel';
+import {
+  filterRedundantAgentLifecycleEntries,
+  taskUpdateAgentPresentation,
+  taskUpdateEventLabel,
+} from '../taskUpdateEventLabel';
 
 function run(overrides: Partial<AgentRun> = {}): AgentRun {
   return {
@@ -119,5 +123,50 @@ describe('task update agent presentation', () => {
     expect(taskUpdateEventLabel(runActivityEntry('note_added', { actor: undefined }), run())).toBe(
       'Forge’s run received a note',
     );
+  });
+
+  it('reduces runtime errors to a concise summary', () => {
+    const entry = agentRunEntry({
+      agent_run: run({
+        status: 'failed',
+        error_message: 'activity error (type: Heartbeat timeout, scheduledEventID: 123, startedEventID: 456, identity: runner-1)',
+      }),
+    });
+
+    expect(taskUpdateAgentPresentation(entry)?.detail).toBe('Heartbeat timeout');
+  });
+
+  it('shows delivery targets without exposing raw URLs', () => {
+    const entry = runActivityEntry('updated', {
+      activity: {
+        ...runActivityEntry().activity!,
+        field_name: 'delivery_target',
+        new_value: 'https://github.com/usermaven/events-pipeline/pull/80',
+      },
+    });
+
+    expect(taskUpdateEventLabel(entry)).toBe(
+      'Delivery target changed · usermaven/events-pipeline · PR #80',
+    );
+  });
+
+  it('keeps the audit action and removes a matching terminal lifecycle snapshot', () => {
+    const cancellation = runActivityEntry('cancel');
+    const lifecycle = agentRunEntry({ agent_run: run({ status: 'cancelled' }) });
+
+    expect(filterRedundantAgentLifecycleEntries([cancellation, lifecycle])).toEqual([cancellation]);
+  });
+
+  it('keeps lifecycle snapshots when the audit action is for another run', () => {
+    const cancellation = runActivityEntry('cancel', {
+      activity: {
+        ...runActivityEntry().activity!,
+        new_value: 'cancel',
+        metadata: { run_id: 'run-2', agent_name: 'Forge' },
+      },
+    });
+    const lifecycle = agentRunEntry({ agent_run: run({ status: 'cancelled' }) });
+
+    expect(filterRedundantAgentLifecycleEntries([cancellation, lifecycle])).toEqual([cancellation, lifecycle]);
   });
 });

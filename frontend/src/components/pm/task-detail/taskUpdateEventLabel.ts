@@ -1,5 +1,6 @@
 import type { AgentPresetKey, AgentRun, TaskUpdateEntry } from '@/lib/pmTypes';
 import { getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
+import { truncateText } from '@/lib/utils';
 
 export interface TaskUpdateAgentPresentation {
   agentName: string;
@@ -52,6 +53,36 @@ function normalizeRunAction(value: string) {
     resume: 'resumed',
   };
   return aliases[normalized] ?? normalized;
+}
+
+function conciseRunError(value?: string) {
+  const normalized = value?.replace(/\s+/g, ' ').trim();
+  if (!normalized) return undefined;
+  if (/heartbeat timeout/i.test(normalized)) return 'Heartbeat timeout';
+  if (/context deadline exceeded|deadline exceeded/i.test(normalized)) return 'Run timed out';
+  if (/authentication required|not authenticated/i.test(normalized)) return 'Sign-in required';
+
+  const technicalMetadata = normalized.search(/\s+\((?:type|scheduledEventID|startedEventID|identity|retryState):/i);
+  const summary = technicalMetadata > 0 ? normalized.slice(0, technicalMetadata) : normalized;
+  return truncateText(summary, 96);
+}
+
+function deliveryTargetLabel(value: string) {
+  const normalized = value.trim().replace(/\.git$/i, '').replace(/\/$/, '');
+  if (!normalized) return '';
+
+  try {
+    const url = new URL(normalized);
+    const path = url.pathname.replace(/^\//, '').replace(/\.git$/i, '').replace(/\/$/, '');
+    const githubPullRequest = url.hostname === 'github.com'
+      ? path.match(/^([^/]+\/[^/]+)\/pull\/(\d+)/i)
+      : null;
+    if (githubPullRequest) return `${githubPullRequest[1]} · PR #${githubPullRequest[2]}`;
+    if (url.hostname === 'github.com' && path) return path.split('/').slice(0, 2).join('/');
+    return url.hostname;
+  } catch {
+    return truncateText(normalized, 64);
+  }
 }
 
 function namedRun(agentName: string) {
@@ -151,7 +182,7 @@ export function taskUpdateAgentPresentation(
   const runId = entry.agent_run?.id || metadataString(entry, 'run_id') || undefined;
   const detail = isRunActivity && normalizeRunAction(entry.activity?.new_value ?? '') === 'note_added'
     ? metadataString(entry, 'note_snippet') || undefined
-    : entry.agent_run?.error_message?.trim() || undefined;
+    : conciseRunError(entry.agent_run?.error_message);
 
   return {
     agentName,
@@ -185,8 +216,30 @@ export function taskUpdateEventLabel(entry: TaskUpdateEntry, linkedRun?: AgentRu
 
   const activity = entry.activity;
   if (!activity) return 'Task updated';
+  if (activity.field_name === 'delivery_target' && activity.new_value) {
+    const target = deliveryTargetLabel(activity.new_value);
+    return target ? `Delivery target changed · ${target}` : 'Delivery target changed';
+  }
   if (activity.field_name && activity.new_value) {
     return sentenceCase(`${activity.field_name.replace(/_/g, ' ')} changed${activity.old_value ? ` · ${activity.old_value} → ${activity.new_value}` : ` to ${activity.new_value}`}`);
   }
   return sentenceCase(activity.action.replace(/_/g, ' '));
+}
+
+export function filterRedundantAgentLifecycleEntries(entries: TaskUpdateEntry[]) {
+  const terminalActionsByRun = new Map<string, string>();
+
+  for (const entry of entries) {
+    if (entry.kind !== 'change' || entry.activity?.field_name !== 'agent_run') continue;
+    const runId = metadataString(entry, 'run_id');
+    const action = normalizeRunAction(entry.activity.new_value ?? '');
+    if (runId && ['completed', 'failed', 'cancelled'].includes(action)) {
+      terminalActionsByRun.set(runId, action);
+    }
+  }
+
+  return entries.filter((entry) => {
+    if (entry.kind !== 'agent_run' || !entry.agent_run) return true;
+    return terminalActionsByRun.get(entry.agent_run.id) !== entry.agent_run.status;
+  });
 }
