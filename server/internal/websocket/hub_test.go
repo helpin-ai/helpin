@@ -293,6 +293,42 @@ func TestShouldReceive_WidgetClient_DoesNotEchoOwnMessages(t *testing.T) {
 	}
 }
 
+func TestShouldReceive_SupportAIStreamOnlyForMatchingWidget(t *testing.T) {
+	hub := NewHub()
+	conversationID := "conv-1"
+	matchingWidget := &Client{
+		UserID: "widget:sess-1", WorkspaceID: "ws-1", IsWidget: true, ConversationID: &conversationID,
+	}
+	otherConversationID := "conv-2"
+	otherWidget := &Client{
+		UserID: "widget:sess-2", WorkspaceID: "ws-1", IsWidget: true, ConversationID: &otherConversationID,
+	}
+	internalClient := &Client{UserID: "user-1", WorkspaceID: "ws-1"}
+	event := Event{
+		Action:      "response_delta",
+		Entity:      SupportAIResponseStreamEntity,
+		EntityID:    "msg-1",
+		WorkspaceID: "ws-1",
+		ParentID:    conversationID,
+	}
+
+	if !hub.shouldReceive(matchingWidget, event) {
+		t.Fatal("matching widget should receive customer-safe AI stream")
+	}
+	if hub.shouldReceive(otherWidget, event) {
+		t.Fatal("widget for another conversation must not receive AI stream")
+	}
+	if hub.shouldReceive(internalClient, event) {
+		t.Fatal("internal client must not receive redundant widget AI stream")
+	}
+
+	event.Action = "internal_trace"
+	event.Data = []byte(`{"reasoning":"private"}`)
+	if hub.shouldReceive(matchingWidget, event) {
+		t.Fatal("widget must reject unknown AI stream actions")
+	}
+}
+
 func TestShouldReceive_VisitorOnlineEvents_OnlyInternalClients(t *testing.T) {
 	hub := NewHub()
 	agentClient := &Client{UserID: "user-1", WorkspaceID: "ws-1", IsWidget: false}

@@ -258,6 +258,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		Confidence:   req.Confidence,
 		Claims:       req.Claims,
 	}
+	supportAI.publishProgress(meta.WorkspaceID, conversationID, supportAIProgressFinalizing)
 	gate := evaluateSupportReplyGate(supportReplyGateInput{
 		Kind:      req.ReplyKind,
 		Contract:  contract,

@@ -7,7 +7,8 @@ import { TypingIndicator } from './TypingIndicator';
 import { PreChatForm } from './PreChatForm';
 import { ImageLightbox } from './ImageLightbox';
 import { SpecialNoticeBanner } from './SpecialNoticeBanner';
-import { ChevronLeftIcon, MoreVerticalIcon, SparklesIcon, XIcon } from './icons';
+import { AIThinkingMark } from './AIThinkingMark';
+import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -21,6 +22,7 @@ interface ConversationViewProps {
   onUploadAttachment?: (file: File, localId: string) => Promise<{ attachmentId: string; url: string } | null>;
   isTyping?: boolean;
   isAIThinking?: boolean;
+  aiProgressLabel?: string;
   typingAgentName?: string;
   typingAgentAvatar?: string;
   onBack: () => void;
@@ -47,6 +49,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   onUploadAttachment,
   isTyping = false,
   isAIThinking = false,
+  aiProgressLabel = 'Looking into this…',
   typingAgentName,
   typingAgentAvatar,
   onBack,
@@ -558,13 +561,16 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       {isAIThinking && (
         <div className="helpin-ai-thinking" role="status" aria-live="polite">
           <span className="helpin-ai-thinking-icon" aria-hidden="true">
-            <SparklesIcon size={16} strokeWidth={1.8} />
+            <AIThinkingMark className="helpin-ai-thinking-mark" />
+            <span className="helpin-ai-thinking-status" />
           </span>
-          <span className="helpin-ai-thinking-shimmer" aria-hidden="true">
-            <span className="helpin-ai-thinking-line helpin-ai-thinking-line--primary" />
-            <span className="helpin-ai-thinking-line helpin-ai-thinking-line--secondary" />
+          <span className="helpin-ai-thinking-copy">
+            <span className="helpin-ai-thinking-label" key={aiProgressLabel}>{aiProgressLabel}</span>
+            <span className="helpin-ai-thinking-shimmer" aria-hidden="true">
+              <span className="helpin-ai-thinking-line helpin-ai-thinking-line--primary" />
+              <span className="helpin-ai-thinking-line helpin-ai-thinking-line--secondary" />
+            </span>
           </span>
-          <span className="helpin-sr-only">Preparing an answer…</span>
         </div>
       )}
       {showTalkToHumanButton && (

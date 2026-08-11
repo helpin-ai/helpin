@@ -378,16 +378,19 @@ func TestAgentRuntimeFinalizersSupportDraftFromRuntimeSummary(t *testing.T) {
 	if got := strings.TrimSpace(getStringFromMap(summary, "sent_message_id")); got != run.ID {
 		t.Fatalf("expected sent_message_id %q, got %q (summary=%s)", run.ID, got, string(run.OutputSummary))
 	}
-	if len(publisher.events) != 2 {
-		t.Fatalf("expected message + visitor refresh events, got %#v", publisher.events)
+	if len(publisher.events) != 5 {
+		t.Fatalf("expected streamed reply + message + visitor refresh events, got %#v", publisher.events)
 	}
-	if publisher.events[0].Entity != "support_conversation_message" || publisher.events[1].Entity != "support_visitor_conversations" {
-		t.Fatalf("unexpected event entities: %s, %s", publisher.events[0].Entity, publisher.events[1].Entity)
+	wantActions := []string{"response_started", "response_delta", "created", "response_completed", "updated"}
+	for index, wantAction := range wantActions {
+		if publisher.events[index].Action != wantAction {
+			t.Fatalf("event %d action = %q, want %q", index, publisher.events[index].Action, wantAction)
+		}
 	}
 
 	// Crash-replay while still non-terminal: sent_message_id short-circuits.
 	finalizers.FinalizeTerminalRun(context.Background(), run, true)
-	if messageRepo.creates != 1 || len(publisher.events) != 2 {
+	if messageRepo.creates != 1 || len(publisher.events) != 5 {
 		t.Fatalf("expected support draft replay no-op, creates=%d events=%d", messageRepo.creates, len(publisher.events))
 	}
 }
