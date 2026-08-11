@@ -22,7 +22,6 @@ export function AutomationLibraryPage() {
     <AutomationShell
       title="Trigger Catalog"
       description="Browse every event surface your workspace can react to. Go to Flows to connect a trigger to an agent and action."
-      className="max-w-5xl"
     >
       {!permissions.canManageSettings ? (
         <Card className="border-border/60 bg-card/80">

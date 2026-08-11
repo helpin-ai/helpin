@@ -65,9 +65,3 @@ export function buildAutomationToolsPath(slug: string | undefined, hash?: string
   const base = slug ? `/w/${slug}/automation/tools` : '/automation/tools';
   return buildPathWithSearch(base, undefined, hash);
 }
-
-export function buildAutomationToolConnectionsPath(slug: string | undefined) {
-  return slug
-    ? `/w/${slug}/automation/tools/connections`
-    : '/automation/tools/connections';
-}

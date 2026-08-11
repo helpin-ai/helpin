@@ -8,7 +8,7 @@ describe('automation tools sidebar navigation', () => {
     expect(isSidebarLinkActive(toolsLink, {}, toolsLink)).toBe(true);
   });
 
-  it('keeps Tools active on the nested Connections route', () => {
+  it('keeps Tools active while the legacy Connections route redirects', () => {
     expect(isSidebarLinkActive(`${toolsLink}/connections`, {}, toolsLink)).toBe(true);
   });
 });

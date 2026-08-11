@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { AutomationRouteViewport } from '@/components/automation/AutomationRouteViewport';
 import { AutomationFlowsPage, type AutomationFlowsSearch } from '@/pages/automation/AutomationFlows';
 
 const TARGET_MODES = new Set(['event', 'task', 'epic', 'repository', 'workspace']);
@@ -53,8 +54,8 @@ function AutomationFlowsRoute() {
   };
 
   return (
-    <div className="h-full overflow-auto p-4 pb-20 md:p-6 md:pb-24">
+    <AutomationRouteViewport>
       <AutomationFlowsPage search={search} onSearchChange={handleSearchChange} />
-    </div>
+    </AutomationRouteViewport>
   );
 }

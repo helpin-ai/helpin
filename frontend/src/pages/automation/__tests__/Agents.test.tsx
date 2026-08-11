@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   AgentActions,
+  AgentRow,
   AgentsListHeader,
   AgentsListTable,
   CUSTOM_AGENT_TARGET_OPTIONS,
@@ -49,7 +50,8 @@ describe('Agents list header', () => {
     expect(container?.textContent).toContain('Config');
     expect(container?.textContent).toContain('Runs · 7d');
     expect(container?.textContent).toContain('Last run');
-    expect(container?.textContent).toContain('Action');
+    expect(container?.textContent).toContain('Used in flows');
+    expect(container?.textContent).not.toContain('Action');
     expect(container?.textContent).not.toContain('Recent activity');
   });
 
@@ -62,6 +64,11 @@ describe('Agents list header', () => {
 
     expect(container?.firstElementChild?.className).toContain('overflow-x-auto');
     expect(container?.firstElementChild?.className).not.toContain('overflow-hidden');
+    expect(container?.firstElementChild?.className).not.toContain('rounded');
+    expect(container?.firstElementChild?.className).not.toContain('border');
+    expect(container?.firstElementChild?.className).not.toContain('bg-card');
+    expect(container?.firstElementChild?.firstElementChild?.className).toContain('min-w-[64rem]');
+    expect(container?.firstElementChild?.firstElementChild?.className).not.toContain('xl:min-w');
   });
 });
 
@@ -216,6 +223,40 @@ const baseAgent: Agent = {
   created_at: '2026-05-07T00:00:00Z',
   updated_at: '2026-05-07T00:00:00Z',
 };
+
+describe('AgentRow', () => {
+  it('opens from the row keyboard target without hijacking nested actions', () => {
+    let openCount = 0;
+    render(
+      <AgentRow
+        agent={baseAgent}
+        presets={[]}
+        onOpen={() => { openCount += 1; }}
+        onOpenRun={() => {}}
+        onRunNow={() => {}}
+        onDelete={() => {}}
+        canEdit={false}
+        workspaceSlug="acme"
+      />,
+    );
+
+    const row = container?.querySelector('[role="button"][aria-label="Open Atlas"]');
+    const actions = container?.querySelector('[aria-label="More agent actions"]');
+    expect(row).not.toBeNull();
+    expect(actions).not.toBeNull();
+    expect(row?.className).not.toContain('bg-amber');
+
+    act(() => {
+      actions?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(openCount).toBe(0);
+
+    act(() => {
+      row?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    });
+    expect(openCount).toBe(1);
+  });
+});
 
 describe('PM agent targets', () => {
   it('shows sprint and objective targets and accepts both for Run now', () => {
