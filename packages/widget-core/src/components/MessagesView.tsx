@@ -41,7 +41,7 @@ export const MessagesView: FunctionComponent<MessagesViewProps> = ({
 
   if (!hasConversation || messages.length === 0) {
     return (
-      <div className="helpin-messages-view">
+      <div className="helpin-messages-view helpin-view-enter">
         <div className="helpin-messages-header">
           <span className="helpin-messages-title">Messages</span>
         </div>
@@ -62,7 +62,7 @@ export const MessagesView: FunctionComponent<MessagesViewProps> = ({
   }
 
   return (
-    <div className="helpin-messages-view">
+    <div className="helpin-messages-view helpin-view-enter">
       <div className="helpin-messages-header">
         <span className="helpin-messages-title">Messages</span>
       </div>

@@ -79,7 +79,7 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
   }, [host, normalizedDebouncedSearchQuery, showSearchResults, widgetKey]);
 
   return (
-    <div className="helpin-help-view">
+    <div className="helpin-help-view helpin-view-enter">
       <div className="helpin-help-header">
         <div className="helpin-help-header-spacer" />
         <span className="helpin-help-title">Help Center</span>
@@ -127,7 +127,7 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
         )}
 
         {showSearchResults && (
-          <div className="helpin-help-list">
+          <div className="helpin-help-list helpin-stagger-list">
             {isSearching && <p className="helpin-help-empty">Searching articles...</p>}
             {!isSearching && searchError && <p className="helpin-help-empty">{searchError}</p>}
             {!isSearching && !searchError && searchResults.length === 0 && (
@@ -169,7 +169,7 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
 
         {!showSearchResults && canBrowseDocs && helpSpaces.length > 1 && (
           <div className="helpin-help-inline-section">
-            <div className="helpin-help-list">
+            <div className="helpin-help-list helpin-stagger-list">
               {helpSpaces.map((space) => (
                 <button
                   key={space.id}

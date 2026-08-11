@@ -28,7 +28,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
 
   if (conversations.length === 0) {
     return (
-      <div className="helpin-conversations-view">
+      <div className="helpin-conversations-view helpin-view-enter">
         <div className="helpin-conversations-header">
           <div className="helpin-conversations-header-spacer" />
           <span className="helpin-conversations-title">Messages</span>
@@ -58,7 +58,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
   }
 
   return (
-    <div className="helpin-conversations-view">
+    <div className="helpin-conversations-view helpin-view-enter">
       <div className="helpin-conversations-header">
         <div className="helpin-conversations-header-spacer" />
         <span className="helpin-conversations-title">Messages</span>
@@ -68,7 +68,7 @@ export const ConversationListView: FunctionComponent<ConversationListViewProps> 
           </button>
         )}
       </div>
-      <div className="helpin-conversations-list">
+      <div className="helpin-conversations-list helpin-stagger-list">
         {conversations.map((conv) => (
           <button
             key={conv.id}

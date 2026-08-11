@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Helpin widget loading-state preview</title>
+    <style>
+      :root {
+        color: #172033;
+        background: #f3f6fb;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background:
+          radial-gradient(circle at 15% 20%, rgba(92, 95, 246, 0.12), transparent 30rem),
+          #f3f6fb;
+      }
+
+      main {
+        width: min(620px, calc(100% - 48px));
+        padding: 72px 0;
+        margin: 0 auto;
+      }
+
+      .preview-card {
+        padding: 28px;
+        border: 1px solid rgba(23, 32, 51, 0.09);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 22px 60px rgba(30, 41, 59, 0.1);
+        backdrop-filter: blur(18px);
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: #5c5ff6;
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(28px, 5vw, 40px);
+        letter-spacing: -0.04em;
+      }
+
+      p {
+        max-width: 52ch;
+        margin: 14px 0 0;
+        color: #5e687d;
+        line-height: 1.65;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      button {
+        padding: 10px 15px;
+        border: 1px solid rgba(23, 32, 51, 0.12);
+        border-radius: 10px;
+        background: #fff;
+        color: #172033;
+        cursor: pointer;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      button:hover {
+        border-color: rgba(92, 95, 246, 0.42);
+      }
+
+      button.primary {
+        border-color: #5c5ff6;
+        background: #5c5ff6;
+        color: #fff;
+      }
+
+      #status {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        margin-top: 18px;
+        color: #697489;
+        font-size: 13px;
+      }
+
+      #status::before {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #f59e0b;
+        content: "";
+      }
+
+      #status.ready::before {
+        background: #22c55e;
+      }
+    </style>
+    <script>
+      (() => {
+        const widgetHost = 'widget.preview.local';
+        const widgetKey = 'loading-state-preview';
+        const conversationId = 'preview-conversation';
+
+        try {
+          localStorage.removeItem(`helpin_wc_${widgetKey}`);
+          localStorage.removeItem(`helpin_ws_${widgetKey}`);
+        } catch {
+          // The preview still works when browser storage is unavailable.
+        }
+
+        const originalFetch = window.fetch.bind(window);
+        window.fetch = async (input, init) => {
+          const rawUrl = typeof input === 'string' ? input : input.url;
+          const url = new URL(rawUrl, window.location.href);
+
+          if (url.host !== widgetHost) {
+            return originalFetch(input, init);
+          }
+
+          if (url.pathname === '/widget/config') {
+            return Response.json({
+              workspaceId: 'preview-workspace',
+              workspaceName: 'Helpin Support',
+              branding: {
+                primaryColor: '#5c5ff6',
+                buttonColor: '#5c5ff6',
+                buttonIconColor: '#ffffff',
+                welcomeMessage: 'Hi! What can I help you with today?',
+                widgetPosition: 'bottom-right',
+                showBranding: true,
+                launcherIcon: 'chat_bubble',
+                colorScheme: 'light',
+              },
+              features: {
+                aiEnabled: true,
+                aiFirst: true,
+                showTalkToHuman: true,
+                escalationMessage: 'Let me connect you with a teammate.',
+                fileUploads: false,
+                preChatForm: false,
+                requirePhone: false,
+                csatRating: false,
+                forceIdentify: false,
+              },
+              availability: {
+                isOnline: true,
+                statusText: 'Online now',
+                replyTimeText: 'Usually replies in a few minutes',
+              },
+            });
+          }
+
+          return Response.json({ success: true });
+        };
+
+        class PreviewWebSocket {
+          static CONNECTING = 0;
+          static OPEN = 1;
+          static CLOSING = 2;
+          static CLOSED = 3;
+
+          readyState = PreviewWebSocket.CONNECTING;
+          onopen = null;
+          onmessage = null;
+          onclose = null;
+          onerror = null;
+
+          constructor() {
+            window.__loadingPreviewSocket = this;
+            queueMicrotask(() => {
+              this.readyState = PreviewWebSocket.OPEN;
+              this.onopen?.(new Event('open'));
+            });
+          }
+
+          send(rawFrame) {
+            const frame = JSON.parse(rawFrame);
+            if (frame.type === 'session:create' || frame.type === 'session:restore') {
+              queueMicrotask(() => {
+                this.emit({
+                  type: 'session:joined',
+                  data: {
+                    session_token: 'preview-session',
+                    expires_at: '2099-01-01T00:00:00Z',
+                    is_anonymous: true,
+                    conversations: [{
+                      id: conversationId,
+                      subject: 'Loading-state preview',
+                      status: 'open',
+                      last_message: 'Can you help me understand my latest report?',
+                      updated_at: new Date().toISOString(),
+                      unread_count: 0,
+                    }],
+                    messages: [{
+                      id: 'preview-message',
+                      conversation_id: conversationId,
+                      sender_type: 'customer',
+                      content: 'Can you help me understand my latest report?',
+                      is_internal: false,
+                      via_channel: 'widget',
+                      created_at: new Date().toISOString(),
+                    }],
+                  },
+                });
+              });
+            }
+          }
+
+          emit(payload) {
+            this.onmessage?.(new MessageEvent('message', { data: JSON.stringify(payload) }));
+          }
+
+          close() {
+            this.readyState = PreviewWebSocket.CLOSED;
+          }
+        }
+
+        Object.defineProperty(window, 'WebSocket', {
+          configurable: true,
+          value: PreviewWebSocket,
+          writable: true,
+        });
+
+        window.showLoadingState = () => {
+          window.__loadingPreviewSocket?.emit({ type: 'ai:thinking:start', data: {} });
+        };
+
+        window.hideLoadingState = () => {
+          window.__loadingPreviewSocket?.emit({ type: 'ai:thinking:stop', data: {} });
+        };
+
+        window.bootLoadingPreview = () => {
+          window.helpin?.('boot', { key: widgetKey, host: widgetHost });
+          const readyTimer = window.setInterval(() => {
+            if (window.helpin?.('isWidgetReady') !== true) return;
+            window.clearInterval(readyTimer);
+            window.helpin?.('open');
+            window.showLoadingState();
+            const status = document.querySelector('#status');
+            if (status) {
+              status.classList.add('ready');
+              status.textContent = 'Real SDK bundle loaded with mocked data';
+            }
+          }, 50);
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <main>
+      <section class="preview-card">
+        <p class="eyebrow">Widget preview</p>
+        <h1>AI loading state</h1>
+        <p>
+          This page uses the production SDK bundle and replaces only its network connection with local mock data.
+          The widget opens automatically with the shimmer visible.
+        </p>
+        <div class="controls">
+          <button class="primary" type="button" onclick="showLoadingState()">Show shimmer</button>
+          <button type="button" onclick="hideLoadingState()">Hide shimmer</button>
+          <button type="button" onclick="helpin('open')">Open widget</button>
+        </div>
+        <div id="status">Loading SDK bundle…</div>
+      </section>
+    </main>
+
+    <script
+      src="../../dist/lib.js"
+      data-key="loading-state-preview"
+      data-no-auto-init="true"
+      onload="bootLoadingPreview()"
+    ></script>
+  </body>
+</html>
