@@ -19,7 +19,8 @@ describe('TaskDetailPanel optional section spacing', () => {
     const crmIndex = panelSource.indexOf('section="crm"');
 
     expect(overviewIndex).toBeGreaterThan(-1);
-    expect(panelSource).toContain('<TaskStandingBriefCard');
+    expect(panelSource).not.toContain('<TaskStandingBriefCard');
+    expect(panelSource).not.toContain('handleBriefSuggestion');
     expect(panelSource).toContain('className="mt-6 border-t border-border/60 pt-6" data-testid="checklist-section"');
     expect(panelSource).toContain('className="mt-6 border-t border-border/60 pt-6" id="attachments-section"');
     expect(checklistIndex).toBeGreaterThan(overviewIndex);

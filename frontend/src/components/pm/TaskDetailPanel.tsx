@@ -105,7 +105,6 @@ import { isSprintOpenForPlanning } from '@/lib/pmSprintOptions';
 import { repositoryDefaultBranchLabel } from '@/lib/branchLabels';
 import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
-import { TaskStandingBriefCard } from '@/components/pm/task-detail/TaskStandingBriefCard';
 import { TaskUpdatesView } from '@/components/pm/task-detail/TaskUpdatesView';
 import { resolveTaskTeamWorkflow, resolveTaskWorkflowStates } from '@/components/pm/task-detail/taskWorkflowResolution';
 import {
@@ -132,7 +131,6 @@ import type {
   TaskRecurringSummary,
   TaskType,
   TaskDetailView,
-  TaskStandingBriefSuggestion,
   UpdateTaskRequest,
   WorkflowState,
 } from '@/lib/pmTypes';
@@ -1122,24 +1120,6 @@ function TaskDetailPanelBody({
     });
   }, [form?.team_id, onTaskUpdated, taskDetail.task.id, taskLabels, workspaceId]);
 
-  const handleBriefSuggestion = (suggestion: TaskStandingBriefSuggestion) => {
-    if (suggestion.action.type === 'reply_to_comment') {
-      selectView('updates');
-      return;
-    }
-    if (suggestion.action.type === 'add_checklist_item') {
-      selectView('overview');
-      return;
-    }
-    if (suggestion.action.type === 'retry_run') {
-      openDelivery(suggestion.action.run_id);
-      return;
-    }
-    if (suggestion.action.type === 'open_related_object') {
-      document.getElementById('task-related-section')?.scrollIntoView({ block: 'nearest' });
-    }
-  };
-
   return (
     <div className="flex h-full flex-col">
       {/* ── Header bar ──────────────────────────────────────────── */}
@@ -1442,15 +1422,6 @@ function TaskDetailPanelBody({
                 </div>
               </div>
             )}
-          </div>
-
-          <div className="mt-7">
-            <TaskStandingBriefCard
-              workspaceId={workspaceId}
-              taskId={taskDetail.task.id}
-              canEdit={canEdit}
-              onSuggestion={handleBriefSuggestion}
-            />
           </div>
 
           <div className="mt-6 border-t border-border/60 pt-6" data-testid="checklist-section">
