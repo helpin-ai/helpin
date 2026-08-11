@@ -1893,7 +1893,7 @@
   .helpin-help-link-skeleton-line,
   .helpin-ai-thinking-line,
   .helpin-ai-thinking-label,
-  .helpin-ai-thinking-status,
+  .helpin-ai-thinking-mark-arm,
   .helpin-streaming-cursor {
     animation: none;
     transform: none;
@@ -3224,6 +3224,29 @@
   height: 15px;
 }
 
+.helpin-ai-thinking-mark-arm {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: helpin-ai-mark-wave 1.6s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.helpin-ai-thinking-mark-arm--top {
+  animation-delay: 0ms;
+}
+
+.helpin-ai-thinking-mark-arm--right {
+  animation-delay: -1.2s;
+}
+
+.helpin-ai-thinking-mark-arm--bottom {
+  animation-delay: -800ms;
+}
+
+.helpin-ai-thinking-mark-arm--left {
+  animation-delay: -400ms;
+}
+
 .helpin-ai-thinking-status {
   position: absolute;
   right: -2px;
@@ -3234,7 +3257,6 @@
   border-radius: 999px;
   background: var(--helpin-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--helpin-primary) 12%, transparent);
-  animation: helpin-ai-status-pulse 1.5s ease-in-out infinite;
 }
 
 .helpin-ai-thinking-shimmer {
@@ -3313,9 +3335,9 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes helpin-ai-status-pulse {
-  0%, 100% { opacity: 0.55; transform: scale(0.82); }
-  50% { opacity: 1; transform: scale(1); }
+@keyframes helpin-ai-mark-wave {
+  0%, 55%, 100% { opacity: 0.68; transform: scale(0.94); }
+  20% { opacity: 1; transform: scale(1); }
 }
 
 .helpin-streaming-cursor {

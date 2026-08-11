@@ -681,6 +681,7 @@ describe('ChatWindow', () => {
     expect(getByRole('status').textContent).toContain('Looking into this…');
     expect(container.querySelector('.helpin-ai-thinking-icon svg')).toBeTruthy();
     expect(container.querySelector('.helpin-ai-thinking-mark')).toBeTruthy();
+    expect(container.querySelectorAll('.helpin-ai-thinking-mark-arm')).toHaveLength(4);
     expect(container.querySelector('.helpin-ai-thinking-status')).toBeTruthy();
     expect(container.querySelectorAll('.helpin-ai-thinking-line')).toHaveLength(2);
     expect(queryByText('Thinking')).toBeNull();
