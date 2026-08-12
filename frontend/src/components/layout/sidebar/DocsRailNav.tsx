@@ -177,6 +177,8 @@ function DocumentRow({
       <TooltipTrigger asChild>
         <button
           type="button"
+          data-slot="docs-document-row"
+          data-pinned={pinned || undefined}
           aria-current={active ? 'page' : undefined}
           onClick={onOpen}
           className={cn(
@@ -184,14 +186,8 @@ function DocumentRow({
             active && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
           )}
         >
-          {pinned ? (
+          {pinned && (
             <StarIcon className="h-3 w-3 shrink-0 text-amber-500" />
-          ) : (
-            <StoredIcon
-              name={document.icon}
-              className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-              fallback={<File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />}
-            />
           )}
           <span className="truncate">{document.title || 'Untitled'}</span>
         </button>
@@ -205,8 +201,10 @@ function CollectionBranch({
   node,
   expanded,
   activeDocumentId,
+  activeCollectionId,
   canEditDocs,
   onToggle,
+  onOpenCollection,
   onOpenDocument,
   onCreateDocument,
   onEditCollection,
@@ -215,31 +213,47 @@ function CollectionBranch({
   node: DocsSidebarCollectionNode
   expanded: Set<string>
   activeDocumentId: string
+  activeCollectionId: string
   canEditDocs: boolean
   onToggle: (collectionId: string) => void
+  onOpenCollection: (collection: DocsCollection) => void
   onOpenDocument: (document: DocsDocument) => void
   onCreateDocument: (collectionId: string) => void
   onEditCollection: (collection: DocsCollection) => void
   onDeleteCollection: (collection: DocsCollection) => void
 }) {
   const isExpanded = expanded.has(node.collection.id)
+  const isActive = activeCollectionId === node.collection.id
   const directCount = node.documents.length
 
   return (
     <div>
-      <div className="group/collection relative flex min-h-8 items-center rounded-md transition-colors hover:bg-sidebar-accent">
+      <div data-slot="docs-tree-row" className="group/collection relative flex min-h-8 items-center">
         <button
           type="button"
+          data-slot="docs-tree-disclosure"
+          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${node.collection.name}`}
           aria-expanded={isExpanded}
           onClick={() => onToggle(node.collection.id)}
-          className="relative flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
+          className="absolute -left-2 z-10 flex h-8 w-2 items-center justify-start text-muted-foreground transition-colors before:absolute before:inset-y-0 before:left-0 before:w-4 hover:text-sidebar-accent-foreground"
         >
           <ArrowRight01Icon
             className={cn(
-              'absolute -left-1.5 h-3 w-3 text-muted-foreground transition-transform',
+              'h-2.5 w-2.5 max-w-none shrink-0 transition-transform',
               isExpanded && 'rotate-90',
             )}
           />
+        </button>
+        <button
+          type="button"
+          data-slot="docs-tree-item"
+          aria-current={isActive ? 'location' : undefined}
+          onClick={() => onOpenCollection(node.collection)}
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+            isActive && 'bg-sidebar-accent text-sidebar-accent-foreground',
+          )}
+        >
           <StoredIcon
             name={node.collection.icon}
             className="h-3.5 w-3.5 shrink-0"
@@ -293,8 +307,10 @@ function CollectionBranch({
               node={child}
               expanded={expanded}
               activeDocumentId={activeDocumentId}
+              activeCollectionId={activeCollectionId}
               canEditDocs={canEditDocs}
               onToggle={onToggle}
+              onOpenCollection={onOpenCollection}
               onOpenDocument={onOpenDocument}
               onCreateDocument={onCreateDocument}
               onEditCollection={onEditCollection}
@@ -334,7 +350,7 @@ export function DocsRailNav({
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [spaceQuery, setSpaceQuery] = useState('')
   const [highlightedSpaceIndex, setHighlightedSpaceIndex] = useState(0)
-  const [expansionRevision, setExpansionRevision] = useState(0)
+  const [expansionOverrides, setExpansionOverrides] = useState<Record<string, Record<string, boolean>>>({})
   const [editingSpace, setEditingSpace] = useState<DocsSpace | null>(null)
   const [deletingSpace, setDeletingSpace] = useState<DocsSpace | null>(null)
   const [editingCollection, setEditingCollection] = useState<DocsCollection | null>(null)
@@ -376,21 +392,25 @@ export function DocsRailNav({
     () => buildDocsSidebarTree(collections, documents),
     [collections, documents],
   )
-  void expansionRevision
-  const persistedExpanded = getStoredExpandedCollections(wsId, activeSpaceId)
-  const activeAncestry = useMemo(
-    () => findCollectionAncestry(collections, activeDocument?.collection_id),
-    [activeDocument?.collection_id, collections],
+  const focusedExpansionIds = useMemo(
+    () => search.collection === '__uncollected__'
+      ? ['__uncategorized__']
+      : findCollectionAncestry(collections, routeCollectionId),
+    [collections, routeCollectionId, search.collection],
   )
-  const expanded = useMemo(
-    () => new Set([...persistedExpanded, ...activeAncestry]),
-    [activeAncestry, persistedExpanded],
-  )
+  const focusedExpansionKey = focusedExpansionIds.join(':')
+  const expansionContextKey = `${activeSpaceId}:${focusedExpansionKey}`
+  const expanded = getStoredExpandedCollections(wsId, activeSpaceId)
+  for (const collectionId of focusedExpansionIds) expanded.add(collectionId)
+  for (const [collectionId, isExpanded] of Object.entries(expansionOverrides[expansionContextKey] ?? {})) {
+    if (isExpanded) expanded.add(collectionId)
+    else expanded.delete(collectionId)
+  }
   const pinnedDocuments = documents.filter((document) => document.is_pinned)
   const uncollectedDocuments = documents
     .filter((document) => !document.collection_id)
     .sort((a, b) => a.position - b.position || a.title.localeCompare(b.title))
-  const uncategorizedExpanded = expanded.has('__uncategorized__') || search.collection === '__uncollected__'
+  const uncategorizedExpanded = expanded.has('__uncategorized__')
 
   const filteredSpaces = spaces.filter((space) =>
     space.name.toLowerCase().includes(spaceQuery.trim().toLowerCase()),
@@ -418,12 +438,28 @@ export function DocsRailNav({
     })
   }
 
+  const navigateToCollection = (collection: DocsCollection) => {
+    saveStoredDocsCollectionId(wsId, collection.space_id, collection.id)
+    onNavigate({
+      to: '/w/$slug/docs/spaces/$spaceId',
+      params: { slug: wsSlug, spaceId: collection.space_id },
+      search: { collection: collection.id },
+    })
+  }
+
   const toggleCollection = (collectionId: string) => {
-    const next = getStoredExpandedCollections(wsId, activeSpaceId)
-    if (next.has(collectionId)) next.delete(collectionId)
-    else next.add(collectionId)
+    const nextIsExpanded = !expanded.has(collectionId)
+    const next = new Set(expanded)
+    if (nextIsExpanded) next.add(collectionId)
+    else next.delete(collectionId)
     saveStoredExpandedCollections(wsId, activeSpaceId, next)
-    setExpansionRevision((revision) => revision + 1)
+    setExpansionOverrides((current) => ({
+      ...current,
+      [expansionContextKey]: {
+        ...current[expansionContextKey],
+        [collectionId]: nextIsExpanded,
+      },
+    }))
   }
 
   const validCollectionIds = new Set(collections.map((collection) => collection.id))
@@ -608,7 +644,7 @@ export function DocsRailNav({
         </div>
       )}
 
-      <nav aria-label="Docs views" className="space-y-0.5 px-2 pb-2">
+      <nav data-slot="docs-quick-links" aria-label="Docs views" className="space-y-0.5 px-2 pb-2">
         {[
           { label: 'Recent docs', icon: Clock01Icon, link: `/w/${wsSlug}/docs/recent` },
           { label: 'My documents', icon: UserIcon, link: `/w/${wsSlug}/docs/my` },
@@ -642,7 +678,7 @@ export function DocsRailNav({
 
       <div className="mx-3 h-px bg-sidebar-border/80" />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-2 [scrollbar-gutter:stable]">
+      <div data-slot="docs-tree-scroll" className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-2">
         <div className="flex min-h-7 items-center justify-between px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
           <span>In this space</span>
           {canEditDocs && (
@@ -683,8 +719,10 @@ export function DocsRailNav({
                 node={node}
                 expanded={expanded}
                 activeDocumentId={activeDocumentId}
+                activeCollectionId={location.pathname.includes('/docs/spaces/') && search.collection !== '__uncollected__' ? (search.collection ?? '') : ''}
                 canEditDocs={canEditDocs}
                 onToggle={toggleCollection}
+                onOpenCollection={navigateToCollection}
                 onOpenDocument={navigateToDocument}
                 onCreateDocument={(collectionId) => openCreate('docs_document', { spaceId: activeSpaceId, collectionId })}
                 onEditCollection={setEditingCollection}
@@ -694,17 +732,36 @@ export function DocsRailNav({
 
             {uncollectedDocuments.length > 0 && (
               <div>
-                <button
-                  type="button"
-                  aria-expanded={uncategorizedExpanded}
-                  onClick={() => toggleCollection('__uncategorized__')}
-                  className="relative flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent"
-                >
-                  <ArrowRight01Icon className={cn('absolute -left-1.5 h-3 w-3 text-muted-foreground transition-transform', uncategorizedExpanded && 'rotate-90')} />
-                  <InboxIcon className="h-3.5 w-3.5" />
-                  <span className="truncate text-[13px] font-medium">Uncategorized</span>
-                  <span className="ml-auto w-6 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{uncollectedDocuments.length}</span>
-                </button>
+                <div data-slot="docs-tree-row" className="relative flex min-h-8 items-center">
+                  <button
+                    type="button"
+                    data-slot="docs-tree-disclosure"
+                    aria-label={`${uncategorizedExpanded ? 'Collapse' : 'Expand'} Uncategorized`}
+                    aria-expanded={uncategorizedExpanded}
+                    onClick={() => toggleCollection('__uncategorized__')}
+                    className="absolute -left-2 z-10 flex h-8 w-2 items-center justify-start text-muted-foreground transition-colors before:absolute before:inset-y-0 before:left-0 before:w-4 hover:text-sidebar-accent-foreground"
+                  >
+                    <ArrowRight01Icon className={cn('h-2.5 w-2.5 max-w-none shrink-0 transition-transform', uncategorizedExpanded && 'rotate-90')} />
+                  </button>
+                  <button
+                    type="button"
+                    data-slot="docs-tree-item"
+                    aria-current={location.pathname.includes('/docs/spaces/') && search.collection === '__uncollected__' ? 'location' : undefined}
+                    onClick={() => onNavigate({
+                      to: '/w/$slug/docs/spaces/$spaceId',
+                      params: { slug: wsSlug, spaceId: activeSpaceId },
+                      search: { collection: '__uncollected__' },
+                    })}
+                    className={cn(
+                      'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                      location.pathname.includes('/docs/spaces/') && search.collection === '__uncollected__' && 'bg-sidebar-accent text-sidebar-accent-foreground',
+                    )}
+                  >
+                    <InboxIcon className="h-3.5 w-3.5" />
+                    <span className="truncate text-[13px] font-medium">Uncategorized</span>
+                    <span className="ml-auto w-6 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{uncollectedDocuments.length}</span>
+                  </button>
+                </div>
                 {uncategorizedExpanded && (
                   <div className="ml-4 border-l border-sidebar-border/80 pl-2">
                     {uncollectedDocuments.map((document) => (
