@@ -503,6 +503,7 @@ func main() {
 	commandService.SetDocsOrganizationServices(docsSpaceService, nil)
 	commandService.SetDocsBlockService(docsBlockService)
 	commandService.SetSupportDependencies(supportMessageRepo, conversationRepo, wsPublisher)
+	commandService.SetSupportAttachmentRepository(repository.NewSupportAttachmentRepository(db))
 	commandService.SetCRMReadServices(
 		service.NewCRMContactService(crmContactRepo),
 		service.NewCRMSignalService(crmSignalRepo, crmSummaryService),

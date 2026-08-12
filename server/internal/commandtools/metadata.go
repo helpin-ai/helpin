@@ -191,13 +191,13 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "support.list_conversation_messages",
 		Alias:       "list_conversation_messages",
 		Category:    "Support",
-		Description: "List the current support conversation messages.",
+		Description: "List support conversation messages newest-first by page, returned in chronological reading order with attachment metadata.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"conversation_id": map[string]any{"type": "string", "description": "Optional conversation ID. Defaults to the current conversation target."},
-				"limit":           map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "Maximum messages to return. Defaults to 50, max 100."},
-				"offset":          map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
+				"limit":           map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "Maximum messages to return. Defaults to the newest 20, max 100."},
+				"offset":          map[string]any{"type": "integer", "minimum": 0, "description": "Number of newer messages to skip. Use next_offset to load the previous page."},
 			},
 			"required":             []string{},
 			"additionalProperties": false,

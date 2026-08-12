@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +110,81 @@ func TestListConversationMessagesCommandReturnsConversationMessages(t *testing.T
 	}
 	if !result.Messages[1].IsInternal {
 		t.Fatalf("expected internal note to be included, got %#v", result.Messages[1])
+	}
+}
+
+func TestListConversationMessagesCommandDefaultsToNewestTwentyInChronologicalOrder(t *testing.T) {
+	db := newTestDB(t)
+	seedProductToolConversation(t, db)
+	now := time.Now().Add(2 * time.Minute)
+	for i := 3; i <= 25; i++ {
+		mustExec(t, db, `INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, is_internal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			fmt.Sprintf("msg-%02d", i), "ws-1", "conv-1", "customer", fmt.Sprintf("message %02d", i), false, now.Add(time.Duration(i)*time.Minute), now.Add(time.Duration(i)*time.Minute))
+	}
+
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetSupportDependencies(repository.NewSupportMessageRepository(db), repository.NewSupportConversationRepository(db), nil)
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1", TargetType: "workspace", TargetID: "ws-1",
+	}, "support.list_conversation_messages", json.RawMessage(`{"conversation_id":"conv-1"}`))
+	if err != nil {
+		t.Fatalf("list newest messages: %v", err)
+	}
+	var result struct {
+		Messages []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+		Limit      int  `json:"limit"`
+		NextOffset *int `json:"next_offset"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if len(result.Messages) != 20 || result.Limit != 20 {
+		t.Fatalf("expected newest 20 messages, got %#v", result)
+	}
+	if result.Messages[0].Content != "message 06" || result.Messages[19].Content != "message 25" {
+		t.Fatalf("expected chronological newest window, got first=%q last=%q", result.Messages[0].Content, result.Messages[19].Content)
+	}
+	if result.NextOffset == nil || *result.NextOffset != 20 {
+		t.Fatalf("expected next_offset 20, got %#v", result.NextOffset)
+	}
+}
+
+func TestListConversationMessagesCommandReturnsOlderPagesAndSafeAttachments(t *testing.T) {
+	db := newTestDB(t)
+	seedProductToolConversation(t, db)
+	mustExec(t, db, `CREATE TABLE support_attachments (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT NOT NULL, message_id TEXT, file_name TEXT NOT NULL, file_size INTEGER NOT NULL, content_type TEXT NOT NULL, storage_key TEXT NOT NULL, public_url TEXT NOT NULL, is_uploaded BOOLEAN NOT NULL, uploaded_by_type TEXT NOT NULL, created_at DATETIME)`)
+	mustExec(t, db, `INSERT INTO support_attachments (id, workspace_id, conversation_id, message_id, file_name, file_size, content_type, storage_key, public_url, is_uploaded, uploaded_by_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"att-1", "ws-1", "conv-1", "msg-1", "error.png", 2048, "image/png", "private/ws-1/error.png", "https://files.example/error.png", true, "customer", time.Now())
+
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetSupportDependencies(repository.NewSupportMessageRepository(db), repository.NewSupportConversationRepository(db), nil)
+	svc.SetSupportAttachmentRepository(repository.NewSupportAttachmentRepository(db))
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1", TargetType: "workspace", TargetID: "ws-1",
+	}, "support.list_conversation_messages", json.RawMessage(`{"conversation_id":"conv-1","limit":1,"offset":1}`))
+	if err != nil {
+		t.Fatalf("list older messages: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(output, &decoded); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	messages := decoded["messages"].([]any)
+	message := messages[0].(map[string]any)
+	if message["content"] != "The widget will not load." {
+		t.Fatalf("expected older message, got %#v", message)
+	}
+	attachments := message["attachments"].([]any)
+	attachment := attachments[0].(map[string]any)
+	if attachment["file_name"] != "error.png" || attachment["file_type"] != "image/png" || attachment["url"] != "https://files.example/error.png" {
+		t.Fatalf("unexpected attachment %#v", attachment)
+	}
+	if _, exposed := attachment["file_key"]; exposed {
+		t.Fatalf("private storage key must not be exposed: %#v", attachment)
 	}
 }
 

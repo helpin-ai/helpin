@@ -1031,6 +1031,8 @@ export function MessageThread({
                   receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
                   customerDisplayName={conversation?.customer_name || conversation?.customer_email}
                   customerEmail={conversation?.customer_email}
+                  workspaceSlug={workspaceSlug}
+                  linkedTaskId={conversation?.linked_task_id}
                   fallbackAvatarUrl={
                     (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
                     ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)

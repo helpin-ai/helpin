@@ -3,6 +3,7 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { useDockStore } from '@/stores/dockStore';
 import { SidebarRunsButton } from '../SidebarRunsButton';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -12,6 +13,8 @@ describe('SidebarRunsButton', () => {
   let root: Root;
 
   beforeEach(() => {
+    localStorage.clear();
+    useDockStore.setState({ collapsed: true, tab: 'chats' });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -32,6 +35,7 @@ describe('SidebarRunsButton', () => {
     act(() => container.querySelector<HTMLButtonElement>('button')?.click());
 
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'helpin:ask-agents' }));
+    expect(useDockStore.getState()).toMatchObject({ collapsed: false, tab: 'agents' });
   });
 
   it('labels the sidebar action as Ask Agents', () => {

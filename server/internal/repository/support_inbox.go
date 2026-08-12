@@ -39,6 +39,28 @@ func (r *SupportMessageRepository) ListByConversation(ctx context.Context, works
 	return messages, nil
 }
 
+// ListConversationPageFromNewest returns a bounded page counted backward from
+// the newest message, while preserving chronological order within the page.
+func (r *SupportMessageRepository) ListConversationPageFromNewest(ctx context.Context, workspaceID, conversationID string, includeInternal bool, limit, offset int) ([]model.SupportMessage, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
+		Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID)
+	if !includeInternal {
+		query = query.Where("is_internal = false")
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count messages: %w", err)
+	}
+	var messages []model.SupportMessage
+	if err := query.Order("created_at DESC, id DESC").Limit(limit).Offset(offset).Find(&messages).Error; err != nil {
+		return nil, 0, fmt.Errorf("list newest messages: %w", err)
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+	return messages, total, nil
+}
+
 // Create creates a new message.
 //
 // Invariant: every row with MessageType == "system" MUST carry a recognized

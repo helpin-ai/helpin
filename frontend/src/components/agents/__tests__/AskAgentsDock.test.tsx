@@ -12,6 +12,11 @@ import type { DockChat, DockChatDetail, DockRunSummary } from '@/lib/dockTypes';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as typeof globalThis & { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
 
 const mocks = vi.hoisted(() => ({
   listChats: vi.fn(),
@@ -908,6 +913,14 @@ describe('AskAgentsDock', () => {
     expect(minimizeButton).not.toBeNull();
     expect(minimizeButton?.getAttribute('data-slot')).toBe('tooltip-trigger');
     expect(document.body.querySelector('[data-dock-header] [aria-label="Close agent dock"]')).toBeNull();
+
+    await act(async () => {
+      minimizeButton?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' }));
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
+    });
+    const tooltip = Array.from(document.body.querySelectorAll<HTMLElement>('[data-slot="tooltip-content"]'))
+      .find((element) => element.textContent?.includes('Minimize'));
+    expect(tooltip?.className).toContain('z-[70]');
   });
 
   it('maximizes and restores the dock without changing its active conversation', async () => {

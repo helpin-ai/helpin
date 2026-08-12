@@ -13,7 +13,7 @@ import (
 )
 
 var supportCommandTargetTypes = []string{"conversation", "support_conversation"}
-var supportReadCommandTargetTypes = []string{"conversation", "support_conversation", "support_coverage_gap"}
+var supportReadCommandTargetTypes = []string{"workspace", "conversation", "support_conversation", "support_coverage_gap"}
 
 // registerSupportCommands registers command-backed variants of the native
 // support tools so delegated runtime runs can use them through the internal
@@ -106,7 +106,7 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 		return nil, fmt.Errorf("no support conversation associated with this run")
 	}
 	if req.Limit == 0 {
-		req.Limit = 50
+		req.Limit = 20
 	}
 	if req.Limit < 1 || req.Limit > 100 {
 		return nil, fmt.Errorf("limit must be between 1 and 100")
@@ -114,29 +114,63 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	if req.Offset < 0 {
 		return nil, fmt.Errorf("offset must be zero or greater")
 	}
-	messages, err := s.supportMessageRepo.ListByConversation(ctx, meta.WorkspaceID, conversationID, true)
+	messages, total, err := s.supportMessageRepo.ListConversationPageFromNewest(ctx, meta.WorkspaceID, conversationID, true, req.Limit, req.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list ticket messages: %w", err)
 	}
-	type ticketMessage struct {
-		SenderType string `json:"sender_type"`
-		Content    string `json:"content"`
-		IsInternal bool   `json:"is_internal"`
-		CreatedAt  string `json:"created_at"`
+	if s.supportAttachmentRepo != nil && len(messages) > 0 {
+		messageIDs := make([]string, len(messages))
+		for i := range messages {
+			messageIDs[i] = messages[i].ID
+		}
+		attachments, attachmentErr := s.supportAttachmentRepo.ListByMessageIDs(ctx, messageIDs)
+		if attachmentErr != nil {
+			return nil, fmt.Errorf("list ticket message attachments: %w", attachmentErr)
+		}
+		byMessage := make(map[string][]model.SupportAttachmentPayload)
+		for _, attachment := range attachments {
+			if attachment.MessageID == nil {
+				continue
+			}
+			byMessage[*attachment.MessageID] = append(byMessage[*attachment.MessageID], model.SupportAttachmentPayload{
+				ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.ContentType,
+				FileSize: attachment.FileSize, URL: attachment.PublicURL,
+			})
+		}
+		for i := range messages {
+			messages[i].Attachments = byMessage[messages[i].ID]
+		}
 	}
-	start := min(req.Offset, len(messages))
-	end := min(start+req.Limit, len(messages))
-	result := make([]ticketMessage, 0, end-start)
-	for _, message := range messages[start:end] {
-		result = append(result, ticketMessage{
-			SenderType: message.SenderType,
-			Content:    message.Content,
-			IsInternal: message.IsInternal,
-			CreatedAt:  message.CreatedAt.Format(time.RFC3339),
+	type safeAttachment struct {
+		ID       string `json:"id"`
+		FileName string `json:"file_name"`
+		FileType string `json:"file_type"`
+		FileSize int64  `json:"file_size"`
+		URL      string `json:"url,omitempty"`
+	}
+	type ticketMessageWithAttachments struct {
+		SenderType  string           `json:"sender_type"`
+		Content     string           `json:"content"`
+		IsInternal  bool             `json:"is_internal"`
+		CreatedAt   string           `json:"created_at"`
+		Attachments []safeAttachment `json:"attachments,omitempty"`
+	}
+	resultWithAttachments := make([]ticketMessageWithAttachments, 0, len(messages))
+	for _, message := range messages {
+		attachments := make([]safeAttachment, 0, len(message.Attachments))
+		for _, attachment := range message.Attachments {
+			attachments = append(attachments, safeAttachment{
+				ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType,
+				FileSize: attachment.FileSize, URL: attachment.URL,
+			})
+		}
+		resultWithAttachments = append(resultWithAttachments, ticketMessageWithAttachments{
+			SenderType: message.SenderType, Content: message.Content, IsInternal: message.IsInternal,
+			CreatedAt: message.CreatedAt.Format(time.RFC3339), Attachments: attachments,
 		})
 	}
-	response := commandPaginationOutput(int64(len(messages)), req.Offset, req.Limit, len(result))
-	response["messages"] = result
+	response := commandPaginationOutput(total, req.Offset, req.Limit, len(resultWithAttachments))
+	response["messages"] = resultWithAttachments
 	return mustJSON(response), nil
 }
 

@@ -1271,6 +1271,7 @@ func main() {
 	commandService.SetDocsOrganizationServices(docsSpaceService, docsCollectionService)
 	commandService.SetDocsBlockService(docsBlockService)
 	commandService.SetSupportDependencies(supportMessageRepo, supportConversationRepo, wsPublisher)
+	commandService.SetSupportAttachmentRepository(supportAttachmentRepo)
 	commandService.SetSupportOperationalServices(supportInboxService, supportTagService)
 	commandService.SetCRMReadServices(crmContactService, crmSignalService)
 	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)

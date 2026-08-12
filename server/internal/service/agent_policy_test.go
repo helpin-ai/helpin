@@ -368,6 +368,7 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 		"get_my_capabilities",
 		"create_task", "create_document", "write_document_content", "insert_document_artifact",
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
+		"list_conversation_messages",
 		"search_workspace", "search_documents",
 		"list_available_skills", "search_available_skills", "read_skill",
 		"list_repositories", "checkout_repository", "checkout_repositories",
@@ -403,6 +404,9 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	}
 	if !strings.Contains(*preset.SystemPrompt, "routine reversible workspace mutations execute directly") || !strings.Contains(*preset.SystemPrompt, "Call them directly with the complete step or plan") {
 		t.Fatalf("Ask Agent prompt is missing risk-based direct execution guidance: %s", *preset.SystemPrompt)
+	}
+	if !strings.Contains(*preset.SystemPrompt, "start with the newest 20") || !strings.Contains(*preset.SystemPrompt, "Inspect image attachment URLs") {
+		t.Fatalf("Ask Agent prompt is missing support transcript and image guidance: %s", *preset.SystemPrompt)
 	}
 	for _, skillKey := range preset.AvailableSkills {
 		skill, ok := agentcontract.GetBuiltInSkill(skillKey)

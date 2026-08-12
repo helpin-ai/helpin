@@ -18,6 +18,7 @@ import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffe
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
+import { buildTaskPath } from '@/lib/pmTaskLinks';
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -117,7 +118,21 @@ function renderBoldedSupportMatches(content: string, pattern: RegExp): ReactNode
   return parts.length > 1 ? <>{parts}</> : content;
 }
 
-function renderSupportAuditSystemEventContent(eventType: string | undefined, content: string): ReactNode {
+function supportTaskIDFromMetadata(metadata?: string): string | null {
+  if (!metadata?.trim()) return null;
+  try {
+    const parsed = JSON.parse(metadata) as { task_id?: unknown };
+    return typeof parsed.task_id === 'string' && parsed.task_id.trim() ? parsed.task_id.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderSupportAuditSystemEventContent(
+  eventType: string | undefined,
+  content: string,
+  taskHref?: string | null,
+): ReactNode {
   if (eventType === 'assigned') {
     return renderAssignedSystemEventContent(content);
   }
@@ -138,12 +153,21 @@ function renderSupportAuditSystemEventContent(eventType: string | undefined, con
     if (taskMatch) {
       const [, prefix, taskKey, taskName, suffix] = taskMatch;
       return (
-        <>
-          {prefix}
-          {boldSupportSystemValue(taskKey)}
-          {taskName ? <>: {boldSupportSystemValue(taskName)}</> : null}
-          {suffix}
-        </>
+        <span className="flex min-w-0 max-w-full items-center whitespace-nowrap">
+          <span className="shrink-0">{prefix}</span>
+          {taskHref ? (
+            <a href={taskHref} title={`${taskKey}${taskName ? `: ${taskName}` : ''}`} className="flex min-w-0 items-center font-semibold text-foreground underline decoration-border underline-offset-2 transition-colors hover:text-primary">
+              <strong className="shrink-0 font-semibold text-foreground">{taskKey}</strong>
+              {taskName ? <><span className="shrink-0">:&nbsp;</span><strong data-task-created-title className="truncate font-semibold text-foreground">{taskName}</strong></> : null}
+            </a>
+          ) : (
+            <span className="flex min-w-0 items-center">
+              {boldSupportSystemValue(taskKey)}
+              {taskName ? <><span className="shrink-0">:&nbsp;</span><strong data-task-created-title className="truncate font-semibold text-foreground">{taskName}</strong></> : null}
+            </span>
+          )}
+          <span className="shrink-0">{suffix}</span>
+        </span>
       );
     }
   }
@@ -291,6 +315,8 @@ interface MessageBubbleProps {
   fallbackAvatarUrl?: string;
   customerDisplayName?: string;
   customerEmail?: string | null;
+  workspaceSlug?: string;
+  linkedTaskId?: string | null;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -302,6 +328,8 @@ export const MessageBubble = memo(function MessageBubble({
   fallbackAvatarUrl,
   customerDisplayName,
   customerEmail,
+  workspaceSlug,
+  linkedTaskId,
 }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
@@ -521,7 +549,11 @@ export const MessageBubble = memo(function MessageBubble({
         ? <BotIcon className="h-3 w-3" />
         : null;
     const systemDisplayContent = escalationLabel ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
-    const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent);
+    const taskID = eventType === 'task_created'
+      ? supportTaskIDFromMetadata(message.metadata) ?? linkedTaskId
+      : null;
+    const taskHref = taskID && workspaceSlug ? buildTaskPath(workspaceSlug, taskID) : null;
+    const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent, taskHref);
 
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
@@ -584,7 +616,7 @@ export const MessageBubble = memo(function MessageBubble({
         <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className={`flex items-center gap-2 ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
+              <div className={`flex min-w-0 max-w-full items-center gap-2 ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
                 {isEscalationEvent ? (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                     {escalationIcon}
@@ -600,7 +632,7 @@ export const MessageBubble = memo(function MessageBubble({
                     {getInitial(resolvedSenderName)}
                   </div>
                 )}
-                <span>{systemDisplayNode}</span>
+                <span className="min-w-0 max-w-full">{systemDisplayNode}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="top">
