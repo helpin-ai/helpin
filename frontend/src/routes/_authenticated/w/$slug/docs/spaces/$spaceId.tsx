@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
+import { DocsRouteViewport } from '@/components/docs/DocsRouteViewport'
 import { DocsSpaceDetail } from '@/pages/docs/DocsSpaceDetail'
 
 // `collection` drives which node the space-detail page renders:
@@ -14,8 +15,8 @@ const spaceDetailSearchSchema = z.object({
 export const Route = createFileRoute('/_authenticated/w/$slug/docs/spaces/$spaceId')({
   validateSearch: spaceDetailSearchSchema,
   component: () => (
-    <div className="h-full overflow-auto p-4 md:p-6">
+    <DocsRouteViewport>
       <DocsSpaceDetail />
-    </div>
+    </DocsRouteViewport>
   ),
 })

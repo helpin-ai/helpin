@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -72,6 +74,25 @@ func (h *PMAttachmentHandler) List(w http.ResponseWriter, r *http.Request) {
 // Content redirects to a fresh attachment download URL.
 func (h *PMAttachmentHandler) Content(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
+	// ?proxy=1 streams the bytes through the API. Canvas consumers (image annotation) need a
+	// CORS-clean response, and the default redirect hands CORS control to the object store.
+	if r.URL.Query().Get("proxy") == "1" {
+		data, contentType, err := h.attachmentService.ContentBytes(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		w.Header().Set("Cache-Control", "private, max-age=300")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			slog.ErrorContext(r.Context(), "write attachment content", "error", err, "attachment_id", id)
+		}
+		return
+	}
+
 	downloadURL, err := h.attachmentService.ContentURL(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())

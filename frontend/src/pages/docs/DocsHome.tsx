@@ -579,7 +579,7 @@ export function DocsHome() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="space-y-4">
       <header className="space-y-3">
         <div className="flex items-center justify-between">
           <div>

@@ -41,7 +41,7 @@ import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
 import { getInitialThreadScrollTarget, isNearThreadBottom, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import type { UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 interface MessageThreadProps {
   workspaceId: string;
