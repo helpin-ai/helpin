@@ -146,23 +146,57 @@ function buildNode(shape: AnnotationShape): Konva.Shape | Konva.Group | null {
   }
 }
 
-/** Loads an image element for rendering. `crossOrigin` is required or the canvas taints. */
-export function loadAnnotationImage(src: string): Promise<HTMLImageElement> {
+function decodeImage(src: string, crossOrigin?: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new window.Image();
-    image.crossOrigin = 'anonymous';
+    if (crossOrigin) image.crossOrigin = crossOrigin;
     image.onload = () => resolve(image);
-    // The load is anonymous-CORS, so this fires for a genuinely missing image AND for a host
-    // that serves the image without CORS headers. Say so — the second case is otherwise a
-    // baffling failure on an image the user can plainly see on the page.
-    image.onerror = () =>
-      reject(
-        new Error(
-          'Could not load the image for annotation. It may be hosted somewhere that does not allow cross-origin reads.',
-        ),
-      );
+    image.onerror = () => reject(new Error(`image load failed: ${src.slice(0, 200)}`));
     image.src = src;
   });
+}
+
+/** Appends a nonce so a CORS load never reuses a cache entry stored without CORS headers. */
+function withCacheBuster(src: string): string {
+  if (src.startsWith('data:') || src.startsWith('blob:')) return src;
+  const separator = src.includes('?') ? '&' : '?';
+  return `${src}${separator}__cors=1`;
+}
+
+/**
+ * Loads an image for canvas use, which requires it to be readable without tainting.
+ *
+ * Fetching to a blob first is deliberate. Loading the same URL directly with
+ * `crossOrigin="anonymous"` after the page has already displayed it without CORS hits a
+ * long-standing browser behaviour: the cached response has no `Access-Control-Allow-Origin`,
+ * so the CORS load fails even though the server would happily supply the header. A blob URL is
+ * same-origin by definition, so it sidesteps the problem entirely.
+ *
+ * The direct load remains as a fallback for hosts that allow `<img>` but not `fetch`.
+ */
+export async function loadAnnotationImage(src: string): Promise<HTMLImageElement> {
+  try {
+    const response = await fetch(src, { mode: 'cors', credentials: 'omit', cache: 'reload' });
+    if (response.ok) {
+      const objectUrl = URL.createObjectURL(await response.blob());
+      try {
+        return await decodeImage(objectUrl);
+      } finally {
+        // Safe once decoding resolved — the element keeps its own decoded copy.
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  } catch {
+    // Fall through to the direct load below.
+  }
+
+  try {
+    return await decodeImage(withCacheBuster(src), 'anonymous');
+  } catch {
+    throw new Error(
+      `Could not load the image for annotation (${src.slice(0, 120)}). It may be hosted somewhere that does not allow cross-origin reads.`,
+    );
+  }
 }
 
 /**
