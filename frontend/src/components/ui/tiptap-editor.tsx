@@ -344,7 +344,14 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       }),
     ];
     if (uploadConfig) {
-      exts.push(ResizableImageExtension.configure({ enableCaption: false, defaultAlignment: 'left' }) as typeof exts[number]);
+      // workspaceId/uploadConfig are what enable image annotation outside docs (PM comments,
+      // support replies). The memo re-runs when upload support appears, so this stays current.
+      exts.push(ResizableImageExtension.configure({
+        enableCaption: false,
+        defaultAlignment: 'left',
+        workspaceId: uploadConfig.workspaceId,
+        uploadConfig,
+      }) as typeof exts[number]);
     }
     return exts;
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -163,7 +163,7 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="space-y-4">
       <header>
         <h2 className="text-xl font-semibold">{title}</h2>
         <p className="text-sm text-muted-foreground">{description}</p>

@@ -41,6 +41,10 @@ func (f *fakeAttachmentStore) GeneratePresignedInlineGetURL(key string) (string,
 	return f.getURL, nil
 }
 
+func (f *fakeAttachmentStore) GetObject(ctx context.Context, key string) ([]byte, error) {
+	return []byte("fake-object-bytes"), nil
+}
+
 func (f *fakeAttachmentStore) DeleteObject(ctx context.Context, key string) error {
 	return nil
 }
@@ -332,5 +336,54 @@ func TestPMAttachmentRepository_DeleteEditorUploadOnlyRemovesEditorUploads(t *te
 	}
 	if editorUpload != nil {
 		t.Fatal("expected editor upload attachment to be deleted")
+	}
+}
+
+func TestPMAttachmentService_DeleteEditorUploadAllowsNonUploader(t *testing.T) {
+	t.Parallel()
+
+	_, repo, db, workspaceID, userID := newAttachmentTestEnv(t)
+	svc := NewPMAttachmentService(repo, &fakeAttachmentStore{}, nil)
+	ctx := context.Background()
+
+	// Redaction depends on this: whoever redacts an image must be able to remove the original,
+	// even when a colleague uploaded it.
+	seedEditorUploadAttachment(t, db, "attachment-inline-image", workspaceID, workspaceID, userID)
+
+	if err := svc.Delete(ctx, "attachment-inline-image", "another-editor"); err != nil {
+		t.Fatalf("Delete editor upload as non-uploader: %v", err)
+	}
+
+	remaining, err := repo.GetByID(ctx, "attachment-inline-image")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if remaining != nil {
+		t.Fatal("expected editor upload to be deleted")
+	}
+}
+
+func TestPMAttachmentService_DeleteEntityAttachmentStillRequiresUploader(t *testing.T) {
+	t.Parallel()
+
+	_, repo, db, workspaceID, userID := newAttachmentTestEnv(t)
+	svc := NewPMAttachmentService(repo, &fakeAttachmentStore{}, nil)
+	ctx := context.Background()
+
+	seedEditorUploadAttachment(t, db, "attachment-on-comment", workspaceID, workspaceID, userID)
+	if err := repo.ReassignToEntity(ctx, []string{"attachment-on-comment"}, "comment", "comment-1"); err != nil {
+		t.Fatalf("ReassignToEntity: %v", err)
+	}
+
+	if err := svc.Delete(ctx, "attachment-on-comment", "another-editor"); err == nil {
+		t.Fatal("expected non-uploader deletion of an entity attachment to be rejected")
+	}
+
+	remaining, err := repo.GetByID(ctx, "attachment-on-comment")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if remaining == nil {
+		t.Fatal("expected entity attachment to be preserved")
 	}
 }

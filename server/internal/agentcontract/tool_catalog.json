@@ -3461,23 +3461,46 @@
     },
     {
       "name": "read_file",
-      "description": "Read a bounded window of a text file at the given path (relative to the workspace root). Use ripgrep/search_files/list_symbols first, then use read_file or read_file_range for the exact section you need.",
+      "description": "Read a bounded window of numbered text lines at the given path (relative to the workspace root). Truncated results include the exact offset_line to continue. Use ripgrep/search_files/list_symbols first, then read the exact section you need.",
       "category": "Filesystem",
       "input_schema": {
         "properties": {
           "limit_lines": {
             "description": "Optional maximum number of lines to return. Defaults to 120, max 240.",
+            "maximum": 240,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "limit": {
+            "description": "Deprecated maximum line count.",
+            "maximum": 240,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Deprecated 0-based line offset.",
+            "minimum": 0,
             "type": "integer"
           },
           "offset_line": {
             "description": "Optional 1-based line number to start reading from. Defaults to 1.",
+            "minimum": 1,
             "type": "integer"
           },
           "path": {
             "description": "File path relative to the workspace root",
             "type": "string"
+          },
+          "repo_alias": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
           }
         },
+        "additionalProperties": false,
         "required": [
           "path"
         ],
@@ -3487,23 +3510,34 @@
     },
     {
       "name": "read_file_range",
-      "description": "Read a specific line range from a file. Prefer this after search/ripgrep when you know the relevant span; it is much more token-efficient than broad file reads.",
+      "description": "Read a bounded, numbered line range from a file. Prefer this after search/ripgrep when you know the relevant span; truncated results include the exact continuation line.",
       "category": "Filesystem",
       "input_schema": {
         "properties": {
           "end_line": {
-            "description": "Last line number to read (1-based, inclusive)",
+            "description": "Last line number to read, 1-based inclusive",
+            "minimum": 1,
             "type": "integer"
           },
           "path": {
             "description": "File path relative to the workspace root",
             "type": "string"
           },
+          "repo_alias": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
           "start_line": {
-            "description": "First line number to read (1-based)",
+            "description": "First line number to read, 1-based",
+            "minimum": 1,
             "type": "integer"
           }
         },
+        "additionalProperties": false,
         "required": [
           "path",
           "start_line",
@@ -3521,21 +3555,35 @@
         "properties": {
           "files": {
             "description": "Files to read. Max 4 files per call.",
+            "maxItems": 4,
+            "minItems": 1,
             "items": {
               "properties": {
                 "limit_lines": {
                   "description": "Optional maximum number of lines to return for this file. Defaults to 60, max 120.",
+                  "maximum": 120,
+                  "minimum": 1,
                   "type": "integer"
                 },
                 "offset_line": {
                   "description": "Optional 1-based line number to start reading from. Defaults to 1.",
+                  "minimum": 1,
                   "type": "integer"
                 },
                 "path": {
                   "description": "File path relative to the workspace root",
                   "type": "string"
+                },
+                "repo_alias": {
+                  "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+                  "type": "string"
+                },
+                "repository": {
+                  "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+                  "type": "string"
                 }
               },
+              "additionalProperties": false,
               "required": [
                 "path"
               ],
@@ -3544,6 +3592,7 @@
             "type": "array"
           }
         },
+        "additionalProperties": false,
         "required": [
           "files"
         ],

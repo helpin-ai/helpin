@@ -1,7 +1,9 @@
-import { Node, mergeAttributes } from '@tiptap/core';
+import { Node, mergeAttributes, type JSONContent } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { ResizableImageComponent } from './resizable-image-component';
 import { pickBlockNodeViewAttrs } from '@/components/editor/nodeViewAttrs';
+import { parseAnnotationState } from '@/components/docs/annotator/core/annotationTypes';
+import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
 
 export interface ResizableImageOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -9,6 +11,10 @@ export interface ResizableImageOptions {
   defaultAlignment: 'left' | 'center' | 'right';
   workspaceId?: string;
   documentId?: string;
+  /** Required for image annotation — without it the annotate action is hidden. */
+  uploadConfig?: EditorUploadConfig;
+  /** Persists node-view mutations that must survive an immediate page refresh. */
+  onImmediateSave?: (content: JSONContent) => void | Promise<void>;
 }
 
 declare module '@tiptap/core' {
@@ -24,6 +30,8 @@ declare module '@tiptap/core' {
         attachmentId?: string | null;
         artifactId?: string | null;
         caption?: string | null;
+        annotationState?: unknown;
+        sourceAttachmentId?: string | null;
       }) => ReturnType;
     };
   }
@@ -42,6 +50,8 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       defaultAlignment: 'center',
       workspaceId: undefined,
       documentId: undefined,
+      uploadConfig: undefined,
+      onImmediateSave: undefined,
     };
   },
 
@@ -59,6 +69,12 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       alignment: { default: this.options.defaultAlignment },
       linkUrl: { default: null },
       linkNewTab: { default: true },
+      // Annotation state is kept so an annotated image can be re-opened and edited. It is
+      // stripped at publish time — see docsPublishTransforms.
+      annotationState: { default: null },
+      // The un-annotated original. Re-editing always reloads from here, never from `src`, so
+      // annotations never compound onto already-flattened pixels.
+      sourceAttachmentId: { default: null },
     };
   },
 
@@ -81,13 +97,27 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
           alignment: dom.getAttribute('data-alignment') || this.options.defaultAlignment,
           linkUrl: dom.getAttribute('data-link-url') || null,
           linkNewTab: dom.getAttribute('data-link-new-tab') !== 'false',
+          // Never throws: malformed state parses to null rather than breaking document load.
+          annotationState: parseAnnotationState(dom.getAttribute('data-annotation')),
+          sourceAttachmentId: dom.getAttribute('data-source-attachment-id') || null,
         };
       }},
     ];
   },
 
   renderHTML({ HTMLAttributes }) {
-    const { aspectRatio, attachmentId, artifactId, caption, alignment, linkUrl, linkNewTab, ...rest } = HTMLAttributes;
+    const {
+      aspectRatio,
+      attachmentId,
+      artifactId,
+      caption,
+      alignment,
+      linkUrl,
+      linkNewTab,
+      annotationState,
+      sourceAttachmentId,
+      ...rest
+    } = HTMLAttributes;
     return ['img', mergeAttributes(this.options.HTMLAttributes, rest, {
       ...(aspectRatio ? { 'data-aspect-ratio': aspectRatio } : {}),
       ...(attachmentId ? { 'data-attachment-id': attachmentId } : {}),
@@ -95,6 +125,8 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       ...(this.options.enableCaption && caption ? { 'data-caption': caption } : {}),
       ...(alignment && alignment !== 'center' ? { 'data-alignment': alignment } : {}),
       ...(linkUrl ? { 'data-link-url': linkUrl, 'data-link-new-tab': String(linkNewTab ?? true) } : {}),
+      ...(annotationState ? { 'data-annotation': JSON.stringify(annotationState) } : {}),
+      ...(sourceAttachmentId ? { 'data-source-attachment-id': sourceAttachmentId } : {}),
     })];
   },
 

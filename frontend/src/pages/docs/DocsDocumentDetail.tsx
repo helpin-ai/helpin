@@ -1377,7 +1377,7 @@ export function DocsDocumentDetail({
             already tells users they're in the Docs module; repeating
             it here wastes the first breadcrumb slot on something
             they already know. */}
-        <nav className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
+        <nav className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {space && (
             <button
               type="button"
@@ -1387,7 +1387,7 @@ export function DocsDocumentDetail({
                   params: { slug: wsSlug, spaceId: space.id },
                 })
               }
-              className="truncate hover:text-foreground transition-colors"
+              className="truncate transition-colors hover:text-foreground"
             >
               <span className="inline-flex items-center gap-1">
                 <StoredIcon name={space.icon} className="h-3.5 w-3.5 shrink-0" textClassName="" />
@@ -1407,13 +1407,29 @@ export function DocsDocumentDetail({
                     search: { collection: node.collection.id },
                   })
                 }
-                className="inline-flex min-w-0 items-center gap-1 truncate hover:text-foreground transition-colors"
+                className="inline-flex min-w-0 items-center gap-1 truncate transition-colors hover:text-foreground"
               >
                 <DocCollectionIcon name={node.collection.icon} />
                 <span className="truncate">{node.collection.name}</span>
               </button>
             </div>
           ))}
+          {doc && (
+            <div className="flex min-w-0 items-center gap-1">
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
+              <span
+                aria-current="page"
+                className="inline-flex min-w-0 items-center gap-1 font-medium"
+              >
+                <StoredIcon
+                  name={doc.icon}
+                  className="h-3 w-3 shrink-0"
+                  fallback={<File01Icon className="h-3 w-3 shrink-0" />}
+                />
+                <span className="truncate">{titleDraft.trim() || 'Untitled'}</span>
+              </span>
+            </div>
+          )}
         </nav>
 
         {(editorSaveStatus !== 'idle' || editorLastSavedAt) && (
