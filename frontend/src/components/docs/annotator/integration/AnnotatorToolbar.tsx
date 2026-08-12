@@ -30,6 +30,7 @@ const TOOLS: { tool: AnnotationTool; label: string; icon: typeof SquareIcon }[] 
 
 const ANNOTATION_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#111827', '#ffffff'];
 const STROKE_WIDTHS = [2, 4, 8];
+export const FONT_SIZE_PRESETS = [16, 24, 32, 48] as const;
 
 interface AnnotatorToolbarProps {
   tool: AnnotationTool;
@@ -38,6 +39,9 @@ interface AnnotatorToolbarProps {
   onColorChange: (color: string) => void;
   strokeWidth: number;
   onStrokeWidthChange: (width: number) => void;
+  fontSize: number;
+  onFontSizeChange: (size: number) => void;
+  showFontSizes: boolean;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -53,6 +57,9 @@ export function AnnotatorToolbar({
   onColorChange,
   strokeWidth,
   onStrokeWidthChange,
+  fontSize,
+  onFontSizeChange,
+  showFontSizes,
   canUndo,
   canRedo,
   onUndo,
@@ -113,6 +120,27 @@ export function AnnotatorToolbar({
           <span className="rounded-full bg-current" style={{ width: value + 2, height: value + 2 }} />
         </button>
       ))}
+
+      {showFontSizes && (
+        <>
+          <div className="mx-1 h-5 w-px bg-border" />
+          {FONT_SIZE_PRESETS.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-label={`Text size ${value}`}
+              aria-pressed={fontSize === value}
+              onClick={() => onFontSizeChange(value)}
+              className={cn(
+                'flex h-8 min-w-8 items-center justify-center rounded-md px-1.5 text-xs font-semibold transition-colors',
+                fontSize === value ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              {value}
+            </button>
+          ))}
+        </>
+      )}
 
       <div className="mx-1 h-5 w-px bg-border" />
 

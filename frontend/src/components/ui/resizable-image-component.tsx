@@ -11,6 +11,7 @@ import { parseHelpinReference } from '@/lib/helpinReferences';
 import { automationService } from '@/lib/services/automationService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
+import { selectResizableImageSources } from './resizable-image-sources';
 
 // Lazy so konva never lands in the main bundle — readers of a doc must not pay for the editor.
 const DocsImageAnnotateDialog = lazy(() =>
@@ -54,6 +55,24 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(resolvedArtifactId ? null : src);
   const [artifactError, setArtifactError] = useState(false);
   const [artifactRefresh, setArtifactRefresh] = useState(0);
+
+  const {
+    displaySrc,
+    displayDarkSrc,
+    annotationSourceUrl: rawAnnotationSourceUrl,
+    annotationSourceAttachmentId,
+  } = selectResizableImageSources({
+    src,
+    darkSrc,
+    resolvedSrc,
+    isArtifactBacked: Boolean(resolvedArtifactId),
+    hasAnnotations: Boolean(annotationState),
+    attachmentId: node.attrs.attachmentId,
+    sourceAttachmentId,
+  });
+  const annotationSourceUrl = annotationSourceAttachmentId
+    ? pmAttachmentService.proxiedContentUrl(annotationSourceAttachmentId)
+    : rawAnnotationSourceUrl;
 
   useEffect(() => {
     let cancelled = false;
@@ -272,14 +291,14 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
           ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
         }}
       >
-        {resolvedSrc ? (
+        {displaySrc ? (
           <LoadingImage
             ref={imageRef}
-            src={resolvedSrc}
+            src={displaySrc}
             alt={alt ?? ''}
             onLoad={handleImageLoad}
             draggable={false}
-            containerClassName={`${darkSrc ? 'dark:hidden' : 'block'} max-w-full overflow-hidden rounded-md`}
+            containerClassName={`${displayDarkSrc ? 'dark:hidden' : 'block'} max-w-full overflow-hidden rounded-md`}
             className="block max-w-full rounded-md"
             style={{
               width: currentWidth,
@@ -291,9 +310,9 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             {artifactError ? 'Private image is unavailable' : 'Loading private image…'}
           </div>
         )}
-        {darkSrc && (
+        {displayDarkSrc && (
           <LoadingImage
-            src={darkSrc}
+            src={displayDarkSrc}
             alt={alt ?? ''}
             draggable={false}
             containerClassName="hidden max-w-full overflow-hidden rounded-md dark:block"
@@ -399,7 +418,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             <QuickTooltip label="Download">
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); if (resolvedSrc) downloadImage(resolvedSrc, alt); }}
+                onClick={(e) => { e.stopPropagation(); if (displaySrc) downloadImage(displaySrc, alt); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
                 <Download04Icon className="h-4 w-4" />
@@ -408,7 +427,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             <QuickTooltip label="Copy image">
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); if (resolvedSrc) copyImage(resolvedSrc); }}
+                onClick={(e) => { e.stopPropagation(); if (displaySrc) copyImage(displaySrc); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
                 <Copy01Icon className="h-4 w-4" />
@@ -418,7 +437,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 NOT need an existing attachment, unlike "Edit with AI" whose endpoint takes a
                 source_attachment_id. Requiring one hid the action on pasted and imported
                 images, which are exactly the screenshots people want to annotate. */}
-            {editable && uploadConfig && resolvedSrc && (
+            {editable && uploadConfig && annotationSourceUrl && (
               <QuickTooltip label={annotationState ? 'Edit annotations' : 'Annotate'}>
                 <button
                   type="button"
@@ -545,7 +564,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
       )}
 
       {/* Fullscreen overlay */}
-      {isFullscreen && resolvedSrc && (
+      {isFullscreen && displaySrc && (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
           onClick={() => setIsFullscreen(false)}
@@ -560,7 +579,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             </button>
           </QuickTooltip>
           <LoadingImage
-            src={resolvedSrc}
+            src={displaySrc}
             alt={alt ?? ''}
             containerClassName="max-h-[90vh] max-w-[90vw] overflow-hidden rounded-lg"
             className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
@@ -579,7 +598,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
           onUse={({ attachmentId, url }) => updateAttributes({ src: url, attachmentId })}
         />
       )}
-      {showAnnotator && uploadConfig && resolvedSrc && (
+      {showAnnotator && uploadConfig && annotationSourceUrl && (
         <Suspense fallback={null}>
           <DocsImageAnnotateDialog
             open={showAnnotator}
@@ -591,12 +610,8 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             // Proxied so the canvas stays untainted regardless of bucket CORS. Images that are
             // not attachments (pasted or imported URLs) fall back to their own src and depend
             // on that host sending CORS headers.
-            sourceUrl={
-              (sourceAttachmentId ?? node.attrs.attachmentId)
-                ? pmAttachmentService.proxiedContentUrl(sourceAttachmentId ?? node.attrs.attachmentId)
-                : resolvedSrc
-            }
-            sourceAttachmentId={sourceAttachmentId ?? node.attrs.attachmentId ?? null}
+            sourceUrl={annotationSourceUrl}
+            sourceAttachmentId={annotationSourceAttachmentId}
             initialState={annotationState}
             fileName={alt ?? 'image'}
             onSave={(result) => {

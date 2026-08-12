@@ -1,5 +1,9 @@
 import type { JSONContent } from '@tiptap/react';
 import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload';
+import { parseAnnotationState } from '@/components/docs/annotator/core/annotationTypes';
+import { parseHelpinReference } from '@/lib/helpinReferences';
+import { automationService } from '@/lib/services/automationService';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { mermaidSvgFile, renderMermaidSvg } from './mermaidRenderer';
 import { excalidrawPngFile, normalizeExcalidrawScene } from './excalidrawRenderer';
 
@@ -134,11 +138,12 @@ export const excalidrawBlockToImage: PublishContentTransform = {
 };
 
 /**
- * Drops editor-only annotation data from published content.
+ * Flattens editable annotations into a new public image and drops editor-only provenance.
  *
- * `annotationState` exists solely so an annotation can be re-opened and edited in the app; the
- * published image is already flattened, so carrying the state adds weight to public HTML, to
- * search indexing, and to embeddings for no reader benefit.
+ * `annotationState` exists solely so an annotation can be re-opened and edited in the app.
+ * Draft images normally already point at a flattened preview, but publishing renders again from
+ * the stored original. This guarantees the public asset matches the editable state and avoids
+ * depending on a stale preview produced by an older editor version.
  *
  * `sourceAttachmentId` is dropped too, and that one matters: it points at the ORIGINAL,
  * un-annotated image. On a public help-center article it would hand anyone a link to the
@@ -149,10 +154,57 @@ export const stripImageAnnotationState: PublishContentTransform = {
   appliesTo: (node) =>
     node.type === 'resizableImage' &&
     (node.attrs?.annotationState != null || node.attrs?.sourceAttachmentId != null),
-  async transform(node) {
+  async transform(node, ctx) {
     const attrs = { ...(node.attrs ?? {}) };
+    const annotationState = parseAnnotationState(attrs.annotationState);
+
+    if (annotationState?.shapes.length) {
+      let sourceUrl: string | null = null;
+      const srcReference = parseHelpinReference(typeof attrs.src === 'string' ? attrs.src : undefined);
+      const artifactId = typeof attrs.artifactId === 'string' && attrs.artifactId
+        ? attrs.artifactId
+        : srcReference?.type === 'artifacts'
+          ? srcReference.id
+          : null;
+
+      // Artifact-backed legacy nodes sometimes point sourceAttachmentId at an older flattened
+      // preview. The artifact is the authoritative original and must win or annotations would be
+      // painted twice when the document is published.
+      if (artifactId) {
+        const response = await automationService.getArtifactContentURL(ctx.uploadConfig.workspaceId, artifactId);
+        if (response.error || !response.data?.url) {
+          throw new Error(response.error || 'Could not load the original annotated image for publishing');
+        }
+        sourceUrl = response.data.url;
+      } else if (typeof attrs.sourceAttachmentId === 'string' && attrs.sourceAttachmentId) {
+        sourceUrl = pmAttachmentService.proxiedContentUrl(attrs.sourceAttachmentId);
+      }
+
+      if (sourceUrl) {
+        const { renderAnnotationsToFile } = await import(
+          '@/components/docs/annotator/core/renderAnnotations'
+        );
+        const baseName = typeof attrs.alt === 'string' && attrs.alt.trim()
+          ? attrs.alt.trim().replace(/[^a-z0-9_-]+/gi, '-')
+          : 'image';
+        const file = await renderAnnotationsToFile(
+          sourceUrl,
+          annotationState,
+          `${baseName}-published-annotated.png`,
+        );
+        const upload = await uploadEditorImage(file, ctx.uploadConfig);
+        attrs.src = upload.publicUrl;
+        attrs.attachmentId = upload.attachmentId;
+      }
+    }
+
     delete attrs.annotationState;
     delete attrs.sourceAttachmentId;
+    // These point at unannotated originals or alternates. Public rendering must use only the
+    // freshly flattened asset in `src`, including in dark mode.
+    delete attrs.artifactId;
+    delete attrs.darkSrc;
+    delete attrs.darkAttachmentId;
     return { ...node, attrs };
   },
 };

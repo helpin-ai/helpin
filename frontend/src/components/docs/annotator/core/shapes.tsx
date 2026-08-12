@@ -32,12 +32,12 @@ function calloutTailPoints(shape: CalloutShape): number[] {
   const anchorY = shape.tailY < centerY ? shape.y : shape.y + shape.height;
   const spread = Math.min(18, shape.width / 3);
   return [
-    anchorX - spread,
-    anchorY,
-    shape.tailX,
-    shape.tailY,
-    anchorX + spread,
-    anchorY,
+    anchorX - spread - shape.x,
+    anchorY - shape.y,
+    shape.tailX - shape.x,
+    shape.tailY - shape.y,
+    anchorX + spread - shape.x,
+    anchorY - shape.y,
   ];
 }
 
@@ -123,6 +123,7 @@ export function AnnotationShapeNode({
           x={shape.x}
           y={shape.y}
           text={shape.text}
+          width={shape.width}
           fill={shape.color}
           fontSize={shape.fontSize}
           fontStyle="bold"
@@ -133,24 +134,24 @@ export function AnnotationShapeNode({
 
     case 'callout':
       return (
-        <Group {...common}>
+        <Group {...common} x={shape.x} y={shape.y}>
           <Line points={calloutTailPoints(shape)} closed fill={shape.color} stroke={shape.color} strokeWidth={1} />
           <Rect
-            x={shape.x}
-            y={shape.y}
+            x={0}
+            y={0}
             width={shape.width}
             height={shape.height}
             fill={shape.color}
             cornerRadius={CALLOUT_CORNER}
           />
           <Text
-            x={shape.x + CALLOUT_PADDING}
-            y={shape.y + CALLOUT_PADDING}
+            x={CALLOUT_PADDING}
+            y={CALLOUT_PADDING}
             width={shape.width - CALLOUT_PADDING * 2}
             height={shape.height - CALLOUT_PADDING * 2}
             text={shape.text}
             fill="#ffffff"
-            fontSize={16}
+            fontSize={shape.fontSize}
             fontStyle="bold"
             fontFamily="Inter, system-ui, sans-serif"
             wrap="word"

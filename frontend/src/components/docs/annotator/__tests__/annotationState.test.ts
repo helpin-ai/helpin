@@ -76,6 +76,20 @@ describe('parseAnnotationState', () => {
     const shape = parsed?.shapes[0]
     expect(shape).toMatchObject({ strokeWidth: 4, rotation: 0, color: '#ef4444' })
   })
+
+  it('keeps legacy text and callouts editable by adding resize defaults', () => {
+    const parsed = parseAnnotationState({
+      baseWidth: 800,
+      baseHeight: 600,
+      shapes: [
+        { id: 'text', type: 'text', x: 10, y: 20, text: 'Legacy text' },
+        { id: 'callout', type: 'callout', x: 30, y: 40, width: 200, height: 80, text: 'Legacy note' },
+      ],
+    })
+
+    expect(parsed?.shapes[0]).toMatchObject({ width: 260, fontSize: 24 })
+    expect(parsed?.shapes[1]).toMatchObject({ fontSize: 16 })
+  })
 })
 
 describe('hasCoverShape', () => {
@@ -174,11 +188,23 @@ describe('stripImageAnnotationState publish transform', () => {
   it('drops the editable state and the pointer to the pre-redaction original', async () => {
     const node = {
       type: 'resizableImage',
-      attrs: { src: 'https://example.test/rendered.png', attachmentId: 'att-2', annotationState: state, sourceAttachmentId: 'src-1', width: '60%' },
+      attrs: {
+        src: 'https://example.test/rendered.png',
+        attachmentId: 'att-2',
+        annotationState: null,
+        sourceAttachmentId: 'src-1',
+        artifactId: 'artifact-1',
+        darkSrc: 'https://example.test/original-dark.png',
+        darkAttachmentId: 'dark-1',
+        width: '60%',
+      },
     }
     const published = await stripImageAnnotationState.transform(node, ctx)
     expect(published.attrs).not.toHaveProperty('annotationState')
     expect(published.attrs).not.toHaveProperty('sourceAttachmentId')
+    expect(published.attrs).not.toHaveProperty('artifactId')
+    expect(published.attrs).not.toHaveProperty('darkSrc')
+    expect(published.attrs).not.toHaveProperty('darkAttachmentId')
     // Everything a reader needs must survive.
     expect(published.attrs).toMatchObject({ src: 'https://example.test/rendered.png', attachmentId: 'att-2', width: '60%' })
   })

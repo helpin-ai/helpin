@@ -25,9 +25,8 @@ export type AnnotationTool =
   | 'freehand';
 
 /** Shapes whose konva node carries its own coordinates; the rest report a drag delta. */
-const BOX_TOOLS = new Set<AnnotationShape['type']>(['rect', 'ellipse', 'text', 'highlight', 'cover']);
-/** Shapes the Transformer can resize. Callouts are drag-only — their children are absolute. */
-const TRANSFORMABLE = new Set<AnnotationShape['type']>(['rect', 'ellipse', 'text', 'highlight', 'cover']);
+const BOX_TOOLS = new Set<AnnotationShape['type']>(['rect', 'ellipse', 'text', 'callout', 'highlight', 'cover']);
+const TRANSFORMABLE = new Set<AnnotationShape['type']>(['rect', 'ellipse', 'text', 'callout', 'highlight', 'cover', 'freehand']);
 
 const MIN_DRAG_PIXELS = 6;
 const DEFAULT_CALLOUT_TEXT = 'Add a note';
@@ -182,6 +181,10 @@ export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorPro
     }
     const node = layer.findOne(`#${selectedShape.id}`);
     transformer.nodes(node ? [node] : []);
+    // Setting the same node twice does not make Konva recalculate its bounds. Shape dimensions
+    // change after every committed resize, so force the handles to follow the new geometry.
+    transformer.forceUpdate();
+    layer.batchDraw();
   }, [selectedShape, shapes]);
 
   const replaceShape = useCallback(
@@ -200,6 +203,20 @@ export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorPro
       const y = node.y();
 
       if (BOX_TOOLS.has(shape.type)) {
+        if (shape.type === 'callout') {
+          const deltaX = x - shape.x;
+          const deltaY = y - shape.y;
+          replaceShape(id, (current) => current.type === 'callout'
+            ? {
+                ...current,
+                x,
+                y,
+                tailX: current.tailX + deltaX,
+                tailY: current.tailY + deltaY,
+              }
+            : current);
+          return;
+        }
         replaceShape(id, (current) => ({ ...current, x, y }) as AnnotationShape);
         return;
       }
@@ -242,6 +259,7 @@ export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorPro
 
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
+    const nodeTransform = node.getTransform().copy();
     node.scaleX(1);
     node.scaleY(1);
 
@@ -255,7 +273,37 @@ export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorPro
             radiusY: Math.max(2, current.radiusY * scaleY),
           } as AnnotationShape;
         case 'text':
-          return { ...base, fontSize: Math.max(8, current.fontSize * scaleY) } as AnnotationShape;
+          return {
+            ...base,
+            width: Math.max(40, current.width * Math.abs(scaleX)),
+            fontSize: Math.max(8, current.fontSize * Math.abs(scaleY)),
+          } as AnnotationShape;
+        case 'callout': {
+          const transformedTail = nodeTransform.point({
+            x: current.tailX - current.x,
+            y: current.tailY - current.y,
+          });
+          return {
+            ...current,
+            x: node.x(),
+            y: node.y(),
+            width: Math.max(40, current.width * Math.abs(scaleX)),
+            height: Math.max(32, current.height * Math.abs(scaleY)),
+            fontSize: Math.max(8, current.fontSize * Math.abs(scaleY)),
+            tailX: transformedTail.x,
+            tailY: transformedTail.y,
+          };
+        }
+        case 'freehand': {
+          const points: number[] = [];
+          for (let index = 0; index < current.points.length; index += 2) {
+            const point = nodeTransform.point({ x: current.points[index], y: current.points[index + 1] });
+            points.push(point.x, point.y);
+          }
+          node.position({ x: 0, y: 0 });
+          node.rotation(0);
+          return { ...current, points };
+        }
         case 'rect':
         case 'highlight':
         case 'cover':
@@ -280,8 +328,8 @@ export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorPro
         value: shape.text,
         left: (shape.x + padding) * scale,
         top: (shape.y + padding) * scale,
-        width: (shape.type === 'callout' ? shape.width - padding * 2 : 260) * scale,
-        fontSize: (shape.type === 'callout' ? 16 : shape.fontSize) * scale,
+        width: (shape.type === 'callout' ? shape.width - padding * 2 : shape.width) * scale,
+        fontSize: shape.fontSize * scale,
       });
     },
     [scale],
@@ -332,8 +380,10 @@ export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorPro
         return;
       }
       if (tool === 'select') {
-        // A click on empty canvas clears the selection.
-        if (event.target === event.target.getStage() || event.target.name() !== 'annotation-shape') {
+        // Only the stage itself is empty canvas. Transformer anchors are separate Konva nodes;
+        // treating every non-shape target as empty deselected the shape at the exact moment a
+        // resize began, so the transform was discarded on pointer-up.
+        if (event.target === event.target.getStage()) {
           onSelectedIdChange(null);
         }
         return;
@@ -374,6 +424,7 @@ export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorPro
             width: 0,
             height: 0,
             text: DEFAULT_CALLOUT_TEXT,
+            fontSize,
             color,
             tailX: point.x,
             tailY: point.y,
@@ -390,6 +441,7 @@ export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorPro
             x: point.x,
             y: point.y,
             text: '',
+            width: 260,
             color,
             fontSize,
             rotation: 0,
@@ -562,7 +614,7 @@ export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorPro
               ))}
               <Transformer
                 ref={transformerRef}
-                rotateEnabled
+                rotateEnabled={selectedShape?.type !== 'callout'}
                 ignoreStroke
                 anchorSize={8 / scale}
                 borderStrokeWidth={1 / scale}

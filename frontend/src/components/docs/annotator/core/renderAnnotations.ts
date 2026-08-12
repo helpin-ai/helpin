@@ -16,7 +16,14 @@ function calloutTailPoints(shape: CalloutShape): number[] {
   const anchorX = Math.max(shape.x, Math.min(shape.tailX, shape.x + shape.width));
   const anchorY = shape.tailY < centerY ? shape.y : shape.y + shape.height;
   const spread = Math.min(18, shape.width / 3);
-  return [anchorX - spread, anchorY, shape.tailX, shape.tailY, anchorX + spread, anchorY];
+  return [
+    anchorX - spread - shape.x,
+    anchorY - shape.y,
+    shape.tailX - shape.x,
+    shape.tailY - shape.y,
+    anchorX + spread - shape.x,
+    anchorY - shape.y,
+  ];
 }
 
 /**
@@ -66,6 +73,7 @@ function buildNode(shape: AnnotationShape): Konva.Shape | Konva.Group | null {
         x: shape.x,
         y: shape.y,
         text: shape.text,
+        width: shape.width,
         fill: shape.color,
         fontSize: shape.fontSize,
         fontStyle: 'bold',
@@ -74,7 +82,7 @@ function buildNode(shape: AnnotationShape): Konva.Shape | Konva.Group | null {
       });
 
     case 'callout': {
-      const group = new Konva.Group();
+      const group = new Konva.Group({ x: shape.x, y: shape.y });
       group.add(
         new Konva.Line({
           points: calloutTailPoints(shape),
@@ -86,8 +94,8 @@ function buildNode(shape: AnnotationShape): Konva.Shape | Konva.Group | null {
       );
       group.add(
         new Konva.Rect({
-          x: shape.x,
-          y: shape.y,
+          x: 0,
+          y: 0,
           width: shape.width,
           height: shape.height,
           fill: shape.color,
@@ -96,13 +104,13 @@ function buildNode(shape: AnnotationShape): Konva.Shape | Konva.Group | null {
       );
       group.add(
         new Konva.Text({
-          x: shape.x + CALLOUT_PADDING,
-          y: shape.y + CALLOUT_PADDING,
+          x: CALLOUT_PADDING,
+          y: CALLOUT_PADDING,
           width: shape.width - CALLOUT_PADDING * 2,
           height: shape.height - CALLOUT_PADDING * 2,
           text: shape.text,
           fill: '#ffffff',
-          fontSize: 16,
+          fontSize: shape.fontSize,
           fontStyle: 'bold',
           fontFamily: FONT_FAMILY,
           wrap: 'word',

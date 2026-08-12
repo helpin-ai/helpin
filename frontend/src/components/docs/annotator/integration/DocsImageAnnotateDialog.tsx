@@ -65,6 +65,7 @@ export function DocsImageAnnotateDialog({
   const [tool, setTool] = useState<AnnotationTool>('select');
   const [color, setColor] = useState(DEFAULT_ANNOTATION_COLOR);
   const [strokeWidth, setStrokeWidth] = useState(DEFAULT_STROKE_WIDTH);
+  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [baseSize, setBaseSize] = useState<{ width: number; height: number } | null>(
     initialState ? { width: initialState.baseWidth, height: initialState.baseHeight } : null,
@@ -76,6 +77,21 @@ export function DocsImageAnnotateDialog({
     () => history.shapes.some((shape: AnnotationShape) => shape.type === 'cover'),
     [history.shapes],
   );
+  const selectedShape = useMemo(
+    () => history.shapes.find((shape: AnnotationShape) => shape.id === selectedId) ?? null,
+    [history.shapes, selectedId],
+  );
+  const showFontSizes = tool === 'text' || tool === 'callout' || selectedShape?.type === 'text' || selectedShape?.type === 'callout';
+
+  const changeFontSize = useCallback((size: number) => {
+    setFontSize(size);
+    if (!selectedId) return;
+    history.commit(history.shapes.map((shape) =>
+      shape.id === selectedId && (shape.type === 'text' || shape.type === 'callout')
+        ? { ...shape, fontSize: size }
+        : shape,
+    ));
+  }, [history, selectedId]);
 
   // Redaction forces permanent flattening: a cover box that leaves the original fetchable is not
   // a redaction at all. Derived rather than stored, so adding a cover shape cannot race the save.
@@ -168,6 +184,11 @@ export function DocsImageAnnotateDialog({
             onColorChange={setColor}
             strokeWidth={strokeWidth}
             onStrokeWidthChange={setStrokeWidth}
+            fontSize={selectedShape && (selectedShape.type === 'text' || selectedShape.type === 'callout')
+              ? selectedShape.fontSize
+              : fontSize}
+            onFontSizeChange={changeFontSize}
+            showFontSizes={showFontSizes}
             canUndo={history.canUndo}
             canRedo={history.canRedo}
             onUndo={history.undo}
@@ -184,7 +205,7 @@ export function DocsImageAnnotateDialog({
             tool={tool}
             color={color}
             strokeWidth={strokeWidth}
-            fontSize={DEFAULT_FONT_SIZE}
+            fontSize={fontSize}
             shapes={history.shapes}
             onCommit={history.commit}
             selectedId={selectedId}

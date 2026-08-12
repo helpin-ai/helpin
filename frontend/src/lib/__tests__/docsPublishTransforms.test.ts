@@ -2,6 +2,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { prepareDocsContentForPublish } from '@/lib/docsPublishTransforms';
 import { renderMermaidSvg } from '@/lib/mermaidRenderer';
+import { renderAnnotationsToFile } from '@/components/docs/annotator/core/renderAnnotations';
+import { automationService } from '@/lib/services/automationService';
 
 vi.mock('@/lib/mermaidRenderer', () => ({
   renderMermaidSvg: vi.fn(async (_source: string, theme: 'light' | 'dark') => `<svg><text>${theme}</text></svg>`),
@@ -22,6 +24,20 @@ vi.mock('@/hooks/useEditorImageUpload', () => ({
     attachmentId: file.name.includes('dark') ? 'att-dark' : 'att-light',
     publicUrl: `https://cdn.example.com/${file.name}`,
   })),
+}));
+
+vi.mock('@/components/docs/annotator/core/renderAnnotations', () => ({
+  renderAnnotationsToFile: vi.fn(async (_sourceUrl: string, _state: unknown, filename: string) =>
+    new File(['annotated'], filename, { type: 'image/png' })),
+}));
+
+vi.mock('@/lib/services/automationService', () => ({
+  automationService: {
+    getArtifactContentURL: vi.fn(async () => ({
+      data: { url: 'https://artifacts.example.com/original.png', expires_at: '2099-01-01T00:00:00Z' },
+      error: null,
+    })),
+  },
 }));
 
 describe('prepareDocsContentForPublish', () => {
@@ -127,5 +143,87 @@ describe('prepareDocsContentForPublish', () => {
     const result = await prepareDocsContentForPublish(content, { uploadConfig });
 
     expect(result).toEqual(content);
+  });
+
+  it('publishes an annotated legacy artifact as a fresh flattened image', async () => {
+    const annotationState = {
+      version: 1,
+      baseWidth: 1440,
+      baseHeight: 900,
+      shapes: [{ id: 'shape-1', type: 'text', x: 20, y: 30, width: 260, text: 'Note', color: '#ef4444', fontSize: 24, rotation: 0 }],
+    };
+    const result = await prepareDocsContentForPublish({
+      type: 'doc',
+      content: [{
+        type: 'resizableImage',
+        attrs: {
+          src: 'https://cdn.example.com/draft-preview.png',
+          artifactId: 'artifact-1',
+          darkSrc: 'https://cdn.example.com/original-dark.png',
+          annotationState,
+          sourceAttachmentId: 'stale-derived-attachment',
+          width: '60%',
+        },
+      }],
+    }, { uploadConfig });
+
+    const published = result?.content?.[0];
+    expect(automationService.getArtifactContentURL).toHaveBeenCalledWith('ws-1', 'artifact-1');
+    expect(renderAnnotationsToFile).toHaveBeenCalledWith(
+      'https://artifacts.example.com/original.png',
+      annotationState,
+      'image-published-annotated.png',
+    );
+    expect(published?.attrs).toMatchObject({
+      src: 'https://cdn.example.com/image-published-annotated.png',
+      attachmentId: 'att-light',
+      width: '60%',
+    });
+    expect(published?.attrs).not.toHaveProperty('annotationState');
+    expect(published?.attrs).not.toHaveProperty('sourceAttachmentId');
+    expect(published?.attrs).not.toHaveProperty('artifactId');
+    expect(published?.attrs).not.toHaveProperty('darkSrc');
+  });
+
+  it('resolves the original artifact when no attachment source exists', async () => {
+    const annotationState = {
+      version: 1,
+      baseWidth: 800,
+      baseHeight: 600,
+      shapes: [{ id: 'shape-1', type: 'rect', x: 10, y: 10, width: 100, height: 80, color: '#ef4444', strokeWidth: 4, rotation: 0 }],
+    };
+    await prepareDocsContentForPublish({
+      type: 'doc',
+      content: [{ type: 'resizableImage', attrs: { src: '/rendered.png', artifactId: 'artifact-1', annotationState } }],
+    }, { uploadConfig });
+
+    expect(automationService.getArtifactContentURL).toHaveBeenCalledWith('ws-1', 'artifact-1');
+    expect(renderAnnotationsToFile).toHaveBeenCalledWith(
+      'https://artifacts.example.com/original.png',
+      annotationState,
+      'image-published-annotated.png',
+    );
+  });
+
+  it('uses the original attachment when publishing an attachment-backed annotation', async () => {
+    const annotationState = {
+      version: 1,
+      baseWidth: 800,
+      baseHeight: 600,
+      shapes: [{ id: 'shape-1', type: 'rect', x: 10, y: 10, width: 100, height: 80, color: '#ef4444', strokeWidth: 4, rotation: 0 }],
+    };
+    await prepareDocsContentForPublish({
+      type: 'doc',
+      content: [{
+        type: 'resizableImage',
+        attrs: { src: '/rendered.png', sourceAttachmentId: 'original-attachment', annotationState },
+      }],
+    }, { uploadConfig });
+
+    expect(renderAnnotationsToFile).toHaveBeenCalledWith(
+      expect.stringContaining('/pm/attachments/original-attachment/content?proxy=1'),
+      annotationState,
+      'image-published-annotated.png',
+    );
   });
 });

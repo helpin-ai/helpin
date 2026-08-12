@@ -59,6 +59,8 @@ export interface TextShape extends ShapeBase {
   x: number;
   y: number;
   text: string;
+  /** Wrapping width in source-image pixels. */
+  width: number;
   color: string;
   fontSize: number;
   rotation: number;
@@ -71,6 +73,7 @@ export interface CalloutShape extends ShapeBase {
   width: number;
   height: number;
   text: string;
+  fontSize: number;
   color: string;
   /** Tail tip, in source pixels — what the callout points at. */
   tailX: number;
@@ -214,6 +217,7 @@ function parseShape(raw: unknown): AnnotationShape | null {
         x: shape.x,
         y: shape.y,
         text: shape.text,
+        width: numberOr(shape.width, 260),
         color,
         fontSize: numberOr(shape.fontSize, DEFAULT_FONT_SIZE),
         rotation: numberOr(shape.rotation, 0),
@@ -231,6 +235,7 @@ function parseShape(raw: unknown): AnnotationShape | null {
         width: shape.width,
         height: shape.height,
         text: shape.text,
+        fontSize: numberOr(shape.fontSize, 16),
         color,
         tailX: numberOr(shape.tailX, shape.x),
         tailY: numberOr(shape.tailY, shape.y + shape.height + 40),
@@ -324,7 +329,7 @@ export function shapeBounds(shape: AnnotationShape): { x: number; y: number; wid
         height: shape.radiusY * 2,
       };
     case 'text':
-      return { x: shape.x, y: shape.y, width: shape.text.length * shape.fontSize * 0.6, height: shape.fontSize * 1.2 };
+      return { x: shape.x, y: shape.y, width: shape.width, height: shape.fontSize * 1.2 };
     case 'freehand': {
       const xs = shape.points.filter((_, index) => index % 2 === 0);
       const ys = shape.points.filter((_, index) => index % 2 === 1);
