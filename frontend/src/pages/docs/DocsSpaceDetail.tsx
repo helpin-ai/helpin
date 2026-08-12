@@ -218,7 +218,7 @@ export function DocsSpaceDetail() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="space-y-4">
       <SpaceNodeHeader
         space={space}
         view={view}
