@@ -4,8 +4,6 @@ import {
   ArchiveIcon,
   ArchiveRestoreIcon,
   ArrowDown01Icon,
-  ArrowDown02Icon,
-  ArrowUp02Icon,
   Copy01Icon,
   Delete01Icon,
   File01Icon,
@@ -18,13 +16,17 @@ import {
   SentIcon,
   Tick01Icon,
 } from '@/lib/icons'
-import { timeAgo } from '@/lib/utils'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import type { DocsDocument, DocStatus } from '@/lib/docsTypes'
-import type { AssignableMember } from '@/lib/types'
-import { UserAvatar } from '@/components/pm/UserAvatar'
-import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposalBadge'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import {
+  DocsLibraryList,
+  DocsLibraryRow,
+  DocsLibrarySortMenu,
+  type DocsLibrarySortField,
+} from '@/components/docs/DocsLibraryList'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,33 +35,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-/**
- * Tailwind color class for a document status badge. Matches the
- * colors the inline table used before extraction.
- */
-function statusColor(status: string): string {
-  switch (status) {
-    case 'published':
-      return 'text-emerald-600 dark:text-emerald-400'
-    case 'archived':
-      return 'text-muted-foreground/60'
-    default:
-      return 'text-amber-600 dark:text-amber-400'
-  }
-}
-
-export type DocumentsTableSortField = 'updated_at' | 'title' | 'status' | 'position'
+export type DocumentsTableSortField = DocsLibrarySortField
 export type DocumentsTableSortDir = 'asc' | 'desc'
 
 export interface DocumentsTableProps {
   /** Already-scoped documents (pre-sort, pre-filter). */
   documents: DocsDocument[]
-  /** Assignable members for owner rendering. */
-  members: AssignableMember[]
-  /** collection id → display name, used for the Collection column. */
-  collectionNames: Map<string, string>
-  /** collection id → tree depth (0 = top-level, 1 = child, 2 = grandchild). */
-  collectionDepths?: Map<string, number>
+  /** collection id → breadcrumb label, used only at the space root. */
+  collectionPaths: Map<string, string>
+  showCollectionPath: boolean
   /**
    * Whether any collection exists in the current space. Controls
    * which empty-state variant renders when there are no documents.
@@ -109,9 +93,8 @@ export interface DocumentsTableProps {
  */
 export function DocumentsTable({
   documents,
-  members,
-  collectionNames,
-  collectionDepths,
+  collectionPaths,
+  showCollectionPath,
   hasCollections,
   wsSlug,
   filterStatus,
@@ -134,6 +117,7 @@ export function DocumentsTable({
   const [searchQuery, setSearchQuery] = useState('')
 
   const showStatusFilter = hasCollections && (documents.length > 0 || Boolean(filterStatus))
+  const showToolbar = documents.length > 0 || Boolean(filterStatus)
 
   // Filter by search query, then sort.
   const filtered = searchQuery.trim()
@@ -148,9 +132,6 @@ export function DocumentsTable({
       case 'title':
         cmp = (a.title ?? '').localeCompare(b.title ?? '')
         break
-      case 'status':
-        cmp = (a.status ?? '').localeCompare(b.status ?? '')
-        break
       case 'position':
         cmp = (a.position ?? 0) - (b.position ?? 0)
         break
@@ -162,47 +143,39 @@ export function DocumentsTable({
     return sortDir === 'asc' ? cmp : -cmp
   })
 
-  const cycleSort = (field: DocumentsTableSortField) => {
-    if (sortField === field) {
-      onSort(field, sortDir === 'asc' ? 'desc' : 'asc')
-    } else {
-      onSort(field, field === 'updated_at' ? 'desc' : 'asc')
-    }
-  }
-
   return (
     <>
-      {showStatusFilter && (
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-1">
-            <div className="relative w-64">
+      {showToolbar && (
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="relative min-w-0 flex-1 sm:max-w-64">
               <Search01Icon className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/60" />
-              <input
+              <Input
                 type="text"
                 placeholder="Search..."
+                aria-label="Search documents in this space"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-md border border-border/60 bg-background py-1 pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/50 focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+                className="h-8 pl-7 text-xs"
               />
             </div>
             <span className="text-xs text-muted-foreground shrink-0">
               {displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`}
             </span>
           </div>
-          <DropdownMenu>
+          <div className="flex shrink-0 items-center justify-end gap-1">
+          {showStatusFilter && <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
+              <Button
                 type="button"
-                className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                  filterStatus
-                    ? 'border-primary/30 bg-primary/5 text-foreground'
-                    : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
-                }`}
+                variant="outline"
+                size="sm"
+                className="text-xs text-muted-foreground"
               >
                 <FilterHorizontalIcon className="h-3 w-3" />
                 {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
                 <ArrowDown01Icon className="h-3 w-3 opacity-50" />
-              </button>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem
@@ -223,7 +196,13 @@ export function DocumentsTable({
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu>}
+          <DocsLibrarySortMenu
+            value={{ field: sortField, direction: sortDir }}
+            includeManualOrder
+            onChange={(next) => onSort(next.field, next.direction)}
+          />
+          </div>
         </div>
       )}
 
@@ -265,146 +244,73 @@ export function DocumentsTable({
           )}
         </div>
       ) : (
-        <div className="rounded-lg border border-border/60 bg-card divide-y divide-border/40">
-          <div className="flex items-center gap-3 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            <button
-              type="button"
-              onClick={() => cycleSort('title')}
-              className="min-w-0 flex-1 flex items-center gap-1 hover:text-foreground transition-colors text-left"
-            >
-              Title
-              {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
-            </button>
-            <span className="w-36 shrink-0">Owner</span>
-            <span className="w-40 shrink-0">Collection</span>
-            <button
-              type="button"
-              onClick={() => cycleSort('status')}
-              className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
-            >
-              Status
-              {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
-            </button>
-            {/* Order column removed — sort_key model makes position
-                numbers misleading when docs span multiple sub-collections. */}
-            <button
-              type="button"
-              onClick={() => cycleSort('updated_at')}
-              className="w-24 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
-            >
-              Updated
-              {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
-            </button>
-            {canEdit && <span className="w-8 shrink-0" />}
-          </div>
-          {displayDocs.map((doc) => {
-            const owner = members.find((m) => m.id === doc.owner_id)
-            return (
-              <div
-                key={doc.id}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40 group/row"
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    navigate({
-                      to: '/w/$slug/docs/documents/$docId',
-                      params: { slug: wsSlug, docId: doc.id },
-                    })
-                  }
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left justify-start"
-                >
-                  <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 truncate font-medium">{doc.title}</span>
-                  <PendingProposalBadge count={doc.pending_change_proposal_count ?? 0} />
-                </button>
-                <span className="w-36 shrink-0 truncate text-xs text-muted-foreground">
-                  {owner ? (
-                    <span className="flex items-center gap-1">
-                      <UserAvatar
-                        name={owner.display_name || owner.email}
-                        avatarUrl={owner.avatar_url}
-                        className="h-4 w-4"
-                        fallbackClassName="text-[7px]"
-                      />
-                      <span className="truncate">{formatAssignableMemberName(owner)}</span>
-                    </span>
-                  ) : '—'}
-                </span>
-                <span className="w-40 shrink-0 truncate text-xs text-muted-foreground" title={doc.collection_id ? (collectionNames.get(doc.collection_id) ?? '') : ''}>
-                  {doc.collection_id ? (
-                    <>
-                      {(collectionDepths?.get(doc.collection_id) ?? 0) > 0 && (
-                        <span className="text-muted-foreground/50 mr-0.5">↳</span>
-                      )}
-                      {collectionNames.get(doc.collection_id) ?? '—'}
-                    </>
-                  ) : '—'}
-                </span>
-                <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
-                  {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-                </span>
-                <span className="w-24 shrink-0 text-xs text-muted-foreground">
-                  {timeAgo(doc.updated_at)}
-                </span>
-                {canEdit && (
-                  <span className="w-8 shrink-0">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="rounded p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreHorizontalIcon className="h-4 w-4" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem
-                          disabled={duplicatingDocId === doc.id}
-                          onClick={() => onDuplicate(doc)}
-                        >
-                          <Copy01Icon className="h-3.5 w-3.5" />
-                          {duplicatingDocId === doc.id ? 'Duplicating...' : 'Duplicate'}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onMove(doc)}>
-                          <FolderInputIcon className="h-3.5 w-3.5" />
-                          Move to...
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {doc.status === 'draft' && (
-                          <DropdownMenuItem onClick={() => onPublish(doc)}>
-                            <SentIcon className="h-3.5 w-3.5" />
-                            Publish
-                          </DropdownMenuItem>
-                        )}
-                        {doc.status === 'archived' ? (
-                          <DropdownMenuItem onClick={() => onUnarchive(doc)}>
-                            <ArchiveRestoreIcon className="h-3.5 w-3.5" />
-                            Unarchive
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem onClick={() => onArchive(doc)}>
-                            <ArchiveIcon className="h-3.5 w-3.5" />
-                            Archive
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => onDelete(doc)}
-                        >
-                          <Delete01Icon className="h-3.5 w-3.5" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </span>
-                )}
-              </div>
-            )
-          })}
-        </div>
+        <DocsLibraryList ariaLabel="Documents in this space">
+          {displayDocs.map((doc) => (
+            <DocsLibraryRow
+              key={doc.id}
+              title={doc.title}
+              status={doc.status}
+              updatedAt={doc.updated_at}
+              location={showCollectionPath && doc.collection_id
+                ? collectionPaths.get(doc.collection_id)
+                : undefined}
+              proposalBadge={<PendingProposalBadge count={doc.pending_change_proposal_count ?? 0} />}
+              onOpen={() => navigate({
+                to: '/w/$slug/docs/documents/$docId',
+                params: { slug: wsSlug, docId: doc.id },
+              })}
+              actions={canEdit ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="rounded p-1.5 text-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label={`More options for ${doc.title}`}
+                    >
+                      <MoreHorizontalIcon className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem disabled={duplicatingDocId === doc.id} onClick={() => onDuplicate(doc)}>
+                      <Copy01Icon className="h-3.5 w-3.5" />
+                      {duplicatingDocId === doc.id ? 'Duplicating...' : 'Duplicate'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onMove(doc)}>
+                      <FolderInputIcon className="h-3.5 w-3.5" />
+                      Move to...
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {doc.status === 'draft' && (
+                      <DropdownMenuItem onClick={() => onPublish(doc)}>
+                        <SentIcon className="h-3.5 w-3.5" />
+                        Publish
+                      </DropdownMenuItem>
+                    )}
+                    {doc.status === 'archived' ? (
+                      <DropdownMenuItem onClick={() => onUnarchive(doc)}>
+                        <ArchiveRestoreIcon className="h-3.5 w-3.5" />
+                        Unarchive
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem onClick={() => onArchive(doc)}>
+                        <ArchiveIcon className="h-3.5 w-3.5" />
+                        Archive
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => onDelete(doc)}
+                    >
+                      <Delete01Icon className="h-3.5 w-3.5" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : undefined}
+            />
+          ))}
+        </DocsLibraryList>
       )}
     </>
   )

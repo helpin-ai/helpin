@@ -4,6 +4,7 @@ import {
   flattenCollectionTree,
   findCollectionNode,
   collectionAncestorChain,
+  buildCollectionPathLabels,
 } from '../docsCollectionTree'
 import type { DocsCollection, DocsDocument } from '@/lib/docsTypes'
 
@@ -157,5 +158,22 @@ describe('findCollectionNode and collectionAncestorChain', () => {
 
   it('returns empty for a top-level node', () => {
     expect(collectionAncestorChain(tree.topLevel, 'root')).toEqual([])
+  })
+})
+
+describe('buildCollectionPathLabels', () => {
+  it('builds breadcrumb labels for nested collections', () => {
+    const collections = [
+      makeCollection('Guides', null, 0, 0),
+      makeCollection('Setup', 'Guides', 1, 0),
+      makeCollection('Web', 'Setup', 2, 0),
+    ]
+
+    expect(buildCollectionPathLabels(collections).get('Web')).toBe('Guides › Setup › Web')
+  })
+
+  it('keeps orphaned collections usable', () => {
+    const orphan = makeCollection('Orphan', 'missing', 1, 0)
+    expect(buildCollectionPathLabels([orphan]).get('Orphan')).toBe('Orphan')
   })
 })

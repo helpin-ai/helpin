@@ -159,3 +159,35 @@ export function collectionAncestorChain(
   walk(tree)
   return path
 }
+
+/**
+ * Builds compact breadcrumb labels for every collection in a flat result set.
+ * Cycles and missing parents are handled defensively so list rendering remains
+ * usable even when collection data is temporarily inconsistent.
+ */
+export function buildCollectionPathLabels(collections: DocsCollection[]): Map<string, string> {
+  const byId = new Map(collections.map((collection) => [collection.id, collection]))
+  const labels = new Map<string, string>()
+
+  const labelFor = (collection: DocsCollection): string => {
+    const cached = labels.get(collection.id)
+    if (cached) return cached
+
+    const names = [collection.name]
+    const visited = new Set([collection.id])
+    let parentId = collection.parent_collection_id
+    while (parentId && !visited.has(parentId)) {
+      visited.add(parentId)
+      const parent = byId.get(parentId)
+      if (!parent) break
+      names.unshift(parent.name)
+      parentId = parent.parent_collection_id
+    }
+    const label = names.join(' › ')
+    labels.set(collection.id, label)
+    return label
+  }
+
+  for (const collection of collections) labelFor(collection)
+  return labels
+}
