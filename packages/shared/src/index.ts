@@ -1,5 +1,5 @@
 export type { Conversation } from './types/conversation';
-export type { Message, AiSource, Attachment, LinkPreview, PendingAttachment, SystemEventType } from './types/message';
+export type { Message, AiSource, Attachment, LinkPreview, PendingAttachment, SystemEventType, AIReplyKind } from './types/message';
 export { SYSTEM_EVENT_TYPES } from './types/message';
 export type { Organization } from './types/organization';
 export type { User } from './types/user';
