@@ -48,6 +48,7 @@ interface AnnotatorToolbarProps {
   onRedo: () => void;
   canDelete: boolean;
   onDelete: () => void;
+  disabledTools?: Partial<Record<AnnotationTool, string>>;
 }
 
 export function AnnotatorToolbar({
@@ -66,25 +67,35 @@ export function AnnotatorToolbar({
   onRedo,
   canDelete,
   onDelete,
+  disabledTools,
 }: AnnotatorToolbarProps) {
   return (
     <div className="flex flex-wrap items-center gap-1 rounded-lg border bg-background p-1">
-      {TOOLS.map(({ tool: value, label, icon: Icon }) => (
-        <QuickTooltip key={value} label={label}>
+      {TOOLS.map(({ tool: value, label, icon: Icon }) => {
+        const disabledReason = disabledTools?.[value];
+        const button = (
           <button
             type="button"
             aria-label={label}
             aria-pressed={tool === value}
+            disabled={Boolean(disabledReason)}
+            title={disabledReason}
             onClick={() => onToolChange(value)}
             className={cn(
               'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
               tool === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              disabledReason && 'pointer-events-none opacity-40',
             )}
           >
             <Icon className="h-4 w-4" />
           </button>
-        </QuickTooltip>
-      ))}
+        );
+        return (
+          <QuickTooltip key={value} label={disabledReason ?? label}>
+            {disabledReason ? <span className="inline-flex" tabIndex={0}>{button}</span> : button}
+          </QuickTooltip>
+        );
+      })}
 
       <div className="mx-1 h-5 w-px bg-border" />
 

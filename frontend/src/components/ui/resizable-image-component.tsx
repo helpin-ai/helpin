@@ -11,7 +11,7 @@ import { parseHelpinReference } from '@/lib/helpinReferences';
 import { automationService } from '@/lib/services/automationService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
-import { selectResizableImageSources } from './resizable-image-sources';
+import { permanentAnnotationSourceCleanup, selectResizableImageSources } from './resizable-image-sources';
 
 // Lazy so konva never lands in the main bundle — readers of a doc must not pay for the editor.
 const DocsImageAnnotateDialog = lazy(() =>
@@ -612,6 +612,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             // on that host sending CORS headers.
             sourceUrl={annotationSourceUrl}
             sourceAttachmentId={annotationSourceAttachmentId}
+            hasAlternateSource={Boolean(darkSrc || node.attrs.darkAttachmentId)}
             initialState={annotationState}
             fileName={alt ?? 'image'}
             onSave={(result) => {
@@ -622,6 +623,9 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 attachmentId: result.attachmentId,
                 sourceAttachmentId: result.sourceAttachmentId,
                 annotationState: result.annotationState,
+                // Never leave an alternate or artifact-backed original available to rendering
+                // after a permanent flatten. The dialog already deleted the attachment source.
+                ...permanentAnnotationSourceCleanup(result.permanent),
                 width: currentWidth,
                 height: currentHeight,
                 aspectRatio,

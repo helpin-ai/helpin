@@ -17,7 +17,6 @@ import {
   DEFAULT_ANNOTATION_COLOR,
   DEFAULT_FONT_SIZE,
   DEFAULT_STROKE_WIDTH,
-  hasCoverShape,
   type AnnotationShape,
   type AnnotationState,
 } from '../core/annotationTypes';
@@ -29,6 +28,7 @@ import { AnnotatorToolbar } from './AnnotatorToolbar';
 export interface AnnotationSaveResult {
   attachmentId: string;
   url: string;
+  permanent: boolean;
   /** Null when the user chose to flatten permanently — the annotation is then not re-editable. */
   annotationState: AnnotationState | null;
   sourceAttachmentId: string | null;
@@ -42,6 +42,8 @@ interface DocsImageAnnotateDialogProps {
   /** The image the annotations are drawn on — always the ORIGINAL, never a previous render. */
   sourceUrl: string;
   sourceAttachmentId: string | null;
+  /** True when another original variant exists and cannot be deleted atomically with the source. */
+  hasAlternateSource?: boolean;
   initialState: AnnotationState | null;
   fileName?: string;
   onSave: (result: AnnotationSaveResult) => void;
@@ -54,6 +56,7 @@ export function DocsImageAnnotateDialog({
   uploadConfig,
   sourceUrl,
   sourceAttachmentId,
+  hasAlternateSource = false,
   initialState,
   fileName = 'image',
   onSave,
@@ -71,7 +74,8 @@ export function DocsImageAnnotateDialog({
     initialState ? { width: initialState.baseWidth, height: initialState.baseHeight } : null,
   );
   const [saving, setSaving] = useState(false);
-  const [flattenRequested, setFlattenRequested] = useState(() => hasCoverShape(initialState));
+  const [flattenRequested, setFlattenRequested] = useState(false);
+  const canDeleteOriginal = Boolean(sourceAttachmentId?.trim()) && !hasAlternateSource;
 
   const containsCover = useMemo(
     () => history.shapes.some((shape: AnnotationShape) => shape.type === 'cover'),
@@ -96,6 +100,9 @@ export function DocsImageAnnotateDialog({
   // Redaction forces permanent flattening: a cover box that leaves the original fetchable is not
   // a redaction at all. Derived rather than stored, so adding a cover shape cannot race the save.
   const flattenPermanently = flattenRequested || containsCover;
+  const redactionUnavailableReason = canDeleteOriginal
+    ? undefined
+    : 'Redaction is unavailable because the original image cannot be securely deleted.';
 
   const handleImageLoaded = useCallback((size: { width: number; height: number }) => {
     setBaseSize(size);
@@ -113,6 +120,10 @@ export function DocsImageAnnotateDialog({
 
   const save = useCallback(async () => {
     if (!baseSize) return;
+    if (flattenPermanently && !canDeleteOriginal) {
+      toast.error('Permanent flattening is unavailable because the original image cannot be securely deleted. Remove all redactions to save editable annotations.');
+      return;
+    }
     setSaving(true);
     try {
       // Text is edited in a DOM textarea over the canvas. Read through the annotator handle so
@@ -143,6 +154,7 @@ export function DocsImageAnnotateDialog({
       onSave({
         attachmentId: upload.attachmentId,
         url: upload.publicUrl,
+        permanent,
         annotationState: permanent ? null : state,
         sourceAttachmentId: permanent ? null : sourceAttachmentId,
       });
@@ -154,6 +166,7 @@ export function DocsImageAnnotateDialog({
     }
   }, [
     baseSize,
+    canDeleteOriginal,
     fileName,
     flattenPermanently,
     history.shapes,
@@ -195,6 +208,7 @@ export function DocsImageAnnotateDialog({
             onRedo={history.redo}
             canDelete={Boolean(selectedId)}
             onDelete={deleteSelected}
+            disabledTools={redactionUnavailableReason ? { cover: redactionUnavailableReason } : undefined}
           />
         </div>
 
@@ -218,20 +232,25 @@ export function DocsImageAnnotateDialog({
 
         <div className="border-t px-5 py-4">
           {containsCover && (
-            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-              This annotation redacts part of the image. The original will be deleted on save so the
-              hidden content cannot be recovered — the annotation will not be editable afterwards.
+            <div className={`mb-3 rounded-md border px-3 py-2 text-xs ${canDeleteOriginal
+              ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'}`}>
+              {canDeleteOriginal
+                ? 'This annotation redacts part of the image. The original will be deleted on save so the hidden content cannot be recovered — the annotation will not be editable afterwards.'
+                : 'This image’s original source cannot be securely deleted. Remove all redactions before saving, or replace the image with an uploaded attachment.'}
             </div>
           )}
           <div className="flex items-center gap-2 pb-3">
             <Checkbox
               id="annotation-flatten"
               checked={flattenPermanently}
-              disabled={containsCover}
+              disabled={containsCover || !canDeleteOriginal}
               onCheckedChange={(checked) => setFlattenRequested(checked === true)}
             />
             <label htmlFor="annotation-flatten" className="text-xs text-muted-foreground">
-              Flatten permanently (delete the original and discard editable annotations)
+              {canDeleteOriginal
+                ? 'Flatten permanently (delete the original and discard editable annotations)'
+                : 'Permanent flattening is unavailable because the original source cannot be deleted'}
             </label>
           </div>
           <DialogFooter className="sm:justify-between">

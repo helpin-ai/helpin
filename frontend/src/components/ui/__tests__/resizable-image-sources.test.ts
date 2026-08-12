@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { selectResizableImageSources } from '../resizable-image-sources';
+import { permanentAnnotationSourceCleanup, selectResizableImageSources } from '../resizable-image-sources';
 
 describe('selectResizableImageSources', () => {
   it('displays the flattened render while editing against the original legacy artifact', () => {
@@ -47,5 +47,31 @@ describe('selectResizableImageSources', () => {
       annotationSourceUrl: '/attachments/rendered/content',
       annotationSourceAttachmentId: 'original-attachment',
     });
+  });
+
+  it('does not treat an annotated render as its own deletable original', () => {
+    expect(selectResizableImageSources({
+      src: '/attachments/rendered/content',
+      darkSrc: null,
+      resolvedSrc: '/attachments/rendered/content',
+      isArtifactBacked: false,
+      hasAnnotations: true,
+      attachmentId: 'rendered-attachment',
+      sourceAttachmentId: null,
+    }).annotationSourceAttachmentId).toBeNull();
+  });
+});
+
+describe('permanentAnnotationSourceCleanup', () => {
+  it('clears every alternate original after permanent flattening', () => {
+    expect(permanentAnnotationSourceCleanup(true)).toEqual({
+      artifactId: null,
+      darkSrc: null,
+      darkAttachmentId: null,
+    });
+  });
+
+  it('preserves editable annotation provenance', () => {
+    expect(permanentAnnotationSourceCleanup(false)).toEqual({});
   });
 });
