@@ -1120,10 +1120,21 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
-		// Atlas, Scribe, and Quill product defaults moved from OpenAI to DeepSeek on
+		// Scribe's product default moved from DeepSeek on OpenRouter to Codex on
+		// OpenAI. Only migrate the default preset when it still uses the previous
+		// product default, preserving custom routing choices.
+		if presetKey == model.AgentPresetTaskPlanner &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenRouter &&
+			strings.TrimSpace(derefString(existing.Model)) == "deepseek/deepseek-v4-flash" {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
+		// Atlas and Quill product defaults moved from OpenAI to DeepSeek on
 		// OpenRouter. Only migrate the default preset when it still uses a known
 		// legacy product default, preserving custom routing choices.
-		if (presetKey == model.AgentPresetEpicPlanner || presetKey == model.AgentPresetTaskPlanner || presetKey == model.AgentPresetDocumentationAgent) &&
+		if (presetKey == model.AgentPresetEpicPlanner || presetKey == model.AgentPresetDocumentationAgent) &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
 			(strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel ||

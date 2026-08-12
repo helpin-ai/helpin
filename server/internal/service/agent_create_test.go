@@ -527,7 +527,7 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 			case model.AgentPresetEpicPlanner:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAtlasAgentModel
 			case model.AgentPresetTaskPlanner:
-				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultScribeAgentModel
+				wantProvider, wantModel = model.AgentModelProviderOpenAI, defaultScribeAgentModel
 			case model.AgentPresetDocumentationAgent:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultQuillAgentModel
 			case model.AgentPresetAskAgent, model.AgentPresetSupportAgent:
@@ -771,35 +771,35 @@ func TestEnsureBuiltInAgent_UpgradesLegacyDefaultModelToGPT56Terra(t *testing.T)
 }
 
 func TestEnsureBuiltInAgent_UpgradesLegacyScribeDefaultRouting(t *testing.T) {
-	legacyModels := []string{"gpt-5.5", defaultOpenAIAgentModel}
-	for _, legacyModel := range legacyModels {
-		t.Run(legacyModel, func(t *testing.T) {
-			db := newAgentServiceTestDB(t)
-			agentRepo := repository.NewAgentRepository(db)
-			svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
-			systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
-			if err != nil {
-				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
-			}
-			legacyProvider := model.AgentModelProviderOpenAI
-			systemAgent.Provider = &legacyProvider
-			systemAgent.Model = &legacyModel
-			if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
-				t.Fatalf("persist legacy Scribe routing: %v", err)
-			}
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	legacyProvider := model.AgentModelProviderOpenRouter
+	legacyModel := "deepseek/deepseek-v4-flash"
+	systemAgent.RuntimeKind = "native_sdk"
+	systemAgent.Provider = &legacyProvider
+	systemAgent.Model = &legacyModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist legacy Scribe routing: %v", err)
+	}
 
-			reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
-			if err != nil {
-				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
-			}
-			if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
-				t.Fatalf("expected reconciled provider openrouter, got %+v", reconciled.Provider)
-			}
-			if reconciled.Model == nil || *reconciled.Model != defaultScribeAgentModel {
-				t.Fatalf("expected reconciled model %s, got %+v", defaultScribeAgentModel, reconciled.Model)
-			}
-		})
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if reconciled.RuntimeKind != "codex" {
+		t.Fatalf("expected reconciled runtime codex, got %q", reconciled.RuntimeKind)
+	}
+	if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected reconciled provider openai, got %+v", reconciled.Provider)
+	}
+	if reconciled.Model == nil || *reconciled.Model != defaultScribeAgentModel {
+		t.Fatalf("expected reconciled model %s, got %+v", defaultScribeAgentModel, reconciled.Model)
 	}
 }
 
@@ -931,6 +931,9 @@ func TestEnsureBuiltInAgent_PreservesCustomScribeRouting(t *testing.T) {
 	}
 	if reconciled.Provider == nil || *reconciled.Provider != customProvider {
 		t.Fatalf("expected custom provider %s, got %+v", customProvider, reconciled.Provider)
+	}
+	if reconciled.RuntimeKind != "codex" {
+		t.Fatalf("expected Scribe runtime codex, got %q", reconciled.RuntimeKind)
 	}
 	if reconciled.Model == nil || *reconciled.Model != customModel {
 		t.Fatalf("expected custom model %s, got %+v", customModel, reconciled.Model)

@@ -16,11 +16,12 @@ const (
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
 	// preferred DeepSeek OpenRouter model.
 	defaultAtlasAgentModel = "deepseek/deepseek-v4-flash-0731"
-	// defaultScribeAgentModel keeps interactive task planning on the product's
-	// preferred fast OpenRouter model.
-	defaultScribeAgentModel = "deepseek/deepseek-v4-flash"
-	// Quill shares Scribe's fast OpenRouter model by default.
-	defaultQuillAgentModel = defaultScribeAgentModel
+	// defaultScribeAgentModel keeps interactive task planning on Codex's
+	// default OpenAI model.
+	defaultScribeAgentModel = defaultOpenAIAgentModel
+	// defaultQuillAgentModel keeps documentation work on the product's fast
+	// OpenRouter model.
+	defaultQuillAgentModel = "deepseek/deepseek-v4-flash"
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
 	defaultAskAgentModel = "deepseek/deepseek-v4-flash-0731"
@@ -476,8 +477,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Coding Task Planner",
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Coding Task Planner",
-			RuntimeKind:           "native_sdk",
-			Provider:              &openRouterPresetProvider,
+			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
 			Model:                 &scribeDefaultModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
@@ -486,7 +487,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"task", "epic", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("native_sdk"),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          taskPlannerPrompt,
 		},
 		{

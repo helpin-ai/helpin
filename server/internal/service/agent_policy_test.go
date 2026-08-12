@@ -115,6 +115,9 @@ func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "native_sdk" {
 		t.Fatalf("expected planner runtime default native_sdk, got %q", got)
 	}
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetTaskPlanner); got != "codex" {
+		t.Fatalf("expected Scribe runtime default codex, got %q", got)
+	}
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "native_sdk" {
 		t.Fatalf("expected support runtime default native_sdk, got %q", got)
 	}
@@ -243,19 +246,27 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			}
 			continue
 		}
-		if preset.Key == model.AgentPresetTaskPlanner || preset.Key == model.AgentPresetDocumentationAgent {
+		if preset.Key == model.AgentPresetTaskPlanner {
+			if preset.RuntimeKind != "codex" {
+				t.Errorf("preset %q runtime = %q, want codex", preset.Key, preset.RuntimeKind)
+			}
+			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenAI {
+				t.Errorf("preset %q provider = %+v, want openai", preset.Key, preset.Provider)
+			}
+			if preset.Model == nil || *preset.Model != defaultScribeAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultScribeAgentModel)
+			}
+			continue
+		}
+		if preset.Key == model.AgentPresetDocumentationAgent {
 			if preset.RuntimeKind != "native_sdk" {
 				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
 			}
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}
-			wantModel := defaultScribeAgentModel
-			if preset.Key == model.AgentPresetDocumentationAgent {
-				wantModel = defaultQuillAgentModel
-			}
-			if preset.Model == nil || *preset.Model != wantModel {
-				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, wantModel)
+			if preset.Model == nil || *preset.Model != defaultQuillAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultQuillAgentModel)
 			}
 			continue
 		}
