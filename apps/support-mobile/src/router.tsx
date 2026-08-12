@@ -27,6 +27,7 @@ import {
 import { InboxScreen } from '@mobile/screens/inbox-screen'
 import { ConversationPending } from '@mobile/screens/conversation-pending'
 import { SettingsScreen } from '@mobile/screens/you-screen'
+import { Spinner } from '@mobile/ui/spinner'
 
 export interface RouterContext {
   auth: {
@@ -45,6 +46,38 @@ function requireAuth({ context }: { context: RouterContext }) {
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
+})
+
+export function resolveStartupRoute(
+  loading: boolean,
+  user: Pick<User, 'id'> | null,
+  serverUnreachable: boolean,
+): '/login' | '/workspaces' | null {
+  if (loading) return null
+  return user || serverUnreachable ? '/workspaces' : '/login'
+}
+
+function StartupRouteComponent() {
+  const user = useAuthStore((state) => state.user)
+  const loading = useAuthStore((state) => state.loading)
+  const serverUnreachable = useAuthStore((state) => state.serverUnreachable)
+  const destination = resolveStartupRoute(loading, user, serverUnreachable)
+
+  if (!destination) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center">
+        <Spinner />
+      </div>
+    )
+  }
+
+  return <Navigate to={destination} replace />
+}
+
+const startupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
+  component: StartupRouteComponent,
 })
 
 const loginRoute = createRoute({
@@ -143,6 +176,7 @@ const legacyYouRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([
+  startupRoute,
   loginRoute,
   workspacesRoute,
   supportInboxRoute,

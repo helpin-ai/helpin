@@ -7,6 +7,8 @@ import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
 import { setLastWorkspaceSlug } from '@mobile/lib/prefs'
+import { useConfirmPress } from '@mobile/lib/use-confirm-press'
+import { signOut } from '@mobile/stores/auth-store'
 import type { Workspace } from '@mobile/lib/types'
 
 /**
@@ -37,6 +39,26 @@ export function resolveWorkspaceRedirect(workspaces: Workspace[], storedSlug: st
 }
 
 const MAX_STAGGERED_ROWS = 10
+
+export function EmptyWorkspacesState({ onSignOut }: { onSignOut: () => void }) {
+  const { armed, trigger } = useConfirmPress(3000)
+
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+      <p className="text-body">No workspaces yet</p>
+      <p className="mt-1 max-w-64 text-footnote text-muted-foreground">
+        Ask a teammate to invite you, then reopen the app.
+      </p>
+      <Pressable
+        haptic="selection"
+        onPress={() => trigger(onSignOut)}
+        className="mt-6 rounded-full px-5 py-2.5 text-body font-medium text-muted-foreground active:bg-muted"
+      >
+        {armed ? 'Tap again to confirm' : 'Sign out'}
+      </Pressable>
+    </div>
+  )
+}
 
 /**
  * The auto-redirect (single workspace / stored last_workspace_slug) runs in
@@ -77,10 +99,7 @@ export function WorkspacesScreen() {
       )}
 
       {workspaces?.length === 0 && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
-          <p className="text-body">No workspaces yet</p>
-          <p className="text-footnote text-muted-foreground">Ask a teammate to invite you, then pull to refresh.</p>
-        </div>
+        <EmptyWorkspacesState onSignOut={() => void signOut()} />
       )}
 
       {workspaces && workspaces.length > 0 && (

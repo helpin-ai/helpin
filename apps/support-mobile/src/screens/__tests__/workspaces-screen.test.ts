@@ -1,4 +1,6 @@
-import { resolveWorkspaceRedirect } from '../workspaces-screen'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { createElement } from 'react'
+import { EmptyWorkspacesState, resolveWorkspaceRedirect } from '../workspaces-screen'
 import type { Workspace } from '@mobile/lib/types'
 
 function ws(slug: string): Workspace {
@@ -24,4 +26,19 @@ test('multiple workspaces with no stored slug match requires a manual pick', () 
 test('zero workspaces never redirects', () => {
   expect(resolveWorkspaceRedirect([], null)).toBeNull()
   expect(resolveWorkspaceRedirect([], 'acme')).toBeNull()
+})
+
+test('the empty workspace state lets the user sign out with confirmation', () => {
+  vi.useFakeTimers()
+  const onSignOut = vi.fn()
+  render(createElement(EmptyWorkspacesState, { onSignOut }))
+
+  expect(screen.getByText('No workspaces yet')).toBeTruthy()
+  const button = screen.getByRole('button', { name: 'Sign out' })
+  fireEvent.click(button)
+  expect(onSignOut).not.toHaveBeenCalled()
+  expect(screen.getByRole('button', { name: 'Tap again to confirm' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Tap again to confirm' }))
+  expect(onSignOut).toHaveBeenCalledOnce()
+  vi.useRealTimers()
 })
