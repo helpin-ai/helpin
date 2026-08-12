@@ -47,6 +47,15 @@ test('renders built-in views as one unlabeled list with the total count number a
   // Inbox: the number badge is the TOTAL (9), with a red dot for the 4 unread (mirrors web).
   expect(screen.getByText('9')).toBeTruthy()
   expect(screen.getByLabelText('4 unread')).toBeTruthy()
+  const inboxRow = screen.getByRole('button', { name: /Inbox/ })
+  const label = screen.getByText('Inbox')
+  const dot = screen.getByLabelText('4 unread')
+  const count = screen.getByText('9')
+  expect(label.compareDocumentPosition(dot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(dot.compareDocumentPosition(count) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(count.className).toContain('text-caption')
+  expect(count.className).not.toContain('rounded-full')
+  expect(inboxRow.lastElementChild).not.toBe(count)
 })
 
 test('pins Settings outside the scrollable view list and closes before navigating', () => {

@@ -85,8 +85,8 @@ function DrawerRow({
         className={cn('h-[18px] w-[18px] shrink-0', active ? 'text-primary' : 'text-muted-foreground')}
         strokeWidth={active ? 2.4 : 2}
       />
-      {/* Label + unread dot together on the left; the count number sits on the
-          far right — mirrors the web sidebar. */}
+      {/* Keep status metadata beside its view name, matching the web sidebar:
+          label → unread dot → compact workload count. */}
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className={cn('truncate text-body', active ? 'font-semibold text-primary' : 'text-foreground')}>
           {item.label}
@@ -97,17 +97,14 @@ function DrawerRow({
             className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
           />
         )}
+        {badge && (
+          <span
+            className={`shrink-0 text-caption tnum ${active ? 'text-primary/75' : 'text-muted-foreground'}`}
+          >
+            {badge}
+          </span>
+        )}
       </span>
-      {badge && (
-        <span
-          className={cn(
-            'shrink-0 rounded-full px-2 py-0.5 text-footnote tnum',
-            active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
-          )}
-        >
-          {badge}
-        </span>
-      )}
     </Pressable>
   )
 }
