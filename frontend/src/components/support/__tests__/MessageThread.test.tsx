@@ -164,7 +164,7 @@ describe('MessageThread', () => {
     act(() => root.unmount())
   })
 
-  it('marks an open unread thread read when the latest message is visible', () => {
+  it('contains an open unread thread with intrinsically wide message content', () => {
     supportHooks.useConversation.mockReturnValue({
       isFetched: true,
       data: {
@@ -189,7 +189,7 @@ describe('MessageThread', () => {
           workspace_id: 'ws-1',
           conversation_id: 'conv-1',
           sender_type: 'customer',
-          content: 'Still there?',
+          content: `See https://example.com/${'unbroken-path-segment-'.repeat(30)}`,
           message_type: 'reply',
           is_internal: false,
           created_at: '2026-06-03T10:01:00.000Z',
@@ -214,7 +214,12 @@ describe('MessageThread', () => {
     })
 
     expect(supportHooks.markConversationRead).toHaveBeenCalledWith('conv-1')
-    expect(container.querySelector('[data-slot="scroll-area"]')?.className).toContain('min-w-0')
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]')
+    expect(scrollArea?.className).toContain('min-w-0')
+    expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!block')
+    expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!w-full')
+    expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!min-w-0')
+    expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!max-w-full')
     const messageList = container.querySelector('[data-support-message-list]')
     expect(messageList?.className).toContain('w-full')
     expect(messageList?.className).toContain('max-w-full')
