@@ -190,4 +190,23 @@ describe('MessageList', () => {
 
     expect(rendered.queryByText('Helpful?')).toBeNull();
   });
+
+  it('does not show feedback for a greeting-only exchange in Spanish', () => {
+    const rendered = render(<MessageList
+      messages={[
+        {
+          id: 'customer-greeting', conversationId: 'conv-1', role: 'customer', content: 'Hola',
+          isInternal: false, createdAt: new Date().toISOString(),
+        },
+        {
+          id: 'ai-greeting', conversationId: 'conv-1', role: 'ai',
+          content: '¡Hola! 👋 ¿En qué puedo ayudarte hoy?',
+          isInternal: false, createdAt: new Date().toISOString(),
+        },
+      ]}
+      onAnswerFeedback={() => {}}
+    />);
+
+    expect(rendered.queryByText('Helpful?')).toBeNull();
+  });
 });

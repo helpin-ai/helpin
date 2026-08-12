@@ -11,15 +11,25 @@ interface MessageListProps {
   onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
 }
 
-function isLikelyGreeting(message: Message): boolean {
-  if (message.sources && message.sources.length > 0) return false;
-  const text = message.content
+function normalizeMessageText(content: string): string {
+  return content
     .replace(/[*_`#>]/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
-  if (!/^(hi|hello|hey)\b/.test(text)) return false;
-  return /(?:thanks? for (?:reaching out|contacting us)|how (?:can|may) (?:i|we) help|what can (?:i|we) help)/.test(text);
+}
+
+function isGreetingOnlyCustomerMessage(message: Message): boolean {
+  const text = normalizeMessageText(message.content);
+  return /^(?:hi|hello|hey|hiya|howdy|hola|buenas|buenos días|buenas tardes|buenas noches|bonjour|salut|hallo|guten tag|ciao|olá|ola|oi|namaste)(?: (?:there|everyone|team|all|helpin))?$/.test(text);
+}
+
+function isLikelyGreeting(message: Message): boolean {
+  if (message.sources && message.sources.length > 0) return false;
+  const text = normalizeMessageText(message.content);
+  if (!/^(?:hi|hello|hey|hola|bonjour|salut|hallo|ciao|olá|ola|oi)(?:\s|$)/.test(text)) return false;
+  return /(?:thanks? for (?:reaching out|contacting us)|how (?:can|may) (?:i|we) help|what can (?:i|we) help|en (?:qué|que) puedo ayudarte|(?:cómo|como) puedo ayudarte|comment puis je vous aider|wie kann ich (?:dir|ihnen) helfen|como posso ajudar)/.test(text);
 }
 
 export const MessageList: FunctionComponent<MessageListProps> = ({
@@ -37,7 +47,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
   let latestFeedbackMessageId: string | null = null;
   for (const message of messages) {
     if (message.role === 'customer' && message.content.trim().length > 0) {
-      hasCustomerQuestion = true;
+      hasCustomerQuestion = !isGreetingOnlyCustomerMessage(message);
       latestFeedbackMessageId = null;
       continue;
     }
