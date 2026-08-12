@@ -78,7 +78,7 @@ import {
   useApplyDocsChangeProposal,
   useDiscardDocsChangeProposal,
 } from '@/hooks/queries'
-import { cn, timeAgo } from '@/lib/utils'
+import { timeAgo } from '@/lib/utils'
 import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
@@ -1387,10 +1387,7 @@ export function DocsDocumentDetail({
                   params: { slug: wsSlug, spaceId: space.id },
                 })
               }
-              className={cn(
-                'truncate transition-colors hover:text-foreground',
-                collectionBreadcrumbNodes.length === 0 && 'font-medium',
-              )}
+              className="truncate transition-colors hover:text-foreground"
             >
               <span className="inline-flex items-center gap-1">
                 <StoredIcon name={space.icon} className="h-3.5 w-3.5 shrink-0" textClassName="" />
@@ -1398,7 +1395,7 @@ export function DocsDocumentDetail({
               </span>
             </button>
           )}
-          {collectionBreadcrumbNodes.map((node, index) => (
+          {collectionBreadcrumbNodes.map((node) => (
             <div key={node.collection.id} className="flex min-w-0 items-center gap-1">
               <ArrowRight01Icon className="h-3 w-3 shrink-0" />
               <button
@@ -1410,16 +1407,29 @@ export function DocsDocumentDetail({
                     search: { collection: node.collection.id },
                   })
                 }
-                className={cn(
-                  'inline-flex min-w-0 items-center gap-1 truncate transition-colors hover:text-foreground',
-                  index === collectionBreadcrumbNodes.length - 1 && 'font-medium',
-                )}
+                className="inline-flex min-w-0 items-center gap-1 truncate transition-colors hover:text-foreground"
               >
                 <DocCollectionIcon name={node.collection.icon} />
                 <span className="truncate">{node.collection.name}</span>
               </button>
             </div>
           ))}
+          {doc && (
+            <div className="flex min-w-0 items-center gap-1">
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
+              <span
+                aria-current="page"
+                className="inline-flex min-w-0 items-center gap-1 font-medium"
+              >
+                <StoredIcon
+                  name={doc.icon}
+                  className="h-3 w-3 shrink-0"
+                  fallback={<File01Icon className="h-3 w-3 shrink-0" />}
+                />
+                <span className="truncate">{titleDraft.trim() || 'Untitled'}</span>
+              </span>
+            </div>
+          )}
         </nav>
 
         {(editorSaveStatus !== 'idle' || editorLastSavedAt) && (
