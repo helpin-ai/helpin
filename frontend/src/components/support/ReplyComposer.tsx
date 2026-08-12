@@ -69,6 +69,7 @@ import { DEFAULT_SHORTCUT_CATEGORY, normalizeShortcutCategory, shortcutCategoryO
 import { filterShortcuts, stripShortcutContent } from './shortcutFiltering';
 import { getClipboardImageFiles } from './clipboardAttachments';
 import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './draftAttachments';
+import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -799,7 +800,7 @@ function ShortcutFormPanel({
 }
 
 export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, onUpgradeRequired }: ReplyComposerProps) {
-  const { replyMode, setReplyMode, setDraft, clearDraft } = useSupportInboxStore();
+  const { replyMode, setReplyMode, setDraft, clearDraft, detailSidebarMode, setDetailSidebarMode } = useSupportInboxStore();
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
@@ -2151,6 +2152,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
         </div>
 
         <div className="flex items-center gap-2">
+          <SupportAskAgentsButton
+            open={detailSidebarMode === 'agents'}
+            onOpen={() => setDetailSidebarMode('agents')}
+          />
           <kbd className="hidden items-center gap-1 font-mono text-[15px] leading-none text-muted-foreground sm:inline-flex">
             <span>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl'}</span>
             <span>{'\u21B5'}</span>

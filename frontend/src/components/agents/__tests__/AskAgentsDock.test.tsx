@@ -9,6 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDockStore } from '@/stores/dockStore';
 import type { DockChat, DockChatDetail, DockRunSummary } from '@/lib/dockTypes';
+import type { CommandBarPageContext } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -182,6 +183,19 @@ async function renderDock() {
   await flush();
 }
 
+async function renderEmbeddedDock(requiredPageContext: CommandBarPageContext, onClose = vi.fn()) {
+  await act(async () => {
+    root.render(
+      <TooltipProvider>
+        <PageContextProvider>
+          <AskAgentsDock presentation="embedded" requiredPageContext={requiredPageContext} onClose={onClose} />
+        </PageContextProvider>
+      </TooltipProvider>,
+    );
+  });
+  await flush();
+}
+
 async function flush() {
   await act(async () => {
     await Promise.resolve();
@@ -230,6 +244,32 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it('embeds the full chat without a floating trigger and sends mandatory support context', async () => {
+    const supportContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-42',
+      display_title: 'Refund request',
+    };
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
+    await renderEmbeddedDock(supportContext);
+    await waitForText('Sprint questions');
+
+    expect(document.body.querySelector('[data-helpin-dock-presentation="embedded"]')).not.toBeNull();
+    expect(document.body.querySelector('[aria-label="Agent dock"]')).toBeNull();
+    expect(document.body.textContent).toContain('Refund request');
+
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'Draft a helpful response');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-1', expect.objectContaining({
+      content: 'Draft a helpful response',
+      page_context: supportContext,
+    }));
+  });
   it('renders the collapsed pill and expands via the / key', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();

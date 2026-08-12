@@ -5,7 +5,7 @@ import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { parseDockPlanConfirm } from '@/lib/dockTypes';
 import type { DockChatDetail, DockEntityReference } from '@/lib/dockTypes';
-import type { AgentRun, CodingSessionInteraction, CommandBarPlanSummary } from '@/lib/pmTypes';
+import type { AgentRun, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
 import { DockUserMessage } from './DockUserMessage';
@@ -40,6 +40,7 @@ interface ChatViewProps {
   streamController: AgentRunStreamState;
   onPresenceChange?: (state: AskAgentAvatarState | null) => void;
   onRunIdChange?: (runId: string | null) => void;
+  requiredPageContext?: CommandBarPageContext | null;
 }
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
@@ -64,6 +65,7 @@ export function ChatView({
   streamController,
   onPresenceChange,
   onRunIdChange,
+  requiredPageContext,
 }: ChatViewProps) {
   const [detail, setDetail] = useState<DockChatDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
@@ -89,7 +91,7 @@ export function ChatView({
 
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
-  const effectivePageContext = contextCleared ? null : pageContext;
+  const effectivePageContext = requiredPageContext ?? (contextCleared ? null : pageContext);
 
   useEffect(() => {
     if (!initialDraft) return;
@@ -485,13 +487,13 @@ export function ChatView({
             onChange={setValue}
             onSubmit={() => void submit()}
             pageContext={effectivePageContext}
-            contextOptions={scopeOptions}
+            contextOptions={requiredPageContext ? [] : scopeOptions}
             activeContextKey={activeScopeKey}
             onContextKeyChange={(key) => {
               setContextCleared(false);
               setActiveScopeKey(key);
             }}
-            onClearContext={() => setContextCleared(true)}
+            onClearContext={requiredPageContext ? undefined : () => setContextCleared(true)}
             workspaceId={workspaceId}
             references={references}
             onAddReference={(reference) => {

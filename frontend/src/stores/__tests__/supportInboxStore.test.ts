@@ -36,6 +36,7 @@ function resetStore() {
     selectedConversationId: null,
     conversationHandoff: null,
     replyMode: 'reply',
+    detailSidebarMode: 'details',
     createDialogOpen: false,
     activePanel: 'list',
   });
@@ -50,6 +51,17 @@ describe('supportInboxStore', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('opens and closes the agent sidebar independently of conversation selection', () => {
+    useSupportInboxStore.setState({ selectedConversationId: 'conv-1' });
+
+    useSupportInboxStore.getState().setDetailSidebarMode('agents');
+    expect(useSupportInboxStore.getState().detailSidebarMode).toBe('agents');
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-1');
+
+    useSupportInboxStore.getState().setDetailSidebarMode('details');
+    expect(useSupportInboxStore.getState().detailSidebarMode).toBe('details');
   });
 
   // ── setDraft / clearDraft ──────────────────────────────────

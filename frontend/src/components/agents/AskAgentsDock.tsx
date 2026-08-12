@@ -17,6 +17,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDockStore } from '@/stores/dockStore';
 import { dockChatService } from '@/lib/services/dockChatService';
 import type { DockChat, DockRunSummary } from '@/lib/dockTypes';
+import type { CommandBarPageContext } from '@/lib/pmTypes';
 import { DockRoster } from './dock/DockRoster';
 import { ChatView } from './dock/ChatView';
 import { DockRunView } from './dock/DockRunView';
@@ -29,7 +30,14 @@ type AskAgentsEventDetail = { query?: string; mode?: 'compose' | 'runs'; runId?:
 type DockFocusTarget = 'composer' | 'selection' | 'header';
 
 /** Persistent workspace presence layer for chats and user-owned agent runs. */
-export function AskAgentsDock() {
+interface AskAgentsDockProps {
+  presentation?: 'floating' | 'embedded';
+  requiredPageContext?: CommandBarPageContext | null;
+  onClose?: () => void;
+}
+
+export function AskAgentsDock({ presentation = 'floating', requiredPageContext, onClose }: AskAgentsDockProps = {}) {
+  const embedded = presentation === 'embedded';
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const {
     collapsed,
@@ -318,6 +326,10 @@ export function AskAgentsDock() {
   }, [rememberFocusSource, setCollapsed, setTab]);
 
   const closeDock = useCallback(() => {
+    if (embedded) {
+      onClose?.();
+      return;
+    }
     setMaximized(false);
     setCollapsed(true);
     window.setTimeout(() => {
@@ -325,7 +337,7 @@ export function AskAgentsDock() {
       if (target?.isConnected) target.focus();
       else askTriggerRef.current?.focus();
     }, 0);
-  }, [setCollapsed]);
+  }, [embedded, onClose, setCollapsed]);
 
   const newChat = useCallback(async () => {
     if (!workspaceId) return;
@@ -342,7 +354,7 @@ export function AskAgentsDock() {
   }, [chats, setActiveChatId, setChats, setCollapsed, setTab, workspaceId]);
 
   useLayoutEffect(() => {
-    if (collapsed) return;
+    if (collapsed && !embedded) return;
     if (!panelRef.current) return;
     const target = focusTargetRef.current;
     if (target === 'composer' && textareaRef.current) {
@@ -357,9 +369,10 @@ export function AskAgentsDock() {
       }
     }
     panelRef.current.querySelector<HTMLElement>('[data-dock-header]')?.focus();
-  }, [activeChatId, activeRunId, collapsed, tab]);
+  }, [activeChatId, activeRunId, collapsed, embedded, tab]);
 
   useEffect(() => {
+    if (embedded) return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
       const editable = target instanceof Element
@@ -378,10 +391,10 @@ export function AskAgentsDock() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [closeDock, collapsed, newChat, openDock]);
+  }, [closeDock, collapsed, embedded, newChat, openDock]);
 
   useEffect(() => {
-    if (collapsed) return;
+    if (embedded || collapsed) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Tab' || !panelRef.current) return;
       const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
@@ -404,10 +417,10 @@ export function AskAgentsDock() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [collapsed]);
+  }, [collapsed, embedded]);
 
   useEffect(() => {
-    if (collapsed) return;
+    if (embedded || collapsed) return;
     const previousBodyOverflow = document.body.style.overflow;
     const previousRootOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -416,9 +429,10 @@ export function AskAgentsDock() {
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousRootOverflow;
     };
-  }, [collapsed]);
+  }, [collapsed, embedded]);
 
   useEffect(() => {
+    if (embedded) return;
     const onAsk = (event: Event) => {
       const detail = (event as CustomEvent<AskAgentsEventDetail>).detail ?? {};
       const query = detail.query?.trim();
@@ -437,7 +451,7 @@ export function AskAgentsDock() {
     };
     window.addEventListener('helpin:ask-agents', onAsk);
     return () => window.removeEventListener('helpin:ask-agents', onAsk);
-  }, [openDock, setActiveChatId, setActiveRunId]);
+  }, [embedded, openDock, setActiveChatId, setActiveRunId]);
 
   useEffect(() => {
     const compute = () => {
@@ -456,6 +470,49 @@ export function AskAgentsDock() {
   }, []);
 
   if (!workspaceId || typeof document === 'undefined') return null;
+
+  if (embedded) {
+    return (
+      <div
+        ref={panelRef}
+        id="support-agent-sidebar"
+        data-helpin-dock="true"
+        data-helpin-dock-presentation="embedded"
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#fffefa] dark:bg-[#242320]"
+      >
+        <DockPaneHeader
+          key={`embedded:${activeChat?.id ?? 'empty'}`}
+          tab="chats"
+          run={null}
+          chat={activeChat}
+          workspaceSlug={workspace.slug}
+          askAgentState={askAgentState}
+          onClose={closeDock}
+          closeLabel="Back to details"
+          onRenameChat={renameChat}
+          onArchiveChat={archiveChat}
+        />
+        {activeChat ? (
+          <ChatView
+            key={activeChat.id}
+            workspaceId={workspaceId}
+            chatId={activeChat.id}
+            textareaRef={textareaRef}
+            draftValue={drafts[`chat:${activeChat.id}`] ?? ''}
+            onDraftChange={(value) => setDraft(`chat:${activeChat.id}`, value)}
+            onChatChanged={() => void refreshChats(true)}
+            onRunStatusChange={updateChatRunStatus}
+            streamController={chatStreamController}
+            onPresenceChange={handleChatPresenceChange}
+            onRunIdChange={handleChatRunIdChange}
+            requiredPageContext={requiredPageContext}
+          />
+        ) : (
+          <EmptyChatPane onNewChat={() => void newChat()} />
+        )}
+      </div>
+    );
+  }
 
   return createPortal(
     <div
@@ -622,6 +679,7 @@ function DockPaneHeader({
   onClose,
   onRenameChat,
   onArchiveChat,
+  closeLabel = 'Minimize',
 }: {
   tab: 'agents' | 'chats';
   run: DockRunSummary | null;
@@ -633,6 +691,7 @@ function DockPaneHeader({
   onClose: () => void;
   onRenameChat: (chatId: string, title: string) => Promise<boolean>;
   onArchiveChat: (chatId: string) => Promise<boolean>;
+  closeLabel?: string;
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState(chat?.title ?? '');
@@ -722,11 +781,11 @@ function DockPaneHeader({
       ) : null}
       <Tooltip>
         <TooltipTrigger asChild>
-          <button type="button" onClick={onClose} aria-label="Minimize" className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
+          <button type="button" onClick={onClose} aria-label={closeLabel} className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
             <Cancel01Icon className="h-3.5 w-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="top">Minimize</TooltipContent>
+        <TooltipContent side="top">{closeLabel}</TooltipContent>
       </Tooltip>
     </header>
   );
