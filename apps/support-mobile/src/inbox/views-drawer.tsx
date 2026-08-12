@@ -77,7 +77,7 @@ function DrawerRow({
       aria-pressed={active}
       onPress={onPress}
       className={cn(
-        'mx-2 flex min-h-[44px] items-center gap-3 rounded-xl px-3 text-left transition-colors',
+        'mx-2 flex min-h-[44px] w-[calc(100%-1rem)] items-center gap-3 rounded-xl px-3 text-left transition-colors',
         active ? 'bg-primary/[0.06]' : 'active:bg-muted',
       )}
     >
@@ -92,19 +92,19 @@ function DrawerRow({
       </span>
       {(hasUnread || badge) && (
         <span className="flex min-w-8 shrink-0 items-center justify-end gap-1.5">
-        {hasUnread && (
-          <span
-            aria-label={`${item.count.unread > 99 ? '99+' : item.count.unread} unread`}
-            className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
-          />
-        )}
-        {badge && (
-          <span
-            className={`shrink-0 text-caption tnum ${active ? 'text-primary/75' : 'text-muted-foreground'}`}
-          >
-            {badge}
-          </span>
-        )}
+          {hasUnread && (
+            <span
+              aria-label={`${item.count.unread > 99 ? '99+' : item.count.unread} unread`}
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
+            />
+          )}
+          {badge && (
+            <span
+              className={`shrink-0 text-footnote tnum ${active ? 'text-primary/75' : 'text-muted-foreground'}`}
+            >
+              {badge}
+            </span>
+          )}
         </span>
       )}
     </Pressable>
