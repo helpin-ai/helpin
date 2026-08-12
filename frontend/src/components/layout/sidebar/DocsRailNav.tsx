@@ -48,6 +48,7 @@ import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog
 import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog'
 import { useSearchCommandStore } from '@/stores/searchCommandStore'
 import type { SidebarNavigateTarget } from './navigation'
+import { SidebarCreateBar } from './SidebarCreateBar'
 import {
   buildDocsSidebarTree,
   findCollectionAncestry,
@@ -611,37 +612,31 @@ export function DocsRailNav({
       </div>
 
       {canEditDocs && (
-        <div className="flex px-2 pb-3">
-          <Button
-            size="sm"
-            className="h-8 flex-1 rounded-r-none text-xs"
-            onClick={() => openCreate('docs_document', { spaceId: activeSpaceId, collectionId: defaultCollectionId })}
-          >
-            <PlusSignIcon className="h-3.5 w-3.5" />
-            New document
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" className="h-8 rounded-l-none border-l border-primary-foreground/20 px-2" aria-label="More create options">
-                <ArrowDown01Icon className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => openCreate('docs_document', { spaceId: activeSpaceId })}>
-                <File01Icon className="h-4 w-4" />
-                New document in…
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => openCreate('docs_collection', { spaceId: activeSpaceId })}>
-                <FolderOpenIcon className="h-4 w-4" />
-                New collection
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => openCreate('docs_space')}>
-                <PlusSignIcon className="h-4 w-4" />
-                New space
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <SidebarCreateBar
+          className="px-2"
+          primaryLabel="New document"
+          onPrimaryClick={() => openCreate('docs_document', { spaceId: activeSpaceId, collectionId: defaultCollectionId })}
+          options={[
+            {
+              key: 'document',
+              label: 'New document in…',
+              icon: File01Icon,
+              onSelect: () => openCreate('docs_document', { spaceId: activeSpaceId }),
+            },
+            {
+              key: 'collection',
+              label: 'New collection',
+              icon: FolderOpenIcon,
+              onSelect: () => openCreate('docs_collection', { spaceId: activeSpaceId }),
+            },
+            {
+              key: 'space',
+              label: 'New space',
+              icon: PlusSignIcon,
+              onSelect: () => openCreate('docs_space'),
+            },
+          ]}
+        />
       )}
 
       <nav data-slot="docs-quick-links" aria-label="Docs views" className="space-y-0.5 px-2 pb-2">
