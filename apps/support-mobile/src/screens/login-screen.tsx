@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { writeSession } from '@helpin-ai/support-core'
 import { TextField } from '@mobile/ui/text-field'
 import { Spinner } from '@mobile/ui/spinner'
+import { HelpinLogo } from '@mobile/ui/helpin-logo'
 import { authService } from '@mobile/lib/services/auth-service'
 import { bootstrapAuth } from '@mobile/stores/auth-store'
 
@@ -69,7 +70,7 @@ export function LoginScreen() {
     >
       <div className="flex flex-1 flex-col items-center justify-center gap-10">
         <div className="text-center">
-          <h1 className="text-large-title">Helpin</h1>
+          <HelpinLogo />
           <p className="mt-1 text-footnote text-muted-foreground">Support</p>
         </div>
 

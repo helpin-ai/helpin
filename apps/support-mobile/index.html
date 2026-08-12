@@ -6,9 +6,31 @@
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
     <title>Helpin Support</title>
+    <style>
+      html, body, #root { min-height: 100%; margin: 0; }
+      .launch-screen {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #ffffff;
+      }
+      .launch-screen img { width: 88px; height: 88px; }
+      .launch-screen .launch-logo-dark { display: none; }
+      @media (prefers-color-scheme: dark) {
+        .launch-screen { background: #0a0a0a; }
+        .launch-screen .launch-logo-light { display: none; }
+        .launch-screen .launch-logo-dark { display: block; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="launch-screen" aria-label="Helpin">
+        <img class="launch-logo-light" src="/src/ui/helpin-icon-black.svg" alt="" />
+        <img class="launch-logo-dark" src="/src/ui/helpin-icon-white.svg" alt="" />
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
