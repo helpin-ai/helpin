@@ -628,3 +628,60 @@ func TestBrowserToolCatalogContracts(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
+	catalog := ListToolCatalog()
+	want := map[string]bool{"read_file": false, "read_files": false, "read_file_range": false}
+	for _, tool := range catalog.Tools {
+		if _, ok := want[tool.Name]; !ok {
+			continue
+		}
+		want[tool.Name] = true
+		if tool.Category != "Filesystem" {
+			t.Fatalf("%s category = %q", tool.Name, tool.Category)
+		}
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok || schema["type"] != "object" || schema["additionalProperties"] != false {
+			t.Fatalf("%s schema is not a strict object: %#v", tool.Name, tool.InputSchema)
+		}
+		properties, _ := schema["properties"].(map[string]any)
+		for _, field := range []string{"path", "repo_alias", "repository"} {
+			if tool.Name != "read_files" && properties[field] == nil {
+				t.Fatalf("%s schema missing %s: %#v", tool.Name, field, schema)
+			}
+		}
+		switch tool.Name {
+		case "read_file":
+			if !strings.Contains(tool.Description, "numbered text lines") || !strings.Contains(tool.Description, "exact offset_line") {
+				t.Fatalf("read_file description lacks bounded recovery contract: %s", tool.Description)
+			}
+			limit := properties["limit_lines"].(map[string]any)
+			if limit["minimum"] != float64(1) || limit["maximum"] != float64(240) || properties["offset"] == nil || properties["limit"] == nil {
+				t.Fatalf("read_file compatibility bounds drifted: %#v", properties)
+			}
+		case "read_file_range":
+			if !strings.Contains(tool.Description, "numbered line range") || !strings.Contains(tool.Description, "exact continuation") {
+				t.Fatalf("read_file_range description lacks bounded recovery contract: %s", tool.Description)
+			}
+		case "read_files":
+			files := properties["files"].(map[string]any)
+			if files["minItems"] != float64(1) || files["maxItems"] != float64(4) {
+				t.Fatalf("read_files array bounds drifted: %#v", files)
+			}
+			items := files["items"].(map[string]any)
+			if items["additionalProperties"] != false {
+				t.Fatalf("read_files item schema is not strict: %#v", items)
+			}
+			itemProperties := items["properties"].(map[string]any)
+			limit := itemProperties["limit_lines"].(map[string]any)
+			if limit["minimum"] != float64(1) || limit["maximum"] != float64(120) || itemProperties["repo_alias"] == nil || itemProperties["repository"] == nil {
+				t.Fatalf("read_files item contract drifted: %#v", itemProperties)
+			}
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Fatalf("%s missing from tool catalog", name)
+		}
+	}
+}
