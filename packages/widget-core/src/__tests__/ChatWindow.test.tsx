@@ -81,6 +81,57 @@ describe('ChatWindow', () => {
     expect(windowEl.style.right).toBe('');
   });
 
+  it('uses the current light and dark themes when the color scheme follows the system', () => {
+    let prefersDark = false;
+    let notifyThemeChange: (() => void) | undefined;
+    const removeEventListener = vi.fn();
+
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      get matches() {
+        return prefersDark;
+      },
+      media: '(prefers-color-scheme: dark)',
+      onchange: null,
+      addEventListener: vi.fn((_event: string, listener: () => void) => {
+        notifyThemeChange = listener;
+      }),
+      removeEventListener,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+
+    const { container, unmount } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          branding: {
+            ...baseConfig.branding,
+            colorScheme: 'system',
+          },
+        }}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    const windowEl = container.querySelector('.helpin-chat-window') as HTMLElement;
+    expect(windowEl.className).toContain('helpin-theme-light');
+    expect(windowEl.className).not.toContain('helpin-theme-system');
+
+    prefersDark = true;
+    act(() => notifyThemeChange?.());
+    expect(windowEl.className).toContain('helpin-theme-dark');
+
+    unmount();
+    expect(removeEventListener).toHaveBeenCalledWith('change', expect.any(Function));
+  });
+
   it('uses the configured brand color and a contrasting icon color for the active rail item', () => {
     const { container } = render(
       <ChatWindow
@@ -416,7 +467,7 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
   });
 
   it('shows talk to human when enabled after an AI reply and the conversation is idle', () => {
@@ -452,10 +503,10 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('Talk to a human')).toBeTruthy();
+    expect(getByText('Talk to a person')).toBeTruthy();
   });
 
-  it('reveals human handoff status only after the visitor asks for a human', () => {
+  it('reveals human handoff status only after the visitor asks for a person', () => {
     const { getByText, queryByText } = render(
       <ChatWindow
         config={{
@@ -493,10 +544,69 @@ describe('ChatWindow', () => {
 
     expect(queryByText('We typically reply in a few minutes')).toBeNull();
 
-    fireEvent.click(getByText('Talk to a human'));
+    fireEvent.click(getByText('Talk to a person'));
 
+    expect(getByText('Finding the right teammate…')).toBeTruthy();
     expect(getByText('We typically reply in a few minutes')).toBeTruthy();
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
+  });
+
+  it('asks for contact details only after handoff is requested and escalates after the choice', () => {
+    const onPreChatSubmit = vi.fn();
+    const onEscalateToHuman = vi.fn();
+    const { getByText, queryByPlaceholderText, getByPlaceholderText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            aiEnabled: true,
+            aiFirst: true,
+            showTalkToHuman: true,
+            preChatForm: true,
+            requirePhone: false,
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'ai' as const,
+            content: 'I can help with that.',
+            senderName: 'Helpin AI',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={true}
+        onPreChatSubmit={onPreChatSubmit}
+        onEscalateToHuman={onEscalateToHuman}
+        initialView="conversation"
+      />,
+    );
+
+    expect(queryByPlaceholderText('you@example.com')).toBeNull();
+    expect(onEscalateToHuman).not.toHaveBeenCalled();
+
+    fireEvent.click(getByText('Talk to a person'));
+
+    const emailInput = getByPlaceholderText('you@example.com');
+    expect(emailInput).toBeTruthy();
+    expect(onEscalateToHuman).not.toHaveBeenCalled();
+
+    fireEvent.input(emailInput, { target: { value: 'visitor@example.com' } });
+    fireEvent.submit(emailInput.closest('form') as HTMLFormElement);
+
+    expect(onPreChatSubmit).toHaveBeenCalledWith({
+      phone: '',
+      email: 'visitor@example.com',
+    });
+    expect(onEscalateToHuman).toHaveBeenCalledTimes(1);
   });
 
   it('shows waiting for teammate after an escalated system handoff message', () => {
@@ -533,12 +643,14 @@ describe('ChatWindow', () => {
         onQuickReply={() => {}}
         showPreChatForm={false}
         onPreChatSubmit={() => {}}
+        transcriptEmail="visitor@example.com"
         initialView="conversation"
       />,
     );
 
     expect(getByText('Let me connect you with a team member who can help further.')).toBeTruthy();
-    expect(getByText('A team member will reply soon')).toBeTruthy();
+    expect(getByText('You’re in the support queue')).toBeTruthy();
+    expect(getByText('Replies will also go to visitor@example.com')).toBeTruthy();
     expect(container.querySelectorAll('.helpin-waiting-teammate-avatar').length).toBe(2);
   });
 
@@ -582,8 +694,8 @@ describe('ChatWindow', () => {
     );
 
     expect(getByText('A teammate will join shortly.')).toBeTruthy();
-    expect(getByText('A team member will reply soon')).toBeTruthy();
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(getByText('You’re in the support queue')).toBeTruthy();
+    expect(queryByText('Talk to a person')).toBeNull();
   });
 
   it('groups consecutive Helpin AI handoff and reply messages under one sender label', () => {
@@ -677,7 +789,7 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
     expect(getByRole('status').textContent).toContain('Looking into this…');
     expect(container.querySelector('.helpin-ai-thinking-icon svg')).toBeTruthy();
     expect(container.querySelector('.helpin-ai-thinking-mark')).toBeTruthy();
@@ -710,7 +822,7 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
   });
 
   it('shows a reconnecting banner while the widget is temporarily disconnected', () => {
@@ -729,11 +841,11 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('Connection lost. Reconnecting...')).toBeTruthy();
+    expect(getByText('Connection lost. Reconnecting…')).toBeTruthy();
     expect(queryByText('Reconnect')).toBeNull();
   });
 
-  it('shows a reconnect prompt and disables the composer after prolonged disconnection', () => {
+  it('shows a reconnect prompt while keeping the composer available for queued messages', () => {
     const handleRetry = vi.fn();
     const { getByText, container } = render(
       <ChatWindow
@@ -757,8 +869,8 @@ describe('ChatWindow', () => {
     expect(handleRetry).toHaveBeenCalledTimes(1);
 
     const textarea = container.querySelector('.helpin-compose-input') as HTMLTextAreaElement;
-    expect(textarea.disabled).toBe(true);
-    expect(textarea.placeholder).toBe('Offline. Reconnecting in the background...');
+    expect(textarea.disabled).toBe(false);
+    expect(textarea.placeholder).toBe('Write a message — we’ll send it when reconnected');
   });
 
   it('hides talk to human after a human teammate has already replied', () => {
@@ -794,6 +906,6 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
   });
 });

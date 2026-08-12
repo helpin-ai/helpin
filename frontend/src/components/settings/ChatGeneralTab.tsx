@@ -1069,7 +1069,7 @@ function Dashboard() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Identity Capture</p>
-              <p className="text-sm text-muted-foreground">Control what information is collected before starting a chat</p>
+              <p className="text-sm text-muted-foreground">Control what contact information is collected for human support</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('identity-capture') && 'rotate-180')} />
           </button>
@@ -1078,24 +1078,24 @@ function Dashboard() {
             <div className="border-t border-border px-6 py-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm">Require email before chat</Label>
-                  <p className="text-xs text-muted-foreground">Visitors must enter their email to start a conversation.</p>
+                  <Label className="text-sm">Ask for email before human handoff</Label>
+                  <p className="text-xs text-muted-foreground">When visitors request a person, ask where to send replies.</p>
                 </div>
                 <Switch checked={requireEmail} onCheckedChange={setRequireEmail} />
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm">Require phone number after email</Label>
-                  <p className="text-xs text-muted-foreground">Also ask for the visitor's phone number.</p>
+                  <Label className="text-sm">Ask for phone number after email</Label>
+                  <p className="text-xs text-muted-foreground">Also collect a phone number when your support process needs it.</p>
                 </div>
                 <Switch checked={requirePhone} onCheckedChange={setRequirePhone} disabled={!requireEmail} />
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm">Force visitors to identify themselves</Label>
-                  <p className="text-xs text-muted-foreground">Visitors must provide their email (or phone) before chatting. When disabled, they can skip the identity step.</p>
+                  <Label className="text-sm">Require contact details for handoff</Label>
+                  <p className="text-xs text-muted-foreground">Visitors must provide an email before requesting human support. When disabled, they can continue without email.</p>
                 </div>
                 <Switch checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} disabled={!requireEmail} />
               </div>

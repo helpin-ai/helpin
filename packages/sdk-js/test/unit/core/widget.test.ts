@@ -61,6 +61,7 @@ describe('WidgetManager', () => {
     setDocumentVisibility('visible');
     MockWebSocket.reset();
     localStorage.clear();
+    sessionStorage.clear();
     hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
 
     (localStorage.getItem as any).mockReset();
@@ -813,6 +814,134 @@ describe('WidgetManager', () => {
     });
   });
 
+  describe('offline message recovery', () => {
+    it('persists messages while offline, flushes them on reconnect, and clears them on acknowledgment', () => {
+      const sent: string[] = [];
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).wsConnection = {
+        readyState: MockWebSocket.CLOSED,
+        send: (payload: string) => sent.push(payload),
+        close: vi.fn(),
+      };
+
+      (widget as any).render();
+      const offlineOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      offlineOptions.onSendMessage('Please send this later');
+
+      expect((widget as any).pendingOutgoingMessages).toHaveLength(1);
+      expect(JSON.parse(sessionStorage.getItem('helpin_pending_messages_test-key') || '[]')).toHaveLength(1);
+      expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(1);
+      expect(sent).toHaveLength(0);
+
+      (widget as any).wsConnection.readyState = MockWebSocket.OPEN;
+      (widget as any).connectionGeneration = 1;
+      (widget as any).flushPendingOutgoingMessages();
+
+      expect(sent.map((frame) => JSON.parse(frame))).toEqual([
+        { type: 'conversation:select', data: { conversation_id: 'conv-1' } },
+        { type: 'message:send', data: { content: 'Please send this later' } },
+      ]);
+
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-server-1',
+          conversation_id: 'conv-1',
+          sender_type: 'customer',
+          message_type: 'reply',
+          content: 'Please send this later',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      expect((widget as any).pendingOutgoingMessages).toHaveLength(0);
+      expect(sessionStorage.getItem('helpin_pending_messages_test-key')).toBeNull();
+      expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(0);
+    });
+
+    it('restores a saved message into its conversation after a page reload', () => {
+      const queuedAt = Date.now();
+      sessionStorage.setItem('helpin_pending_messages_test-key', JSON.stringify([{
+        id: 'temp-restored',
+        content: 'Restored draft',
+        conversationId: 'conv-1',
+        queuedAt,
+        lastSentConnection: 4,
+      }]));
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).pendingOutgoingMessages = (widget as any).restorePendingOutgoingMessages();
+
+      (widget as any).restorePendingMessagesIntoThread();
+
+      expect((widget as any).messages).toContainEqual(expect.objectContaining({
+        id: 'temp-restored',
+        content: 'Restored draft',
+        conversationId: 'conv-1',
+      }));
+      expect((widget as any).pendingOutgoingMessages[0].lastSentConnection).toBe(-1);
+    });
+  });
+
+  describe('AI answer feedback', () => {
+    it('tracks useful feedback with message and conversation context', () => {
+      const track = vi.fn();
+      (globalThis as any).helpin = { track };
+      (widget as any).activeConversationId = 'conv-1';
+
+      (widget as any).handleAnswerFeedback('answer-1', false);
+
+      expect(track).toHaveBeenCalledWith('support_ai_answer_feedback', {
+        message_id: 'answer-1',
+        conversation_id: 'conv-1',
+        helpful: false,
+      });
+      delete (globalThis as any).helpin;
+    });
+  });
+
+  describe('conversation CSAT', () => {
+    it('tracks and persists a valid conversation rating', () => {
+      const track = vi.fn();
+      (globalThis as any).helpin = { track };
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).messages = [{ role: 'agent' }];
+
+      (widget as any).handleCsatSubmit(4, ' Helpful and quick ');
+
+      expect(localStorage.setItem).toHaveBeenCalledWith('helpin_csat_test-key_conv-1', '1');
+      expect(track).toHaveBeenCalledWith('support_conversation_csat', {
+        conversation_id: 'conv-1',
+        rating: 4,
+        feedback: 'Helpful and quick',
+        handled_by: 'human',
+      });
+      delete (globalThis as any).helpin;
+    });
+
+    it('exposes persisted CSAT state to the mounted widget', () => {
+      (localStorage.getItem as any).mockImplementation((key: string) => key === 'helpin_csat_test-key_conv-1' ? '1' : null);
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test', branding: { primaryColor: '#6366f1' }, features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+
+      (widget as any).render();
+
+      expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].csatSubmitted).toBe(true);
+    });
+  });
+
   describe('typing fallback', () => {
     it('should send typing indicators over HTTP when websocket is unavailable', async () => {
       vi.useFakeTimers();
@@ -1336,6 +1465,12 @@ describe('WidgetManager', () => {
         },
       });
       expect((widget as any).currentEmail).toBe('lead@example.com');
+      expect((widget as any).preChatDone).toBe(true);
+      expect((widget as any).messages).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: expect.stringContaining('prechat-confirm-') }),
+        ]),
+      );
     });
 
     it('upgrades an anonymous restored session when boot user email is provided', async () => {
