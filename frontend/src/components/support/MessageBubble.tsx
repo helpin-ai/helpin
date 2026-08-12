@@ -153,10 +153,10 @@ function renderSupportAuditSystemEventContent(
     if (taskMatch) {
       const [, prefix, taskKey, taskName, suffix] = taskMatch;
       return (
-        <span className="flex min-w-0 max-w-full items-center whitespace-nowrap">
-          <span className="shrink-0">{prefix}</span>
+        <span data-task-created-event className="flex min-w-0 max-w-[70%] items-center whitespace-nowrap">
+          <span data-task-created-prefix className="mr-1 shrink-0">{prefix.trimEnd()}</span>
           {taskHref ? (
-            <a href={taskHref} title={`${taskKey}${taskName ? `: ${taskName}` : ''}`} className="flex min-w-0 items-center font-semibold text-foreground underline decoration-border underline-offset-2 transition-colors hover:text-primary">
+            <a data-task-created-link href={taskHref} title={`${taskKey}${taskName ? `: ${taskName}` : ''}`} className="-mx-1 flex min-w-0 items-center rounded-md px-1 font-semibold text-foreground underline decoration-border underline-offset-2 transition-[color,background-color,text-decoration-color] duration-150 hover:bg-muted hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
               <strong className="shrink-0 font-semibold text-foreground">{taskKey}</strong>
               {taskName ? <><span className="shrink-0">:&nbsp;</span><strong data-task-created-title className="truncate font-semibold text-foreground">{taskName}</strong></> : null}
             </a>

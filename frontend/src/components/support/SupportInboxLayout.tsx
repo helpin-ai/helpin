@@ -408,7 +408,7 @@ export function SupportInboxLayout() {
 
         {/* Panel 3: Detail sidebar - hidden on mobile & tablet */}
         <div
-          className={`relative hidden shrink-0 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+          className={`relative hidden shrink-0 overflow-hidden border-l border-border/70 transition-[width,flex-basis] duration-200 ease-out motion-reduce:transition-none ${
             selectedConversationId ? 'xl:flex' : ''
           } ${supportSidebarWidthClass(detailSidebarMode, detailSidebarCollapsed)}`}
         >

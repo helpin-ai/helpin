@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SupportConversation, SupportMessage } from '@/lib/pmTypes'
 import {
   copyCustomerEmailToClipboard,
+  conversationDetailSidebarRootClassName,
   customerEmailCopyButtonClassName,
   customerEmailDisplayRowClassName,
   customerNameDisplayRowClassName,
@@ -13,6 +14,14 @@ import {
   getLastActiveTooltipLabel,
   shouldShowLastActiveIndicator,
 } from '../ConversationDetailSidebar'
+
+describe('details sidebar scrolling', () => {
+  it('constrains the sidebar to its panel height so the inner content can scroll', () => {
+    expect(conversationDetailSidebarRootClassName).toContain('h-full')
+    expect(conversationDetailSidebarRootClassName).toContain('min-h-0')
+    expect(conversationDetailSidebarRootClassName).not.toContain('border-l')
+  })
+})
 
 const baseMessage: SupportMessage = {
   id: 'msg-1',
