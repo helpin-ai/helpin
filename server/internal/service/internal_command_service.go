@@ -75,6 +75,7 @@ type InternalCommandService struct {
 	crmSearch             *CRMSearchService
 
 	supportMessageRepo        *repository.SupportMessageRepository
+	supportAttachmentRepo     *repository.SupportAttachmentRepository
 	supportConversationRepo   *repository.SupportConversationRepository
 	supportEventPublisher     websocket.EventPublisher
 	supportInboxService       *SupportInboxService
@@ -99,6 +100,13 @@ type InternalCommandService struct {
 	authz                     *authorization.AuthzService
 
 	definitions map[string]InternalCommandDefinition
+}
+
+func (s *InternalCommandService) SetSupportAttachmentRepository(repo *repository.SupportAttachmentRepository) {
+	if s == nil {
+		return
+	}
+	s.supportAttachmentRepo = repo
 }
 
 func (s *InternalCommandService) withAgentCommentAttribution(ctx context.Context, meta model.InternalCommandContext, req model.CreateCommentRequest) model.CreateCommentRequest {

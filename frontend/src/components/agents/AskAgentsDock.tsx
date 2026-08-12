@@ -832,7 +832,7 @@ function DockPaneHeader({
             <Cancel01Icon className="h-3.5 w-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="top">{closeLabel}</TooltipContent>
+        <TooltipContent side="top" className="z-[70]">{closeLabel}</TooltipContent>
       </Tooltip>
     </header>
   );

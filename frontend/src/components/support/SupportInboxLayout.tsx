@@ -13,6 +13,7 @@ import { ConversationDetailSidebar } from './ConversationDetailSidebar';
 import { SupportAgentSidebar } from './SupportAgentSidebar';
 import { buildSupportConversationPageContext } from './supportAgentContext';
 import { supportSidebarWidthClass } from './supportSidebarLayout';
+import { shouldClearConversationForMailbox } from './supportInboxSelection';
 import { NewConversationDialog } from './NewConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
@@ -318,6 +319,22 @@ export function SupportInboxLayout() {
       };
     }
   }, [routeConversationId, selectedConversationId, slug, supportRouteSearch, navigate]);
+
+  // A team inbox can become empty after its final conversation is moved or
+  // resolved. Do not leave a thread from a different mailbox selected beside
+  // that empty list.
+  useEffect(() => {
+    if (!selectedConversationId || !selectedConversation) return;
+    if (!shouldClearConversationForMailbox(selectedMailboxId, selectedConversation.mailbox_id)) return;
+
+    selectConversation(null);
+    void navigate({
+      to: '/w/$slug/support',
+      params: { slug },
+      search: supportRouteSearch,
+      replace: true,
+    });
+  }, [navigate, selectConversation, selectedConversation, selectedConversationId, selectedMailboxId, slug, supportRouteSearch]);
 
   if (!workspace) {
     return <p className="p-4 text-sm text-muted-foreground">Workspace not found.</p>;
