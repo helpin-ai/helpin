@@ -1377,7 +1377,7 @@ export function DocsDocumentDetail({
             already tells users they're in the Docs module; repeating
             it here wastes the first breadcrumb slot on something
             they already know. */}
-        <nav className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
+        <nav className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {space && (
             <button
               type="button"
