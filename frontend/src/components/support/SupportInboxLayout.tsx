@@ -12,6 +12,7 @@ import { MessageThread } from './MessageThread';
 import { ConversationDetailSidebar } from './ConversationDetailSidebar';
 import { SupportAgentSidebar } from './SupportAgentSidebar';
 import { buildSupportConversationPageContext } from './supportAgentContext';
+import { supportSidebarWidthClass } from './supportSidebarLayout';
 import { NewConversationDialog } from './NewConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
@@ -93,6 +94,7 @@ export function SupportInboxLayout() {
     setTeamInboxDialogOpen,
     editMailboxId,
     detailSidebarMode,
+    detailSidebarCollapsed,
     setDetailSidebarMode,
   } = useSupportInboxStore();
   const { data: mailboxes = [] } = useSupportMailboxes(workspaceId);
@@ -391,7 +393,7 @@ export function SupportInboxLayout() {
         <div
           className={`relative hidden shrink-0 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
             selectedConversationId ? 'xl:flex' : ''
-          } ${detailSidebarMode === 'agents' ? 'w-[420px]' : 'w-[300px]'}`}
+          } ${supportSidebarWidthClass(detailSidebarMode, detailSidebarCollapsed)}`}
         >
           <div
             aria-hidden={detailSidebarMode === 'agents' || undefined}
