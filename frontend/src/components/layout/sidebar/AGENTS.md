@@ -33,8 +33,8 @@ This folder contains the composable pieces that make up the app sidebar shell in
   - Support rail filters, AI section, and Team Inboxes.
 - `ProjectsTeamsNav.tsx`
   - Team-scoped project navigation.
-- `DocsSpacesNav.tsx`
-  - Docs spaces and collections navigation.
+- `DocsRailNav.tsx`
+  - Active-space picker, scoped creation, quick links, and the Docs collection/document tree.
 
 ## Source Of Truth Rules
 
