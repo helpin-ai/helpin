@@ -70,6 +70,15 @@ type AIResponseStreamState = {
   revealTimer: ReturnType<typeof setTimeout> | null;
 };
 
+type PendingOutgoingMessage = {
+  id: string;
+  content: string;
+  attachmentIds?: string[];
+  conversationId?: string;
+  queuedAt: number;
+  lastSentConnection: number;
+};
+
 const MAX_WS_RETRIES = 10;
 const MAX_WS_INITIAL_RETRIES = 3; // retries before first successful connection (invalid key, server down)
 const WS_BASE_DELAY_MS = 1000;
@@ -128,6 +137,8 @@ export class WidgetManager {
   private widgetKey: string | null = null;
   private anonymousId: string | null = null;
   private connectionStatus: ConnectionStatus = 'idle';
+  private connectionGeneration = 0;
+  private pendingOutgoingMessages: PendingOutgoingMessage[] = [];
 
   // Preact mount state
   private mountContainer: HTMLElement | null = null;
@@ -199,6 +210,7 @@ export class WidgetManager {
       widgetKey,
     };
     this.widgetKey = widgetKey;
+    this.pendingOutgoingMessages = this.restorePendingOutgoingMessages();
 
     // Restore pre-chat done state from localStorage.
     if (this.widgetKey) {
@@ -261,6 +273,7 @@ export class WidgetManager {
       clearAnonymousId(this.widgetKey);
       clearConfigCache(this.widgetKey);
       try { localStorage.removeItem(`helpin_prechat_${this.widgetKey}`); } catch { /* ignore */ }
+      try { sessionStorage.removeItem(`helpin_pending_messages_${this.widgetKey}`); } catch { /* ignore */ }
     }
     this.preChatDone = false;
 
@@ -301,6 +314,8 @@ export class WidgetManager {
     this.isTyping = false;
     this.isAIThinking = false;
     this.connectionStatus = 'idle';
+    this.connectionGeneration = 0;
+    this.pendingOutgoingMessages = [];
     this.activeTeammate = undefined;
     this.currentEmail = null;
     this.isConversationExpanded = false;
@@ -584,6 +599,7 @@ export class WidgetManager {
       onUploadAttachment: (file: File, localId: string) => this.handleUploadAttachment(file, localId),
       onTyping: (content: string) => this.handleTyping(content),
       showPreChatForm: showPreChat,
+      contactCaptureCompleted: this.preChatDone,
       onPreChatSubmit: (data: { phone: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
       isAIThinking: this.isAIThinking,
@@ -612,6 +628,10 @@ export class WidgetManager {
       host: this.host,
       openArticleRequest: this.openArticleRequest || undefined,
       onImageClick: (src: string, alt: string) => this.showImageLightbox(src, alt),
+      onAnswerFeedback: (messageId: string, helpful: boolean) => this.handleAnswerFeedback(messageId, helpful),
+      queuedMessageCount: this.pendingOutgoingMessages.length,
+      csatSubmitted: this.activeConversationId ? this.hasSubmittedCsat(this.activeConversationId) : false,
+      onCsatSubmit: (rating: number, feedback?: string) => this.handleCsatSubmit(rating, feedback),
       onViewChange: (view: WidgetView) => {
         this.currentView = view;
         // Refresh conversations list from server when navigating to Messages tab
@@ -1017,6 +1037,7 @@ export class WidgetManager {
 
     // Replace optimistic customer messages and transient AI stream placeholders.
     if (msg.sender_type === 'customer') {
+      this.reconcilePendingOutgoingMessage(msg.content || '');
       const tempIdx = this.messages.findIndex(
         (message) => message.id.startsWith('temp-') && message.content === msg.content,
       );
@@ -1189,15 +1210,10 @@ export class WidgetManager {
       this.resetActiveConversation();
     }
 
-    // If no active conversation, tell server to start a new one.
-    // Server responds with conversation:created (real ID) before message:send is processed.
-    if (!this.activeConversationId && this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('conversation:new', {});
-    }
-
     // Optimistic update
+    const pendingId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticMsg: Message = {
-      id: `temp-${Date.now()}`,
+      id: pendingId,
       conversationId: this.activeConversationId || '',
       role: 'customer',
       content,
@@ -1222,7 +1238,7 @@ export class WidgetManager {
         activeConversation?.aiState !== 'escalated' &&
         !humanHandledFlowStates.has(activeConversation?.flowState || ''),
     );
-    if (expectsAIReply) {
+    if (expectsAIReply && this.wsConnection?.readyState === WebSocket.OPEN) {
       this.isAIThinking = true;
       this.aiProgressLabel = AI_PROGRESS_COPY.looking;
     }
@@ -1232,17 +1248,107 @@ export class WidgetManager {
     // Stop typing indicator before sending
     this.stopTyping();
 
-    // Send via WS
-    const payload: Record<string, unknown> = { content };
-    if (options.attachmentIds && options.attachmentIds.length > 0) {
-      payload.attachment_ids = options.attachmentIds;
-    }
+    this.pendingOutgoingMessages.push({
+      id: pendingId,
+      content,
+      attachmentIds: options.attachmentIds,
+      conversationId: this.activeConversationId || undefined,
+      queuedAt: Date.now(),
+      lastSentConnection: -1,
+    });
+    this.persistPendingOutgoingMessages();
+    this.flushPendingOutgoingMessages();
+    this.render();
+  }
 
-    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+  private pendingMessagesStorageKey(): string | null {
+    return this.widgetKey ? `helpin_pending_messages_${this.widgetKey}` : null;
+  }
+
+  private restorePendingOutgoingMessages(): PendingOutgoingMessage[] {
+    const key = this.pendingMessagesStorageKey();
+    if (!key) return [];
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(key) || '[]');
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((item): item is PendingOutgoingMessage =>
+        Boolean(item && typeof item.id === 'string' && typeof item.content === 'string' && typeof item.queuedAt === 'number'),
+      ).map((item) => ({ ...item, lastSentConnection: -1 }));
+    } catch {
+      return [];
+    }
+  }
+
+  private persistPendingOutgoingMessages(): void {
+    const key = this.pendingMessagesStorageKey();
+    if (!key) return;
+    try {
+      if (this.pendingOutgoingMessages.length === 0) {
+        sessionStorage.removeItem(key);
+      } else {
+        sessionStorage.setItem(key, JSON.stringify(this.pendingOutgoingMessages));
+      }
+    } catch { /* storage may be unavailable */ }
+  }
+
+  private flushPendingOutgoingMessages(): void {
+    if (this.wsConnection?.readyState !== WebSocket.OPEN) return;
+
+    let selectedConversationId: string | undefined;
+    let newConversationStarted = false;
+    for (const pending of this.pendingOutgoingMessages) {
+      if (pending.lastSentConnection === this.connectionGeneration) continue;
+
+      if (pending.conversationId && pending.conversationId !== selectedConversationId) {
+        this.wsSend('conversation:select', { conversation_id: pending.conversationId });
+        selectedConversationId = pending.conversationId;
+      } else if (!pending.conversationId && !newConversationStarted) {
+        this.wsSend('conversation:new', {});
+        newConversationStarted = true;
+        selectedConversationId = undefined;
+      }
+
+      const payload: Record<string, unknown> = { content: pending.content };
+      if (pending.attachmentIds && pending.attachmentIds.length > 0) {
+        payload.attachment_ids = pending.attachmentIds;
+      }
       this.wsSend('message:send', payload);
-    } else {
-      // Fallback to HTTP if WS not available
-      this.sendMessageHTTP(content);
+      pending.lastSentConnection = this.connectionGeneration;
+    }
+    this.persistPendingOutgoingMessages();
+  }
+
+  private reconcilePendingOutgoingMessage(content: string): void {
+    const pendingIndex = this.pendingOutgoingMessages.findIndex((message) => message.content === content);
+    if (pendingIndex < 0) return;
+    this.pendingOutgoingMessages.splice(pendingIndex, 1);
+    this.persistPendingOutgoingMessages();
+  }
+
+  private reconcilePendingMessagesWithHistory(rawMessages: any[]): void {
+    for (const raw of rawMessages) {
+      if (raw?.sender_type !== 'customer') continue;
+      const createdAt = new Date(raw.created_at || 0).getTime();
+      const pendingIndex = this.pendingOutgoingMessages.findIndex((pending) =>
+        pending.content === (raw.content || '') && (!createdAt || createdAt >= pending.queuedAt - 5 * 60_000),
+      );
+      if (pendingIndex >= 0) this.pendingOutgoingMessages.splice(pendingIndex, 1);
+    }
+    this.persistPendingOutgoingMessages();
+  }
+
+  private restorePendingMessagesIntoThread(): void {
+    for (const pending of this.pendingOutgoingMessages) {
+      if (pending.conversationId !== this.activeConversationId) continue;
+      if (this.messages.some((message) => message.id === pending.id)) continue;
+      this.messages.push({
+        id: pending.id,
+        conversationId: pending.conversationId || '',
+        role: 'customer',
+        content: pending.content,
+        isInternal: false,
+        createdAt: new Date(pending.queuedAt).toISOString(),
+      });
     }
   }
 
@@ -1380,16 +1486,48 @@ export class WidgetManager {
     }
   }
 
-  private async sendMessageHTTP(content: string): Promise<void> {
-    if (!this.sessionToken) return;
-    try {
-      await fetch(`https://${this.host}/widget/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_token: this.sessionToken, content }),
+  private handleAnswerFeedback(messageId: string, helpful: boolean): void {
+    const track = (globalThis as any).helpin?.track;
+    if (typeof track === 'function') {
+      track('support_ai_answer_feedback', {
+        message_id: messageId,
+        conversation_id: this.activeConversationId || undefined,
+        helpful,
       });
-    } catch (error) {
-      console.error('Failed to send message:', error);
+    }
+  }
+
+  private csatStorageKey(conversationId: string): string | null {
+    return this.widgetKey ? `helpin_csat_${this.widgetKey}_${conversationId}` : null;
+  }
+
+  private hasSubmittedCsat(conversationId: string): boolean {
+    const key = this.csatStorageKey(conversationId);
+    if (!key) return false;
+    try {
+      return localStorage.getItem(key) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  private handleCsatSubmit(rating: number, feedback?: string): void {
+    const conversationId = this.activeConversationId;
+    if (!conversationId || rating < 1 || rating > 5) return;
+
+    const key = this.csatStorageKey(conversationId);
+    if (key) {
+      try { localStorage.setItem(key, '1'); } catch { /* storage may be unavailable */ }
+    }
+
+    const track = (globalThis as any).helpin?.track;
+    if (typeof track === 'function') {
+      track('support_conversation_csat', {
+        conversation_id: conversationId,
+        rating,
+        feedback: feedback?.trim() || undefined,
+        handled_by: this.messages.some((message) => message.role === 'agent') ? 'human' : 'ai',
+      });
     }
   }
 
@@ -1412,19 +1550,6 @@ export class WidgetManager {
     // Upgrade session via WS with source=prechat (even if email is empty — server handles skip)
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', { email: data.email || '', phone: data.phone || '', source: 'widget_prechat' });
-    }
-
-    // Inject a confirmation message so the user knows email was recorded + AI is ready
-    if (data.email) {
-      const confirmationMsg: Message = {
-        id: `prechat-confirm-${Date.now()}`,
-        conversationId: this.activeConversationId || '',
-        role: 'ai',
-        content: `Thanks! Our AI assistant is here to help you. If needed, a team member can also follow up with you at **${data.email}**.`,
-        isInternal: false,
-        createdAt: new Date().toISOString(),
-      };
-      this.messages = [...this.messages, confirmationMsg];
     }
 
     // Fire lead tracking event to events pipeline (ClickHouse)
@@ -1621,6 +1746,7 @@ export class WidgetManager {
         this.wsHasConnected = true;
         this.connectionIssueStartedAt = null;
         this.connectionStatus = 'connected';
+        this.connectionGeneration++;
         this.render();
 
         // Send session:create or session:restore
@@ -1753,6 +1879,8 @@ export class WidgetManager {
         if (payload.messages && payload.messages.length > 0) {
           this.messages = payload.messages.map((m: any) => this.mapSupportMessage(m));
         }
+        this.reconcilePendingMessagesWithHistory(payload.messages || []);
+        this.restorePendingMessagesIntoThread();
 
         const hashConversationId = this.getConversationIdFromHash();
         if (hashConversationId && this.conversations.some((c) => c.id === hashConversationId)) {
@@ -1809,6 +1937,8 @@ export class WidgetManager {
             this.currentEmail = email;
           }
         }
+
+        this.flushPendingOutgoingMessages();
 
         this.render();
         break;

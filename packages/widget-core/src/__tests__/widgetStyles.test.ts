@@ -76,6 +76,14 @@ describe('widget scroll styles', () => {
     expect(ruleBody('.helpin-theme-dark .helpin-ai-thinking-line')).toContain('rgba(255, 255, 255, 0.24)');
   });
 
+  it('keeps transparent conversation logos visible without cropping them', () => {
+    expect(ruleBody('.helpin-conversation-logo--brand')).toContain('padding: 5px');
+    expect(ruleBody('.helpin-conversation-logo--brand')).toContain('overflow: hidden');
+    expect(ruleBody('.helpin-conversation-brand-logo')).toContain('object-fit: contain');
+    expect(ruleBody('.helpin-message-avatar--brand')).toContain('padding: 4px');
+    expect(ruleBody('.helpin-message-brand-logo')).toContain('object-fit: contain');
+  });
+
   it('uses a layered, brand-aware surface system in light mode', () => {
     expect(ruleBody('.helpin-theme-light')).toContain('--helpin-bg: #f7f8fb');
     expect(ruleBody('.helpin-theme-light')).toContain('--helpin-card-bg: #ffffff');

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/preact';
 import { MessageBubble } from '../components/MessageBubble';
 import type { Message } from '../types';
@@ -51,11 +51,11 @@ describe('MessageBubble', () => {
     expect(container.textContent).toContain('1 source');
     expect(queryByText('Test Doc')).toBeNull();
 
-    fireEvent.click(getByRole('button', { name: '1 source' }));
+    fireEvent.click(getByRole('button', { name: 'Based on 1 source' }));
     expect(queryByText('Test Doc')).toBeTruthy();
   });
 
-  it('displays confidence score', () => {
+  it('uses source attribution instead of exposing an exact confidence score', () => {
     const message = createMessage({
       role: 'ai',
       sources: [
@@ -64,7 +64,8 @@ describe('MessageBubble', () => {
       aiConfidence: 0.85,
     });
     const { container } = render(<MessageBubble message={message} />);
-    expect(container.textContent).toContain('85%');
+    expect(container.textContent).toContain('Based on 1 source');
+    expect(container.textContent).not.toContain('85%');
   });
 
   it('does not display confidence without sources', () => {
@@ -75,6 +76,36 @@ describe('MessageBubble', () => {
     const { container } = render(<MessageBubble message={message} />);
     expect(container.textContent).not.toContain('85%');
     expect(container.querySelector('.helpin-message-confidence')).toBeNull();
+  });
+
+  it('collects lightweight feedback on completed AI answers', () => {
+    const onAnswerFeedback = vi.fn();
+    const message = createMessage({ role: 'ai', id: 'answer-1' });
+    const { getByRole, getByText, queryByRole } = render(
+      <MessageBubble message={message} onAnswerFeedback={onAnswerFeedback} />,
+    );
+
+    fireEvent.click(getByRole('button', { name: 'This answer was helpful' }));
+
+    expect(onAnswerFeedback).toHaveBeenCalledWith('answer-1', true);
+    expect(getByText('Thanks for the feedback')).toBeTruthy();
+    expect(queryByRole('button', { name: 'This answer was not helpful' })).toBeNull();
+  });
+
+  it('does not show answer feedback on the static AI welcome message', () => {
+    const onAnswerFeedback = vi.fn();
+    const message = createMessage({
+      id: '__intro__',
+      conversationId: '__intro__',
+      role: 'ai',
+      content: 'Hi there! How can we help you today?',
+    });
+    const { queryByText, queryByRole } = render(
+      <MessageBubble message={message} onAnswerFeedback={onAnswerFeedback} />,
+    );
+
+    expect(queryByText('Helpful?')).toBeNull();
+    expect(queryByRole('button', { name: 'This answer was helpful' })).toBeNull();
   });
 
   it('displays email channel badge', () => {

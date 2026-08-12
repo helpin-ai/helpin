@@ -18,6 +18,15 @@ import { BrandAttribution } from './BrandAttribution';
 import { XIcon } from './icons';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+type ResolvedColorScheme = 'light' | 'dark';
+
+const getSystemColorScheme = (): ResolvedColorScheme => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return 'light';
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
 
 interface ChatWindowProps {
   config: WidgetConfig;
@@ -30,6 +39,7 @@ interface ChatWindowProps {
   onQuickReply: (content: string) => void;
   onTyping?: (content: string) => void;
   showPreChatForm: boolean;
+  contactCaptureCompleted?: boolean;
   onPreChatSubmit: (data: { phone: string; email: string }) => void;
   isTyping?: boolean;
   isAIThinking?: boolean;
@@ -59,6 +69,10 @@ interface ChatWindowProps {
     articleSlug?: string;
   };
   onImageClick?: (src: string, alt: string) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  queuedMessageCount?: number;
+  csatSubmitted?: boolean;
+  onCsatSubmit?: (rating: number, feedback?: string) => void;
 }
 
 export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
@@ -72,6 +86,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   onQuickReply,
   onTyping,
   showPreChatForm,
+  contactCaptureCompleted = false,
   onPreChatSubmit,
   isTyping = false,
   isAIThinking = false,
@@ -97,6 +112,10 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   host,
   openArticleRequest,
   onImageClick,
+  onAnswerFeedback,
+  queuedMessageCount = 0,
+  csatSubmitted = false,
+  onCsatSubmit,
 }) => {
   const initialPreviousView: WidgetBaseView =
     initialView === 'messages' || initialView === 'help' || initialView === 'home'
@@ -118,6 +137,11 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(isOpen);
   const [humanSupportRequested, setHumanSupportRequested] = useState(false);
+  const configuredColorScheme = config.branding?.colorScheme || 'light';
+  const [systemColorScheme, setSystemColorScheme] = useState<ResolvedColorScheme>(getSystemColorScheme);
+  const colorScheme = configuredColorScheme === 'system'
+    ? systemColorScheme
+    : configuredColorScheme;
 
   // Sync activeView when initialView prop changes (e.g. first-open → conversation)
   useEffect(() => {
@@ -127,6 +151,30 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   useEffect(() => {
     setHumanSupportRequested(false);
   }, [activeConversation?.id]);
+
+  useEffect(() => {
+    if (
+      configuredColorScheme !== 'system'
+      || typeof window === 'undefined'
+      || typeof window.matchMedia !== 'function'
+    ) {
+      return;
+    }
+
+    const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const syncColorScheme = () => {
+      setSystemColorScheme(colorSchemeQuery.matches ? 'dark' : 'light');
+    };
+
+    syncColorScheme();
+    if (typeof colorSchemeQuery.addEventListener === 'function') {
+      colorSchemeQuery.addEventListener('change', syncColorScheme);
+      return () => colorSchemeQuery.removeEventListener('change', syncColorScheme);
+    }
+
+    colorSchemeQuery.addListener(syncColorScheme);
+    return () => colorSchemeQuery.removeListener(syncColorScheme);
+  }, [configuredColorScheme]);
 
   useEffect(() => {
     const requestedArticleKey = openArticleRequest?.articleKey ?? openArticleRequest?.articleSlug;
@@ -172,7 +220,6 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const position = config.branding?.widgetPosition || 'bottom-right';
   const brandColor = config.branding?.primaryColor || '#6366f1';
   const showBranding = config.branding?.showBranding ?? true;
-  const colorScheme = config.branding?.colorScheme || 'light';
   const helpSpaces = config.helpSpaces ?? [];
   const activeHelpSpace = helpSpaces.find((space) => space.slug === activeHelpSpaceSlug) || null;
   const homeTeammates = (config.availableTeammates ?? []).slice(0, 4);
@@ -325,7 +372,9 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
       )}
       {connectionStatus === 'disconnected' && (
         <div className="helpin-connection-banner helpin-connection-banner--disconnected">
-          Connection lost. Reconnecting...
+          {queuedMessageCount > 0
+            ? `Reconnecting… ${queuedMessageCount === 1 ? '1 message is saved' : `${queuedMessageCount} messages are saved`}.`
+            : 'Connection lost. Reconnecting…'}
         </div>
       )}
       {connectionStatus === 'failed' && (
@@ -387,9 +436,14 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             transcriptEmail={transcriptEmail}
             onRequestTranscript={onRequestTranscript}
             showPreChatForm={showPreChatForm}
+            contactCaptureCompleted={contactCaptureCompleted}
             onPreChatSubmit={onPreChatSubmit}
             onImageClick={onImageClick}
+            onAnswerFeedback={onAnswerFeedback}
             connectionStatus={connectionStatus}
+            queuedMessageCount={queuedMessageCount}
+            csatSubmitted={csatSubmitted}
+            onCsatSubmit={onCsatSubmit}
           />
         )}
         {activeView === 'messages' && (
