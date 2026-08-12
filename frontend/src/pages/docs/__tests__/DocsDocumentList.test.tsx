@@ -31,6 +31,8 @@ vi.mock('@/hooks/queries', () => ({
   }),
   usePermissions: () => ({ canEditDocs: false }),
   useAssignableMembers: () => ({ data: [] }),
+  useDocsSpaces: () => ({ data: [] }),
+  useAllDocsCollections: () => ({ data: [] }),
   useArchiveDocsDocument: () => ({ mutate: vi.fn() }),
   useUnarchiveDocsDocument: () => ({ mutate: vi.fn() }),
   useDeleteDocsDocument: () => ({ mutateAsync: vi.fn() }),

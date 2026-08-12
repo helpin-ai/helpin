@@ -12,7 +12,7 @@ import { useArchiveMailbox, useInboxScopes, useSupportBuiltinInboxViews, useSupp
 import { useDeleteSupportInboxView, useSupportInboxViews, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
-import { getInitials } from '@/lib/utils';
+import { cn, getInitials } from '@/lib/utils';
 import { buildSupportInboxSearch } from '@/lib/supportInboxRouting';
 import { supportInboxCountMailboxScope } from '@/lib/supportInboxFilters';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -25,7 +25,7 @@ import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 import { TrialBanner } from '@/components/layout/TrialBanner';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
-import { DocsSpacesNav } from './sidebar/DocsSpacesNav';
+import { DocsRailNav } from './sidebar/DocsRailNav';
 import { buildPanelNavGroups, buildRailItems, deriveActiveRail, projectCreateOptions } from './sidebar/config';
 import { isSidebarLinkActive, isTeamSubLinkActive, type SidebarNavigateTarget } from './sidebar/navigation';
 import { ProjectsTeamsNav } from './sidebar/ProjectsTeamsNav';
@@ -62,7 +62,7 @@ export function Sidebar() {
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { data: setup } = useSetup(isSetupSuccessEnabled() ? workspaceId : undefined);
-  const { isAdmin, canManageSettings, canManageTeams, permissionSet, canAccessModule, modules } = usePermissions(access);
+  const { isAdmin, canManageSettings, canManageTeams, canEditDocs, permissionSet, canAccessModule, modules } = usePermissions(access);
   const hasSupportModule = canAccessModule('support');
   const {
     navFilter,
@@ -336,7 +336,12 @@ export function Sidebar() {
             )}
           />
 
-          <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-2">
+          <div
+            className={cn(
+              'flex min-w-0 flex-1 flex-col',
+              activeRail === 'docs' ? 'overflow-hidden p-1 pb-0' : 'overflow-y-auto p-2',
+            )}
+          >
             {activeRail === 'projects' && (
               <SidebarCreateBar
                 primaryLabel={primaryCreate.label}
@@ -347,20 +352,6 @@ export function Sidebar() {
                   icon: option.icon,
                   onSelect: () => openCreate(option.key, activeTeamParam ? { teamId: activeTeamParam } : undefined),
                 }))}
-              />
-            )}
-
-            {activeRail === 'docs' && (
-              <SidebarCreateBar
-                primaryLabel="Document"
-                onPrimaryClick={() => {
-                  const spaceMatch = location.pathname.match(/\/docs\/spaces\/([^/]+)/);
-                  openCreate('docs_document', { spaceId: spaceMatch?.[1] });
-                }}
-                options={[
-                  { key: 'docs_space', label: 'Space', onSelect: () => openCreate('docs_space') },
-                  { key: 'docs_collection', label: 'Collection', onSelect: () => openCreate('docs_collection') },
-                ]}
               />
             )}
 
@@ -380,7 +371,7 @@ export function Sidebar() {
                 onNavigate={(link) => handleNavigate(link)}
                 onNavigateTo={(to) => navigate({ to })}
               />
-            ) : activeRail === 'support' ? null : (
+            ) : activeRail === 'support' || activeRail === 'docs' ? null : (
               <StandardRailNav
                 groups={currentNavGroups}
                 isActive={isActive}
@@ -468,11 +459,10 @@ export function Sidebar() {
             )}
 
             {activeRail === 'docs' && (
-              <DocsSpacesNav
+              <DocsRailNav
                 wsId={workspaceId ?? ''}
                 wsSlug={wsSlug}
-                expandedTeams={expandedTeams}
-                setExpandedTeams={setExpandedTeams}
+                canEditDocs={canEditDocs}
                 isActive={isActive}
                 openCreate={openCreate}
                 onNavigate={handleNavigate}

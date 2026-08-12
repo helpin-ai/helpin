@@ -133,6 +133,8 @@ import type { CommandBarPageContext, CommentWithAuthor } from '@/lib/pmTypes'
 import { prepareDocsContentForPublish } from '@/lib/docsPublishTransforms'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
+import { areMermaidDiagramsReady, preloadMermaidDiagrams } from '@/components/editor/mermaidPreviewCache'
+import { collectMermaidSources } from '@/components/editor/mermaidContent'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
 import { useRegisterPageContext, type PageContextScopeOption } from '@/components/command-bar/pageContext'
@@ -411,6 +413,29 @@ export function DocsDocumentDetail({
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
   const { data: blocks = [] } = useDocsBlocks(wsId, docId)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
+  const mermaidSources = useMemo(
+    () => collectMermaidSources(content?.content as JSONContent | null | undefined),
+    [content?.content],
+  )
+  const mermaidPreloadKey = useMemo(
+    () => mermaidSources.length > 0 ? `${docId}:${mermaidSources.join('\u001f')}` : '',
+    [docId, mermaidSources],
+  )
+  const [completedMermaidPreloadKey, setCompletedMermaidPreloadKey] = useState('')
+  const mermaidPreloadReady = !mermaidPreloadKey
+    || completedMermaidPreloadKey === mermaidPreloadKey
+    || areMermaidDiagramsReady(mermaidSources)
+
+  useEffect(() => {
+    if (!mermaidPreloadKey || areMermaidDiagramsReady(mermaidSources)) return
+    let cancelled = false
+    void preloadMermaidDiagrams(mermaidSources).then(() => {
+      if (!cancelled) setCompletedMermaidPreloadKey(mermaidPreloadKey)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [mermaidPreloadKey, mermaidSources])
   const { data: changeProposals = [] } = useDocsChangeProposals(wsId, docId)
   const {
     data: searchedChangeProposal,
@@ -1328,7 +1353,7 @@ export function DocsDocumentDetail({
       }
     : articleTranslationsByLocale.get(editingTranslationLocale ?? '') ?? null
 
-  if (docLoading || contentLoading) {
+  if (docLoading || contentLoading || !mermaidPreloadReady) {
     return (
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-3 border-b border-border/60 px-4 py-2">

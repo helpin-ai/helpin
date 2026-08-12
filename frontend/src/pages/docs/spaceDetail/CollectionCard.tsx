@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Button } from '@/components/ui/button'
 
 export interface CollectionCardProps {
   node: CollectionTreeNode
@@ -88,14 +89,15 @@ export function CollectionCard({
         <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover/card:opacity-100 group-focus-within/card:opacity-100">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 onClick={(event) => event.stopPropagation()}
-                className="flex h-6 w-6 items-center justify-center rounded hover:bg-muted"
                 aria-label={`More options for ${collection.name}`}
               >
                 <MoreHorizontalIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onClick={onEdit}>

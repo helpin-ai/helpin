@@ -145,7 +145,7 @@ describe('DocsHome', () => {
     navigate.mockReset()
   })
 
-  it('labels document timestamps as updated times in the docs tree', () => {
+  it('renders compact updated metadata in the borderless docs tree', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -155,7 +155,9 @@ describe('DocsHome', () => {
     })
 
     expect(container.textContent).toContain('Install the widget')
-    expect(container.textContent).toContain('Updated:')
+    expect(container.textContent).toContain('Updated')
+    expect(container.querySelector('[data-slot="docs-space-library"]')).toBeTruthy()
+    expect(container.querySelector('[data-slot="docs-space-library"]')?.className).not.toContain('rounded-lg')
 
     act(() => {
       root.unmount()
