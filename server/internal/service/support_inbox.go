@@ -2387,7 +2387,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	if err != nil {
 		return nil, err
 	}
-	s.emitTaskCreatedSystemMessage(ctx, workspaceID, conversationID, actorID, detail.Task.TaskKey, detail.Task.Name)
+	s.emitTaskCreatedSystemMessage(ctx, workspaceID, conversationID, actorID, taskID, detail.Task.TaskKey, detail.Task.Name)
 
 	slog.InfoContext(ctx, "created task from support conversation",
 		"workspace_id", workspaceID,
@@ -4237,7 +4237,7 @@ func (s *SupportInboxService) emitEmailRecipientsUpdatedSystemMessage(ctx contex
 	}
 }
 
-func (s *SupportInboxService) emitTaskCreatedSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, taskKey, taskName string) {
+func (s *SupportInboxService) emitTaskCreatedSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, taskID, taskKey, taskName string) {
 	if s.messageRepo == nil {
 		return
 	}
@@ -4280,6 +4280,9 @@ func (s *SupportInboxService) emitTaskCreatedSystemMessage(ctx context.Context, 
 		IsInternal:        true,
 		MessageType:       "system",
 		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventTaskCreated),
+	}
+	if metadata, err := json.Marshal(map[string]string{"task_id": strings.TrimSpace(taskID)}); err == nil {
+		msg.Metadata = string(metadata)
 	}
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create support task created system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)

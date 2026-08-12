@@ -231,12 +231,17 @@ describe('MessageBubble', () => {
       },
     ]
 
-    const rendered = messages.map(renderBubble)
+    const rendered = messages.map((message) => renderBubble(message, undefined, {
+      workspaceSlug: 'acme',
+      linkedTaskId: 'task-123',
+    }))
     expect(rendered[0].container.querySelectorAll('strong')[0]?.textContent).toBe('jane@example.com')
     expect(rendered[0].container.querySelectorAll('strong')[1]?.textContent).toBe('teammate@example.com')
     expect(rendered[1].container.querySelector('strong')?.textContent).toBe('Billing')
     expect(rendered[2].container.querySelectorAll('strong')[0]?.textContent).toBe('#ENG-123')
     expect(rendered[2].container.querySelectorAll('strong')[1]?.textContent).toBe('Fix billing webhook')
+    expect(rendered[2].container.querySelector('a')?.getAttribute('href')).toBe('/w/acme/pm/tasks/task-123')
+    expect(rendered[2].container.querySelector('[data-task-created-title]')?.className).toContain('truncate')
     rendered.forEach((entry) => entry.cleanup())
   })
 

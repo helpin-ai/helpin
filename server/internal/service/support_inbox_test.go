@@ -2257,6 +2257,13 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 	if !strings.Contains(taskEvent.Content, "created task #"+resp.TaskKey+": "+resp.TaskName) {
 		t.Fatalf("task system message = %q", taskEvent.Content)
 	}
+	var taskEventMetadata map[string]string
+	if err := json.Unmarshal([]byte(taskEvent.Metadata), &taskEventMetadata); err != nil {
+		t.Fatalf("decode task system metadata: %v", err)
+	}
+	if taskEventMetadata["task_id"] != resp.TaskID {
+		t.Fatalf("task system metadata task_id = %q, want %q", taskEventMetadata["task_id"], resp.TaskID)
+	}
 	if resp.CopiedDealAssociations != 1 {
 		t.Fatalf("copied_deal_associations = %d, want 1", resp.CopiedDealAssociations)
 	}
