@@ -489,6 +489,9 @@ export function AskAgentsDock({ presentation = 'floating', requiredPageContext, 
           askAgentState={askAgentState}
           onClose={closeDock}
           closeLabel="Back to details"
+          maximized={false}
+          onToggleMaximized={() => {}}
+          allowMaximize={false}
           onRenameChat={renameChat}
           onArchiveChat={archiveChat}
         />
@@ -506,6 +509,7 @@ export function AskAgentsDock({ presentation = 'floating', requiredPageContext, 
             onPresenceChange={handleChatPresenceChange}
             onRunIdChange={handleChatRunIdChange}
             requiredPageContext={requiredPageContext}
+            scrollToLatestRequest={chatScrollRequest}
           />
         ) : (
           <EmptyChatPane onNewChat={() => void newChat()} />
@@ -680,6 +684,7 @@ function DockPaneHeader({
   onRenameChat,
   onArchiveChat,
   closeLabel = 'Minimize',
+  allowMaximize = true,
 }: {
   tab: 'agents' | 'chats';
   run: DockRunSummary | null;
@@ -692,6 +697,7 @@ function DockPaneHeader({
   onRenameChat: (chatId: string, title: string) => Promise<boolean>;
   onArchiveChat: (chatId: string) => Promise<boolean>;
   closeLabel?: string;
+  allowMaximize?: boolean;
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState(chat?.title ?? '');
@@ -746,7 +752,7 @@ function DockPaneHeader({
           {presentation.label}
         </span>
       ) : null}
-      <Tooltip>
+      {allowMaximize ? <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
@@ -760,7 +766,7 @@ function DockPaneHeader({
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" className="z-[70]">{maximized ? 'Restore' : 'Maximize'}</TooltipContent>
-      </Tooltip>
+      </Tooltip> : null}
       {fullPath ? (
         <a href={fullPath} aria-label="Open full agent session" title="Open full session" className="grid h-8 w-8 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
           <LinkSquare01Icon className="h-3.5 w-3.5" />
