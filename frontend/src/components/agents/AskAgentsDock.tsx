@@ -33,10 +33,18 @@ type DockFocusTarget = 'composer' | 'selection' | 'header';
 interface AskAgentsDockProps {
   presentation?: 'floating' | 'embedded';
   requiredPageContext?: CommandBarPageContext | null;
+  associatedSupportConversationId?: string;
+  active?: boolean;
   onClose?: () => void;
 }
 
-export function AskAgentsDock({ presentation = 'floating', requiredPageContext, onClose }: AskAgentsDockProps = {}) {
+export function AskAgentsDock({
+  presentation = 'floating',
+  requiredPageContext,
+  associatedSupportConversationId,
+  active = true,
+  onClose,
+}: AskAgentsDockProps = {}) {
   const embedded = presentation === 'embedded';
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const {
@@ -84,6 +92,7 @@ export function AskAgentsDock({ presentation = 'floating', requiredPageContext, 
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const focusTargetRef = useRef<DockFocusTarget>('header');
   const loadingMoreChatsRef = useRef(false);
+  const ensuredSupportConversationRef = useRef<string | null>(null);
 
   const orderedRuns = useMemo(() => [...runs].sort((left, right) => {
     const leftPresentation = presentDockRun(left.run.status, left.run.pause_reason, left.attention_kind);
@@ -271,6 +280,36 @@ export function AskAgentsDock({ presentation = 'floating', requiredPageContext, 
     if (current && chats.some((chat) => chat.id === current)) return;
     setActiveChatId(chats[0]?.id ?? null);
   }, [chats, chatsLoading, setActiveChatId]);
+
+  useEffect(() => {
+    if (!active || !workspaceId || !associatedSupportConversationId || chatsLoading) return;
+    const associationKey = `${workspaceId}:${associatedSupportConversationId}`;
+    const associatedChat = chats.find(
+      (chat) => chat.support_conversation_id === associatedSupportConversationId,
+    );
+    if (associatedChat) {
+      ensuredSupportConversationRef.current = associationKey;
+      if (useDockStore.getState().activeChatId !== associatedChat.id) {
+        setActiveChatId(associatedChat.id);
+      }
+      setTab('chats');
+      return;
+    }
+    if (ensuredSupportConversationRef.current === associationKey) return;
+    ensuredSupportConversationRef.current = associationKey;
+    void dockChatService.createChat(workspaceId, '', associatedSupportConversationId).then((result) => {
+      if (result.error || !result.data) {
+        ensuredSupportConversationRef.current = null;
+        toast.error(result.error ?? 'Failed to open the conversation chat');
+        return;
+      }
+      const current = useDockStore.getState().chats;
+      setChats([result.data, ...current.filter((chat) => chat.id !== result.data?.id)]);
+      setActiveChatId(result.data.id);
+      setTab('chats');
+      focusTargetRef.current = 'composer';
+    });
+  }, [active, associatedSupportConversationId, chats, chatsLoading, setActiveChatId, setChats, setTab, workspaceId]);
 
   useEffect(() => {
     if (runsLoading) return;

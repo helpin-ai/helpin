@@ -44,6 +44,25 @@ func (r *DockChatRepository) GetByID(ctx context.Context, workspaceID, id string
 	return &chat, nil
 }
 
+// GetBySupportConversation returns the user's unarchived chat associated with
+// a support inbox conversation, or nil when that conversation has no history.
+func (r *DockChatRepository) GetBySupportConversation(ctx context.Context, workspaceID, userID, conversationID string) (*model.DockChat, error) {
+	if r == nil || r.db == nil {
+		return nil, gorm.ErrInvalidDB
+	}
+	var chat model.DockChat
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND user_id = ? AND support_conversation_id = ? AND archived_at IS NULL", workspaceID, userID, conversationID).
+		First(&chat).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &chat, nil
+}
+
 // ListByWorkspaceUser returns the user's unarchived chats, most recently active first.
 func (r *DockChatRepository) ListByWorkspaceUser(ctx context.Context, workspaceID, userID string, limit int, before *time.Time, beforeID string) ([]model.DockChat, error) {
 	if r == nil || r.db == nil {

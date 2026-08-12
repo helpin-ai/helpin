@@ -125,12 +125,33 @@ func (s *DockChatService) ListChats(ctx context.Context, workspaceID, userID str
 // CreateChat creates an empty chat; its backing run starts lazily on the
 // first message.
 func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID string, req model.CreateDockChatRequest) (*model.DockChat, error) {
+	if req.SupportConversationID != nil {
+		conversationID := strings.TrimSpace(*req.SupportConversationID)
+		if conversationID == "" {
+			return nil, errors.New("support conversation id is required")
+		}
+		req.SupportConversationID = &conversationID
+		existing, err := s.chatRepo.GetBySupportConversation(ctx, workspaceID, userID, conversationID)
+		if err != nil {
+			return nil, fmt.Errorf("find support conversation chat: %w", err)
+		}
+		if existing != nil {
+			return existing, nil
+		}
+	}
 	chat := &model.DockChat{
-		WorkspaceID: workspaceID,
-		UserID:      userID,
-		Title:       strings.TrimSpace(req.Title),
+		WorkspaceID:           workspaceID,
+		UserID:                userID,
+		Title:                 strings.TrimSpace(req.Title),
+		SupportConversationID: req.SupportConversationID,
 	}
 	if err := s.chatRepo.Create(ctx, chat); err != nil {
+		if req.SupportConversationID != nil {
+			existing, lookupErr := s.chatRepo.GetBySupportConversation(ctx, workspaceID, userID, *req.SupportConversationID)
+			if lookupErr == nil && existing != nil {
+				return existing, nil
+			}
+		}
 		return nil, fmt.Errorf("create dock chat: %w", err)
 	}
 	return chat, nil
