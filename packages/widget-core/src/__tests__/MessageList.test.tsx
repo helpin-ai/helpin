@@ -155,10 +155,12 @@ describe('MessageList', () => {
       {
         id: 'greeting-1', conversationId: 'conv-1', role: 'ai',
         content: 'Hi there! 👋 Thanks for reaching out. How can I help you today?',
+        aiReplyKind: 'conversational',
         isInternal: false, createdAt: new Date().toISOString(),
       },
       {
         id: 'answer-1', conversationId: 'conv-1', role: 'ai', content: 'Open Settings, then choose Export data.',
+        aiReplyKind: 'answer',
         isInternal: false, createdAt: new Date().toISOString(),
       },
       {
@@ -167,6 +169,7 @@ describe('MessageList', () => {
       },
       {
         id: 'answer-2', conversationId: 'conv-1', role: 'ai', content: 'Yes. Select CSV before starting the export.',
+        aiReplyKind: 'answer',
         isInternal: false, createdAt: new Date().toISOString(),
       },
     ];
@@ -201,6 +204,25 @@ describe('MessageList', () => {
         {
           id: 'ai-greeting', conversationId: 'conv-1', role: 'ai',
           content: '¡Hola! 👋 ¿En qué puedo ayudarte hoy?',
+          aiReplyKind: 'conversational',
+          isInternal: false, createdAt: new Date().toISOString(),
+        },
+      ]}
+      onAnswerFeedback={() => {}}
+    />);
+
+    expect(rendered.queryByText('Helpful?')).toBeNull();
+  });
+
+  it('hides feedback conservatively when an AI message has no reply kind metadata', () => {
+    const rendered = render(<MessageList
+      messages={[
+        {
+          id: 'customer-question', conversationId: 'conv-1', role: 'customer', content: 'How do I export?',
+          isInternal: false, createdAt: new Date().toISOString(),
+        },
+        {
+          id: 'legacy-answer', conversationId: 'conv-1', role: 'ai', content: 'Open Settings and select Export.',
           isInternal: false, createdAt: new Date().toISOString(),
         },
       ]}

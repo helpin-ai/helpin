@@ -635,6 +635,7 @@ describe('WidgetManager', () => {
           sender_type: 'ai',
           message_type: 'reply',
           content: 'Here is what I found.',
+          metadata: JSON.stringify({ ai_reply_kind: 'answer' }),
           created_at: new Date().toISOString(),
         },
       });
@@ -642,6 +643,33 @@ describe('WidgetManager', () => {
       const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
       expect(latestOptions?.isAIThinking).toBe(false);
       expect(latestOptions?.messages.at(-1)?.content).toBe('Here is what I found.');
+      expect(latestOptions?.messages.at(-1)?.aiReplyKind).toBe('answer');
+    });
+
+    it('ignores an unsupported AI reply kind from message metadata', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: { aiEnabled: true, aiFirst: true },
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-ai',
+          conversation_id: 'conv-1',
+          sender_type: 'ai',
+          message_type: 'reply',
+          content: 'A response.',
+          metadata: JSON.stringify({ ai_reply_kind: 'unexpected' }),
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.messages.at(-1)?.aiReplyKind).toBeUndefined();
     });
 
     it('shows curated support progress copy without trusting arbitrary labels', () => {

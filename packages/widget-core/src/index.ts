@@ -15,6 +15,7 @@ export type {
   Attachment,
   PendingAttachment,
   SystemEventType,
+  AIReplyKind,
 } from './types';
 export { SYSTEM_EVENT_TYPES } from './types';
 
