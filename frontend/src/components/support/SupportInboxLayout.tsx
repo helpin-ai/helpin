@@ -388,12 +388,31 @@ export function SupportInboxLayout() {
         </div>
 
         {/* Panel 3: Detail sidebar - hidden on mobile & tablet */}
-        <div className={`hidden ${selectedConversationId ? 'xl:flex' : ''}`}>
-          {detailSidebarMode === 'agents' && supportAgentContext ? (
-            <SupportAgentSidebar context={supportAgentContext} onBack={handleCloseAgentSidebar} />
-          ) : (
+        <div
+          className={`relative hidden shrink-0 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+            selectedConversationId ? 'xl:flex' : ''
+          } ${detailSidebarMode === 'agents' ? 'w-[420px]' : 'w-[300px]'}`}
+        >
+          <div
+            aria-hidden={detailSidebarMode === 'agents' || undefined}
+            inert={detailSidebarMode === 'agents'}
+            className={`absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+              detailSidebarMode === 'agents' ? 'pointer-events-none -translate-x-2 opacity-0' : 'translate-x-0 opacity-100'
+            }`}
+          >
             <ConversationDetailSidebar workspaceId={workspaceId} conversationId={selectedConversationId} />
-          )}
+          </div>
+          {supportAgentContext ? (
+            <div
+              aria-hidden={detailSidebarMode !== 'agents' || undefined}
+              inert={detailSidebarMode !== 'agents'}
+              className={`absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+                detailSidebarMode === 'agents' ? 'translate-x-0 opacity-100' : 'pointer-events-none translate-x-2 opacity-0'
+              }`}
+            >
+              <SupportAgentSidebar context={supportAgentContext} onBack={handleCloseAgentSidebar} />
+            </div>
+          ) : null}
         </div>
       </div>
 

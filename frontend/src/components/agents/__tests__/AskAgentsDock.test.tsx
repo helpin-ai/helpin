@@ -270,6 +270,38 @@ describe('AskAgentsDock', () => {
       page_context: supportContext,
     }));
   });
+
+  it('updates the mandatory context without replacing the active embedded chat', async () => {
+    const firstContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-1',
+      display_title: 'First conversation',
+    };
+    const nextContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-2',
+      display_title: 'Next conversation',
+    };
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
+    await renderEmbeddedDock(firstContext);
+    await waitForText('First conversation');
+    const originalTextarea = dockTextarea();
+
+    await renderEmbeddedDock(nextContext);
+    await waitForText('Next conversation');
+    expect(dockTextarea()).toBe(originalTextarea);
+    expect(useDockStore.getState().activeChatId).toBe('chat-1');
+
+    await act(async () => {
+      setTextareaValue(originalTextarea, 'Use the new conversation');
+      originalTextarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-1', expect.objectContaining({
+      page_context: nextContext,
+    }));
+  });
   it('renders the collapsed pill and expands via the / key', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();
