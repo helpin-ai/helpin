@@ -990,7 +990,10 @@ export function MessageThread({
       )}
 
       {/* Messages area with light background (Crisp-style) */}
-      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 min-w-0 bg-muted/20">
+      <ScrollArea
+        ref={scrollAreaRef}
+        className="min-h-0 min-w-0 flex-1 bg-muted/20 [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!max-w-full"
+      >
         <div data-support-message-list className="w-full min-w-0 max-w-full overflow-x-hidden px-4 pb-10 pt-2">
           {isThreadLoading && <MessageSkeleton />}
           {!isThreadLoading && messages.length === 0 && (
