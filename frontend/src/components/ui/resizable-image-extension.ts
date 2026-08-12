@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from '@tiptap/core';
+import { Node, mergeAttributes, type JSONContent } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { ResizableImageComponent } from './resizable-image-component';
 import { pickBlockNodeViewAttrs } from '@/components/editor/nodeViewAttrs';
@@ -13,6 +13,8 @@ export interface ResizableImageOptions {
   documentId?: string;
   /** Required for image annotation — without it the annotate action is hidden. */
   uploadConfig?: EditorUploadConfig;
+  /** Persists node-view mutations that must survive an immediate page refresh. */
+  onImmediateSave?: (content: JSONContent) => void | Promise<void>;
 }
 
 declare module '@tiptap/core' {
@@ -49,6 +51,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       workspaceId: undefined,
       documentId: undefined,
       uploadConfig: undefined,
+      onImmediateSave: undefined,
     };
   },
 

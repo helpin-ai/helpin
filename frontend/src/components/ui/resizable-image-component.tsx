@@ -611,6 +611,10 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 height: currentHeight,
                 aspectRatio,
               });
+              // The upload is already durable, so persist the matching node attributes now as
+              // well. Relying only on the editor debounce loses the annotation metadata and new
+              // attachment URL when the page is refreshed immediately after the dialog closes.
+              void extension.options.onImmediateSave?.(editor.getJSON());
             }}
           />
         </Suspense>

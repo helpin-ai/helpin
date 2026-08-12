@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -21,7 +21,7 @@ import {
   type AnnotationShape,
   type AnnotationState,
 } from '../core/annotationTypes';
-import { ImageAnnotator, type AnnotationTool } from '../core/ImageAnnotator';
+import { ImageAnnotator, type AnnotationTool, type ImageAnnotatorHandle } from '../core/ImageAnnotator';
 import { renderAnnotationsToFile } from '../core/renderAnnotations';
 import { useAnnotationHistory } from '../core/useAnnotationHistory';
 import { AnnotatorToolbar } from './AnnotatorToolbar';
@@ -61,6 +61,7 @@ export function DocsImageAnnotateDialog({
   // The caller mounts this only while open, so state initialisers are the reset — no effect
   // needs to sync `open` back into local state.
   const history = useAnnotationHistory(initialState?.shapes ?? []);
+  const annotatorRef = useRef<ImageAnnotatorHandle>(null);
   const [tool, setTool] = useState<AnnotationTool>('select');
   const [color, setColor] = useState(DEFAULT_ANNOTATION_COLOR);
   const [strokeWidth, setStrokeWidth] = useState(DEFAULT_STROKE_WIDTH);
@@ -98,11 +99,14 @@ export function DocsImageAnnotateDialog({
     if (!baseSize) return;
     setSaving(true);
     try {
+      // Text is edited in a DOM textarea over the canvas. Read through the annotator handle so
+      // Save includes the current value even when the textarea has not blurred into history yet.
+      const shapes = annotatorRef.current?.getShapesForSave() ?? history.shapes;
       const state: AnnotationState = {
         version: 1,
         baseWidth: baseSize.width,
         baseHeight: baseSize.height,
-        shapes: history.shapes,
+        shapes,
       };
 
       const safeName = fileName.replace(/\.[a-z0-9]+$/i, '') || 'image';
@@ -175,6 +179,7 @@ export function DocsImageAnnotateDialog({
 
         <div className="min-h-0 flex-1 overflow-auto bg-muted/30 p-5">
           <ImageAnnotator
+            ref={annotatorRef}
             imageUrl={sourceUrl}
             tool={tool}
             color={color}

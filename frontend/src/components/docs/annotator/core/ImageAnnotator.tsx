@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Image as KonvaImage, Layer, Stage, Transformer, Circle } from 'react-konva';
 import type Konva from 'konva';
 import {
@@ -51,6 +51,11 @@ export interface ImageAnnotatorProps {
   maxHeight?: number;
 }
 
+export interface ImageAnnotatorHandle {
+  /** Includes text still being edited in the DOM overlay, which is not yet in undo history. */
+  getShapesForSave: () => AnnotationShape[];
+}
+
 interface EditingText {
   id: string;
   value: string;
@@ -61,7 +66,23 @@ interface EditingText {
   fontSize: number;
 }
 
-export function ImageAnnotator({
+function applyTextEdit(shapes: AnnotationShape[], editing: EditingText | null): AnnotationShape[] {
+  if (!editing) return shapes;
+  const target = shapes.find((shape) => shape.id === editing.id);
+  if (!target || (target.type !== 'text' && target.type !== 'callout')) return shapes;
+
+  const value = editing.value.trim();
+  if (!value && target.type === 'text') {
+    return shapes.filter((shape) => shape.id !== editing.id);
+  }
+  return shapes.map((shape) =>
+    shape.id === editing.id
+      ? ({ ...shape, text: value || DEFAULT_CALLOUT_TEXT } as AnnotationShape)
+      : shape,
+  );
+}
+
+export const ImageAnnotator = forwardRef<ImageAnnotatorHandle, ImageAnnotatorProps>(function ImageAnnotator({
   imageUrl,
   tool,
   color,
@@ -75,7 +96,7 @@ export function ImageAnnotator({
   onError,
   onToolConsumed,
   maxHeight = 520,
-}: ImageAnnotatorProps) {
+}, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
@@ -268,20 +289,26 @@ export function ImageAnnotator({
 
   const commitTextEditor = useCallback(() => {
     if (!editingText) return;
-    const value = editingText.value.trim();
     const target = shapes.find((shape) => shape.id === editingText.id);
     setEditingText(null);
     if (!target) return;
 
     // An empty text shape is invisible and unselectable — drop it rather than stranding it.
-    if (!value && target.type === 'text') {
-      onCommit(shapes.filter((shape) => shape.id !== editingText.id));
+    const next = applyTextEdit(shapes, editingText);
+    if (!editingText.value.trim() && target.type === 'text') {
+      onCommit(next);
       onSelectedIdChange(null);
       return;
     }
     if (target.type !== 'text' && target.type !== 'callout') return;
-    replaceShape(editingText.id, (current) => ({ ...current, text: value || DEFAULT_CALLOUT_TEXT }) as AnnotationShape);
-  }, [editingText, onCommit, onSelectedIdChange, replaceShape, shapes]);
+    onCommit(next);
+  }, [editingText, onCommit, onSelectedIdChange, shapes]);
+
+  useImperativeHandle(
+    ref,
+    () => ({ getShapesForSave: () => applyTextEdit(shapes, editingText) }),
+    [editingText, shapes],
+  );
 
   const handleDoubleClick = useCallback(
     (id: string) => {
@@ -353,7 +380,10 @@ export function ImageAnnotator({
           });
           break;
         case 'text': {
-          // Text is a click, not a drag: place it and go straight into editing.
+          // Text is a click, not a drag. Keep it as a draft until pointer-up before mounting
+          // the textarea: mounting an auto-focused input during pointer-down lets the browser's
+          // remaining click focus the canvas again, immediately blurring and deleting the empty
+          // text shape.
           const shape: AnnotationShape = {
             id,
             type: 'text',
@@ -364,11 +394,7 @@ export function ImageAnnotator({
             fontSize,
             rotation: 0,
           };
-          drawingRef.current = false;
-          onCommit([...shapes, shape]);
-          onSelectedIdChange(id);
-          openTextEditor(shape);
-          onToolConsumed?.();
+          applyDraft(shape);
           break;
         }
       }
@@ -379,12 +405,8 @@ export function ImageAnnotator({
       commitTextEditor,
       editingText,
       fontSize,
-      onCommit,
       onSelectedIdChange,
-      onToolConsumed,
-      openTextEditor,
       pointerInSourceSpace,
-      shapes,
       strokeWidth,
       tool,
     ],
@@ -449,7 +471,12 @@ export function ImageAnnotator({
 
     onCommit([...shapes, current]);
     onSelectedIdChange(current.id);
-    if (current.type === 'callout') openTextEditor(current);
+    if (current.type === 'text' || current.type === 'callout') {
+      // Let the native click finish before focusing the DOM editor. If it mounts during
+      // pointer-up, the click's default focus action puts focus back on the canvas and the
+      // textarea immediately blurs.
+      window.requestAnimationFrame(() => openTextEditor(current));
+    }
     onToolConsumed?.();
   }, [applyDraft, onCommit, onSelectedIdChange, onToolConsumed, openTextEditor, scale, shapes]);
 
@@ -575,7 +602,7 @@ export function ImageAnnotator({
       )}
     </div>
   );
-}
+});
 
 /** Rejects click-sized drags so a stray click does not litter the image with zero-size shapes. */
 function isDrawnShapeUsable(shape: AnnotationShape, scale: number): boolean {
