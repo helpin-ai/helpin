@@ -186,4 +186,50 @@ describe('describeToolCall', () => {
       });
     });
   });
+
+  it('formats read_symbol with the symbol name and file', () => {
+    const presentation = describeToolCall(buildToolCall({
+      tool_name: 'read_symbol',
+      args_text: JSON.stringify({ path: 'internal/tools/workspace_read_tools.go', symbol: 'readTextFileWindow' }),
+    }));
+    expect(presentation.primaryLabel).toBe('Read readTextFileWindow in internal/tools/workspace_read_tools.go');
+  });
+
+  it('formats find_symbol with an optional kind chip', () => {
+    const withKind = describeToolCall(buildToolCall({
+      tool_name: 'find_symbol',
+      args_text: JSON.stringify({ name: 'Config', kind: 'type' }),
+    }));
+    expect(withKind.primaryLabel).toBe('Find Config');
+    expect(withKind.chips).toContain('type');
+
+    const withoutKind = describeToolCall(buildToolCall({
+      tool_name: 'find_symbol',
+      args_text: JSON.stringify({ name: 'Config' }),
+    }));
+    expect(withoutKind.chips).toHaveLength(0);
+  });
+
+  it('formats call graph lookups', () => {
+    const callers = describeToolCall(buildToolCall({
+      tool_name: 'find_callers',
+      args_text: JSON.stringify({ symbol: 'Login' }),
+    }));
+    expect(callers.primaryLabel).toBe('Find callers of Login');
+
+    const callees = describeToolCall(buildToolCall({
+      tool_name: 'find_callees',
+      args_text: JSON.stringify({ symbol: 'HandleLogin' }),
+    }));
+    expect(callees.primaryLabel).toBe('Find calls made by HandleLogin');
+  });
+
+  it('formats list_symbols as an outline', () => {
+    const presentation = describeToolCall(buildToolCall({
+      tool_name: 'list_symbols',
+      args_text: JSON.stringify({ path: 'internal/tools/workspace_tools.go' }),
+    }));
+    expect(presentation.primaryLabel).toBe('Outline internal/tools/workspace_tools.go');
+  });
+
 });

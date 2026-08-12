@@ -2653,17 +2653,151 @@
     },
     {
       "name": "list_symbols",
-      "description": "Extract function, type, and class declarations from a source file. Returns only signature lines with line numbers.",
+      "description": "Outline a source file: every function, method, type, and class declaration with its name, kind, and exact start-end line range. Use this to find a declaration, then read_symbol to read it.",
       "category": "Code Analysis",
       "input_schema": {
         "properties": {
           "path": {
             "description": "File path relative to the workspace root",
             "type": "string"
+          },
+          "repo_alias": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
           }
         },
+        "additionalProperties": false,
         "required": [
           "path"
+        ],
+        "type": "object"
+      },
+      "presets": []
+    },
+    {
+      "name": "read_symbol",
+      "description": "Read one named declaration (function, method, type, or class) in full, by name. Preferred over read_file whenever you know the declaration's name: it resolves the exact line range for you instead of making you guess an offset.",
+      "category": "Code Analysis",
+      "input_schema": {
+        "properties": {
+          "include_docstring": {
+            "description": "Include the comment block immediately above the declaration. Defaults to true.",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "File path relative to the workspace root",
+            "type": "string"
+          },
+          "repo_alias": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Declaration name, e.g. a function, method, type, or class name.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "symbol"
+        ],
+        "type": "object"
+      },
+      "presets": []
+    },
+    {
+      "name": "find_symbol",
+      "description": "Find where a function, method, type, or class is declared across the whole workspace, without knowing its file. Returns each declaration's path, kind, and exact line range.",
+      "category": "Code Analysis",
+      "input_schema": {
+        "properties": {
+          "kind": {
+            "description": "Optional kind filter: function, method, type, class, interface, constructor, constant, variable, module.",
+            "type": "string"
+          },
+          "name": {
+            "description": "Declaration name to find.",
+            "type": "string"
+          },
+          "repo_alias": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "presets": []
+    },
+    {
+      "name": "find_callers",
+      "description": "Find where a function or method is called across the workspace, with the enclosing function for each call site. Use before changing or deleting a declaration.",
+      "category": "Code Analysis",
+      "input_schema": {
+        "properties": {
+          "repo_alias": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Function or method name whose call sites you want.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "symbol"
+        ],
+        "type": "object"
+      },
+      "presets": []
+    },
+    {
+      "name": "find_callees",
+      "description": "List the symbols a given function or method calls.",
+      "category": "Code Analysis",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "description": "Optional file path relative to the workspace root.",
+            "type": "string"
+          },
+          "repo_alias": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Function or method name to inspect.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "symbol"
         ],
         "type": "object"
       },
@@ -3510,7 +3644,7 @@
     },
     {
       "name": "read_file_range",
-      "description": "Read a bounded, numbered line range from a file. Prefer this after search/ripgrep when you know the relevant span; truncated results include the exact continuation line.",
+      "description": "Read a bounded, numbered line range from a file. Use this when you know the line numbers, for example from a ripgrep hit or a stack trace; use read_symbol instead when you know a declaration's name. Truncated results include the exact continuation line. The range may span at most 240 lines.",
       "category": "Filesystem",
       "input_schema": {
         "properties": {

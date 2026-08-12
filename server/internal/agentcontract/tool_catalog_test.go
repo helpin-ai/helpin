@@ -685,3 +685,62 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 		}
 	}
 }
+
+// The symbol tools are the catalog's view of agent-runtime's tree-sitter
+// navigation tools. Their value is the exact line range they return, so the
+// catalog must keep advertising that and must stay strict about inputs.
+func TestSymbolNavigationToolCatalogContracts(t *testing.T) {
+	catalog := ListToolCatalog()
+	want := map[string]bool{
+		"list_symbols": false, "read_symbol": false,
+		"find_symbol": false, "find_callers": false, "find_callees": false,
+	}
+	for _, tool := range catalog.Tools {
+		if _, ok := want[tool.Name]; !ok {
+			continue
+		}
+		want[tool.Name] = true
+		if tool.Category != "Code Analysis" {
+			t.Fatalf("%s category = %q, want Code Analysis", tool.Name, tool.Category)
+		}
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok || schema["type"] != "object" || schema["additionalProperties"] != false {
+			t.Fatalf("%s schema is not a strict object: %#v", tool.Name, tool.InputSchema)
+		}
+		properties, _ := schema["properties"].(map[string]any)
+		for _, field := range []string{"repo_alias", "repository"} {
+			if properties[field] == nil {
+				t.Fatalf("%s schema missing %s; multi-repo selection would be impossible: %#v", tool.Name, field, schema)
+			}
+		}
+		switch tool.Name {
+		case "read_symbol":
+			if properties["path"] == nil || properties["symbol"] == nil {
+				t.Fatalf("read_symbol must take a path and a symbol: %#v", properties)
+			}
+			if !strings.Contains(tool.Description, "exact line range") {
+				t.Fatalf("read_symbol description lost its line-range contract: %s", tool.Description)
+			}
+		case "find_symbol":
+			if properties["name"] == nil {
+				t.Fatalf("find_symbol must take a name: %#v", properties)
+			}
+			if !strings.Contains(tool.Description, "without knowing its file") {
+				t.Fatalf("find_symbol description lost its cross-file contract: %s", tool.Description)
+			}
+		case "find_callers", "find_callees":
+			if properties["symbol"] == nil {
+				t.Fatalf("%s must take a symbol: %#v", tool.Name, properties)
+			}
+		case "list_symbols":
+			if !strings.Contains(tool.Description, "line range") {
+				t.Fatalf("list_symbols description lost its line-range contract: %s", tool.Description)
+			}
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Fatalf("%s missing from tool catalog", name)
+		}
+	}
+}

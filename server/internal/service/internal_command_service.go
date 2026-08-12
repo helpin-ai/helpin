@@ -2208,6 +2208,7 @@ func (s *InternalCommandService) groupDockCapabilities(tools []string) map[strin
 		"list_repositories": true, "checkout_repository": true, "checkout_repositories": true,
 		"list_commits": true, "read_file": true, "read_files": true, "read_file_range": true,
 		"list_directory": true, "search_files": true, "ripgrep": true, "grep": true, "list_symbols": true,
+		"read_symbol": true, "find_symbol": true, "find_callers": true, "find_callees": true,
 	}
 	skillTools := map[string]bool{"list_available_skills": true, "search_available_skills": true, "read_skill": true}
 	interactionWebTools := map[string]bool{

@@ -82,6 +82,39 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     return { primaryLabel, secondaryLabel, chips };
   }
 
+  // Symbol navigation reads a named declaration rather than a line span, so the
+  // symbol is the useful label; the path is secondary and often absent.
+  const symbolName = asString(parsed?.symbol) ?? asString(parsed?.name);
+
+  if (toolName === 'read_symbol' && symbolName) {
+    return {
+      primaryLabel: `Read ${symbolName}${path ? ` in ${path}` : ''}`,
+      secondaryLabel,
+      chips: [],
+    };
+  }
+
+  if (toolName === 'find_symbol' && symbolName) {
+    const kind = asString(parsed?.kind);
+    return {
+      primaryLabel: `Find ${symbolName}`,
+      secondaryLabel,
+      chips: kind ? [kind] : [],
+    };
+  }
+
+  if (toolName === 'find_callers' && symbolName) {
+    return { primaryLabel: `Find callers of ${symbolName}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'find_callees' && symbolName) {
+    return { primaryLabel: `Find calls made by ${symbolName}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'list_symbols' && path) {
+    return { primaryLabel: `Outline ${path}`, secondaryLabel, chips: [] };
+  }
+
   if ((toolName === 'read_file' || toolName === 'write_file' || toolName === 'edit_file' || toolName === 'str_replace_editor') && path) {
     const verb = toolName === 'write_file' ? 'Write' : toolName === 'edit_file' || toolName === 'str_replace_editor' ? 'Edit' : 'Read';
     return { primaryLabel: `${verb} ${path}`, secondaryLabel, chips: [] };

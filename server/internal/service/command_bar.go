@@ -274,7 +274,11 @@ func commandBarRequiredTargetTypesForStep(step model.CommandBarPlanStep, agent m
 			"search_files",
 			"ripgrep",
 			"grep",
-			"list_symbols":
+			"list_symbols",
+			"read_symbol",
+			"find_symbol",
+			"find_callers",
+			"find_callees":
 			required = append(required, "repository")
 		}
 	}

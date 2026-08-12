@@ -183,7 +183,11 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
   const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed);
   const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const readOutputText = !isFailed && (isToolName(toolCall.tool_name, 'read_file') || isToolName(toolCall.tool_name, 'read_file_range'))
+  // read_symbol returns the same numbered-line output as the other read tools,
+  // so it gets the same source preview rather than a raw result blob.
+  const readOutputText = !isFailed && (isToolName(toolCall.tool_name, 'read_file')
+    || isToolName(toolCall.tool_name, 'read_file_range')
+    || isToolName(toolCall.tool_name, 'read_symbol'))
     ? toolCall.result?.content?.trim() || ''
     : '';
   const readLineCount = readOutputText ? readOutputText.split('\n').length : null;

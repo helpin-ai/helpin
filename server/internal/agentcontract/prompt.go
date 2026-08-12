@@ -160,16 +160,24 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			parts = append(parts, "- If repository inspection is needed but repository tools report that no workspace lease exists, use target context when it identifies a repo; otherwise call list_repositories, ask which repo or repos to inspect when ambiguous, then call checkout_repository or checkout_repositories. Use repo_alias when reading from multiple checked-out repos.")
 		}
 		if (story != nil || epic != nil) && hasRepoAccess {
-			parts = append(parts, fmt.Sprintf("- Start by locating the relevant code with `%s`, `%s`, `%s`, or `%s` before reading large files.",
+			parts = append(parts, fmt.Sprintf("- When you know a declaration's name, start with `%s` to locate it and `%s` to read it in full; both return exact line ranges, so you never guess an offset.",
+				RuntimeToolNameForPrompt("find_symbol"),
+				RuntimeToolNameForPrompt("read_symbol"),
+			))
+			parts = append(parts, fmt.Sprintf("- Otherwise locate the relevant code with `%s`, `%s`, `%s`, or `%s` before reading large files.",
 				RuntimeToolNameForPrompt("list_directory"),
 				RuntimeToolNameForPrompt("ripgrep"),
 				RuntimeToolNameForPrompt("search_files"),
 				RuntimeToolNameForPrompt("list_symbols"),
 			))
-			parts = append(parts, fmt.Sprintf("- Prefer search-first, then narrow reads: use `%s`, `%s`, or `%s` to find exact files or symbols before any broad file read.",
+			parts = append(parts, fmt.Sprintf("- Prefer search-first, then narrow reads: use `%s`, `%s`, `%s`, or `%s` to find exact files or symbols before any broad file read.",
+				RuntimeToolNameForPrompt("find_symbol"),
 				RuntimeToolNameForPrompt("ripgrep"),
 				RuntimeToolNameForPrompt("search_files"),
 				RuntimeToolNameForPrompt("list_symbols"),
+			))
+			parts = append(parts, fmt.Sprintf("- Before changing or deleting a declaration, call `%s` to see what depends on it.",
+				RuntimeToolNameForPrompt("find_callers"),
 			))
 			parts = append(parts, fmt.Sprintf("- `%s` now returns a smaller bounded window by default; use offset_line to continue and use `%s` for targeted spans.",
 				RuntimeToolNameForPrompt("read_file"),

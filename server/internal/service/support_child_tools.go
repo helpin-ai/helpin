@@ -24,6 +24,10 @@ var supportChildReadOnlyTools = map[string]bool{
 	"ripgrep":               true,
 	"grep":                  true,
 	"list_symbols":          true,
+	"read_symbol":           true,
+	"find_symbol":           true,
+	"find_callers":          true,
+	"find_callees":          true,
 	// Docs / knowledge reads.
 	"list_documents":   true,
 	"read_document":    true,

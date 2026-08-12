@@ -266,7 +266,7 @@ func supportChildResearchKinds(steps []model.CommandBarPlanStep) (hasWeb, hasRep
 			switch strings.TrimSpace(tool) {
 			case "web_search_brave", "web_search_exa", "fetch_url", "crawl_url":
 				hasWeb = true
-			case "checkout_repository", "checkout_repositories", "list_repositories", "list_commits", "read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols":
+			case "checkout_repository", "checkout_repositories", "list_repositories", "list_commits", "read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "read_symbol", "find_symbol", "find_callers", "find_callees":
 				hasRepository = true
 			}
 		}
