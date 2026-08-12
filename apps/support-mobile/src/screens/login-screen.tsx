@@ -71,7 +71,6 @@ export function LoginScreen() {
       <div className="flex flex-1 flex-col items-center justify-center gap-10">
         <div className="text-center">
           <HelpinLogo />
-          <p className="mt-1 text-footnote text-muted-foreground">Support</p>
         </div>
 
         <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-3" noValidate>

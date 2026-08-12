@@ -187,7 +187,7 @@ export function SettingsScreen() {
             </Pressable>
           </section>
 
-          <p className="pb-6 pt-2 text-center text-caption text-muted-foreground">Helpin Support v{appVersion}</p>
+          <p className="pb-6 pt-2 text-center text-caption text-muted-foreground">Helpin v{appVersion}</p>
       </div>
     </div>
   )

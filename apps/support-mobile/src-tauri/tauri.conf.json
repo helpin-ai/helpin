@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Helpin Support",
+  "productName": "Helpin",
   "version": "0.1.0",
   "identifier": "ai.helpin.mobile",
   "build": {
@@ -10,7 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "label": "main", "title": "Helpin Support" }],
+    "windows": [{ "label": "main", "title": "Helpin" }],
     "security": { "csp": null }
   },
   "bundle": {
