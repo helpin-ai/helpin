@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildUsageChart } from '../UsageDetail';
+import { buildUsageChart, selectUsageDateTickIndexes } from '../UsageDetail';
 import type { UsageResponse } from '@/lib/billingTypes';
 
 const usage: UsageResponse = {
@@ -37,5 +37,15 @@ describe('buildUsageChart', () => {
     }, 'cumulative');
 
     expect(chart.points.map((point) => point.total)).toEqual([10, 30]);
+  });
+});
+
+describe('selectUsageDateTickIndexes', () => {
+  it('shows every date when the series is sparse', () => {
+    expect(selectUsageDateTickIndexes(4)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('keeps the first and last dates with evenly spaced intermediate ticks', () => {
+    expect(selectUsageDateTickIndexes(31, 6)).toEqual([0, 6, 12, 18, 24, 30]);
   });
 });
