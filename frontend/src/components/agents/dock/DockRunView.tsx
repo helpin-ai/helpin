@@ -4,6 +4,7 @@ import { Loading01Icon } from '@/lib/icons';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
 import { PendingInteractionCard } from './PendingInteractionCard';
+import { ApprovalAttentionBanner } from './ApprovalAttentionBanner';
 import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
 import { deriveLiveStatusLabel, ScrollToLatestButton } from '@/components/agents/transcript';
 import { dockChatService } from '@/lib/services/dockChatService';
@@ -85,12 +86,24 @@ export function DockRunView({
     return () => node.removeEventListener('scroll', update);
   }, []);
 
+  const scrollToLatest = useCallback(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    autoFollowRef.current = true;
+    setAtBottom(true);
+    node.scrollTop = node.scrollHeight;
+  }, []);
+
   useEffect(() => {
     const node = scrollRef.current;
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
   }, [streamState, pendingInteraction, fallbackInteraction, sendError]);
 
   const interaction = pendingInteraction ?? fallbackInteraction;
+  const needsApproval = (
+    (run.status === 'paused' && run.pause_reason === 'human_approval')
+    || interaction?.interaction_kind.includes('approval') === true
+  );
   const resolveInteraction = useCallback(async (
     interactionId: string,
     payload: { response_payload: Record<string, unknown>; followup_message?: string },
@@ -234,8 +247,11 @@ export function DockRunView({
             </div>
           ) : null}
         </div>
-        {!atBottom ? <ScrollToLatestButton onClick={() => { const node = scrollRef.current; if (node) node.scrollTop = node.scrollHeight; }} /> : null}
+        {!atBottom ? <ScrollToLatestButton onClick={scrollToLatest} /> : null}
       </div>
+      {needsApproval && !atBottom ? (
+        <ApprovalAttentionBanner onReview={scrollToLatest} />
+      ) : null}
       {(composerEnabled || canStop || run.status === 'running' || run.status === 'queued') ? (
         <div className="border-t border-[#f1efea] dark:border-[#302f2b]">
           <DockInput

@@ -5,13 +5,14 @@ import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { parseDockPlanConfirm } from '@/lib/dockTypes';
 import type { DockChatDetail, DockEntityReference } from '@/lib/dockTypes';
-import type { AgentRun, CodingSessionInteraction, CommandBarPlanSummary } from '@/lib/pmTypes';
+import type { AgentRun, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
 import { DockUserMessage } from './DockUserMessage';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
+import { ApprovalAttentionBanner } from './ApprovalAttentionBanner';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
 import type { AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
@@ -28,6 +29,7 @@ import {
 interface ChatViewProps {
   workspaceId: string;
   chatId: string;
+  scrollToLatestRequest: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
   onDraftConsumed?: () => void;
@@ -38,6 +40,7 @@ interface ChatViewProps {
   streamController: AgentRunStreamState;
   onPresenceChange?: (state: AskAgentAvatarState | null) => void;
   onRunIdChange?: (runId: string | null) => void;
+  requiredPageContext?: CommandBarPageContext | null;
 }
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
@@ -51,6 +54,7 @@ const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
 export function ChatView({
   workspaceId,
   chatId,
+  scrollToLatestRequest,
   textareaRef,
   initialDraft,
   onDraftConsumed,
@@ -61,6 +65,7 @@ export function ChatView({
   streamController,
   onPresenceChange,
   onRunIdChange,
+  requiredPageContext,
 }: ChatViewProps) {
   const [detail, setDetail] = useState<DockChatDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
@@ -86,7 +91,7 @@ export function ChatView({
 
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
-  const effectivePageContext = contextCleared ? null : pageContext;
+  const effectivePageContext = requiredPageContext ?? (contextCleared ? null : pageContext);
 
   useEffect(() => {
     if (!initialDraft) return;
@@ -243,6 +248,12 @@ export function ChatView({
     node.scrollTop = node.scrollHeight;
   }, []);
 
+  // Selecting a chat is an explicit request to resume at its latest message,
+  // including when the already-active chat is selected again.
+  useEffect(() => {
+    scrollToLatest();
+  }, [detailLoading, scrollToLatest, scrollToLatestRequest]);
+
   // Keep the transcript pinned to the bottom as content streams in, unless the
   // user has scrolled up to read earlier turns.
   useEffect(() => {
@@ -365,16 +376,26 @@ export function ChatView({
     return map;
   }, [plans]);
 
+  const needsApproval = (
+    (run?.status === 'paused' && run.pause_reason === 'human_approval')
+    || effectiveInteraction?.interaction_kind.includes('approval') === true
+    || Object.values(runsById).some(
+      (childRun) => childRun.status === 'paused' && childRun.pause_reason === 'human_approval',
+    )
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} className="max-h-[60vh] min-h-24 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <div ref={scrollRef} data-agent-dock-chat-scroll className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {detailLoading && !detail && (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading chat…</p>
         )}
         {!detailLoading && !run && !pendingEcho && (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Ask a question about your workspace, or describe work for an agent to do.
+            {requiredPageContext?.entity_type === 'support_conversation'
+              ? 'Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.'
+              : 'Ask a question about your workspace, or describe work for an agent to do.'}
           </p>
         )}
         {transformed && <DockTranscript stream={transformed.stream} active={runActive} />}
@@ -457,6 +478,9 @@ export function ChatView({
       </div>
       {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
       </div>
+      {needsApproval && !atBottom ? (
+        <ApprovalAttentionBanner onReview={scrollToLatest} />
+      ) : null}
       {composer.visible && (
         <div className="border-t border-border/60 p-2">
           <DockInput
@@ -465,13 +489,13 @@ export function ChatView({
             onChange={setValue}
             onSubmit={() => void submit()}
             pageContext={effectivePageContext}
-            contextOptions={scopeOptions}
+            contextOptions={requiredPageContext ? [] : scopeOptions}
             activeContextKey={activeScopeKey}
             onContextKeyChange={(key) => {
               setContextCleared(false);
               setActiveScopeKey(key);
             }}
-            onClearContext={() => setContextCleared(true)}
+            onClearContext={requiredPageContext ? undefined : () => setContextCleared(true)}
             workspaceId={workspaceId}
             references={references}
             onAddReference={(reference) => {

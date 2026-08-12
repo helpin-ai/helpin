@@ -43,6 +43,14 @@ export function buildUsageChart(usage: UsageResponse, mode: UsageMode) {
   return { points, max, featureKeys, labelByKey };
 }
 
+export function selectUsageDateTickIndexes(pointCount: number, maxTicks = 6) {
+  if (pointCount <= 0) return [];
+  if (pointCount <= maxTicks) return Array.from({ length: pointCount }, (_, index) => index);
+  return Array.from({ length: maxTicks }, (_, index) => (
+    Math.round((index * (pointCount - 1)) / (maxTicks - 1))
+  ));
+}
+
 export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
   const [mode, setMode] = useState<UsageMode>('daily');
   const period = useMemo(() => {
@@ -72,6 +80,10 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
   }
 
   const { points, max } = buildUsageChart(usage, mode);
+  const chartColumnCount = Math.max(1, points.length);
+  const tickIndexes = new Set(selectUsageDateTickIndexes(points.length));
+  const crossesYears = points.length > 1
+    && dayjs(points[0]?.date).year() !== dayjs(points[points.length - 1]?.date).year();
   const features = Array.isArray(usage.features) ? usage.features : [];
   const periodLabel = formatUsagePeriod(usage.period_start, usage.period_end);
 
@@ -104,29 +116,50 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
 
       {/* Stacked bar chart (CSS/flex) */}
       <div className="rounded-xl border bg-card p-4">
-        <div className="flex h-40 items-end gap-[3px]">
-          {points.map((p) => (
-            <div
-              key={p.date}
-              className="group relative flex h-full flex-1 flex-col justify-end"
-              title={`${dayjs(p.date).format('MMM D')}: ${formatNumber(p.total)} usage units`}
-            >
-              <div className="flex w-full flex-col-reverse" style={{ height: `${(p.total / max) * 100}%` }}>
-                {p.segs
-                  .filter((s) => s.value > 0)
-                  .map((s) => (
-                    <div
-                      key={s.key}
-                      style={{
-                        height: `${(s.value / Math.max(1, p.total)) * 100}%`,
-                        backgroundColor: s.color,
-                      }}
-                      className="w-full first:rounded-t-sm"
-                    />
-                  ))}
+        <div className="overflow-x-auto px-1 pb-1">
+          <div
+            data-usage-chart-track
+            className="grid h-40 w-full items-end justify-center gap-[3px]"
+            style={{ gridTemplateColumns: `repeat(${chartColumnCount}, minmax(8px, 32px))` }}
+          >
+            {points.map((p) => (
+              <div
+                key={p.date}
+                className="group relative flex h-full min-w-0 flex-col justify-end"
+                title={`${dayjs(p.date).format('MMM D')}: ${formatNumber(p.total)} usage units`}
+              >
+                <div className="flex w-full flex-col-reverse" style={{ height: `${(p.total / max) * 100}%` }}>
+                  {p.segs
+                    .filter((s) => s.value > 0)
+                    .map((s) => (
+                      <div
+                        key={s.key}
+                        style={{
+                          height: `${(s.value / Math.max(1, p.total)) * 100}%`,
+                          backgroundColor: s.color,
+                        }}
+                        className="w-full first:rounded-t-sm"
+                      />
+                    ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          <div
+            aria-label="Usage period"
+            className="mt-2 grid w-full justify-center gap-[3px] text-[10px] text-muted-foreground"
+            style={{ gridTemplateColumns: `repeat(${chartColumnCount}, minmax(8px, 32px))` }}
+          >
+            {points.map((point, index) => (
+              <div key={point.date} className="relative h-4 min-w-0">
+                {tickIndexes.has(index) ? (
+                  <span className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap">
+                    {dayjs(point.date).format(crossesYears ? 'MMM D, YY' : 'MMM D')}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
         </div>
         {/* Legend */}
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">

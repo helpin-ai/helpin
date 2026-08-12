@@ -9,6 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDockStore } from '@/stores/dockStore';
 import type { DockChat, DockChatDetail, DockRunSummary } from '@/lib/dockTypes';
+import type { CommandBarPageContext } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -143,6 +144,7 @@ beforeEach(() => {
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
   mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
+  mocks.createChat.mockResolvedValue({ data: null, error: 'not configured' });
   mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
   mocks.getChat.mockResolvedValue({ data: chatDetail(), error: null });
   mocks.getChatRun.mockResolvedValue({ data: null, error: null });
@@ -175,6 +177,42 @@ async function renderDock() {
       <TooltipProvider>
         <PageContextProvider>
           <AskAgentsDock />
+        </PageContextProvider>
+      </TooltipProvider>,
+    );
+  });
+  await flush();
+}
+
+async function renderDockWithHiddenTrigger() {
+  await act(async () => {
+    root.render(
+      <TooltipProvider>
+        <PageContextProvider>
+          <AskAgentsDock hideCollapsedTrigger />
+        </PageContextProvider>
+      </TooltipProvider>,
+    );
+  });
+  await flush();
+}
+
+async function renderEmbeddedDock(
+  requiredPageContext: CommandBarPageContext,
+  onClose = vi.fn(),
+  active = true,
+) {
+  await act(async () => {
+    root.render(
+      <TooltipProvider>
+        <PageContextProvider>
+          <AskAgentsDock
+            presentation="embedded"
+            requiredPageContext={requiredPageContext}
+            associatedSupportConversationId={requiredPageContext.entity_id}
+            active={active}
+            onClose={onClose}
+          />
         </PageContextProvider>
       </TooltipProvider>,
     );
@@ -230,6 +268,135 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it('stays hidden when collapsed in support but opens from the global sidebar event', async () => {
+    useDockStore.setState({ collapsed: true });
+    await renderDockWithHiddenTrigger();
+    expect(document.body.querySelector('[aria-label="Agent dock"]')).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { mode: 'runs' } }));
+    });
+    await waitForCondition(
+      () => document.body.querySelector('[aria-label="Agent runs and chats"]') !== null,
+      'global Ask Agents panel did not open',
+    );
+    expect(useDockStore.getState().collapsed).toBe(false);
+  });
+
+  it('reopens the chat associated with the active support conversation', async () => {
+    const supportContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-42',
+      display_title: 'Refund request',
+    };
+    const associatedChat = { ...CHAT, id: 'chat-support', support_conversation_id: 'conv-42' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [CHAT, associatedChat] }, error: null });
+
+    await renderEmbeddedDock(supportContext);
+    await waitForCondition(
+      () => useDockStore.getState().activeChatId === 'chat-support',
+      'associated support chat was not selected',
+    );
+
+    expect(mocks.createChat).not.toHaveBeenCalled();
+  });
+
+  it('describes support-specific agent capabilities in an empty conversation chat', async () => {
+    const supportContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-42',
+      display_title: 'Refund request',
+    };
+    const associatedChat = { ...CHAT, support_conversation_id: 'conv-42' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [associatedChat] }, error: null });
+
+    await renderEmbeddedDock(supportContext);
+    await waitForText('Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.');
+  });
+
+  it('creates an associated chat when the support conversation has no history', async () => {
+    const supportContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-new',
+      display_title: 'New request',
+    };
+    const newChat = { ...CHAT, id: 'chat-new', support_conversation_id: 'conv-new' };
+    mocks.createChat.mockResolvedValue({ data: newChat, error: null });
+
+    await renderEmbeddedDock(supportContext);
+    await waitForCondition(() => mocks.createChat.mock.calls.length === 1, 'support chat was not created');
+
+    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new');
+    expect(useDockStore.getState().activeChatId).toBe('chat-new');
+  });
+
+  it('embeds the full chat without a floating trigger and sends mandatory support context', async () => {
+    const supportContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-42',
+      display_title: 'Refund request',
+    };
+    mocks.listChats.mockResolvedValue({
+      data: { chats: [{ ...CHAT, support_conversation_id: 'conv-42' }] },
+      error: null,
+    });
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
+    await renderEmbeddedDock(supportContext);
+    await waitForText('Sprint questions');
+
+    expect(document.body.querySelector('[data-helpin-dock-presentation="embedded"]')).not.toBeNull();
+    expect(document.body.querySelector('[aria-label="Agent dock"]')).toBeNull();
+    expect(document.body.textContent).toContain('Refund request');
+
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'Draft a helpful response');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-1', expect.objectContaining({
+      content: 'Draft a helpful response',
+      page_context: supportContext,
+    }));
+  });
+
+  it('switches the embedded composer to the next support conversation chat', async () => {
+    const firstContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-1',
+      display_title: 'First conversation',
+    };
+    const nextContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-2',
+      display_title: 'Next conversation',
+    };
+    const firstChat = { ...CHAT, support_conversation_id: 'conv-1' };
+    const nextChat = { ...CHAT, id: 'chat-2', title: 'Next questions', support_conversation_id: 'conv-2' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [firstChat, nextChat] }, error: null });
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
+    await renderEmbeddedDock(firstContext);
+    await waitForText('First conversation');
+
+    await renderEmbeddedDock(nextContext);
+    await waitForText('Next conversation');
+    await waitForCondition(
+      () => useDockStore.getState().activeChatId === 'chat-2',
+      'next support chat was not selected',
+    );
+    const nextTextarea = dockTextarea();
+
+    await act(async () => {
+      setTextareaValue(nextTextarea, 'Use the new conversation');
+      nextTextarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-2', expect.objectContaining({
+      page_context: nextContext,
+    }));
+  });
   it('renders the collapsed pill and expands via the / key', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();
@@ -250,8 +417,39 @@ describe('AskAgentsDock', () => {
     expect(document.querySelector('.agent-dock-chat-row-dot')).not.toBeNull();
     expect(document.querySelector('.agent-dock-chat-marker')).not.toBeNull();
     expect(document.body.textContent).not.toContain('Ask Agent · Conversation');
+    const scrollContainer = document.body.querySelector<HTMLElement>('[data-agent-dock-chat-scroll]');
+    expect(scrollContainer?.className).toContain('min-h-0');
+    expect(scrollContainer?.className).not.toContain('max-h-[60vh]');
     const textarea = dockTextarea();
     expect(textarea.disabled).toBe(false);
+  });
+
+  it('scrolls an active chat to its latest message when selected again', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const scrollContainer = document.body.querySelector<HTMLElement>('[data-agent-dock-chat-scroll]');
+    expect(scrollContainer).not.toBeNull();
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1_000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 200 },
+    });
+
+    await act(async () => {
+      scrollContainer?.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(scrollContainer?.scrollTop).toBe(200);
+
+    const activeChatButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Sprint questions, Stopped"]');
+    expect(activeChatButton).not.toBeNull();
+    await act(async () => {
+      activeChatButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(scrollContainer?.scrollTop).toBe(1_000);
   });
 
   it('shows running, paused, and stopped chat lifecycle indicators', async () => {
@@ -712,6 +910,36 @@ describe('AskAgentsDock', () => {
     expect(document.body.querySelector('[data-dock-header] [aria-label="Close agent dock"]')).toBeNull();
   });
 
+  it('maximizes and restores the dock without changing its active conversation', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const panel = document.body.querySelector<HTMLElement>('#agent-dock-panel');
+    const maximizeButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Maximize agent dock"]');
+    expect(panel?.getAttribute('data-maximized')).toBeNull();
+    expect(maximizeButton).not.toBeNull();
+
+    await act(async () => {
+      maximizeButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(panel?.getAttribute('data-maximized')).toBe('true');
+    expect(panel?.className).toContain('h-full');
+    expect(document.body.querySelector('[aria-label="Restore agent dock"]')).not.toBeNull();
+    expect(document.body.textContent).toContain('Sprint questions');
+
+    const restoreButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Restore agent dock"]');
+    await act(async () => {
+      restoreButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(panel?.getAttribute('data-maximized')).toBeNull();
+    expect(panel?.className).toContain('w-[min(900px,92vw)]');
+    expect(document.body.querySelector('[aria-label="Maximize agent dock"]')).not.toBeNull();
+  });
+
   it('restores focus to the segment that opened the dock', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();
@@ -820,6 +1048,30 @@ describe('AskAgentsDock', () => {
 
     await renderDock();
     await waitForText('Confirm fallback launch');
+
+    const scrollContainer = document.body.querySelector<HTMLElement>('[data-agent-dock-chat-scroll]');
+    expect(scrollContainer).not.toBeNull();
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1_000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 200 },
+    });
+    await act(async () => {
+      scrollContainer?.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const approvalNotice = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('Agent needs your approval'),
+    );
+    expect(approvalNotice).not.toBeUndefined();
+    await act(async () => {
+      approvalNotice?.click();
+      await Promise.resolve();
+    });
+
+    expect(scrollContainer?.scrollTop).toBe(1_000);
+    expect(document.body.textContent).not.toContain('Agent needs your approval');
 
     const approve = Array.from(document.body.querySelectorAll('button')).find(
       (b) => b.textContent === 'Approve',

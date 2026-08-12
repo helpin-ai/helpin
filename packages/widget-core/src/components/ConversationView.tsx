@@ -7,6 +7,7 @@ import { TypingIndicator } from './TypingIndicator';
 import { PreChatForm } from './PreChatForm';
 import { ImageLightbox } from './ImageLightbox';
 import { SpecialNoticeBanner } from './SpecialNoticeBanner';
+import { AIThinkingMark } from './AIThinkingMark';
 import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -21,6 +22,7 @@ interface ConversationViewProps {
   onUploadAttachment?: (file: File, localId: string) => Promise<{ attachmentId: string; url: string } | null>;
   isTyping?: boolean;
   isAIThinking?: boolean;
+  aiProgressLabel?: string;
   typingAgentName?: string;
   typingAgentAvatar?: string;
   onBack: () => void;
@@ -47,6 +49,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   onUploadAttachment,
   isTyping = false,
   isAIThinking = false,
+  aiProgressLabel = 'Looking into this…',
   typingAgentName,
   typingAgentAvatar,
   onBack,
@@ -556,15 +559,18 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         />
       )}
       {isAIThinking && (
-        <div className="helpin-ai-thinking">
-          <div className="helpin-ai-thinking-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22" />
-              <path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93" />
-            </svg>
-          </div>
-          <span className="helpin-ai-thinking-text">Thinking</span>
-          <span className="helpin-ai-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+        <div className="helpin-ai-thinking" role="status" aria-live="polite">
+          <span className="helpin-ai-thinking-icon" aria-hidden="true">
+            <AIThinkingMark className="helpin-ai-thinking-mark" />
+            <span className="helpin-ai-thinking-status" />
+          </span>
+          <span className="helpin-ai-thinking-copy">
+            <span className="helpin-ai-thinking-label" key={aiProgressLabel}>{aiProgressLabel}</span>
+            <span className="helpin-ai-thinking-shimmer" aria-hidden="true">
+              <span className="helpin-ai-thinking-line helpin-ai-thinking-line--primary" />
+              <span className="helpin-ai-thinking-line helpin-ai-thinking-line--secondary" />
+            </span>
+          </span>
         </div>
       )}
       {showTalkToHumanButton && (

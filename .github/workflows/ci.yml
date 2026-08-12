@@ -236,6 +236,8 @@ jobs:
         run: pnpm --dir packages/react run test
       - name: nextjs
         run: pnpm --dir packages/nextjs run test
+      - name: vue
+        run: pnpm --dir packages/vue run test
 
   # ----------------------- Help Center ----------------------
   helpcenter:

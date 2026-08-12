@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { Cancel01Icon, Maximize01Icon, MoreVerticalIcon } from '@/lib/icons';
+import { Cancel01Icon, LinkSquare01Icon, Maximize01Icon, Minimize01Icon, MoreVerticalIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AskAgentAvatar, type AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
 import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
@@ -17,6 +17,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDockStore } from '@/stores/dockStore';
 import { dockChatService } from '@/lib/services/dockChatService';
 import type { DockChat, DockRunSummary } from '@/lib/dockTypes';
+import type { CommandBarPageContext } from '@/lib/pmTypes';
 import { DockRoster } from './dock/DockRoster';
 import { ChatView } from './dock/ChatView';
 import { DockRunView } from './dock/DockRunView';
@@ -29,7 +30,24 @@ type AskAgentsEventDetail = { query?: string; mode?: 'compose' | 'runs'; runId?:
 type DockFocusTarget = 'composer' | 'selection' | 'header';
 
 /** Persistent workspace presence layer for chats and user-owned agent runs. */
-export function AskAgentsDock() {
+interface AskAgentsDockProps {
+  presentation?: 'floating' | 'embedded';
+  requiredPageContext?: CommandBarPageContext | null;
+  associatedSupportConversationId?: string;
+  active?: boolean;
+  hideCollapsedTrigger?: boolean;
+  onClose?: () => void;
+}
+
+export function AskAgentsDock({
+  presentation = 'floating',
+  requiredPageContext,
+  associatedSupportConversationId,
+  active = true,
+  hideCollapsedTrigger = false,
+  onClose,
+}: AskAgentsDockProps = {}) {
+  const embedded = presentation === 'embedded';
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const {
     collapsed,
@@ -56,6 +74,8 @@ export function AskAgentsDock() {
   const [runsError, setRunsError] = useState<string | null>(null);
   const [chatsError, setChatsError] = useState<string | null>(null);
   const [hiddenByModal, setHiddenByModal] = useState(false);
+  const [maximized, setMaximized] = useState(false);
+  const [chatScrollRequest, setChatScrollRequest] = useState(0);
   const [pendingDraft, setPendingDraft] = useState<string | undefined>();
   const [attentionNudge, setAttentionNudge] = useState(false);
   const [nextChatCursor, setNextChatCursor] = useState<string | null>(null);
@@ -74,6 +94,7 @@ export function AskAgentsDock() {
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const focusTargetRef = useRef<DockFocusTarget>('header');
   const loadingMoreChatsRef = useRef(false);
+  const ensuredSupportConversationRef = useRef<string | null>(null);
 
   const orderedRuns = useMemo(() => [...runs].sort((left, right) => {
     const leftPresentation = presentDockRun(left.run.status, left.run.pause_reason, left.attention_kind);
@@ -263,6 +284,36 @@ export function AskAgentsDock() {
   }, [chats, chatsLoading, setActiveChatId]);
 
   useEffect(() => {
+    if (!active || !workspaceId || !associatedSupportConversationId || chatsLoading) return;
+    const associationKey = `${workspaceId}:${associatedSupportConversationId}`;
+    const associatedChat = chats.find(
+      (chat) => chat.support_conversation_id === associatedSupportConversationId,
+    );
+    if (associatedChat) {
+      ensuredSupportConversationRef.current = associationKey;
+      if (useDockStore.getState().activeChatId !== associatedChat.id) {
+        setActiveChatId(associatedChat.id);
+      }
+      setTab('chats');
+      return;
+    }
+    if (ensuredSupportConversationRef.current === associationKey) return;
+    ensuredSupportConversationRef.current = associationKey;
+    void dockChatService.createChat(workspaceId, '', associatedSupportConversationId).then((result) => {
+      if (result.error || !result.data) {
+        ensuredSupportConversationRef.current = null;
+        toast.error(result.error ?? 'Failed to open the conversation chat');
+        return;
+      }
+      const current = useDockStore.getState().chats;
+      setChats([result.data, ...current.filter((chat) => chat.id !== result.data?.id)]);
+      setActiveChatId(result.data.id);
+      setTab('chats');
+      focusTargetRef.current = 'composer';
+    });
+  }, [active, associatedSupportConversationId, chats, chatsLoading, setActiveChatId, setChats, setTab, workspaceId]);
+
+  useEffect(() => {
     if (runsLoading) return;
     const nextIds = attentionRuns.map((summary) => summary.run.id);
     const hasNew = nextIds.some((id) => !lastAttentionIds.includes(id));
@@ -316,13 +367,18 @@ export function AskAgentsDock() {
   }, [rememberFocusSource, setCollapsed, setTab]);
 
   const closeDock = useCallback(() => {
+    if (embedded) {
+      onClose?.();
+      return;
+    }
+    setMaximized(false);
     setCollapsed(true);
     window.setTimeout(() => {
       const target = returnFocusRef.current;
       if (target?.isConnected) target.focus();
       else askTriggerRef.current?.focus();
     }, 0);
-  }, [setCollapsed]);
+  }, [embedded, onClose, setCollapsed]);
 
   const newChat = useCallback(async () => {
     if (!workspaceId) return;
@@ -339,7 +395,7 @@ export function AskAgentsDock() {
   }, [chats, setActiveChatId, setChats, setCollapsed, setTab, workspaceId]);
 
   useLayoutEffect(() => {
-    if (collapsed) return;
+    if (collapsed && !embedded) return;
     if (!panelRef.current) return;
     const target = focusTargetRef.current;
     if (target === 'composer' && textareaRef.current) {
@@ -354,9 +410,10 @@ export function AskAgentsDock() {
       }
     }
     panelRef.current.querySelector<HTMLElement>('[data-dock-header]')?.focus();
-  }, [activeChatId, activeRunId, collapsed, tab]);
+  }, [activeChatId, activeRunId, collapsed, embedded, tab]);
 
   useEffect(() => {
+    if (embedded) return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
       const editable = target instanceof Element
@@ -375,10 +432,10 @@ export function AskAgentsDock() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [closeDock, collapsed, newChat, openDock]);
+  }, [closeDock, collapsed, embedded, newChat, openDock]);
 
   useEffect(() => {
-    if (collapsed) return;
+    if (embedded || collapsed) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Tab' || !panelRef.current) return;
       const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
@@ -401,10 +458,10 @@ export function AskAgentsDock() {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [collapsed]);
+  }, [collapsed, embedded]);
 
   useEffect(() => {
-    if (collapsed) return;
+    if (embedded || collapsed) return;
     const previousBodyOverflow = document.body.style.overflow;
     const previousRootOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -413,9 +470,10 @@ export function AskAgentsDock() {
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousRootOverflow;
     };
-  }, [collapsed]);
+  }, [collapsed, embedded]);
 
   useEffect(() => {
+    if (embedded) return;
     const onAsk = (event: Event) => {
       const detail = (event as CustomEvent<AskAgentsEventDetail>).detail ?? {};
       const query = detail.query?.trim();
@@ -434,7 +492,7 @@ export function AskAgentsDock() {
     };
     window.addEventListener('helpin:ask-agents', onAsk);
     return () => window.removeEventListener('helpin:ask-agents', onAsk);
-  }, [openDock, setActiveChatId, setActiveRunId]);
+  }, [embedded, openDock, setActiveChatId, setActiveRunId]);
 
   useEffect(() => {
     const compute = () => {
@@ -454,6 +512,53 @@ export function AskAgentsDock() {
 
   if (!workspaceId || typeof document === 'undefined') return null;
 
+  if (embedded) {
+    return (
+      <div
+        ref={panelRef}
+        id="support-agent-sidebar"
+        data-helpin-dock="true"
+        data-helpin-dock-presentation="embedded"
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#fffefa] dark:bg-[#242320]"
+      >
+        <DockPaneHeader
+          key={`embedded:${activeChat?.id ?? 'empty'}`}
+          tab="chats"
+          run={null}
+          chat={activeChat}
+          workspaceSlug={workspace.slug}
+          askAgentState={askAgentState}
+          onClose={closeDock}
+          closeLabel="Back to details"
+          maximized={false}
+          onToggleMaximized={() => {}}
+          allowMaximize={false}
+          onRenameChat={renameChat}
+          onArchiveChat={archiveChat}
+        />
+        {activeChat ? (
+          <ChatView
+            key={activeChat.id}
+            workspaceId={workspaceId}
+            chatId={activeChat.id}
+            textareaRef={textareaRef}
+            draftValue={drafts[`chat:${activeChat.id}`] ?? ''}
+            onDraftChange={(value) => setDraft(`chat:${activeChat.id}`, value)}
+            onChatChanged={() => void refreshChats(true)}
+            onRunStatusChange={updateChatRunStatus}
+            streamController={chatStreamController}
+            onPresenceChange={handleChatPresenceChange}
+            onRunIdChange={handleChatRunIdChange}
+            requiredPageContext={requiredPageContext}
+            scrollToLatestRequest={chatScrollRequest}
+          />
+        ) : (
+          <EmptyChatPane onNewChat={() => void newChat()} />
+        )}
+      </div>
+    );
+  }
+
   return createPortal(
     <div
       data-helpin-dock="true"
@@ -464,7 +569,12 @@ export function AskAgentsDock() {
         <button type="button" aria-label="Close agent dock" tabIndex={-1} onClick={closeDock} className="agent-dock-scrim absolute inset-0 bg-[rgba(28,27,25,.10)] backdrop-blur-[1.5px] dark:bg-black/35" />
       ) : null}
 
-      <div className="agent-dock-anchor pointer-events-none absolute inset-x-0 bottom-[calc(22px+env(safe-area-inset-bottom))] flex flex-col items-center gap-2.5 px-3">
+      <div className={cn(
+        'agent-dock-anchor pointer-events-none absolute inset-0 flex flex-col items-center justify-end motion-safe:transition-[padding] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]',
+        maximized
+          ? 'gap-0 p-0'
+          : 'gap-2.5 px-3 pb-[calc(22px+env(safe-area-inset-bottom))]',
+      )}>
         {!collapsed ? (
           <div
             ref={panelRef}
@@ -472,8 +582,14 @@ export function AskAgentsDock() {
             role="dialog"
             aria-modal="true"
             aria-label="Agent runs and chats"
+            data-maximized={maximized || undefined}
             tabIndex={-1}
-            className="agent-dock-panel pointer-events-auto flex h-[min(600px,calc(100dvh-104px))] w-[min(900px,92vw)] min-h-[360px] overflow-hidden rounded-[18px] border border-[#e6e3dd] bg-[#fffefa] shadow-[0_30px_70px_-26px_rgba(28,27,25,.5)] dark:border-[#37352f] dark:bg-[#242320]"
+            className={cn(
+              'agent-dock-panel pointer-events-auto flex origin-bottom overflow-hidden bg-[#fffefa] will-change-[width,height] motion-safe:transition-[width,height,min-height,border-radius,box-shadow] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:bg-[#242320]',
+              maximized
+                ? 'h-full w-full min-h-0'
+                : 'h-[min(600px,calc(100dvh-104px))] w-[min(900px,92vw)] min-h-[360px] rounded-[18px] border border-[#e6e3dd] shadow-[0_30px_70px_-26px_rgba(28,27,25,.5)] dark:border-[#37352f]',
+            )}
           >
             <DockRoster
               workspaceId={workspaceId}
@@ -490,10 +606,18 @@ export function AskAgentsDock() {
                 focusTargetRef.current = 'selection';
                 setTab(next);
                 if (next === 'agents' && !activeRunId) setActiveRunId(orderedRuns[0]?.run.id ?? null);
-                if (next === 'chats' && !activeChatId) setActiveChatId(chats[0]?.id ?? null);
+                if (next === 'chats') {
+                  if (!activeChatId) setActiveChatId(chats[0]?.id ?? null);
+                  setChatScrollRequest((request) => request + 1);
+                }
               }}
               onSelectRun={(runId) => { focusTargetRef.current = 'selection'; setActiveRunId(runId); setTab('agents'); }}
-              onSelectChat={(chatId) => { focusTargetRef.current = 'selection'; setActiveChatId(chatId); setTab('chats'); }}
+              onSelectChat={(chatId) => {
+                focusTargetRef.current = 'selection';
+                setActiveChatId(chatId);
+                setTab('chats');
+                setChatScrollRequest((request) => request + 1);
+              }}
               onNewChat={() => void newChat()}
               onRenameChat={renameChat}
               onArchiveChat={archiveChat}
@@ -511,6 +635,8 @@ export function AskAgentsDock() {
                 chat={activeChat}
                 workspaceSlug={workspace.slug}
                 askAgentState={askAgentState}
+                maximized={maximized}
+                onToggleMaximized={() => setMaximized((value) => !value)}
                 onClose={closeDock}
                 onRenameChat={renameChat}
                 onArchiveChat={archiveChat}
@@ -539,6 +665,7 @@ export function AskAgentsDock() {
                   key={activeChat.id}
                   workspaceId={workspaceId}
                   chatId={activeChat.id}
+                  scrollToLatestRequest={chatScrollRequest}
                   textareaRef={textareaRef}
                   initialDraft={pendingDraft}
                   onDraftConsumed={() => setPendingDraft(undefined)}
@@ -557,7 +684,7 @@ export function AskAgentsDock() {
           </div>
         ) : null}
 
-        <DockTrigger
+        {!maximized && !(hideCollapsedTrigger && collapsed) ? <DockTrigger
           askTriggerRef={askTriggerRef}
           open={!collapsed}
           runs={triggerRuns}
@@ -578,7 +705,7 @@ export function AskAgentsDock() {
             if (collapsed) openDock(tab, tab === 'chats' ? 'composer' : 'selection', source);
             else closeDock();
           }}
-        />
+        /> : null}
       </div>
       <div className="sr-only" aria-live="polite">{attentionRuns.length > 0 ? `${attentionRuns.length} agent${attentionRuns.length === 1 ? '' : 's'} need your attention` : ''}</div>
     </div>,
@@ -592,18 +719,26 @@ function DockPaneHeader({
   chat,
   workspaceSlug,
   askAgentState,
+  maximized,
+  onToggleMaximized,
   onClose,
   onRenameChat,
   onArchiveChat,
+  closeLabel = 'Minimize',
+  allowMaximize = true,
 }: {
   tab: 'agents' | 'chats';
   run: DockRunSummary | null;
   chat: DockChat | null;
   workspaceSlug?: string;
   askAgentState: AskAgentAvatarState;
+  maximized: boolean;
+  onToggleMaximized: () => void;
   onClose: () => void;
   onRenameChat: (chatId: string, title: string) => Promise<boolean>;
   onArchiveChat: (chatId: string) => Promise<boolean>;
+  closeLabel?: string;
+  allowMaximize?: boolean;
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState(chat?.title ?? '');
@@ -658,9 +793,24 @@ function DockPaneHeader({
           {presentation.label}
         </span>
       ) : null}
+      {allowMaximize ? <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onToggleMaximized}
+            aria-label={maximized ? 'Restore agent dock' : 'Maximize agent dock'}
+            className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]"
+          >
+            {maximized
+              ? <Minimize01Icon className="h-3.5 w-3.5" />
+              : <Maximize01Icon className="h-3.5 w-3.5" />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="z-[70]">{maximized ? 'Restore' : 'Maximize'}</TooltipContent>
+      </Tooltip> : null}
       {fullPath ? (
         <a href={fullPath} aria-label="Open full agent session" title="Open full session" className="grid h-8 w-8 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
-          <Maximize01Icon className="h-3.5 w-3.5" />
+          <LinkSquare01Icon className="h-3.5 w-3.5" />
         </a>
       ) : null}
       {tab === 'chats' && chat ? (
@@ -678,11 +828,11 @@ function DockPaneHeader({
       ) : null}
       <Tooltip>
         <TooltipTrigger asChild>
-          <button type="button" onClick={onClose} aria-label="Minimize" className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
+          <button type="button" onClick={onClose} aria-label={closeLabel} className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
             <Cancel01Icon className="h-3.5 w-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="top">Minimize</TooltipContent>
+        <TooltipContent side="top">{closeLabel}</TooltipContent>
       </Tooltip>
     </header>
   );

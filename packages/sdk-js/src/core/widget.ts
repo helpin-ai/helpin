@@ -60,6 +60,16 @@ type WidgetConversation = Conversation & {
   aiState?: string;
 };
 
+type AIResponseStreamState = {
+  responseId: string;
+  conversationId: string;
+  lastSequence: number;
+  pendingChunks: string[];
+  displayedContent: string;
+  canonicalPayload?: any;
+  revealTimer: ReturnType<typeof setTimeout> | null;
+};
+
 const MAX_WS_RETRIES = 10;
 const MAX_WS_INITIAL_RETRIES = 3; // retries before first successful connection (invalid key, server down)
 const WS_BASE_DELAY_MS = 1000;
@@ -68,6 +78,13 @@ const MAX_AUTO_RECONNECT_WINDOW_MS = 25_000;
 const MAX_BACKGROUND_RETRY_DELAY_MS = 120_000;
 const RECEIVED_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
 const SENT_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/submit.mp3';
+const AI_STREAM_REVEAL_INTERVAL_MS = 45;
+const AI_PROGRESS_COPY: Record<string, string> = {
+  looking: 'Looking into this…',
+  checking: 'Checking the details…',
+  composing: 'Preparing your answer…',
+  finalizing: 'Finishing your answer…',
+};
 
 function normalizeWidgetConfig(raw: any): WidgetConfig {
   const teammates = Array.isArray(raw?.availableTeammates)
@@ -123,6 +140,8 @@ export class WidgetManager {
   private articleRequestKey = 0;
   private isTyping = false;
   private isAIThinking = false;
+  private aiProgressLabel: string | undefined;
+  private aiResponseStreams = new Map<string, AIResponseStreamState>();
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
   private activeTeammate: WidgetActiveTeammate | undefined;
@@ -272,6 +291,7 @@ export class WidgetManager {
     this.hasBeenOpened = false;
     this.wsRetryCount = 0;
     this.connectionIssueStartedAt = null;
+    this.clearAIResponseStreams(false);
     this.messages = [];
     this.conversations = [];
     this.activeConversationId = null;
@@ -567,6 +587,7 @@ export class WidgetManager {
       onPreChatSubmit: (data: { phone: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
       isAIThinking: this.isAIThinking,
+      aiProgressLabel: this.aiProgressLabel,
       onEscalateToHuman: () => this.handleEscalateToHuman(),
       typingAgentName: this.typingAgentName,
       typingAgentAvatar: this.typingAgentAvatar,
@@ -837,6 +858,7 @@ export class WidgetManager {
   // ─── Message Handling ──────────────────────────────────────
 
   private resetActiveConversation(): void {
+    this.clearAIResponseStreams();
     this.activeConversationId = null;
     this.activeTeammate = undefined;
     this.messages = [];
@@ -975,6 +997,191 @@ export class WidgetManager {
     return message;
   }
 
+  private handleReceivedMessage(msg: any): void {
+    if (!msg) return;
+
+    const responseId = typeof msg.id === 'string' ? msg.id : '';
+    const stream = responseId ? this.aiResponseStreams.get(responseId) : undefined;
+    if (stream) {
+      stream.canonicalPayload = msg;
+      this.maybeFinalizeAIResponseStream(stream);
+      return;
+    }
+
+    this.commitReceivedMessage(msg);
+  }
+
+  private commitReceivedMessage(msg: any): void {
+    const newMsg = this.mapSupportMessage(msg);
+    const existingIdx = this.messages.findIndex((message) => message.id === newMsg.id);
+
+    // Replace optimistic customer messages and transient AI stream placeholders.
+    if (msg.sender_type === 'customer') {
+      const tempIdx = this.messages.findIndex(
+        (message) => message.id.startsWith('temp-') && message.content === msg.content,
+      );
+      if (tempIdx >= 0) {
+        this.messages[tempIdx] = newMsg;
+        this.messages = [...this.messages];
+      } else if (existingIdx >= 0) {
+        this.messages[existingIdx] = newMsg;
+        this.messages = [...this.messages];
+      } else {
+        this.messages = [...this.messages, newMsg];
+      }
+    } else if (existingIdx >= 0) {
+      this.messages[existingIdx] = newMsg;
+      this.messages = [...this.messages];
+    } else {
+      this.messages = [...this.messages, newMsg];
+    }
+
+    if (msg.sender_type !== 'customer') {
+      this.isTyping = false;
+      this.isAIThinking = false;
+      this.aiProgressLabel = undefined;
+      this.playReceivedMessageSound();
+    }
+
+    // Update conversation in the list (lastMessage preview + unread count + move to top).
+    if (newMsg.conversationId) {
+      const convIdx = this.conversations.findIndex((conversation) => conversation.id === newMsg.conversationId);
+      const isActiveAndOpen = this.isConversationVisibleToUser(newMsg.conversationId);
+      const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
+      if (msg.sender_type !== 'customer' && newMsg.role !== 'system' && !isActiveAndOpen) {
+        this.incrementTitleUnread(newMsg.conversationId);
+      }
+      if (convIdx >= 0) {
+        const prev = this.conversations[convIdx];
+        const updated = {
+          ...prev,
+          lastMessage: newMsg.content,
+          lastMessageAt: newMsg.createdAt,
+          unreadCount: (msg.sender_type !== 'customer' && !isActiveAndOpen)
+            ? (prev.unreadCount ?? 0) + 1
+            : (prev.unreadCount ?? 0),
+        };
+        this.conversations = [updated, ...this.conversations.filter((_, index) => index !== convIdx)];
+      } else {
+        this.conversations = [{
+          id: newMsg.conversationId,
+          subject: newMsg.content || 'Conversation',
+          status: 'open',
+          lastMessage: newMsg.content,
+          lastMessageAt: newMsg.createdAt,
+          unreadCount: nextUnreadCount,
+        }, ...this.conversations];
+      }
+
+      if (this.activeConversationId === newMsg.conversationId && this.conversations.length > 0) {
+        this.activeTeammate = this.conversations.find(
+          (conversation) => conversation.id === newMsg.conversationId,
+        )?.activeTeammate;
+      }
+
+      if (msg.sender_type !== 'customer' && isActiveAndOpen) {
+        this.markConversationRead(newMsg.conversationId);
+      }
+    }
+
+    this.syncUnreadCount();
+    this.triggerCallback('onMessageReceived', msg);
+    this.render();
+  }
+
+  private startAIResponseStream(payload: any): void {
+    const responseId = typeof payload?.response_id === 'string' ? payload.response_id : '';
+    const conversationId = typeof payload?.conversation_id === 'string' ? payload.conversation_id : '';
+    if (!responseId || !conversationId) return;
+    if (this.activeConversationId && this.activeConversationId !== conversationId) return;
+    if (this.messages.some((message) => message.id === responseId && !message.isStreaming)) return;
+
+    const prior = this.aiResponseStreams.get(responseId);
+    if (prior?.revealTimer) clearTimeout(prior.revealTimer);
+
+    const stream: AIResponseStreamState = {
+      responseId,
+      conversationId,
+      lastSequence: 0,
+      pendingChunks: [],
+      displayedContent: '',
+      revealTimer: null,
+    };
+    this.aiResponseStreams.set(responseId, stream);
+
+    const role: Message['role'] = payload.sender_type === 'agent' || payload.sender_type === 'user'
+      ? 'agent'
+      : 'ai';
+    const placeholder: Message = {
+      id: responseId,
+      conversationId,
+      role,
+      content: '',
+      senderName: payload.sender_name || undefined,
+      senderAvatar: payload.sender_avatar || undefined,
+      isStreaming: true,
+      isInternal: false,
+      createdAt: payload.created_at || new Date().toISOString(),
+    };
+    this.messages = [...this.messages.filter((message) => message.id !== responseId), placeholder];
+    this.isTyping = false;
+    this.isAIThinking = false;
+    this.aiProgressLabel = undefined;
+    this.render();
+  }
+
+  private queueAIResponseDelta(payload: any): void {
+    const responseId = typeof payload?.response_id === 'string' ? payload.response_id : '';
+    const sequence = Number(payload?.sequence);
+    const delta = typeof payload?.delta === 'string' ? payload.delta : '';
+    const stream = this.aiResponseStreams.get(responseId);
+    if (!stream || !Number.isInteger(sequence) || sequence <= stream.lastSequence || !delta) return;
+
+    stream.lastSequence = sequence;
+    stream.pendingChunks.push(delta);
+    this.scheduleAIResponseReveal(stream);
+  }
+
+  private scheduleAIResponseReveal(stream: AIResponseStreamState): void {
+    if (stream.revealTimer) return;
+    if (stream.pendingChunks.length === 0) {
+      this.maybeFinalizeAIResponseStream(stream);
+      return;
+    }
+
+    stream.revealTimer = setTimeout(() => {
+      stream.revealTimer = null;
+      if (this.aiResponseStreams.get(stream.responseId) !== stream) return;
+      const nextChunk = stream.pendingChunks.shift();
+      if (nextChunk) {
+        stream.displayedContent += nextChunk;
+        this.messages = this.messages.map((message) => message.id === stream.responseId && message.isStreaming
+          ? { ...message, content: stream.displayedContent }
+          : message);
+        this.render();
+      }
+      this.scheduleAIResponseReveal(stream);
+    }, AI_STREAM_REVEAL_INTERVAL_MS);
+  }
+
+  private maybeFinalizeAIResponseStream(stream: AIResponseStreamState): void {
+    if (!stream.canonicalPayload || stream.pendingChunks.length > 0 || stream.revealTimer) return;
+    this.aiResponseStreams.delete(stream.responseId);
+    this.commitReceivedMessage(stream.canonicalPayload);
+  }
+
+  private clearAIResponseStreams(removePlaceholders = true): void {
+    for (const stream of this.aiResponseStreams.values()) {
+      if (stream.revealTimer) clearTimeout(stream.revealTimer);
+    }
+    this.aiResponseStreams.clear();
+    this.isAIThinking = false;
+    if (removePlaceholders) {
+      this.messages = this.messages.filter((message) => !message.isStreaming);
+    }
+    this.aiProgressLabel = undefined;
+  }
+
   private handleSendMessage(content: string, options: { startNewConversation?: boolean; attachmentIds?: string[] } = {}): void {
     if (!content.trim() && (!options.attachmentIds || options.attachmentIds.length === 0)) return;
 
@@ -1017,6 +1224,7 @@ export class WidgetManager {
     );
     if (expectsAIReply) {
       this.isAIThinking = true;
+      this.aiProgressLabel = AI_PROGRESS_COPY.looking;
     }
     this.render();
     this.playSentMessageSound();
@@ -1321,6 +1529,7 @@ export class WidgetManager {
   // ─── Conversation Switching ─────────────────────────────────
 
   private handleSelectConversation(conversationId: string): void {
+    this.clearAIResponseStreams();
     this.activeConversationId = conversationId;
     this.activeTeammate = this.conversations.find((conversation) => conversation.id === conversationId)?.activeTeammate;
 
@@ -1448,6 +1657,8 @@ export class WidgetManager {
         }
 
         this.connectionStatus = 'disconnected';
+        this.clearAIResponseStreams();
+        this.isAIThinking = false;
         this.render();
 
         // Server rejected before WS upgrade (e.g. invalid widget key → HTTP 400).
@@ -1515,6 +1726,7 @@ export class WidgetManager {
   private handleWSMessage(data: { type: string; data?: any }): void {
     switch (data.type) {
       case 'session:joined': {
+        this.clearAIResponseStreams();
         const payload = data.data;
         this.sessionToken = payload.session_token;
 
@@ -1630,73 +1842,7 @@ export class WidgetManager {
         break;
 
       case 'message:received': {
-        const msg = data.data;
-        const newMsg = this.mapSupportMessage(msg);
-
-        // Replace optimistic message if this is an echo
-        if (msg.sender_type === 'customer') {
-          const tempIdx = this.messages.findIndex(
-            (m) => m.id.startsWith('temp-') && m.content === msg.content
-          );
-          if (tempIdx >= 0) {
-            this.messages[tempIdx] = newMsg;
-            this.messages = [...this.messages];
-          } else {
-            this.messages = [...this.messages, newMsg];
-          }
-        } else {
-          this.messages = [...this.messages, newMsg];
-        }
-
-        if (msg.sender_type !== 'customer') {
-          this.isTyping = false;
-          this.isAIThinking = false;
-          this.playReceivedMessageSound();
-        }
-
-        // Update conversation in the list (lastMessage preview + unread count + move to top)
-        if (newMsg.conversationId) {
-          const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
-          const isActiveAndOpen = this.isConversationVisibleToUser(newMsg.conversationId);
-          const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
-          if (msg.sender_type !== 'customer' && newMsg.role !== 'system' && !isActiveAndOpen) {
-            this.incrementTitleUnread(newMsg.conversationId);
-          }
-          if (convIdx >= 0) {
-            const prev = this.conversations[convIdx];
-            const updated = {
-              ...prev,
-              lastMessage: newMsg.content,
-              lastMessageAt: newMsg.createdAt,
-              unreadCount: (msg.sender_type !== 'customer' && !isActiveAndOpen)
-                ? (prev.unreadCount ?? 0) + 1
-                : (prev.unreadCount ?? 0),
-            };
-            this.conversations = [updated, ...this.conversations.filter((_, i) => i !== convIdx)];
-          } else {
-            this.conversations = [{
-              id: newMsg.conversationId,
-              subject: newMsg.content || 'Conversation',
-              status: 'open',
-              lastMessage: newMsg.content,
-              lastMessageAt: newMsg.createdAt,
-              unreadCount: nextUnreadCount,
-            }, ...this.conversations];
-          }
-
-          if (this.activeConversationId === newMsg.conversationId && this.conversations.length > 0) {
-            this.activeTeammate = this.conversations.find((conversation) => conversation.id === newMsg.conversationId)?.activeTeammate;
-          }
-
-          if (msg.sender_type !== 'customer' && isActiveAndOpen) {
-            this.markConversationRead(newMsg.conversationId);
-          }
-        }
-
-        this.syncUnreadCount();
-
-        this.triggerCallback('onMessageReceived', msg);
-        this.render();
+        this.handleReceivedMessage(data.data);
         break;
       }
 
@@ -1723,6 +1869,36 @@ export class WidgetManager {
         break;
       }
 
+      case 'ai:progress': {
+        const stage = typeof data.data?.stage === 'string' ? data.data.stage : '';
+        const conversationId = typeof data.data?.conversation_id === 'string'
+          ? data.data.conversation_id
+          : '';
+        if (conversationId && (!this.activeConversationId || this.activeConversationId === conversationId)) {
+          this.aiProgressLabel = AI_PROGRESS_COPY[stage] || AI_PROGRESS_COPY.looking;
+          this.isAIThinking = true;
+          this.render();
+        }
+        break;
+      }
+
+      case 'ai:response:start':
+        this.startAIResponseStream(data.data);
+        break;
+
+      case 'ai:response:delta':
+        this.queueAIResponseDelta(data.data);
+        break;
+
+      case 'ai:response:complete': {
+        const responseId = typeof data.data?.response_id === 'string' ? data.data.response_id : '';
+        const stream = this.aiResponseStreams.get(responseId);
+        if (stream) {
+          this.maybeFinalizeAIResponseStream(stream);
+        }
+        break;
+      }
+
       case 'typing:start': {
         // Hub already filters out widget's own typing — this is always agent-origin
         this.isTyping = true;
@@ -1744,11 +1920,13 @@ export class WidgetManager {
 
       case 'ai:thinking:start':
         this.isAIThinking = true;
+        this.aiProgressLabel ||= AI_PROGRESS_COPY.looking;
         this.render();
         break;
 
       case 'ai:thinking:stop':
         this.isAIThinking = false;
+        this.aiProgressLabel = undefined;
         this.render();
         break;
 
@@ -1779,6 +1957,7 @@ export class WidgetManager {
       case 'conversation:messages': {
         const msgs = data.data?.messages;
         if (Array.isArray(msgs)) {
+          this.clearAIResponseStreams();
           this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate)
             || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
           this.messages = msgs.map((m: any) => this.mapSupportMessage(m));
@@ -1925,6 +2104,7 @@ export class WidgetManager {
   }
 
   private disconnectWebSocket(): void {
+    this.clearAIResponseStreams();
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
       this.keepaliveTimer = null;

@@ -69,6 +69,7 @@ import { DEFAULT_SHORTCUT_CATEGORY, normalizeShortcutCategory, shortcutCategoryO
 import { filterShortcuts, stripShortcutContent } from './shortcutFiltering';
 import { getClipboardImageFiles } from './clipboardAttachments';
 import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './draftAttachments';
+import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -799,7 +800,7 @@ function ShortcutFormPanel({
 }
 
 export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, onUpgradeRequired }: ReplyComposerProps) {
-  const { replyMode, setReplyMode, setDraft, clearDraft } = useSupportInboxStore();
+  const { replyMode, setReplyMode, setDraft, clearDraft, detailSidebarMode, setDetailSidebarMode } = useSupportInboxStore();
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
@@ -1880,7 +1881,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       })()}
 
       {/* Mode toggle */}
-      <div className="flex items-center gap-1 px-4 pt-3">
+      <div className="flex items-center justify-between gap-3 px-4 pt-3">
+        <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
           onClick={() => {
@@ -1986,6 +1988,11 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
             })}
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
+        <SupportAskAgentsButton
+          open={detailSidebarMode === 'agents'}
+          onOpen={() => setDetailSidebarMode('agents')}
+        />
       </div>
 
       {/* TipTap Editor */}

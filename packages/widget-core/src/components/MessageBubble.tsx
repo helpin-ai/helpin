@@ -243,6 +243,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
     isAI && 'helpin-message--ai',
     isSystem && 'helpin-message--system',
     message.isInternal && 'helpin-message--internal',
+    message.isStreaming && 'helpin-message--streaming',
   ]
     .filter(Boolean)
     .join(' ');
@@ -256,7 +257,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const hasSources = Boolean(message.sources && message.sources.length > 0);
   const hasLinkPreviews = Boolean(message.linkPreviews && message.linkPreviews.length > 0);
   const showConfidence = hasSources && message.aiConfidence !== undefined;
-  const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || hasSources || hasLinkPreviews;
+  const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || hasSources || hasLinkPreviews || message.isStreaming;
   const hasMeta = hasSources || showConfidence;
 
   const agentName = message.senderName;
@@ -319,6 +320,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
             {showBubble && (
               <div className={bubbleClass} data-tooltip={tooltipText}>
                 <MessageContent message={message} />
+                {message.isStreaming && <span className="helpin-streaming-cursor" aria-hidden="true" />}
 
                 {message.viaChannel === 'email' && (
                   <div className="helpin-message-channel">Via email</div>

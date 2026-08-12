@@ -18,6 +18,7 @@ export interface DockChat {
   workspace_id: string
   user_id: string
   title: string
+  support_conversation_id?: string | null
   active_run_id?: string | null
   active_run_status?: AgentRun['status'] | null
   last_message_at?: string | null

@@ -9,11 +9,12 @@ import "time"
 // backed the chat carry AgentRun.DockChatID, so the full history is a real FK
 // chain rather than a heuristic match.
 type DockChat struct {
-	ID          string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string  `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1"`
-	UserID      string  `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2"`
-	Title       string  `json:"title"`
-	ActiveRunID *string `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
+	ID                    string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID           string  `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1;uniqueIndex:idx_dock_chats_support_conversation,priority:1"`
+	UserID                string  `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2;uniqueIndex:idx_dock_chats_support_conversation,priority:2"`
+	Title                 string  `json:"title"`
+	SupportConversationID *string `json:"support_conversation_id,omitempty" gorm:"type:uuid;index;uniqueIndex:idx_dock_chats_support_conversation,priority:3"`
+	ActiveRunID           *string `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
 	// ActiveRunStatus is a read-only projection used by chat roster surfaces.
 	// It is hydrated from ActiveRunID and is not stored on the chat row.
 	ActiveRunStatus string     `json:"active_run_status,omitempty" gorm:"-"`
@@ -28,7 +29,8 @@ func (DockChat) TableName() string { return "dock_chats" }
 
 // CreateDockChatRequest is the payload for creating a dock chat.
 type CreateDockChatRequest struct {
-	Title string `json:"title"`
+	Title                 string  `json:"title"`
+	SupportConversationID *string `json:"support_conversation_id,omitempty"`
 }
 
 // UpdateDockChatRequest is the payload for renaming or archiving a dock chat.

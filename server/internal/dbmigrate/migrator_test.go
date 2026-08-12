@@ -155,3 +155,41 @@ func TestCustomerIOLifecycleOutboxMigrationContract(t *testing.T) {
 		t.Error("migration must create the outbox table idempotently")
 	}
 }
+
+func TestSupportEmailRouteVerificationBackfillMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202608110004" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected support email route verification backfill migration 202608110004 to be registered")
+	}
+	if migration.Name != "backfill_support_email_route_verification" {
+		t.Fatalf("migration name = %q, want %q", migration.Name, "backfill_support_email_route_verification")
+	}
+
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"update support_email_routes as route",
+		"set forwarding_verified_at = evidence.verified_at",
+		"from support_email_logs as email_log",
+		"email_log.direction = 'inbound'",
+		"email_log.email_route_id is not null",
+		"forwarding-noreply@google.com",
+		"mail-settings.google.com/mail/vf-",
+		"zoho",
+		"route.forwarding_verified_at is null",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("migration SQL missing contract clause %q", clause)
+		}
+	}
+}

@@ -47,6 +47,7 @@ function DocsSpaceCollections({
   isActive,
   openCreate,
   onNavigate,
+  compact,
   onEditCollection,
   onDeleteCollection,
 }: {
@@ -56,6 +57,7 @@ function DocsSpaceCollections({
   isActive: (link: string) => boolean;
   openCreate: (modal: 'docs_collection', options?: { spaceId?: string }) => void;
   onNavigate: (args: { to: string; params?: Record<string, string>; search?: Record<string, string> }) => void;
+  compact?: boolean;
   onEditCollection: (collection: DocsCollection) => void;
   onDeleteCollection: (collection: DocsCollection) => void;
 }) {
@@ -113,7 +115,7 @@ function DocsSpaceCollections({
   }, [treeOptions, expandedColls]);
 
   return (
-    <SidebarMenuSub className="mr-0 pr-0">
+    <SidebarMenuSub className={compact ? "mx-1 translate-x-0 px-1" : "mr-0 pr-0"}>
       {visibleOptions.map((option) => {
         const collection = collectionById.get(option.id);
         if (!collection) return null;
@@ -130,6 +132,7 @@ function DocsSpaceCollections({
                     asChild
                     size="sm"
                     isActive={isActive(link)}
+                    className={compact ? "gap-1.5 px-2" : undefined}
                   >
                     <a
                       href={link}
@@ -351,6 +354,7 @@ export function DocsSpacesNav({
               isActive={isActive}
               openCreate={openCreate}
               onNavigate={onNavigate}
+              compact={space.type === 'external_capable'}
               onEditCollection={setEditingCollection}
               onDeleteCollection={setDeletingCollection}
             />

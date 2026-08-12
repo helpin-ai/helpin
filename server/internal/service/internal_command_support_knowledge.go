@@ -92,9 +92,15 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 				return nil, fmt.Errorf("at least one non-empty query is required")
 			}
 
+			if s.supportAIService != nil {
+				s.supportAIService.publishProgress(meta.WorkspaceID, conversationID, supportAIProgressChecking)
+			}
 			outcome, err := s.supportKnowledgeSearcher.SearchKnowledgeForConversation(ctx, meta.WorkspaceID, conversationID, strings.TrimSpace(req.Language), queries)
 			if err != nil {
 				return nil, err
+			}
+			if s.supportAIService != nil {
+				s.supportAIService.publishProgress(meta.WorkspaceID, conversationID, supportAIProgressComposing)
 			}
 			results := outcome.Results
 			maxResults := req.MaxResults

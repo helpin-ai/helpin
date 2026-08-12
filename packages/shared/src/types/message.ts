@@ -40,6 +40,8 @@ export interface Message {
   emailHasQuotedContent?: boolean;
   emailProjectionConfidence?: 'high' | 'medium' | 'none';
   emailProjectionVersion?: number;
+  /** Transient client-side state while a validated AI reply is being revealed. */
+  isStreaming?: boolean;
   isInternal: boolean;
   createdAt: string;
 }

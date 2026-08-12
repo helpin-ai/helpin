@@ -117,3 +117,22 @@ describe('ConversationView teammate_joined system line', () => {
     expect(getByText(/joined the conversation/i)).toBeTruthy();
   });
 });
+
+describe('ConversationView AI progress', () => {
+  it('keeps the shimmer while announcing the current safe progress stage', () => {
+    const { container, getByRole } = render(
+      <ConversationView
+        config={baseConfig}
+        messages={[]}
+        onSendMessage={() => {}}
+        onBack={() => {}}
+        isAIThinking={true}
+        aiProgressLabel="Checking the details…"
+      />,
+    );
+
+    expect(getByRole('status').textContent).toContain('Checking the details…');
+    expect(container.querySelector('.helpin-ai-thinking-shimmer')).toBeTruthy();
+    expect(container.querySelectorAll('.helpin-ai-thinking-line')).toHaveLength(2);
+  });
+});

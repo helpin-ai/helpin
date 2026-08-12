@@ -643,6 +643,103 @@ describe('WidgetManager', () => {
       expect(latestOptions?.messages.at(-1)?.content).toBe('Here is what I found.');
     });
 
+    it('shows curated support progress copy without trusting arbitrary labels', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: { aiEnabled: true, aiFirst: true },
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+
+      (widget as any).handleWSMessage({
+        type: 'ai:progress',
+        data: {
+          conversation_id: 'conv-1',
+          stage: 'checking',
+          label: 'Leaked internal tool details',
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.isAIThinking).toBe(true);
+      expect(latestOptions?.aiProgressLabel).toBe('Checking the details…');
+    });
+
+    it('reveals sequenced reply chunks and replaces them with one canonical message', async () => {
+      vi.useFakeTimers();
+      try {
+        (widget as any).widgetConfig = {
+          workspaceId: 'ws_test',
+          branding: { primaryColor: '#6366f1' },
+          features: { aiEnabled: true, aiFirst: true },
+        };
+        (widget as any).mountContainer = document.createElement('div');
+        (widget as any).activeConversationId = 'conv-1';
+
+        (widget as any).handleWSMessage({
+          type: 'ai:response:start',
+          data: {
+            response_id: 'msg-stream',
+            conversation_id: 'conv-1',
+            sender_type: 'ai',
+            sender_name: 'Helpin AI',
+            created_at: '2026-08-11T19:00:00Z',
+          },
+        });
+        let latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        expect(latestOptions?.isAIThinking).toBe(false);
+        expect(latestOptions?.messages).toEqual([
+          expect.objectContaining({ id: 'msg-stream', content: '', isStreaming: true }),
+        ]);
+
+        (widget as any).handleWSMessage({
+          type: 'ai:response:delta',
+          data: { response_id: 'msg-stream', conversation_id: 'conv-1', sequence: 1, delta: 'Here is ' },
+        });
+        // A replayed sequence must not duplicate text.
+        (widget as any).handleWSMessage({
+          type: 'ai:response:delta',
+          data: { response_id: 'msg-stream', conversation_id: 'conv-1', sequence: 1, delta: 'Here is ' },
+        });
+        (widget as any).handleWSMessage({
+          type: 'ai:response:delta',
+          data: { response_id: 'msg-stream', conversation_id: 'conv-1', sequence: 2, delta: 'your answer.' },
+        });
+        (widget as any).handleWSMessage({
+          type: 'message:received',
+          data: {
+            id: 'msg-stream',
+            conversation_id: 'conv-1',
+            sender_type: 'ai',
+            message_type: 'reply',
+            content: 'Here is your answer.',
+            created_at: '2026-08-11T19:00:00Z',
+          },
+        });
+        (widget as any).handleWSMessage({
+          type: 'ai:response:complete',
+          data: { response_id: 'msg-stream', conversation_id: 'conv-1' },
+        });
+
+        await vi.advanceTimersByTimeAsync(45);
+        latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        expect(latestOptions?.messages[0]).toMatchObject({
+          id: 'msg-stream', content: 'Here is ', isStreaming: true,
+        });
+
+        await vi.advanceTimersByTimeAsync(45);
+        latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        expect(latestOptions?.messages).toHaveLength(1);
+        expect(latestOptions?.messages[0]).toMatchObject({
+          id: 'msg-stream', content: 'Here is your answer.',
+        });
+        expect(latestOptions?.messages[0].isStreaming).toBeUndefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('maps email projection fields from live message payloads', () => {
       (widget as any).widgetConfig = {
         workspaceId: 'ws_test',

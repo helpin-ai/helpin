@@ -29,7 +29,6 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useInboxScopes: () => ({ data: null }),
   useSupportTeammatePresence: () => undefined,
   useUpdateConversationStatus: () => ({ mutate: vi.fn(), isPending: false }),
-  useRunConversationAgent: () => ({ mutate: vi.fn(), isPending: false }),
   useCreateTaskFromConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useDismissConversationTriage: () => ({ mutate: vi.fn(), isPending: false }),
@@ -217,6 +216,42 @@ describe('MessageThread', () => {
     expect(supportHooks.markConversationRead).toHaveBeenCalledWith('conv-1')
     expect(container.querySelector('[data-slot="scroll-area"]')?.className).toContain('min-w-0')
 
+    act(() => root.unmount())
+  })
+
+  it('does not show a manual Run action for an assigned support agent', () => {
+    supportHooks.useConversation.mockReturnValue({
+      isFetched: true,
+      data: {
+        id: 'conv-1',
+        workspace_id: 'ws-1',
+        display_id: 1,
+        subject: 'Question',
+        status: 'open',
+        priority: 'medium',
+        source: 'widget',
+        assigned_agent_id: 'agent-1',
+        unread_count: 0,
+        created_at: '2026-06-03T09:00:00.000Z',
+        updated_at: '2026-06-03T10:01:00.000Z',
+      },
+    })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: [] })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const queryClient = createTestQueryClient()
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MessageThread workspaceId="ws-1" conversationId="conv-1" />
+        </QueryClientProvider>,
+      )
+      vi.runAllTimers()
+    })
+
+    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent?.trim() === 'Run')).toBe(false)
     act(() => root.unmount())
   })
 })
