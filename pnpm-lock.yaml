@@ -200,8 +200,8 @@ importers:
         specifier: ^3.13.23
         version: 3.13.23(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@tauri-apps/api':
-        specifier: ^2.8.0
-        version: 2.10.1
+        specifier: ^2.11.1
+        version: 2.11.1
       '@tauri-apps/plugin-deep-link':
         specifier: ^2
         version: 2.4.9
@@ -14991,7 +14991,7 @@ snapshots:
 
   '@tauri-apps/plugin-haptics@2.3.2':
     dependencies:
-      '@tauri-apps/api': 2.10.1
+      '@tauri-apps/api': 2.11.1
 
   '@tauri-apps/plugin-notification@2.3.3':
     dependencies:
