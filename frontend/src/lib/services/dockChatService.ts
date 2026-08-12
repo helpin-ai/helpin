@@ -26,8 +26,11 @@ export const dockChatService = {
     if (cursor) query.set('cursor', cursor);
     return api.get<DockChatListResponse>(`/dock/chats?${query.toString()}`);
   },
-  createChat: (workspaceId: string, title = '') =>
-    api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, { title }),
+  createChat: (workspaceId: string, title = '', supportConversationId?: string) =>
+    api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, {
+      title,
+      ...(supportConversationId ? { support_conversation_id: supportConversationId } : {}),
+    }),
   getChat: (workspaceId: string, chatId: string) =>
     api.get<DockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}${qs(workspaceId)}`),
   updateChat: (workspaceId: string, chatId: string, payload: UpdateDockChatRequest) =>

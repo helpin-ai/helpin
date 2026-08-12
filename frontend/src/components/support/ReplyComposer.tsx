@@ -1881,7 +1881,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       })()}
 
       {/* Mode toggle */}
-      <div className="flex items-center gap-1 px-4 pt-3">
+      <div className="flex items-center justify-between gap-3 px-4 pt-3">
+        <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
           onClick={() => {
@@ -1987,6 +1988,11 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
             })}
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
+        <SupportAskAgentsButton
+          open={detailSidebarMode === 'agents'}
+          onOpen={() => setDetailSidebarMode('agents')}
+        />
       </div>
 
       {/* TipTap Editor */}
@@ -2152,10 +2158,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
         </div>
 
         <div className="flex items-center gap-2">
-          <SupportAskAgentsButton
-            open={detailSidebarMode === 'agents'}
-            onOpen={() => setDetailSidebarMode('agents')}
-          />
           <kbd className="hidden items-center gap-1 font-mono text-[15px] leading-none text-muted-foreground sm:inline-flex">
             <span>{navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl'}</span>
             <span>{'\u21B5'}</span>

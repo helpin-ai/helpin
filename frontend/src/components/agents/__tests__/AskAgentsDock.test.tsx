@@ -144,6 +144,7 @@ beforeEach(() => {
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
   mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
+  mocks.createChat.mockResolvedValue({ data: null, error: 'not configured' });
   mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
   mocks.getChat.mockResolvedValue({ data: chatDetail(), error: null });
   mocks.getChatRun.mockResolvedValue({ data: null, error: null });
@@ -183,12 +184,22 @@ async function renderDock() {
   await flush();
 }
 
-async function renderEmbeddedDock(requiredPageContext: CommandBarPageContext, onClose = vi.fn()) {
+async function renderEmbeddedDock(
+  requiredPageContext: CommandBarPageContext,
+  onClose = vi.fn(),
+  active = true,
+) {
   await act(async () => {
     root.render(
       <TooltipProvider>
         <PageContextProvider>
-          <AskAgentsDock presentation="embedded" requiredPageContext={requiredPageContext} onClose={onClose} />
+          <AskAgentsDock
+            presentation="embedded"
+            requiredPageContext={requiredPageContext}
+            associatedSupportConversationId={requiredPageContext.entity_id}
+            active={active}
+            onClose={onClose}
+          />
         </PageContextProvider>
       </TooltipProvider>,
     );
@@ -244,12 +255,50 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it('reopens the chat associated with the active support conversation', async () => {
+    const supportContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-42',
+      display_title: 'Refund request',
+    };
+    const associatedChat = { ...CHAT, id: 'chat-support', support_conversation_id: 'conv-42' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [CHAT, associatedChat] }, error: null });
+
+    await renderEmbeddedDock(supportContext);
+    await waitForCondition(
+      () => useDockStore.getState().activeChatId === 'chat-support',
+      'associated support chat was not selected',
+    );
+
+    expect(mocks.createChat).not.toHaveBeenCalled();
+  });
+
+  it('creates an associated chat when the support conversation has no history', async () => {
+    const supportContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-new',
+      display_title: 'New request',
+    };
+    const newChat = { ...CHAT, id: 'chat-new', support_conversation_id: 'conv-new' };
+    mocks.createChat.mockResolvedValue({ data: newChat, error: null });
+
+    await renderEmbeddedDock(supportContext);
+    await waitForCondition(() => mocks.createChat.mock.calls.length === 1, 'support chat was not created');
+
+    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new');
+    expect(useDockStore.getState().activeChatId).toBe('chat-new');
+  });
+
   it('embeds the full chat without a floating trigger and sends mandatory support context', async () => {
     const supportContext: CommandBarPageContext = {
       entity_type: 'support_conversation',
       entity_id: 'conv-42',
       display_title: 'Refund request',
     };
+    mocks.listChats.mockResolvedValue({
+      data: { chats: [{ ...CHAT, support_conversation_id: 'conv-42' }] },
+      error: null,
+    });
     mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
     await renderEmbeddedDock(supportContext);
     await waitForText('Sprint questions');
@@ -271,7 +320,7 @@ describe('AskAgentsDock', () => {
     }));
   });
 
-  it('updates the mandatory context without replacing the active embedded chat', async () => {
+  it('switches the embedded composer to the next support conversation chat', async () => {
     const firstContext: CommandBarPageContext = {
       entity_type: 'support_conversation',
       entity_id: 'conv-1',
@@ -282,23 +331,28 @@ describe('AskAgentsDock', () => {
       entity_id: 'conv-2',
       display_title: 'Next conversation',
     };
+    const firstChat = { ...CHAT, support_conversation_id: 'conv-1' };
+    const nextChat = { ...CHAT, id: 'chat-2', title: 'Next questions', support_conversation_id: 'conv-2' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [firstChat, nextChat] }, error: null });
     mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
     await renderEmbeddedDock(firstContext);
     await waitForText('First conversation');
-    const originalTextarea = dockTextarea();
 
     await renderEmbeddedDock(nextContext);
     await waitForText('Next conversation');
-    expect(dockTextarea()).toBe(originalTextarea);
-    expect(useDockStore.getState().activeChatId).toBe('chat-1');
+    await waitForCondition(
+      () => useDockStore.getState().activeChatId === 'chat-2',
+      'next support chat was not selected',
+    );
+    const nextTextarea = dockTextarea();
 
     await act(async () => {
-      setTextareaValue(originalTextarea, 'Use the new conversation');
-      originalTextarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      setTextareaValue(nextTextarea, 'Use the new conversation');
+      nextTextarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
     await flush();
 
-    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-1', expect.objectContaining({
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-2', expect.objectContaining({
       page_context: nextContext,
     }));
   });

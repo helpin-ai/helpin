@@ -41,7 +41,7 @@ func TestDockChatListCursorPagination(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
-		title TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		title TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)
@@ -77,6 +77,41 @@ func TestDockChatListCursorPagination(t *testing.T) {
 	}
 }
 
+func TestDockChatCreateReusesSupportConversationChat(t *testing.T) {
+	dbName := fmt.Sprintf("file:dock_chat_support_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+		title TEXT, support_conversation_id TEXT, active_run_id TEXT,
+		last_message_at DATETIME, archived_at DATETIME, created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create dock chats: %v", err)
+	}
+	conversationID := "conversation-42"
+	existing := model.DockChat{
+		ID: "chat-existing", WorkspaceID: "ws-1", UserID: "user-1",
+		Title: "Refund request", SupportConversationID: &conversationID,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatalf("seed dock chat: %v", err)
+	}
+
+	service := &DockChatService{chatRepo: repository.NewDockChatRepository(db)}
+	chat, err := service.CreateChat(context.Background(), "ws-1", "user-1", model.CreateDockChatRequest{
+		SupportConversationID: &conversationID,
+	})
+	if err != nil {
+		t.Fatalf("create support chat: %v", err)
+	}
+	if chat.ID != existing.ID {
+		t.Fatalf("chat ID = %q, want existing %q", chat.ID, existing.ID)
+	}
+}
+
 func TestDockChatListHydratesActiveRunStatus(t *testing.T) {
 	dbName := fmt.Sprintf("file:dock_chat_status_%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
@@ -85,7 +120,7 @@ func TestDockChatListHydratesActiveRunStatus(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
-		title TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		title TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)
@@ -148,7 +183,7 @@ func TestDockChatGenerateTitleUsesSemanticCompletion(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
-		title TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		title TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)
@@ -186,7 +221,7 @@ func TestDockChatGenerateTitlePreservesManualTitle(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
-		title TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		title TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)
