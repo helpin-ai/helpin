@@ -230,8 +230,7 @@ function RouteAwareHeader() {
 
 function RouteAwareAskAgentsDock() {
   const location = useLocation()
-  if (isWorkspaceSupportRoute(location.pathname)) return null
-  return <AskAgentsDock />
+  return <AskAgentsDock hideCollapsedTrigger={isWorkspaceSupportRoute(location.pathname)} />
 }
 
 const MemoizedGlobalCreateModals = memo(GlobalCreateModals)

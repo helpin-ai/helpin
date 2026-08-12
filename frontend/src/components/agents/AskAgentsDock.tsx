@@ -35,6 +35,7 @@ interface AskAgentsDockProps {
   requiredPageContext?: CommandBarPageContext | null;
   associatedSupportConversationId?: string;
   active?: boolean;
+  hideCollapsedTrigger?: boolean;
   onClose?: () => void;
 }
 
@@ -43,6 +44,7 @@ export function AskAgentsDock({
   requiredPageContext,
   associatedSupportConversationId,
   active = true,
+  hideCollapsedTrigger = false,
   onClose,
 }: AskAgentsDockProps = {}) {
   const embedded = presentation === 'embedded';
@@ -682,7 +684,7 @@ export function AskAgentsDock({
           </div>
         ) : null}
 
-        {!maximized ? <DockTrigger
+        {!maximized && !(hideCollapsedTrigger && collapsed) ? <DockTrigger
           askTriggerRef={askTriggerRef}
           open={!collapsed}
           runs={triggerRuns}

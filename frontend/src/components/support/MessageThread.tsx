@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useMemo, memo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { Message01Icon, BotIcon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
+import { Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -13,7 +13,6 @@ import {
   useInboxScopes,
   useSupportTeammatePresence,
   useUpdateConversationStatus,
-  useRunConversationAgent,
   useCreateTaskFromConversation,
   useMoveConversation,
   useDismissConversationTriage,
@@ -267,7 +266,6 @@ export function MessageThread({
   useSupportTeammatePresence(workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
-  const runAgent = useRunConversationAgent(workspaceId);
   const createTaskFromConversation = useCreateTaskFromConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
@@ -864,25 +862,6 @@ export function MessageThread({
               {createTaskFromConversation.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
               Create Task
             </Button>
-
-            {/* Run Agent */}
-            {conversation.assigned_agent_id && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1 text-xs"
-                disabled={runAgent.isPending}
-                onClick={() => runAgent.mutate(conversation.id, {
-                  onError: (error) => {
-                    const reason = getUpgradeRequiredReason(error);
-                    if (reason) setUpgradeDialogReason(reason);
-                  },
-                })}
-              >
-                {runAgent.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <BotIcon className="h-3 w-3" />}
-                Run
-              </Button>
-            )}
 
             {/* Resolve / Unresolve */}
             {conversation.status === 'resolved' ? (

@@ -4,6 +4,7 @@ import { isModuleEnabled } from '@/lib/featureFlags';
 import type { WorkspaceModule } from '@/lib/types';
 import type { RailId, RailItem } from './types';
 import { SidebarRunsButton } from './SidebarRunsButton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 type SidebarRailProps = {
   railItems: RailItem[];
@@ -76,16 +77,22 @@ export function SidebarRail({
       </div>
 
       <div className="flex flex-col items-center gap-1.5 pt-2">
-        <button
-          type="button"
-          className="flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-          onClick={onToggleTheme}
-          aria-label="Toggle theme"
-        >
-          <Sun01Icon className="h-3.5 w-3.5 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
-          <Moon02Icon className="absolute h-3.5 w-3.5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">{theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}</span>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+              onClick={onToggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              <Sun01Icon className="h-3.5 w-3.5 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
+              <Moon02Icon className="absolute h-3.5 w-3.5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          </TooltipContent>
+        </Tooltip>
         <SidebarRunsButton />
         {accountMenu}
       </div>

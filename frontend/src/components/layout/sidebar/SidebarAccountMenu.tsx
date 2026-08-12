@@ -1,4 +1,4 @@
-import { Logout01Icon, Setting07Icon, UserIcon, UserGroupIcon } from '@/lib/icons';
+import { HelpCircleIcon, Logout01Icon, Setting07Icon, UserIcon, UserGroupIcon } from '@/lib/icons';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import {
@@ -37,6 +37,7 @@ type SidebarAccountMenuProps = {
   onProfile: () => void;
   onSettings: () => void;
   onWorkspaces: () => void;
+  onGetHelp: () => void;
   onSignOut: () => void;
 };
 
@@ -55,6 +56,7 @@ export function SidebarAccountMenu({
   onProfile,
   onSettings,
   onWorkspaces,
+  onGetHelp,
   onSignOut,
 }: SidebarAccountMenuProps) {
   const avatarSrc = resolveTeamMemberAvatarSrc({
@@ -129,6 +131,10 @@ export function SidebarAccountMenu({
           <span>All Workspaces</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onGetHelp}>
+          <HelpCircleIcon className="h-4 w-4" />
+          <span>Get Help</span>
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={onSignOut} variant="destructive">
           <Logout01Icon className="h-4 w-4" />
           <span>Sign out</span>
