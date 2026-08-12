@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Button } from '@/components/ui/button'
 import type { NodeView } from './nodeSelection'
 
 interface AncestorLink {
@@ -139,7 +140,7 @@ export function SpaceNodeHeader({
 
   return (
     <header className="flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="flex min-w-0 items-start gap-3">
           <div className="min-w-0">
             <nav
@@ -147,14 +148,16 @@ export function SpaceNodeHeader({
               className="group flex min-w-0 items-center gap-2"
             >
               {ancestors.length > 0 && (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={ancestors[ancestors.length - 1].onClick}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="shrink-0 text-muted-foreground"
                   aria-label="Go back"
                 >
                   <ArrowLeft02Icon className="h-4 w-4" />
-                </button>
+                </Button>
               )}
               {ancestors.map((ancestor) => (
                 <span key={ancestor.id} className="flex shrink-0 items-center gap-1.5">
@@ -186,36 +189,40 @@ export function SpaceNodeHeader({
         </div>
 
         {canEdit && view.kind !== 'loading' && (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
             {onCreateChildCollection && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={onCreateChildCollection}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="text-xs text-muted-foreground"
               >
                 <PlusSignIcon className="h-3.5 w-3.5" />
                 {view.kind === 'collection' ? 'Sub-collection' : 'Collection'}
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               type="button"
+              size="sm"
               onClick={onCreateDocument}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+              className="text-xs"
             >
               <PlusSignIcon className="h-3.5 w-3.5" />
               Document
-            </button>
+            </Button>
 
             {hasOverflowMenu && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button
+                  <Button
                     type="button"
-                    className="flex h-8 w-8 items-center justify-center rounded-md transition-colors hover:bg-muted"
+                    variant="ghost"
+                    size="icon-sm"
                     aria-label="More options"
                   >
                     <MoreHorizontalIcon className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   {view.kind === 'space_root' && (

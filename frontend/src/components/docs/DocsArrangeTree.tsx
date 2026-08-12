@@ -28,7 +28,7 @@ import {
   useReorderDocsChildren,
 } from '@/hooks/queries'
 import { toast } from 'sonner'
-import { COLLECTION_ROW_CLASS, ARTICLE_ROW_CLASS, DOC_ICON_CLASS, COLLECTION_ICON_CLASS, STATUS_BADGE_CLASS, UPDATED_TEXT_CLASS, COUNT_BADGE_CLASS, statusColor } from '@/pages/docs/docsTreeStyles'
+import { COLLECTION_ROW_CLASS, COLLECTION_ICON_CLASS, COUNT_BADGE_CLASS } from '@/pages/docs/docsTreeStyles'
 import type { DocsSpace, DocsDocument, SpaceType } from '@/lib/docsTypes'
 import { buildCollectionTree, type CollectionTreeNode } from './docsCollectionTree'
 import { CreateCollectionDialog } from './CreateCollectionDialog'
@@ -135,14 +135,17 @@ function SpaceDragPreview({ space, wsId }: { space: DocsSpace; wsId: string }) {
 
 function ArrangeDocRow({ doc }: { doc: DocsDocument }) {
   return (
-    <div className={`flex items-center gap-2.5 rounded-md px-3 py-2 ${ARTICLE_ROW_CLASS}`}>
-      <File01Icon className={DOC_ICON_CLASS} />
-      <span className="min-w-0 flex-1 truncate">{doc.title}</span>
-      <span className={`${STATUS_BADGE_CLASS} ${statusColor(doc.status)}`}>
-        {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-      </span>
-      <span className={UPDATED_TEXT_CLASS}>
-        Updated: {timeAgo(doc.updated_at)}
+    <div className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium">
+      <span className="min-w-0 flex-1 truncate">{doc.title || 'Untitled'}</span>
+      {doc.status !== 'published' && (
+        <span className={doc.status === 'draft'
+          ? 'text-[11px] font-medium text-amber-600 dark:text-amber-400'
+          : 'text-[11px] font-medium text-muted-foreground/70'}>
+          {DOC_STATUS_LABELS[doc.status] ?? doc.status}
+        </span>
+      )}
+      <span className="hidden shrink-0 text-[11px] font-normal text-muted-foreground sm:inline">
+        {timeAgo(doc.updated_at)}
       </span>
     </div>
   )
@@ -194,12 +197,10 @@ function ArrangeBucketItems({
     return items
   }, [collections, documents])
 
-  const [localOrder, setLocalOrder] = useState<BucketItem[] | null>(null)
+  const mergedKey = merged.map((item) => `${item.type}:${item.id}:${item.sortKey}`).join('|')
+  const [localOrder, setLocalOrder] = useState<{ sourceKey: string; items: BucketItem[] } | null>(null)
   const [dragActiveId, setDragActiveId] = useState<string | null>(null)
-  const ordered = localOrder ?? merged
-
-  // Reset local state when upstream data changes (e.g., after mutation settles).
-  useMemo(() => setLocalOrder(null), [merged])
+  const ordered = localOrder?.sourceKey === mergedKey ? localOrder.items : merged
 
   const handleDragEnd = (event: DragEndEvent) => {
     setDragActiveId(null)
@@ -210,7 +211,7 @@ function ArrangeBucketItems({
     const newIdx = ids.indexOf(over.id as string)
     if (oldIdx === -1 || newIdx === -1) return
     const reordered = arrayMove([...ordered], oldIdx, newIdx)
-    setLocalOrder(reordered)
+    setLocalOrder({ sourceKey: mergedKey, items: reordered })
     reorderChildren.mutate(
       {
         spaceId,
@@ -532,7 +533,7 @@ function ArrangeSection({
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </h3>
-      <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
+      <div className="divide-y divide-border/45" data-slot="docs-arrange-library">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}

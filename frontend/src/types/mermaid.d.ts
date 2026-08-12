@@ -6,7 +6,7 @@ declare module 'mermaid' {
 
   type MermaidAPI = {
     initialize: (config: Record<string, unknown>) => void
-    render: (id: string, source: string) => Promise<MermaidRenderResult>
+    render: (id: string, source: string, svgContainingElement?: Element) => Promise<MermaidRenderResult>
   }
 
   const mermaid: MermaidAPI

@@ -136,16 +136,7 @@ export function buildPanelNavGroups(
         ],
       },
     ],
-    docs: [
-      {
-        label: '',
-        items: [
-          { link: `/w/${wsSlug}/docs/recent`, label: 'Recent Docs', icon: Clock01Icon },
-          { link: `/w/${wsSlug}/docs/my`, label: 'My Documents', icon: UserIcon },
-          { link: `/w/${wsSlug}/docs`, label: 'All Docs', icon: File01Icon },
-        ],
-      },
-    ],
+    docs: [],
     settings: getSettingsSidebarGroups(canManageSettings, permissionSet).map((group) => ({
       label: group.label,
       items: group.sections.map((section) => ({
