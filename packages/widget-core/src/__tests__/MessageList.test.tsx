@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, render } from '@testing-library/preact';
 import { MessageList } from '../components/MessageList';
 import type { Message } from '../types';
 
@@ -121,5 +121,73 @@ describe('MessageList', () => {
 
     expect(list?.classList.contains('helpin-message-list--smooth-enter')).toBe(true);
     expect(container.querySelector('.helpin-message-list-item')).toBeNull();
+  });
+
+  it('preserves reading position and offers a jump to latest control for new messages', () => {
+    const initialMessages = createMessages(3);
+    const rendered = render(<MessageList messages={initialMessages} />);
+    const list = rendered.getByRole('list') as HTMLDivElement;
+
+    Object.defineProperties(list, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 120 },
+    });
+    fireEvent.scroll(list);
+
+    rendered.rerender(<MessageList messages={[...initialMessages, ...createMessages(1).map(message => ({ ...message, id: 'msg-new' }))]} />);
+
+    const jumpButton = rendered.getByRole('button', { name: /jump to latest/i });
+    expect(list.scrollTop).toBe(120);
+
+    fireEvent.click(jumpButton);
+    expect(list.scrollTop).toBe(1000);
+    expect(rendered.queryByRole('button', { name: /jump to latest/i })).toBeNull();
+  });
+
+  it('shows feedback only on the latest substantive AI answer after a customer question', () => {
+    const onAnswerFeedback = vi.fn();
+    const messages: Message[] = [
+      {
+        id: 'customer-1', conversationId: 'conv-1', role: 'customer', content: 'How do I export my data?',
+        isInternal: false, createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'greeting-1', conversationId: 'conv-1', role: 'ai',
+        content: 'Hi there! 👋 Thanks for reaching out. How can I help you today?',
+        isInternal: false, createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'answer-1', conversationId: 'conv-1', role: 'ai', content: 'Open Settings, then choose Export data.',
+        isInternal: false, createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'customer-2', conversationId: 'conv-1', role: 'customer', content: 'Can I export CSV?',
+        isInternal: false, createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'answer-2', conversationId: 'conv-1', role: 'ai', content: 'Yes. Select CSV before starting the export.',
+        isInternal: false, createdAt: new Date().toISOString(),
+      },
+    ];
+
+    const rendered = render(<MessageList messages={messages} onAnswerFeedback={onAnswerFeedback} />);
+
+    expect(rendered.queryAllByText('Helpful?')).toHaveLength(1);
+    fireEvent.click(rendered.getByRole('button', { name: 'This answer was helpful' }));
+    expect(onAnswerFeedback).toHaveBeenCalledWith('answer-2', true);
+  });
+
+  it('does not show feedback before a customer has asked a question', () => {
+    const rendered = render(<MessageList
+      messages={[{
+        id: 'server-greeting', conversationId: 'conv-1', role: 'ai',
+        content: 'Hi there! Thanks for reaching out. How can I help you today?',
+        isInternal: false, createdAt: new Date().toISOString(),
+      }]}
+      onAnswerFeedback={() => {}}
+    />);
+
+    expect(rendered.queryByText('Helpful?')).toBeNull();
   });
 });

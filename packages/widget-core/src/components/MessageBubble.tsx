@@ -2,13 +2,14 @@ import { FunctionComponent } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Message, Attachment, WidgetConfig } from '../types';
 import { renderMarkdown } from '../utils/markdownRenderer';
-import { FileTextIcon } from './icons';
+import { FileTextIcon, ThumbsDownIcon, ThumbsUpIcon } from './icons';
 
 interface MessageBubbleProps {
   message: Message;
   config?: WidgetConfig;
   isFirstInGroup?: boolean;
   onImageClick?: (src: string, alt: string) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
 }
 
 function isImageType(type: string): boolean {
@@ -206,7 +207,7 @@ function SourcePopover({ sources }: { sources: NonNullable<Message['sources']> }
         aria-expanded={open}
         onClick={() => setOpen(prev => !prev)}
       >
-        {formatSourceCount(sources.length)}
+        Based on {formatSourceCount(sources.length)}
       </button>
 
       {open && (
@@ -230,7 +231,9 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   config,
   isFirstInGroup = true,
   onImageClick,
+  onAnswerFeedback,
 }) => {
+  const [answerFeedback, setAnswerFeedback] = useState<'helpful' | 'not-helpful' | null>(null);
   const isCustomer = message.role === 'customer';
   const isAI = message.role === 'ai';
   const isAgent = message.role === 'agent';
@@ -256,12 +259,22 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const hasImages = message.attachments?.some(a => a.url && isImageType(a.fileType)) ?? false;
   const hasSources = Boolean(message.sources && message.sources.length > 0);
   const hasLinkPreviews = Boolean(message.linkPreviews && message.linkPreviews.length > 0);
-  const showConfidence = hasSources && message.aiConfidence !== undefined;
   const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || hasSources || hasLinkPreviews || message.isStreaming;
-  const hasMeta = hasSources || showConfidence;
+  const showAnswerFeedback = isAI
+    && message.id !== '__intro__'
+    && hasTextContent
+    && !message.isStreaming
+    && Boolean(onAnswerFeedback);
+  const hasMeta = hasSources || showAnswerFeedback;
+
+  const submitAnswerFeedback = (helpful: boolean) => {
+    setAnswerFeedback(helpful ? 'helpful' : 'not-helpful');
+    onAnswerFeedback?.(message.id, helpful);
+  };
 
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
+  const isWorkspaceBrandAvatar = message.id === '__intro__' && Boolean(agentAvatar);
   // Flat Intercom-style pill is reserved for teammate_joined — the one and
   // only widget-visible routing event. Every other system_event_type either
   // falls through to a normal bubble (when sender context is present — e.g.
@@ -302,7 +315,14 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
           {/* Agent: avatar + name row, shown only on first message */}
           {isFirstInGroup && (
             <div className="helpin-message-agent-header">
-              {agentAvatar ? (
+              {isWorkspaceBrandAvatar ? (
+                <span
+                  className="helpin-message-avatar helpin-message-avatar--brand"
+                  style={{ backgroundColor: config?.branding?.primaryColor || '#6366f1' }}
+                >
+                  <img src={agentAvatar} alt={displayName} className="helpin-message-brand-logo" />
+                </span>
+              ) : agentAvatar ? (
                 <img src={agentAvatar} alt={displayName} className="helpin-message-avatar" />
               ) : displayName ? (
                 <span className="helpin-message-avatar-placeholder">
@@ -331,9 +351,31 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                     {hasSources && (
                       <SourcePopover sources={message.sources!} />
                     )}
-                    {showConfidence && (
-                      <div className="helpin-message-confidence">
-                        Confidence: {Math.round(message.aiConfidence! * 100)}%
+                    {showAnswerFeedback && (
+                      <div className="helpin-answer-feedback" aria-live="polite">
+                        {answerFeedback ? (
+                          <span className="helpin-answer-feedback-thanks">Thanks for the feedback</span>
+                        ) : (
+                          <>
+                            <span className="helpin-answer-feedback-label">Helpful?</span>
+                            <button
+                              type="button"
+                              className="helpin-answer-feedback-btn"
+                              aria-label="This answer was helpful"
+                              onClick={() => submitAnswerFeedback(true)}
+                            >
+                              <ThumbsUpIcon size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="helpin-answer-feedback-btn"
+                              aria-label="This answer was not helpful"
+                              onClick={() => submitAnswerFeedback(false)}
+                            >
+                              <ThumbsDownIcon size={14} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>

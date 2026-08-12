@@ -31,20 +31,23 @@ const mockConfig: WidgetConfig = {
 };
 
 describe('PreChatForm', () => {
-  it('renders inline form with email input', () => {
+  it('renders a human contact card with an email input', () => {
     const { container } = render(<PreChatForm config={mockConfig} onSubmit={() => {}} />);
-    expect(container.querySelector('.helpin-inline-prechat')).toBeTruthy();
+    expect(container.querySelector('.helpin-human-contact-card')).toBeTruthy();
     expect(container.querySelector('input[type="email"]')).toBeTruthy();
   });
 
-  it('shows prompt text for email', () => {
+  it('explains why the email is useful and when the team replies', () => {
     const { container } = render(<PreChatForm config={mockConfig} onSubmit={() => {}} />);
-    expect(container.textContent).toContain('Please enter your email address');
+    expect(container.textContent).toContain('Talk to a person');
+    expect(container.textContent).toContain('Where should we send their reply?');
+    expect(container.textContent).toContain('We typically reply in a few minutes');
+    expect(container.textContent).toContain('used only for this conversation');
   });
 
   it('renders the email prompt without duplicating workspace identity', () => {
     const { container } = render(<PreChatForm config={mockConfig} onSubmit={() => {}} />);
-    expect(container.textContent).toContain('Please enter your email address');
+    expect(container.textContent).toContain('Talk to a person');
     expect(container.textContent).not.toContain('Test Support');
   });
 
@@ -60,7 +63,7 @@ describe('PreChatForm', () => {
     await waitFor(() => {
       const phoneInput = container.querySelector('input[type="tel"]');
       expect(phoneInput).toBeTruthy();
-      expect(container.textContent).toContain("What's your phone number");
+      expect(container.textContent).toContain('What phone number should our team use?');
     });
   });
 
@@ -125,7 +128,47 @@ describe('PreChatForm', () => {
     fireEvent.submit(container.querySelector('form') as HTMLFormElement);
 
     await waitFor(() => {
-      expect(container.querySelector('.helpin-inline-prechat')).toBeFalsy();
+      expect(container.querySelector('.helpin-human-contact-card')).toBeFalsy();
     });
+  });
+
+  it('lets optional visitors continue without email', async () => {
+    const onSubmit = vi.fn();
+    const emailOnlyConfig: WidgetConfig = {
+      ...mockConfig,
+      features: { ...mockConfig.features, requirePhone: false },
+    };
+    const { getByText } = render(<PreChatForm config={emailOnlyConfig} onSubmit={onSubmit} />);
+
+    fireEvent.click(getByText('Continue without email'));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith({ phone: '', email: '' });
+    });
+  });
+
+  it('does not offer email bypass when contact details are required', () => {
+    const requiredConfig: WidgetConfig = {
+      ...mockConfig,
+      features: { ...mockConfig.features, forceIdentify: true },
+    };
+    const { queryByText } = render(<PreChatForm config={requiredConfig} onSubmit={() => {}} />);
+
+    expect(queryByText('Continue without email')).toBeNull();
+  });
+
+  it('uses offline-specific benefit copy', () => {
+    const offlineConfig: WidgetConfig = {
+      ...mockConfig,
+      features: { ...mockConfig.features, requirePhone: false },
+      availability: {
+        ...mockConfig.availability,
+        isOnline: false,
+      },
+    };
+    const { getByText } = render(<PreChatForm config={offlineConfig} onSubmit={() => {}} />);
+
+    expect(getByText(/currently offline/)).toBeTruthy();
+    expect(getByText('Send message and notify me')).toBeTruthy();
   });
 });

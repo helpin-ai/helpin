@@ -1,5 +1,5 @@
 import { FunctionComponent } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 import type { Message, WidgetConfig } from '../types';
 import { MessageBubble } from './MessageBubble';
 
@@ -8,6 +8,18 @@ interface MessageListProps {
   showDateSeparators?: boolean;
   config?: WidgetConfig;
   onImageClick?: (src: string, alt: string) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+}
+
+function isLikelyGreeting(message: Message): boolean {
+  if (message.sources && message.sources.length > 0) return false;
+  const text = message.content
+    .replace(/[*_`#>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (!/^(hi|hello|hey)\b/.test(text)) return false;
+  return /(?:thanks? for (?:reaching out|contacting us)|how (?:can|may) (?:i|we) help|what can (?:i|we) help)/.test(text);
 }
 
 export const MessageList: FunctionComponent<MessageListProps> = ({
@@ -15,21 +27,59 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
   showDateSeparators = true,
   config,
   onImageClick,
+  onAnswerFeedback,
 }) => {
   const listRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
+  const isNearBottomRef = useRef(true);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  let hasCustomerQuestion = false;
+  let latestFeedbackMessageId: string | null = null;
+  for (const message of messages) {
+    if (message.role === 'customer' && message.content.trim().length > 0) {
+      hasCustomerQuestion = true;
+      latestFeedbackMessageId = null;
+      continue;
+    }
+    if (
+      hasCustomerQuestion
+      && message.role === 'ai'
+      && message.content.trim().length > 0
+      && !message.isStreaming
+      && !message.systemEventType
+      && !isLikelyGreeting(message)
+    ) {
+      latestFeedbackMessageId = message.id;
+    }
+  }
+
+  const scrollToLatest = () => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    isNearBottomRef.current = true;
+    setShowJumpToLatest(false);
+  };
+
+  const handleScroll = () => {
+    const el = listRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    isNearBottomRef.current = isNearBottom;
+    if (isNearBottom) setShowJumpToLatest(false);
+  };
 
   useEffect(() => {
     if (listRef.current) {
-      const el = listRef.current;
       if (isInitialMount.current) {
-        el.scrollTop = el.scrollHeight;
+        scrollToLatest();
         isInitialMount.current = false;
         return;
       }
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-      if (isNearBottom) {
-        el.scrollTop = el.scrollHeight;
+      if (isNearBottomRef.current) {
+        scrollToLatest();
+      } else {
+        setShowJumpToLatest(true);
       }
     }
   }, [messages]);
@@ -84,7 +134,14 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
   };
 
   return (
-    <div className="helpin-message-list helpin-message-list--smooth-enter" ref={listRef} role="list" aria-label="Messages">
+    <div className="helpin-message-list-shell">
+      <div
+        className="helpin-message-list helpin-message-list--smooth-enter"
+        ref={listRef}
+        role="list"
+        aria-label="Messages"
+        onScroll={handleScroll}
+      >
       {messages.map((message, idx) => {
         const dateSeparator = getDateSeparator(message.createdAt, idx);
         // Consecutive = same sender identity for incoming messages.
@@ -99,10 +156,23 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
                 <span>{dateSeparator}</span>
               </div>
             )}
-            <MessageBubble message={message} config={config} isFirstInGroup={isFirstInGroup} onImageClick={onImageClick} />
+            <MessageBubble
+              message={message}
+              config={config}
+              isFirstInGroup={isFirstInGroup}
+              onImageClick={onImageClick}
+              onAnswerFeedback={message.id === latestFeedbackMessageId ? onAnswerFeedback : undefined}
+            />
           </div>
         );
       })}
+      </div>
+      {showJumpToLatest && (
+        <button type="button" className="helpin-jump-to-latest" onClick={scrollToLatest}>
+          <span aria-hidden="true">↓</span>
+          Jump to latest
+        </button>
+      )}
     </div>
   );
 };

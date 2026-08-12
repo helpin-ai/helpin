@@ -60,6 +60,7 @@ export interface MountWidgetOptions {
   onQuickReply?: (content: string) => void;
   onTyping?: (content: string) => void;
   showPreChatForm?: boolean;
+  contactCaptureCompleted?: boolean;
   onPreChatSubmit?: (data: { phone: string; email: string }) => void;
   isTyping?: boolean;
   isAIThinking?: boolean;
@@ -92,6 +93,10 @@ export interface MountWidgetOptions {
     articleSlug?: string;
   };
   onImageClick?: (src: string, alt: string) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  queuedMessageCount?: number;
+  csatSubmitted?: boolean;
+  onCsatSubmit?: (rating: number, feedback?: string) => void;
 }
 
 export function mountWidget(container: HTMLElement, options: MountWidgetOptions): void {
@@ -106,6 +111,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     onQuickReply = () => {},
     onTyping,
     showPreChatForm = false,
+    contactCaptureCompleted = false,
     onPreChatSubmit = () => {},
     isTyping = false,
     isAIThinking = false,
@@ -134,6 +140,10 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     host,
     openArticleRequest,
     onImageClick,
+    onAnswerFeedback,
+    queuedMessageCount = 0,
+    csatSubmitted = false,
+    onCsatSubmit,
   } = options;
 
   const tree = h(
@@ -150,6 +160,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       onQuickReply,
       onTyping,
       showPreChatForm,
+      contactCaptureCompleted,
       onPreChatSubmit,
       isTyping,
       isAIThinking,
@@ -175,6 +186,10 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       host,
       openArticleRequest,
       onImageClick,
+      onAnswerFeedback,
+      queuedMessageCount,
+      csatSubmitted,
+      onCsatSubmit,
     }),
     showLauncher
       ? h(WidgetLauncher, {
