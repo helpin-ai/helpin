@@ -8,6 +8,16 @@ export const pmAttachmentService = {
   contentUrl: (id: string) =>
     `${API_BASE}/pm/attachments/${encodeURIComponent(id)}/content`,
 
+  /**
+   * Same content, streamed through the API instead of redirecting to the object store.
+   *
+   * Canvas readers (image annotation) need this: the redirect hands CORS control to the
+   * bucket, and a bucket without a CORS policy either blocks the load outright or taints the
+   * canvas so the PNG export throws.
+   */
+  proxiedContentUrl: (id: string) =>
+    `${API_BASE}/pm/attachments/${encodeURIComponent(id)}/content?proxy=1`,
+
   /** Initiate an upload — returns the attachment record + presigned PUT URL. */
   initiateUpload: (workspaceId: string, payload: CreateAttachmentRequest) =>
     api.post<AttachmentResponse>(`/pm/attachments?${qs(workspaceId)}`, payload),

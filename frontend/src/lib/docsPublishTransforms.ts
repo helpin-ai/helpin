@@ -133,10 +133,38 @@ export const excalidrawBlockToImage: PublishContentTransform = {
   },
 };
 
+/**
+ * Drops editor-only annotation data from published content.
+ *
+ * `annotationState` exists solely so an annotation can be re-opened and edited in the app; the
+ * published image is already flattened, so carrying the state adds weight to public HTML, to
+ * search indexing, and to embeddings for no reader benefit.
+ *
+ * `sourceAttachmentId` is dropped too, and that one matters: it points at the ORIGINAL,
+ * un-annotated image. On a public help-center article it would hand anyone a link to the
+ * pre-redaction version.
+ */
+export const stripImageAnnotationState: PublishContentTransform = {
+  name: 'strip-image-annotation-state',
+  appliesTo: (node) =>
+    node.type === 'resizableImage' &&
+    (node.attrs?.annotationState != null || node.attrs?.sourceAttachmentId != null),
+  async transform(node) {
+    const attrs = { ...(node.attrs ?? {}) };
+    delete attrs.annotationState;
+    delete attrs.sourceAttachmentId;
+    return { ...node, attrs };
+  },
+};
+
 export async function prepareDocsContentForPublish(
   content: JSONContent | null | undefined,
   ctx: PublishTransformContext,
-  transforms: PublishContentTransform[] = [mermaidCodeBlockToImage, excalidrawBlockToImage],
+  transforms: PublishContentTransform[] = [
+    mermaidCodeBlockToImage,
+    excalidrawBlockToImage,
+    stripImageAnnotationState,
+  ],
 ): Promise<JSONContent | undefined> {
   if (!content) return undefined;
   return transformNode(content, ctx, transforms);

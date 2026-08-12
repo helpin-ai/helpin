@@ -1367,7 +1367,7 @@ export function DocsEditor({
         transformPastedText: true,
         transformCopiedText: false, // Don't force clipboard to markdown — we have explicit "Copy as Markdown"
       }),
-      ResizableImageExtension.configure({ workspaceId, documentId }),
+      ResizableImageExtension.configure({ workspaceId, documentId, uploadConfig }),
       Table.configure({ resizable: true }),
       TableRow,
       TableHeader,

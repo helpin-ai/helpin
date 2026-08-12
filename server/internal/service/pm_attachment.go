@@ -34,8 +34,12 @@ var allowedMIMETypes = map[string]bool{
 	"application/x-tar": true,
 }
 
+// entityTypeEditorUpload marks an attachment created by an inline rich-text editor upload
+// rather than attached to a specific entity by one person.
+const entityTypeEditorUpload = "editor_upload"
+
 var allowedEntityTypes = map[string]bool{
-	"task": true, "story": true, "task_template": true, "epic": true, "objective": true, "sprint": true, "comment": true, "editor_upload": true,
+	"task": true, "story": true, "task_template": true, "epic": true, "objective": true, "sprint": true, "comment": true, entityTypeEditorUpload: true,
 }
 
 // PMAttachmentService contains attachment business logic.
@@ -52,6 +56,7 @@ type pmAttachmentObjectStore interface {
 	PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error
 	GeneratePresignedGetURL(key, filename string) (string, error)
 	GeneratePresignedInlineGetURL(key string) (string, error)
+	GetObject(ctx context.Context, key string) ([]byte, error)
 	DeleteObject(ctx context.Context, key string) error
 }
 
@@ -236,7 +241,11 @@ func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string, pen
 	if attachment == nil {
 		return fmt.Errorf("attachment not found")
 	}
-	if attachment.UploadedByID != userID {
+	// Inline editor uploads are document content rather than personal files. The route already
+	// requires workspace pm.edit, and anyone holding it can remove the image from the document
+	// anyway. Restricting object deletion to the original uploader would leave the stored file
+	// behind — which breaks redaction, where the un-redacted original must not survive.
+	if attachment.UploadedByID != userID && attachment.EntityType != entityTypeEditorUpload {
 		return fmt.Errorf("only the uploader can delete this attachment")
 	}
 
@@ -291,6 +300,34 @@ func (s *PMAttachmentService) ContentURL(ctx context.Context, id string) (string
 	return downloadURL, nil
 }
 
+// ContentBytes streams an attachment's bytes through the API instead of redirecting to the
+// object store.
+//
+// Canvas features (image annotation) need a same-origin, CORS-clean image: a redirect to a
+// presigned object-store URL makes the bucket's CORS policy govern the load, and a bucket
+// without one either blocks the request or taints the canvas so the export fails.
+func (s *PMAttachmentService) ContentBytes(ctx context.Context, id string) ([]byte, string, error) {
+	if s.s3Client == nil {
+		return nil, "", fmt.Errorf("file storage is not configured")
+	}
+	attachment, err := s.attachmentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, "", err
+	}
+	if attachment == nil || !attachment.IsUploaded || attachment.StorageKey == "" {
+		return nil, "", fmt.Errorf("attachment not found")
+	}
+	data, err := s.s3Client.GetObject(ctx, attachment.StorageKey)
+	if err != nil {
+		return nil, "", fmt.Errorf("read attachment object: %w", err)
+	}
+	contentType := attachment.ContentType
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return data, contentType, nil
+}
+
 // SourceURL returns a provider-readable URL for a document editor image.
 func (s *PMAttachmentService) SourceURL(ctx context.Context, id, workspaceID, entityID string) (string, error) {
 	if s.s3Client == nil {
@@ -300,7 +337,7 @@ func (s *PMAttachmentService) SourceURL(ctx context.Context, id, workspaceID, en
 	if err != nil {
 		return "", err
 	}
-	if attachment == nil || !attachment.IsUploaded || attachment.WorkspaceID != workspaceID || attachment.EntityType != "editor_upload" || attachment.EntityID != entityID || !strings.HasPrefix(attachment.ContentType, "image/") {
+	if attachment == nil || !attachment.IsUploaded || attachment.WorkspaceID != workspaceID || attachment.EntityType != entityTypeEditorUpload || attachment.EntityID != entityID || !strings.HasPrefix(attachment.ContentType, "image/") {
 		return "", fmt.Errorf("image attachment not found")
 	}
 	if s.s3Client.HasPublicURL() {
