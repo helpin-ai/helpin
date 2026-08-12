@@ -41,7 +41,7 @@ interface ConversationDetailSidebarProps {
   conversationId: string | null;
 }
 
-export const conversationDetailSidebarRootClassName = 'flex h-full min-h-0 w-[300px] flex-col border-l bg-muted/30';
+export const conversationDetailSidebarRootClassName = 'flex h-full min-h-0 w-[300px] flex-col bg-muted/30';
 
 function normalizeCountryCode(code?: string | null): keyof typeof Flags | null {
   const normalized = code?.trim().toUpperCase().replace(/-/g, '_');
@@ -280,7 +280,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
 
   if (detailSidebarCollapsed) {
     return (
-      <div className="flex h-full min-h-0 w-10 flex-col items-center border-l bg-muted/30 pt-2">
+      <div className="flex h-full min-h-0 w-10 flex-col items-center bg-muted/30 pt-2">
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={toggleDetailSidebar}>
           <ArrowLeft01Icon className="h-4 w-4" />
         </Button>

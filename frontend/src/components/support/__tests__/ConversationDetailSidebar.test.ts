@@ -19,6 +19,7 @@ describe('details sidebar scrolling', () => {
   it('constrains the sidebar to its panel height so the inner content can scroll', () => {
     expect(conversationDetailSidebarRootClassName).toContain('h-full')
     expect(conversationDetailSidebarRootClassName).toContain('min-h-0')
+    expect(conversationDetailSidebarRootClassName).not.toContain('border-l')
   })
 })
 
