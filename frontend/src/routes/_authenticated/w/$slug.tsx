@@ -229,6 +229,8 @@ function RouteAwareHeader() {
 }
 
 function RouteAwareAskAgentsDock() {
+  const location = useLocation()
+  if (isWorkspaceSupportRoute(location.pathname)) return null
   return <AskAgentsDock />
 }
 

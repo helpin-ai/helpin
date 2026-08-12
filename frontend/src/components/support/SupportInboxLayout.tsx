@@ -6,10 +6,13 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
 import { supportInboxBuiltinViewKey, useSupportInboxStore } from '@/stores/supportInboxStore';
-import { useSupportInboxViews, useSupportMailboxes, useSupportRoutingUsage } from '@/hooks/queries/useSupport';
+import { useConversation, useSupportInboxViews, useSupportMailboxes, useSupportRoutingUsage } from '@/hooks/queries/useSupport';
 import { ConversationList } from './ConversationList';
 import { MessageThread } from './MessageThread';
 import { ConversationDetailSidebar } from './ConversationDetailSidebar';
+import { SupportAgentSidebar } from './SupportAgentSidebar';
+import { buildSupportConversationPageContext } from './supportAgentContext';
+import { supportSidebarWidthClass } from './supportSidebarLayout';
 import { NewConversationDialog } from './NewConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
@@ -90,9 +93,17 @@ export function SupportInboxLayout() {
     teamInboxDialogOpen,
     setTeamInboxDialogOpen,
     editMailboxId,
+    detailSidebarMode,
+    detailSidebarCollapsed,
+    setDetailSidebarMode,
   } = useSupportInboxStore();
   const { data: mailboxes = [] } = useSupportMailboxes(workspaceId);
   const { data: routingUsage } = useSupportRoutingUsage(workspaceId);
+  const { data: selectedConversation } = useConversation(workspaceId, selectedConversationId);
+  const supportAgentContext = useMemo(
+    () => buildSupportConversationPageContext(selectedConversation ?? (selectedConversationId ? { id: selectedConversationId } : null)),
+    [selectedConversation, selectedConversationId],
+  );
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { isAdmin } = usePermissions(access);
   const editMailbox = editMailboxId ? mailboxes.find((m) => m.id === editMailboxId) ?? null : null;
@@ -125,6 +136,12 @@ export function SupportInboxLayout() {
     }
     void navigate({ to: '/w/$slug/support/search', params: { slug }, search: {} as never });
   }, [navigate, slug]);
+  const handleCloseAgentSidebar = useCallback(() => {
+    setDetailSidebarMode('details');
+    window.setTimeout(() => {
+      document.querySelector<HTMLButtonElement>('[aria-label="Ask agents about this conversation"]')?.focus();
+    }, 0);
+  }, [setDetailSidebarMode]);
 
   const supportRouteSearch = useMemo(
     () => {
@@ -373,8 +390,31 @@ export function SupportInboxLayout() {
         </div>
 
         {/* Panel 3: Detail sidebar - hidden on mobile & tablet */}
-        <div className={`hidden ${selectedConversationId ? 'xl:flex' : ''}`}>
-          <ConversationDetailSidebar workspaceId={workspaceId} conversationId={selectedConversationId} />
+        <div
+          className={`relative hidden shrink-0 overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+            selectedConversationId ? 'xl:flex' : ''
+          } ${supportSidebarWidthClass(detailSidebarMode, detailSidebarCollapsed)}`}
+        >
+          <div
+            aria-hidden={detailSidebarMode === 'agents' || undefined}
+            inert={detailSidebarMode === 'agents'}
+            className={`absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+              detailSidebarMode === 'agents' ? 'pointer-events-none -translate-x-2 opacity-0' : 'translate-x-0 opacity-100'
+            }`}
+          >
+            <ConversationDetailSidebar workspaceId={workspaceId} conversationId={selectedConversationId} />
+          </div>
+          {supportAgentContext ? (
+            <div
+              aria-hidden={detailSidebarMode !== 'agents' || undefined}
+              inert={detailSidebarMode !== 'agents'}
+              className={`absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+                detailSidebarMode === 'agents' ? 'translate-x-0 opacity-100' : 'pointer-events-none translate-x-2 opacity-0'
+              }`}
+            >
+              <SupportAgentSidebar context={supportAgentContext} onBack={handleCloseAgentSidebar} />
+            </div>
+          ) : null}
         </div>
       </div>
 

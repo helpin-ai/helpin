@@ -33,6 +33,7 @@ const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
   document: 'Doc',
   crm_contact: 'Contact',
   crm_deal: 'Deal',
+  support_conversation: 'Conversation',
   workspace: 'Workspace',
   repository: 'Repository',
 };
