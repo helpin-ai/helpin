@@ -55,7 +55,8 @@ test('renders built-in views as one unlabeled list with the total count number a
   expect(dot.compareDocumentPosition(count) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(count.className).toContain('text-caption')
   expect(count.className).not.toContain('rounded-full')
-  expect(inboxRow.lastElementChild).not.toBe(count)
+  expect(inboxRow.lastElementChild?.contains(dot)).toBe(true)
+  expect(inboxRow.lastElementChild?.contains(count)).toBe(true)
 })
 
 test('pins Settings outside the scrollable view list and closes before navigating', () => {
