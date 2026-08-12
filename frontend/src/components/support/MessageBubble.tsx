@@ -153,7 +153,7 @@ function renderSupportAuditSystemEventContent(
     if (taskMatch) {
       const [, prefix, taskKey, taskName, suffix] = taskMatch;
       return (
-        <span data-task-created-event className="flex min-w-0 max-w-[70%] items-center whitespace-nowrap">
+        <span data-task-created-event className="mx-auto flex min-w-0 max-w-[70%] items-center justify-center whitespace-nowrap">
           <span data-task-created-prefix className="mr-1 shrink-0">{prefix.trimEnd()}</span>
           {taskHref ? (
             <a data-task-created-link href={taskHref} title={`${taskKey}${taskName ? `: ${taskName}` : ''}`} className="-mx-1 flex min-w-0 items-center rounded-md px-1 font-semibold text-foreground underline decoration-border underline-offset-2 transition-[color,background-color,text-decoration-color] duration-150 hover:bg-muted hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
@@ -616,7 +616,7 @@ export const MessageBubble = memo(function MessageBubble({
         <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className={`flex min-w-0 max-w-full items-center gap-2 ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
+              <div data-support-system-callout className={`flex min-w-0 max-w-full items-center gap-2 ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
                 {isEscalationEvent ? (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                     {escalationIcon}
@@ -647,10 +647,10 @@ export const MessageBubble = memo(function MessageBubble({
       <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className={`flex items-center gap-2.5 ${statePillClass}`}>
+            <div data-support-system-callout className={`flex min-w-0 max-w-full items-center gap-2.5 [overflow-wrap:anywhere] ${statePillClass}`}>
               {statusIcon ?? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />}
               {resolvedActorAvatar}
-              <span className={stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}>{systemDisplayNode}</span>
+              <span className={`min-w-0 ${stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}`}>{systemDisplayNode}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="top">
@@ -764,7 +764,7 @@ export const MessageBubble = memo(function MessageBubble({
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
       {/* Bubble row: avatar + bubble aligned together */}
-      <div className={`flex ${isCustomer ? 'justify-start' : 'justify-end'}`}>
+      <div className={`flex min-w-0 max-w-full ${isCustomer ? 'justify-start' : 'justify-end'}`}>
         {/* Left side: avatar or spacer (customer messages) */}
         {isCustomer && (
           <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">

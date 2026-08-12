@@ -215,6 +215,11 @@ describe('MessageThread', () => {
 
     expect(supportHooks.markConversationRead).toHaveBeenCalledWith('conv-1')
     expect(container.querySelector('[data-slot="scroll-area"]')?.className).toContain('min-w-0')
+    const messageList = container.querySelector('[data-support-message-list]')
+    expect(messageList?.className).toContain('w-full')
+    expect(messageList?.className).toContain('max-w-full')
+    expect(messageList?.className).toContain('min-w-0')
+    expect(messageList?.className).toContain('overflow-x-hidden')
 
     act(() => root.unmount())
   })
