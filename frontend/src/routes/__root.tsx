@@ -3,6 +3,7 @@ import { ThemeProvider } from 'next-themes'
 import { ConfirmProvider } from '@/components/ui/confirm-dialog'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { HelpinWidgetVisibility } from '@/components/HelpinWidgetVisibility'
 import type { User } from '@/lib/types'
 
 export interface RouterContext {
@@ -25,6 +26,7 @@ function RootComponent() {
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <TooltipProvider>
         <ConfirmProvider>
+          <HelpinWidgetVisibility />
           <Outlet />
           <Toaster closeButton />
         </ConfirmProvider>

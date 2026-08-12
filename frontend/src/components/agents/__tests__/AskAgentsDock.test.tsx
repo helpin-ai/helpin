@@ -184,6 +184,19 @@ async function renderDock() {
   await flush();
 }
 
+async function renderDockWithHiddenTrigger() {
+  await act(async () => {
+    root.render(
+      <TooltipProvider>
+        <PageContextProvider>
+          <AskAgentsDock hideCollapsedTrigger />
+        </PageContextProvider>
+      </TooltipProvider>,
+    );
+  });
+  await flush();
+}
+
 async function renderEmbeddedDock(
   requiredPageContext: CommandBarPageContext,
   onClose = vi.fn(),
@@ -255,6 +268,21 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it('stays hidden when collapsed in support but opens from the global sidebar event', async () => {
+    useDockStore.setState({ collapsed: true });
+    await renderDockWithHiddenTrigger();
+    expect(document.body.querySelector('[aria-label="Agent dock"]')).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { mode: 'runs' } }));
+    });
+    await waitForCondition(
+      () => document.body.querySelector('[aria-label="Agent runs and chats"]') !== null,
+      'global Ask Agents panel did not open',
+    );
+    expect(useDockStore.getState().collapsed).toBe(false);
+  });
+
   it('reopens the chat associated with the active support conversation', async () => {
     const supportContext: CommandBarPageContext = {
       entity_type: 'support_conversation',
@@ -271,6 +299,19 @@ describe('AskAgentsDock', () => {
     );
 
     expect(mocks.createChat).not.toHaveBeenCalled();
+  });
+
+  it('describes support-specific agent capabilities in an empty conversation chat', async () => {
+    const supportContext: CommandBarPageContext = {
+      entity_type: 'support_conversation',
+      entity_id: 'conv-42',
+      display_title: 'Refund request',
+    };
+    const associatedChat = { ...CHAT, support_conversation_id: 'conv-42' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [associatedChat] }, error: null });
+
+    await renderEmbeddedDock(supportContext);
+    await waitForText('Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.');
   });
 
   it('creates an associated chat when the support conversation has no history', async () => {

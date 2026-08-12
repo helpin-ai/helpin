@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useTheme } from 'next-themes';
+import { useHelpin } from '@helpin-ai/react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useSetup, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
@@ -51,6 +52,7 @@ export function Sidebar() {
   const { currentWorkspace } = useWorkspaceStore();
   const { user, signOut } = useAuthStore();
   const { theme, setTheme } = useTheme();
+  const { show: showHelpin, open: openHelpin } = useHelpin();
   const openCreate = useGlobalCreateStore((state) => state.openCreate);
 
   const wsSlug = currentWorkspace?.slug ?? '';
@@ -325,6 +327,10 @@ export function Sidebar() {
                 onProfile={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}
                 onSettings={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'general' } })}
                 onWorkspaces={() => handleNavigate('/workspaces')}
+                onGetHelp={() => {
+                  showHelpin();
+                  openHelpin();
+                }}
                 onSignOut={signOut}
               />
             )}

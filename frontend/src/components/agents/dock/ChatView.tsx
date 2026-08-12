@@ -393,7 +393,9 @@ export function ChatView({
         )}
         {!detailLoading && !run && !pendingEcho && (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Ask a question about your workspace, or describe work for an agent to do.
+            {requiredPageContext?.entity_type === 'support_conversation'
+              ? 'Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.'
+              : 'Ask a question about your workspace, or describe work for an agent to do.'}
           </p>
         )}
         {transformed && <DockTranscript stream={transformed.stream} active={runActive} />}
