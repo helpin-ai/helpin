@@ -242,9 +242,11 @@ describe('MessageBubble', () => {
     expect(rendered[2].container.querySelectorAll('strong')[1]?.textContent).toBe('Fix billing webhook')
     expect(rendered[2].container.querySelector('a')?.getAttribute('href')).toBe('/w/acme/pm/tasks/task-123')
     expect(rendered[2].container.querySelector('[data-task-created-event]')?.className).toContain('max-w-[70%]')
+    expect(rendered[2].container.querySelector('[data-task-created-event]')?.className).toContain('justify-center')
     expect(rendered[2].container.querySelector('[data-task-created-prefix]')?.className).toContain('mr-1')
     expect(rendered[2].container.querySelector('[data-task-created-link]')?.className).toContain('hover:bg-muted')
     expect(rendered[2].container.querySelector('[data-task-created-title]')?.className).toContain('truncate')
+    expect(rendered[2].container.querySelector('[data-support-system-callout]')?.className).toContain('max-w-full')
     rendered.forEach((entry) => entry.cleanup())
   })
 
