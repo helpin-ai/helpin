@@ -24,6 +24,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/billingstripe"
@@ -1642,6 +1643,10 @@ func main() {
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 
+	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
+	if pricingCatalogErr != nil {
+		log.Fatalf("load AI pricing catalog: %v", pricingCatalogErr)
+	}
 	handlers := router.Handlers{
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
@@ -1657,6 +1662,7 @@ func main() {
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Setup:               setupHandler,
 		Billing:             handler.NewBillingHandler(billingService, cfg.StripeWebhookSecret, cfg.AppBaseURL, billingTestScenarioService, strings.EqualFold(os.Getenv("BILLING_TEST_SCENARIOS_ENABLED"), "true")),
+		AIUsage:             handler.NewAIUsageHandler(pricingCatalog),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
 		Invite:              handler.NewInviteHandler(inviteService),

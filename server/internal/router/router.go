@@ -31,6 +31,7 @@ type Handlers struct {
 	Workspace           *handler.WorkspaceHandler
 	Setup               *handler.SetupHandler
 	Billing             *handler.BillingHandler
+	AIUsage             *handler.AIUsageHandler
 	Settings            *handler.SettingsHandler
 	Automation          *handler.AutomationHandler
 	Invite              *handler.InviteHandler
@@ -275,6 +276,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/mcp/oauth/revoke", h.MCP.RevokeToken)
 		}
 		r.Get("/health", h.Health.Check)
+		if h.AIUsage != nil {
+			r.Get("/ai-pricing", h.AIUsage.Pricing)
+		}
 		r.Get("/system/ensure-cors", h.Health.EnsureStorageCORS)
 		r.Get("/invitations/info", h.Invite.GetInfo)
 		r.Post("/invitations/accept-with-signup", h.Invite.AcceptWithSignup)
