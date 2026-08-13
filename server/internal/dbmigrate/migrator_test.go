@@ -90,14 +90,18 @@ func TestTieredAIUsageCutoverMigrationContract(t *testing.T) {
 		"create table if not exists billing_ai_usage_pricing_state",
 		"insert into billing_ai_usage_periods",
 		"'2026-08-13'",
-		"rename column on_demand_enabled to extra_ai_usage_enabled",
 		"rename to billing_credit_ledger_legacy",
-		"drop column if exists included_credits",
-		"drop column if exists credits_used",
-		"drop column if exists on_demand_blocks_invoiced",
 	} {
 		if !strings.Contains(sql, clause) {
 			t.Errorf("migration missing behavior %q", clause)
+		}
+	}
+	for _, destructive := range []string{
+		"rename column on_demand_enabled", "drop column if exists included_credits",
+		"drop column if exists credits_used", "drop column if exists on_demand_blocks_invoiced",
+	} {
+		if strings.Contains(sql, destructive) {
+			t.Errorf("activation migration contains premature contract change %q", destructive)
 		}
 	}
 }

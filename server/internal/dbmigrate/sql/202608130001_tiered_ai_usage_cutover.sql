@@ -62,16 +62,9 @@ SELECT wb.workspace_id, now(),
 FROM workspace_billing wb
 WHERE NOT EXISTS (SELECT 1 FROM billing_ai_usage_periods p WHERE p.workspace_id = wb.workspace_id AND p.status = 'open');
 DO $$ BEGIN
- IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspace_billing' AND column_name = 'on_demand_enabled')
- AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'workspace_billing' AND column_name = 'extra_ai_usage_enabled') THEN
-  ALTER TABLE workspace_billing RENAME COLUMN on_demand_enabled TO extra_ai_usage_enabled;
- END IF;
-END $$;
-DO $$ BEGIN
  IF to_regclass('billing_credit_ledger') IS NOT NULL AND to_regclass('billing_credit_ledger_legacy') IS NULL THEN
   ALTER TABLE billing_credit_ledger RENAME TO billing_credit_ledger_legacy;
  END IF;
 END $$;
-ALTER TABLE workspace_billing DROP COLUMN IF EXISTS included_credits;
-ALTER TABLE workspace_billing DROP COLUMN IF EXISTS credits_used;
-ALTER TABLE workspace_billing DROP COLUMN IF EXISTS on_demand_blocks_invoiced;
+-- The activation build stops treating legacy credit columns as the source of truth.
+-- Physical column removal follows only after all mixed-version application callers are gone.
