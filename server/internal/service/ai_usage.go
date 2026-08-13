@@ -159,6 +159,15 @@ func (s *AIUsageService) Reconcile(ctx context.Context, input CompletionUsage) (
 	if err != nil {
 		return nil, err
 	}
+	if input.MeasurementStatus == "estimated" {
+		fallback := launchEstimateMicrousd(input.Context.TaskNature, string(input.Context.Route.Tier))
+		charge.PublishedEquivalentMicrousd = fallback
+		charge.FinalMicrousd = fallback
+		if input.Context.FundingMode == aiusage.FundingCustomer {
+			charge.OrchestrationMicrousd = (fallback + 5) / 10
+			charge.FinalMicrousd = charge.OrchestrationMicrousd
+		}
+	}
 	entry := model.AIUsageLedgerEntry{
 		WorkspaceID: input.Context.WorkspaceID, EntryKind: "usage", FeatureKey: input.Context.FeatureKey,
 		Category: input.Context.TaskNature, ModelTier: string(input.Context.Route.Tier), Provider: input.Context.Route.Provider,
@@ -170,6 +179,10 @@ func (s *AIUsageService) Reconcile(ctx context.Context, input CompletionUsage) (
 		CacheWriteTokens: normalized.CacheWriteTokens, OutputTokens: normalized.OutputTokens,
 		ReasoningTokens: normalized.ReasoningTokens, PublishedChargeMicrousd: charge.PublishedEquivalentMicrousd,
 		MeasurementStatus: input.MeasurementStatus, IdempotencyKey: input.Context.IdempotencyKey + ":usage",
+	}
+	if input.MeasurementStatus == "estimated" {
+		entry.EntryKind = "estimate"
+		entry.EstimationMethod = "launch_fallback"
 	}
 	if input.Context.Promotional {
 		entry.EntryKind = "promotional"

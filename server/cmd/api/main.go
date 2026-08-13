@@ -649,6 +649,12 @@ func main() {
 		orgRepo,
 		billingRepo,
 	)
+	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
+	if pricingCatalogErr != nil {
+		log.Fatalf("load AI pricing catalog: %v", pricingCatalogErr)
+	}
+	aiUsageRepo := repository.NewAIUsageRepository(db)
+	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
 	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
 	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
 	billingTestScenarioService := service.NewBillingTestScenarioService(db, billingService, time.Now)
@@ -687,7 +693,7 @@ func main() {
 		defer close(productAnalyticsDone)
 		productAnalyticsWorker.Run(productAnalyticsCtx, 15*time.Second)
 	}()
-	aiUsageMeter := service.NewAIUsageMeter(billingService)
+	aiUsageMeter := service.NewTokenPricedAIUsageMeter(aiUsageService)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
 	gitCredentialRepo := repository.NewGitCredentialRepository(db)
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
@@ -1643,10 +1649,6 @@ func main() {
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 
-	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
-	if pricingCatalogErr != nil {
-		log.Fatalf("load AI pricing catalog: %v", pricingCatalogErr)
-	}
 	handlers := router.Handlers{
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),

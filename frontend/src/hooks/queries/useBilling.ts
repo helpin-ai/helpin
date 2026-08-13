@@ -110,7 +110,7 @@ export function useSetOnDemand(orgId?: string) {
   const invalidate = useInvalidateOrgBilling(orgId);
   return useMutation({
     mutationFn: async ({ wsId, enabled }: { wsId: string; enabled: boolean }) => {
-      const res = await billingService.setOnDemand(wsId, enabled);
+      const res = await billingService.setExtraAIUsage(wsId, enabled);
       if (res.error) throw new Error(res.error);
       return res.data;
     },
@@ -203,7 +203,7 @@ export function useSetBillingOnDemand(wsId?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (enabled: boolean) => {
-      const res = await billingService.setOnDemand(wsId!, enabled);
+      const res = await billingService.setExtraAIUsage(wsId!, enabled);
       if (res.error) throw new Error(res.error);
       return res.data;
     },

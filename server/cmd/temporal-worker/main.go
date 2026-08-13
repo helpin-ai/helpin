@@ -22,6 +22,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
@@ -175,6 +176,12 @@ func main() {
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
 	billingRepo := repository.NewBillingRepository(db)
+	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
+	if pricingCatalogErr != nil {
+		fatalWithSentry("load AI pricing catalog", pricingCatalogErr)
+	}
+	aiUsageRepo := repository.NewAIUsageRepository(db)
+	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
 	docsAssetReferenceRepo := repository.NewDocsAssetReferenceRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
@@ -248,7 +255,7 @@ func main() {
 	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
 	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
 	billingService.SetWorkspaceRepository(workspaceRepo)
-	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, service.NewAIUsageMeter(billingService))
+	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, service.NewTokenPricedAIUsageMeter(aiUsageService))
 	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)

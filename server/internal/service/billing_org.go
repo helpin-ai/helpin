@@ -78,30 +78,39 @@ type OrganizationBillingSummary struct {
 
 // UsageFeature is a per-feature usage table row.
 type UsageFeature struct {
-	FeatureKey string  `json:"feature_key"`
-	Label      string  `json:"label"`
-	Cost       int     `json:"cost"`
-	Usage      int     `json:"usage"`
-	Credits    int     `json:"credits"`
-	Pct        float64 `json:"pct"`
+	FeatureKey       string  `json:"feature_key"`
+	Label            string  `json:"label"`
+	ModelTier        string  `json:"model_tier"`
+	ActionCount      int     `json:"action_count"`
+	ActualCount      int     `json:"actual_count"`
+	EstimatedCount   int     `json:"estimated_count"`
+	ChargedMicrousd  int64   `json:"charged_microusd"`
+	InputTokens      int64   `json:"input_tokens"`
+	CacheReadTokens  int64   `json:"cache_read_tokens"`
+	CacheWriteTokens int64   `json:"cache_write_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	ReasoningTokens  int64   `json:"reasoning_tokens"`
+	Pct              float64 `json:"pct"`
 }
 
 // UsageSeriesPoint is one day in the usage chart, with per-feature credits.
 type UsageSeriesPoint struct {
-	Date     string         `json:"date"`
-	Features map[string]int `json:"features"`
+	Date     string           `json:"date"`
+	Features map[string]int64 `json:"features"`
 }
 
 // WorkspaceUsage is the response for GET /billing/usage.
 type WorkspaceUsage struct {
-	Period          string             `json:"period"`
-	PeriodStart     time.Time          `json:"period_start"`
-	PeriodEnd       time.Time          `json:"period_end"`
-	Mode            string             `json:"mode"`
-	IncludedCredits int                `json:"included_credits"`
-	CreditsUsed     int                `json:"credits_used"`
-	Series          []UsageSeriesPoint `json:"series"`
-	Features        []UsageFeature     `json:"features"`
+	Period                   string             `json:"period"`
+	PeriodStart              time.Time          `json:"period_start"`
+	PeriodEnd                time.Time          `json:"period_end"`
+	Mode                     string             `json:"mode"`
+	AIUsageAllowanceMicrousd int64              `json:"ai_usage_allowance_microusd"`
+	AIUsageUsedMicrousd      int64              `json:"ai_usage_used_microusd"`
+	AIUsageReservedMicrousd  int64              `json:"ai_usage_reserved_microusd"`
+	AIUsageOverageMicrousd   int64              `json:"ai_usage_overage_microusd"`
+	Series                   []UsageSeriesPoint `json:"series"`
+	Features                 []UsageFeature     `json:"features"`
 }
 
 // PriceCentsForPlan returns the price (in cents) for a plan + interval.
@@ -489,31 +498,41 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 		return nil, err
 	}
 
-	featureCredits := map[string]int{}
-	featureUsage := map[string]int{}
-	totalCredits := 0
+	featureRows := map[string]UsageFeature{}
+	var totalCharged int64
 	dayIndex := map[string]int{}
 	series := make([]UsageSeriesPoint, 0)
 	for _, row := range rows {
-		featureCredits[row.FeatureKey] += row.Credits
-		featureUsage[row.FeatureKey] += row.Entries
-		totalCredits += row.Credits
+		key := row.FeatureKey + ":" + row.ModelTier
+		feature := featureRows[key]
+		feature.FeatureKey, feature.Label, feature.ModelTier = row.FeatureKey, billingFeatureLabel(row.FeatureKey), row.ModelTier
+		feature.ActionCount += row.Entries
+		feature.ActualCount += row.ActualEntries
+		feature.EstimatedCount += row.EstimatedEntries
+		feature.ChargedMicrousd += row.ChargedMicrousd
+		feature.InputTokens += row.InputTokens
+		feature.CacheReadTokens += row.CacheReadTokens
+		feature.CacheWriteTokens += row.CacheWriteTokens
+		feature.OutputTokens += row.OutputTokens
+		feature.ReasoningTokens += row.ReasoningTokens
+		featureRows[key] = feature
+		totalCharged += row.ChargedMicrousd
 		idx, ok := dayIndex[row.Day]
 		if !ok {
 			idx = len(series)
 			dayIndex[row.Day] = idx
-			series = append(series, UsageSeriesPoint{Date: row.Day, Features: map[string]int{}})
+			series = append(series, UsageSeriesPoint{Date: row.Day, Features: map[string]int64{}})
 		}
-		series[idx].Features[row.FeatureKey] += row.Credits
+		series[idx].Features[row.FeatureKey] += row.ChargedMicrousd
 	}
 
 	if mode == "cumulative" {
-		running := map[string]int{}
+		running := map[string]int64{}
 		for i := range series {
 			for f, c := range series[i].Features {
 				running[f] += c
 			}
-			cum := make(map[string]int, len(running))
+			cum := make(map[string]int64, len(running))
 			for f, c := range running {
 				cum[f] = c
 			}
@@ -521,45 +540,28 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 		}
 	}
 
-	features := buildUsageFeatures(featureCredits, featureUsage, totalCredits)
-
-	return &WorkspaceUsage{
-		Period:          period,
-		PeriodStart:     start,
-		PeriodEnd:       end,
-		Mode:            mode,
-		IncludedCredits: summary.IncludedCredits,
-		CreditsUsed:     summary.CreditsUsed,
-		Series:          series,
-		Features:        features,
-	}, nil
-}
-
-// buildUsageFeatures turns grouped credit/usage maps into a sorted per-feature
-// table with cost and percentage of total.
-func buildUsageFeatures(featureCredits, featureUsage map[string]int, totalCredits int) []UsageFeature {
-	features := make([]UsageFeature, 0, len(featureCredits))
-	for key, credits := range featureCredits {
-		pct := 0.0
-		if totalCredits > 0 {
-			pct = float64(credits) / float64(totalCredits) * 100
+	features := make([]UsageFeature, 0, len(featureRows))
+	for _, feature := range featureRows {
+		if totalCharged > 0 {
+			feature.Pct = float64(feature.ChargedMicrousd) / float64(totalCharged) * 100
 		}
-		features = append(features, UsageFeature{
-			FeatureKey: key,
-			Label:      billingFeatureLabel(key),
-			Cost:       BillingCreditsForFeature(key),
-			Usage:      featureUsage[key],
-			Credits:    credits,
-			Pct:        pct,
-		})
+		features = append(features, feature)
 	}
 	sort.Slice(features, func(i, j int) bool {
-		if features[i].Credits != features[j].Credits {
-			return features[i].Credits > features[j].Credits
+		if features[i].ChargedMicrousd != features[j].ChargedMicrousd {
+			return features[i].ChargedMicrousd > features[j].ChargedMicrousd
 		}
 		return features[i].FeatureKey < features[j].FeatureKey
 	})
-	return features
+
+	return &WorkspaceUsage{
+		Period: period, PeriodStart: start, PeriodEnd: end, Mode: mode,
+		AIUsageAllowanceMicrousd: summary.AIUsageAllowanceMicrousd,
+		AIUsageUsedMicrousd:      summary.AIUsageUsedMicrousd,
+		AIUsageReservedMicrousd:  summary.AIUsageReservedMicrousd,
+		AIUsageOverageMicrousd:   summary.AIUsageOverageMicrousd,
+		Series:                   series, Features: features,
+	}, nil
 }
 
 // parseBillingPeriod resolves a "YYYY-MM" period into [start, end). An empty

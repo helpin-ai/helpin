@@ -25,3 +25,20 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 		t.Fatalf("run() error = %v", err)
 	}
 }
+
+func TestRunExportTypeScriptIsDeterministic(t *testing.T) {
+	var first, second bytes.Buffer
+	for _, output := range []*bytes.Buffer{&first, &second} {
+		if err := run([]string{"export", "--format", "typescript"}, output); err != nil {
+			t.Fatalf("run(export) error = %v", err)
+		}
+	}
+	if first.String() != second.String() {
+		t.Fatal("TypeScript export is not deterministic")
+	}
+	for _, expected := range []string{"export const AI_PRICING", `"pricing_version": "2026-08-13`, "catalogSha256"} {
+		if !strings.Contains(first.String(), expected) {
+			t.Fatalf("export missing %q: %s", expected, first.String())
+		}
+	}
+}

@@ -211,7 +211,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
                 <TableCell className="capitalize text-muted-foreground">
                   {f.model_tier ?? '—'}
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{formatNumber(f.action_count ?? f.usage)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatNumber(f.action_count ?? 0)}</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {Math.round(f.pct)}%
                   {(f.estimated_count ?? 0) > 0 && <span className="ml-1 text-muted-foreground">estimated</span>}

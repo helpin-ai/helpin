@@ -641,10 +641,12 @@ func (r *BillingRepository) FindWorkspaceOrgID(ctx context.Context, workspaceID 
 
 // UsageLedgerRow is one aggregated ledger group by day + feature.
 type UsageLedgerRow struct {
-	Day        string
-	FeatureKey string
-	Entries    int
-	Credits    int
+	Day                                                          string
+	FeatureKey, ModelTier                                        string
+	Entries, ActualEntries, EstimatedEntries                     int
+	ChargedMicrousd                                              int64
+	InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens int64
+	ReasoningTokens                                              int64
 }
 
 // UsageByDayFeature groups usage ledger entries by day and feature for a
@@ -652,11 +654,19 @@ type UsageLedgerRow struct {
 func (r *BillingRepository) UsageByDayFeature(ctx context.Context, workspaceID string, start, end time.Time) ([]UsageLedgerRow, error) {
 	var rows []UsageLedgerRow
 	if err := r.db.WithContext(ctx).
-		Model(&model.BillingCreditLedgerEntry{}).
-		Select("to_char(created_at, 'YYYY-MM-DD') AS day, feature_key AS feature_key, COUNT(*) AS entries, COALESCE(SUM(credits),0) AS credits").
-		Where("workspace_id = ? AND kind = ? AND created_at >= ? AND created_at < ?",
-			workspaceID, model.BillingLedgerKindUsage, start, end).
-		Group("day, feature_key").
+		Model(&model.AIUsageLedgerEntry{}).
+		Select(`DATE(created_at) AS day, feature_key, model_tier, COUNT(*) AS entries,
+			SUM(CASE WHEN measurement_status = 'actual' THEN 1 ELSE 0 END) AS actual_entries,
+			SUM(CASE WHEN measurement_status = 'estimated' THEN 1 ELSE 0 END) AS estimated_entries,
+			COALESCE(SUM(final_charged_microusd),0) AS charged_microusd,
+			COALESCE(SUM(input_tokens_total),0) AS input_tokens,
+			COALESCE(SUM(cache_read_tokens),0) AS cache_read_tokens,
+			COALESCE(SUM(cache_write_tokens),0) AS cache_write_tokens,
+			COALESCE(SUM(output_tokens),0) AS output_tokens,
+			COALESCE(SUM(reasoning_tokens),0) AS reasoning_tokens`).
+		Where("workspace_id = ? AND entry_kind IN ? AND created_at >= ? AND created_at < ?",
+			workspaceID, []string{"usage", "estimate"}, start, end).
+		Group("DATE(created_at), feature_key, model_tier").
 		Order("day ASC").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("aggregate usage by day feature: %w", err)

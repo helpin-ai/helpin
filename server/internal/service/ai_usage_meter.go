@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -91,6 +93,7 @@ type aiUsageCreditConsumer interface {
 // AIUsageMeter is the central adapter from AI token usage to the billing ledger.
 type AIUsageMeter struct {
 	consumer aiUsageCreditConsumer
+	usage    *AIUsageService
 }
 
 // AIUsageMeterInput describes one completed AI action to charge.
@@ -166,6 +169,11 @@ func NewAIUsageMeter(consumer aiUsageCreditConsumer) *AIUsageMeter {
 	return &AIUsageMeter{consumer: consumer}
 }
 
+// NewTokenPricedAIUsageMeter creates the active micro-USD metering adapter.
+func NewTokenPricedAIUsageMeter(usage *AIUsageService) *AIUsageMeter {
+	return &AIUsageMeter{usage: usage}
+}
+
 func NewMeteredLLMProvider(base llm.Provider, meter *AIUsageMeter) llm.Provider {
 	if base == nil || meter == nil {
 		return base
@@ -206,6 +214,9 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 	if !ok && !AIUsageMeteringExemptFromContext(ctx) {
 		return nil, ErrAIUsageMeteringRequired
 	}
+	if ok && p.meter.usage != nil {
+		return p.chatCompletionTokenPriced(ctx, req, metering)
+	}
 	if ok {
 		if err := p.meter.Preflight(ctx, AIUsageMeterInput{
 			WorkspaceID:    metering.WorkspaceID,
@@ -238,6 +249,92 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 		return nil, err
 	}
 	return resp, nil
+}
+
+func (p *MeteredLLMProvider) chatCompletionTokenPriced(ctx context.Context, req llm.ChatRequest, input AIUsageMeteringContext) (*llm.ChatResponse, error) {
+	resolver, ok := p.base.(llm.PricingIdentityResolver)
+	if !ok {
+		return nil, fmt.Errorf("AI usage pricing identity is unavailable")
+	}
+	identity, err := resolver.ResolvePricingIdentity(req)
+	if err != nil {
+		return nil, err
+	}
+	feature, known := AIUsageFeature(input.FeatureKey)
+	promotional := known && !feature.Chargeable
+	maximumOutput := int64(req.MaxTokens)
+	if maximumOutput <= 0 {
+		maximumOutput = 4096
+	}
+	preflight, err := p.meter.usage.Preflight(ctx, PreflightRequest{Metering: MeteringRequest{
+		WorkspaceID: input.WorkspaceID, TaskNature: taskNatureForFeature(input.FeatureKey), FeatureKey: input.FeatureKey,
+		Provider: identity.Provider, Model: identity.Model, Route: identity.Route, ServiceTier: identity.ServiceTier,
+		FundingMode: aiusage.FundingHelpinHosted, InputTokensEstimate: estimateChatInputTokens(req),
+		MaximumOutputTokens: maximumOutput, ExecutionID: metadataString(input.Metadata, "execution_id"),
+		IdempotencyKey: input.IdempotencyKey, Promotional: promotional,
+	}})
+	if err != nil {
+		return nil, err
+	}
+	response, providerErr := p.base.ChatCompletion(ctx, req)
+	if providerErr != nil || response == nil {
+		if preflight.ReservationID != "" {
+			_ = p.meter.usage.Fail(ctx, preflight.ReservationID)
+		}
+		return response, providerErr
+	}
+	_, reconcileErr := p.meter.usage.Reconcile(ctx, CompletionUsage{
+		Context: *preflight,
+		Telemetry: aiusage.TokenTelemetry{
+			InputTokensTotal: int64(response.TokensUsed.InputTokensTotal), CacheReadTokens: int64(response.TokensUsed.CacheReadTokens),
+			CacheWriteTokens: int64(response.TokensUsed.CacheWriteTokens), CompletionTokensTotal: int64(response.TokensUsed.CompletionTokensTotal),
+			OutputTokens: int64(response.TokensUsed.OutputTokens), ReasoningTokens: int64(response.TokensUsed.ReasoningTokens),
+			CompletionIncludesReasoning: response.TokensUsed.CompletionIncludesReasoning,
+		},
+		MeasurementStatus: measurementStatus(response.TokensUsed),
+	})
+	if reconcileErr != nil {
+		slog.Error("AI usage reconciliation failed after successful provider response", "workspace_id", input.WorkspaceID, "feature_key", input.FeatureKey, "error", reconcileErr)
+	}
+	return response, nil
+}
+
+func estimateChatInputTokens(req llm.ChatRequest) int64 {
+	characters := len(req.SystemPrompt)
+	for _, message := range req.Messages {
+		characters += len(message.Content)
+		for _, part := range message.ContentParts {
+			characters += len(part.Text)
+		}
+	}
+	return int64((characters + 3) / 4)
+}
+
+func metadataString(metadata map[string]interface{}, key string) string {
+	if value, ok := metadata[key].(string); ok {
+		return value
+	}
+	return ""
+}
+
+func measurementStatus(usage llm.TokenUsage) string {
+	if usage.InputTokensTotal == 0 && usage.CompletionTokensTotal == 0 && usage.OutputTokens == 0 {
+		return "estimated"
+	}
+	return "actual"
+}
+
+func taskNatureForFeature(featureKey string) string {
+	switch featureKey {
+	case BillingFeaturePlanningRun, BillingFeatureAtlasRun, BillingFeatureScribeRun:
+		return "planning"
+	case BillingFeatureCodingRun, BillingFeatureForgeRun:
+		return "coding"
+	case BillingFeatureLensRun, BillingFeatureCustomCodingReviewRun:
+		return "review"
+	default:
+		return "support"
+	}
 }
 
 func (m *AIUsageMeter) Preflight(ctx context.Context, input AIUsageMeterInput) error {

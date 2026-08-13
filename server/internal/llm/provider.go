@@ -58,8 +58,20 @@ type ImageURLPart struct {
 
 // ChatResponse is a model-agnostic chat response.
 type ChatResponse struct {
-	Content    string
-	TokensUsed TokenUsage
+	Content                string
+	TokensUsed             TokenUsage
+	Provider, Model, Route string
+	ServiceTier            string
+}
+
+// ChatPricingIdentity is the exact route selected before a provider call.
+type ChatPricingIdentity struct {
+	Provider, Model, Route, ServiceTier string
+}
+
+// PricingIdentityResolver exposes a provider's exact request route for preflight pricing.
+type PricingIdentityResolver interface {
+	ResolvePricingIdentity(ChatRequest) (ChatPricingIdentity, error)
 }
 
 // EmbeddingRequest is a model-agnostic embedding request.

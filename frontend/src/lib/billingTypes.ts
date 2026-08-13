@@ -100,9 +100,6 @@ export interface UsageSeriesPoint {
 export interface UsageFeatureRow {
   feature_key: string;
   label: string;
-  cost: number;
-  usage: number;
-  credits: number;
   pct: number;
   model_tier?: 'small' | 'medium' | 'large' | 'flagship';
   action_count?: number;
@@ -120,8 +117,10 @@ export interface UsageResponse {
   period_start: string;
   period_end: string;
   mode: UsageMode;
-  included_credits: number;
-  credits_used: number;
+  ai_usage_allowance_microusd: number;
+  ai_usage_used_microusd: number;
+  ai_usage_reserved_microusd: number;
+  ai_usage_overage_microusd: number;
   series: UsageSeriesPoint[];
   features: UsageFeatureRow[];
 }

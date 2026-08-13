@@ -38,7 +38,16 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	return &ChatResponse{
 		Content:    content,
 		TokensUsed: tokenUsageFromClaude(resp.Usage),
+		Provider:   "anthropic", Model: req.Model, Route: req.Model, ServiceTier: "standard",
 	}, nil
+}
+
+// ResolvePricingIdentity returns the exact Anthropic route before execution.
+func (p *ClaudeProvider) ResolvePricingIdentity(req ChatRequest) (ChatPricingIdentity, error) {
+	if p == nil || strings.TrimSpace(req.Model) == "" {
+		return ChatPricingIdentity{}, fmt.Errorf("Claude model is required for AI usage pricing")
+	}
+	return ChatPricingIdentity{Provider: "anthropic", Model: req.Model, Route: req.Model, ServiceTier: "standard"}, nil
 }
 
 func tokenUsageFromClaude(usage agentcontract.Usage) TokenUsage {

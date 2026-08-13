@@ -46,6 +46,32 @@ func (r *Router) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResp
 	return provider.ChatCompletion(ctx, req)
 }
 
+// ResolvePricingIdentity resolves the same provider route used by ChatCompletion.
+func (r *Router) ResolvePricingIdentity(req ChatRequest) (ChatPricingIdentity, error) {
+	if r == nil {
+		return ChatPricingIdentity{}, fmt.Errorf("llm router is nil")
+	}
+	providerName := normalizeProviderName(req.Provider)
+	if providerName == "" {
+		providerName = r.defaultChatProvider
+	}
+	provider, ok := r.chatProviders[providerName]
+	if !ok || provider == nil {
+		return ChatPricingIdentity{}, fmt.Errorf("chat provider %q is not configured", providerName)
+	}
+	req.Provider = providerName
+	resolver, ok := provider.(PricingIdentityResolver)
+	if !ok {
+		return ChatPricingIdentity{}, fmt.Errorf("chat provider %q has no pricing identity", providerName)
+	}
+	identity, err := resolver.ResolvePricingIdentity(req)
+	if err != nil {
+		return ChatPricingIdentity{}, err
+	}
+	identity.Provider = providerName
+	return identity, nil
+}
+
 // CreateEmbeddings routes an embedding request to the requested provider.
 func (r *Router) CreateEmbeddings(ctx context.Context, req EmbeddingRequest) (*EmbeddingResponse, error) {
 	if r == nil {
