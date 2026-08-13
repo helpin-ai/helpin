@@ -207,6 +207,8 @@ export const queryKeys = {
       ['docs', wsId, 'collections', collectionId, 'deleteImpact'] as const,
     spaceDeleteImpact: (wsId: string, spaceId: string) =>
       ['docs', wsId, 'spaces', spaceId, 'deleteImpact'] as const,
+    apiReferences: (wsId: string, spaceId: string) =>
+      ['docs', wsId, 'spaces', spaceId, 'apiReferences'] as const,
     documents: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['docs', wsId, 'documents', filters] as const) : (['docs', wsId, 'documents'] as const),
     document: (wsId: string, id: string) => ['docs', wsId, 'documents', id] as const,

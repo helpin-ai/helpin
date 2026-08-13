@@ -25,6 +25,8 @@ import type {
   ReorderDocsCollectionsRequest,
   ReorderDocsDocumentsRequest,
   ReorderDocsChildrenRequest,
+  CreateDocsAPIReferenceRequest,
+  UpdateDocsAPIReferenceRequest,
 } from '@/lib/docsTypes'
 
 // ── Spaces ──────────────────────────────────────────────────────────────────
@@ -85,6 +87,74 @@ export function useRestoreDocsSpace(wsId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.spaces(wsId) })
     },
+  })
+}
+
+// API references
+
+export function useDocsAPIReferences(wsId: string, spaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.docs.apiReferences(wsId, spaceId),
+    queryFn: async () => unwrap(await docsService.listAPIReferences(wsId, spaceId)),
+    enabled: enabled && !!wsId && !!spaceId,
+  })
+}
+
+function invalidateDocsAPIReferences(
+  qc: ReturnType<typeof useQueryClient>,
+  wsId: string,
+  spaceId: string,
+) {
+  qc.invalidateQueries({ queryKey: queryKeys.docs.apiReferences(wsId, spaceId) })
+}
+
+export function useCreateDocsAPIReference(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: CreateDocsAPIReferenceRequest) =>
+      unwrap(await docsService.createAPIReference(wsId, spaceId, data)),
+    onSuccess: () => invalidateDocsAPIReferences(qc, wsId, spaceId),
+  })
+}
+
+export function useUpdateDocsAPIReference(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: UpdateDocsAPIReferenceRequest & { id: string }) =>
+      unwrap(await docsService.updateAPIReference(wsId, id, data)),
+    onSuccess: () => invalidateDocsAPIReferences(qc, wsId, spaceId),
+  })
+}
+
+export function useSyncDocsAPIReference(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await docsService.syncAPIReference(wsId, id)),
+    onSuccess: () => invalidateDocsAPIReferences(qc, wsId, spaceId),
+  })
+}
+
+export function usePublishDocsAPIReference(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await docsService.publishAPIReference(wsId, id)),
+    onSuccess: () => invalidateDocsAPIReferences(qc, wsId, spaceId),
+  })
+}
+
+export function useUnpublishDocsAPIReference(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await docsService.unpublishAPIReference(wsId, id)),
+    onSuccess: () => invalidateDocsAPIReferences(qc, wsId, spaceId),
+  })
+}
+
+export function useDeleteDocsAPIReference(wsId: string, spaceId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await docsService.deleteAPIReference(wsId, id)),
+    onSuccess: () => invalidateDocsAPIReferences(qc, wsId, spaceId),
   })
 }
 

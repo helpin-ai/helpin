@@ -106,6 +106,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     spaceSlug?: string
     collectionSlug?: string
     articleKey?: string
+    referenceSlug?: string
   }
   const search = useSearch({ strict: false }) as { q?: string; space?: string }
   const matches = useMatches()
@@ -240,6 +241,14 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       }
     }
 
+    if (params.referenceSlug && params.spaceSlug) {
+      return {
+        kind: 'api_reference',
+        spaceId: currentSpaceId,
+        apiReferenceSlug: params.referenceSlug,
+      }
+    }
+
     if (canonicalCollectionSlug) {
       return {
         kind: 'collection',
@@ -264,6 +273,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     canonicalArticleKey,
     canonicalCollectionSlug,
     params.articleKey,
+    params.referenceSlug,
     params.collectionSlug,
     params.spaceSlug,
     pathname,

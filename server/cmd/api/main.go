@@ -307,6 +307,8 @@ func main() {
 			&model.DocsArticleFeedback{},
 			&model.DocsComment{},
 			&model.DocsImportJob{},
+			&model.DocsAPIReference{},
+			&model.DocsAPIReferenceRevision{},
 			// Notifications module
 			&model.Notification{},
 			&model.NotificationEvent{},
@@ -711,6 +713,7 @@ func main() {
 	docsHelpcenterSearchRepo := repository.NewDocsHelpcenterSearchRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
+	docsAPIReferenceRepo := repository.NewDocsAPIReferenceRepository(db)
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
 	supportContentSourceRepo := repository.NewSupportContentSourceRepository(db)
@@ -1049,6 +1052,7 @@ func main() {
 	}
 
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
+	docsAPIReferenceService := service.NewDocsAPIReferenceService(docsAPIReferenceRepo, docsSpaceRepo)
 	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsDocumentService.SetProductAnalyticsService(productAnalytics)
@@ -1159,6 +1163,7 @@ func main() {
 	docsCollectionService.SetHelpcenterRepository(docsHelpcenterRepo)
 	docsSpaceService.SetPermanentDeleteDependencies(docsCollectionRepo, docsDocumentRepo, docsDocumentService, docsHelpcenterTranslationRepo)
 	docsSpaceService.SetHelpcenterRepository(docsHelpcenterRepo)
+	docsSpaceService.SetAPIReferenceRepository(docsAPIReferenceRepo)
 	contentCrawler := crawler.NewSmartCrawler(
 		cfg.CrawlerMode,
 		cfg.CloudflareAccountID,
@@ -1757,6 +1762,7 @@ func main() {
 	handlers.Docs.SetImageEditService(docsImageEditService)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
+	handlers.Docs.SetAPIReferenceService(docsAPIReferenceService)
 
 	// Slug resolver adapts workspace repo for RBAC middleware.
 	slugResolver := authorization.SlugResolver(func(ctx context.Context, slug string) (string, error) {
