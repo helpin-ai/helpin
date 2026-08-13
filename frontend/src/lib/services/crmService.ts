@@ -223,6 +223,8 @@ export const crmEnrichmentService = {
     api.get<CRMPaginatedResponse<CRMEnrichmentResult[]>>(`/crm/enrichments${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   create: (payload: CreateCRMEnrichmentRequest) =>
     api.post<CRMEnrichmentResult>(`/crm/enrichments${qs(payload.workspace_id)}`, payload),
+  applySuggestion: (workspaceId: string, enrichmentId: string, field: string) =>
+    api.post<CRMEnrichmentResult>(`/crm/enrichments/${enrichmentId}/apply-suggestion${qs(workspaceId)}`, { field }),
 };
 
 export const crmSignalService = {

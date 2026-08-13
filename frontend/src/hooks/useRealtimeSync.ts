@@ -457,6 +457,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       }
     } else if (event.entity === 'crm_contact') {
       queryClient.invalidateQueries({ queryKey: queryKeys.crm.contacts(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.crm.enrichments(workspaceId) })
       queryClient.invalidateQueries({ queryKey: ['support', workspaceId] })
       if (event.entity_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.crm.contact(workspaceId, event.entity_id) })
@@ -464,6 +465,11 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       }
     } else if (event.entity === 'crm_company') {
       queryClient.invalidateQueries({ queryKey: queryKeys.crm.companies(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.crm.enrichments(workspaceId) })
+      if (event.entity_id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.crm.company(workspaceId, event.entity_id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.crm.companyActivities(workspaceId, event.entity_id) })
+      }
       queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === 'support' && query.queryKey[1] === workspaceId && query.queryKey.includes('visitor-context'),
       })

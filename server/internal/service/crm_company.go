@@ -62,6 +62,8 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 		AnnualRevenue:    req.AnnualRevenue,
 		Description:      req.Description,
 		LogoURL:          req.LogoURL,
+		LinkedInURL:      req.LinkedInURL,
+		Headquarters:     req.Headquarters,
 		OwnerMemberID:    req.OwnerMemberID,
 		CustomProperties: model.JSONB(req.CustomProperties),
 	}
@@ -115,6 +117,12 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 	}
 	if req.LogoURL != nil {
 		company.LogoURL = req.LogoURL
+	}
+	if req.LinkedInURL != nil {
+		company.LinkedInURL = req.LinkedInURL
+	}
+	if req.Headquarters != nil {
+		company.Headquarters = req.Headquarters
 	}
 	if req.ClearOwner {
 		company.OwnerMemberID = nil
