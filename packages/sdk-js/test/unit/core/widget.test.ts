@@ -434,6 +434,19 @@ describe('WidgetManager', () => {
         articleSlug: 'article-123',
       });
     });
+
+    it('clears a pending article request when opening Messages', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      widget.openArticle('article-123');
+      widget.openMessages();
+
+      const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      expect(latestOptions.initialView).toBe('messages');
+      expect(latestOptions.openArticleRequest).toBeUndefined();
+    });
   });
 
   describe('websocket reconnect policy', () => {
@@ -1732,6 +1745,27 @@ describe('WidgetManager', () => {
         type: 'conversations:list',
         data: {},
       });
+    });
+
+    it('consumes a pending article request when widget navigation leaves the article', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).openArticleRequest = { key: 1, articleSlug: 'article-123' };
+
+      (widget as any).render();
+      const articleOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(articleOptions.openArticleRequest).toEqual({ key: 1, articleSlug: 'article-123' });
+
+      articleOptions.onViewChange('help');
+      (widget as any).render();
+
+      const helpOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(helpOptions.initialView).toBe('help');
+      expect(helpOptions.openArticleRequest).toBeUndefined();
     });
 
     it('updates cache and normalizes teammate payloads on config:updated', () => {
