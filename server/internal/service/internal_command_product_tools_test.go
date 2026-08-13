@@ -29,6 +29,7 @@ func TestProductToolCommandDefinitionsExposeNativeAliases(t *testing.T) {
 		{command: "crm.list_deals", alias: "list_deals", category: "CRM", mutating: false},
 		{command: "crm.list_contacts", alias: "list_contacts", category: "CRM", mutating: false},
 		{command: "crm.list_buyer_signals", alias: "list_buyer_signals", category: "CRM", mutating: false},
+		{command: "crm.create_deal", alias: "create_crm_deal", category: "CRM / Operations", mutating: true},
 		{command: "docs.search_documents", alias: "search_documents", category: "Docs", mutating: false},
 		{command: "docs.insert_document_artifact", alias: "insert_document_artifact", category: "Docs", mutating: true},
 		{command: "docs.insert_document_image", alias: "insert_document_image", category: "Docs", mutating: true},

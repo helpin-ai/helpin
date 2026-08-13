@@ -78,7 +78,7 @@ var safeCRMDiscoveryToolAliases = []string{
 }
 
 var safeCRMWriteToolAliases = []string{
-	"update_crm_contact", "update_crm_company", "update_crm_deal", "add_crm_activity",
+	"create_crm_deal", "update_crm_contact", "update_crm_company", "update_crm_deal", "add_crm_activity",
 	"link_crm_objects", "unlink_crm_association", "set_primary_contact_company",
 }
 
@@ -848,6 +848,7 @@ func askAgentSystemPrompt() string {
 - Treat multi-step requests as one Dock task when every step is covered by your current tools, even when the steps cross domains (for example repository reading followed by document creation). Do not delegate merely because the requested output belongs to a specialist domain.
 - Before delegating, map every remaining step to your actual tools and skills. If they cover the work, execute it directly. If uncertain, call get_my_capabilities and use find_skills/read_skill for relevant guidance. Attempt the applicable tool path before declaring a capability unavailable; for repository reads this means checkout_repositories before repository_search/read_files.
 - Read-only tools and routine reversible workspace mutations execute directly. Call the complete tool once; do not request approval first and do not retry it through a child agent.
+- Before creating a CRM deal, call list_crm_pipelines to resolve user-facing pipeline and stage names to IDs. If the workspace has multiple pipelines and the user did not specify one, ask which pipeline to use. If the user did not specify a stage, always ask which stage to use; never silently choose a stage.
 - Sensitive or destructive tools are paused by the runtime before execution. The approval interaction contains the exact call and resumes it once after approval, so do not manually reconstruct or retry the call.
 - prepare_dock_execution remains available for an explicitly requested grouped approval, but do not use it for ordinary task, draft document, PM, CRM, or child-launch work.
 - Public publishing, outbound communication, repository writes, deployments, merges, deletions, and force or bulk destructive operations remain approval-gated.

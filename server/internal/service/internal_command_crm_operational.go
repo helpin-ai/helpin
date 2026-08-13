@@ -17,6 +17,7 @@ func (s *InternalCommandService) registerCRMOperationalCommands() {
 		{Name: "crm.get_deal", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_deal"}, Tool: mustCommandToolMetadata("crm.get_deal"), Execute: s.executeCRMGetDeal},
 		{Name: "crm.list_companies", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_company", "crm_contact", "crm_deal"}, Tool: mustCommandToolMetadata("crm.list_companies"), Execute: s.executeCRMListCompanies},
 		{Name: "crm.list_pipelines", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_deal"}, Tool: mustCommandToolMetadata("crm.list_pipelines"), Execute: s.executeCRMListPipelines},
+		{Name: "crm.create_deal", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_contact"}, Tool: mustCommandToolMetadata("crm.create_deal"), Execute: s.executeCRMCreateDeal},
 		{Name: "crm.update_contact", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_contact"}, Tool: mustCommandToolMetadata("crm.update_contact"), Execute: s.executeCRMUpdateContact},
 		{Name: "crm.update_company", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_company"}, Tool: mustCommandToolMetadata("crm.update_company"), Execute: s.executeCRMUpdateCompany},
 		{Name: "crm.update_deal", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_deal"}, Tool: mustCommandToolMetadata("crm.update_deal"), Execute: s.executeCRMUpdateDeal},
@@ -131,6 +132,113 @@ func (s *InternalCommandService) executeCRMListPipelines(ctx context.Context, me
 		pipelines = pipelines[:limit]
 	}
 	return mustJSON(map[string]any{"pipelines": pipelines}), nil
+}
+
+type crmDealCreateCommandInput struct {
+	Name          string   `json:"name"`
+	ContactID     string   `json:"contact_id"`
+	PipelineID    string   `json:"pipeline_id"`
+	StageID       string   `json:"stage_id"`
+	Amount        *float64 `json:"amount"`
+	Currency      *string  `json:"currency"`
+	CloseDate     *string  `json:"close_date"`
+	OwnerMemberID *string  `json:"owner_member_id"`
+	Probability   *int     `json:"probability"`
+}
+
+func (s *InternalCommandService) executeCRMCreateDeal(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+	if s.crmDealService == nil {
+		return nil, fmt.Errorf("CRM deal service is not configured")
+	}
+	var req crmDealCreateCommandInput
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, fmt.Errorf("parse deal create input: %w", err)
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	contactID, err := resolveCRMCommandID(meta, req.ContactID, "crm_contact", "contact_id")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.scopedCRMContact(ctx, meta.WorkspaceID, contactID); err != nil {
+		return nil, err
+	}
+	if req.Amount != nil && *req.Amount < 0 {
+		return nil, fmt.Errorf("amount must not be negative")
+	}
+	if req.Probability != nil && (*req.Probability < 0 || *req.Probability > 100) {
+		return nil, fmt.Errorf("probability must be between 0 and 100")
+	}
+	if req.Currency != nil {
+		value := strings.ToUpper(strings.TrimSpace(*req.Currency))
+		if len(value) != 3 {
+			return nil, fmt.Errorf("currency must be a 3-letter code")
+		}
+		req.Currency = &value
+	}
+	closeDate, err := parseCRMCommandDate(req.CloseDate)
+	if err != nil {
+		return nil, err
+	}
+	owner, err := s.validateCRMOwnerMember(ctx, meta.WorkspaceID, req.OwnerMemberID)
+	if err != nil {
+		return nil, err
+	}
+	pipeline, stage, err := s.resolveCRMDealPlacement(ctx, meta.WorkspaceID, req.PipelineID, req.StageID)
+	if err != nil {
+		return nil, err
+	}
+	deal, err := s.crmDealService.Create(ctx, model.CreateCRMDealRequest{
+		WorkspaceID: meta.WorkspaceID, Name: req.Name, ContactID: contactID,
+		PipelineID: pipeline.ID, StageID: stage.ID, Amount: req.Amount,
+		Currency: req.Currency, CloseDate: closeDate, OwnerMemberID: owner,
+		Probability: req.Probability,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := compactCRMDeal(deal)
+	result["contact_id"] = contactID
+	return mustJSON(result), nil
+}
+
+func (s *InternalCommandService) resolveCRMDealPlacement(ctx context.Context, workspaceID, pipelineID, stageID string) (*model.CRMPipeline, *model.CRMPipelineStage, error) {
+	pipelineID = strings.TrimSpace(pipelineID)
+	stageID = strings.TrimSpace(stageID)
+	if stageID == "" {
+		return nil, nil, fmt.Errorf("stage_id is required; ask the user which stage to use")
+	}
+	var pipeline *model.CRMPipeline
+	if pipelineID != "" {
+		resolved, err := s.crmDealService.GetPipeline(ctx, pipelineID)
+		if err != nil || resolved == nil || resolved.WorkspaceID != workspaceID {
+			return nil, nil, fmt.Errorf("pipeline not found")
+		}
+		pipeline = resolved
+	} else {
+		pipelines, err := s.crmDealService.ListPipelines(ctx, workspaceID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(pipelines) == 1 {
+			pipeline = &pipelines[0]
+		}
+		if len(pipelines) == 0 {
+			return nil, nil, fmt.Errorf("workspace has no CRM pipeline")
+		}
+		if pipeline == nil {
+			return nil, nil, fmt.Errorf("pipeline_id is required because this workspace has multiple pipelines; ask the user which pipeline to use")
+		}
+	}
+	for idx := range pipeline.Stages {
+		stage := &pipeline.Stages[idx]
+		if stage.ID == stageID {
+			return pipeline, stage, nil
+		}
+	}
+	return nil, nil, fmt.Errorf("stage not found in pipeline")
 }
 
 type crmContactUpdateCommandInput struct {
