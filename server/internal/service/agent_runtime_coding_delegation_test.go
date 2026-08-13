@@ -193,10 +193,18 @@ func TestRuntimeAgentFromHelpinAgentRegistersManagedAskSkillsAndTools(t *testing
 		agentcontract.ToolListAvailableSkills,
 		agentcontract.ToolSearchAvailableSkills,
 		agentcontract.ToolReadSkill,
+		"read_files",
+		"read_symbol",
+		"find_symbol",
+		"find_callers",
+		"find_callees",
 	} {
 		if !slices.Contains(out.AllowedTools, toolName) {
 			t.Fatalf("managed Ask Agent must retain %q, got %#v", toolName, out.AllowedTools)
 		}
+	}
+	if !strings.Contains(out.SystemPrompt, "use find_symbol then read_symbol when you know a declaration name") {
+		t.Fatalf("managed Ask Agent runtime prompt is missing narrow repository-read guidance:\n%s", out.SystemPrompt)
 	}
 }
 

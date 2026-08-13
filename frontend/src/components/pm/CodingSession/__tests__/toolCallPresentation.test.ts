@@ -232,4 +232,32 @@ describe('describeToolCall', () => {
     expect(presentation.primaryLabel).toBe('Outline internal/tools/workspace_tools.go');
   });
 
+  it('keeps repository identity in multi-repository symbol and root-list rows', () => {
+    const symbol = describeToolCall(buildToolCall({
+      tool_name: 'read_symbol',
+      args_text: JSON.stringify({
+        path: 'rust-capture/src/sinks/kafka_event_sink.rs',
+        symbol: 'kafka_send',
+        repo_alias: 'events-pipeline',
+      }),
+    }));
+    expect(symbol).toEqual({
+      primaryLabel: 'Read kafka_send in rust-capture/src/sinks/kafka_event_sink.rs · events-pipeline',
+      secondaryLabel: 'Read Symbol',
+      chips: [],
+      repositoryLabel: 'events-pipeline',
+    });
+
+    const root = describeToolCall(buildToolCall({
+      tool_name: 'list_directory',
+      args_text: JSON.stringify({ path: '', repo_alias: 'website' }),
+    }));
+    expect(root).toEqual({
+      primaryLabel: 'List repository root · website',
+      secondaryLabel: 'List Directory',
+      chips: [],
+      repositoryLabel: 'website',
+    });
+  });
+
 });

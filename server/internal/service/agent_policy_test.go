@@ -383,7 +383,8 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 		"search_workspace", "search_documents",
 		"list_available_skills", "search_available_skills", "read_skill",
 		"list_repositories", "checkout_repository", "checkout_repositories",
-		"ripgrep", "search_files", "list_symbols", "read_file", "read_file_range",
+		"ripgrep", "search_files", "list_symbols", "read_file", "read_files", "read_file_range",
+		"read_symbol", "find_symbol", "find_callers", "find_callees",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
@@ -447,7 +448,8 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 		t.Fatalf("managed Ask approval mode = %q, want risk_based", preset.ApprovalMode)
 	}
 	for _, toolName := range []string{
-		"checkout_repository", "ripgrep", "read_file",
+		"checkout_repository", "ripgrep", "read_file", "read_files",
+		"read_symbol", "find_symbol", "find_callers", "find_callees",
 		"list_available_skills", "read_skill", "update_plan",
 		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "prepare_dock_execution",
 	} {

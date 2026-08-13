@@ -1544,7 +1544,7 @@ func TestAgentRuntimeProjectionAppliesCumulativeUsage(t *testing.T) {
 	}
 }
 
-func TestAgentRuntimeProjectionUsageFallbackIncludesCachedTokens(t *testing.T) {
+func TestAgentRuntimeProjectionUsageFallbackDoesNotDoubleCountUsageDetails(t *testing.T) {
 	run := &model.AgentRun{
 		ID:                "helpin-run-usage",
 		Status:            model.AgentRunStatusRunning,
@@ -1573,8 +1573,8 @@ func TestAgentRuntimeProjectionUsageFallbackIncludesCachedTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyEvent returned error: %v", err)
 	}
-	if run.TokensUsed != 29 {
-		t.Fatalf("expected fallback total to include cached tokens, got %d", run.TokensUsed)
+	if run.TokensUsed != 20 {
+		t.Fatalf("expected fallback total to use input plus output, got %d", run.TokensUsed)
 	}
 }
 
@@ -1621,7 +1621,7 @@ func TestAgentRuntimeProjectionReconcileMappedRunsAppliesFetchedRuntimeState(t *
 	if run.Status != model.AgentRunStatusCompleted || run.CompletedAt == nil || !run.CompletedAt.Equal(completedAt) {
 		t.Fatalf("expected completed run from reconciliation, got status=%s completed_at=%v", run.Status, run.CompletedAt)
 	}
-	if run.InputTokens != 12 || run.CachedInputTokens != 3 || run.OutputTokens != 8 || run.TokensUsed != 23 {
+	if run.InputTokens != 12 || run.CachedInputTokens != 3 || run.OutputTokens != 8 || run.TokensUsed != 20 {
 		t.Fatalf("expected usage from runtime summary, got input=%d cached=%d output=%d total=%d", run.InputTokens, run.CachedInputTokens, run.OutputTokens, run.TokensUsed)
 	}
 }

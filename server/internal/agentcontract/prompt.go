@@ -157,9 +157,9 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			parts = append(parts, "- Use the provided tools to read, write, and search files.")
 		case hasRepoAccess:
 			parts = append(parts, "- Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.")
-			parts = append(parts, "- If repository inspection is needed but repository tools report that no workspace lease exists, use target context when it identifies a repo; otherwise call list_repositories, ask which repo or repos to inspect when ambiguous, then call checkout_repository or checkout_repositories. Use repo_alias when reading from multiple checked-out repos.")
+			parts = append(parts, "- If repository inspection is needed but repository tools report that no workspace lease exists, use target context when it identifies a repo; otherwise call list_repositories, ask which repo or repos to inspect when ambiguous, then call checkout_repository or checkout_repositories with the returned repository_id (preferred) or exact repo_full_name. Do not pass a display name or bare repository name. Use repo_alias when reading from multiple checked-out repos.")
 		}
-		if (story != nil || epic != nil) && hasRepoAccess {
+		if hasRepoAccess {
 			parts = append(parts, fmt.Sprintf("- When you know a declaration's name, start with `%s` to locate it and `%s` to read it in full; both return exact line ranges, so you never guess an offset.",
 				RuntimeToolNameForPrompt("find_symbol"),
 				RuntimeToolNameForPrompt("read_symbol"),
@@ -176,9 +176,6 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 				RuntimeToolNameForPrompt("search_files"),
 				RuntimeToolNameForPrompt("list_symbols"),
 			))
-			parts = append(parts, fmt.Sprintf("- Before changing or deleting a declaration, call `%s` to see what depends on it.",
-				RuntimeToolNameForPrompt("find_callers"),
-			))
 			parts = append(parts, fmt.Sprintf("- `%s` now returns a smaller bounded window by default; use offset_line to continue and use `%s` for targeted spans.",
 				RuntimeToolNameForPrompt("read_file"),
 				RuntimeToolNameForPrompt("read_file_range"),
@@ -188,6 +185,9 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 				RuntimeToolNameForPrompt("read_files"),
 			))
 			if hasFileMutationTools {
+				parts = append(parts, fmt.Sprintf("- Before changing or deleting a declaration, call `%s` to see what depends on it.",
+					RuntimeToolNameForPrompt("find_callers"),
+				))
 				parts = append(parts, fmt.Sprintf("- Prefer `%s` for focused in-place changes and `%s` for coordinated multi-file edits.",
 					RuntimeToolNameForPrompt("edit_file"),
 					RuntimeToolNameForPrompt("apply_patch"),
@@ -196,16 +196,18 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 					RuntimeToolNameForPrompt("write_file"),
 				))
 				parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
-			} else {
+			} else if story != nil || epic != nil {
 				parts = append(parts, "- This run is planning-only and read-only. Do not change code, create files, or alter git state.")
 			}
-			parts = append(parts, fmt.Sprintf("- When available, keep a short working execution checklist with `%s` instead of repeating plan status in prose. Do not use `%s` as a substitute for `%s`, `%s`, or `%s`.",
-				RuntimeToolNameForPrompt(ToolUpdatePlan),
-				RuntimeToolNameForPrompt(ToolUpdatePlan),
-				RuntimeToolNameForPrompt(ToolPublishPRDDraft),
-				RuntimeToolNameForPrompt(ToolPublishTaskPlan),
-				RuntimeToolNameForPrompt(ToolPublishTaskPlanDoc),
-			))
+			if story != nil || epic != nil {
+				parts = append(parts, fmt.Sprintf("- When available, keep a short working execution checklist with `%s` instead of repeating plan status in prose. Do not use `%s` as a substitute for `%s`, `%s`, or `%s`.",
+					RuntimeToolNameForPrompt(ToolUpdatePlan),
+					RuntimeToolNameForPrompt(ToolUpdatePlan),
+					RuntimeToolNameForPrompt(ToolPublishPRDDraft),
+					RuntimeToolNameForPrompt(ToolPublishTaskPlan),
+					RuntimeToolNameForPrompt(ToolPublishTaskPlanDoc),
+				))
+			}
 		}
 		if options.IncludeResolvedSkillText && (toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"]) {
 			parts = append(parts, "- Use list_available_skills or search_available_skills when specialized workflow guidance would materially improve the task, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default.")

@@ -5,7 +5,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
-import { formatCompactTokenCount, formatSessionTokenUsage } from '@/lib/agentTokenUsage';
+import { formatSessionTokenUsage, formatSessionTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { buildAutomationActivityPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
@@ -174,6 +174,11 @@ export function CodingSessionHeader({
   const branchHref = session?.repo.repo_name && session?.repo.branch
     ? `https://github.com/${session.repo.repo_name}/tree/${session.repo.branch}`
     : undefined;
+  const hasTokenUsage = !!session && (
+    session.tokens_used > 0
+    || session.input_tokens > 0
+    || session.output_tokens > 0
+  );
 
   return (
     <div className="space-y-2.5">
@@ -298,10 +303,10 @@ export function CodingSessionHeader({
           <div className="flex flex-wrap items-center justify-between gap-3" data-coding-session-detail-row>
             {session ? <CodingSessionLifecycleStrip session={session} /> : null}
             <div className="flex min-w-0 items-center gap-1.5">
-              {session?.tokens_used ? (
+              {hasTokenUsage ? (
                 <CodingSessionTokenSummary session={session} />
               ) : null}
-              {session?.tokens_used && session ? (
+              {hasTokenUsage ? (
                 <span className="h-3 w-px bg-muted-foreground/25" aria-hidden="true" />
               ) : null}
               {session ? (
@@ -333,8 +338,7 @@ export function CodingSessionHeader({
 }
 
 function CodingSessionTokenSummary({ session }: { session: CodingSession }) {
-  const totalTokens = session.tokens_used || (session.input_tokens ?? 0) + (session.output_tokens ?? 0);
-  const compactTotal = formatCompactTokenCount(totalTokens);
+  const compactTotal = formatSessionTokenUsageTotal(session);
   const breakdown = formatSessionTokenUsage(session, { includeUnit: true });
 
   return (

@@ -1,6 +1,7 @@
 package agentcontract
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -511,6 +512,36 @@ func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *test
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected prompt to contain %q\n%s", expected, prompt)
 		}
+	}
+}
+
+func TestBuildSystemPromptAdHocRepositoryRunIncludesNarrowReadGuidance(t *testing.T) {
+	systemPrompt := "You are a repository researcher."
+	prompt := BuildSystemPrompt(
+		&model.Agent{
+			Name:         "Researcher",
+			RuntimeKind:  "native_sdk",
+			SystemPrompt: &systemPrompt,
+			AllowedTools: json.RawMessage(`["read_file","read_files","read_file_range","ripgrep","list_symbols","read_symbol","find_symbol"]`),
+		},
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+	)
+
+	for _, expected := range []string{
+		"When you know a declaration's name, start with `find_symbol` to locate it and `read_symbol` to read it in full",
+		"Prefer `read_file_range` once you know the relevant lines. Do not use `read_files` for broad repo exploration",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected ad-hoc repository prompt to contain %q\n%s", expected, prompt)
+		}
+	}
+	if strings.Contains(prompt, "This run is planning-only") {
+		t.Fatalf("ad-hoc repository question must not be mislabeled as a planning run\n%s", prompt)
 	}
 }
 

@@ -5,6 +5,7 @@ export interface ToolCallPresentation {
   primaryLabel: string;
   secondaryLabel: string;
   chips: string[];
+  repositoryLabel?: string;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -58,6 +59,14 @@ function domainChip(domains: string[]) {
   return domains.length === 1 ? domains[0] : `${domains[0]} +${domains.length - 1}`;
 }
 
+export function repositorySelectorForToolCall(toolCall: CodingSessionLiveToolCall): string | null {
+  const parsed = parseArgs(toolCall.args_text);
+  return asString(parsed?.repo_alias)
+    ?? asString(parsed?.repository_id)
+    ?? asString(parsed?.repo_full_name)
+    ?? asString(parsed?.repository);
+}
+
 export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallPresentation {
   const toolName = canonicalToolName(toolCall.tool_name).toLowerCase();
   const parsed = parseArgs(toolCall.args_text);
@@ -73,13 +82,24 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     ? parsed?.paths.map((value) => asString(value)).filter((value): value is string => Boolean(value))
     : [];
 
+  const repositoryLabel = repositorySelectorForToolCall(toolCall);
+  const withRepository = (presentation: ToolCallPresentation): ToolCallPresentation => (
+    repositoryLabel
+      ? {
+          ...presentation,
+          primaryLabel: `${presentation.primaryLabel} · ${repositoryLabel}`,
+          repositoryLabel,
+        }
+      : presentation
+  );
+
   const secondaryLabel = titleCaseToolName(displayToolName(toolCall.tool_name));
 
   if (toolName === 'read_file_range' && path) {
     const primaryLabel = `Read ${path}${range ? `:${range}` : ''}`;
     const chips = [];
     if (startLine != null && endLine != null && endLine >= startLine) chips.push(`${endLine - startLine + 1} lines`);
-    return { primaryLabel, secondaryLabel, chips };
+    return withRepository({ primaryLabel, secondaryLabel, chips });
   }
 
   // Symbol navigation reads a named declaration rather than a line span, so the
@@ -87,53 +107,53 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
   const symbolName = asString(parsed?.symbol) ?? asString(parsed?.name);
 
   if (toolName === 'read_symbol' && symbolName) {
-    return {
+    return withRepository({
       primaryLabel: `Read ${symbolName}${path ? ` in ${path}` : ''}`,
       secondaryLabel,
       chips: [],
-    };
+    });
   }
 
   if (toolName === 'find_symbol' && symbolName) {
     const kind = asString(parsed?.kind);
-    return {
+    return withRepository({
       primaryLabel: `Find ${symbolName}`,
       secondaryLabel,
       chips: kind ? [kind] : [],
-    };
+    });
   }
 
   if (toolName === 'find_callers' && symbolName) {
-    return { primaryLabel: `Find callers of ${symbolName}`, secondaryLabel, chips: [] };
+    return withRepository({ primaryLabel: `Find callers of ${symbolName}`, secondaryLabel, chips: [] });
   }
 
   if (toolName === 'find_callees' && symbolName) {
-    return { primaryLabel: `Find calls made by ${symbolName}`, secondaryLabel, chips: [] };
+    return withRepository({ primaryLabel: `Find calls made by ${symbolName}`, secondaryLabel, chips: [] });
   }
 
   if (toolName === 'list_symbols' && path) {
-    return { primaryLabel: `Outline ${path}`, secondaryLabel, chips: [] };
+    return withRepository({ primaryLabel: `Outline ${path}`, secondaryLabel, chips: [] });
   }
 
   if ((toolName === 'read_file' || toolName === 'write_file' || toolName === 'edit_file' || toolName === 'str_replace_editor') && path) {
     const verb = toolName === 'write_file' ? 'Write' : toolName === 'edit_file' || toolName === 'str_replace_editor' ? 'Edit' : 'Read';
-    return { primaryLabel: `${verb} ${path}`, secondaryLabel, chips: [] };
+    return withRepository({ primaryLabel: `${verb} ${path}`, secondaryLabel, chips: [] });
   }
 
   if (toolName === 'read_files' && paths.length > 0) {
-    return {
+    return withRepository({
       primaryLabel: `Read ${paths[0]}${paths.length > 1 ? ` +${paths.length - 1} more` : ''}`,
       secondaryLabel,
       chips: [`${paths.length} files`],
-    };
+    });
   }
 
   if ((toolName === 'ripgrep' || toolName === 'grep' || toolName === 'search_files') && pattern) {
-    return {
+    return withRepository({
       primaryLabel: `Search ${quoted(pattern)}${searchPath ? ` in ${searchPath}` : ''}`,
       secondaryLabel,
       chips: [],
-    };
+    });
   }
 
   if (toolName === 'web_search_exa') {
@@ -196,8 +216,8 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     return { primaryLabel: 'Run Command', secondaryLabel, chips };
   }
 
-  if (toolName === 'list_directory' && path) {
-    return { primaryLabel: `List ${path}`, secondaryLabel, chips: [] };
+  if (toolName === 'list_directory' && (path || repositoryLabel)) {
+    return withRepository({ primaryLabel: path ? `List ${path}` : 'List repository root', secondaryLabel, chips: [] });
   }
 
   if (toolName === 'apply_patch') {

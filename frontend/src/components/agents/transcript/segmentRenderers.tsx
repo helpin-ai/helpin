@@ -136,7 +136,9 @@ function ToolSegment({
     <TranscriptRow
       icon={icon}
       iconClassName={className}
-      label={grouped ? `${presentation.secondaryLabel} x ${group.count}` : presentation.primaryLabel}
+      label={grouped
+        ? `${presentation.secondaryLabel}${presentation.repositoryLabel ? ` · ${presentation.repositoryLabel}` : ''} x ${group.count}`
+        : presentation.primaryLabel}
       tone={failed ? 'failed' : 'muted'}
       meta={formatToolDuration(grouped ? group.totalDurationMs : toolCall.duration_ms)}
     />

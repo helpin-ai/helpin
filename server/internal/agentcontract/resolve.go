@@ -140,7 +140,7 @@ func QueueForRuntime(runtimeKind, invocationMode string) string {
 // hasRepoTools returns true if any tool in the set requires repository access.
 func hasRepoTools(tools []string) bool {
 	repoTools := map[string]bool{
-		"read_file": true, "read_file_range": true, "write_file": true,
+		"read_file": true, "read_files": true, "read_file_range": true, "write_file": true,
 		"list_directory": true, "search_files": true, "ripgrep": true,
 		"grep": true, "list_symbols": true, "run_command": true,
 		"read_symbol": true, "find_symbol": true, "find_callers": true, "find_callees": true,

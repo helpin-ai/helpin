@@ -20,6 +20,17 @@ func TestResolveAgentProfileUsesInteractiveNativeQueue(t *testing.T) {
 	}
 }
 
+func TestResolveAgentProfileTreatsReadFilesAsRepositoryAccess(t *testing.T) {
+	resolved := ResolveAgentProfile(&model.Agent{
+		RuntimeKind:  "native_sdk",
+		AllowedTools: []byte(`["read_files"]`),
+	})
+
+	if !resolved.RequiresRepo {
+		t.Fatal("read_files must require repository access")
+	}
+}
+
 func TestResolveApprovalStateByMode(t *testing.T) {
 	tests := []struct {
 		name string

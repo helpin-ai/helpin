@@ -1,6 +1,7 @@
 import type { TranscriptSegment } from '@/components/agents/transcript';
 import type { CodingSessionLiveToolCall } from '@/lib/pmTypes';
 import { canonicalToolName } from '@/lib/toolNames';
+import { repositorySelectorForToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import type { TranscriptToolGroupPresentation } from '@/components/agents/transcript/segmentRenderers';
 
 export interface DockTranscriptEntry {
@@ -10,7 +11,9 @@ export interface DockTranscriptEntry {
 }
 
 function toolGroupKey(segment: Extract<TranscriptSegment, { kind: 'tool' }>): string {
-  return canonicalToolName(segment.toolCall.tool_name).toLowerCase();
+  const toolName = canonicalToolName(segment.toolCall.tool_name).toLowerCase();
+  const repository = repositorySelectorForToolCall(segment.toolCall)?.toLowerCase() ?? '';
+  return `${toolName}\u0000${repository}`;
 }
 
 function combinedStatus(

@@ -2721,7 +2721,7 @@ func usagePayloadFromSDK(usage agentruntime.Usage) (agentRuntimeUsagePayload, bo
 		ReasoningOutputTokens: clampInt64(usage.ReasoningOutputTokens),
 	}
 	if payload.TotalTokens == 0 {
-		payload.TotalTokens = payload.InputTokens + payload.CachedInputTokens + payload.OutputTokens + payload.ReasoningOutputTokens
+		payload.TotalTokens = payload.InputTokens + payload.OutputTokens
 	}
 	if payload.TotalTokens == 0 && payload.InputTokens == 0 && payload.CachedInputTokens == 0 && payload.OutputTokens == 0 && payload.ReasoningOutputTokens == 0 {
 		return agentRuntimeUsagePayload{}, false
@@ -2755,7 +2755,7 @@ func eventUsageFromData(data map[string]any) (agentRuntimeUsagePayload, bool) {
 		ReasoningOutputTokens: mapInt(usageMap, "reasoning_output_tokens"),
 	}
 	if usage.TotalTokens == 0 {
-		usage.TotalTokens = usage.InputTokens + usage.CachedInputTokens + usage.OutputTokens + usage.ReasoningOutputTokens
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 	}
 	if usage.TotalTokens == 0 && usage.InputTokens == 0 && usage.CachedInputTokens == 0 && usage.OutputTokens == 0 && usage.ReasoningOutputTokens == 0 {
 		return agentRuntimeUsagePayload{}, false
@@ -2783,7 +2783,7 @@ func usageFromMap(values map[string]any) (agentRuntimeUsagePayload, bool) {
 		ReasoningOutputTokens: mapInt(values, "reasoning_output_tokens"),
 	}
 	if usage.TotalTokens == 0 {
-		usage.TotalTokens = usage.InputTokens + usage.CachedInputTokens + usage.OutputTokens + usage.ReasoningOutputTokens
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
 	}
 	if usage.TotalTokens == 0 && usage.InputTokens == 0 && usage.CachedInputTokens == 0 && usage.OutputTokens == 0 && usage.ReasoningOutputTokens == 0 {
 		return agentRuntimeUsagePayload{}, false

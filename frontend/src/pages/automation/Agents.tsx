@@ -50,6 +50,7 @@ import {
 } from '@/lib/agentRuntime';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
+import { getAgentTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
@@ -4146,7 +4147,7 @@ export function AgentsPage() {
                             </div>
                             <div>
                               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tokens</p>
-                              <p className="font-mono text-sm">{(run.tokens_used ?? 0).toLocaleString()}</p>
+                              <p className="font-mono text-sm">{getAgentTokenUsageTotal(run).toLocaleString()}</p>
                             </div>
                             <div>
                               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">When</p>
