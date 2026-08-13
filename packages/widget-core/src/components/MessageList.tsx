@@ -1,5 +1,5 @@
 import { FunctionComponent } from 'preact';
-import { useRef, useEffect, useState } from 'preact/hooks';
+import { useRef, useLayoutEffect, useState } from 'preact/hooks';
 import type { Message, WidgetConfig } from '../types';
 import { MessageBubble } from './MessageBubble';
 
@@ -11,6 +11,13 @@ interface MessageListProps {
   onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
 }
 
+type MessageListSnapshot = {
+  count: number;
+  lastKey: string | null;
+  lastContent: string;
+  lastWasStreaming: boolean;
+};
+
 export const MessageList: FunctionComponent<MessageListProps> = ({
   messages,
   showDateSeparators = true,
@@ -21,6 +28,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
   const listRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
   const isNearBottomRef = useRef(true);
+  const previousMessagesRef = useRef<MessageListSnapshot | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   let hasCustomerQuestion = false;
   let latestFeedbackMessageId: string | null = null;
@@ -58,18 +66,46 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
     if (isNearBottom) setShowJumpToLatest(false);
   };
 
-  useEffect(() => {
-    if (listRef.current) {
-      if (isInitialMount.current) {
-        scrollToLatest();
-        isInitialMount.current = false;
-        return;
-      }
-      if (isNearBottomRef.current) {
-        scrollToLatest();
-      } else {
-        setShowJumpToLatest(true);
-      }
+  useLayoutEffect(() => {
+    const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
+    const lastKey = lastMessage ? lastMessage.clientId || lastMessage.id : null;
+    const currentSnapshot: MessageListSnapshot = {
+      count: messages.length,
+      lastKey,
+      lastContent: lastMessage?.content || '',
+      lastWasStreaming: Boolean(lastMessage?.isStreaming),
+    };
+    const previousSnapshot = previousMessagesRef.current;
+    previousMessagesRef.current = currentSnapshot;
+
+    if (!listRef.current) return;
+    if (isInitialMount.current) {
+      scrollToLatest();
+      isInitialMount.current = false;
+      return;
+    }
+
+    const messageWasAppended = Boolean(
+      previousSnapshot
+      && (currentSnapshot.count > previousSnapshot.count || currentSnapshot.lastKey !== previousSnapshot.lastKey),
+    );
+    const streamingReplyAdvanced = Boolean(
+      previousSnapshot
+      && currentSnapshot.lastKey === previousSnapshot.lastKey
+      && (currentSnapshot.lastWasStreaming || previousSnapshot.lastWasStreaming)
+      && currentSnapshot.lastContent !== previousSnapshot.lastContent,
+    );
+    const visitorJustSent = messageWasAppended
+      && lastMessage?.role === 'customer'
+      && lastMessage.deliveryStatus === 'sending';
+
+    // Reconciliation only changes the server id and delivery state of the same
+    // keyed bubble. It should not move the thread a second time.
+    if (!messageWasAppended && !streamingReplyAdvanced) return;
+    if (visitorJustSent || isNearBottomRef.current) {
+      scrollToLatest();
+    } else if (messageWasAppended) {
+      setShowJumpToLatest(true);
     }
   }, [messages]);
 
@@ -139,7 +175,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
           || getSenderGroupKey(prev) !== getSenderGroupKey(message)
           || !!dateSeparator;
         return (
-          <div key={message.id}>
+          <div key={message.clientId || message.id}>
             {dateSeparator && (
               <div className="helpin-date-separator">
                 <span>{dateSeparator}</span>

@@ -247,6 +247,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
     isSystem && 'helpin-message--system',
     message.isInternal && 'helpin-message--internal',
     message.isStreaming && 'helpin-message--streaming',
+    isCustomer && message.deliveryStatus === 'sending' && 'helpin-message--sending',
   ]
     .filter(Boolean)
     .join(' ');
@@ -306,7 +307,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
   return (
     <div
-      className={`helpin-message-row ${isCustomer ? 'helpin-message-row--customer' : 'helpin-message-row--agent'} ${isFirstInGroup ? '' : 'helpin-message-row--consecutive'}`}
+      className={`helpin-message-row ${isCustomer ? 'helpin-message-row--customer' : 'helpin-message-row--agent'} ${isFirstInGroup ? '' : 'helpin-message-row--consecutive'} ${message.clientId ? 'helpin-message-row--optimistic' : ''}`}
       role="listitem"
       aria-label={`${displayName || 'You'} message`}
     >

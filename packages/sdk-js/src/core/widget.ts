@@ -77,6 +77,7 @@ type PendingOutgoingMessage = {
   conversationId?: string;
   queuedAt: number;
   lastSentConnection: number;
+  expectsAIReply?: boolean;
 };
 
 const MAX_WS_RETRIES = 10;
@@ -88,6 +89,7 @@ const MAX_BACKGROUND_RETRY_DELAY_MS = 120_000;
 const RECEIVED_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
 const SENT_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/submit.mp3';
 const AI_STREAM_REVEAL_INTERVAL_MS = 45;
+const OUTGOING_STATUS_DELAY_MS = 1500;
 const AI_PROGRESS_COPY: Record<string, string> = {
   looking: 'Looking into this…',
   checking: 'Checking the details…',
@@ -139,6 +141,7 @@ export class WidgetManager {
   private connectionStatus: ConnectionStatus = 'idle';
   private connectionGeneration = 0;
   private pendingOutgoingMessages: PendingOutgoingMessage[] = [];
+  private pendingStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Preact mount state
   private mountContainer: HTMLElement | null = null;
@@ -211,6 +214,7 @@ export class WidgetManager {
     };
     this.widgetKey = widgetKey;
     this.pendingOutgoingMessages = this.restorePendingOutgoingMessages();
+    this.schedulePendingStatusRender();
 
     // Restore pre-chat done state from localStorage.
     if (this.widgetKey) {
@@ -316,6 +320,10 @@ export class WidgetManager {
     this.connectionStatus = 'idle';
     this.connectionGeneration = 0;
     this.pendingOutgoingMessages = [];
+    if (this.pendingStatusTimer) {
+      clearTimeout(this.pendingStatusTimer);
+      this.pendingStatusTimer = null;
+    }
     this.activeTeammate = undefined;
     this.currentEmail = null;
     this.isConversationExpanded = false;
@@ -629,7 +637,7 @@ export class WidgetManager {
       openArticleRequest: this.openArticleRequest || undefined,
       onImageClick: (src: string, alt: string) => this.showImageLightbox(src, alt),
       onAnswerFeedback: (messageId: string, helpful: boolean) => this.handleAnswerFeedback(messageId, helpful),
-      queuedMessageCount: this.pendingOutgoingMessages.length,
+      queuedMessageCount: this.getVisiblePendingMessageCount(),
       csatSubmitted: this.activeConversationId ? this.hasSubmittedCsat(this.activeConversationId) : false,
       onCsatSubmit: (rating: number, feedback?: string) => this.handleCsatSubmit(rating, feedback),
       onViewChange: (view: WidgetView) => {
@@ -1040,11 +1048,14 @@ export class WidgetManager {
 
     // Replace optimistic customer messages and transient AI stream placeholders.
     if (msg.sender_type === 'customer') {
-      this.reconcilePendingOutgoingMessage(msg.content || '');
-      const tempIdx = this.messages.findIndex(
-        (message) => message.id.startsWith('temp-') && message.content === msg.content,
+      const pending = this.reconcilePendingOutgoingMessage(msg.content || '');
+      const tempIdx = this.messages.findIndex((message) =>
+        pending
+          ? message.id === pending.id
+          : message.id.startsWith('temp-') && message.content === msg.content,
       );
       if (tempIdx >= 0) {
+        newMsg.clientId = this.messages[tempIdx].clientId || this.messages[tempIdx].id;
         this.messages[tempIdx] = newMsg;
         this.messages = [...this.messages];
       } else if (existingIdx >= 0) {
@@ -1052,6 +1063,10 @@ export class WidgetManager {
         this.messages = [...this.messages];
       } else {
         this.messages = [...this.messages, newMsg];
+      }
+      if (pending?.expectsAIReply && this.wsConnection?.readyState === WebSocket.OPEN) {
+        this.isAIThinking = true;
+        this.aiProgressLabel = AI_PROGRESS_COPY.looking;
       }
     } else if (existingIdx >= 0) {
       this.messages[existingIdx] = newMsg;
@@ -1217,9 +1232,11 @@ export class WidgetManager {
     const pendingId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticMsg: Message = {
       id: pendingId,
+      clientId: pendingId,
       conversationId: this.activeConversationId || '',
       role: 'customer',
       content,
+      deliveryStatus: 'sending',
       isInternal: false,
       createdAt: new Date().toISOString(),
     };
@@ -1241,11 +1258,6 @@ export class WidgetManager {
         activeConversation?.aiState !== 'escalated' &&
         !humanHandledFlowStates.has(activeConversation?.flowState || ''),
     );
-    if (expectsAIReply && this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.isAIThinking = true;
-      this.aiProgressLabel = AI_PROGRESS_COPY.looking;
-    }
-    this.render();
     this.playSentMessageSound();
 
     // Stop typing indicator before sending
@@ -1258,9 +1270,11 @@ export class WidgetManager {
       conversationId: this.activeConversationId || undefined,
       queuedAt: Date.now(),
       lastSentConnection: -1,
+      expectsAIReply,
     });
     this.persistPendingOutgoingMessages();
     this.flushPendingOutgoingMessages();
+    this.schedulePendingStatusRender();
     this.render();
   }
 
@@ -1321,11 +1335,36 @@ export class WidgetManager {
     this.persistPendingOutgoingMessages();
   }
 
-  private reconcilePendingOutgoingMessage(content: string): void {
+  private getVisiblePendingMessageCount(): number {
+    const visibleBefore = Date.now() - OUTGOING_STATUS_DELAY_MS;
+    return this.pendingOutgoingMessages.filter((message) => message.queuedAt <= visibleBefore).length;
+  }
+
+  private schedulePendingStatusRender(): void {
+    if (this.pendingStatusTimer) {
+      clearTimeout(this.pendingStatusTimer);
+      this.pendingStatusTimer = null;
+    }
+    const now = Date.now();
+    const nextVisibleAt = this.pendingOutgoingMessages
+      .map((message) => message.queuedAt + OUTGOING_STATUS_DELAY_MS)
+      .filter((visibleAt) => visibleAt > now)
+      .sort((a, b) => a - b)[0];
+    if (nextVisibleAt === undefined) return;
+    this.pendingStatusTimer = setTimeout(() => {
+      this.pendingStatusTimer = null;
+      this.render();
+      this.schedulePendingStatusRender();
+    }, Math.max(0, nextVisibleAt - now));
+  }
+
+  private reconcilePendingOutgoingMessage(content: string): PendingOutgoingMessage | null {
     const pendingIndex = this.pendingOutgoingMessages.findIndex((message) => message.content === content);
-    if (pendingIndex < 0) return;
-    this.pendingOutgoingMessages.splice(pendingIndex, 1);
+    if (pendingIndex < 0) return null;
+    const [pending] = this.pendingOutgoingMessages.splice(pendingIndex, 1);
     this.persistPendingOutgoingMessages();
+    this.schedulePendingStatusRender();
+    return pending;
   }
 
   private reconcilePendingMessagesWithHistory(rawMessages: any[]): void {
@@ -1338,6 +1377,7 @@ export class WidgetManager {
       if (pendingIndex >= 0) this.pendingOutgoingMessages.splice(pendingIndex, 1);
     }
     this.persistPendingOutgoingMessages();
+    this.schedulePendingStatusRender();
   }
 
   private restorePendingMessagesIntoThread(): void {
@@ -1346,9 +1386,11 @@ export class WidgetManager {
       if (this.messages.some((message) => message.id === pending.id)) continue;
       this.messages.push({
         id: pending.id,
+        clientId: pending.id,
         conversationId: pending.conversationId || '',
         role: 'customer',
         content: pending.content,
+        deliveryStatus: 'sending',
         isInternal: false,
         createdAt: new Date(pending.queuedAt).toISOString(),
       });

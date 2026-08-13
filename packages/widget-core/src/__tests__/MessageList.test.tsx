@@ -44,6 +44,41 @@ describe('MessageList', () => {
     expect(container.textContent).toContain('Hello world');
   });
 
+  it('keeps the same rendered bubble while an optimistic message is acknowledged', () => {
+    const optimistic = createMessages(1)[0];
+    optimistic.id = 'temp-1';
+    optimistic.clientId = 'temp-1';
+    optimistic.deliveryStatus = 'sending';
+    const rendered = render(<MessageList messages={[optimistic]} />);
+    const initialBubble = rendered.container.querySelector('.helpin-message-bubble');
+    const list = rendered.getByRole('list') as HTMLDivElement;
+    let scrollTop = 700;
+    let scrollWrites = 0;
+    Object.defineProperties(list, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = value;
+          scrollWrites += 1;
+        },
+      },
+    });
+    fireEvent.scroll(list);
+
+    rendered.rerender(<MessageList messages={[{
+      ...optimistic,
+      id: 'server-1',
+      deliveryStatus: undefined,
+    }]} />);
+
+    expect(rendered.container.querySelector('.helpin-message-bubble')).toBe(initialBubble);
+    expect(initialBubble?.classList.contains('helpin-message--sending')).toBe(false);
+    expect(scrollWrites).toBe(0);
+  });
+
   it('shows date separator for first message', () => {
     const messages = createMessages(1);
     const { container } = render(<MessageList messages={messages} />);
