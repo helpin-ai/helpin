@@ -3,10 +3,15 @@ package model
 import "time"
 
 const (
-	AIUsagePeriodOpen        = "open"
-	AIUsageEnforcementStrict = "enforced"
-	AIUsageEnforcementExtra  = "extra_allowed"
-	AIUsageEnforcementSoft   = "soft"
+	AIUsagePeriodOpen            = "open"
+	AIUsagePeriodClosed          = "closed"
+	AIUsageEnforcementStrict     = "enforced"
+	AIUsageEnforcementExtra      = "extra_allowed"
+	AIUsageEnforcementSoft       = "soft"
+	AIUsageReservationActive     = "active"
+	AIUsageReservationReconciled = "reconciled"
+	AIUsageReservationReleased   = "released"
+	AIUsageSettlementPending     = "pending"
 )
 
 type AIUsagePeriod struct {
