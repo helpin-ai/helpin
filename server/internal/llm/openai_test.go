@@ -180,6 +180,9 @@ func TestTokenUsageFromOpenAIIncludesCacheAndReasoningBreakdown(t *testing.T) {
 	if usage.OutputTokens != 200 || usage.ReasoningTokens != 100 {
 		t.Fatalf("output usage = %#v", usage)
 	}
+	if usage.InputTokensTotal != 1200 || usage.CacheReadTokens != 800 || usage.CompletionTokensTotal != 300 || !usage.CompletionIncludesReasoning {
+		t.Fatalf("exact metering usage = %#v", usage)
+	}
 }
 
 func TestOpenAIProviderCreateEmbeddingsNilReceiver(t *testing.T) {

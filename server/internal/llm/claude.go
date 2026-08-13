@@ -42,11 +42,15 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 }
 
 func tokenUsageFromClaude(usage agentcontract.Usage) TokenUsage {
+	inputTotal := usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens
 	return TokenUsage{
-		InputTokens:       usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens,
-		CachedInputTokens: usage.CacheReadInputTokens,
-		CacheWriteTokens:  usage.CacheCreationInputTokens,
-		OutputTokens:      usage.OutputTokens,
+		InputTokens:           inputTotal,
+		InputTokensTotal:      inputTotal,
+		CachedInputTokens:     usage.CacheReadInputTokens,
+		CacheReadTokens:       usage.CacheReadInputTokens,
+		CacheWriteTokens:      usage.CacheCreationInputTokens,
+		OutputTokens:          usage.OutputTokens,
+		CompletionTokensTotal: usage.OutputTokens,
 	}
 }
 

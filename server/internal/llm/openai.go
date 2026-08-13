@@ -142,11 +142,15 @@ func tokenUsageFromOpenAI(usage openAIUsage) TokenUsage {
 		outputTokens = 0
 	}
 	return TokenUsage{
-		InputTokens:       usage.PromptTokens,
-		CachedInputTokens: usage.PromptTokensDetails.CachedTokens,
-		CacheWriteTokens:  usage.PromptTokensDetails.CacheWriteTokens,
-		OutputTokens:      outputTokens,
-		ReasoningTokens:   usage.CompletionTokensDetails.ReasoningTokens,
+		InputTokens:                 usage.PromptTokens,
+		InputTokensTotal:            usage.PromptTokens,
+		CachedInputTokens:           usage.PromptTokensDetails.CachedTokens,
+		CacheReadTokens:             usage.PromptTokensDetails.CachedTokens,
+		CacheWriteTokens:            usage.PromptTokensDetails.CacheWriteTokens,
+		OutputTokens:                outputTokens,
+		CompletionTokensTotal:       usage.CompletionTokens,
+		ReasoningTokens:             usage.CompletionTokensDetails.ReasoningTokens,
+		CompletionIncludesReasoning: true,
 	}
 }
 

@@ -76,9 +76,10 @@ type EmbeddingResponse struct {
 
 // TokenUsage tracks token consumption.
 type TokenUsage struct {
-	InputTokens       int
-	CachedInputTokens int
-	CacheWriteTokens  int
-	OutputTokens      int
-	ReasoningTokens   int
+	InputTokens, InputTokensTotal       int
+	CachedInputTokens, CacheReadTokens  int
+	CacheWriteTokens                    int
+	OutputTokens, CompletionTokensTotal int
+	ReasoningTokens                     int
+	CompletionIncludesReasoning         bool
 }
