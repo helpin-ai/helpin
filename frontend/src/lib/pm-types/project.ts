@@ -870,11 +870,11 @@ export interface UpdateTaskTemplateRequest {
 export interface CreateEpicRequest {
   workspace_id: string;
   name: string;
+  team_id: string;
   description?: string;
   attachment_ids?: string[];
   epic_state_id?: string;
   owner_member_id?: string;
-  team_id?: string;
   planned_start_date?: string;
   deadline?: string;
   position?: number;
@@ -939,6 +939,7 @@ export interface SprintPlanningFilters {
 export interface CreateTaskRequest {
   workspace_id: string;
   name: string;
+  team_id: string;
   description?: string;
   attachment_ids?: string[];
   task_type?: TaskType;
@@ -946,7 +947,6 @@ export interface CreateTaskRequest {
   workflow_state_id?: string;
   epic_id?: string;
   sprint_id?: string;
-  team_id?: string;
   owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;

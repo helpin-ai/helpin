@@ -514,7 +514,7 @@ export function MessageThread({
     const dismissed = access?.membership?.support_task_dialog_dismissed;
     const savedTeamId = access?.membership?.support_default_team_id;
 
-    if (!dismissed) {
+    if (!dismissed || !savedTeamId) {
       setShowCreateTaskDialog(true);
       return;
     }

@@ -182,6 +182,11 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
+	if req.TeamID == nil || strings.TrimSpace(*req.TeamID) == "" {
+		return nil, fmt.Errorf("team_id is required")
+	}
+	teamID := strings.TrimSpace(*req.TeamID)
+	req.TeamID = &teamID
 	if err := requireCanEditTeamEpics(ctx, req.TeamID); err != nil {
 		return nil, err
 	}

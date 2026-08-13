@@ -2300,6 +2300,10 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	if s == nil || s.taskService == nil {
 		return nil, fmt.Errorf("task service is unavailable")
 	}
+	teamID := trimOptionalPtr(req.TeamID)
+	if teamID == nil {
+		return nil, fmt.Errorf("team_id is required")
+	}
 
 	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
@@ -2347,7 +2351,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		WorkflowStateID:   trimPtrValue(req.WorkflowStateID),
 		EpicID:            trimOptionalPtr(req.EpicID),
 		SprintID:          trimOptionalPtr(req.SprintID),
-		TeamID:            trimOptionalPtr(req.TeamID),
+		TeamID:            teamID,
 		OwnerMemberIDs:    optionalTrimmedStringSlice(req.OwnerMemberID),
 		RequesterID:       nil,
 		RequesterMemberID: requesterMemberID,

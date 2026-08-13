@@ -125,7 +125,7 @@ func TestPMToolCatalogContracts(t *testing.T) {
 	assertRequiredFields(t, "update_task_checklist_item", updateChecklist, []string{"checklist_item_id"})
 	assertSchemaFields(t, "update_task_checklist_item", updateChecklist, []string{"task_id", "due_date"})
 	assertRequiredFields(t, "add_pm_comment", requireCatalogSchema(t, toolsByName, "add_pm_comment"), []string{"content"})
-	assertRequiredFields(t, "create_epic", requireCatalogSchema(t, toolsByName, "create_epic"), []string{"name"})
+	assertRequiredFields(t, "create_epic", requireCatalogSchema(t, toolsByName, "create_epic"), []string{"name", "team_id"})
 	assertRequiredFields(t, "create_sprint", requireCatalogSchema(t, toolsByName, "create_sprint"), []string{"name", "start_date", "end_date", "team_id"})
 	assertRequiredFields(t, "create_objective", requireCatalogSchema(t, toolsByName, "create_objective"), []string{"name", "objective_type"})
 	assertRequiredFields(t, "create_key_result", requireCatalogSchema(t, toolsByName, "create_key_result"), []string{"name"})
@@ -159,7 +159,7 @@ func TestPMToolCatalogContracts(t *testing.T) {
 
 	for alias, fields := range map[string][]string{
 		"create_task": {"epic_id", "sprint_id", "workflow_id", "state_id"},
-		"create_epic": {"epic_state_id", "owner_id", "owner_member_id", "team_id", "planning_repository_id"},
+		"create_epic": {"epic_state_id", "owner_id", "owner_member_id", "planning_repository_id"},
 	} {
 		schema := requireCatalogSchema(t, toolsByName, alias)
 		for _, field := range fields {
@@ -168,6 +168,8 @@ func TestPMToolCatalogContracts(t *testing.T) {
 			assertPropertyMinimumLength(t, alias, schema, field, 1)
 		}
 	}
+	assertPropertyDescriptionContains(t, "create_epic", requireCatalogSchema(t, toolsByName, "create_epic"), "team_id", "Owning team ID")
+	assertPropertyMinimumLength(t, "create_epic", requireCatalogSchema(t, toolsByName, "create_epic"), "team_id", 1)
 
 	for alias, fields := range map[string][]string{
 		"create_epic":      {"planned_start_date", "deadline"},

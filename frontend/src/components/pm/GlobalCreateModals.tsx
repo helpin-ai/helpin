@@ -299,7 +299,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
         description: description.trim() || undefined,
         attachment_ids: inlineAttachmentIds.length > 0 ? inlineAttachmentIds : undefined,
         epic_state_id: meta.stateId || undefined,
-        team_id: meta.teamId || undefined,
+        team_id: meta.teamId,
         owner_member_id: meta.ownerMemberId || undefined,
         planned_start_date: meta.startDate || undefined,
         deadline: meta.targetDate || undefined,
