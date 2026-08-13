@@ -1011,6 +1011,9 @@ export class WidgetManager {
     if (parsedMeta) {
       if (parsedMeta.ai_sources) message.sources = parsedMeta.ai_sources;
       if (parsedMeta.ai_confidence !== undefined) message.aiConfidence = parsedMeta.ai_confidence;
+      if (['answer', 'clarify', 'conversational', 'confirmation', 'greeting'].includes(parsedMeta.ai_reply_kind)) {
+        message.aiReplyKind = parsedMeta.ai_reply_kind;
+      }
       if (Array.isArray(parsedMeta.link_previews)) message.linkPreviews = parsedMeta.link_previews;
     }
 
