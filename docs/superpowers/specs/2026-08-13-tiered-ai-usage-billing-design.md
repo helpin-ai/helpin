@@ -29,7 +29,8 @@ Resets September 12
 The percentage is backed by exact monetary accounting:
 
 ```text
-used percentage = min(posted charged micro-USD, allowance micro-USD) / allowance micro-USD
+raw used percentage = posted charged micro-USD / allowance micro-USD
+included meter percentage = min(raw used percentage, 100%)
 reserved percentage = active reserved micro-USD / allowance micro-USD
 remaining percentage = max(allowance - posted - active reservations, 0) / allowance
 ```
@@ -38,8 +39,10 @@ The UI rounds display percentages without changing stored or billable amounts. I
 enough precision to show small activity: individual contributions below 0.01% display as
 `<0.01%`.
 
-Founder workspaces have no denominator. Their summary shows `Unlimited`, the reset/reporting
-date, action counts, and actual token telemetry without an allowance percentage.
+Founder is an internal Helpin plan with a $150 monthly soft budget. It shows the same percentage
+meter and telemetry as other plans. Its raw percentage may exceed 100%, but Founder work is never
+blocked or invoiced. The UI caps the progress bar at 100% and shows the actual value, such as
+`112% used — internal budget exceeded`.
 
 ### Consumption breakdown
 
@@ -86,7 +89,7 @@ cutover.
 
 - Disabled: Helpin reserves allowance before launch and rejects work that cannot fit.
 - Enabled: work may exceed the included allowance and accrues an exact extra-usage charge.
-- Founder: unlimited hosted usage; no extra-usage control or invoice.
+- Founder: $150 monthly internal soft budget; no blocking, extra-usage control, or invoice.
 - Trial: no extra usage unless the workspace has an active paid Stripe subscription.
 
 There are no credit packs, block counters, or minimum extra-usage purchases.
@@ -102,7 +105,7 @@ Subscription prices do not change. Internal allowance amounts are:
 | Growth monthly | $299 monthly | Monthly | 299,000,000 micro-USD |
 | Growth annual | $2,868 annually | Monthly | 239,000,000 micro-USD |
 | Growth trial | 14 days | Trial lifetime | 140,000,000 micro-USD |
-| Founder | Managed | Monthly reporting | Unlimited |
+| Founder | Internal | Monthly reporting | 150,000,000 micro-USD soft budget |
 
 The allowance is an accounting denominator and is not presented as a cash balance. It does not
 roll over, cannot be refunded, and is before applicable tax.
@@ -110,7 +113,8 @@ roll over, cannot be refunded, and is before applicable tax.
 - Upgrades immediately increase the open period's allowance without resetting posted usage.
 - Downgrades and billing-interval changes affect the next AI period.
 - Cancellation does not refund or carry forward unused allowance.
-- Founder activity is fully metered for reporting but never blocked or overage-billed.
+- Founder activity is fully metered for reporting but never blocked or overage-billed. Internal
+  notifications fire at 80% and 100% of its monthly soft budget.
 
 Customer prices are the provider-cost ceiling plus 10%. A fully consumed hosted $99 allowance
 costs at most $90 at the catalog ceilings, leaving $9 before non-provider costs. Actual cost can
@@ -258,9 +262,10 @@ Add versioned SQL migrations in `server/internal/dbmigrate/sql/` and matching Go
 ### AI usage periods
 
 `billing_ai_usage_periods` is the transactional allowance source of truth. It stores workspace,
-start/end, nullable allowance, posted usage, overage, active reservations, unlimited state,
-status, pricing version, and timestamps. A partial unique index permits only one open period per
-workspace.
+start/end, allowance, posted usage, overage, active reservations, enforcement mode, status,
+pricing version, and timestamps. Founder uses `soft`; customer plans use `enforced` or
+`extra_allowed` according to their setting. A partial unique index permits only one open period
+per workspace.
 
 ### Immutable usage ledger
 
@@ -318,7 +323,7 @@ analytics, and upgrade dialogs with:
 
 - allowance, used, remaining, reserved, and overage micro-USD values;
 - used, remaining, and reserved display percentages;
-- AI period start/end and unlimited state;
+- AI period start/end and enforcement mode;
 - extra-usage enabled/available state;
 - pricing version.
 
@@ -377,7 +382,7 @@ performs these operations in a transaction where PostgreSQL permits:
 1. Create periods, ledger, reservations, settlements, estimates, constraints, and indexes.
 2. Rename `on_demand_enabled` to `extra_ai_usage_enabled`, preserving customer choices.
 3. Open one new period per workspace at zero usage with the full allowance for its current plan
-   and billing interval; Founder periods are unlimited.
+   and billing interval; Founder periods receive the $150 monthly soft budget.
 4. Set the server-side active pricing version to the new catalog version.
 5. Rename `billing_credit_ledger` to `billing_credit_ledger_legacy` and install immutability
    protection.
@@ -419,7 +424,7 @@ rounding; missing telemetry; alias resolution; unsupported models; and catalog c
 ### Repository and concurrency tests
 
 Cover concurrent reservations/consumption; idempotent runtime events; reservation resize,
-reconcile, release, and recovery; period rollover; extra usage; unlimited Founder; monthly,
+reconcile, release, and recovery; period rollover; extra usage; Founder soft budgets; monthly,
 annual, and trial schedules; upgrades/deferred downgrades; settlement retries; and transaction
 rollback.
 
@@ -431,8 +436,9 @@ and successful output with estimates.
 
 ### API and presentation tests
 
-Cover removal of credit fields and terminology; percentage calculations and rounding; Founder;
-reserved segments; exact extra-usage disclosures; token drill-downs; estimate/promotion labels;
+Cover removal of credit fields and terminology; percentage calculations and rounding; Founder
+soft-budget warnings and above-100% display; reserved segments; exact extra-usage disclosures;
+token drill-downs; estimate/promotion labels;
 upgrade dialogs; curated models; unsupported legacy models; organization aggregation; and pricing
 snapshot consistency.
 
