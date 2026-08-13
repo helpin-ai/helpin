@@ -1,6 +1,11 @@
 import { useCallback, useContext } from 'react';
 import HelpinContext from './HelpinContext';
-import { EventPayload, LeadProps, UserProps } from '@helpin-ai/sdk-js';
+import type {
+  EventPayload,
+  LeadProps,
+  ShowArticleOptions,
+  UserProps,
+} from '@helpin-ai/sdk-js';
 
 export type HelpinClient = {
   trackPageView: () => void;
@@ -14,6 +19,8 @@ export type HelpinClient = {
   toggle: () => void;
   openMessages: () => void;
   openNewMessage: (content?: string) => void;
+  openConversation: (conversationId: string) => void;
+  openArticle: (articleKey: string, options?: ShowArticleOptions) => void;
   shutdown: () => void;
   rawTrack: (payload: any) => void;
   set: (
@@ -43,6 +50,8 @@ const noopClient: HelpinClient = {
   toggle: () => {},
   openMessages: () => {},
   openNewMessage: () => {},
+  openConversation: () => {},
+  openArticle: () => {},
   shutdown: () => {},
   rawTrack: () => {},
   set: () => {},
@@ -127,6 +136,17 @@ function useHelpin(): HelpinClient {
     [client],
   );
 
+  const openConversation = useCallback(
+    (conversationId: string): void => client?.openConversation(conversationId),
+    [client],
+  );
+
+  const openArticle = useCallback(
+    (articleKey: string, options?: ShowArticleOptions): void =>
+      client?.openArticle(articleKey, options),
+    [client],
+  );
+
   const shutdown = useCallback(
     (): void => client?.shutdown(),
     [client],
@@ -167,6 +187,8 @@ function useHelpin(): HelpinClient {
     toggle,
     openMessages,
     openNewMessage,
+    openConversation,
+    openArticle,
     shutdown,
     rawTrack,
     set,

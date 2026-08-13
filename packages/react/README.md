@@ -95,9 +95,31 @@ function App() {
 | `toggle` | `() => void` | Toggle the widget open or closed |
 | `openMessages` | `() => void` | Open the messages view |
 | `openNewMessage` | `(content?) => void` | Start a new conversation |
+| `openConversation` | `(conversationId) => void` | Open an existing conversation |
+| `openArticle` | `(articleKey, options?) => void` | Open a Helpin article inside the widget |
 | `shutdown` | `() => void` | End the session and unmount the widget |
 
 For the complete client API (`boot`, `group`, `reset`, `setUserId`, `getConfig`, `getLogger`), use the object returned by `createClient(...)` directly.
+
+### Open a help article
+
+Pass the final segment from the Helpin article URL:
+
+```tsx
+import { useHelpin } from '@helpin-ai/react';
+
+function LearnMore() {
+  const { openArticle } = useHelpin();
+
+  return (
+    <button onClick={() => openArticle('how-to-add-first-comment-2906b16e')}>
+      Learn more
+    </button>
+  );
+}
+```
+
+For migrations from another help-center provider, map each legacy article ID to its Helpin article key. Use a normal external link only when no reliable mapping exists.
 
 ## `usePageView()`
 
@@ -147,6 +169,15 @@ function AppShell() {
 | `HelpinContext` | Raw React context (for advanced use) |
 | `useHelpin` | Analytics and widget hook |
 | `usePageView` | Automatic pageview tracking hook |
+
+## Configuration notes
+
+- `widgetKey` must be the public key for the intended in-app widget. It can differ from the key embedded in a public help center.
+- `host` is the Helpin application/API origin, for example `https://client.helpin.ai`.
+- Set `autoBoot: false` when a custom launcher should decide when the widget loads.
+- Widget UI is loaded from `https://cdn.helpin.ai/lib.js` by default. Override `widgetRuntimeUrl` only for a custom, staging, or pinned runtime.
+
+See the [JavaScript SDK reference](../sdk-js/README.md#client-api) for configuration, widget events, and the complete client API.
 
 ## Development
 
