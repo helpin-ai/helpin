@@ -35,7 +35,7 @@ import { Switch } from '@/components/ui/switch';
 import { UsageDetail } from '@/components/billing/UsageDetail';
 import { useAuthStore } from '@/stores/authStore';
 import { useApplyBillingTestScenario, useBillingCheckout, useBillingPlanChange, useBillingPlanChangePreview, useBillingPortal, useConfirmBillingCheckout, useResumeBillingSubscription, useSetBillingOnDemand, useWorkspaceBilling } from '@/hooks/queries';
-import type { BillingTestScenarioID, PlanChangePreview } from '@/lib/billingTypes';
+import type { BillingTestScenarioID, PlanChangePreview, UsageResponse } from '@/lib/billingTypes';
 import type { BillingInterval, BillingPlan, WorkspaceBillingSummary } from '@/lib/types';
 import { SettingsPageFrame } from './SettingsPageFrame';
 import { getBillingNoticePresentation } from './billingNoticePresentation';
@@ -261,16 +261,45 @@ export function BillingSettingsPage({
   );
 }
 
+export function BillingSettingsPreview({
+  billing,
+  usage,
+}: {
+  billing: WorkspaceBillingSummary;
+  usage: UsageResponse;
+}) {
+  return (
+    <div className="min-h-screen bg-background px-4 py-8 sm:px-8">
+      <div className="mx-auto mb-6 max-w-6xl">
+        <Badge variant="secondary">Development preview · mock data</Badge>
+        <h1 className="mt-3 text-2xl font-semibold">Billing settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">This page is read-only and does not contact Stripe.</p>
+      </div>
+      <BillingSettingsContent
+        workspaceId={billing.workspace_id}
+        editable={false}
+        openPlanChooser={false}
+        mockBilling={billing}
+        mockUsage={usage}
+      />
+    </div>
+  );
+}
+
 function BillingSettingsContent({
   workspaceId,
   editable,
   openPlanChooser,
   onPlanChooserChange,
+  mockBilling,
+  mockUsage,
 }: {
   workspaceId: string;
   editable: boolean;
   openPlanChooser: boolean;
   onPlanChooserChange?: (open: boolean) => void;
+  mockBilling?: WorkspaceBillingSummary;
+  mockUsage?: UsageResponse;
 }) {
   const [choosingPlan, setChoosingPlan] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState<BillingInterval>('annual');
@@ -280,7 +309,8 @@ function BillingSettingsContent({
   const [planPreview, setPlanPreview] = useState<PlanChangePreview | null>(null);
   const [pendingPlanAction, setPendingPlanAction] = useState<string | null>(null);
   const [selectedTestScenario, setSelectedTestScenario] = useState<BillingTestScenarioID>('reset_starter');
-  const { data: billing, isLoading, refetch } = useWorkspaceBilling(workspaceId);
+  const { data: queriedBilling, isLoading, refetch } = useWorkspaceBilling(workspaceId);
+  const billing = mockBilling ?? queriedBilling;
   const currentUserId = useAuthStore((s) => s.user?.id);
   const checkout = useBillingCheckout(workspaceId);
   const confirmCheckout = useConfirmBillingCheckout(workspaceId);
@@ -453,7 +483,7 @@ function BillingSettingsContent({
     );
   };
 
-  if (isLoading || !billing) {
+  if ((isLoading && !mockBilling) || !billing) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
         <Skeleton className="h-32 w-full" />
@@ -766,6 +796,7 @@ function BillingSettingsContent({
               workspaceId={workspaceId}
               periodStart={billing.ai_usage_period_start || billing.current_period_start}
               periodEnd={billing.ai_usage_period_end || billing.current_period_end}
+              mockUsage={mockUsage}
             />
           </CardContent>
         </Card>

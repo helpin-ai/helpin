@@ -18,6 +18,7 @@ interface Props {
   workspaceId: string;
   periodStart?: string;
   periodEnd?: string;
+  mockUsage?: UsageResponse;
 }
 
 export function buildUsageChart(usage: UsageResponse, mode: UsageMode) {
@@ -51,25 +52,26 @@ export function selectUsageDateTickIndexes(pointCount: number, maxTicks = 6) {
   ));
 }
 
-export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
+export function UsageDetail({ workspaceId, periodStart, periodEnd, mockUsage }: Props) {
   const [mode, setMode] = useState<UsageMode>('daily');
   const period = useMemo(() => {
     if (periodStart && periodEnd) return `${periodStart}..${periodEnd}`;
     return dayjs().format('YYYY-MM');
   }, [periodEnd, periodStart]);
-  const { data: usage, isLoading, isError } = useWorkspaceUsage(
+  const { data: queriedUsage, isLoading, isError } = useWorkspaceUsage(
     workspaceId,
     period,
     mode,
     periodStart,
     periodEnd,
   );
+  const usage = mockUsage ?? queriedUsage;
 
-  if (isLoading) {
+  if (isLoading && !mockUsage) {
     return <Skeleton className="h-64 w-full" />;
   }
 
-  if (isError || !usage) {
+  if ((isError && !mockUsage) || !usage) {
     return (
       <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
         Usage details couldn't be loaded. Only the billing owner can manage this
