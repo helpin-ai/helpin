@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Check, ArrowRight, Zap, Users, Building2, Layers, MessageCircle, BarChart3, FileText, Search, Code2, CheckCircle, Send } from 'lucide-react';
+import { Check, ArrowRight, Zap, Users, Building2, Layers, MessageCircle, BarChart3, FileText, Code2, Send } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
+import { AI_PRICING } from '@/generated/aiPricing';
 
 const SIGNUP_URL = 'https://app.helpin.ai/register';
 
@@ -16,7 +17,7 @@ const PLANS = [
     Icon: Users,
     color: 'oklch(0.52 0.16 250)',
     seats: 'Unlimited',
-    credits: '5,000',
+    aiUsage: '100%',
     cta: 'Start Starter trial',
     href: `${SIGNUP_URL}?plan=starter`,
     popular: false,
@@ -39,7 +40,7 @@ const PLANS = [
     Icon: Building2,
     color: 'oklch(0.55 0.18 310)',
     seats: 'Unlimited',
-    credits: '25,000',
+    aiUsage: '100%',
     cta: 'Start Growth trial',
     href: `${SIGNUP_URL}?plan=growth`,
     popular: true,
@@ -150,8 +151,8 @@ const FAQS = [
     a: 'A typical 20-person team pays $1,000-2,000/month across Jira, Intercom, HubSpot, Notion, and ChatGPT. Helpin replaces all of them starting at $99/month on Starter — with AI agents included.',
   },
   {
-    q: 'Do unused credits roll over?',
-    a: 'Credits reset monthly. Your included credits refresh at the start of each billing cycle. We keep it simple.',
+    q: 'Does unused AI usage roll over?',
+    a: 'No. Included AI usage resets on your subscription renewal date each month.',
   },
   {
     q: 'How does per-workspace pricing work?',
@@ -293,10 +294,10 @@ export default function PricingPage() {
                     <p className="text-[10px] text-muted-foreground uppercase tracking-wide leading-tight mt-1">Seats</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-lg font-bold text-foreground leading-tight">{plan.credits}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                    <a href="#credits" className="text-[10px] text-muted-foreground uppercase tracking-wide hover:text-pop cursor-pointer leading-tight mt-1 block"
-                      onClick={(e) => { e.preventDefault(); document.getElementById('credits')?.scrollIntoView({ behavior: 'smooth' }); }}>
-                      AI Credits ↓
+                    <p className="text-lg font-bold text-foreground leading-tight">{plan.aiUsage}<span className="text-xs font-normal text-muted-foreground"> included</span></p>
+                    <a href="#ai-usage" className="text-[10px] text-muted-foreground uppercase tracking-wide hover:text-pop cursor-pointer leading-tight mt-1 block"
+                      onClick={(e) => { e.preventDefault(); document.getElementById('ai-usage')?.scrollIntoView({ behavior: 'smooth' }); }}>
+                      AI usage ↓
                     </a>
                   </div>
                 </div>
@@ -380,20 +381,22 @@ export default function PricingPage() {
           </p>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              { action: 'Small', credits: '$0.22 input · $1.32 output', Icon: MessageCircle, color: 'oklch(0.58 0.15 55)', bg: 'oklch(0.58 0.15 55 / 0.08)' },
-              { action: 'Medium', credits: '$0.44 input · $3.52 output', Icon: Send, color: 'oklch(0.52 0.14 28)', bg: 'oklch(0.52 0.14 28 / 0.08)' },
-              { action: 'Large', credits: '$2.20 input · $13.20 output', Icon: Code2, color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)' },
-              { action: 'Flagship', credits: '$11.00 input · $49.50 output', Icon: Zap, color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)' },
-            ].map((item) => (
-              <div key={item.action} className="rounded-xl border border-border p-4 text-center">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center mx-auto mb-3" style={{ background: item.bg }}>
-                  <item.Icon className="w-[16px] h-[16px]" style={{ color: item.color }} />
+            {AI_PRICING.tiers.map((tier, index) => {
+              const icons = [MessageCircle, Send, Code2, Zap];
+              const colors = ['#b56c31', '#ad5544', '#27879a', '#4b77bd'];
+              const Icon = icons[index];
+              const input = tier.rates.input_microusd_per_million / 1_000_000;
+              const output = tier.rates.output_microusd_per_million / 1_000_000;
+              return (
+                <div key={tier.key} className="rounded-xl border border-border p-4 text-center">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center mx-auto mb-3 bg-muted">
+                    <Icon className="w-[16px] h-[16px]" style={{ color: colors[index] }} />
+                  </div>
+                  <p className="text-sm font-medium text-foreground mb-1">{tier.label}</p>
+                  <p className="text-xs text-muted-foreground">${input.toFixed(input < 0.1 ? 3 : 2)} input · ${output.toFixed(2)} output / 1M tokens</p>
                 </div>
-                <p className="text-sm font-medium text-foreground mb-1">{item.action}</p>
-                <p className="text-xs text-muted-foreground">{item.credits} / 1M tokens</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="mt-10 rounded-xl bg-muted/50 p-6 text-center">
