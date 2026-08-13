@@ -32,11 +32,21 @@ func (r *CRMCompanyRepository) LockExternalID(ctx context.Context, workspaceID, 
 	if r.db.Dialector.Name() != "postgres" {
 		return nil
 	}
-	key := workspaceID + "\x00" + strings.ToLower(strings.TrimSpace(externalID))
-	if err := r.db.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+	if err := lockCRMCompanyExternalID(r.db, ctx, workspaceID, externalID).Error; err != nil {
 		return fmt.Errorf("lock company external id: %w", err)
 	}
 	return nil
+}
+
+func lockCRMCompanyExternalID(db *gorm.DB, ctx context.Context, workspaceID, externalID string) *gorm.DB {
+	normalizedExternalID := strings.ToLower(strings.TrimSpace(externalID))
+	// Bind both lock dimensions separately because PostgreSQL text parameters
+	// reject NUL-delimited keys.
+	return db.WithContext(ctx).Exec(
+		"SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))",
+		workspaceID,
+		normalizedExternalID,
+	)
 }
 
 // GetNextDisplayID generates the next sequential display ID for companies in a workspace.
