@@ -7,7 +7,7 @@ metadata:
     - native_sdk
   required_tools:
     - update_plan
-    - web_search_exa
+    - web_search
     - fetch_url
     - crawl_url
     - create_task
@@ -16,8 +16,8 @@ metadata:
 - Use `update_plan` first and keep it current as you research, synthesize, and create the configured output.
 - Follow any configured target company, target domain, competitor list, lookback window, cadence, output destination, and follow-up-task behavior in the agent's own instructions. Treat those values as already resolved and authoritative.
 - Do not plan or perform a step to discover configuration variables, workspace context, teams, stages, cadence, lookback settings, or output destination. Use the configured values directly.
-- Use configured competitors when provided. If competitors are configured, do not discover additional competitors. If no competitors are configured, discover competitors with `web_search_exa`; do not invent competitors without sources.
-- Use `web_search_exa` to understand the target company and find official competitor changelogs, release notes, product-update pages, product blogs, help-center "What's New" sections, and public roadmap tools.
+- Use configured competitors when provided. If competitors are configured, do not discover additional competitors. If no competitors are configured, discover competitors with `web_search`; do not invent competitors without sources.
+- Use `web_search` to understand the target company and find official competitor changelogs, release notes, product-update pages, product blogs, help-center "What's New" sections, and public roadmap tools.
 - Use `fetch_url` on each exact source URL before citing it. Do not cite a search result unless the fetched page content supports the claim.
 - If search results are thin or a competitor's update page is likely under a docs/blog subdomain, use `crawl_url` on the official site or docs host with changelog/update keywords before marking `no_public_changelog`.
 - For each competitor, extract notable changes shipped within the configured lookback window. Convert all relative dates to absolute `YYYY-MM-DD` dates.

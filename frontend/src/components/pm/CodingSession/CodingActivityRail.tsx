@@ -187,6 +187,7 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
   // so it gets the same source preview rather than a raw result blob.
   const readOutputText = !isFailed && (isToolName(toolCall.tool_name, 'read_file')
     || isToolName(toolCall.tool_name, 'read_file_range')
+    || isToolName(toolCall.tool_name, 'read_files')
     || isToolName(toolCall.tool_name, 'read_symbol'))
     ? toolCall.result?.content?.trim() || ''
     : '';

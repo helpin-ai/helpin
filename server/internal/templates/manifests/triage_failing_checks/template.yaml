@@ -35,7 +35,7 @@ agent:
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [get_check_run_logs, read_file, read_files, search_files, ripgrep, run_command, create_document, link_document_to_object, create_task]
+    allowed_tools: [get_check_run_logs, read_files, repository_search, run_command, create_document, link_document_to_object, create_task]
     allowed_targets: [repository, document]
     approval_mode: always
 trigger:

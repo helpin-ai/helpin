@@ -500,12 +500,10 @@ func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *test
 	)
 
 	for _, expected := range []string{
-		"When you know a declaration's name, start with `find_symbol` to locate it and `read_symbol` to read it in full; both return exact line ranges, so you never guess an offset.",
-		"Otherwise locate the relevant code with `list_directory`, `ripgrep`, `search_files`, or `list_symbols` before reading large files.",
-		"Prefer search-first, then narrow reads: use `find_symbol`, `ripgrep`, `search_files`, or `list_symbols` to find exact files or symbols before any broad file read.",
-		"Before changing or deleting a declaration, call `find_callers` to see what depends on it.",
-		"`read_file` now returns a smaller bounded window by default; use offset_line to continue and use `read_file_range` for targeted spans.",
-		"Prefer `read_file_range` once you know the relevant lines. Do not use `read_files` for broad repo exploration; reserve it for a few known files with small excerpts.",
+		"When you know a declaration's name, use `read_symbol`; it locates a unique declaration",
+		"Otherwise locate relevant code with `list_directory`, `repository_search`, or `list_symbols` before reading files.",
+		"Before changing or deleting a declaration, call `trace_symbol` to see what depends on it.",
+		"Use `read_files` for one to four known files or line windows, continuing with start_line when needed.",
 		"Prefer `edit_file` for focused in-place changes and `apply_patch` for coordinated multi-file edits.",
 		"Use `write_file` for new files or full rewrites only after you have read the current file state.",
 	} {
@@ -533,8 +531,8 @@ func TestBuildSystemPromptAdHocRepositoryRunIncludesNarrowReadGuidance(t *testin
 	)
 
 	for _, expected := range []string{
-		"When you know a declaration's name, start with `find_symbol` to locate it and `read_symbol` to read it in full",
-		"Prefer `read_file_range` once you know the relevant lines. Do not use `read_files` for broad repo exploration",
+		"When you know a declaration's name, use `read_symbol`",
+		"Use `read_files` for one to four known files or line windows",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected ad-hoc repository prompt to contain %q\n%s", expected, prompt)
@@ -685,7 +683,7 @@ func TestBuildRuntimeSystemPromptDescribesAvailableSkillsWhenSkillTextDisabled(t
 	}
 	for _, expected := range []string{
 		"Available Skills",
-		"Do not load every available skill by default.",
+		"Use find_skills to inspect options",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected runtime prompt to include %q\n%s", expected, prompt)

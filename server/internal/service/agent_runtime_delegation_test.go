@@ -111,7 +111,7 @@ func TestRunAllowedToolsForCoverageTargetPreservesRequiredToolWhenNarrowed(t *te
 	if err != nil {
 		t.Fatalf("runAllowedToolsForTargetContract returned error: %v", err)
 	}
-	want := []string{"read_file", agentcontract.ToolCompleteSupportCoverageGap}
+	want := []string{"read_files", agentcontract.ToolCompleteSupportCoverageGap}
 	if !slices.Equal(tools, want) {
 		t.Fatalf("coverage run tools = %#v, want %#v", tools, want)
 	}

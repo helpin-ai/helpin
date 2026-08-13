@@ -51,6 +51,29 @@ describe('describeToolCall', () => {
     });
   });
 
+  it('formats canonical batched reads and repository search', () => {
+    const read = describeToolCall(buildToolCall({
+      tool_name: 'read_files',
+      args_text: JSON.stringify({ files: [{ path: 'main.go' }, { path: 'metrics.go' }] }),
+    }));
+    expect(read).toEqual({
+      primaryLabel: 'Read main.go +1 more',
+      secondaryLabel: 'Read Files',
+      chips: ['2 files'],
+    });
+
+    const search = describeToolCall(buildToolCall({
+      tool_name: 'repository_search',
+      args_text: JSON.stringify({ query: 'prometheus', path: 'rust-capture', repository: 'events-pipeline' }),
+    }));
+    expect(search).toEqual({
+      primaryLabel: 'Search "prometheus" in rust-capture · events-pipeline',
+      secondaryLabel: 'Repository Search',
+      chips: [],
+      repositoryLabel: 'events-pipeline',
+    });
+  });
+
   it('formats run_command with command and cwd', () => {
     const presentation = describeToolCall(buildToolCall({
       tool_name: 'run_command',
@@ -68,6 +91,25 @@ describe('describeToolCall', () => {
   });
 
   describe('web search tools', () => {
+    it('formats canonical web_search modes and filters', () => {
+      const presentation = describeToolCall(buildToolCall({
+        tool_name: 'web_search',
+        args_text: JSON.stringify({
+          query: 'Kafka fallback patterns',
+          mode: 'deep',
+          category: 'research paper',
+          include_domains: ['kafka.apache.org'],
+          max_results: 4,
+        }),
+      }));
+
+      expect(presentation).toEqual({
+        primaryLabel: 'Search "Kafka fallback patterns"',
+        secondaryLabel: 'Web Search',
+        chips: ['deep', 'research paper', 'kafka.apache.org', '4 results'],
+      });
+    });
+
     it('formats web_search_exa with only query', () => {
       const presentation = describeToolCall(buildToolCall({
         tool_name: 'web_search_exa',
@@ -222,6 +264,24 @@ describe('describeToolCall', () => {
       args_text: JSON.stringify({ symbol: 'HandleLogin' }),
     }));
     expect(callees.primaryLabel).toBe('Find calls made by HandleLogin');
+  });
+
+  it('formats canonical symbol tracing and skill discovery', () => {
+    const trace = describeToolCall(buildToolCall({
+      tool_name: 'trace_symbol',
+      args_text: JSON.stringify({ symbol: 'kafka_send', direction: 'callers' }),
+    }));
+    expect(trace).toEqual({
+      primaryLabel: 'Trace callers of kafka_send',
+      secondaryLabel: 'Trace Symbol',
+      chips: ['callers'],
+    });
+
+    const skills = describeToolCall(buildToolCall({
+      tool_name: 'find_skills',
+      args_text: JSON.stringify({ query: 'security review' }),
+    }));
+    expect(skills.primaryLabel).toBe('Find skills for "security review"');
   });
 
   it('formats list_symbols as an outline', () => {

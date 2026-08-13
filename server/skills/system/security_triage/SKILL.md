@@ -127,7 +127,7 @@ Pass the configured severity threshold, `include_low_info`, and scan scope if av
 
 Important path rule:
 
-- Repository file tools such as `list_directory`, `read_file`, and `search_files` are scoped to the checked-out repository. Do not use them to inspect `/app/security-rules`, `/app/.cache`, or any other absolute runtime path.
+- Repository tools such as `list_directory`, `read_files`, and `repository_search` are scoped to the checked-out repository. Do not use them to inspect `/app/security-rules`, `/app/.cache`, or any other absolute runtime path.
 - Treat `/app/security-rules/semgrep`, `/app/.cache`, and `/tmp/helpin-security-cache` as paths owned by the scanner tools only.
 - Do not spend tool calls checking whether those runtime paths exist. Let the scanner tools handle bundled rules, caches, and scanner-native fallbacks.
 

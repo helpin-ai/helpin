@@ -1287,7 +1287,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	if version.SystemPrompt == nil || *version.SystemPrompt != "Use the repo conventions and keep changes incremental." {
 		t.Fatalf("expected persisted system prompt override, got %+v", version.SystemPrompt)
 	}
-	if !slices.Equal(version.AllowedTools, []string{"read_file", "run_command"}) {
+	if !slices.Equal(version.AllowedTools, []string{"read_files", "run_command"}) {
 		t.Fatalf("expected allowed tools override, got %v", version.AllowedTools)
 	}
 	if version.ApprovalMode != "never" {
@@ -1500,7 +1500,7 @@ func TestUpdateWorkspacePresetVersion(t *testing.T) {
 	if updated.Model == nil || *updated.Model != "" {
 		t.Fatalf("expected explicit blank model preserved, got %+v", updated.Model)
 	}
-	if !slices.Equal(updated.AllowedTools, []string{"read_file"}) {
+	if !slices.Equal(updated.AllowedTools, []string{"read_files"}) {
 		t.Fatalf("expected updated allowed tools, got %v", updated.AllowedTools)
 	}
 	if !slices.Equal(updated.SupportedModes, []string{model.InvocationModeAutonomous, model.InvocationModeInteractive}) {
@@ -1726,7 +1726,7 @@ func TestUpdateWorkspacePresetVersion_PropagatesToPinnedSystemAgent(t *testing.T
 	if strings.TrimSpace(string(refetched.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
 		t.Fatalf("expected pinned agent execution config to update, got %s", refetched.ExecutionConfig)
 	}
-	if !slices.Equal(parseJSONStringSlice(refetched.AllowedTools), []string{"read_file"}) {
+	if !slices.Equal(parseJSONStringSlice(refetched.AllowedTools), []string{"read_files"}) {
 		t.Fatalf("expected pinned agent allowed tools to update, got %v", parseJSONStringSlice(refetched.AllowedTools))
 	}
 	if refetched.DefaultInvocationMode != model.InvocationModeInteractive {

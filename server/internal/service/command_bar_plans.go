@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -60,6 +59,7 @@ func (s *CommandBarService) ListPlans(ctx context.Context, workspaceID, actorID 
 	}
 	return &model.CommandBarPlanListResponse{Plans: summaries}, nil
 }
+
 // ListEntityPlans returns command-bar plans targeting the given entity (e.g. an
 // epic), hydrated with their agent runs, regardless of which actor triggered
 // them. Visibility is enforced at the route by entity-read permissions, so this
@@ -515,8 +515,6 @@ func (s *CommandBarService) retryFailedFanOutRuns(ctx context.Context, workspace
 	}
 	return resp, nil
 }
-
-
 
 func (s *CommandBarService) PromoteRunToAgent(ctx context.Context, workspaceID, actorID, runID string, req model.PromoteCommandBarRunRequest) (*model.PromoteCommandBarRunResponse, error) {
 	if s == nil || s.agentService == nil {

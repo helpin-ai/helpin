@@ -13,7 +13,7 @@ Adapted from research-heavy workflows across the MIT-licensed `customer-research
 
 ## Source Rules
 
-- Use `web_search_exa` to discover sources.
+- Use `web_search` to discover sources.
 - Use `fetch_url` on exact URLs before citing or relying on claims.
 - Use `crawl_url` only for official sites or docs/blog hosts when source discovery is thin.
 - Prefer primary sources: official pages, docs, pricing pages, changelogs, public directories, credible publications, review sites, and community threads.

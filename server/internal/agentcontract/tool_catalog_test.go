@@ -631,7 +631,7 @@ func TestBrowserToolCatalogContracts(t *testing.T) {
 
 func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 	catalog := ListToolCatalog()
-	want := map[string]bool{"read_file": false, "read_files": false, "read_file_range": false}
+	want := map[string]bool{"read_files": false}
 	for _, tool := range catalog.Tools {
 		if _, ok := want[tool.Name]; !ok {
 			continue
@@ -645,24 +645,7 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 			t.Fatalf("%s schema is not a strict object: %#v", tool.Name, tool.InputSchema)
 		}
 		properties, _ := schema["properties"].(map[string]any)
-		for _, field := range []string{"path", "repo_alias", "repository"} {
-			if tool.Name != "read_files" && properties[field] == nil {
-				t.Fatalf("%s schema missing %s: %#v", tool.Name, field, schema)
-			}
-		}
 		switch tool.Name {
-		case "read_file":
-			if !strings.Contains(tool.Description, "numbered text lines") || !strings.Contains(tool.Description, "exact offset_line") {
-				t.Fatalf("read_file description lacks bounded recovery contract: %s", tool.Description)
-			}
-			limit := properties["limit_lines"].(map[string]any)
-			if limit["minimum"] != float64(1) || limit["maximum"] != float64(240) || properties["offset"] == nil || properties["limit"] == nil {
-				t.Fatalf("read_file compatibility bounds drifted: %#v", properties)
-			}
-		case "read_file_range":
-			if !strings.Contains(tool.Description, "numbered line range") || !strings.Contains(tool.Description, "exact continuation") {
-				t.Fatalf("read_file_range description lacks bounded recovery contract: %s", tool.Description)
-			}
 		case "read_files":
 			files := properties["files"].(map[string]any)
 			if files["minItems"] != float64(1) || files["maxItems"] != float64(4) {
@@ -674,7 +657,7 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 			}
 			itemProperties := items["properties"].(map[string]any)
 			limit := itemProperties["limit_lines"].(map[string]any)
-			if limit["minimum"] != float64(1) || limit["maximum"] != float64(120) || itemProperties["repo_alias"] == nil || itemProperties["repository"] == nil {
+			if limit["minimum"] != float64(1) || limit["maximum"] != float64(240) || itemProperties["start_line"] == nil || itemProperties["repository"] == nil {
 				t.Fatalf("read_files item contract drifted: %#v", itemProperties)
 			}
 		}
@@ -692,8 +675,7 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 func TestSymbolNavigationToolCatalogContracts(t *testing.T) {
 	catalog := ListToolCatalog()
 	want := map[string]bool{
-		"list_symbols": false, "read_symbol": false,
-		"find_symbol": false, "find_callers": false, "find_callees": false,
+		"list_symbols": false, "read_symbol": false, "trace_symbol": false,
 	}
 	for _, tool := range catalog.Tools {
 		if _, ok := want[tool.Name]; !ok {
@@ -708,29 +690,17 @@ func TestSymbolNavigationToolCatalogContracts(t *testing.T) {
 			t.Fatalf("%s schema is not a strict object: %#v", tool.Name, tool.InputSchema)
 		}
 		properties, _ := schema["properties"].(map[string]any)
-		for _, field := range []string{"repo_alias", "repository"} {
-			if properties[field] == nil {
-				t.Fatalf("%s schema missing %s; multi-repo selection would be impossible: %#v", tool.Name, field, schema)
-			}
+		if properties["repository"] == nil {
+			t.Fatalf("%s schema missing repository; multi-repo selection would be impossible: %#v", tool.Name, schema)
 		}
 		switch tool.Name {
 		case "read_symbol":
-			if properties["path"] == nil || properties["symbol"] == nil {
-				t.Fatalf("read_symbol must take a path and a symbol: %#v", properties)
+			if properties["symbol"] == nil || properties["kind"] == nil {
+				t.Fatalf("read_symbol must take a symbol and optional kind: %#v", properties)
 			}
-			if !strings.Contains(tool.Description, "exact line range") {
-				t.Fatalf("read_symbol description lost its line-range contract: %s", tool.Description)
-			}
-		case "find_symbol":
-			if properties["name"] == nil {
-				t.Fatalf("find_symbol must take a name: %#v", properties)
-			}
-			if !strings.Contains(tool.Description, "without knowing its file") {
-				t.Fatalf("find_symbol description lost its cross-file contract: %s", tool.Description)
-			}
-		case "find_callers", "find_callees":
-			if properties["symbol"] == nil {
-				t.Fatalf("%s must take a symbol: %#v", tool.Name, properties)
+		case "trace_symbol":
+			if properties["symbol"] == nil || properties["direction"] == nil {
+				t.Fatalf("trace_symbol must take symbol and direction: %#v", properties)
 			}
 		case "list_symbols":
 			if !strings.Contains(tool.Description, "line range") {

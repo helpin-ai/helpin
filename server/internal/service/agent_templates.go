@@ -39,7 +39,7 @@ Treat these configured values as already resolved and authoritative. Do not plan
 
 Use the configured competitor list when it is not empty. If no competitors are configured, discover competitors with web search and cite sources.
 
-For each competitor, first use web_search_exa (or the runtime's built-in web search when available) to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog. A missing search provider is a tool limitation, not evidence that a competitor has no public changelog.
+For each competitor, first use web_search (or the runtime's built-in web search when available) to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog. A missing search provider is a tool limitation, not evidence that a competitor has no public changelog.
 
 Create exactly one competitors changelog tracking report task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
@@ -362,7 +362,7 @@ Raw configuration:
 			},
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"update_plan",
-				"web_search_exa",
+				"web_search",
 				"fetch_url",
 				"crawl_url",
 				"list_workspace_teams",
@@ -390,14 +390,10 @@ Raw configuration:
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"update_plan",
 				"list_directory",
-				"read_file",
 				"read_files",
-				"read_file_range",
-				"search_files",
-				"ripgrep",
-				"grep",
+				"repository_search",
 				"run_command",
-				"web_search_exa",
+				"web_search",
 				"fetch_url",
 				"create_task",
 			})),
@@ -448,17 +444,13 @@ Raw configuration:
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"update_plan",
 				"list_directory",
-				"read_file",
 				"read_files",
-				"read_file_range",
-				"search_files",
-				"ripgrep",
-				"grep",
+				"repository_search",
 				"run_command",
 				"scan_semgrep",
 				"scan_trivy",
 				"scan_gitleaks",
-				"web_search_exa",
+				"web_search",
 				"ensure_task_label",
 				"list_tasks",
 				"create_task",
@@ -1094,7 +1086,7 @@ These values were configured when this custom agent was created. Treat them as a
 - schedule_preset: %s (informational; the automation rule already handled cadence)
 
 Use the destination IDs directly when calling create_task. Only discover competitors if the configured competitors list is empty.
-Use web_search_exa to find candidate official update sources, fetch_url to verify exact source pages, and crawl_url on official or docs hosts when search results are thin.
+Use web_search to find candidate official update sources, fetch_url to verify exact source pages, and crawl_url on official or docs hosts when search results are thin.
 
 Raw configuration:
 

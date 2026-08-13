@@ -333,7 +333,7 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 				t.Fatalf("expected documentation target %q in %v", targetType, preset.AllowedTargetTypes)
 			}
 		}
-		for _, toolName := range []string{"list_repositories", "checkout_repository", "checkout_repositories", "read_file", "list_documents", "create_document", "write_document_content", "insert_document_artifact", "browser_open", "browser_screenshot", "browser_record", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
+		for _, toolName := range []string{"list_repositories", "checkout_repositories", "read_files", "list_documents", "create_document", "write_document_content", "insert_document_artifact", "browser_open", "browser_screenshot", "browser_record", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
 			if !slices.Contains(preset.AllowedTools, toolName) {
 				t.Fatalf("expected documentation tool %q in %v", toolName, preset.AllowedTools)
 			}
@@ -381,10 +381,10 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		"list_conversation_messages",
 		"search_workspace", "search_documents",
-		"list_available_skills", "search_available_skills", "read_skill",
-		"list_repositories", "checkout_repository", "checkout_repositories",
-		"ripgrep", "search_files", "list_symbols", "read_file", "read_files", "read_file_range",
-		"read_symbol", "find_symbol", "find_callers", "find_callees",
+		"find_skills", "read_skill",
+		"list_repositories", "checkout_repositories",
+		"repository_search", "list_symbols", "read_files",
+		"read_symbol", "trace_symbol",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
@@ -448,9 +448,9 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 		t.Fatalf("managed Ask approval mode = %q, want risk_based", preset.ApprovalMode)
 	}
 	for _, toolName := range []string{
-		"checkout_repository", "ripgrep", "read_file", "read_files",
-		"read_symbol", "find_symbol", "find_callers", "find_callees",
-		"list_available_skills", "read_skill", "update_plan",
+		"checkout_repositories", "repository_search", "read_files",
+		"read_symbol", "trace_symbol",
+		"find_skills", "read_skill", "update_plan",
 		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "prepare_dock_execution",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
@@ -519,8 +519,8 @@ func TestListAgentPresetsPlannersIncludeExaSearch(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if !slices.Contains(preset.AllowedTools, "web_search_exa") {
-			t.Fatalf("expected preset %q to include web_search_exa, got %v", preset.Key, preset.AllowedTools)
+		if !slices.Contains(preset.AllowedTools, "web_search") {
+			t.Fatalf("expected preset %q to include web_search, got %v", preset.Key, preset.AllowedTools)
 		}
 		expected[preset.Key] = true
 	}
@@ -1190,7 +1190,7 @@ func TestNormalizeAgentRecordStripsRepositoryEditToolsFromPlannerPresets(t *test
 					t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)
 				}
 			}
-			for _, required := range []string{"read_file", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval} {
+			for _, required := range []string{"read_files", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval} {
 				if !slices.Contains(tools, required) {
 					t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
 				}
@@ -1215,7 +1215,7 @@ func TestNormalizeAgentRecordStripsListEpicTasksFromTaskPlanner(t *testing.T) {
 	if slices.Contains(tools, "list_epic_tasks") {
 		t.Fatalf("expected sanitized task planner tool list to exclude list_epic_tasks, got %v", tools)
 	}
-	for _, required := range []string{"read_file", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval, agentcontract.ToolPublishTaskPlanDoc} {
+	for _, required := range []string{"read_files", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval, agentcontract.ToolPublishTaskPlanDoc} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
 		}

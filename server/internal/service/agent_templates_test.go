@@ -89,7 +89,7 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	if err := json.Unmarshal(competitiveIntel.AllowedTools, &competitiveAllowedTools); err != nil {
 		t.Fatalf("unmarshal competitive allowed tools: %v", err)
 	}
-	for _, tool := range []string{"web_search_exa", "fetch_url", "crawl_url", "create_task"} {
+	for _, tool := range []string{"web_search", "fetch_url", "crawl_url", "create_task"} {
 		if !slices.Contains(competitiveAllowedTools, tool) {
 			t.Fatalf("expected competitive template allowed tools to include %q, got %v", tool, competitiveAllowedTools)
 		}

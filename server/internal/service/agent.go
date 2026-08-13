@@ -276,7 +276,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		!hasAvailableRuntimeSkills(out.Skills) {
 		out.AllowedTools = slices.DeleteFunc(out.AllowedTools, func(toolName string) bool {
 			switch agentcontract.CanonicalToolName(toolName) {
-			case agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill:
+			case agentcontract.ToolFindSkills, agentcontract.ToolReadSkill:
 				return true
 			default:
 				return false

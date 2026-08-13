@@ -157,36 +157,19 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			parts = append(parts, "- Use the provided tools to read, write, and search files.")
 		case hasRepoAccess:
 			parts = append(parts, "- Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.")
-			parts = append(parts, "- If repository inspection is needed but repository tools report that no workspace lease exists, use target context when it identifies a repo; otherwise call list_repositories, ask which repo or repos to inspect when ambiguous, then call checkout_repository or checkout_repositories with the returned repository_id (preferred) or exact repo_full_name. Do not pass a display name or bare repository name. Use repo_alias when reading from multiple checked-out repos.")
+			parts = append(parts, "- If repository inspection needs a workspace lease, use target context when it identifies a repo; otherwise call list_repositories, ask when the choice is ambiguous, then call checkout_repositories with repository_id or exact repo_full_name. Use the repository selector for later multi-repo reads.")
 		}
 		if hasRepoAccess {
-			parts = append(parts, fmt.Sprintf("- When you know a declaration's name, start with `%s` to locate it and `%s` to read it in full; both return exact line ranges, so you never guess an offset.",
-				RuntimeToolNameForPrompt("find_symbol"),
-				RuntimeToolNameForPrompt("read_symbol"),
-			))
-			parts = append(parts, fmt.Sprintf("- Otherwise locate the relevant code with `%s`, `%s`, `%s`, or `%s` before reading large files.",
+			parts = append(parts, fmt.Sprintf("- When you know a declaration's name, use `%s`; it locates a unique declaration and reads its exact range, or returns candidates when ambiguous.", RuntimeToolNameForPrompt("read_symbol")))
+			parts = append(parts, fmt.Sprintf("- Otherwise locate relevant code with `%s`, `%s`, or `%s` before reading files.",
 				RuntimeToolNameForPrompt("list_directory"),
-				RuntimeToolNameForPrompt("ripgrep"),
-				RuntimeToolNameForPrompt("search_files"),
+				RuntimeToolNameForPrompt("repository_search"),
 				RuntimeToolNameForPrompt("list_symbols"),
 			))
-			parts = append(parts, fmt.Sprintf("- Prefer search-first, then narrow reads: use `%s`, `%s`, `%s`, or `%s` to find exact files or symbols before any broad file read.",
-				RuntimeToolNameForPrompt("find_symbol"),
-				RuntimeToolNameForPrompt("ripgrep"),
-				RuntimeToolNameForPrompt("search_files"),
-				RuntimeToolNameForPrompt("list_symbols"),
-			))
-			parts = append(parts, fmt.Sprintf("- `%s` now returns a smaller bounded window by default; use offset_line to continue and use `%s` for targeted spans.",
-				RuntimeToolNameForPrompt("read_file"),
-				RuntimeToolNameForPrompt("read_file_range"),
-			))
-			parts = append(parts, fmt.Sprintf("- Prefer `%s` once you know the relevant lines. Do not use `%s` for broad repo exploration; reserve it for a few known files with small excerpts.",
-				RuntimeToolNameForPrompt("read_file_range"),
-				RuntimeToolNameForPrompt("read_files"),
-			))
+			parts = append(parts, fmt.Sprintf("- Use `%s` for one to four known files or line windows, continuing with start_line when needed. Do not use it for broad exploration.", RuntimeToolNameForPrompt("read_files")))
 			if hasFileMutationTools {
 				parts = append(parts, fmt.Sprintf("- Before changing or deleting a declaration, call `%s` to see what depends on it.",
-					RuntimeToolNameForPrompt("find_callers"),
+					RuntimeToolNameForPrompt("trace_symbol"),
 				))
 				parts = append(parts, fmt.Sprintf("- Prefer `%s` for focused in-place changes and `%s` for coordinated multi-file edits.",
 					RuntimeToolNameForPrompt("edit_file"),
@@ -209,8 +192,8 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 				))
 			}
 		}
-		if options.IncludeResolvedSkillText && (toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"]) {
-			parts = append(parts, "- Use list_available_skills or search_available_skills when specialized workflow guidance would materially improve the task, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default.")
+		if options.IncludeResolvedSkillText && (toolSet[ToolFindSkills] || toolSet[ToolReadSkill]) {
+			parts = append(parts, "- Use find_skills when specialized workflow guidance would materially improve the task, then read only the selected instructions with read_skill.")
 		}
 	}
 	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageTaskPlanDoc {
@@ -240,8 +223,8 @@ func availableSkillAccessGuidance(agent *model.Agent, toolSet map[string]bool) s
 	if !agentHasAvailableSkills(agent) {
 		return ""
 	}
-	if toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"] {
-		return "This agent has available skills it can choose to use when they are relevant to the task. Use list_available_skills or search_available_skills to inspect options, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default."
+	if toolSet[ToolFindSkills] || toolSet[ToolReadSkill] {
+		return "This agent has available skills it can choose when relevant. Use find_skills to inspect options, then read only the selected instructions with read_skill."
 	}
 	return "This agent has available skills it can use when they would help or are required for the task. Use the runtime's skill access mechanism to inspect and apply only the specific skill instructions the task needs. Do not load every available skill by default."
 }

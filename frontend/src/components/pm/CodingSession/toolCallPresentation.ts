@@ -61,10 +61,10 @@ function domainChip(domains: string[]) {
 
 export function repositorySelectorForToolCall(toolCall: CodingSessionLiveToolCall): string | null {
   const parsed = parseArgs(toolCall.args_text);
-  return asString(parsed?.repo_alias)
+  return asString(parsed?.repository)
     ?? asString(parsed?.repository_id)
     ?? asString(parsed?.repo_full_name)
-    ?? asString(parsed?.repository);
+    ?? asString(parsed?.repo_alias); // Historical transcripts.
 }
 
 export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallPresentation {
@@ -80,7 +80,9 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
   const cwd = asString(parsed?.cwd);
   const paths = Array.isArray(parsed?.paths)
     ? parsed?.paths.map((value) => asString(value)).filter((value): value is string => Boolean(value))
-    : [];
+    : Array.isArray(parsed?.files)
+      ? parsed.files.map((value) => asString(asRecord(value)?.path)).filter((value): value is string => Boolean(value))
+      : [];
 
   const repositoryLabel = repositorySelectorForToolCall(toolCall);
   const withRepository = (presentation: ToolCallPresentation): ToolCallPresentation => (
@@ -131,6 +133,16 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     return withRepository({ primaryLabel: `Find calls made by ${symbolName}`, secondaryLabel, chips: [] });
   }
 
+  if (toolName === 'trace_symbol' && symbolName) {
+    const direction = asString(parsed?.direction);
+    const label = direction === 'callers'
+      ? `Trace callers of ${symbolName}`
+      : direction === 'callees'
+        ? `Trace calls made by ${symbolName}`
+        : `Trace ${symbolName}`;
+    return withRepository({ primaryLabel: label, secondaryLabel, chips: direction ? [direction] : [] });
+  }
+
   if (toolName === 'list_symbols' && path) {
     return withRepository({ primaryLabel: `Outline ${path}`, secondaryLabel, chips: [] });
   }
@@ -154,6 +166,23 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
       secondaryLabel,
       chips: [],
     });
+  }
+
+  if (toolName === 'repository_search') {
+    const glob = asString(parsed?.glob);
+    const search = asString(parsed?.query) ?? glob;
+    if (search) {
+      return withRepository({
+        primaryLabel: `Search ${quoted(search)}${searchPath ? ` in ${searchPath}` : ''}`,
+        secondaryLabel,
+        chips: glob && glob !== search ? [glob] : [],
+      });
+    }
+  }
+
+  if (toolName === 'find_skills') {
+    const query = asString(parsed?.query);
+    return { primaryLabel: query ? `Find skills for ${quoted(query)}` : 'List available skills', secondaryLabel, chips: [] };
   }
 
   if (toolName === 'web_search_exa') {
@@ -180,6 +209,23 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
       const domainAllowlistChip = domainChip(domainAllowlist);
       if (freshness) chips.push(freshness);
       if (domainAllowlistChip) chips.push(domainAllowlistChip);
+      return { primaryLabel: `Search ${quoted(truncateSearchQuery(query))}`, secondaryLabel, chips };
+    }
+  }
+
+  if (toolName === 'web_search') {
+    const query = asString(parsed?.query);
+    if (query) {
+      const chips = [];
+      const mode = asString(parsed?.mode);
+      const category = asString(parsed?.category);
+      const domains = stringArray(parsed?.include_domains);
+      const domainsChip = domainChip(domains);
+      const maxResults = asNumber(parsed?.max_results);
+      if (mode) chips.push(mode);
+      if (category) chips.push(category);
+      if (domainsChip) chips.push(domainsChip);
+      if (maxResults != null) chips.push(`${maxResults} result${maxResults === 1 ? '' : 's'}`);
       return { primaryLabel: `Search ${quoted(truncateSearchQuery(query))}`, secondaryLabel, chips };
     }
   }

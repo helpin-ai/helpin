@@ -23,9 +23,12 @@ const (
 	ToolScanTrivy    = "scan_trivy"
 	ToolScanGitleaks = "scan_gitleaks"
 
-	ToolListAvailableSkills   = "list_available_skills"
-	ToolSearchAvailableSkills = "search_available_skills"
-	ToolReadSkill             = "read_skill"
+	ToolFindSkills = "find_skills"
+	ToolReadSkill  = "read_skill"
+	// Deprecated Go identifiers retained for source compatibility. Both resolve
+	// to the single model-facing find_skills tool.
+	ToolListAvailableSkills   = ToolFindSkills
+	ToolSearchAvailableSkills = ToolFindSkills
 )
 
 // CanonicalToolName resolves runtime and legacy aliases to the persisted tool name.
@@ -49,6 +52,20 @@ func CanonicalToolName(name string) string {
 		return ToolScanTrivy
 	case "run_gitleaks":
 		return ToolScanGitleaks
+	case "checkout_repository":
+		return "checkout_repositories"
+	case "read_file", "read_file_range":
+		return "read_files"
+	case "search_files", "ripgrep", "grep":
+		return "repository_search"
+	case "find_symbol":
+		return "read_symbol"
+	case "find_callers", "find_callees":
+		return "trace_symbol"
+	case "list_available_skills", "search_available_skills":
+		return ToolFindSkills
+	case "web_search_brave", "web_search_exa":
+		return "web_search"
 	default:
 		return trimmed
 	}

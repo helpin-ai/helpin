@@ -494,7 +494,7 @@ func (s *InternalCommandService) registerDefaults() {
 			CommandName: "agents.get_my_capabilities",
 			Alias:       "get_my_capabilities",
 			Category:    "Agents",
-			Description: "Inspect the current run's actual granted tools, grouped by capability. Use this before delegation when unsure whether the Dock can complete every step itself. For skill guidance, use list_available_skills/search_available_skills/read_skill.",
+			Description: "Inspect the current run's actual granted tools, grouped by capability. Use this before delegation when unsure whether the Dock can complete every step itself. For skill guidance, use find_skills/read_skill.",
 			InputSchema: map[string]any{
 				"type":                 "object",
 				"properties":           map[string]any{},
@@ -2205,15 +2205,15 @@ func (s *InternalCommandService) groupDockCapabilities(tools []string) map[strin
 		"other":               {},
 	}
 	repositoryReads := map[string]bool{
-		"list_repositories": true, "checkout_repository": true, "checkout_repositories": true,
-		"list_commits": true, "read_file": true, "read_files": true, "read_file_range": true,
-		"list_directory": true, "search_files": true, "ripgrep": true, "grep": true, "list_symbols": true,
-		"read_symbol": true, "find_symbol": true, "find_callers": true, "find_callees": true,
+		"list_repositories": true, "checkout_repositories": true,
+		"list_commits": true, "read_files": true,
+		"list_directory": true, "repository_search": true, "list_symbols": true,
+		"read_symbol": true, "trace_symbol": true,
 	}
-	skillTools := map[string]bool{"list_available_skills": true, "search_available_skills": true, "read_skill": true}
+	skillTools := map[string]bool{"find_skills": true, "read_skill": true}
 	interactionWebTools := map[string]bool{
 		"request_user_input": true, "request_approval": true, "update_plan": true,
-		"web_search_brave": true, "web_search_exa": true, "fetch_url": true, "crawl_url": true,
+		"web_search": true, "fetch_url": true, "crawl_url": true,
 	}
 	for _, tool := range normalizeStringSlice(tools) {
 		switch {
@@ -2242,8 +2242,8 @@ func (s *InternalCommandService) groupDockCapabilities(tools []string) map[strin
 	}
 	return map[string]interface{}{
 		"groups":                        groups,
-		"can_load_skills":               len(groups["skills"]) == 3,
-		"can_read_repositories":         slices.Contains(groups["repository_read"], "checkout_repository") && slices.Contains(groups["repository_read"], "read_file") && slices.Contains(groups["repository_read"], "ripgrep"),
+		"can_load_skills":               len(groups["skills"]) == 2,
+		"can_read_repositories":         slices.Contains(groups["repository_read"], "checkout_repositories") && slices.Contains(groups["repository_read"], "read_files") && slices.Contains(groups["repository_read"], "repository_search"),
 		"can_execute_product_mutations": slices.Contains(groups["agent_orchestration"], "prepare_dock_execution") && len(groups["product_mutation"]) > 0,
 	}
 }

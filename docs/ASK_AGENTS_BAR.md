@@ -77,7 +77,7 @@ draft, rather than being re-generated after approval.
 **Capability-driven delegation:** the Dock treats a multi-domain request as
 one task whenever its current tools cover every step. It can inspect its actual
 run grants with `get_my_capabilities` and load applicable guidance with
-`list_available_skills`, `search_available_skills`, and `read_skill`. It
+`find_skills` and `read_skill`. It
 delegates only the smallest portion requiring a missing or intentionally
 isolated capability. Repository writes, code implementation/validation, and
 specialist code review normally go to coding/review agents; read-only
@@ -161,7 +161,7 @@ to create or update the final document, task, or CRM record.
   Dock to metadata-only repository access or delegation-only execution.
 - Ask Agent's primary runtime target remains the product `workspace`; managed
   reconciliation removes stale `workspace.mode=repository` execution settings.
-  Repository context is attached dynamically by `checkout_repository`, so a
+  Repository context is attached dynamically by `checkout_repositories`, so a
   repository read followed by a product mutation stays within the same run
   without asking the repository-spec provider to resolve a product workspace.
 - When Agent Runtime revalidates a dynamically checked-out lease after an

@@ -190,20 +190,18 @@ func TestRuntimeAgentFromHelpinAgentRegistersManagedAskSkillsAndTools(t *testing
 		}
 	}
 	for _, toolName := range []string{
-		agentcontract.ToolListAvailableSkills,
-		agentcontract.ToolSearchAvailableSkills,
+		agentcontract.ToolFindSkills,
 		agentcontract.ToolReadSkill,
 		"read_files",
 		"read_symbol",
-		"find_symbol",
-		"find_callers",
-		"find_callees",
+		"repository_search",
+		"trace_symbol",
 	} {
 		if !slices.Contains(out.AllowedTools, toolName) {
 			t.Fatalf("managed Ask Agent must retain %q, got %#v", toolName, out.AllowedTools)
 		}
 	}
-	if !strings.Contains(out.SystemPrompt, "use find_symbol then read_symbol when you know a declaration name") {
+	if !strings.Contains(out.SystemPrompt, "use read_symbol directly when you know a declaration name") {
 		t.Fatalf("managed Ask Agent runtime prompt is missing narrow repository-read guidance:\n%s", out.SystemPrompt)
 	}
 }
@@ -719,17 +717,17 @@ func TestStartTargetRunUsesRegisteredRuntimeAgentToolContract(t *testing.T) {
 	seedCodingDelegationAgent(t, db, model.AgentPresetCodeBuilder, model.InvocationModeAutonomous, now)
 	seedCodingDelegationTaskAndDelivery(t, db, now)
 	mustExec(t, db, `UPDATE agents SET allowed_tools = ? WHERE id = ?`,
-		mustJSONStringSlice([]string{"read_file", "run_command"}), "agent-1")
+		mustJSONStringSlice([]string{"read_files", "run_command"}), "agent-1")
 
 	runtimeClient := &fakeAgentRuntimeSignalClient{
-		upsertResult: &AgentRuntimeAgent{AllowedTools: []string{"read_file"}},
+		upsertResult: &AgentRuntimeAgent{AllowedTools: []string{"read_files"}},
 	}
 	svc := newCodingDelegationService(t, db, runtimeClient)
 
 	actorID := "user-1"
 	_, err := svc.startTargetRunWithOptions(context.Background(), "ws-1", "task", "task-1", model.StartAgentRunRequest{
 		AgentID:      "agent-1",
-		AllowedTools: []string{"read_file", "run_command"},
+		AllowedTools: []string{"read_files", "run_command"},
 	}, &actorID, nil, nil, nil, startTargetRunOptions{})
 	if err != nil {
 		t.Fatalf("startTargetRunWithOptions returned error: %v", err)
@@ -737,7 +735,7 @@ func TestStartTargetRunUsesRegisteredRuntimeAgentToolContract(t *testing.T) {
 	if len(runtimeClient.startRunCalls) != 1 {
 		t.Fatalf("expected one runtime start call, got %d", len(runtimeClient.startRunCalls))
 	}
-	if got := runtimeClient.startRunCalls[0].AllowedTools; !slices.Equal(got, []string{"read_file"}) {
+	if got := runtimeClient.startRunCalls[0].AllowedTools; !slices.Equal(got, []string{"read_files"}) {
 		t.Fatalf("run tools must use the registered runtime agent contract, got %#v", got)
 	}
 }

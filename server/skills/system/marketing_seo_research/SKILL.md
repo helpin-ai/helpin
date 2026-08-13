@@ -25,7 +25,7 @@ Do not claim keyword volume, ranking position, backlink count, traffic, Core Web
 
 ## Research Process
 
-- Use `web_search_exa` for topic and source discovery.
+- Use `web_search` for topic and source discovery.
 - Fetch exact pages before citing.
 - Prefer official docs, competitor pages, high-quality guides, community questions, and review content.
 - Label search opportunities as hypotheses unless supported by dedicated SEO data.

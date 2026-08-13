@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -76,64 +75,6 @@ func (s *CommandBarService) SetReadOnlyDataServices(docs *DocsDocumentService, d
 	return s
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 func truncateCommandBarText(value string, maxRunes int) string {
 	out, _ := truncateCommandBarTextWithFlag(value, maxRunes)
 	return out
@@ -150,22 +91,6 @@ func truncateCommandBarTextWithFlag(value string, maxRunes int) (string, bool) {
 	}
 	return strings.TrimSpace(string(runes[:maxRunes])) + "...", true
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.CustomAgentDraft, req model.ConfirmCommandBarChatProposalRequest) model.CreateAgentRequest {
 	name := strings.TrimSpace(draft.Name)
@@ -216,22 +141,6 @@ func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.Custo
 	}
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 func crmContactDisplayName(contact *model.CRMContact) string {
 	if contact == nil {
 		return "Contact"
@@ -245,8 +154,6 @@ func crmContactDisplayName(contact *model.CRMContact) string {
 	}
 	return "Contact " + shortCommandBarID(contact.ID)
 }
-
-
 
 func commandBarRequiredTargetTypesForStep(step model.CommandBarPlanStep, agent model.Agent) []string {
 	if normalizePresetKey(agent.PresetKey) != model.AgentPresetCommandAgent {
@@ -267,18 +174,12 @@ func commandBarRequiredTargetTypesForStep(step model.CommandBarPlanStep, agent m
 		case "enrich_crm_contact", "ensure_crm_contact_company":
 			required = append(required, "crm_contact")
 		case "list_commits",
-			"read_file",
-			"read_file_range",
 			"read_files",
 			"list_directory",
-			"search_files",
-			"ripgrep",
-			"grep",
+			"repository_search",
 			"list_symbols",
 			"read_symbol",
-			"find_symbol",
-			"find_callers",
-			"find_callees":
+			"trace_symbol":
 			required = append(required, "repository")
 		}
 	}
@@ -306,12 +207,6 @@ func commandBarIntersectTargetTypes(base, required []string) []string {
 	}
 	return out
 }
-
-
-
-
-
-
 
 func commandBarTerminalRunMessage(run *model.AgentRun, payload commandBarTriggerContextPayload, fallback string) string {
 	if run != nil && strings.TrimSpace(derefString(run.ErrorMessage)) != "" {
@@ -430,8 +325,6 @@ func commandBarPlanSummary(record model.CommandBarPlanRecord, runs []model.Agent
 	}
 }
 
-
-
 func validatePromotedAgentTargets(targets []string, sourceAgent *model.Agent) error {
 	targets = normalizeStringSlice(targets)
 	if len(targets) == 0 {
@@ -453,25 +346,6 @@ func validatePromotedAgentTargets(targets []string, sourceAgent *model.Agent) er
 	}
 	return nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 func commandBarAllAgentCandidates(agents []model.Agent) []model.CommandBarAgent {
 	candidates := make([]model.CommandBarAgent, 0, len(agents))
@@ -510,32 +384,6 @@ func commandBarAgentDescription(agent model.Agent) string {
 	return "Custom workspace agent."
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 func shortCommandBarID(id string) string {
 	id = strings.TrimSpace(id)
 	if len(id) <= 8 {
@@ -543,23 +391,6 @@ func shortCommandBarID(id string) string {
 	}
 	return id[:8]
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 func commandBarPlanKindForSteps(steps []model.CommandBarPlanStep) string {
 	if len(steps) == 0 {
@@ -603,11 +434,6 @@ func commandBarPlanKindForSteps(steps []model.CommandBarPlanStep) string {
 	return model.CommandBarPlanKindOneShotCommand
 }
 
-
-
-
-
-
 func normalizeCommandBarPageContext(ctx model.CommandBarPageContext, workspaceID string) model.CommandBarPageContext {
 	ctx.EntityType = normalizeCommandBarTargetType(ctx.EntityType)
 	ctx.EntityID = strings.TrimSpace(ctx.EntityID)
@@ -623,7 +449,6 @@ func normalizeCommandBarPageContext(ctx model.CommandBarPageContext, workspaceID
 	}
 	return ctx
 }
-
 
 func normalizeCommandBarPlanSteps(steps []model.CommandBarPlanStep, fallbackTarget model.CommandBarPageContext) []model.CommandBarPlanStep {
 	normalized := make([]model.CommandBarPlanStep, 0, len(steps))
@@ -700,7 +525,6 @@ func normalizeCommandBarTargetTypes(targetTypes []string) []string {
 	}
 	return normalized
 }
-
 
 func validateCommandBarSupportedTarget(targetType string) error {
 	switch normalizeCommandBarTargetType(targetType) {
@@ -812,9 +636,6 @@ func commandBarBlockContextInstruction(pageContext model.CommandBarPageContext) 
 	}
 	return strings.Join(lines, "\n")
 }
-
-
-
 
 func containsAny(value string, needles ...string) bool {
 	for _, needle := range needles {

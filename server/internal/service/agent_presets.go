@@ -423,8 +423,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		agentcontract.ToolPublishTaskPlan,
 		agentcontract.ToolRequestUserInput,
 		agentcontract.ToolRequestApproval,
-		agentcontract.ToolListAvailableSkills,
-		agentcontract.ToolSearchAvailableSkills,
+		agentcontract.ToolFindSkills,
 		agentcontract.ToolReadSkill,
 		"ensure_epic_spec_doc",
 		"write_document_content",
@@ -504,7 +503,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          appendPresetTools([]string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill, "search_workspace", "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"}, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases),
+			AllowedTools:          appendPresetTools([]string{agentcontract.ToolFindSkills, agentcontract.ToolReadSkill, "search_workspace", "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"}, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "crm_company", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
@@ -571,29 +570,21 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			DefaultTriggerMode:  "manual",
 			AllowedTriggerModes: []string{"manual"},
 			AllowedTools: appendPresetTools([]string{
-				agentcontract.ToolListAvailableSkills,
-				agentcontract.ToolSearchAvailableSkills,
+				agentcontract.ToolFindSkills,
 				agentcontract.ToolReadSkill,
 				"update_plan",
 				"request_user_input",
 				"request_approval",
 				"request_review_checkpoint",
 				"list_repositories",
-				"checkout_repository",
 				"checkout_repositories",
 				"list_commits",
-				"read_file",
-				"read_file_range",
 				"read_files",
 				"list_directory",
-				"search_files",
-				"ripgrep",
-				"grep",
+				"repository_search",
 				"list_symbols",
 				"read_symbol",
-				"find_symbol",
-				"find_callers",
-				"find_callees",
+				"trace_symbol",
 				"search_workspace",
 				"list_documents",
 				"list_collections",
@@ -614,7 +605,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 				"list_contacts",
 				"list_buyer_signals",
 				"add_deal_note",
-				"web_search_exa",
+				"web_search",
 				"fetch_url",
 				"crawl_url",
 				"get_release_context",
@@ -687,7 +678,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          appendPresetTools([]string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "read_symbol", "find_symbol", "find_callers", "find_callees", "list_spaces", "search_workspace", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "update_document_metadata", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases, safeSupportDiscoveryToolAliases, safeSupportWriteToolAliases),
+			AllowedTools:          appendPresetTools([]string{"web_search", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repositories", "list_commits", "read_files", "list_directory", "repository_search", "list_symbols", "read_symbol", "trace_symbol", "list_spaces", "search_workspace", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "update_document_metadata", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases, safeSupportDiscoveryToolAliases, safeSupportWriteToolAliases),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "crm_company", "support_conversation", "repository"},
 			ApprovalMode:          "never",
@@ -729,10 +720,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 func askAgentPresetTools() []string {
 	return appendPresetTools([]string{
 		// Skills, interaction, and progress.
-		"list_available_skills", "search_available_skills", "read_skill",
+		"find_skills", "read_skill",
 		"request_user_input", "request_approval", "update_plan",
 		// Web research.
-		"web_search_brave", "web_search_exa", "fetch_url", "crawl_url",
+		"web_search", "fetch_url", "crawl_url",
 		// Authenticated browser inspection and private screenshot/video artifacts.
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		// Workspace / PM reads.
@@ -751,10 +742,9 @@ func askAgentPresetTools() []string {
 		// PM approval-gated writes (read aliases are appended below).
 		"create_task", "add_task_comment",
 		// Read-only repository inspection. No shell, file-write, branch, push, or PR tools.
-		"list_repositories", "checkout_repository", "checkout_repositories", "list_commits",
-		"read_file", "read_files", "read_file_range", "list_directory",
-		"search_files", "ripgrep", "grep", "list_symbols",
-		"read_symbol", "find_symbol", "find_callers", "find_callees",
+		"list_repositories", "checkout_repositories", "list_commits",
+		"read_files", "list_directory", "repository_search", "list_symbols",
+		"read_symbol", "trace_symbol",
 		// Scoped direct execution.
 		"prepare_dock_execution", "activate_dock_execution", "finish_dock_execution",
 		// Agent orchestration.
@@ -856,7 +846,7 @@ func askAgentSystemPrompt() string {
 - For complex or long requests, call update_plan early with a concise outcome-oriented plan, keep exactly one step in_progress, and update it as work advances. This is the Dock's own visible work plan, not a child-agent plan or an approval request. Skip it for simple tasks, and never let planning replace execution.
 - Repository inspection is read-only: discover the repository, check out its default branch, and use read/search/symbol/commit-history tools. Never attempt file edits, shell commands, branches, commits, pushes, merges, or pull requests from the Dock.
 - Treat multi-step requests as one Dock task when every step is covered by your current tools, even when the steps cross domains (for example repository reading followed by document creation). Do not delegate merely because the requested output belongs to a specialist domain.
-- Before delegating, map every remaining step to your actual tools and skills. If they cover the work, execute it directly. If uncertain, call get_my_capabilities and use list_available_skills/search_available_skills/read_skill for relevant guidance. Attempt the applicable tool path before declaring a capability unavailable; for repository reads this means checkout_repository before file search/read tools.
+- Before delegating, map every remaining step to your actual tools and skills. If they cover the work, execute it directly. If uncertain, call get_my_capabilities and use find_skills/read_skill for relevant guidance. Attempt the applicable tool path before declaring a capability unavailable; for repository reads this means checkout_repositories before repository_search/read_files.
 - Read-only tools and routine reversible workspace mutations execute directly. Call the complete tool once; do not request approval first and do not retry it through a child agent.
 - Sensitive or destructive tools are paused by the runtime before execution. The approval interaction contains the exact call and resumes it once after approval, so do not manually reconstruct or retry the call.
 - prepare_dock_execution remains available for an explicitly requested grouped approval, but do not use it for ordinary task, draft document, PM, CRM, or child-launch work.
