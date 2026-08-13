@@ -199,7 +199,13 @@ func TestRenderHTML_ToggleSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`<details class="docs-toggle-section" data-toggle-section open`, `<summary>More context</summary>`, `Hidden until expanded.`} {
+	for _, want := range []string{
+		`<details class="docs-toggle-section" data-toggle-section open`,
+		`<span class="docs-toggle-title">More context</span>`,
+		`<span class="docs-toggle-chevron" aria-hidden="true"></span>`,
+		`<div class="docs-toggle-content" data-toggle-content>`,
+		`Hidden until expanded.`,
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected %q in rendered toggle, got: %s", want, got)
 		}
@@ -207,7 +213,7 @@ func TestRenderHTML_ToggleSection(t *testing.T) {
 }
 
 func TestRenderHTML_ToggleSectionWithHelpScoutMetadata(t *testing.T) {
-	input := `{"type":"doc","content":[{"type":"toggleSection","attrs":{"title":"Authentication & Setup","icon":"🔑","badgeText":"3 topics","sourceStyle":"helpScoutCard","open":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"How to Get Your API Key"}]}]}]}`
+	input := `{"type":"doc","content":[{"type":"toggleSection","attrs":{"title":"Authentication & Setup","icon":"🔑","badgeText":"3 topics","open":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"How to Get Your API Key"}]}]}]}`
 	got, err := RenderHTML(json.RawMessage(input))
 	if err != nil {
 		t.Fatal(err)

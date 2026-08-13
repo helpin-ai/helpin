@@ -72,7 +72,7 @@ jobs:
           if echo "$CHANGED" | grep -qE '^server/'; then
             SERVER=true
           fi
-          if echo "$CHANGED" | grep -qE '^help-center/'; then
+          if echo "$CHANGED" | grep -qE '^help-center/|^packages/shared/src/docs-blocks\.css$'; then
             HELPCENTER=true
           fi
           if echo "$CHANGED" | grep -qE '^(frontend/|packages/)'; then
@@ -207,7 +207,7 @@ jobs:
             -t ${{ env.IMAGE_PREFIX }}/helpcenter:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/helpcenter:prod-latest \
             --push \
-            build-prod-helpcenter/help-center/
+            build-prod-helpcenter/
 
   deploy-netlify:
     name: Build & Deploy Frontend to Netlify

@@ -81,7 +81,7 @@ jobs:
           if echo "$CHANGED" | grep -qE '^packages/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
             PACKAGES=true
           fi
-          if echo "$CHANGED" | grep -qE '^help-center/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/ci\.yml$'; then
+          if echo "$CHANGED" | grep -qE '^help-center/|^packages/shared/src/docs-blocks\.css$|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/ci\.yml$'; then
             HELPCENTER=true
           fi
           # Desktop reuses frontend/src via the `@` alias and depends on the
