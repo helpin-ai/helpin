@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { formatCents, formatNumber } from '@/lib/billingUtils';
 import type { OrgBillingSummary } from '@/lib/billingTypes';
+import { formatAIUsagePercent } from '@/lib/aiUsage';
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -26,8 +27,8 @@ export function BillingSummaryHeader({ summary }: { summary: OrgBillingSummary }
           <Stat label="On trial" value={formatNumber(summary.trialing_count)} />
           <Stat
             label="AI usage"
-            value={formatNumber(summary.credits_used)}
-            hint={`of ${formatNumber(summary.included_credits_total)} included`}
+            value={formatAIUsagePercent(summary.ai_usage_percent ?? 0)}
+            hint="across included workspace allowances"
           />
         </div>
         {!summary.setup_complete && (

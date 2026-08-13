@@ -393,14 +393,17 @@ func customerIOWorkspaceAttributes(input CustomerIOWorkspaceIdentity) map[string
 		attrs["trial_ends_at"] = b.TrialEndsAt
 		attrs["trial_days_left"] = trialDaysLeft(b.TrialEndsAt)
 		attrs["locked"] = b.Locked
-		attrs["credits_used"] = b.CreditsUsed
-		attrs["credits_remaining"] = b.CreditsRemaining
-		attrs["included_credits"] = b.IncludedCredits
+		attrs["ai_usage_allowance_microusd"] = b.AIUsageAllowanceMicrousd
+		attrs["ai_usage_used_microusd"] = b.AIUsageUsedMicrousd
+		attrs["ai_usage_remaining_microusd"] = b.AIUsageRemainingMicrousd
+		attrs["ai_usage_reserved_microusd"] = b.AIUsageReservedMicrousd
+		attrs["ai_usage_overage_microusd"] = b.AIUsageOverageMicrousd
+		attrs["pricing_version"] = b.PricingVersion
 		attrs["seat_limit"] = b.SeatLimit
 		attrs["seat_usage"] = b.SeatUsage
 		attrs["seat_over_limit"] = b.SeatOverLimit
-		attrs["on_demand_enabled"] = b.OnDemandEnabled
-		attrs["on_demand_available"] = b.OnDemandAvailable
+		attrs["extra_ai_usage_enabled"] = b.ExtraAIUsageEnabled
+		attrs["extra_ai_usage_available"] = b.ExtraAIUsageAvailable
 		attrs["manage_billing_enabled"] = b.ManageBillingEnabled
 		attrs["cancel_at_period_end"] = b.CancelAtPeriodEnd
 	}
@@ -702,7 +705,18 @@ func (s *CustomerIOIdentityService) workspaceBillingSummary(ctx context.Context,
 	if billing == nil {
 		return nil
 	}
-	return customerIOBillingSummary(ctx, billing, s.workspaceRepo)
+	summary := customerIOBillingSummary(ctx, billing, s.workspaceRepo)
+	if period, periodErr := s.billingRepo.GetOpenAIUsagePeriod(ctx, workspaceID); periodErr == nil && period != nil {
+		summary.AIUsageAllowanceMicrousd = period.AllowanceMicrousd
+		summary.AIUsageUsedMicrousd = period.UsedMicrousd
+		summary.AIUsageReservedMicrousd = period.ReservedMicrousd
+		summary.AIUsageOverageMicrousd = period.OverageMicrousd
+		summary.AIUsageRemainingMicrousd = max(period.AllowanceMicrousd-period.UsedMicrousd-period.ReservedMicrousd, 0)
+		summary.ExtraAIUsageEnabled = period.EnforcementMode == model.AIUsageEnforcementExtra
+		summary.ExtraAIUsageAvailable = billingCanUseOnDemand(billing)
+		summary.PricingVersion = period.PricingVersion
+	}
+	return summary
 }
 
 func (s *CustomerIOIdentityService) identifyWorkspaceRelationship(ctx context.Context, workspace *model.Workspace, billing *BillingSummary, userID, role, status string, teamMemberships int) error {

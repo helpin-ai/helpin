@@ -48,6 +48,7 @@ import type {
   ToolCatalogEntry,
 } from '@/lib/pmTypes';
 import { automationService } from '@/lib/services/automationService';
+import { CuratedModelSelect } from '@/components/automation/CuratedModelSelect';
 import {
   applyCustomAgentDraftToForm,
   createDefaultCustomAgentForm,
@@ -869,11 +870,10 @@ export function CustomAgentCreatePanel({
                     </label>
                     <label className="block space-y-2">
                       <FieldLabel tooltip="The provider default is selected automatically. Enter a different provider-compatible model only when needed.">Model</FieldLabel>
-                      <input
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      <CuratedModelSelect
+                        provider={form.provider}
                         value={form.model}
-                        onChange={(event) => update({ model: event.target.value })}
-                        placeholder={defaultModelForAgentProvider(form.provider, providerOptions)}
+                        onValueChange={(model) => update({ model })}
                       />
                     </label>
                     {form.runtime_kind === 'native_sdk' ? (

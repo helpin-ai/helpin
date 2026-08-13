@@ -155,6 +155,9 @@ func TestTokenUsageFromClaudeNormalizesSeparateCacheCounters(t *testing.T) {
 	if usage.CachedInputTokens != 700 || usage.CacheWriteTokens != 300 {
 		t.Fatalf("cache usage = %#v", usage)
 	}
+	if usage.InputTokensTotal != 1200 || usage.CacheReadTokens != 700 || usage.CompletionTokensTotal != 100 || usage.CompletionIncludesReasoning {
+		t.Fatalf("exact metering usage = %#v", usage)
+	}
 }
 
 func TestBuildClaudeMessageContentUsesImageBlocks(t *testing.T) {

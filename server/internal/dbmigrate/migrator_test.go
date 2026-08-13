@@ -65,6 +65,47 @@ func TestCreateKeepsLegacySequentialVersionsAsExistingVersions(t *testing.T) {
 	}
 }
 
+func TestTieredAIUsageCutoverMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202608130002" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected tiered AI usage cutover migration 202608130002")
+	}
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"create table if not exists billing_ai_usage_periods",
+		"create table if not exists billing_ai_usage_ledger",
+		"create table if not exists billing_ai_usage_reservations",
+		"create table if not exists billing_ai_usage_settlements",
+		"create table if not exists billing_ai_usage_task_estimates",
+		"create table if not exists billing_ai_usage_pricing_state",
+		"insert into billing_ai_usage_periods",
+		"'2026-08-13'",
+		"rename to billing_credit_ledger_legacy",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("migration missing behavior %q", clause)
+		}
+	}
+	for _, destructive := range []string{
+		"rename column on_demand_enabled", "drop column if exists included_credits",
+		"drop column if exists credits_used", "drop column if exists on_demand_blocks_invoiced",
+	} {
+		if strings.Contains(sql, destructive) {
+			t.Errorf("activation migration contains premature contract change %q", destructive)
+		}
+	}
+}
+
 func TestSupportConversationCompanyContextMigrationContract(t *testing.T) {
 	migrations, err := loadMigrations()
 	if err != nil {

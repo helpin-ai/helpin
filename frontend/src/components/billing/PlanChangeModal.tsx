@@ -14,7 +14,6 @@ import {
   PLAN_OPTIONS,
   annualDiscountPct,
   formatCents,
-  formatNumber,
   planPriceCents,
 } from '@/lib/billingUtils';
 import type { BillingInterval, BillingPlan } from '@/lib/billingTypes';
@@ -121,7 +120,7 @@ export function PlanChangeModal({
                     </div>
                   )}
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {formatNumber(opt.credits)} AI usage / mo
+                    Full included AI usage allowance
                   </div>
                 </button>
               );

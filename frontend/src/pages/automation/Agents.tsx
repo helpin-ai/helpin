@@ -28,6 +28,7 @@ import {
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
+import { CuratedModelSelect } from '@/components/automation/CuratedModelSelect';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -5017,21 +5018,18 @@ export function AgentsPage() {
                         <div className="grid gap-5 md:grid-cols-2">
                           <div className="space-y-2">
                             <FieldLabel htmlFor="system-agent-model">Model</FieldLabel>
-                            <Input
+                            <CuratedModelSelect
                               id="system-agent-model"
+                              provider={form.provider}
                               value={form.model}
-                              disabled={versionReadOnly || providerConfigState.modelDisabled}
-                              onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                              placeholder={selectedProviderOption?.model_placeholder ?? 'Select provider first'}
-                              className="h-9"
+                              disabled
+                              onValueChange={(model) => setForm((current) => ({ ...current, model }))}
                             />
                             <p className={cn(
                               'text-[11px] leading-relaxed',
                               versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
                             )}>
-                              {versionReadOnly
-                                ? versionReadOnlyHelperText('the model')
-                                : providerConfigState.modelMessage || 'The language model that powers this agent.'}
+                              Built-in model size and route are managed by Helpin so capability and pricing stay predictable.
                             </p>
                           </div>
 
@@ -6627,16 +6625,15 @@ export function AgentsPage() {
                   >
                     Model
                   </FieldLabel>
-                  <Input
+                  <CuratedModelSelect
                     id="agent-model"
+                    provider={form.provider}
                     value={form.model}
-                    onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                    placeholder={selectedProviderOption?.model_placeholder ?? 'Select provider first'}
                     disabled={providerConfigState.modelDisabled}
-                    className="h-9"
+                    onValueChange={(model) => setForm((current) => ({ ...current, model }))}
                   />
                   <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    {providerConfigState.modelMessage || 'The language model that powers this agent.'}
+                    {providerConfigState.modelMessage || 'Choose from the approved catalog; model size and pricing are shown in the selector.'}
                   </p>
                 </div>
               </div>

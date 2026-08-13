@@ -267,9 +267,8 @@ describe('CustomAgentCreatePanel', () => {
     click('Start blank');
     click('Advanced settings');
 
-    const modelInput = Array.from(container?.querySelectorAll('input') ?? [])
-      .find((input) => input.value === 'gpt-5.6-terra');
-    expect(modelInput).toBeTruthy();
+    expect(container?.textContent).toContain('GPT-5.6 Terra');
+    expect(container?.textContent).toContain('Large');
     expect(container?.textContent).not.toContain('Use suggested');
     expect(container?.textContent).toContain('Coming soon');
   });

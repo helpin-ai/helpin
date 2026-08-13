@@ -133,7 +133,24 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	return &ChatResponse{
 		Content:    content,
 		TokensUsed: tokenUsageFromOpenAI(result.Usage),
+		Provider:   req.Provider, Model: modelName, Route: modelName, ServiceTier: "standard",
 	}, nil
+}
+
+// ResolvePricingIdentity returns the exact OpenAI-compatible route before execution.
+func (p *OpenAIProvider) ResolvePricingIdentity(req ChatRequest) (ChatPricingIdentity, error) {
+	if p == nil {
+		return ChatPricingIdentity{}, fmt.Errorf("openai provider is not configured")
+	}
+	modelName := p.model
+	if req.Model != "" {
+		modelName = req.Model
+	}
+	provider := normalizeProviderName(req.Provider)
+	if provider == "" {
+		provider = "openai"
+	}
+	return ChatPricingIdentity{Provider: provider, Model: modelName, Route: modelName, ServiceTier: "standard"}, nil
 }
 
 func tokenUsageFromOpenAI(usage openAIUsage) TokenUsage {
@@ -142,11 +159,15 @@ func tokenUsageFromOpenAI(usage openAIUsage) TokenUsage {
 		outputTokens = 0
 	}
 	return TokenUsage{
-		InputTokens:       usage.PromptTokens,
-		CachedInputTokens: usage.PromptTokensDetails.CachedTokens,
-		CacheWriteTokens:  usage.PromptTokensDetails.CacheWriteTokens,
-		OutputTokens:      outputTokens,
-		ReasoningTokens:   usage.CompletionTokensDetails.ReasoningTokens,
+		InputTokens:                 usage.PromptTokens,
+		InputTokensTotal:            usage.PromptTokens,
+		CachedInputTokens:           usage.PromptTokensDetails.CachedTokens,
+		CacheReadTokens:             usage.PromptTokensDetails.CachedTokens,
+		CacheWriteTokens:            usage.PromptTokensDetails.CacheWriteTokens,
+		OutputTokens:                outputTokens,
+		CompletionTokensTotal:       usage.CompletionTokens,
+		ReasoningTokens:             usage.CompletionTokensDetails.ReasoningTokens,
+		CompletionIncludesReasoning: true,
 	}
 }
 

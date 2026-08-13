@@ -15,7 +15,7 @@ vi.mock('@/hooks/queries', () => ({
       included_credits: 5_000,
       credits_used: 10,
       features: [
-        { feature_key: 'coding_run', label: 'Coding runs', cost: 10, usage: 1, credits: 10, pct: 100 },
+        { feature_key: 'coding_run', label: 'Coding runs', model_tiers: ['large', 'flagship'], action_count: 1, charged_microusd: 10, pct: 100 },
       ],
       series: [
         { date: '2026-08-11', features: { coding_run: 10 } },
@@ -41,7 +41,7 @@ describe('UsageDetail chart layout', () => {
 
     act(() => root.render(<UsageDetail workspaceId="workspace-1" />));
 
-    const barColumn = container.querySelector('[title*="usage units"]');
+    const barColumn = container.querySelector('[title*="period usage"]');
     expect(barColumn?.classList.contains('h-full')).toBe(true);
 
     act(() => root.unmount());
@@ -59,6 +59,20 @@ describe('UsageDetail chart layout', () => {
     expect(container.textContent).toContain('Aug 12');
     const chartTrack = container.querySelector('[data-usage-chart-track]');
     expect(chartTrack?.getAttribute('style')).toContain('minmax(8px, 32px)');
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('shows every model size used by an activity during the period', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => root.render(<UsageDetail workspaceId="workspace-1" />));
+
+    expect(container.textContent).toContain('large');
+    expect(container.textContent).toContain('flagship');
 
     act(() => root.unmount());
     container.remove();

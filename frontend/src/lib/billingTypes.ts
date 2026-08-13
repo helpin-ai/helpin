@@ -37,10 +37,12 @@ export interface WorkspaceBillingCard {
   trialing: boolean;
   trial_ends_at?: string;
   current_period_end: string;
-  included_credits: number;
-  credits_used: number;
-  on_demand_enabled: boolean;
-  on_demand_available: boolean;
+  ai_usage_allowance_microusd?: number;
+  ai_usage_used_microusd?: number;
+  ai_usage_reserved_microusd?: number;
+  ai_usage_percent?: number;
+  extra_ai_usage_enabled?: boolean;
+  extra_ai_usage_available?: boolean;
   price_cents: number;
   billing_interval: BillingInterval;
   payment_method: BillingPaymentMethodRef | null;
@@ -52,8 +54,9 @@ export interface OrgBillingSummary {
   total_monthly_spend_cents: number;
   paid_count: number;
   trialing_count: number;
-  credits_used: number;
-  included_credits_total: number;
+  ai_usage_used_microusd?: number;
+  ai_usage_allowance_microusd?: number;
+  ai_usage_percent?: number;
   setup_complete: boolean;
 }
 
@@ -100,10 +103,17 @@ export interface UsageSeriesPoint {
 export interface UsageFeatureRow {
   feature_key: string;
   label: string;
-  cost: number;
-  usage: number;
-  credits: number;
   pct: number;
+  model_tier?: 'small' | 'medium' | 'large' | 'flagship';
+  model_tiers?: Array<'small' | 'medium' | 'large' | 'flagship'>;
+  action_count?: number;
+  charged_microusd?: number;
+  input_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  output_tokens?: number;
+  reasoning_tokens?: number;
+  estimated_count?: number;
 }
 
 export interface UsageResponse {
@@ -111,8 +121,10 @@ export interface UsageResponse {
   period_start: string;
   period_end: string;
   mode: UsageMode;
-  included_credits: number;
-  credits_used: number;
+  ai_usage_allowance_microusd: number;
+  ai_usage_used_microusd: number;
+  ai_usage_reserved_microusd: number;
+  ai_usage_overage_microusd: number;
   series: UsageSeriesPoint[];
   features: UsageFeatureRow[];
 }

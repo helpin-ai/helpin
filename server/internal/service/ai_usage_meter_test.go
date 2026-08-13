@@ -305,6 +305,45 @@ func TestPreflightAgentRunAIUsageUsesAgentFeatureFloor(t *testing.T) {
 	}
 }
 
+func TestPreflightAgentRunAIUsageStoresTokenPricedReservation(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	meter := NewTokenPricedAIUsageMeter(newTestAIUsageService(t, store))
+	provider, modelID := "openrouter-responses", "openai/gpt-5.6-terra"
+	run := &model.AgentRun{ID: "run-token", WorkspaceID: "ws-1", Input: []byte(`{"additional_context":"plan it"}`), OutputSummary: []byte(`{}`)}
+	agent := &model.Agent{ID: "agent-1", PresetKey: model.AgentPresetCodeBuilder, Provider: &provider, Model: &modelID}
+
+	if err := PreflightAgentRunAIUsage(context.Background(), meter, run, agent); err != nil {
+		t.Fatal(err)
+	}
+	context, ok := agentRunMeteringContext(run)
+	if !ok {
+		t.Fatal("expected durable token-priced metering context")
+	}
+	if context.ReservationID != "reservation" || context.Route.Tier != "large" || context.MaxBillableMicrousd <= 0 {
+		t.Fatalf("metering context = %#v", context)
+	}
+	if store.reservation.ExecutionID != run.ID || store.reservation.IdempotencyKey != "ws-1:agent_run:run-token" {
+		t.Fatalf("reservation = %#v", store.reservation)
+	}
+}
+
+func TestTokenPricedAgentRunReconcilesTerminalCumulativeUsage(t *testing.T) {
+	store := &fakeAIUsageStore{mode: model.AIUsageEnforcementExtra}
+	meter := NewTokenPricedAIUsageMeter(newTestAIUsageService(t, store))
+	provider, modelID := "openrouter", "openai/gpt-5.6-terra"
+	run := &model.AgentRun{ID: "run-token", WorkspaceID: "ws-1", OutputSummary: []byte(`{}`)}
+	agent := &model.Agent{PresetKey: model.AgentPresetCodeBuilder, Provider: &provider, Model: &modelID}
+	if err := PreflightAgentRunAIUsage(context.Background(), meter, run, agent); err != nil {
+		t.Fatal(err)
+	}
+	if err := meter.reconcileAgentRun(context.Background(), run, agentRuntimeUsagePayload{InputTokens: 1000, CachedInputTokens: 100, OutputTokens: 200, ReasoningOutputTokens: 50}); err != nil {
+		t.Fatal(err)
+	}
+	if store.reconcile.ReservationID != "reservation" || store.reconcile.Entry.InputTokensTotal != 1000 || store.reconcile.Entry.ReasoningTokens != 50 {
+		t.Fatalf("reconcile = %#v", store.reconcile)
+	}
+}
+
 type scriptedMeteredLLMProvider struct {
 	response *llm.ChatResponse
 	err      error

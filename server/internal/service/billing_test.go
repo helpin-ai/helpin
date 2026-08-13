@@ -423,6 +423,37 @@ func TestBillingServiceEnsureTrialForWorkspaceStartsGrowthTrial(t *testing.T) {
 	}
 }
 
+func TestBillingServiceSummaryUsesPercentageAIUsagePeriod(t *testing.T) {
+	db := newBillingTestDB(t)
+	if err := db.AutoMigrate(&model.AIUsagePeriod{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	repo := repository.NewBillingRepository(db)
+	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
+		ID: "billing", WorkspaceID: "workspace-usage", Plan: model.BillingPlanStarter,
+		Status: model.BillingStatusActive, BillingInterval: "monthly", CurrentPeriodStart: now,
+		CurrentPeriodEnd: now.AddDate(0, 1, 0), IncludedCredits: 5000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	period := model.AIUsagePeriod{
+		ID: "period", WorkspaceID: "workspace-usage", PeriodStart: now, PeriodEnd: now.AddDate(0, 1, 0),
+		AllowanceMicrousd: 99_000_000, UsedMicrousd: 24_750_000, ReservedMicrousd: 1_000_000,
+		EnforcementMode: model.AIUsageEnforcementStrict, Status: model.AIUsagePeriodOpen, PricingVersion: "2026-08-13",
+	}
+	if err := db.Create(&period).Error; err != nil {
+		t.Fatal(err)
+	}
+	summary, err := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now }).GetWorkspaceBilling(context.Background(), "workspace-usage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.AIUsageUsedMicrousd != 24_750_000 || summary.AIUsageRemainingMicrousd != 73_250_000 || summary.PricingVersion != "2026-08-13" {
+		t.Fatalf("AI usage summary = %#v", summary)
+	}
+}
+
 func TestBillingServiceRejectsStripeActionsForFounderPlan(t *testing.T) {
 	db := newBillingTestDB(t)
 	repo := repository.NewBillingRepository(db)
@@ -689,8 +720,8 @@ func TestBillingServicePreflightCreditsRejectsWhenUsageExhausted(t *testing.T) {
 		FeatureKey:  BillingFeatureSupportAIReply,
 		Credits:     8,
 	})
-	if err == nil || !strings.Contains(err.Error(), "AI usage exhausted") {
-		t.Fatalf("PreflightCredits() error = %v, want AI usage exhausted", err)
+	if err == nil || !strings.Contains(err.Error(), "AI allowance exhausted") {
+		t.Fatalf("PreflightCredits() error = %v, want AI allowance exhausted", err)
 	}
 }
 
@@ -860,8 +891,8 @@ func TestBillingRepositoryConsumeCreditsRejectsOverLimitInsideLock(t *testing.T)
 		IdempotencyKey: "reply-1",
 		Metadata:       model.JSONBlob(`{}`),
 	}, nil)
-	if err == nil || !strings.Contains(err.Error(), "AI usage exhausted") {
-		t.Fatalf("ConsumeCredits() error = %v, want AI usage exhausted", err)
+	if err == nil || !strings.Contains(err.Error(), "AI allowance exhausted") {
+		t.Fatalf("ConsumeCredits() error = %v, want AI allowance exhausted", err)
 	}
 	billing, err := repo.GetByWorkspaceID(context.Background(), "workspace-1")
 	if err != nil {

@@ -9,6 +9,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { featureColor, formatNumber } from '@/lib/billingUtils';
 import type { UsageMode, UsageResponse } from '@/lib/billingTypes';
@@ -18,6 +19,7 @@ interface Props {
   workspaceId: string;
   periodStart?: string;
   periodEnd?: string;
+  mockUsage?: UsageResponse;
 }
 
 export function buildUsageChart(usage: UsageResponse, mode: UsageMode) {
@@ -51,25 +53,26 @@ export function selectUsageDateTickIndexes(pointCount: number, maxTicks = 6) {
   ));
 }
 
-export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
+export function UsageDetail({ workspaceId, periodStart, periodEnd, mockUsage }: Props) {
   const [mode, setMode] = useState<UsageMode>('daily');
   const period = useMemo(() => {
     if (periodStart && periodEnd) return `${periodStart}..${periodEnd}`;
     return dayjs().format('YYYY-MM');
   }, [periodEnd, periodStart]);
-  const { data: usage, isLoading, isError } = useWorkspaceUsage(
+  const { data: queriedUsage, isLoading, isError } = useWorkspaceUsage(
     workspaceId,
     period,
     mode,
     periodStart,
     periodEnd,
   );
+  const usage = mockUsage ?? queriedUsage;
 
-  if (isLoading) {
+  if (isLoading && !mockUsage) {
     return <Skeleton className="h-64 w-full" />;
   }
 
-  if (isError || !usage) {
+  if ((isError && !mockUsage) || !usage) {
     return (
       <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
         Usage details couldn't be loaded. Only the billing owner can manage this
@@ -126,7 +129,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
               <div
                 key={p.date}
                 className="group relative flex h-full min-w-0 flex-col justify-end"
-                title={`${dayjs(p.date).format('MMM D')}: ${formatNumber(p.total)} usage units`}
+                title={`${dayjs(p.date).format('MMM D')}: ${Math.round(p.total)}% of period usage`}
               >
                 <div className="flex w-full flex-col-reverse" style={{ height: `${(p.total / max) * 100}%` }}>
                   {p.segs
@@ -184,9 +187,9 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
           <TableHeader>
             <TableRow>
               <TableHead>Feature</TableHead>
-              <TableHead className="text-right">Typical minimum</TableHead>
+              <TableHead>Model size</TableHead>
               <TableHead className="text-right">Actions</TableHead>
-              <TableHead className="text-right">AI usage (%)</TableHead>
+              <TableHead className="text-right">Share of usage</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -208,13 +211,20 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
                     {f.label}
                   </span>
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">
-                  {f.cost > 0 ? `${f.cost} units` : 'variable'}
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {(f.model_tiers?.length ? f.model_tiers : f.model_tier ? [f.model_tier] : []).map((tier) => (
+                      <Badge key={tier} variant="secondary" className="capitalize">
+                        {tier}
+                      </Badge>
+                    ))}
+                    {!f.model_tiers?.length && !f.model_tier && <span className="text-muted-foreground">—</span>}
+                  </div>
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{formatNumber(f.usage)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatNumber(f.action_count ?? 0)}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {formatNumber(f.credits)}{' '}
-                  <span className="text-muted-foreground">({Math.round(f.pct)}%)</span>
+                  {Math.round(f.pct)}%
+                  {(f.estimated_count ?? 0) > 0 && <span className="ml-1 text-muted-foreground">estimated</span>}
                 </TableCell>
               </TableRow>
             ))}
