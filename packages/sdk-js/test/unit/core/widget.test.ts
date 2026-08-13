@@ -37,6 +37,7 @@ const flushAsync = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
+const OUTGOING_STATUS_DELAY_MS_FOR_TEST = 1500;
 
 describe('WidgetManager', () => {
   let widget: WidgetManager;
@@ -587,7 +588,7 @@ describe('WidgetManager', () => {
       expect(postSendOptions.messages[0].content).toBe('Fresh question');
     });
 
-    it('shows AI thinking immediately after sending an AI-first widget message', () => {
+    it('keeps the optimistic bubble pending and starts AI thinking after acknowledgment', () => {
       const sent: string[] = [];
       (widget as any).widgetConfig = {
         workspaceId: 'ws_test',
@@ -605,16 +606,37 @@ describe('WidgetManager', () => {
       (widget as any).render();
       const mockMount = mountWidget as ReturnType<typeof vi.fn>;
       const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      const rendersBeforeSend = mockMount.mock.calls.length;
 
       latestOptions.onSendMessage('Need help');
 
       const postSendOptions = mockMount.mock.calls.at(-1)?.[1];
+      expect(mockMount.mock.calls.length - rendersBeforeSend).toBe(1);
       expect(postSendOptions.messages.at(-1)?.content).toBe('Need help');
-      expect(postSendOptions.isAIThinking).toBe(true);
+      expect(postSendOptions.messages.at(-1)?.deliveryStatus).toBe('sending');
+      expect(postSendOptions.isAIThinking).toBe(false);
       expect(sent.map((frame) => JSON.parse(frame))).toContainEqual({
         type: 'message:send',
         data: { content: 'Need help' },
       });
+
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-server-1',
+          conversation_id: 'conv-1',
+          sender_type: 'customer',
+          message_type: 'reply',
+          content: 'Need help',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      const acknowledgedOptions = mockMount.mock.calls.at(-1)?.[1];
+      expect(acknowledgedOptions.messages.at(-1)?.id).toBe('msg-server-1');
+      expect(acknowledgedOptions.messages.at(-1)?.clientId).toBe(postSendOptions.messages.at(-1)?.clientId);
+      expect(acknowledgedOptions.messages.at(-1)?.deliveryStatus).toBeUndefined();
+      expect(acknowledgedOptions.isAIThinking).toBe(true);
     });
 
     it('clears optimistic AI thinking when a non-customer reply arrives', () => {
@@ -843,55 +865,62 @@ describe('WidgetManager', () => {
   });
 
   describe('offline message recovery', () => {
-    it('persists messages while offline, flushes them on reconnect, and clears them on acknowledgment', () => {
-      const sent: string[] = [];
-      (widget as any).widgetKey = 'test-key';
-      (widget as any).widgetConfig = {
-        workspaceId: 'ws_test',
-        branding: { primaryColor: '#6366f1' },
-        features: {},
-      };
-      (widget as any).mountContainer = document.createElement('div');
-      (widget as any).activeConversationId = 'conv-1';
-      (widget as any).wsConnection = {
-        readyState: MockWebSocket.CLOSED,
-        send: (payload: string) => sent.push(payload),
-        close: vi.fn(),
-      };
+    it('delays queue status, flushes offline messages, and clears them on acknowledgment', () => {
+      vi.useFakeTimers();
+      try {
+        const sent: string[] = [];
+        (widget as any).widgetKey = 'test-key';
+        (widget as any).widgetConfig = {
+          workspaceId: 'ws_test',
+          branding: { primaryColor: '#6366f1' },
+          features: {},
+        };
+        (widget as any).mountContainer = document.createElement('div');
+        (widget as any).activeConversationId = 'conv-1';
+        (widget as any).wsConnection = {
+          readyState: MockWebSocket.CLOSED,
+          send: (payload: string) => sent.push(payload),
+          close: vi.fn(),
+        };
 
-      (widget as any).render();
-      const offlineOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
-      offlineOptions.onSendMessage('Please send this later');
+        (widget as any).render();
+        const offlineOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        offlineOptions.onSendMessage('Please send this later');
 
-      expect((widget as any).pendingOutgoingMessages).toHaveLength(1);
-      expect(JSON.parse(sessionStorage.getItem('helpin_pending_messages_test-key') || '[]')).toHaveLength(1);
-      expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(1);
-      expect(sent).toHaveLength(0);
+        expect((widget as any).pendingOutgoingMessages).toHaveLength(1);
+        expect(JSON.parse(sessionStorage.getItem('helpin_pending_messages_test-key') || '[]')).toHaveLength(1);
+        expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(0);
+        vi.advanceTimersByTime(OUTGOING_STATUS_DELAY_MS_FOR_TEST);
+        expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(1);
+        expect(sent).toHaveLength(0);
 
-      (widget as any).wsConnection.readyState = MockWebSocket.OPEN;
-      (widget as any).connectionGeneration = 1;
-      (widget as any).flushPendingOutgoingMessages();
+        (widget as any).wsConnection.readyState = MockWebSocket.OPEN;
+        (widget as any).connectionGeneration = 1;
+        (widget as any).flushPendingOutgoingMessages();
 
-      expect(sent.map((frame) => JSON.parse(frame))).toEqual([
-        { type: 'conversation:select', data: { conversation_id: 'conv-1' } },
-        { type: 'message:send', data: { content: 'Please send this later' } },
-      ]);
+        expect(sent.map((frame) => JSON.parse(frame))).toEqual([
+          { type: 'conversation:select', data: { conversation_id: 'conv-1' } },
+          { type: 'message:send', data: { content: 'Please send this later' } },
+        ]);
 
-      (widget as any).handleWSMessage({
-        type: 'message:received',
-        data: {
-          id: 'msg-server-1',
-          conversation_id: 'conv-1',
-          sender_type: 'customer',
-          message_type: 'reply',
-          content: 'Please send this later',
-          created_at: new Date().toISOString(),
-        },
-      });
+        (widget as any).handleWSMessage({
+          type: 'message:received',
+          data: {
+            id: 'msg-server-1',
+            conversation_id: 'conv-1',
+            sender_type: 'customer',
+            message_type: 'reply',
+            content: 'Please send this later',
+            created_at: new Date().toISOString(),
+          },
+        });
 
-      expect((widget as any).pendingOutgoingMessages).toHaveLength(0);
-      expect(sessionStorage.getItem('helpin_pending_messages_test-key')).toBeNull();
-      expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(0);
+        expect((widget as any).pendingOutgoingMessages).toHaveLength(0);
+        expect(sessionStorage.getItem('helpin_pending_messages_test-key')).toBeNull();
+        expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('restores a saved message into its conversation after a page reload', () => {

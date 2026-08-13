@@ -20,6 +20,16 @@ describe('MessageBubble', () => {
     expect(container.querySelector('.helpin-message--customer')).toBeTruthy();
   });
 
+  it('renders an optimistic customer message with a muted sending state', () => {
+    const { container } = render(<MessageBubble message={createMessage({
+      clientId: 'temp-1',
+      deliveryStatus: 'sending',
+    })} />);
+
+    expect(container.querySelector('.helpin-message--sending')).toBeTruthy();
+    expect(container.querySelector('.helpin-message-row--optimistic')).toBeTruthy();
+  });
+
   it('renders agent message', () => {
     const { container } = render(<MessageBubble message={createMessage({ role: 'agent' })} />);
     expect(container.querySelector('.helpin-message--agent')).toBeTruthy();
