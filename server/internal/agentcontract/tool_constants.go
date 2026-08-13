@@ -32,6 +32,19 @@ const (
 )
 
 // CanonicalToolName resolves runtime and legacy aliases to the persisted tool name.
+//
+// The legacy entries below are what let an agent row whose allowed_tools was
+// stored before a tool consolidation keep working: ResolveAgentProfile runs
+// stored names through NormalizeToolNames, so read_file becomes read_files and
+// ripgrep becomes repository_search without a data migration. Note this only
+// carries a tool forward when the old name maps onto the new one — a stored row
+// gains read_symbol or trace_symbol only if it already listed find_symbol or
+// find_callers/find_callees.
+//
+// The frontend's canonicalToolName is intentionally NOT a mirror of this: it
+// strips the MCP prefix and stops, because it renders stored transcripts and
+// must show the tool that actually ran. Aliasing is for deciding what may be
+// called now; it would be wrong when replaying what was called before.
 func CanonicalToolName(name string) string {
 	trimmed := strings.TrimSpace(name)
 	trimmed = strings.TrimPrefix(trimmed, HelpinMCPToolPrefix)
