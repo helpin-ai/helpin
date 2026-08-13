@@ -66,6 +66,9 @@ function createMockEditor() {
       setContent: vi.fn(),
       focus: vi.fn(),
     },
+    schema: {
+      nodeFromJSON: vi.fn(() => ({ check: vi.fn() })),
+    },
     chain: vi.fn(() => chain),
     getJSON: vi.fn(() => currentJson),
     getHTML: vi.fn(() => '<p>Doc</p>'),
@@ -425,5 +428,47 @@ describe('DocsEditor', () => {
 
     expect(testState.editorBundle?.doc.descendants).toHaveBeenCalled()
     expect(testState.importExternalImage).toHaveBeenCalledWith('ws_1', 'https://cdn.example.com/shot.png')
+  })
+
+  it('offers a one-click repair and validates before replacing invalid content', async () => {
+    const invalidContent = {
+      type: 'doc',
+      content: [{
+        type: 'orderedList',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Step' }] }],
+      }],
+    }
+    const onRepairInvalidContent = vi.fn().mockResolvedValue(undefined)
+
+    await act(async () => {
+      root.render(
+        <DocsEditor
+          initialContent={invalidContent}
+          onSave={vi.fn().mockResolvedValue(undefined)}
+          onRepairInvalidContent={onRepairInvalidContent}
+        />,
+      )
+    })
+
+    await act(async () => {
+      testState.editorOptions?.onContentError?.({ error: new Error('Invalid JSON content') })
+    })
+
+    const repairButton = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('Repair document'))
+    expect(repairButton).toBeTruthy()
+
+    await act(async () => {
+      repairButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const repaired = onRepairInvalidContent.mock.calls[0]?.[0]
+    expect(repaired.content[0].content[0].type).toBe('listItem')
+    expect(testState.editorBundle?.editor.schema.nodeFromJSON).toHaveBeenCalledWith(repaired)
+    expect(testState.editorBundle?.editor.commands.setContent).toHaveBeenCalledWith(repaired, {
+      emitUpdate: false,
+      errorOnInvalidContent: true,
+    })
+    expect(container.textContent).not.toContain('This document could not be loaded correctly.')
   })
 })

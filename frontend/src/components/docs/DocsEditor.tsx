@@ -100,6 +100,7 @@ import { Button } from '@/components/ui/button'
 import { SlugDisplay } from './SlugDisplay'
 import { toast } from 'sonner'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
+import { repairTiptapDocument } from '@/lib/tiptapContentRepair'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 
@@ -804,6 +805,8 @@ interface DocsEditorProps {
   slugHelperText?: string
   initialContent?: JSONContent | null
   onSave: (content: JSONContent) => Promise<void>
+  onRepairInvalidContent?: (content: JSONContent) => Promise<void>
+  repairCreatesRecoveryVersion?: boolean
   autoSaveMs?: number
   readOnly?: boolean
   uploadConfig?: EditorUploadConfig
@@ -831,6 +834,8 @@ export function DocsEditor({
   slug,
   initialContent,
   onSave,
+  onRepairInvalidContent,
+  repairCreatesRecoveryVersion = false,
   autoSaveMs = 2000,
   readOnly = false,
   uploadConfig,
@@ -874,6 +879,8 @@ export function DocsEditor({
   // document is reloaded with content that parses.
   const contentErrorRef = useRef(false)
   const [contentError, setContentError] = useState<string | null>(null)
+  const [repairingContent, setRepairingContent] = useState(false)
+  const [contentRepairError, setContentRepairError] = useState<string | null>(null)
   const pendingPresenceClearRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const lastEditingPresenceRef = useRef<string | null>(null)
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
@@ -1545,6 +1552,7 @@ export function DocsEditor({
     enableContentCheck: true,
     onContentError: ({ error }) => {
       contentErrorRef.current = true
+      setContentRepairError(null)
       setContentError(error instanceof Error ? error.message : String(error))
     },
   })
@@ -1618,6 +1626,43 @@ export function DocsEditor({
       setSaveStatus('idle')
     }
   }, [editor, initialContent])
+
+  const repairInvalidContent = useCallback(async () => {
+    if (!editor || !initialContent || !onRepairInvalidContent || repairingContent) return
+
+    setRepairingContent(true)
+    setContentRepairError(null)
+    try {
+      const repaired = repairTiptapDocument(initialContent)
+
+      // Validate with the exact schema used by this editor before any network
+      // write. If a future node shape is not covered, keep the original locked
+      // instead of making a lossy guess.
+      const repairedNode = editor.schema.nodeFromJSON(repaired)
+      repairedNode.check()
+
+      await onRepairInvalidContent(repaired)
+
+      editor.commands.setContent(repaired, {
+        emitUpdate: false,
+        errorOnInvalidContent: true,
+      })
+      contentErrorRef.current = false
+      setContentError(null)
+      lastSavedSnapshotRef.current = JSON.stringify(repaired)
+      const savedAt = new Date()
+      setLastSavedAt(savedAt)
+      setSaveStatus('saved')
+    } catch (error) {
+      setContentRepairError(
+        error instanceof Error
+          ? error.message
+          : 'Automatic repair could not safely normalize this document.',
+      )
+    } finally {
+      setRepairingContent(false)
+    }
+  }, [editor, initialContent, onRepairInvalidContent, repairingContent])
 
   const insertImage = useCallback(() => {
     if (!editor) return
@@ -1882,10 +1927,34 @@ img { max-width: 100%; }
             <p className="font-medium">This document could not be loaded correctly.</p>
             <p className="mt-1 text-destructive/90">
               Its stored content is not valid document data, so what you see below is incomplete.
-              Editing and autosave are disabled to protect the original. Restore an earlier version
-              from the history panel to recover it.
+              Editing and autosave are disabled to protect the original.
             </p>
             <p className="mt-1 font-mono text-xs text-destructive/70">{contentError}</p>
+            {contentRepairError && (
+              <p className="mt-2 text-xs text-destructive">Repair failed: {contentRepairError}</p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {onRepairInvalidContent && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-destructive/40 bg-background text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={repairingContent}
+                  onClick={() => void repairInvalidContent()}
+                >
+                  {repairingContent && <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                  {repairingContent ? 'Repairing…' : 'Repair document'}
+                </Button>
+              )}
+              <p className="text-xs text-destructive/80">
+                {onRepairInvalidContent
+                  ? repairCreatesRecoveryVersion
+                    ? 'A recovery version of the original will be saved first.'
+                    : 'Visible text and media will be preserved before the repair is saved.'
+                  : 'Restore an earlier version from the history panel to recover it.'}
+              </p>
+            </div>
           </div>
         )}
 

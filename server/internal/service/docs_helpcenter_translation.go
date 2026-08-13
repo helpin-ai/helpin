@@ -367,6 +367,11 @@ func (s *DocsHelpcenterTranslationService) UpsertArticleTranslation(ctx context.
 	if err := s.requireMultilingualLocale(ctx, doc.WorkspaceID, cfg, locale); err != nil {
 		return nil, err
 	}
+	if len(req.Content) > 0 && string(req.Content) != "null" {
+		if err := tiptap.ValidateDocument(req.Content); err != nil {
+			return nil, fmt.Errorf("invalid translation content: %w", err)
+		}
+	}
 
 	existing, err := s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
 	if err != nil {
