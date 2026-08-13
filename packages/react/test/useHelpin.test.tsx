@@ -86,7 +86,29 @@ describe('useHelpin', () => {
     expect(typeof result.current.toggle).toBe('function');
     expect(typeof result.current.openMessages).toBe('function');
     expect(typeof result.current.openNewMessage).toBe('function');
+    expect(typeof result.current.openConversation).toBe('function');
+    expect(typeof result.current.openArticle).toBe('function');
     expect(typeof result.current.shutdown).toBe('function');
+  });
+
+  it('should forward article and conversation controls to the client', () => {
+    const client = createMockClient();
+    const openConversation = vi.spyOn(client, 'openConversation');
+    const openArticle = vi.spyOn(client, 'openArticle');
+    const { result } = renderHook(() => useHelpin(), {
+      wrapper: createWrapper(client),
+    });
+
+    result.current.openConversation('conversation-123');
+    result.current.openArticle('how-to-add-first-comment-2906b16e', {
+      collectionId: 'collection-123',
+    });
+
+    expect(openConversation).toHaveBeenCalledWith('conversation-123');
+    expect(openArticle).toHaveBeenCalledWith(
+      'how-to-add-first-comment-2906b16e',
+      { collectionId: 'collection-123' },
+    );
   });
 
   it('should return a no-op client when used outside HelpinProvider', () => {
@@ -103,6 +125,8 @@ describe('useHelpin', () => {
     expect(typeof result.current.toggle).toBe('function');
     expect(typeof result.current.openMessages).toBe('function');
     expect(typeof result.current.openNewMessage).toBe('function');
+    expect(typeof result.current.openConversation).toBe('function');
+    expect(typeof result.current.openArticle).toBe('function');
     expect(typeof result.current.shutdown).toBe('function');
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();

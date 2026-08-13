@@ -123,8 +123,8 @@ export class HostedWidgetController implements HelpinWidgetController {
     this.command('openConversation', conversationId);
   }
 
-  openArticle(articleId: string, options?: ShowArticleOptions): void {
-    this.command('openArticle', articleId, options);
+  openArticle(articleKey: string, options?: ShowArticleOptions): void {
+    this.command('openArticle', articleKey, options);
   }
 
   onOpen(callback: (...args: any[]) => void): void {

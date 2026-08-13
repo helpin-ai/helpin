@@ -2,6 +2,7 @@ import { inject } from 'vue';
 import type {
   EventPayload,
   LeadProps,
+  ShowArticleOptions,
   UserProps,
 } from '@helpin-ai/sdk-js';
 import { HelpinKey } from './injection';
@@ -18,6 +19,8 @@ export interface HelpinComposable {
   toggle(): void;
   openMessages(): void;
   openNewMessage(content?: string): void;
+  openConversation(conversationId: string): void;
+  openArticle(articleKey: string, options?: ShowArticleOptions): void;
   shutdown(): void;
   rawTrack(payload: unknown): void;
   set(
@@ -47,6 +50,8 @@ const noopClient: HelpinComposable = {
   toggle: () => {},
   openMessages: () => {},
   openNewMessage: () => {},
+  openConversation: () => {},
+  openArticle: () => {},
   shutdown: () => {},
   rawTrack: () => {},
   set: () => {},
@@ -81,6 +86,8 @@ export default function useHelpin(): HelpinComposable {
     toggle: () => client.toggle(),
     openMessages: () => client.openMessages(),
     openNewMessage: (content) => client.openNewMessage(content),
+    openConversation: (conversationId) => client.openConversation(conversationId),
+    openArticle: (articleKey, options) => client.openArticle(articleKey, options),
     shutdown: () => client.shutdown(),
     rawTrack: (payload) => client.rawTrack(payload),
     set: (properties, opts) => client.set(properties, opts),

@@ -93,6 +93,7 @@ The snippet queues commands until the SDK loads, so you can call `helpin(...)` i
 | `UserProps` | User identity payload |
 | `EventPayload` | Event data payload |
 | `ClientProperties` | Browser/request environment shape |
+| `ShowArticleOptions` | Optional collection/space context for `openArticle(...)` |
 | `LogLevel` | Logger verbosity enum |
 
 ## Configuration
@@ -116,6 +117,8 @@ Configure via the `HelpinOptions` object passed to `helpinClient(...)`, or with 
 | `logLevel` | Internal logging verbosity |
 
 **Script tag equivalents:** `data-widget-key`, `data-host`, `data-auto-boot`, `data-namespace`, `data-auto-pageview`, `data-log-level`.
+
+Use the public key for the in-app support widget you want to display. A public help center can intentionally advertise a different widget key. `host` is the Helpin application/API origin; it is not the URL where your site serves its JavaScript bundle.
 
 ## Client API
 
@@ -150,8 +153,29 @@ Every method below is available on the object returned by `helpinClient(...)`.
 | `openMessages` | `() => void` | Open the widget to the messages list |
 | `openNewMessage` | `(content?: string) => void` | Start a new conversation |
 | `openConversation` | `(conversationId: string) => void` | Open a specific conversation |
-| `openArticle` | `(articleId: string, options?: { collectionId?: string; spaceId?: string }) => void` | Display a help-center article |
+| `openArticle` | `(articleKey: string, options?: { collectionId?: string; spaceId?: string }) => void` | Open a help-center article inside the widget |
 | `shutdown` | `() => void` | End the widget session and remove it from the page |
+
+### Open a help-center article
+
+Pass the final article segment from its Helpin URL. For example:
+
+```ts
+// https://contentstudio.helpin.center/articles/how-to-add-first-comment-2906b16e
+client.openArticle('how-to-add-first-comment-2906b16e');
+```
+
+For migrations from another help-center provider, map the old article ID to this Helpin article key. Use a normal link as a fallback when no reliable mapping exists:
+
+```html
+<a
+  href="https://contentstudio.helpin.center/articles/how-to-add-first-comment-2906b16e"
+  target="_blank"
+  rel="noreferrer"
+>
+  Learn more
+</a>
+```
 
 ### Event listeners
 
@@ -185,6 +209,13 @@ When using the script tag, every method above is available as `helpin('methodNam
 ## Module vs. Script Tag
 
 Both builds provide the same analytics and widget capabilities. The script-tag build loads `lib.js` directly. The module build returns a typed `HelpinClient` object and injects that same hosted runtime in the browser, then delegates widget commands to `window.helpin(...)`. Choose whichever fits your stack.
+
+## Troubleshooting
+
+- **The widget does not appear:** verify `widgetKey`, `host`, and that the key belongs to the intended in-app widget.
+- **Commands run before the widget loads:** calls are queued; with a script tag, register startup work through `helpin('onLoad', callback)` when ordering matters.
+- **A custom launcher should control startup:** set `autoBoot: false`, then call `open()`, `openNewMessage()`, or `openArticle()`.
+- **An article does not open:** pass the final Helpin article URL segment, not the legacy provider's article ID or the complete URL.
 
 ## Development
 

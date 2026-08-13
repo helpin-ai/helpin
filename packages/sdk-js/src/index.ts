@@ -193,7 +193,7 @@ function initializeNamespacedClient(
       openMessages: () => widgetManager.openMessages(),
       openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
       openConversation: (id: string) => widgetManager.openConversation(id),
-      openArticle: (id: string, options?: ShowArticleOptions) => widgetManager.openArticle(id, options),
+      openArticle: (articleKey: string, options?: ShowArticleOptions) => widgetManager.openArticle(articleKey, options),
       onOpen: (cb: (...args: any[]) => void) => widgetManager.onOpen(cb),
       onClose: (cb: (...args: any[]) => void) => widgetManager.onClose(cb),
       onUnreadCountChange: (cb: (...args: any[]) => void) => widgetManager.onUnreadCountChange(cb),
@@ -375,7 +375,7 @@ if (isWindowAvailable()) {
           openMessages: () => widgetManager.openMessages(),
           openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
           openConversation: (id: string) => widgetManager.openConversation(id),
-          openArticle: (id: string, options?: ShowArticleOptions) => widgetManager.openArticle(id, options),
+          openArticle: (articleKey: string, options?: ShowArticleOptions) => widgetManager.openArticle(articleKey, options),
           onOpen: (cb: (...a: any[]) => void) => widgetManager.onOpen(cb),
           onClose: (cb: (...a: any[]) => void) => widgetManager.onClose(cb),
           onUnreadCountChange: (cb: (...a: any[]) => void) => widgetManager.onUnreadCountChange(cb),
@@ -470,3 +470,4 @@ export {
   LogLevel,
   ClientProperties,
 };
+export type { ShowArticleOptions } from './core/widget';

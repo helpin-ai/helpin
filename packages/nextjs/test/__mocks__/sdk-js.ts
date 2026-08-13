@@ -19,6 +19,8 @@ export class HelpinClient {
   toggle = (): void => {};
   openMessages = (): void => {};
   openNewMessage = (_content?: string): void => {};
+  openConversation = (_conversationId: string): void => {};
+  openArticle = (_articleKey: string, _options?: ShowArticleOptions): void => {};
   shutdown = (): void => {};
   set = (_properties: Record<string, any>, _opts?: any): void => {};
   unset = (_propertyName: string, _opts?: any): void => {};
@@ -46,6 +48,10 @@ export type LeadProps = EventPayload & {
 };
 
 export type ClientProperties = Record<string, any>;
+export type ShowArticleOptions = {
+  collectionId?: string;
+  spaceId?: string;
+};
 
 export function helpinClient(config: Partial<HelpinOptions>): HelpinClient | null {
   if (!config.widgetKey) {
