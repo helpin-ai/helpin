@@ -76,14 +76,36 @@ function isReviewDecisionMessage(message: CodingSessionTranscriptMessage): boole
   );
 }
 
-/** Identity key for deduping a persisted tool call against the turn timeline. */
-function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall): string {
+function canonicalizeJSON(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJSON);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonicalizeJSON(entry)]),
+  );
+}
+
+function normalizedToolArgs(argsText: string): string {
+  const trimmed = argsText.trim();
+  if (!trimmed) return '';
+  try {
+    return JSON.stringify(canonicalizeJSON(JSON.parse(trimmed)));
+  } catch {
+    return trimmed;
+  }
+}
+
+/** Semantic fallback for legacy projections that did not preserve tool-call IDs. */
+function toolCallSemanticKey(toolCall: CodingSessionLiveToolCall): string {
   return [
     canonicalToolName(toolCall.tool_name).toLowerCase(),
-    toolCall.args_text.trim(),
-    toolCall.result?.output_summary?.trim() ?? '',
-    toolCall.result?.content?.trim() ?? '',
+    normalizedToolArgs(toolCall.args_text),
   ].join('\n');
+}
+
+function incrementCount(counts: Map<string, number>, key: string): void {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
 /**
@@ -108,6 +130,7 @@ export function collectSegments(
     outIndex: number;
     segment: Extract<TranscriptSegment, { kind: 'tool' }>;
   }> = [];
+  const emittedPersistedToolIDs = new Set<string>();
   let activeStreamingAssistantSegmentId: string | null = null;
 
   const pushPersistedAssistant = (segment: Extract<TranscriptSegment, { kind: 'assistant' }>) => {
@@ -115,9 +138,42 @@ export function collectSegments(
     out.push(segment);
   };
   const pushPersistedTool = (segment: Extract<TranscriptSegment, { kind: 'tool' }>) => {
+    const toolCallID = segment.toolCall.tool_call_id.trim();
+    if (toolCallID && emittedPersistedToolIDs.has(toolCallID)) return;
+    if (toolCallID) emittedPersistedToolIDs.add(toolCallID);
     persistedToolSegments.push({ outIndex: out.length, segment });
     out.push(segment);
   };
+
+  // Reconciled terminal payloads can contain both a message-level aggregate
+  // tool list and the authoritative interleaved turn timeline. Pre-index the
+  // timeline before rendering so an aggregate message that sorts earlier does
+  // not briefly become a duplicate tool block at the top of the transcript.
+  const latestTimelineOwnerByToolID = new Map<string, string>();
+  for (let messageIndex = 0; messageIndex < stream.transcript_messages.length; messageIndex += 1) {
+    const message = stream.transcript_messages[messageIndex];
+    for (let segmentIndex = 0; segmentIndex < (message.turn_segments?.length ?? 0); segmentIndex += 1) {
+      const segment = message.turn_segments?.[segmentIndex];
+      if (segment?.kind !== 'tool_call' || isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
+      const toolCallID = segment.tool_call.tool_call_id.trim();
+      if (toolCallID) latestTimelineOwnerByToolID.set(toolCallID, `${messageIndex}:${segmentIndex}`);
+    }
+  }
+
+  const persistedTimelineToolIDs = new Set<string>();
+  const persistedTimelineSemanticCounts = new Map<string, number>();
+  for (let messageIndex = 0; messageIndex < stream.transcript_messages.length; messageIndex += 1) {
+    const message = stream.transcript_messages[messageIndex];
+    for (let segmentIndex = 0; segmentIndex < (message.turn_segments?.length ?? 0); segmentIndex += 1) {
+      const segment = message.turn_segments?.[segmentIndex];
+      if (segment?.kind !== 'tool_call' || isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
+      const toolCallID = segment.tool_call.tool_call_id.trim();
+      if (toolCallID && latestTimelineOwnerByToolID.get(toolCallID) !== `${messageIndex}:${segmentIndex}`) continue;
+      if (toolCallID) persistedTimelineToolIDs.add(toolCallID);
+      incrementCount(persistedTimelineSemanticCounts, toolCallSemanticKey(segment.tool_call));
+    }
+  }
+  const matchedFallbackSemanticCounts = new Map<string, number>();
 
   if (opts.includeLive) {
     for (let index = stream.live_turn_segments.length - 1; index >= 0; index -= 1) {
@@ -138,7 +194,8 @@ export function collectSegments(
     out.push({ kind: 'context', id: `context:${opts.leadingContext.event_id}`, message: opts.leadingContext });
   }
 
-  for (const message of stream.transcript_messages) {
+  for (let messageIndex = 0; messageIndex < stream.transcript_messages.length; messageIndex += 1) {
+    const message = stream.transcript_messages[messageIndex];
     if (isStatusTranscriptMessage(message)) {
       if (include.has('status')) out.push({ kind: 'status', id: message.event_id, message });
       continue;
@@ -167,8 +224,8 @@ export function collectSegments(
 
     const segments = message.turn_segments?.length ? message.turn_segments : null;
     if (segments) {
-      const seenToolKeys = new Set<string>();
-      for (const segment of segments) {
+      for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+        const segment = segments[segmentIndex];
         if (segment.kind === 'assistant_message') {
           const content = segment.assistant_message.content.trim();
           if (content && include.has('assistant')) {
@@ -180,7 +237,8 @@ export function collectSegments(
             });
           }
         } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
-          seenToolKeys.add(toolCallTimelineKey(segment.tool_call));
+          const toolCallID = segment.tool_call.tool_call_id.trim();
+          if (toolCallID && latestTimelineOwnerByToolID.get(toolCallID) !== `${messageIndex}:${segmentIndex}`) continue;
           if (include.has('tool')) pushPersistedTool({ kind: 'tool', id: segment.segment_id, toolCall: segment.tool_call });
         }
       }
@@ -189,7 +247,14 @@ export function collectSegments(
       if (include.has('tool')) {
         for (const toolCall of message.tool_calls ?? []) {
           if (isToolName(toolCall.tool_name, 'update_plan')) continue;
-          if (seenToolKeys.has(toolCallTimelineKey(toolCall))) continue;
+          const toolCallID = toolCall.tool_call_id.trim();
+          if (toolCallID && persistedTimelineToolIDs.has(toolCallID)) continue;
+          const semanticKey = toolCallSemanticKey(toolCall);
+          const matchedCount = matchedFallbackSemanticCounts.get(semanticKey) ?? 0;
+          if (matchedCount < (persistedTimelineSemanticCounts.get(semanticKey) ?? 0)) {
+            matchedFallbackSemanticCounts.set(semanticKey, matchedCount + 1);
+            continue;
+          }
           pushPersistedTool({ kind: 'tool', id: toolCall.tool_call_id, toolCall });
         }
       }
@@ -203,6 +268,14 @@ export function collectSegments(
     if (include.has('tool')) {
       for (const toolCall of message.tool_calls ?? []) {
         if (isToolName(toolCall.tool_name, 'update_plan')) continue;
+        const toolCallID = toolCall.tool_call_id.trim();
+        if (toolCallID && persistedTimelineToolIDs.has(toolCallID)) continue;
+        const semanticKey = toolCallSemanticKey(toolCall);
+        const matchedCount = matchedFallbackSemanticCounts.get(semanticKey) ?? 0;
+        if (matchedCount < (persistedTimelineSemanticCounts.get(semanticKey) ?? 0)) {
+          matchedFallbackSemanticCounts.set(semanticKey, matchedCount + 1);
+          continue;
+        }
         pushPersistedTool({ kind: 'tool', id: toolCall.tool_call_id, toolCall });
       }
     }
@@ -268,6 +341,9 @@ export function collectSegments(
         const persisted = persistedToolSegments.find((candidate) => (
           !consumedPersistedIndexes.has(candidate.outIndex)
           && candidate.segment.toolCall.tool_call_id === segment.tool_call.tool_call_id
+        )) ?? persistedToolSegments.find((candidate) => (
+          !consumedPersistedIndexes.has(candidate.outIndex)
+          && toolCallSemanticKey(candidate.segment.toolCall) === toolCallSemanticKey(segment.tool_call)
         ));
         if (persisted) {
           consumedPersistedIndexes.add(persisted.outIndex);
