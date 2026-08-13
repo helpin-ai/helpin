@@ -1,0 +1,118 @@
+package aiusage
+
+import (
+	"errors"
+	"testing"
+)
+
+func TestLaunchCatalogValidates(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+
+	if issues := catalog.Validate(); len(issues) != 0 {
+		t.Fatalf("Validate() issues = %#v", issues)
+	}
+}
+
+func TestCatalogResolveCanonicalizesRecognizedAlias(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+
+	resolved, err := catalog.Resolve(
+		"openrouter",
+		"gpt-5.6-luna",
+		"openai/gpt-5.6-luna",
+		"standard",
+	)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Tier != TierSmall {
+		t.Errorf("Resolve() tier = %q, want %q", resolved.Tier, TierSmall)
+	}
+	if resolved.CanonicalModel != "gpt-5.6-luna" {
+		t.Errorf("Resolve() canonical model = %q, want gpt-5.6-luna", resolved.CanonicalModel)
+	}
+	if resolved.Route != "openai/gpt-5.6-luna" {
+		t.Errorf("Resolve() route = %q, want openai/gpt-5.6-luna", resolved.Route)
+	}
+}
+
+func TestCatalogResolveRejectsUnapprovedRoute(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+
+	_, err = catalog.Resolve(
+		"openrouter",
+		"gpt-5.6-luna",
+		"fallback/unknown",
+		"standard",
+	)
+	if !errors.Is(err, ErrModelUnavailable) {
+		t.Fatalf("Resolve() error = %v, want ErrModelUnavailable", err)
+	}
+}
+
+func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+
+	pricing := catalog.PublicSnapshot()
+	if pricing.PricingVersion != "2026-08-13" {
+		t.Errorf("pricing version = %q, want 2026-08-13", pricing.PricingVersion)
+	}
+
+	wantAllowances := map[string]int64{
+		"starter:monthly": 99_000_000,
+		"starter:annual":  79_000_000,
+		"growth:monthly":  299_000_000,
+		"growth:annual":   239_000_000,
+		"growth:trial":    140_000_000,
+		"founder:monthly": 150_000_000,
+	}
+	for _, plan := range pricing.Plans {
+		key := plan.Plan + ":" + plan.BillingInterval
+		want, ok := wantAllowances[key]
+		if !ok {
+			t.Errorf("unexpected public plan %q", key)
+			continue
+		}
+		if plan.AllowanceMicrousd != want {
+			t.Errorf("plan %q allowance = %d, want %d", key, plan.AllowanceMicrousd, want)
+		}
+		delete(wantAllowances, key)
+	}
+	if len(wantAllowances) != 0 {
+		t.Errorf("missing public plans = %#v", wantAllowances)
+	}
+}
+
+func TestCatalogValidateRejectsDuplicateExactRoute(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+	catalog.Routes = append(catalog.Routes, catalog.Routes[0])
+
+	issues := catalog.Validate()
+	if !hasValidationCode(issues, "duplicate_route") {
+		t.Fatalf("Validate() issues = %#v, want duplicate_route", issues)
+	}
+}
+
+func hasValidationCode(issues []ValidationIssue, code string) bool {
+	for _, issue := range issues {
+		if issue.Code == code {
+			return true
+		}
+	}
+	return false
+}
