@@ -787,6 +787,20 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if applyRuntimeUsage(run, usage) {
 			changed = true
 		}
+		if strings.TrimSpace(event.Type) == agentruntime.EventRunPaused && run.DockChatID != nil &&
+			run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage &&
+			s.usageMeter != nil && s.usageMeter.usage != nil {
+			if err := s.usageMeter.checkpointAgentRun(ctx, run, usage); err != nil {
+				slog.ErrorContext(ctx, "agent runtime chat-turn usage checkpoint failed",
+					"error", err,
+					"workspace_id", run.WorkspaceID,
+					"run_id", run.ID,
+					"runtime_run_id", strings.TrimSpace(derefString(run.ExternalRuntimeID)),
+				)
+			} else {
+				changed = true
+			}
+		}
 		terminalUsageChanged, err := s.maybeConsumeTerminalUsage(ctx, run, event, usage)
 		if err != nil {
 			slog.ErrorContext(ctx, "agent runtime terminal usage consumption failed",

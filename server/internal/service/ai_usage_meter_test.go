@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -20,6 +21,18 @@ func TestCalculateAIUsageUnitsUsesSixXOutputAndReasoning(t *testing.T) {
 
 	if units != 8 {
 		t.Fatalf("usage units = %d, want support reply floor 8", units)
+	}
+}
+
+func TestAgentRunAIUsageFeatureLabelsAskAgentAsAskChat(t *testing.T) {
+	agent := &model.Agent{IsSystem: true, PresetKey: model.AgentPresetAskAgent}
+	got := AgentRunAIUsageFeature(agent)
+	if got != BillingFeatureAskChat {
+		t.Fatalf("AgentRunAIUsageFeature() = %q, want %q", got, BillingFeatureAskChat)
+	}
+	feature, ok := AIUsageFeature(got)
+	if !ok || feature.Label != "Ask Chat" {
+		t.Fatalf("Ask Chat feature = %#v, found=%v", feature, ok)
 	}
 }
 
@@ -324,6 +337,94 @@ func TestPreflightAgentRunAIUsageStoresTokenPricedReservation(t *testing.T) {
 	}
 	if store.reservation.ExecutionID != run.ID || store.reservation.IdempotencyKey != "ws-1:agent_run:run-token" {
 		t.Fatalf("reservation = %#v", store.reservation)
+	}
+}
+
+func TestAgentRunUsageCheckpointsChargeOnlyCumulativeDelta(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	usageService := newTestAIUsageService(t, store)
+	metering, err := usageService.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws-1", TaskNature: "general", FeatureKey: BillingFeatureBuiltInLightAgentRun,
+		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: "standard",
+		IdempotencyKey: "ws-1:agent_run:run-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metering.ReservationID = "reservation"
+	metering.MaxBillableMicrousd = 1_000_000
+	metering.EnforcementMode = model.AIUsageEnforcementStrict
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", OutputSummary: json.RawMessage(`{}`)}
+	if err := storeAgentRunMeteringContext(run, metering); err != nil {
+		t.Fatal(err)
+	}
+	meter := &AIUsageMeter{usage: usageService}
+	first := agentRuntimeUsagePayload{InputTokens: 100, CachedInputTokens: 20, OutputTokens: 10}
+	if err := meter.checkpointAgentRun(context.Background(), run, first); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 1 || store.checkpoint.Entry.InputTokensTotal != 100 || store.checkpoint.Entry.OutputTokens != 10 {
+		t.Fatalf("first checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
+	}
+	if err := meter.checkpointAgentRun(context.Background(), run, first); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 1 {
+		t.Fatalf("duplicate cumulative checkpoint calls = %d, want 1", store.checkpoints)
+	}
+
+	second := agentRuntimeUsagePayload{InputTokens: 160, CachedInputTokens: 30, OutputTokens: 25}
+	if err := meter.checkpointAgentRun(context.Background(), run, second); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 2 || store.checkpoint.Entry.InputTokensTotal != 60 ||
+		store.checkpoint.Entry.CacheReadTokens != 10 || store.checkpoint.Entry.OutputTokens != 15 {
+		t.Fatalf("second checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
+	}
+	if got := agentRunUsageCheckpointFromSummary(run.OutputSummary); got.Turn != 2 || got.InputTokens != 160 || got.OutputTokens != 25 {
+		t.Fatalf("checkpoint summary = %#v", got)
+	}
+
+	terminal := agentRuntimeUsagePayload{InputTokens: 180, CachedInputTokens: 32, OutputTokens: 30}
+	if err := meter.reconcileAgentRun(context.Background(), run, terminal); err != nil {
+		t.Fatal(err)
+	}
+	if store.reconcile.Entry.InputTokensTotal != 20 || store.reconcile.Entry.CacheReadTokens != 2 || store.reconcile.Entry.OutputTokens != 5 {
+		t.Fatalf("terminal reconciliation = %#v", store.reconcile.Entry)
+	}
+}
+
+func TestAgentRunUsageTerminalAfterCheckpointOnlyReleasesReservation(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	usageService := newTestAIUsageService(t, store)
+	metering, err := usageService.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws-1", TaskNature: "general", FeatureKey: BillingFeatureBuiltInLightAgentRun,
+		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: "standard",
+		IdempotencyKey: "ws-1:agent_run:run-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metering.ReservationID = "reservation"
+	metering.MaxBillableMicrousd = 1_000_000
+	metering.EnforcementMode = model.AIUsageEnforcementStrict
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", OutputSummary: json.RawMessage(`{}`)}
+	if err := storeAgentRunMeteringContext(run, metering); err != nil {
+		t.Fatal(err)
+	}
+	meter := &AIUsageMeter{usage: usageService}
+	usage := agentRuntimeUsagePayload{InputTokens: 100, CachedInputTokens: 20, OutputTokens: 10}
+	if err := meter.checkpointAgentRun(context.Background(), run, usage); err != nil {
+		t.Fatal(err)
+	}
+	if err := meter.reconcileAgentRun(context.Background(), run, usage); err != nil {
+		t.Fatal(err)
+	}
+	if store.releasedID != "reservation" {
+		t.Fatalf("released reservation = %q, want reservation", store.releasedID)
+	}
+	if store.reconcile.Entry.IdempotencyKey != "" {
+		t.Fatalf("unexpected terminal ledger entry: %#v", store.reconcile.Entry)
 	}
 }
 

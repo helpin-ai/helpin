@@ -193,6 +193,8 @@ type fakeAIUsageStore struct {
 	reserveCalls int
 	reservation  repository.AIUsageReservationRequest
 	reconcile    repository.AIUsageReconcileRequest
+	checkpoint   repository.AIUsageCheckpointRequest
+	checkpoints  int
 	uncharged    model.AIUsageLedgerEntry
 	releasedID   string
 }
@@ -209,6 +211,12 @@ func (f *fakeAIUsageStore) Reserve(_ context.Context, input repository.AIUsageRe
 
 func (f *fakeAIUsageStore) Reconcile(_ context.Context, input repository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error) {
 	f.reconcile = input
+	return &model.AIUsagePeriod{}, nil
+}
+
+func (f *fakeAIUsageStore) Checkpoint(_ context.Context, input repository.AIUsageCheckpointRequest) (*model.AIUsagePeriod, error) {
+	f.checkpoints++
+	f.checkpoint = input
 	return &model.AIUsagePeriod{}, nil
 }
 

@@ -1401,6 +1401,69 @@ func TestAgentRuntimeProjectionConsumesTerminalUsageOnce(t *testing.T) {
 	}
 }
 
+func TestAgentRuntimeProjectionCheckpointsDockChatUsageOnUserMessagePause(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	usageService := newTestAIUsageService(t, store)
+	metering, err := usageService.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws-1", TaskNature: "general", FeatureKey: BillingFeatureBuiltInLightAgentRun,
+		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: "standard",
+		IdempotencyKey: "ws-1:agent_run:run-chat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metering.ReservationID = "reservation"
+	metering.MaxBillableMicrousd = 1_000_000
+	metering.EnforcementMode = model.AIUsageEnforcementStrict
+	dockChatID := "chat-1"
+	run := &model.AgentRun{
+		ID: "run-chat", WorkspaceID: "ws-1", AgentID: "agent-1",
+		DockChatID: &dockChatID, Status: model.AgentRunStatusRunning,
+		PauseReason: model.AgentRunPauseReasonNone, ExternalRuntime: stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("runtime-chat"), OutputSummary: json.RawMessage(`{}`),
+	}
+	if err := storeAgentRunMeteringContext(run, metering); err != nil {
+		t.Fatal(err)
+	}
+	runRepo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|runtime-chat": run},
+	}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:    runRepo,
+		usageMeter: &AIUsageMeter{usage: usageService},
+		now:        time.Now,
+	}
+	event := AgentRuntimeEventEnvelope{
+		RunID: "runtime-chat", Type: agentruntime.EventRunPaused,
+		Data: map[string]any{
+			"pause_reason": model.AgentRunPauseReasonUserMessage,
+			"usage": map[string]any{
+				"input_tokens": float64(100), "cached_input_tokens": float64(20),
+				"output_tokens": float64(10), "total_tokens": float64(110),
+			},
+			"usage_semantic": agentruntime.UsageSemanticCumulative,
+		},
+	}
+	if err := svc.ApplyEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonUserMessage {
+		t.Fatalf("run pause = %s/%s", run.Status, run.PauseReason)
+	}
+	if store.checkpoints != 1 || store.checkpoint.Entry.InputTokensTotal != 100 {
+		t.Fatalf("checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
+	}
+	if got := agentRunUsageCheckpointFromSummary(run.OutputSummary); got.Turn != 1 || got.InputTokens != 100 {
+		t.Fatalf("checkpoint summary = %#v", got)
+	}
+	if err := svc.ApplyEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 1 {
+		t.Fatalf("redelivered pause checkpoint calls = %d, want 1", store.checkpoints)
+	}
+}
+
 func TestAgentRuntimeProjectionTerminalUsageFailureDoesNotBlockStatusProjection(t *testing.T) {
 	completedAt := time.Date(2026, 7, 2, 14, 30, 0, 0, time.UTC)
 	run := &model.AgentRun{

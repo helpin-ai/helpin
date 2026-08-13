@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -139,6 +140,68 @@ func TestAIUsageReconcileIsIdempotentAndUpdatesPeriod(t *testing.T) {
 	repo.db.Model(&model.AIUsageLedgerEntry{}).Count(&count)
 	if count != 1 {
 		t.Fatalf("ledger count = %d, want 1", count)
+	}
+}
+
+func TestAIUsageCheckpointIsIdempotentAndKeepsReservationActive(t *testing.T) {
+	repo := setupAIUsageRepository(t, model.AIUsageEnforcementStrict, 1_000_000)
+	if err := repo.db.Exec(`CREATE TABLE agent_runs (id text PRIMARY KEY, output_summary blob, updated_at datetime)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.db.Exec(`INSERT INTO agent_runs (id, output_summary) VALUES (?, ?)`, "run-1", `{}`).Error; err != nil {
+		t.Fatal(err)
+	}
+	reservation, err := repo.Reserve(context.Background(), AIUsageReservationRequest{
+		WorkspaceID: "ws", IdempotencyKey: "reserve:1", ReservedMicrousd: 600_000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := AIUsageCheckpointRequest{ReservationID: reservation.ID, ChargedMicrousd: 100_000,
+		RunID: "run-1", RunOutputSummary: model.JSONBlob(`{"ai_usage_checkpoint":{"turn":1}}`),
+		Entry: model.AIUsageLedgerEntry{IdempotencyKey: "usage:turn:1", EntryKind: "usage"}}
+	for i := 0; i < 2; i++ {
+		if _, err := repo.Checkpoint(context.Background(), input); err != nil {
+			t.Fatalf("Checkpoint() error = %v", err)
+		}
+	}
+	var period model.AIUsagePeriod
+	if err := repo.db.First(&period, "id = ?", "period").Error; err != nil {
+		t.Fatal(err)
+	}
+	if period.UsedMicrousd != 100_000 || period.ReservedMicrousd != 500_000 {
+		t.Fatalf("period used/reserved = %d/%d", period.UsedMicrousd, period.ReservedMicrousd)
+	}
+	var stored model.AIUsageReservation
+	if err := repo.db.First(&stored, "id = ?", reservation.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != model.AIUsageReservationActive || stored.ReservedMicrousd != 500_000 || stored.ConsumedMicrousd != 100_000 {
+		t.Fatalf("reservation after checkpoint = %#v", stored)
+	}
+	var count int64
+	repo.db.Model(&model.AIUsageLedgerEntry{}).Count(&count)
+	if count != 1 {
+		t.Fatalf("ledger count = %d, want 1", count)
+	}
+	var summary string
+	if err := repo.db.Raw(`SELECT output_summary FROM agent_runs WHERE id = ?`, "run-1").Scan(&summary).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(summary, `"turn":1`) {
+		t.Fatalf("run output summary = %q", summary)
+	}
+	if _, err := repo.Reconcile(context.Background(), AIUsageReconcileRequest{
+		ReservationID: reservation.ID, ChargedMicrousd: 50_000,
+		Entry: model.AIUsageLedgerEntry{IdempotencyKey: "usage:turn:2", EntryKind: "usage"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.db.First(&stored, "id = ?", reservation.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != model.AIUsageReservationReconciled || stored.ConsumedMicrousd != 150_000 {
+		t.Fatalf("reservation after terminal reconciliation = %#v", stored)
 	}
 }
 

@@ -44,6 +44,8 @@ type CompletionUsage struct {
 	Telemetry         aiusage.TokenTelemetry
 	PaidTools         []aiusage.PaidToolUsage
 	MeasurementStatus string
+	RunID             string
+	RunOutputSummary  model.JSONBlob
 }
 
 // UsageResult reports customer-charged and internally absorbed value.
@@ -55,6 +57,7 @@ type UsageResult struct {
 type AIUsageStore interface {
 	Reserve(context.Context, repository.AIUsageReservationRequest) (*model.AIUsageReservation, error)
 	Reconcile(context.Context, repository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error)
+	Checkpoint(context.Context, repository.AIUsageCheckpointRequest) (*model.AIUsagePeriod, error)
 	Release(context.Context, string, string) error
 	RecordUncharged(context.Context, model.AIUsageLedgerEntry) error
 }
@@ -151,20 +154,57 @@ func (s *AIUsageService) Preflight(ctx context.Context, input PreflightRequest) 
 
 // Reconcile converts actual telemetry into one immutable, idempotent ledger entry.
 func (s *AIUsageService) Reconcile(ctx context.Context, input CompletionUsage) (*UsageResult, error) {
-	normalized, err := aiusage.NormalizeTokens(input.Telemetry)
+	entry, charged, absorbed, done, err := s.prepareCompletion(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-	toolMicrousd, toolSnapshot, err := s.priceObservedTools(input.PaidTools)
+	if done {
+		return &UsageResult{ChargedMicrousd: charged, AbsorbedMicrousd: absorbed}, nil
+	}
+	if _, err := s.store.Reconcile(ctx, repository.AIUsageReconcileRequest{
+		ReservationID: input.Context.ReservationID, Entry: entry,
+		ChargedMicrousd: charged, AbsorbedMicrousd: absorbed,
+	}); err != nil {
+		return nil, err
+	}
+	return &UsageResult{ChargedMicrousd: charged, AbsorbedMicrousd: absorbed}, nil
+}
+
+// Checkpoint posts one interactive turn while retaining its reservation for
+// later turns in the same long-lived run.
+func (s *AIUsageService) Checkpoint(ctx context.Context, input CompletionUsage) (*UsageResult, error) {
+	entry, charged, absorbed, done, err := s.prepareCompletion(ctx, input)
 	if err != nil {
 		return nil, err
+	}
+	if done {
+		return &UsageResult{ChargedMicrousd: charged, AbsorbedMicrousd: absorbed}, nil
+	}
+	if _, err := s.store.Checkpoint(ctx, repository.AIUsageCheckpointRequest{
+		ReservationID: input.Context.ReservationID, Entry: entry,
+		ChargedMicrousd: charged, AbsorbedMicrousd: absorbed,
+		RunID: input.RunID, RunOutputSummary: input.RunOutputSummary,
+	}); err != nil {
+		return nil, err
+	}
+	return &UsageResult{ChargedMicrousd: charged, AbsorbedMicrousd: absorbed}, nil
+}
+
+func (s *AIUsageService) prepareCompletion(ctx context.Context, input CompletionUsage) (model.AIUsageLedgerEntry, int64, int64, bool, error) {
+	normalized, err := aiusage.NormalizeTokens(input.Telemetry)
+	if err != nil {
+		return model.AIUsageLedgerEntry{}, 0, 0, false, err
+	}
+	toolMicrousd, toolSnapshot, err := s.priceObservedTools(input.PaidTools)
+	if err != nil {
+		return model.AIUsageLedgerEntry{}, 0, 0, false, err
 	}
 	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{
 		FundingMode: input.Context.FundingMode, Tokens: normalized, Rates: input.Context.Route.Rates,
 		PaidToolMicrousd: toolMicrousd,
 	})
 	if err != nil {
-		return nil, err
+		return model.AIUsageLedgerEntry{}, 0, 0, false, err
 	}
 	if input.MeasurementStatus == "estimated" {
 		fallback := launchEstimateMicrousd(input.Context.TaskNature, string(input.Context.Route.Tier))
@@ -195,9 +235,9 @@ func (s *AIUsageService) Reconcile(ctx context.Context, input CompletionUsage) (
 		entry.EntryKind = "promotional"
 		entry.FinalChargedMicrousd = 0
 		if err := s.store.RecordUncharged(ctx, entry); err != nil {
-			return nil, err
+			return model.AIUsageLedgerEntry{}, 0, 0, false, err
 		}
-		return &UsageResult{}, nil
+		return entry, 0, 0, true, nil
 	}
 
 	charged := charge.FinalMicrousd
@@ -209,18 +249,20 @@ func (s *AIUsageService) Reconcile(ctx context.Context, input CompletionUsage) (
 	entry.FinalChargedMicrousd = charged
 	metadata, _ := json.Marshal(map[string]int64{"absorbed_microusd": absorbed})
 	entry.Metadata = model.JSONBlob(metadata)
-	if _, err := s.store.Reconcile(ctx, repository.AIUsageReconcileRequest{
-		ReservationID: input.Context.ReservationID, Entry: entry,
-		ChargedMicrousd: charged, AbsorbedMicrousd: absorbed,
-	}); err != nil {
-		return nil, err
-	}
-	return &UsageResult{ChargedMicrousd: charged, AbsorbedMicrousd: absorbed}, nil
+	return entry, charged, absorbed, false, nil
 }
 
 // Fail releases a reservation after provider failure.
 func (s *AIUsageService) Fail(ctx context.Context, reservationID string) error {
 	return s.store.Release(ctx, reservationID, "provider_failure")
+}
+
+// Release returns an active reservation without recording additional usage.
+func (s *AIUsageService) Release(ctx context.Context, reservationID, reason string) error {
+	if reservationID == "" {
+		return nil
+	}
+	return s.store.Release(ctx, reservationID, reason)
 }
 
 // Heartbeat keeps a long-running reservation live without changing its bound.
