@@ -23,7 +23,6 @@ import { Input } from '@/components/ui/input';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { CreateContactDialog } from '@/components/crm/CreateContactDialog';
 import { useContact, useContactAssociations, useContactSupportConversations, useUpdateContact } from '@/hooks/queries/useCRM';
-import { useUpdateConversationCustomerName } from '@/hooks/queries/useSupport';
 import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
 import { queryKeys } from '@/lib/queryKeys';
@@ -109,7 +108,6 @@ export function CustomerProfileDrawer({
   const { data: associations = [] } = useContactAssociations(workspaceId, contactId);
   const { data: supportPage } = useContactSupportConversations(workspaceId, contactId);
   const updateContact = useUpdateContact(workspaceId);
-  const updateConversationName = useUpdateConversationCustomerName(workspaceId);
 
   const linkedAssociations = useMemo(() => normalizeContactAssociations(associations, contactId), [associations, contactId]);
   const companies = linkedAssociations.filter((assoc) => assoc.linkedType === 'company');
@@ -171,9 +169,6 @@ export function CustomerProfileDrawer({
     const { firstName, lastName } = splitCustomerDisplayName(value);
     if (!firstName || !contact) return;
     await patchContact({ first_name: firstName, last_name: lastName });
-    if (conversation?.id) {
-      updateConversationName.mutate({ conversationId: conversation.id, customerName: [firstName, lastName].filter(Boolean).join(' ') });
-    }
   };
 
   const invalidateLinkedContactViews = async (nextContactId: string) => {

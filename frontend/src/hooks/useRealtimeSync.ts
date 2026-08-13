@@ -457,8 +457,10 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       }
     } else if (event.entity === 'crm_contact') {
       queryClient.invalidateQueries({ queryKey: queryKeys.crm.contacts(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: ['support', workspaceId] })
       if (event.entity_id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.crm.contact(workspaceId, event.entity_id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.crm.contactActivities(workspaceId, event.entity_id) })
       }
     } else if (event.entity === 'crm_company') {
       queryClient.invalidateQueries({ queryKey: queryKeys.crm.companies(workspaceId) })
