@@ -72,13 +72,13 @@ func TestTieredAIUsageCutoverMigrationContract(t *testing.T) {
 	}
 	var migration *Migration
 	for i := range migrations {
-		if migrations[i].Version == "202608130001" {
+		if migrations[i].Version == "202608130002" {
 			migration = &migrations[i]
 			break
 		}
 	}
 	if migration == nil {
-		t.Fatal("expected tiered AI usage cutover migration 202608130001")
+		t.Fatal("expected tiered AI usage cutover migration 202608130002")
 	}
 	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
 	for _, clause := range []string{
