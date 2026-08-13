@@ -9,6 +9,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { featureColor, formatNumber } from '@/lib/billingUtils';
 import type { UsageMode, UsageResponse } from '@/lib/billingTypes';
@@ -210,8 +211,15 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd, mockUsage }: 
                     {f.label}
                   </span>
                 </TableCell>
-                <TableCell className="capitalize text-muted-foreground">
-                  {f.model_tier ?? '—'}
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {(f.model_tiers?.length ? f.model_tiers : f.model_tier ? [f.model_tier] : []).map((tier) => (
+                      <Badge key={tier} variant="secondary" className="capitalize">
+                        {tier}
+                      </Badge>
+                    ))}
+                    {!f.model_tiers?.length && !f.model_tier && <span className="text-muted-foreground">—</span>}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{formatNumber(f.action_count ?? 0)}</TableCell>
                 <TableCell className="text-right tabular-nums">

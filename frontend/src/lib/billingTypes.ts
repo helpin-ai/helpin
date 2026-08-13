@@ -105,6 +105,7 @@ export interface UsageFeatureRow {
   label: string;
   pct: number;
   model_tier?: 'small' | 'medium' | 'large' | 'flagship';
+  model_tiers?: Array<'small' | 'medium' | 'large' | 'flagship'>;
   action_count?: number;
   charged_microusd?: number;
   input_tokens?: number;

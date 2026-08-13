@@ -1,11 +1,23 @@
 package service
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestOrderedModelTiersUsesCustomerFacingOrder(t *testing.T) {
+	input := map[string]struct{}{"flagship": {}, "small": {}, "large": {}}
+	want := []string{"small", "large", "flagship"}
+	if got := orderedModelTiers(input); !reflect.DeepEqual(got, want) {
+		t.Fatalf("orderedModelTiers() = %#v, want %#v", got, want)
+	}
+	if len(input) != 3 {
+		t.Fatal("orderedModelTiers mutated its input")
+	}
+}
 
 func TestPriceCentsForPlan(t *testing.T) {
 	tests := []struct {

@@ -81,19 +81,20 @@ type OrganizationBillingSummary struct {
 
 // UsageFeature is a per-feature usage table row.
 type UsageFeature struct {
-	FeatureKey       string  `json:"feature_key"`
-	Label            string  `json:"label"`
-	ModelTier        string  `json:"model_tier"`
-	ActionCount      int     `json:"action_count"`
-	ActualCount      int     `json:"actual_count"`
-	EstimatedCount   int     `json:"estimated_count"`
-	ChargedMicrousd  int64   `json:"charged_microusd"`
-	InputTokens      int64   `json:"input_tokens"`
-	CacheReadTokens  int64   `json:"cache_read_tokens"`
-	CacheWriteTokens int64   `json:"cache_write_tokens"`
-	OutputTokens     int64   `json:"output_tokens"`
-	ReasoningTokens  int64   `json:"reasoning_tokens"`
-	Pct              float64 `json:"pct"`
+	FeatureKey       string   `json:"feature_key"`
+	Label            string   `json:"label"`
+	ModelTier        string   `json:"model_tier,omitempty"`
+	ModelTiers       []string `json:"model_tiers"`
+	ActionCount      int      `json:"action_count"`
+	ActualCount      int      `json:"actual_count"`
+	EstimatedCount   int      `json:"estimated_count"`
+	ChargedMicrousd  int64    `json:"charged_microusd"`
+	InputTokens      int64    `json:"input_tokens"`
+	CacheReadTokens  int64    `json:"cache_read_tokens"`
+	CacheWriteTokens int64    `json:"cache_write_tokens"`
+	OutputTokens     int64    `json:"output_tokens"`
+	ReasoningTokens  int64    `json:"reasoning_tokens"`
+	Pct              float64  `json:"pct"`
 }
 
 // UsageSeriesPoint is one day in the usage chart, with per-feature credits.
@@ -515,13 +516,20 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 	}
 
 	featureRows := map[string]UsageFeature{}
+	featureTiers := map[string]map[string]struct{}{}
 	var totalCharged int64
 	dayIndex := map[string]int{}
 	series := make([]UsageSeriesPoint, 0)
 	for _, row := range rows {
-		key := row.FeatureKey + ":" + row.ModelTier
+		key := row.FeatureKey
 		feature := featureRows[key]
-		feature.FeatureKey, feature.Label, feature.ModelTier = row.FeatureKey, billingFeatureLabel(row.FeatureKey), row.ModelTier
+		feature.FeatureKey, feature.Label = row.FeatureKey, billingFeatureLabel(row.FeatureKey)
+		if featureTiers[key] == nil {
+			featureTiers[key] = map[string]struct{}{}
+		}
+		if row.ModelTier != "" {
+			featureTiers[key][row.ModelTier] = struct{}{}
+		}
 		feature.ActionCount += row.Entries
 		feature.ActualCount += row.ActualEntries
 		feature.EstimatedCount += row.EstimatedEntries
@@ -557,7 +565,11 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 	}
 
 	features := make([]UsageFeature, 0, len(featureRows))
-	for _, feature := range featureRows {
+	for key, feature := range featureRows {
+		feature.ModelTiers = orderedModelTiers(featureTiers[key])
+		if len(feature.ModelTiers) == 1 {
+			feature.ModelTier = feature.ModelTiers[0]
+		}
 		if totalCharged > 0 {
 			feature.Pct = float64(feature.ChargedMicrousd) / float64(totalCharged) * 100
 		}
@@ -578,6 +590,31 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 		AIUsageOverageMicrousd:   summary.AIUsageOverageMicrousd,
 		Series:                   series, Features: features,
 	}, nil
+}
+
+func orderedModelTiers(values map[string]struct{}) []string {
+	order := []string{"small", "medium", "large", "flagship"}
+	result := make([]string, 0, len(values))
+	for _, tier := range order {
+		if _, ok := values[tier]; ok {
+			result = append(result, tier)
+		}
+	}
+	unknown := make([]string, 0, len(values))
+	for tier := range values {
+		known := false
+		for _, standard := range order {
+			if tier == standard {
+				known = true
+				break
+			}
+		}
+		if !known {
+			unknown = append(unknown, tier)
+		}
+	}
+	sort.Strings(unknown)
+	return append(result, unknown...)
 }
 
 // parseBillingPeriod resolves a "YYYY-MM" period into [start, end). An empty

@@ -63,10 +63,10 @@ export const growthUsagePreview: UsageResponse = {
   ai_usage_reserved_microusd: 11_960_000,
   ai_usage_overage_microusd: 0,
   features: [
-    { feature_key: 'support_reply', label: 'Support replies', pct: 41, model_tier: 'small', action_count: 1842, charged_microusd: 44_745_000, input_tokens: 4_820_000, cache_read_tokens: 1_140_000, cache_write_tokens: 210_000, output_tokens: 2_760_000, reasoning_tokens: 180_000, estimated_count: 0 },
-    { feature_key: 'planning', label: 'Planning runs', pct: 27, model_tier: 'large', action_count: 38, charged_microusd: 29_466_000, input_tokens: 1_320_000, cache_read_tokens: 410_000, cache_write_tokens: 95_000, output_tokens: 620_000, reasoning_tokens: 390_000, estimated_count: 0 },
-    { feature_key: 'coding', label: 'Coding and review', pct: 24, model_tier: 'large', action_count: 21, charged_microusd: 26_192_000, input_tokens: 980_000, cache_read_tokens: 320_000, cache_write_tokens: 82_000, output_tokens: 510_000, reasoning_tokens: 440_000, estimated_count: 1 },
-    { feature_key: 'docs', label: 'Documentation', pct: 8, model_tier: 'small', action_count: 116, charged_microusd: 8_732_000, input_tokens: 760_000, cache_read_tokens: 190_000, cache_write_tokens: 35_000, output_tokens: 430_000, reasoning_tokens: 24_000, estimated_count: 0 },
+    { feature_key: 'support_reply', label: 'Support replies', pct: 41, model_tiers: ['small', 'medium'], action_count: 1842, charged_microusd: 44_745_000, input_tokens: 4_820_000, cache_read_tokens: 1_140_000, cache_write_tokens: 210_000, output_tokens: 2_760_000, reasoning_tokens: 180_000, estimated_count: 0 },
+    { feature_key: 'planning', label: 'Planning runs', pct: 27, model_tiers: ['large'], action_count: 38, charged_microusd: 29_466_000, input_tokens: 1_320_000, cache_read_tokens: 410_000, cache_write_tokens: 95_000, output_tokens: 620_000, reasoning_tokens: 390_000, estimated_count: 0 },
+    { feature_key: 'coding', label: 'Coding and review', pct: 24, model_tiers: ['large', 'flagship'], action_count: 21, charged_microusd: 26_192_000, input_tokens: 980_000, cache_read_tokens: 320_000, cache_write_tokens: 82_000, output_tokens: 510_000, reasoning_tokens: 440_000, estimated_count: 1 },
+    { feature_key: 'docs', label: 'Documentation', pct: 8, model_tiers: ['small'], action_count: 116, charged_microusd: 8_732_000, input_tokens: 760_000, cache_read_tokens: 190_000, cache_write_tokens: 35_000, output_tokens: 430_000, reasoning_tokens: 24_000, estimated_count: 0 },
   ],
   series: [
     { date: '2026-08-12', features: { support_reply: 2_400_000, planning: 0, coding: 0, docs: 620_000 } },
