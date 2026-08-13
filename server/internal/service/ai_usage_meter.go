@@ -30,6 +30,7 @@ const (
 	BillingFeatureDocsArticleGeneration   = "docs_article_generation"
 	BillingFeatureDocsImportConversion    = "docs_import_conversion"
 	BillingFeatureBuiltInLightAgentRun    = "built_in_light_agent_run"
+	BillingFeatureAskChat                 = "ask_chat"
 	BillingFeatureScribeRun               = "scribe_run"
 	BillingFeatureMiraRun                 = "mira_run"
 	BillingFeatureQuillRun                = "quill_run"
@@ -147,6 +148,7 @@ var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
 	BillingFeatureDocsImportConversion:    {FeatureKey: BillingFeatureDocsImportConversion, Label: "Help article import formatting", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
 	BillingFeatureCRMAction:               {FeatureKey: BillingFeatureCRMAction, Label: "CRM / deal action", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
 	BillingFeatureBuiltInLightAgentRun:    {FeatureKey: BillingFeatureBuiltInLightAgentRun, Label: "Built-in agent run", Category: "Agents", FloorUnits: 40, Chargeable: true},
+	BillingFeatureAskChat:                 {FeatureKey: BillingFeatureAskChat, Label: "Ask Chat", Category: "Agents", FloorUnits: 40, Chargeable: true},
 	BillingFeaturePlanningRun:             {FeatureKey: BillingFeaturePlanningRun, Label: "Planning run", Category: "Agents", FloorUnits: 80, Chargeable: true},
 	BillingFeatureScribeRun:               {FeatureKey: BillingFeatureScribeRun, Label: "Scribe task planning run", Category: "Agents", FloorUnits: 50, Chargeable: true},
 	BillingFeatureMiraRun:                 {FeatureKey: BillingFeatureMiraRun, Label: "Mira marketing run", Category: "Agents", FloorUnits: 50, Chargeable: true},
@@ -484,6 +486,8 @@ func AgentRunAIUsageFeature(agent *model.Agent) string {
 		}
 	}
 	switch preset {
+	case model.AgentPresetAskAgent:
+		return BillingFeatureAskChat
 	case model.AgentPresetEpicPlanner:
 		return BillingFeatureAtlasRun
 	case model.AgentPresetTaskPlanner:
@@ -584,6 +588,16 @@ func agentPricingIdentity(agent *model.Agent) (provider, modelID, route string) 
 
 const agentRunMeteringSummaryKey = "ai_usage_metering"
 
+const agentRunUsageCheckpointSummaryKey = "ai_usage_checkpoint"
+
+type agentRunUsageCheckpoint struct {
+	Turn                  int `json:"turn"`
+	InputTokens           int `json:"input_tokens"`
+	CachedInputTokens     int `json:"cached_input_tokens"`
+	OutputTokens          int `json:"output_tokens"`
+	ReasoningOutputTokens int `json:"reasoning_output_tokens"`
+}
+
 func storeAgentRunMeteringContext(run *model.AgentRun, metering MeteringContext) error {
 	if run == nil {
 		return nil
@@ -624,20 +638,109 @@ func (m *AIUsageMeter) reconcileAgentRun(ctx context.Context, run *model.AgentRu
 	if !ok {
 		return model.ErrPricingConfigurationMissing
 	}
+	checkpoint := agentRunUsageCheckpointFromSummary(run.OutputSummary)
+	delta := agentRunUsageDelta(usage, checkpoint)
+	if agentRunUsageIsZero(delta) {
+		return m.usage.Release(ctx, metering.ReservationID, "interactive_run_complete")
+	}
+	if checkpoint.Turn > 0 {
+		metering.IdempotencyKey = aiUsageIdempotencyKey(metering.IdempotencyKey, "turn", fmt.Sprint(checkpoint.Turn+1))
+	}
 	status := "actual"
-	if usage.InputTokens == 0 && usage.CachedInputTokens == 0 && usage.OutputTokens == 0 && usage.ReasoningOutputTokens == 0 {
+	if agentRunUsageIsZero(usage) {
 		status = "estimated"
 	}
 	_, err := m.usage.Reconcile(ctx, CompletionUsage{
 		Context: metering,
 		Telemetry: aiusage.TokenTelemetry{
-			InputTokensTotal: int64(usage.InputTokens), CacheReadTokens: int64(usage.CachedInputTokens),
-			CompletionTokensTotal: int64(usage.OutputTokens + usage.ReasoningOutputTokens),
-			OutputTokens:          int64(usage.OutputTokens), ReasoningTokens: int64(usage.ReasoningOutputTokens),
+			InputTokensTotal: int64(delta.InputTokens), CacheReadTokens: int64(delta.CachedInputTokens),
+			CompletionTokensTotal: int64(delta.OutputTokens + delta.ReasoningOutputTokens),
+			OutputTokens:          int64(delta.OutputTokens), ReasoningTokens: int64(delta.ReasoningOutputTokens),
 		},
 		MeasurementStatus: status,
 	})
 	return err
+}
+
+func (m *AIUsageMeter) checkpointAgentRun(ctx context.Context, run *model.AgentRun, usage agentRuntimeUsagePayload) error {
+	if m == nil || m.usage == nil || run == nil {
+		return nil
+	}
+	metering, ok := agentRunMeteringContext(run)
+	if !ok {
+		return model.ErrPricingConfigurationMissing
+	}
+	checkpoint := agentRunUsageCheckpointFromSummary(run.OutputSummary)
+	delta := agentRunUsageDelta(usage, checkpoint)
+	if agentRunUsageIsZero(delta) {
+		return nil
+	}
+	turn := checkpoint.Turn + 1
+	metering.IdempotencyKey = aiUsageIdempotencyKey(metering.IdempotencyKey, "turn", fmt.Sprint(turn))
+	previousSummary := append(json.RawMessage(nil), run.OutputSummary...)
+	nextCheckpoint := agentRunUsageCheckpoint{
+		Turn: turn, InputTokens: usage.InputTokens, CachedInputTokens: usage.CachedInputTokens,
+		OutputTokens: usage.OutputTokens, ReasoningOutputTokens: usage.ReasoningOutputTokens,
+	}
+	if err := storeAgentRunUsageCheckpoint(run, nextCheckpoint); err != nil {
+		return err
+	}
+	if _, err := m.usage.Checkpoint(ctx, CompletionUsage{
+		Context: metering,
+		Telemetry: aiusage.TokenTelemetry{
+			InputTokensTotal: int64(delta.InputTokens), CacheReadTokens: int64(delta.CachedInputTokens),
+			CompletionTokensTotal: int64(delta.OutputTokens + delta.ReasoningOutputTokens),
+			OutputTokens:          int64(delta.OutputTokens), ReasoningTokens: int64(delta.ReasoningOutputTokens),
+		},
+		MeasurementStatus: "actual",
+		RunID:             run.ID,
+		RunOutputSummary:  model.JSONBlob(run.OutputSummary),
+	}); err != nil {
+		run.OutputSummary = previousSummary
+		return err
+	}
+	return nil
+}
+
+func agentRunUsageCheckpointFromSummary(summary json.RawMessage) agentRunUsageCheckpoint {
+	if len(summary) == 0 {
+		return agentRunUsageCheckpoint{}
+	}
+	var body map[string]json.RawMessage
+	if json.Unmarshal(summary, &body) != nil {
+		return agentRunUsageCheckpoint{}
+	}
+	var checkpoint agentRunUsageCheckpoint
+	_ = json.Unmarshal(body[agentRunUsageCheckpointSummaryKey], &checkpoint)
+	return checkpoint
+}
+
+func storeAgentRunUsageCheckpoint(run *model.AgentRun, checkpoint agentRunUsageCheckpoint) error {
+	body := map[string]any{}
+	if len(run.OutputSummary) > 0 && string(run.OutputSummary) != "null" {
+		_ = json.Unmarshal(run.OutputSummary, &body)
+	}
+	body[agentRunUsageCheckpointSummaryKey] = checkpoint
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("store agent run AI usage checkpoint: %w", err)
+	}
+	run.OutputSummary = raw
+	return nil
+}
+
+func agentRunUsageDelta(usage agentRuntimeUsagePayload, checkpoint agentRunUsageCheckpoint) agentRuntimeUsagePayload {
+	return agentRuntimeUsagePayload{
+		InputTokens:           max(usage.InputTokens-checkpoint.InputTokens, 0),
+		CachedInputTokens:     max(usage.CachedInputTokens-checkpoint.CachedInputTokens, 0),
+		OutputTokens:          max(usage.OutputTokens-checkpoint.OutputTokens, 0),
+		ReasoningOutputTokens: max(usage.ReasoningOutputTokens-checkpoint.ReasoningOutputTokens, 0),
+	}
+}
+
+func agentRunUsageIsZero(usage agentRuntimeUsagePayload) bool {
+	return usage.InputTokens == 0 && usage.CachedInputTokens == 0 &&
+		usage.OutputTokens == 0 && usage.ReasoningOutputTokens == 0
 }
 
 func agentRunUsageExceedsBudget(run *model.AgentRun, usage agentRuntimeUsagePayload) bool {

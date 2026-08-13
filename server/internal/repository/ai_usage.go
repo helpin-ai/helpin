@@ -31,6 +31,16 @@ type AIUsageReconcileRequest struct {
 	ChargedMicrousd, AbsorbedMicrousd int64
 }
 
+// AIUsageCheckpointRequest describes an idempotent partial usage posting that
+// keeps the execution reservation active for a later turn.
+type AIUsageCheckpointRequest struct {
+	ReservationID                     string
+	Entry                             model.AIUsageLedgerEntry
+	ChargedMicrousd, AbsorbedMicrousd int64
+	RunID                             string
+	RunOutputSummary                  model.JSONBlob
+}
+
 // AIUsagePeriodSchedule describes a new, empty allowance period.
 type AIUsagePeriodSchedule struct {
 	WorkspaceID, Plan, BillingInterval, PricingVersion, EnforcementMode string
@@ -215,9 +225,103 @@ func (r *AIUsageRepository) Reconcile(ctx context.Context, input AIUsageReconcil
 			return fmt.Errorf("update AI usage period: %w", err)
 		}
 		if err := tx.Model(&reservation).Updates(map[string]any{
-			"consumed_microusd": input.ChargedMicrousd, "status": model.AIUsageReservationReconciled,
+			"consumed_microusd": reservation.ConsumedMicrousd + input.ChargedMicrousd,
+			"status":            model.AIUsageReservationReconciled,
 		}).Error; err != nil {
 			return fmt.Errorf("reconcile AI usage reservation: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &period, nil
+}
+
+// Checkpoint atomically posts partial usage while retaining the remainder of
+// the reservation for a subsequent interactive turn.
+func (r *AIUsageRepository) Checkpoint(ctx context.Context, input AIUsageCheckpointRequest) (*model.AIUsagePeriod, error) {
+	if input.ReservationID == "" || input.Entry.IdempotencyKey == "" || input.ChargedMicrousd < 0 || input.AbsorbedMicrousd < 0 {
+		return nil, fmt.Errorf("invalid AI usage checkpoint")
+	}
+	var period model.AIUsagePeriod
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing model.AIUsageLedgerEntry
+		if err := tx.Where("idempotency_key = ?", input.Entry.IdempotencyKey).First(&existing).Error; err == nil {
+			if input.RunID != "" {
+				if err := tx.Model(&model.AgentRun{}).Where("id = ?", input.RunID).
+					Update("output_summary", input.RunOutputSummary).Error; err != nil {
+					return fmt.Errorf("restore AI usage checkpoint run summary: %w", err)
+				}
+			}
+			return tx.First(&period, "id = ?", existing.PeriodID).Error
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("check AI usage checkpoint ledger: %w", err)
+		}
+
+		var reservation model.AIUsageReservation
+		reservationQuery := tx.Where("id = ?", input.ReservationID)
+		if tx.Dialector.Name() == "postgres" {
+			reservationQuery = reservationQuery.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := reservationQuery.First(&reservation).Error; err != nil {
+			return fmt.Errorf("load AI usage checkpoint reservation: %w", err)
+		}
+		if reservation.Status != model.AIUsageReservationActive {
+			return fmt.Errorf("AI usage reservation is %s", reservation.Status)
+		}
+
+		periodQuery := tx.Where("id = ?", reservation.PeriodID)
+		if tx.Dialector.Name() == "postgres" {
+			periodQuery = periodQuery.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := periodQuery.First(&period).Error; err != nil {
+			return fmt.Errorf("load AI usage checkpoint period: %w", err)
+		}
+		if period.EnforcementMode == model.AIUsageEnforcementStrict && input.ChargedMicrousd > reservation.ReservedMicrousd {
+			return model.ErrAIUsageExhausted
+		}
+
+		entry := input.Entry
+		entry.ID = uuid.NewString()
+		entry.WorkspaceID = reservation.WorkspaceID
+		entry.PeriodID = reservation.PeriodID
+		entry.FinalChargedMicrousd = input.ChargedMicrousd
+		if err := tx.Create(&entry).Error; err != nil {
+			return fmt.Errorf("create AI usage checkpoint ledger entry: %w", err)
+		}
+
+		releasedHold := min(input.ChargedMicrousd, reservation.ReservedMicrousd)
+		remainingReservation := reservation.ReservedMicrousd - releasedHold
+		if remainingReservation < 0 {
+			remainingReservation = 0
+		}
+		period.UsedMicrousd += input.ChargedMicrousd
+		period.ReservedMicrousd -= releasedHold
+		if period.ReservedMicrousd < 0 {
+			period.ReservedMicrousd = 0
+		}
+		if period.EnforcementMode == model.AIUsageEnforcementExtra && period.UsedMicrousd > period.AllowanceMicrousd {
+			period.OverageMicrousd = period.UsedMicrousd - period.AllowanceMicrousd
+		}
+		if err := tx.Model(&period).Updates(map[string]any{
+			"used_microusd": period.UsedMicrousd, "reserved_microusd": period.ReservedMicrousd,
+			"overage_microusd": period.OverageMicrousd,
+		}).Error; err != nil {
+			return fmt.Errorf("update AI usage checkpoint period: %w", err)
+		}
+		if err := tx.Model(&reservation).Updates(map[string]any{
+			"reserved_microusd": remainingReservation,
+			"consumed_microusd": reservation.ConsumedMicrousd + input.ChargedMicrousd,
+			"heartbeat_at":      time.Now().UTC(),
+		}).Error; err != nil {
+			return fmt.Errorf("update AI usage checkpoint reservation: %w", err)
+		}
+		if input.RunID != "" {
+			if err := tx.Model(&model.AgentRun{}).Where("id = ?", input.RunID).
+				Update("output_summary", input.RunOutputSummary).Error; err != nil {
+				return fmt.Errorf("update AI usage checkpoint run summary: %w", err)
+			}
 		}
 		return nil
 	})

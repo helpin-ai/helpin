@@ -51,19 +51,9 @@ async function createRecurringPrice(productId, nickname, amountCents, interval) 
   });
 }
 
-async function createOneTimePrice(productId, nickname, amountCents) {
-  return stripeRequest('/prices', {
-    product: productId,
-    nickname,
-    currency: 'usd',
-    unit_amount: amountCents,
-  });
-}
-
 const products = {
   starter: await createProduct('Helpin Starter', 'Helpin Starter workspace subscription'),
   growth: await createProduct('Helpin Growth', 'Helpin Growth workspace subscription'),
-  credits: await createProduct('Helpin AI credit block', '5,000 on-demand AI credits'),
 };
 
 const prices = {
@@ -71,7 +61,6 @@ const prices = {
   STRIPE_STARTER_ANNUAL_PRICE_ID: await createRecurringPrice(products.starter.id, 'Starter annual', 94800, 'year'),
   STRIPE_GROWTH_MONTHLY_PRICE_ID: await createRecurringPrice(products.growth.id, 'Growth monthly', 29900, 'month'),
   STRIPE_GROWTH_ANNUAL_PRICE_ID: await createRecurringPrice(products.growth.id, 'Growth annual', 286800, 'year'),
-  STRIPE_CREDIT_BLOCK_PRICE_ID: await createOneTimePrice(products.credits.id, '5,000 AI credits', 5000),
 };
 
 console.log('Stripe billing Products and Prices created.');

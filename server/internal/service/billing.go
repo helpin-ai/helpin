@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -20,11 +19,8 @@ const (
 	BillingFeaturePlanningRun    = "planning_run"
 	BillingFeatureCodingRun      = "coding_run"
 
-	billingTrialDays           = 14
-	billingFounderCredits      = 100000
-	billingCreditBlockSize     = 5000
-	billingCreditBlockCost     = 5000
-	billingStripeChargeTimeout = 5 * time.Second
+	billingTrialDays      = 14
+	billingFounderCredits = 100000
 )
 
 type BillingStripeGateway interface {
@@ -36,7 +32,6 @@ type BillingStripeGateway interface {
 	CancelSubscriptionAtPeriodEnd(ctx context.Context, input BillingSubscriptionCancelInput) error
 	CancelSubscriptionImmediately(ctx context.Context, input BillingSubscriptionCancelInput) error
 	ResumeSubscription(ctx context.Context, input BillingSubscriptionCancelInput) error
-	BillCreditBlock(ctx context.Context, input BillingCreditBlockCharge) error
 	EnsureCustomer(ctx context.Context, orgID, email string) (string, error)
 	ListPaymentMethods(ctx context.Context, customerID string) ([]StripePaymentMethod, error)
 	DetachPaymentMethod(ctx context.Context, paymentMethodID string) error
@@ -225,15 +220,6 @@ type BillingPlanChangePreviewLine struct {
 type BillingSubscriptionCancelInput struct {
 	WorkspaceID    string
 	SubscriptionID string
-}
-
-type BillingCreditBlockCharge struct {
-	WorkspaceID    string
-	CustomerID     string
-	SubscriptionID string
-	Blocks         int
-	AmountCents    int
-	IdempotencyKey string
 }
 
 type BillingCreditConsumption struct {
@@ -1319,36 +1305,15 @@ func (s *BillingService) ConsumeCredits(ctx context.Context, input BillingCredit
 		IdempotencyKey: input.IdempotencyKey,
 		Metadata:       model.JSONBlob(metadata),
 	}
-	result, err := s.repo.ConsumeCredits(ctx, input.WorkspaceID, input.Credits, entry, func(billing *model.WorkspaceBilling, requiredBlocks, newBlocks int) error {
-		return s.chargeOnDemandBlocks(ctx, billing, input.IdempotencyKey, requiredBlocks, newBlocks)
-	})
+	// The credit ledger is retained only for pre-cutover compatibility. It must
+	// never create a legacy fixed-block Stripe charge; active AI usage settles
+	// exact overage through AIUsageSettlementWorker.
+	result, err := s.repo.ConsumeCredits(ctx, input.WorkspaceID, input.Credits, entry, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	return s.summaryWithEntitlements(ctx, result.Billing)
-}
-
-func (s *BillingService) chargeOnDemandBlocks(ctx context.Context, billing *model.WorkspaceBilling, idempotencyKey string, requiredBlocks, newBlocks int) error {
-	if billing == nil || newBlocks <= 0 {
-		return nil
-	}
-	if billing.StripeCustomerID == nil || billing.StripeSubscriptionID == nil {
-		return errors.New("stripe customer and subscription are required for extra AI usage")
-	}
-	if s.gateway == nil {
-		return errors.New("billing gateway is not configured")
-	}
-	chargeCtx, cancel := context.WithTimeout(ctx, billingStripeChargeTimeout)
-	defer cancel()
-	return s.gateway.BillCreditBlock(chargeCtx, BillingCreditBlockCharge{
-		WorkspaceID:    billing.WorkspaceID,
-		CustomerID:     *billing.StripeCustomerID,
-		SubscriptionID: *billing.StripeSubscriptionID,
-		Blocks:         newBlocks,
-		AmountCents:    newBlocks * billingCreditBlockCost,
-		IdempotencyKey: fmt.Sprintf("%s:on_demand:%d", idempotencyKey, requiredBlocks),
-	})
 }
 
 func (s *BillingService) summarizeAndNormalize(ctx context.Context, billing *model.WorkspaceBilling) (*BillingSummary, error) {

@@ -12,10 +12,12 @@ vi.mock('@/hooks/queries', () => ({
       period_start: '2026-08-01T00:00:00Z',
       period_end: '2026-09-01T00:00:00Z',
       mode: 'daily',
-      included_credits: 5_000,
-      credits_used: 10,
+      ai_usage_allowance_microusd: 1_000,
+      ai_usage_used_microusd: 10,
+      ai_usage_reserved_microusd: 0,
+      ai_usage_overage_microusd: 0,
       features: [
-        { feature_key: 'coding_run', label: 'Coding runs', model_tiers: ['large', 'flagship'], action_count: 1, charged_microusd: 10, pct: 100 },
+        { feature_key: 'coding_run', label: 'Coding runs', model_tiers: ['large', 'flagship'], action_count: 1, charged_microusd: 10, pct: 1 },
       ],
       series: [
         { date: '2026-08-11', features: { coding_run: 10 } },
@@ -41,8 +43,38 @@ describe('UsageDetail chart layout', () => {
 
     act(() => root.render(<UsageDetail workspaceId="workspace-1" />));
 
-    const barColumn = container.querySelector('[title*="period usage"]');
+    const barColumn = container.querySelector('[data-usage-bar-column]');
     expect(barColumn?.classList.contains('h-full')).toBe(true);
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('labels activity as a share of the full allowance', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => root.render(<UsageDetail workspaceId="workspace-1" />));
+
+    expect(container.textContent).toContain('Share of allowance');
+    expect(container.textContent).toContain('1%');
+    expect(container.querySelector('[aria-label*="1% of allowance"]')).not.toBeNull();
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('renders square chart bars without rounded segment edges', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => root.render(<UsageDetail workspaceId="workspace-1" />));
+
+    const segments = Array.from(container.querySelectorAll('[data-usage-bar-segment]'));
+    expect(segments.length).toBeGreaterThan(0);
+    expect(segments.every((segment) => !segment.className.includes('rounded'))).toBe(true);
 
     act(() => root.unmount());
     container.remove();
