@@ -90,6 +90,37 @@ func (c *Catalog) Resolve(provider, model, route, serviceTier string) (ResolvedR
 	return ResolvedRoute{}, ErrModelUnavailable
 }
 
+// ResolveDefault resolves the single approved standard route for a curated
+// provider/model pair. It is used for agent records, whose persisted contract
+// predates exact-route storage; ambiguous catalogs fail closed.
+func (c *Catalog) ResolveDefault(provider, model, serviceTier string) (ResolvedRoute, error) {
+	provider = canonicalKey(provider)
+	model = canonicalKey(model)
+	serviceTier = canonicalKey(serviceTier)
+	if serviceTier == "" {
+		serviceTier = "standard"
+	}
+	var match *ResolvedRoute
+	for _, route := range c.Routes {
+		if !route.Enabled || canonicalKey(route.Provider) != provider || canonicalKey(route.ServiceTier) != serviceTier {
+			continue
+		}
+		resolved, err := c.Resolve(provider, model, route.Route, serviceTier)
+		if err != nil {
+			continue
+		}
+		if match != nil && match.Route != resolved.Route {
+			return ResolvedRoute{}, ErrModelUnavailable
+		}
+		copy := resolved
+		match = &copy
+	}
+	if match == nil {
+		return ResolvedRoute{}, ErrModelUnavailable
+	}
+	return *match, nil
+}
+
 // Validate returns every catalog integrity issue in stable traversal order.
 func (c *Catalog) Validate() []ValidationIssue {
 	if c == nil {
@@ -178,9 +209,16 @@ func (c *Catalog) PublicSnapshot() PublicPricing {
 		pricing.Plans = append(pricing.Plans, PublicPlan(plan))
 	}
 	for _, definition := range c.Models {
+		selectionModel := definition.CanonicalModel
+		for _, route := range c.Routes {
+			if route.Enabled && canonicalKey(route.Provider) == canonicalKey(definition.Provider) && canonicalKey(route.CanonicalModel) == canonicalKey(definition.CanonicalModel) {
+				selectionModel = route.Route
+				break
+			}
+		}
 		pricing.Models = append(pricing.Models, PublicModel{
 			Provider: definition.Provider, CanonicalModel: definition.CanonicalModel,
-			Label: definition.Label, Tier: definition.Tier, Enabled: definition.Enabled,
+			SelectionModel: selectionModel, Label: definition.Label, Tier: definition.Tier, Enabled: definition.Enabled,
 		})
 	}
 	for _, tool := range c.Tools {

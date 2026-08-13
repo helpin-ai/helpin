@@ -23,20 +23,16 @@ import (
 var _ service.BillingStripeGateway = (*Gateway)(nil)
 
 type Gateway struct {
-	secretKey          string
-	creditBlockPriceID string
+	secretKey string
 }
 
-func New(secretKey, creditBlockPriceID string) *Gateway {
+func New(secretKey string) *Gateway {
 	secretKey = strings.TrimSpace(secretKey)
 	if secretKey == "" {
 		return nil
 	}
 	stripe.Key = secretKey
-	return &Gateway{
-		secretKey:          secretKey,
-		creditBlockPriceID: strings.TrimSpace(creditBlockPriceID),
-	}
+	return &Gateway{secretKey: secretKey}
 }
 
 func (g *Gateway) CreateCheckoutSession(ctx context.Context, input service.BillingCheckoutInput) (string, error) {
@@ -423,7 +419,7 @@ func (g *Gateway) BillCreditBlock(ctx context.Context, input service.BillingCred
 	if strings.TrimSpace(input.CustomerID) == "" {
 		return fmt.Errorf("stripe customer ID is required")
 	}
-	description := fmt.Sprintf("Helpin extra AI usage (%d x 5,000 units)", input.Blocks)
+	description := "Extra AI usage"
 	params := &stripe.InvoiceItemParams{
 		Params: stripe.Params{
 			Context: ctx,
@@ -436,13 +432,8 @@ func (g *Gateway) BillCreditBlock(ctx context.Context, input service.BillingCred
 			"blocks":       fmt.Sprintf("%d", input.Blocks),
 		},
 	}
-	if g.creditBlockPriceID != "" {
-		params.Pricing = &stripe.InvoiceItemPricingParams{Price: stripe.String(g.creditBlockPriceID)}
-		params.Quantity = stripe.Int64(int64(input.Blocks))
-	} else {
-		params.Amount = stripe.Int64(int64(input.AmountCents))
-		params.Currency = stripe.String(string(stripe.CurrencyUSD))
-	}
+	params.Amount = stripe.Int64(int64(input.AmountCents))
+	params.Currency = stripe.String(string(stripe.CurrencyUSD))
 	params.SetIdempotencyKey(input.IdempotencyKey)
 	if _, err := invoiceitem.New(params); err != nil {
 		return fmt.Errorf("create stripe credit invoice item: %w", err)

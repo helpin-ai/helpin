@@ -145,6 +145,7 @@ type PublicPlan struct {
 type PublicModel struct {
 	Provider       string `json:"provider"`
 	CanonicalModel string `json:"canonical_model"`
+	SelectionModel string `json:"selection_model"`
 	Label          string `json:"label"`
 	Tier           Tier   `json:"tier"`
 	Enabled        bool   `json:"enabled"`

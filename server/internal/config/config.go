@@ -169,7 +169,6 @@ type Config struct {
 	StripeStarterAnnualPriceID  string
 	StripeGrowthMonthlyPriceID  string
 	StripeGrowthAnnualPriceID   string
-	StripeCreditBlockPriceID    string
 
 	// Customer.io Track API (optional — backend identity/object sync disabled if unset)
 	CustomerIOSiteID                   string
@@ -372,7 +371,6 @@ func Load() (*Config, error) {
 		StripeStarterAnnualPriceID:             strings.TrimSpace(os.Getenv("STRIPE_STARTER_ANNUAL_PRICE_ID")),
 		StripeGrowthMonthlyPriceID:             strings.TrimSpace(os.Getenv("STRIPE_GROWTH_MONTHLY_PRICE_ID")),
 		StripeGrowthAnnualPriceID:              strings.TrimSpace(os.Getenv("STRIPE_GROWTH_ANNUAL_PRICE_ID")),
-		StripeCreditBlockPriceID:               strings.TrimSpace(os.Getenv("STRIPE_CREDIT_BLOCK_PRICE_ID")),
 		CustomerIOSiteID:                       strings.TrimSpace(os.Getenv("CUSTOMER_IO_SITE_ID")),
 		CustomerIOTrackAPIKey:                  strings.TrimSpace(os.Getenv("CUSTOMER_IO_TRACK_API_KEY")),
 		CustomerIORegion:                       strings.TrimSpace(firstNonEmpty(os.Getenv("CUSTOMER_IO_REGION"), "us")),

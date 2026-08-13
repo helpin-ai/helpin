@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -338,6 +339,12 @@ func taskNatureForFeature(featureKey string) string {
 }
 
 func (m *AIUsageMeter) Preflight(ctx context.Context, input AIUsageMeterInput) error {
+	if m != nil && m.usage != nil {
+		// Token-priced calls reserve with their resolved provider route immediately
+		// before execution. Agent Runtime launches use PreflightAgentRunAIUsage,
+		// which persists the resulting reservation on the durable run.
+		return nil
+	}
 	if m == nil || m.consumer == nil {
 		return fmt.Errorf("ai usage meter billing consumer is required")
 	}
@@ -353,6 +360,9 @@ func (m *AIUsageMeter) Preflight(ctx context.Context, input AIUsageMeterInput) e
 }
 
 func (m *AIUsageMeter) PreflightUsage(ctx context.Context, input AIUsageMeterInput) error {
+	if m != nil && m.usage != nil {
+		return nil
+	}
 	if m == nil || m.consumer == nil {
 		return fmt.Errorf("ai usage meter billing consumer is required")
 	}
@@ -374,6 +384,9 @@ func (m *AIUsageMeter) PreflightUsage(ctx context.Context, input AIUsageMeterInp
 }
 
 func (m *AIUsageMeter) Consume(ctx context.Context, input AIUsageMeterInput) (*BillingSummary, error) {
+	if m != nil && m.usage != nil {
+		return nil, nil
+	}
 	if m == nil || m.consumer == nil {
 		return nil, fmt.Errorf("ai usage meter billing consumer is required")
 	}
@@ -518,6 +531,21 @@ func PreflightAgentRunAIUsage(ctx context.Context, meter *AIUsageMeter, run *mod
 	if meter == nil || run == nil {
 		return nil
 	}
+	if meter.usage != nil {
+		provider, modelID, _ := agentPricingIdentity(agent)
+		featureKey := AgentRunAIUsageFeature(agent)
+		metering, err := meter.usage.Preflight(ctx, PreflightRequest{Metering: MeteringRequest{
+			WorkspaceID: run.WorkspaceID, TaskNature: taskNatureForFeature(featureKey), FeatureKey: featureKey,
+			Provider: provider, Model: modelID, Route: "", ServiceTier: "standard",
+			FundingMode: aiusage.FundingHelpinHosted, InputTokensEstimate: int64((len(run.Input) + 3) / 4),
+			MaximumOutputTokens: 128000, ExecutionID: run.ID,
+			IdempotencyKey: aiUsageIdempotencyKey(run.WorkspaceID, "agent_run", run.ID),
+		}})
+		if err != nil {
+			return err
+		}
+		return storeAgentRunMeteringContext(run, *metering)
+	}
 	return meter.Preflight(ctx, AIUsageMeterInput{
 		WorkspaceID:    run.WorkspaceID,
 		FeatureKey:     AgentRunAIUsageFeature(agent),
@@ -529,6 +557,104 @@ func PreflightAgentRunAIUsage(ctx context.Context, meter *AIUsageMeter, run *mod
 			"is_system":  agent != nil && agent.IsSystem,
 		},
 	})
+}
+
+func agentPricingIdentity(agent *model.Agent) (provider, modelID, route string) {
+	if agent != nil {
+		provider = strings.ToLower(strings.TrimSpace(derefString(agent.Provider)))
+		modelID = strings.TrimSpace(derefString(agent.Model))
+	}
+	if provider == "openrouter-responses" {
+		provider = "openrouter"
+	}
+	if provider == "" || modelID == "" {
+		feature := AgentRunAIUsageFeature(agent)
+		if taskNatureForFeature(feature) == "planning" || taskNatureForFeature(feature) == "coding" || taskNatureForFeature(feature) == "review" {
+			provider, modelID = "openrouter", "openai/gpt-5.6-terra"
+		} else {
+			provider, modelID = "openrouter", "openai/gpt-5.6-luna"
+		}
+	}
+	route = modelID
+	if provider == "openai" && strings.Contains(modelID, "/") {
+		route = modelID[strings.LastIndex(modelID, "/")+1:]
+	}
+	return provider, modelID, route
+}
+
+const agentRunMeteringSummaryKey = "ai_usage_metering"
+
+func storeAgentRunMeteringContext(run *model.AgentRun, metering MeteringContext) error {
+	if run == nil {
+		return nil
+	}
+	summary := map[string]any{}
+	if len(run.OutputSummary) > 0 && string(run.OutputSummary) != "null" {
+		_ = json.Unmarshal(run.OutputSummary, &summary)
+	}
+	summary[agentRunMeteringSummaryKey] = metering
+	raw, err := json.Marshal(summary)
+	if err != nil {
+		return fmt.Errorf("store agent run AI usage context: %w", err)
+	}
+	run.OutputSummary = raw
+	return nil
+}
+
+func agentRunMeteringContext(run *model.AgentRun) (MeteringContext, bool) {
+	if run == nil || len(run.OutputSummary) == 0 {
+		return MeteringContext{}, false
+	}
+	var summary map[string]json.RawMessage
+	if err := json.Unmarshal(run.OutputSummary, &summary); err != nil {
+		return MeteringContext{}, false
+	}
+	var metering MeteringContext
+	if err := json.Unmarshal(summary[agentRunMeteringSummaryKey], &metering); err != nil || metering.PricingVersion == "" {
+		return MeteringContext{}, false
+	}
+	return metering, true
+}
+
+func (m *AIUsageMeter) reconcileAgentRun(ctx context.Context, run *model.AgentRun, usage agentRuntimeUsagePayload) error {
+	if m == nil || m.usage == nil {
+		return nil
+	}
+	metering, ok := agentRunMeteringContext(run)
+	if !ok {
+		return model.ErrPricingConfigurationMissing
+	}
+	status := "actual"
+	if usage.InputTokens == 0 && usage.CachedInputTokens == 0 && usage.OutputTokens == 0 && usage.ReasoningOutputTokens == 0 {
+		status = "estimated"
+	}
+	_, err := m.usage.Reconcile(ctx, CompletionUsage{
+		Context: metering,
+		Telemetry: aiusage.TokenTelemetry{
+			InputTokensTotal: int64(usage.InputTokens), CacheReadTokens: int64(usage.CachedInputTokens),
+			CompletionTokensTotal: int64(usage.OutputTokens + usage.ReasoningOutputTokens),
+			OutputTokens:          int64(usage.OutputTokens), ReasoningTokens: int64(usage.ReasoningOutputTokens),
+		},
+		MeasurementStatus: status,
+	})
+	return err
+}
+
+func agentRunUsageExceedsBudget(run *model.AgentRun, usage agentRuntimeUsagePayload) bool {
+	metering, ok := agentRunMeteringContext(run)
+	if !ok || metering.EnforcementMode != model.AIUsageEnforcementStrict || metering.MaxBillableMicrousd <= 0 {
+		return false
+	}
+	normalized, err := aiusage.NormalizeTokens(aiusage.TokenTelemetry{
+		InputTokensTotal: int64(usage.InputTokens), CacheReadTokens: int64(usage.CachedInputTokens),
+		CompletionTokensTotal: int64(usage.OutputTokens + usage.ReasoningOutputTokens),
+		OutputTokens:          int64(usage.OutputTokens), ReasoningTokens: int64(usage.ReasoningOutputTokens),
+	})
+	if err != nil {
+		return false
+	}
+	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{FundingMode: metering.FundingMode, Tokens: normalized, Rates: metering.Route.Rates})
+	return err == nil && charge.FinalMicrousd >= metering.MaxBillableMicrousd
 }
 
 func agentPresetKey(agent *model.Agent) string {

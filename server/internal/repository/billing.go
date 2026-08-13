@@ -45,6 +45,47 @@ func (r *BillingRepository) GetOpenAIUsagePeriod(ctx context.Context, workspaceI
 	return &period, nil
 }
 
+// EnsureOpenAIUsagePeriod creates the first token-priced allowance for a
+// workspace created after the common cutover. Existing periods are returned.
+func (r *BillingRepository) EnsureOpenAIUsagePeriod(ctx context.Context, input AIUsagePeriodSchedule) (*model.AIUsagePeriod, error) {
+	if !r.db.Migrator().HasTable(&model.AIUsagePeriod{}) {
+		return nil, nil
+	}
+	var period model.AIUsagePeriod
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("workspace_id = ? AND status = ?", input.WorkspaceID, model.AIUsagePeriodOpen).First(&period).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		period = model.AIUsagePeriod{
+			ID: uuid.NewString(), WorkspaceID: input.WorkspaceID, PeriodStart: input.Start, PeriodEnd: input.End,
+			AllowanceMicrousd: input.AllowanceMicrousd, EnforcementMode: input.EnforcementMode,
+			Status: model.AIUsagePeriodOpen, PricingVersion: input.PricingVersion,
+		}
+		return tx.Create(&period).Error
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ensure open AI usage period: %w", err)
+	}
+	return &period, nil
+}
+
+// UpdateOpenAIUsageControls applies immediate upgrades and extra-usage toggle
+// changes without ever reducing the current period allowance.
+func (r *BillingRepository) UpdateOpenAIUsageControls(ctx context.Context, period *model.AIUsagePeriod, allowanceMicrousd int64, enforcementMode string) error {
+	if period == nil {
+		return nil
+	}
+	updates := map[string]any{"enforcement_mode": enforcementMode}
+	if allowanceMicrousd > period.AllowanceMicrousd {
+		updates["allowance_microusd"] = allowanceMicrousd
+		period.AllowanceMicrousd = allowanceMicrousd
+	}
+	period.EnforcementMode = enforcementMode
+	return r.db.WithContext(ctx).Model(&model.AIUsagePeriod{}).Where("id = ? AND status = ?", period.ID, model.AIUsagePeriodOpen).Updates(updates).Error
+}
+
 // ProcessStripeLifecycleEvent atomically deduplicates a Stripe webhook, applies
 // its billing mutation, snapshots recipients, enqueues Customer.io delivery,
 // and marks the webhook processed.

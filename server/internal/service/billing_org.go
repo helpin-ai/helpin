@@ -44,36 +44,39 @@ type BillingOwnerRef struct {
 
 // WorkspaceBillingCard is a per-workspace entry in the org roll-up.
 type WorkspaceBillingCard struct {
-	WorkspaceID       string            `json:"workspace_id"`
-	WorkspaceName     string            `json:"workspace_name"`
-	WorkspaceSlug     string            `json:"workspace_slug"`
-	Plan              string            `json:"plan"`
-	Status            string            `json:"status"`
-	Locked            bool              `json:"locked"`
-	Trialing          bool              `json:"trialing"`
-	TrialEndsAt       *time.Time        `json:"trial_ends_at,omitempty"`
-	CurrentPeriodEnd  time.Time         `json:"current_period_end"`
-	IncludedCredits   int               `json:"included_credits"`
-	CreditsUsed       int               `json:"credits_used"`
-	OnDemandEnabled   bool              `json:"on_demand_enabled"`
-	OnDemandAvailable bool              `json:"on_demand_available"`
-	PriceCents        int               `json:"price_cents"`
-	BillingInterval   string            `json:"billing_interval"`
-	PaymentMethod     *PaymentMethodRef `json:"payment_method"`
-	BillingOwner      *BillingOwnerRef  `json:"billing_owner"`
-	CanManage         bool              `json:"can_manage"`
+	WorkspaceID              string            `json:"workspace_id"`
+	WorkspaceName            string            `json:"workspace_name"`
+	WorkspaceSlug            string            `json:"workspace_slug"`
+	Plan                     string            `json:"plan"`
+	Status                   string            `json:"status"`
+	Locked                   bool              `json:"locked"`
+	Trialing                 bool              `json:"trialing"`
+	TrialEndsAt              *time.Time        `json:"trial_ends_at,omitempty"`
+	CurrentPeriodEnd         time.Time         `json:"current_period_end"`
+	AIUsageAllowanceMicrousd int64             `json:"ai_usage_allowance_microusd"`
+	AIUsageUsedMicrousd      int64             `json:"ai_usage_used_microusd"`
+	AIUsageReservedMicrousd  int64             `json:"ai_usage_reserved_microusd"`
+	AIUsagePercent           float64           `json:"ai_usage_percent"`
+	ExtraAIUsageEnabled      bool              `json:"extra_ai_usage_enabled"`
+	ExtraAIUsageAvailable    bool              `json:"extra_ai_usage_available"`
+	PriceCents               int               `json:"price_cents"`
+	BillingInterval          string            `json:"billing_interval"`
+	PaymentMethod            *PaymentMethodRef `json:"payment_method"`
+	BillingOwner             *BillingOwnerRef  `json:"billing_owner"`
+	CanManage                bool              `json:"can_manage"`
 }
 
 // OrganizationBillingSummary is the org roll-up returned by GET /billing.
 type OrganizationBillingSummary struct {
-	OrganizationID         string                 `json:"organization_id"`
-	TotalMonthlySpendCents int                    `json:"total_monthly_spend_cents"`
-	PaidCount              int                    `json:"paid_count"`
-	TrialingCount          int                    `json:"trialing_count"`
-	CreditsUsed            int                    `json:"credits_used"`
-	IncludedCreditsTotal   int                    `json:"included_credits_total"`
-	SetupComplete          bool                   `json:"setup_complete"`
-	Workspaces             []WorkspaceBillingCard `json:"workspaces"`
+	OrganizationID           string                 `json:"organization_id"`
+	TotalMonthlySpendCents   int                    `json:"total_monthly_spend_cents"`
+	PaidCount                int                    `json:"paid_count"`
+	TrialingCount            int                    `json:"trialing_count"`
+	AIUsageUsedMicrousd      int64                  `json:"ai_usage_used_microusd"`
+	AIUsageAllowanceMicrousd int64                  `json:"ai_usage_allowance_microusd"`
+	AIUsagePercent           float64                `json:"ai_usage_percent"`
+	SetupComplete            bool                   `json:"setup_complete"`
+	Workspaces               []WorkspaceBillingCard `json:"workspaces"`
 }
 
 // UsageFeature is a per-feature usage table row.
@@ -286,21 +289,33 @@ func (s *BillingService) GetOrganizationBilling(ctx context.Context, userID, org
 		price := PriceCentsForPlan(plan, interval)
 		trialing := b.Status == model.BillingStatusTrialing
 		card := WorkspaceBillingCard{
-			WorkspaceID:       rows[i].WorkspaceID,
-			WorkspaceName:     rows[i].WorkspaceName,
-			WorkspaceSlug:     rows[i].WorkspaceSlug,
-			Plan:              plan,
-			Status:            b.Status,
-			Locked:            billingStatusLocked(b.Status),
-			Trialing:          trialing,
-			TrialEndsAt:       b.TrialEndsAt,
-			CurrentPeriodEnd:  b.CurrentPeriodEnd,
-			IncludedCredits:   b.IncludedCredits,
-			CreditsUsed:       b.CreditsUsed,
-			OnDemandEnabled:   b.OnDemandEnabled,
-			OnDemandAvailable: billingCanUseOnDemand(&b),
-			PriceCents:        price,
-			BillingInterval:   interval,
+			WorkspaceID:           rows[i].WorkspaceID,
+			WorkspaceName:         rows[i].WorkspaceName,
+			WorkspaceSlug:         rows[i].WorkspaceSlug,
+			Plan:                  plan,
+			Status:                b.Status,
+			Locked:                billingStatusLocked(b.Status),
+			Trialing:              trialing,
+			TrialEndsAt:           b.TrialEndsAt,
+			CurrentPeriodEnd:      b.CurrentPeriodEnd,
+			ExtraAIUsageEnabled:   b.OnDemandEnabled,
+			ExtraAIUsageAvailable: billingCanUseOnDemand(&b),
+			PriceCents:            price,
+			BillingInterval:       interval,
+		}
+		period, periodErr := s.repo.GetOpenAIUsagePeriod(ctx, b.WorkspaceID)
+		if periodErr != nil {
+			return nil, periodErr
+		}
+		if period != nil {
+			card.AIUsageAllowanceMicrousd = period.AllowanceMicrousd
+			card.AIUsageUsedMicrousd = period.UsedMicrousd
+			card.AIUsageReservedMicrousd = period.ReservedMicrousd
+			if period.AllowanceMicrousd > 0 {
+				card.AIUsagePercent = float64(period.UsedMicrousd) / float64(period.AllowanceMicrousd) * 100
+			}
+			summary.AIUsageUsedMicrousd += period.UsedMicrousd
+			summary.AIUsageAllowanceMicrousd += period.AllowanceMicrousd
 		}
 		// Resolve linked card: explicit link, else org default.
 		linkedID := b.PaymentMethodID
@@ -334,9 +349,10 @@ func (s *BillingService) GetOrganizationBilling(ctx context.Context, userID, org
 				summary.TotalMonthlySpendCents += price
 			}
 		}
-		summary.CreditsUsed += b.CreditsUsed
-		summary.IncludedCreditsTotal += b.IncludedCredits
 		summary.Workspaces = append(summary.Workspaces, card)
+	}
+	if summary.AIUsageAllowanceMicrousd > 0 {
+		summary.AIUsagePercent = float64(summary.AIUsageUsedMicrousd) / float64(summary.AIUsageAllowanceMicrousd) * 100
 	}
 	summary.SetupComplete = ob != nil && (ob.FounderPlanEnabled || (ob.StripeCustomerID != nil && len(methods) > 0))
 	return summary, nil

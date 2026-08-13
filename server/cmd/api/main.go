@@ -167,7 +167,6 @@ func main() {
 			&model.SetupActionIntent{},
 			&model.MemberSetupPreference{},
 			&model.WorkspaceBilling{},
-			&model.BillingCreditLedgerEntry{},
 			&model.StripeWebhookEvent{},
 			&model.OrganizationBilling{},
 			&model.BillingPaymentMethod{},
@@ -655,7 +654,7 @@ func main() {
 	}
 	aiUsageRepo := repository.NewAIUsageRepository(db)
 	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
-	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
+	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
 	settlementCtx, settlementCancel := context.WithCancel(context.Background())
 	settlementDone := make(chan struct{})
 	if stripeGateway != nil {
@@ -668,6 +667,20 @@ func main() {
 		close(settlementDone)
 	}
 	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
+	periodCtx, periodCancel := context.WithCancel(context.Background())
+	periodDone := make(chan struct{})
+	periodWorker := service.NewAIUsagePeriodWorker(aiUsageRepo, billingService.NextAIUsagePeriodSchedule)
+	go func() {
+		defer close(periodDone)
+		periodWorker.Run(periodCtx, time.Minute)
+	}()
+	reservationCtx, reservationCancel := context.WithCancel(context.Background())
+	reservationDone := make(chan struct{})
+	reservationSweeper := service.NewAIUsageReservationSweeper(aiUsageRepo)
+	go func() {
+		defer close(reservationDone)
+		reservationSweeper.Run(reservationCtx, time.Minute, 15*time.Minute)
+	}()
 	billingTestScenarioService := service.NewBillingTestScenarioService(db, billingService, time.Now)
 	billingService.SetPriceConfig(service.BillingPriceConfig{
 		StarterMonthly: cfg.StripeStarterMonthlyPriceID,
@@ -1990,6 +2003,8 @@ func main() {
 	customerIOOutboxCancel()
 	productAnalyticsCancel()
 	settlementCancel()
+	periodCancel()
+	reservationCancel()
 	select {
 	case <-customerIOOutboxDone:
 	case <-time.After(6 * time.Second):
@@ -2004,6 +2019,16 @@ func main() {
 	case <-settlementDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("AI usage settlement worker did not stop before shutdown timeout")
+	}
+	select {
+	case <-periodDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("AI usage period worker did not stop before shutdown timeout")
+	}
+	select {
+	case <-reservationDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("AI usage reservation sweeper did not stop before shutdown timeout")
 	}
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()

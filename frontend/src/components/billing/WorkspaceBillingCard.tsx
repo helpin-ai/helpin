@@ -9,10 +9,10 @@ import {
   INTERVAL_LABEL,
   PLAN_LABEL,
   formatDate,
-  formatNumber,
   planBadgeLabel,
   statusBadgeVariant,
 } from '@/lib/billingUtils';
+import { formatAIUsagePercent } from '@/lib/aiUsage';
 import { useSetOnDemand, useBillingPortal } from '@/hooks/queries';
 import { BilledToPopover } from './BilledToPopover';
 import { getWorkspaceBillingCardPresentation } from './workspaceBillingCardPresentation';
@@ -51,17 +51,15 @@ export function WorkspaceBillingCard({
   const isPaymentIssue = view.isPaymentIssue;
   const isActivePaid = view.isActivePaid;
 
-  const usagePct = card.included_credits
-    ? Math.min(100, Math.round((card.credits_used / card.included_credits) * 100))
-    : 0;
+  const usagePct = card.ai_usage_percent ?? 0;
 
-  const onDemandDisabled = isFounderPlan || isLocked || isTrial || !card.can_manage || setOnDemand.isPending || !card.on_demand_available;
+  const onDemandDisabled = isFounderPlan || isLocked || isTrial || !card.can_manage || setOnDemand.isPending || !card.extra_ai_usage_available;
 
   const handleOnDemand = (enabled: boolean) => {
     setOnDemand.mutate(
       { wsId: card.workspace_id, enabled },
       {
-        onSuccess: () => toast.success(enabled ? 'On-demand enabled' : 'On-demand disabled'),
+        onSuccess: () => toast.success(enabled ? 'Extra AI usage enabled' : 'Extra AI usage disabled'),
         onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to update'),
       },
     );
@@ -135,7 +133,7 @@ export function WorkspaceBillingCard({
         <div className="mb-1 flex items-center justify-between text-xs">
           <span className="text-muted-foreground">AI usage</span>
           <span className="tabular-nums">
-            {formatNumber(card.credits_used)} / {formatNumber(card.included_credits)} used
+            {formatAIUsagePercent(usagePct)} used
           </span>
         </div>
         <Progress value={usagePct} className={cn(isPaymentIssue && '[&>div]:bg-destructive')} />
@@ -163,13 +161,13 @@ export function WorkspaceBillingCard({
         )}
       </Row>
 
-      {/* On-demand */}
+      {/* Extra AI usage */}
       <Row label="Extra AI usage">
         <span className="text-xs text-muted-foreground">
           {view.extraUsageLabel}
         </span>
         <Switch
-          checked={card.on_demand_enabled}
+          checked={card.extra_ai_usage_enabled}
           disabled={onDemandDisabled}
           onCheckedChange={handleOnDemand}
         />

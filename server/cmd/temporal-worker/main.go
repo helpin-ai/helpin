@@ -252,7 +252,7 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
-	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
+	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
 	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
 	billingService.SetWorkspaceRepository(workspaceRepo)
 	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, service.NewTokenPricedAIUsageMeter(aiUsageService))

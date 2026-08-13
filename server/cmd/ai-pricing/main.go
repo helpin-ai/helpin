@@ -31,8 +31,15 @@ func run(args []string, output io.Writer) error {
 		return nil
 	case len(args) == 3 && args[0] == "export" && args[1] == "--format" && args[2] == "typescript":
 		return exportTypeScript(output, catalog)
+	case len(args) == 5 && args[0] == "export" && args[1] == "--format" && args[2] == "typescript" && args[3] == "--output":
+		file, err := os.Create(args[4])
+		if err != nil {
+			return fmt.Errorf("create pricing export: %w", err)
+		}
+		defer file.Close()
+		return exportTypeScript(file, catalog)
 	default:
-		return fmt.Errorf("usage: ai-pricing validate | export --format typescript")
+		return fmt.Errorf("usage: ai-pricing validate | export --format typescript [--output path]")
 	}
 }
 

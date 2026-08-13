@@ -720,8 +720,8 @@ func TestBillingServicePreflightCreditsRejectsWhenUsageExhausted(t *testing.T) {
 		FeatureKey:  BillingFeatureSupportAIReply,
 		Credits:     8,
 	})
-	if err == nil || !strings.Contains(err.Error(), "AI usage exhausted") {
-		t.Fatalf("PreflightCredits() error = %v, want AI usage exhausted", err)
+	if err == nil || !strings.Contains(err.Error(), "AI allowance exhausted") {
+		t.Fatalf("PreflightCredits() error = %v, want AI allowance exhausted", err)
 	}
 }
 
@@ -891,8 +891,8 @@ func TestBillingRepositoryConsumeCreditsRejectsOverLimitInsideLock(t *testing.T)
 		IdempotencyKey: "reply-1",
 		Metadata:       model.JSONBlob(`{}`),
 	}, nil)
-	if err == nil || !strings.Contains(err.Error(), "AI usage exhausted") {
-		t.Fatalf("ConsumeCredits() error = %v, want AI usage exhausted", err)
+	if err == nil || !strings.Contains(err.Error(), "AI allowance exhausted") {
+		t.Fatalf("ConsumeCredits() error = %v, want AI allowance exhausted", err)
 	}
 	billing, err := repo.GetByWorkspaceID(context.Background(), "workspace-1")
 	if err != nil {

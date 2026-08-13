@@ -30,7 +30,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { UsageDetail } from '@/components/billing/UsageDetail';
@@ -40,13 +39,14 @@ import type { BillingTestScenarioID, PlanChangePreview } from '@/lib/billingType
 import type { BillingInterval, BillingPlan, WorkspaceBillingSummary } from '@/lib/types';
 import { SettingsPageFrame } from './SettingsPageFrame';
 import { getBillingNoticePresentation } from './billingNoticePresentation';
+import { formatAIUsagePercent } from '@/lib/aiUsage';
 
 const PLAN_OPTIONS: Array<{
   id: BillingPlan;
   name: string;
   monthly: number;
   annual: number;
-  credits: number;
+  aiUsage: string;
   description: string;
   features: string[];
   popular?: boolean;
@@ -56,7 +56,7 @@ const PLAN_OPTIONS: Array<{
     name: 'Starter',
     monthly: 99,
     annual: 948,
-    credits: 5_000,
+    aiUsage: '100% included',
     description: "For teams that want the full platform and Helpin's built-in AI out of the box.",
     features: [
       'Project management, support, CRM, and docs',
@@ -73,7 +73,7 @@ const PLAN_OPTIONS: Array<{
     name: 'Growth',
     monthly: 299,
     annual: 2_868,
-    credits: 25_000,
+    aiUsage: '100% included',
     description: 'For growing teams ready to automate their own processes with agents and flows.',
     popular: true,
     features: [
@@ -194,12 +194,12 @@ const BILLING_TEST_SCENARIOS: Array<{
     id: 'reset_starter',
     label: 'Reset to Starter baseline',
     description: 'Starter, active, zero AI usage, extra AI usage off, and billing-test docs/contacts removed.',
-    next: ['Confirm the page shows Starter with 5,000 AI units remaining.', 'Use this before switching to another scenario when you want clean test data.'],
+    next: ['Confirm the page shows Starter with 0% used.', 'Use this before switching to another scenario when you want clean test data.'],
   },
   {
     id: 'trial_cap',
     label: 'Trial AI cap reached',
-    description: 'Growth trial with the full 25,000 trial AI units already used.',
+    description: 'Growth trial with 100% of its included AI usage already used.',
     next: ['Try an AI action such as drafting a support reply or running an agent.', 'It should stop before the model call and ask you to upgrade.'],
   },
   {
@@ -217,14 +217,14 @@ const BILLING_TEST_SCENARIOS: Array<{
   {
     id: 'starter_ai_cap',
     label: 'Starter AI cap reached',
-    description: 'Starter with all 5,000 included AI units used and extra AI usage disabled.',
+    description: 'Starter with 100% of its included AI usage used and extra AI usage disabled.',
     next: ['Try an AI action.', 'It should fail before the model call and prompt for upgrade or extra AI usage.'],
   },
   {
     id: 'starter_on_demand',
     label: 'Starter near overage',
-    description: 'Starter with 4,995 AI units used, extra AI usage enabled, and fake Stripe IDs for overage-path testing.',
-    next: ['Run an AI action that costs more than 5 units.', 'With real Stripe test credentials this should bill one extra usage pack; with fake IDs, expect Stripe portal/charge calls to fail safely.'],
+    description: 'Starter near 100% used, with extra AI usage enabled and fake Stripe IDs for settlement-path testing.',
+    next: ['Run an AI action that crosses the allowance.', 'With real Stripe test credentials this should accrue exact extra usage; with fake IDs, expect Stripe settlement calls to fail safely.'],
   },
   {
     id: 'starter_docs_limit',
@@ -381,8 +381,11 @@ function BillingSettingsContent({
       return Math.round(((billing.ai_usage_used_microusd ?? 0) / billing.ai_usage_allowance_microusd) * 100);
     }
     if (!billing?.included_credits) return 0;
-    return Math.round((billing.credits_used / billing.included_credits) * 100);
+    return Math.round(((billing.credits_used ?? 0) / billing.included_credits) * 100);
   }, [billing]);
+  const reservedPct = billing?.ai_usage_allowance_microusd
+    ? (100 * (billing.ai_usage_reserved_microusd ?? 0)) / billing.ai_usage_allowance_microusd
+    : 0;
 
   const startCheckout = async (plan: BillingPlan, interval: BillingInterval) => {
     const result = await checkout.mutateAsync({ plan, interval, return_url: window.location.href }).catch((error) => {
@@ -736,12 +739,27 @@ function BillingSettingsContent({
                   {billing.ai_usage_unlimited ? 'Internal soft budget' : `${Math.max(0, 100 - usagePct)}% remaining`}
                 </span>
               </div>
-              <Progress value={Math.min(100, usagePct)} />
-              {billing.ai_usage_reserved_microusd > 0 && (
+              <div
+                className="flex h-2 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.min(100, usagePct)}
+                aria-valuetext={`${formatAIUsagePercent(usagePct)} used, ${formatAIUsagePercent(reservedPct)} reserved`}
+              >
+                <span className="bg-primary" style={{ width: `${Math.min(100, usagePct)}%` }} />
+                <span className="bg-primary/35" style={{ width: `${Math.min(Math.max(0, 100 - usagePct), reservedPct)}%` }} />
+              </div>
+              {(billing.ai_usage_reserved_microusd ?? 0) > 0 && (
                 <p className="text-xs text-muted-foreground">An active AI run has reserved part of the remaining allowance.</p>
               )}
-              {billing.ai_usage_overage_microusd > 0 && !billing.ai_usage_unlimited && (
+              {(billing.ai_usage_overage_microusd ?? 0) > 0 && !billing.ai_usage_unlimited && (
                 <p className="text-xs text-muted-foreground">Extra AI usage is accruing for this period.</p>
+              )}
+              {billing.ai_usage_unlimited && usagePct >= 100 && (
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  Founder usage is above the internal monthly soft budget; AI remains available and no invoice is created.
+                </p>
               )}
             </div>
             <UsageDetail
@@ -1123,7 +1141,6 @@ function PendingBillingNotice({
   const pendingLabel = PLAN_LABELS[billing.pending_plan] ?? billing.pending_plan;
   const currentLabel = PLAN_LABELS[billing.plan] ?? billing.plan;
   const isCancel = billing.cancel_at_period_end;
-  const pendingCredits = includedCreditsForPlan(billing.pending_plan);
   return (
     <div className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-3">
@@ -1138,7 +1155,7 @@ function PendingBillingNotice({
             : `${pendingLabel} will begin on ${formatDate(billing.pending_change_at)}. ${currentLabel} remains active until then.`}
         </p>
         <p className="mt-1">
-          You have used {formatNumber(billing.credits_used)} of {formatNumber(billing.included_credits)} {currentLabel} AI usage units. {pendingLabel} includes {formatNumber(pendingCredits)} units per billing period.
+          Your current AI usage percentage remains unchanged. {pendingLabel} starts with a fresh 100% allowance at the next AI usage period.
         </p>
         </div>
       </div>
@@ -1215,7 +1232,7 @@ function PlanChoiceCard({
               <p className="mt-0.5 text-[11px] uppercase text-muted-foreground">Seats</p>
             </div>
             <div>
-              <p className="text-sm font-semibold">{formatNumber(plan.credits)}/mo</p>
+              <p className="text-sm font-semibold">{plan.aiUsage}</p>
               <p className="mt-0.5 text-[11px] uppercase text-muted-foreground">AI usage</p>
             </div>
           </div>
@@ -1388,7 +1405,7 @@ function PlanChangePreviewDialog({
           <div className="rounded-md border bg-muted/20 p-3">
             <p className="font-medium">AI usage after change</p>
             <p className="mt-1 text-muted-foreground">
-              {formatNumber(preview.target_included_credits)} units per month. {formatNumber(preview.credits_used)} used this period, {formatNumber(preview.credits_remaining_after)} available after the change.
+              Upgrades increase the current allowance immediately without resetting usage. Deferred changes receive a fresh 100% allowance at the next period.
             </p>
           </div>
 
@@ -1523,13 +1540,6 @@ function planRank(plan: BillingPlan | string): number {
   return 0;
 }
 
-function includedCreditsForPlan(plan: BillingPlan | string): number {
-  if (plan === 'founder') return 100_000;
-  if (plan === 'growth') return 25_000;
-  if (plan === 'starter') return 5_000;
-  return 0;
-}
-
 function annualBillingNudge(billing: WorkspaceBillingSummary): AnnualBillingNudgeCopy | null {
   if (billing.locked) return null;
   if (billing.billing_interval !== 'monthly') return null;
@@ -1572,7 +1582,7 @@ function statusLabel(billing: WorkspaceBillingSummary): string {
 
 function billingStatusCopy(billing: WorkspaceBillingSummary): string {
   if (billing.plan === 'founder') {
-    return 'The Founder plan includes all features and 100,000 AI usage units each month.';
+    return 'The internal Founder plan includes all features and a monthly AI usage soft budget.';
   }
   if (hasScheduledCancellation(billing)) {
     return `Subscription cancellation scheduled. This workspace will lock on ${formatDate(cancellationEffectiveDate(billing))}.`;

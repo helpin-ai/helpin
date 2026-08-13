@@ -1214,20 +1214,32 @@ func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, 
 	if err != nil {
 		return false, err
 	}
-	err = s.usageMeter.PreflightUsage(ctx, AIUsageMeterInput{
-		WorkspaceID:       run.WorkspaceID,
-		FeatureKey:        AgentRunAIUsageFeature(agent),
-		InputTokens:       usage.InputTokens,
-		OutputTokens:      usage.OutputTokens,
-		ReasoningTokens:   usage.ReasoningOutputTokens,
-		CachedInputTokens: usage.CachedInputTokens,
-		Metadata: map[string]interface{}{
-			"run_id":         run.ID,
-			"runtime_run_id": runtimeRunID,
-			"agent_id":       run.AgentID,
-			"checkpoint":     true,
-		},
-	})
+	if s.usageMeter.usage != nil {
+		if metering, ok := agentRunMeteringContext(run); ok {
+			if heartbeatErr := s.usageMeter.usage.Heartbeat(ctx, metering); heartbeatErr != nil {
+				return false, heartbeatErr
+			}
+		}
+		if !agentRunUsageExceedsBudget(run, usage) {
+			return false, nil
+		}
+		err = model.ErrAIUsageExhausted
+	} else {
+		err = s.usageMeter.PreflightUsage(ctx, AIUsageMeterInput{
+			WorkspaceID:       run.WorkspaceID,
+			FeatureKey:        AgentRunAIUsageFeature(agent),
+			InputTokens:       usage.InputTokens,
+			OutputTokens:      usage.OutputTokens,
+			ReasoningTokens:   usage.ReasoningOutputTokens,
+			CachedInputTokens: usage.CachedInputTokens,
+			Metadata: map[string]interface{}{
+				"run_id":         run.ID,
+				"runtime_run_id": runtimeRunID,
+				"agent_id":       run.AgentID,
+				"checkpoint":     true,
+			},
+		})
+	}
 	if err == nil {
 		return false, nil
 	}
@@ -1262,23 +1274,27 @@ func (s *AgentRuntimeProjectionService) maybeConsumeTerminalUsage(ctx context.Co
 		return false, err
 	}
 	runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID))
-	_, err = s.usageMeter.Consume(ctx, AIUsageMeterInput{
-		WorkspaceID:       run.WorkspaceID,
-		FeatureKey:        AgentRunAIUsageFeature(agent),
-		IdempotencyKey:    aiUsageIdempotencyKey(run.WorkspaceID, "agent-runtime", run.ID, "terminal-usage"),
-		InputTokens:       usage.InputTokens,
-		OutputTokens:      usage.OutputTokens,
-		ReasoningTokens:   usage.ReasoningOutputTokens,
-		CachedInputTokens: usage.CachedInputTokens,
-		AllowOverage:      true,
-		Metadata: map[string]interface{}{
-			"run_id":         run.ID,
-			"runtime_run_id": runtimeRunID,
-			"agent_id":       run.AgentID,
-			"terminal_event": strings.TrimSpace(event.Type),
-			"delegated":      true,
-		},
-	})
+	if s.usageMeter.usage != nil {
+		err = s.usageMeter.reconcileAgentRun(ctx, run, usage)
+	} else {
+		_, err = s.usageMeter.Consume(ctx, AIUsageMeterInput{
+			WorkspaceID:       run.WorkspaceID,
+			FeatureKey:        AgentRunAIUsageFeature(agent),
+			IdempotencyKey:    aiUsageIdempotencyKey(run.WorkspaceID, "agent-runtime", run.ID, "terminal-usage"),
+			InputTokens:       usage.InputTokens,
+			OutputTokens:      usage.OutputTokens,
+			ReasoningTokens:   usage.ReasoningOutputTokens,
+			CachedInputTokens: usage.CachedInputTokens,
+			AllowOverage:      true,
+			Metadata: map[string]interface{}{
+				"run_id":         run.ID,
+				"runtime_run_id": runtimeRunID,
+				"agent_id":       run.AgentID,
+				"terminal_event": strings.TrimSpace(event.Type),
+				"delegated":      true,
+			},
+		})
+	}
 	if err != nil {
 		return false, err
 	}

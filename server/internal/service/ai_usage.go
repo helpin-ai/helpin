@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -80,7 +81,13 @@ func (s *AIUsageService) ResolveMeteringContext(input MeteringRequest) (Metering
 	if s == nil || s.catalog == nil {
 		return MeteringContext{}, model.ErrPricingConfigurationMissing
 	}
-	resolved, err := s.catalog.Resolve(input.Provider, input.Model, input.Route, input.ServiceTier)
+	var resolved aiusage.ResolvedRoute
+	var err error
+	if strings.TrimSpace(input.Route) == "" {
+		resolved, err = s.catalog.ResolveDefault(input.Provider, input.Model, input.ServiceTier)
+	} else {
+		resolved, err = s.catalog.Resolve(input.Provider, input.Model, input.Route, input.ServiceTier)
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, aiusage.ErrPricingConfigurationMissing):
@@ -214,6 +221,20 @@ func (s *AIUsageService) Reconcile(ctx context.Context, input CompletionUsage) (
 // Fail releases a reservation after provider failure.
 func (s *AIUsageService) Fail(ctx context.Context, reservationID string) error {
 	return s.store.Release(ctx, reservationID, "provider_failure")
+}
+
+// Heartbeat keeps a long-running reservation live without changing its bound.
+func (s *AIUsageService) Heartbeat(ctx context.Context, metering MeteringContext) error {
+	if metering.ReservationID == "" {
+		return nil
+	}
+	resizer, ok := s.store.(interface {
+		ResizeReservation(context.Context, string, int64, time.Time) error
+	})
+	if !ok {
+		return nil
+	}
+	return resizer.ResizeReservation(ctx, metering.ReservationID, metering.MaxBillableMicrousd, time.Now().UTC())
 }
 
 func (s *AIUsageService) deterministicBound(input MeteringRequest, metering MeteringContext) (int64, error) {

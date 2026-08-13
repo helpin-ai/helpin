@@ -37,10 +37,12 @@ export interface WorkspaceBillingCard {
   trialing: boolean;
   trial_ends_at?: string;
   current_period_end: string;
-  included_credits: number;
-  credits_used: number;
-  on_demand_enabled: boolean;
-  on_demand_available: boolean;
+  ai_usage_allowance_microusd?: number;
+  ai_usage_used_microusd?: number;
+  ai_usage_reserved_microusd?: number;
+  ai_usage_percent?: number;
+  extra_ai_usage_enabled?: boolean;
+  extra_ai_usage_available?: boolean;
   price_cents: number;
   billing_interval: BillingInterval;
   payment_method: BillingPaymentMethodRef | null;
@@ -52,8 +54,9 @@ export interface OrgBillingSummary {
   total_monthly_spend_cents: number;
   paid_count: number;
   trialing_count: number;
-  credits_used: number;
-  included_credits_total: number;
+  ai_usage_used_microusd?: number;
+  ai_usage_allowance_microusd?: number;
+  ai_usage_percent?: number;
   setup_complete: boolean;
 }
 

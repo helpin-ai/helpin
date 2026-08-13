@@ -463,6 +463,17 @@ func runtimeStartRunRequest(
 	if agent != nil && strings.TrimSpace(agent.PresetKey) != "" {
 		metadata["preset_key"] = strings.TrimSpace(agent.PresetKey)
 	}
+	if metering, ok := agentRunMeteringContext(run); ok {
+		metadata["ai_usage_pricing_version"] = metering.PricingVersion
+		metadata["ai_usage_reservation_id"] = metering.ReservationID
+		metadata["max_billable_microusd"] = metering.MaxBillableMicrousd
+		metadata["ai_usage_enforcement_mode"] = metering.EnforcementMode
+		metadata["ai_usage_provider"] = metering.Route.Provider
+		metadata["ai_usage_model"] = metering.Route.CanonicalModel
+		metadata["ai_usage_route"] = metering.Route.Route
+		metadata["ai_usage_service_tier"] = metering.Route.ServiceTier
+		metadata["ai_usage_model_size"] = metering.Route.Tier
+	}
 	if requiredTools := targetCompletionRequiredTools(run.TargetType); len(requiredTools) > 0 {
 		metadata["completion_required_tools"] = requiredTools
 	}
@@ -6192,6 +6203,11 @@ func (s *AgentService) failRunStart(ctx context.Context, run *model.AgentRun, ag
 	run.CompletedAt = &now
 	run.ErrorMessage = &errMsg
 	run.ExecutionStage = strPtr("failed_to_start")
+	if metering, ok := agentRunMeteringContext(run); ok && s.aiUsageMeter != nil && s.aiUsageMeter.usage != nil && metering.ReservationID != "" {
+		if err := s.aiUsageMeter.usage.Fail(ctx, metering.ReservationID); err != nil {
+			slog.ErrorContext(ctx, "release AI usage reservation after agent start failure", "run_id", run.ID, "error", err)
+		}
+	}
 	_ = s.runRepo.Update(ctx, run)
 	if agent != nil && s.agentRepo != nil {
 		_ = s.markAgentIdle(ctx, workspaceID, agent.ID)

@@ -391,6 +391,9 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 			return nil, err
 		}
 		summary := s.summary(billing)
+		if err := s.addAIUsage(ctx, summary); err != nil {
+			return nil, err
+		}
 		if err := s.addSeatEntitlements(ctx, summary); err != nil {
 			return nil, err
 		}
@@ -451,6 +454,52 @@ func (s *BillingService) GetWorkspaceBilling(ctx context.Context, workspaceID st
 		return s.EnsureTrialForWorkspace(ctx, workspaceID)
 	}
 	return s.summarizeAndNormalize(ctx, billing)
+}
+
+// NextAIUsagePeriodSchedule derives the next renewal-anniversary allowance from subscription state.
+func (s *BillingService) NextAIUsagePeriodSchedule(ctx context.Context, workspaceID string, start time.Time) (repository.AIUsagePeriodSchedule, error) {
+	billing, err := s.repo.GetByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		return repository.AIUsagePeriodSchedule{}, err
+	}
+	if billing == nil {
+		return repository.AIUsagePeriodSchedule{}, fmt.Errorf("workspace billing is missing")
+	}
+	mode := model.AIUsageEnforcementStrict
+	if billing.Plan == model.BillingPlanFounder {
+		mode = model.AIUsageEnforcementSoft
+	} else if billing.OnDemandEnabled {
+		mode = model.AIUsageEnforcementExtra
+	}
+	allowance := aiUsageAllowanceMicrousd(billing.Plan, billing.BillingInterval, billing.Status)
+	end := NextAIUsageBoundary(billing.CurrentPeriodStart, start)
+	if billing.Status == model.BillingStatusTrialing && billing.TrialEndsAt != nil && billing.TrialEndsAt.After(start) {
+		end = *billing.TrialEndsAt
+	}
+	return repository.AIUsagePeriodSchedule{
+		WorkspaceID: workspaceID, Plan: billing.Plan, BillingInterval: billing.BillingInterval,
+		PricingVersion: "2026-08-13", EnforcementMode: mode, Anchor: billing.CurrentPeriodStart,
+		Start: start, End: end, AllowanceMicrousd: allowance,
+	}, nil
+}
+
+func aiUsageAllowanceMicrousd(plan, interval, status string) int64 {
+	if plan == model.BillingPlanFounder {
+		return 150_000_000
+	}
+	if status == model.BillingStatusTrialing {
+		return 140_000_000
+	}
+	if plan == model.BillingPlanStarter {
+		if interval == "annual" {
+			return 79_000_000
+		}
+		return 99_000_000
+	}
+	if interval == "annual" {
+		return 239_000_000
+	}
+	return 299_000_000
 }
 
 func (s *BillingService) CanReserveWorkspaceSeat(ctx context.Context, workspaceID string) error {
@@ -1419,7 +1468,27 @@ func (s *BillingService) addAIUsage(ctx context.Context, summary *BillingSummary
 		return nil
 	}
 	period, err := s.repo.GetOpenAIUsagePeriod(ctx, summary.WorkspaceID)
-	if err != nil || period == nil {
+	if err != nil {
+		return err
+	}
+	if period == nil {
+		schedule, scheduleErr := s.NextAIUsagePeriodSchedule(ctx, summary.WorkspaceID, s.now().UTC())
+		if scheduleErr != nil {
+			return scheduleErr
+		}
+		period, err = s.repo.EnsureOpenAIUsagePeriod(ctx, schedule)
+		if err != nil || period == nil {
+			return err
+		}
+	}
+	desiredMode := model.AIUsageEnforcementStrict
+	if summary.Plan == model.BillingPlanFounder {
+		desiredMode = model.AIUsageEnforcementSoft
+	} else if summary.OnDemandEnabled {
+		desiredMode = model.AIUsageEnforcementExtra
+	}
+	desiredAllowance := aiUsageAllowanceMicrousd(summary.Plan, summary.BillingInterval, summary.Status)
+	if err := s.repo.UpdateOpenAIUsageControls(ctx, period, desiredAllowance, desiredMode); err != nil {
 		return err
 	}
 	remaining := period.AllowanceMicrousd - period.UsedMicrousd - period.ReservedMicrousd

@@ -272,7 +272,18 @@ func (r *AIUsageRepository) ClosePeriod(ctx context.Context, workspaceID string,
 			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 		}
 		if err := query.Order("period_end, id").First(&period).Error; err != nil {
-			return fmt.Errorf("load due AI usage period: %w", err)
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("load due AI usage period: %w", err)
+			}
+			if err := tx.Where("workspace_id = ? AND status = ?", workspaceID, model.AIUsagePeriodClosed).
+				Order("period_end DESC").First(&period).Error; err != nil {
+				return fmt.Errorf("load closed AI usage period: %w", err)
+			}
+			var existing model.AIUsageSettlement
+			if err := tx.Where("period_id = ?", period.ID).First(&existing).Error; err == nil {
+				settlement = &existing
+			}
+			return nil
 		}
 		if period.ReservedMicrousd != 0 {
 			return fmt.Errorf("AI usage period has active reservations")
@@ -333,7 +344,8 @@ func (r *AIUsageRepository) OpenNextPeriod(ctx context.Context, input AIUsagePer
 // ListDuePeriods returns open periods ready to close in stable order.
 func (r *AIUsageRepository) ListDuePeriods(ctx context.Context, now time.Time, limit int) ([]model.AIUsagePeriod, error) {
 	var periods []model.AIUsagePeriod
-	err := r.db.WithContext(ctx).Where("status = ? AND period_end <= ?", model.AIUsagePeriodOpen, now).
+	err := r.db.WithContext(ctx).Where("(status = ? AND period_end <= ?) OR (status = ? AND NOT EXISTS (SELECT 1 FROM billing_ai_usage_periods successor WHERE successor.workspace_id = billing_ai_usage_periods.workspace_id AND successor.status = ?))",
+		model.AIUsagePeriodOpen, now, model.AIUsagePeriodClosed, model.AIUsagePeriodOpen).
 		Order("period_end, id").Limit(limit).Find(&periods).Error
 	return periods, err
 }
@@ -344,6 +356,28 @@ func (r *AIUsageRepository) ListStaleReservations(ctx context.Context, before ti
 	err := r.db.WithContext(ctx).Where("status = ? AND heartbeat_at < ?", model.AIUsageReservationActive, before).
 		Order("heartbeat_at, id").Limit(limit).Find(&reservations).Error
 	return reservations, err
+}
+
+// IsExecutionActive confirms whether a reservation's durable agent run can
+// still produce usage. A missing execution is safe for stale-hold recovery.
+func (r *AIUsageRepository) IsExecutionActive(ctx context.Context, executionID string) (bool, error) {
+	if executionID == "" {
+		return false, nil
+	}
+	var run model.AgentRun
+	err := r.db.WithContext(ctx).Select("id", "status").First(&run, "id = ?", executionID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check AI usage reservation execution: %w", err)
+	}
+	switch run.Status {
+	case model.AgentRunStatusCompleted, model.AgentRunStatusFailed, model.AgentRunStatusCancelled:
+		return false, nil
+	default:
+		return true, nil
+	}
 }
 
 // ListPendingSettlements returns exact-overage work in stable creation order.

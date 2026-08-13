@@ -41,7 +41,7 @@ describe('UsageDetail chart layout', () => {
 
     act(() => root.render(<UsageDetail workspaceId="workspace-1" />));
 
-    const barColumn = container.querySelector('[title*="usage units"]');
+    const barColumn = container.querySelector('[title*="period usage"]');
     expect(barColumn?.classList.contains('h-full')).toBe(true);
 
     act(() => root.unmount());
