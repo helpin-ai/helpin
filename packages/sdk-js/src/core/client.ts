@@ -81,7 +81,7 @@ export type HelpinWidgetController = {
   openMessages(): void;
   openNewMessage(content?: string): void;
   openConversation(conversationId: string): void;
-  openArticle(articleId: string, options?: ShowArticleOptions): void;
+  openArticle(articleKey: string, options?: ShowArticleOptions): void;
   onOpen(callback: WidgetCallback): void;
   onClose(callback: WidgetCallback): void;
   onUnreadCountChange(callback: WidgetCallback): void;
@@ -851,11 +851,11 @@ export class HelpinClient {
   }
 
   public openArticle(
-    articleId: string,
+    articleKey: string,
     options?: ShowArticleOptions,
   ): void {
     this.ensureWidgetBooted();
-    this.widgetController?.openArticle(articleId, options);
+    this.widgetController?.openArticle(articleKey, options);
   }
 
   public onOpen(callback: WidgetCallback): void {

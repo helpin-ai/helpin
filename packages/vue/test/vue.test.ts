@@ -30,11 +30,17 @@ describe('@helpin-ai/vue', () => {
     const client = makeClient();
     const track = vi.spyOn(client, 'track');
     const open = vi.spyOn(client, 'open');
+    const openConversation = vi.spyOn(client, 'openConversation');
+    const openArticle = vi.spyOn(client, 'openArticle');
     const component = defineComponent({
       setup() {
         const helpin = useHelpin();
         helpin.track('checkout_started', { plan: 'pro' });
         helpin.open();
+        helpin.openConversation('conversation-123');
+        helpin.openArticle('how-to-add-first-comment-2906b16e', {
+          spaceId: 'space-123',
+        });
         return () => h('div');
       },
     });
@@ -45,6 +51,11 @@ describe('@helpin-ai/vue', () => {
 
     expect(track).toHaveBeenCalledWith('checkout_started', { plan: 'pro' });
     expect(open).toHaveBeenCalledOnce();
+    expect(openConversation).toHaveBeenCalledWith('conversation-123');
+    expect(openArticle).toHaveBeenCalledWith(
+      'how-to-add-first-comment-2906b16e',
+      { spaceId: 'space-123' },
+    );
   });
 
   it('returns safe no-op methods when the plugin is missing', () => {
@@ -60,6 +71,8 @@ describe('@helpin-ai/vue', () => {
     mount(component);
 
     expect(() => helpin?.open()).not.toThrow();
+    expect(() => helpin?.openConversation('conversation-123')).not.toThrow();
+    expect(() => helpin?.openArticle('article-key')).not.toThrow();
     expect(error).toHaveBeenCalledOnce();
     error.mockRestore();
   });

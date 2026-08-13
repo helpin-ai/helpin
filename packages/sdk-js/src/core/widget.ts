@@ -488,11 +488,11 @@ export class WidgetManager {
     return conversationId || null;
   }
 
-  openArticle(articleId: string, _options?: ShowArticleOptions): void {
+  openArticle(articleKey: string, _options?: ShowArticleOptions): void {
     this.articleRequestKey += 1;
     this.openArticleRequest = {
       key: this.articleRequestKey,
-      articleSlug: articleId,
+      articleSlug: articleKey,
     };
     this.currentView = 'help-article';
     this.open();

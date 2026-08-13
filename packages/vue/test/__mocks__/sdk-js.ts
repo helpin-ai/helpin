@@ -12,6 +12,8 @@ export class HelpinClient {
   toggle = (): void => {};
   openMessages = (): void => {};
   openNewMessage = (): void => {};
+  openConversation = (_conversationId: string): void => {};
+  openArticle = (_articleKey: string, _options?: ShowArticleOptions): void => {};
   shutdown = (): void => {};
   set = (): void => {};
   unset = (): void => {};
@@ -23,6 +25,10 @@ export type HelpinOptions = Record<string, unknown> & { widgetKey: string };
 export type UserProps = Record<string, unknown>;
 export type EventPayload = Record<string, unknown>;
 export type LeadProps = Record<string, unknown>;
+export type ShowArticleOptions = {
+  collectionId?: string;
+  spaceId?: string;
+};
 
 export function helpinClient(
   config: HelpinOptions,

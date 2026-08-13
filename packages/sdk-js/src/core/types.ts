@@ -176,7 +176,7 @@ export interface HelpinGlobal {
   (command: 'openConversation', conversationId: string): void;
   (
     command: 'openArticle',
-    articleId: string,
+    articleKey: string,
     options?: { collectionId?: string; spaceId?: string },
   ): void;
   (command: 'boot', settings: { widgetKey?: string; key?: string; host?: string; user?: Record<string, unknown> }): void;
@@ -218,7 +218,7 @@ export interface HelpinGlobal {
   openNewMessage(content?: string): void;
   openConversation(conversationId: string): void;
   openArticle(
-    articleId: string,
+    articleKey: string,
     options?: { collectionId?: string; spaceId?: string },
   ): void;
   onOpen(callback: (...args: any[]) => void): void;
