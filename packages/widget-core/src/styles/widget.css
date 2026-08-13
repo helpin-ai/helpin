@@ -2052,6 +2052,13 @@
   animation: helpin-bubble-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* An optimistic outgoing bubble already communicates arrival through its
+   pending-to-sent opacity transition. Running the generic entrance animation
+   as well makes the same message appear to blink twice. */
+.helpin-message-row--optimistic {
+  animation: none;
+}
+
 .helpin-message-row--consecutive {
   margin-top: -4px;
 }
@@ -2074,6 +2081,12 @@
   width: fit-content;
   max-width: min(100%, 720px);
   min-width: 0;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.helpin-message--sending {
+  opacity: 0.72;
 }
 
 .helpin-message--customer {

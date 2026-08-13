@@ -45,6 +45,10 @@ export interface Message {
   emailProjectionVersion?: number;
   /** Transient client-side state while a validated AI reply is being revealed. */
   isStreaming?: boolean;
+  /** Stable local key retained while an optimistic message is reconciled with the server. */
+  clientId?: string;
+  /** Transient delivery state for an outgoing optimistic message. */
+  deliveryStatus?: 'sending';
   isInternal: boolean;
   createdAt: string;
 }
