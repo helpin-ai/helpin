@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -263,6 +264,112 @@ func TestAgentOrchestrationToolDescriptionsUseSubAgentTerminology(t *testing.T) 
 		if !strings.Contains(lower, "sub-agent") {
 			t.Fatalf("%s description does not use sub-agent terminology: %q", name, definition.Tool.Description)
 		}
+	}
+}
+
+func TestAgentLaunchContractsRequireExplicitDirectTargets(t *testing.T) {
+	svc := &InternalCommandService{definitions: map[string]InternalCommandDefinition{}}
+	svc.registerAgentOrchestrationCommands()
+
+	startRun, ok := svc.Definition("agents.start_run")
+	if !ok || startRun.Tool == nil {
+		t.Fatal("agents.start_run definition missing")
+	}
+	if !strings.Contains(startRun.Tool.Description, "must explicitly target") {
+		t.Fatalf("start run description omits explicit target guidance: %q", startRun.Tool.Description)
+	}
+	runProperties := startRun.Tool.InputSchema["properties"].(map[string]any)
+	assertDockLaunchTargetSchema(t, runProperties["target"].(map[string]any))
+	if alternatives, ok := startRun.Tool.InputSchema["anyOf"].([]map[string]any); !ok || len(alternatives) != 2 {
+		t.Fatalf("start run direct/legacy alternatives = %#v", startRun.Tool.InputSchema["anyOf"])
+	}
+
+	startPlan, ok := svc.Definition("agents.start_plan")
+	if !ok || startPlan.Tool == nil {
+		t.Fatal("agents.start_plan definition missing")
+	}
+	planProperties := startPlan.Tool.InputSchema["properties"].(map[string]any)
+	steps := planProperties["steps"].(map[string]any)
+	if steps["minItems"] != 1 {
+		t.Fatalf("start plan steps minItems = %#v, want 1", steps["minItems"])
+	}
+	stepSchema := steps["items"].(map[string]any)
+	required := stepSchema["required"].([]string)
+	if !slices.Contains(required, "instructions") || !slices.Contains(required, "target") {
+		t.Fatalf("direct plan step required fields = %v, want instructions and target", required)
+	}
+}
+
+func assertDockLaunchTargetSchema(t *testing.T, schema map[string]any) {
+	t.Helper()
+	required, _ := schema["required"].([]string)
+	if !slices.Contains(required, "type") || schema["additionalProperties"] != false {
+		t.Fatalf("launch target must require type and reject unknown fields: %#v", schema)
+	}
+	properties := schema["properties"].(map[string]any)
+	typeSchema := properties["type"].(map[string]any)
+	targetTypes, _ := typeSchema["enum"].([]string)
+	for _, targetType := range []string{"workspace", "task", "epic", "repository"} {
+		if !slices.Contains(targetTypes, targetType) {
+			t.Fatalf("launch target enum missing %q: %v", targetType, targetTypes)
+		}
+	}
+}
+
+func TestValidateDirectDockLaunchSteps(t *testing.T) {
+	tests := []struct {
+		name    string
+		steps   []dockLaunchStep
+		wantErr string
+	}{
+		{name: "saved agent task target", steps: []dockLaunchStep{{AgentID: "scribe", Instructions: "plan it", Target: dockLaunchTarget{Type: "task", ID: "task-1"}}}},
+		{name: "one-shot agent task target", steps: []dockLaunchStep{{UseCommandAgent: true, AllowedTools: []string{"get_task"}, Instructions: "inspect it", Target: dockLaunchTarget{Type: "task", ID: "task-1"}}}},
+		{name: "workspace derives trusted id", steps: []dockLaunchStep{{Instructions: "research it", Target: dockLaunchTarget{Type: "workspace"}}}},
+		{name: "missing target type", steps: []dockLaunchStep{{Instructions: "plan it"}}, wantErr: "target.type is required"},
+		{name: "missing task id", steps: []dockLaunchStep{{Instructions: "plan it", Target: dockLaunchTarget{Type: "task"}}}, wantErr: `target.id is required for target.type "task"`},
+		{name: "missing second step target", steps: []dockLaunchStep{{Instructions: "first", Target: dockLaunchTarget{Type: "task", ID: "task-1"}}, {Instructions: "second"}}, wantErr: "step 2: target.type is required"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateDirectDockLaunchSteps(test.steps)
+			if test.wantErr == "" && err != nil {
+				t.Fatalf("validate direct launch: %v", err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+				t.Fatalf("error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestAgentLaunchHandlersRejectImplicitWorkspaceTargets(t *testing.T) {
+	svc := &InternalCommandService{definitions: map[string]InternalCommandDefinition{}}
+	svc.registerAgentOrchestrationCommands()
+	meta := model.InternalCommandContext{WorkspaceID: "ws-1", ActorID: "user-1"}
+
+	startRun, _ := svc.Definition("agents.start_run")
+	_, err := startRun.Execute(context.Background(), meta, json.RawMessage(`{"agent_id":"scribe","instructions":"plan the task"}`))
+	if err == nil || !strings.Contains(err.Error(), "target.type is required") {
+		t.Fatalf("start run error = %v, want explicit-target guidance", err)
+	}
+
+	startPlan, _ := svc.Definition("agents.start_plan")
+	_, err = startPlan.Execute(context.Background(), meta, json.RawMessage(`{"steps":[{"agent_id":"scribe","instructions":"plan the task"}]}`))
+	if err == nil || !strings.Contains(err.Error(), "target.type is required") {
+		t.Fatalf("start plan error = %v, want explicit-target guidance", err)
+	}
+}
+
+func TestRepairDockLaunchErrorExplainsRepositoryRecovery(t *testing.T) {
+	err := repairDockLaunchError(fmt.Errorf("start task planner: %w", ErrTaskDeliveryTargetRequired))
+	for _, required := range []string{"configured repository", `target.type="task"`, "list_repositories", "update_task_delivery_target", "same task-targeted launch"} {
+		if !strings.Contains(err.Error(), required) {
+			t.Fatalf("repair error missing %q: %v", required, err)
+		}
+	}
+	original := fmt.Errorf("another launch error")
+	if repairDockLaunchError(original) != original {
+		t.Fatal("unrelated launch error was replaced")
 	}
 }
 

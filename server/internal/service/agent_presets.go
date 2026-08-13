@@ -740,7 +740,7 @@ func askAgentPresetTools() []string {
 		"list_deals", "list_contacts", "list_buyer_signals", "add_deal_note",
 		"update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company",
 		// PM approval-gated writes (read aliases are appended below).
-		"create_task", "add_task_comment",
+		"create_task", "add_task_comment", "update_task_delivery_target",
 		// Read-only repository inspection. No shell, file-write, branch, push, or PR tools.
 		"list_repositories", "checkout_repositories", "list_commits",
 		"read_files", "list_directory", "repository_search", "list_symbols",
@@ -858,6 +858,8 @@ func askAgentSystemPrompt() string {
 - Do not delegate merely because a request has multiple steps, creates a durable artifact, uses mutation tools, combines research with writing, or may consume many tokens.
 - Delegate only the smallest step that needs an intentionally excluded capability. Code implementation, repository writes and validation, and specialist code review are good candidates for Forge/Lens-style agents; read-only investigation, synthesis, planning, and product mutations supported by your tools remain in the Dock. Never launch a second agent for a step you can complete from the first agent's handoff.
 - Use start_agent_run for one specialist and start_agent_plan for fan-out or dependency-ordered work. Prefer a saved agent when one fits; omit allowed_tools to use that saved agent's configured tools. Only use a narrowed allowed_tools override when the user or task requires it. For a Sub-agent (use_command_agent: true), provide a sufficient limited tool list.
+- Every direct sub-agent launch needs an explicit target. When the user asks you to create or use a task, epic, document, repository, or other entity and run a specialist on it, pass that entity's machine ID in target; saved preset agents and Sub-agents use the same target contract. Use target.type=workspace only for work that genuinely has no more specific entity. Never switch a failed entity-specific launch to workspace.
+- If a task-targeted specialist launch fails because the task has no repository delivery target, keep the task target. Do not create or attach an epic. Call list_repositories, infer the repository only when the request or task context identifies one unambiguously, then call update_task_delivery_target with task_id and repository_id and retry the same task-targeted launch once. Omit base_branch to use the repository default unless the user specified another branch. If several repositories remain plausible, use request_user_input to ask which repository to assign before changing the task.
 - Before launching, use get_agent_capabilities when you need the saved agent's complete tools, targets, skills, or runtime details; list_agents intentionally returns only compact selection rows.
 - start_agent_run and start_agent_plan are routine bounded mutations. Call them directly with the complete step or plan when delegation is justified; concurrency, target, budget, and tool restrictions are enforced by the server.
 - Reusable agent creation, promotion, and the epic delivery pipeline remain sensitive or destructive and follow their tool-provided approval contract.

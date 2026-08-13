@@ -377,7 +377,7 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	}
 	for _, toolName := range []string{
 		"get_my_capabilities",
-		"create_task", "create_document", "write_document_content", "insert_document_artifact",
+		"create_task", "update_task_delivery_target", "create_document", "write_document_content", "insert_document_artifact",
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		"list_conversation_messages",
 		"search_workspace", "search_documents",
@@ -420,6 +420,19 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	if !strings.Contains(*preset.SystemPrompt, "start with the newest 20") || !strings.Contains(*preset.SystemPrompt, "Inspect image attachment URLs") {
 		t.Fatalf("Ask Agent prompt is missing support transcript and image guidance: %s", *preset.SystemPrompt)
 	}
+	for _, required := range []string{
+		"Every direct sub-agent launch needs an explicit target",
+		"saved preset agents and Sub-agents use the same target contract",
+		"Never switch a failed entity-specific launch to workspace",
+		"Do not create or attach an epic",
+		"update_task_delivery_target with task_id and repository_id",
+		"retry the same task-targeted launch once",
+		"If several repositories remain plausible",
+	} {
+		if !strings.Contains(*preset.SystemPrompt, required) {
+			t.Errorf("Ask Agent prompt is missing launch recovery guidance %q", required)
+		}
+	}
 	for _, skillKey := range preset.AvailableSkills {
 		skill, ok := agentcontract.GetBuiltInSkill(skillKey)
 		if !ok {
@@ -451,7 +464,7 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 		"checkout_repositories", "repository_search", "read_files",
 		"read_symbol", "trace_symbol",
 		"find_skills", "read_skill", "update_plan",
-		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "prepare_dock_execution",
+		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "update_task_delivery_target", "prepare_dock_execution",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("managed Ask capability %q was not restored to pinned preset: %v", toolName, preset.AllowedTools)

@@ -38,6 +38,7 @@ repository modification.
 | `activate_dock_execution` / `finish_dock_execution` | activate an approved short-lived grant and close it after execution |
 | repository read tools | check out the default branch and read/search files, symbols, and commit history directly |
 | `start_agent_run` / `start_agent_plan` | selectively launch sub-agent runs / multi-step plans (reuses command-bar dispatch validation) |
+| `update_task_delivery_target` | assign the repository and optional branch a task-targeted repository agent needs before launch |
 | `get_agent_run`, `cancel_agent_run` | child run status / cancellation |
 | `draft_custom_agent`, `create_custom_agent` | generate a complete durable agent draft, approve its ID, then create it without reconstructing capabilities |
 | `promote_run_to_agent` | turn a proven run into a reusable agent |
@@ -66,6 +67,16 @@ After approval, `start_agent_run` or `start_agent_plan` accepts only the
 The model therefore cannot lose or subtly change a long instruction payload
 between approval and execution. Approvals are single-use. For saved agents,
 omitting `allowed_tools` preserves the agent's configured defaults.
+
+Every direct launch step has an explicit target. Saved preset agents and
+one-shot Sub-agents use the same target contract and target allowlist checks.
+Entity work stays entity-targeted: after creating a task, the Dock launches a
+task planner with that task's ID rather than falling back to workspace. If a
+repository-capable agent reports that the task lacks a delivery target, the
+Dock selects an unambiguous connected repository, assigns it with
+`update_task_delivery_target`, and retries the same task target once. It asks
+the user when several repositories remain plausible and never creates or
+attaches an epic as a repository-configuration workaround.
 
 **Reusable-agent contract:** `draft_custom_agent` uses the workspace tool and
 skill catalogs to generate the complete prompt, tools, targets, skills, and
