@@ -19,6 +19,27 @@ func TestOrderedModelTiersUsesCustomerFacingOrder(t *testing.T) {
 	}
 }
 
+func TestAIUsageAllowancePercentage(t *testing.T) {
+	tests := []struct {
+		name      string
+		charged   int64
+		allowance int64
+		want      float64
+	}{
+		{name: "part of allowance", charged: 25, allowance: 1_000, want: 2.5},
+		{name: "above allowance", charged: 1_125, allowance: 1_000, want: 112.5},
+		{name: "no allowance", charged: 25, allowance: 0, want: 0},
+		{name: "no charge", charged: 0, allowance: 1_000, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := aiUsageAllowancePercentage(tt.charged, tt.allowance); got != tt.want {
+				t.Fatalf("aiUsageAllowancePercentage(%d, %d) = %v, want %v", tt.charged, tt.allowance, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPriceCentsForPlan(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -8,10 +8,12 @@ const usage: UsageResponse = {
   period_start: '2026-06-21T00:00:00Z',
   period_end: '2026-07-21T00:00:00Z',
   mode: 'daily',
-  included_credits: 5_000,
-  credits_used: 30,
+  ai_usage_allowance_microusd: 100,
+  ai_usage_used_microusd: 30,
+  ai_usage_reserved_microusd: 0,
+  ai_usage_overage_microusd: 0,
   features: [
-    { feature_key: 'coding_run', label: 'Coding runs', cost: 10, usage: 3, credits: 30, pct: 100 },
+    { feature_key: 'coding_run', label: 'Coding runs', charged_microusd: 30, action_count: 3, pct: 30 },
   ],
   series: [
     { date: '2026-06-21', features: { coding_run: 10 } },
@@ -37,6 +39,25 @@ describe('buildUsageChart', () => {
     }, 'cumulative');
 
     expect(chart.points.map((point) => point.total)).toEqual([10, 30]);
+  });
+
+  it('measures chart values against the full allowance, not total consumed usage', () => {
+    const chart = buildUsageChart({
+      ...usage,
+      ai_usage_allowance_microusd: 1_000,
+      series: [{ date: '2026-06-21', features: { coding_run: 25 } }],
+    }, 'daily');
+
+    expect(chart.points[0]?.total).toBe(2.5);
+  });
+
+  it('preserves usage above 100 percent for extra usage and Founder reporting', () => {
+    const chart = buildUsageChart({
+      ...usage,
+      series: [{ date: '2026-06-21', features: { coding_run: 125 } }],
+    }, 'daily');
+
+    expect(chart.points[0]?.total).toBe(125);
   });
 });
 

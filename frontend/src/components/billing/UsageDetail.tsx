@@ -10,8 +10,10 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { featureColor, formatNumber } from '@/lib/billingUtils';
+import { formatAIUsagePercent } from '@/lib/aiUsage';
 import type { UsageMode, UsageResponse } from '@/lib/billingTypes';
 import { useWorkspaceUsage } from '@/hooks/queries';
 
@@ -29,11 +31,13 @@ export function buildUsageChart(usage: UsageResponse, mode: UsageMode) {
   const featureKeys = features.map((f) => f.feature_key);
   const labelByKey = new Map(features.map((f) => [f.feature_key, f.label]));
   const apiAlreadyCumulative = usage.mode === 'cumulative';
+  const allowance = Math.max(0, usage.ai_usage_allowance_microusd ?? 0);
 
   let running: Record<string, number> = {};
   const points = series.map((pt) => {
     const segs = featureKeys.map((key, i) => {
-      const dayVal = pt.features?.[key] ?? 0;
+      const chargedMicrousd = pt.features?.[key] ?? 0;
+      const dayVal = allowance > 0 ? (chargedMicrousd / allowance) * 100 : 0;
       const value = mode === 'cumulative' && !apiAlreadyCumulative ? (running[key] ?? 0) + dayVal : dayVal;
       if (mode === 'cumulative' && !apiAlreadyCumulative) running = { ...running, [key]: value };
       return { key, label: labelByKey.get(key) ?? key, value, color: featureColor(i) };
@@ -120,34 +124,65 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd, mockUsage }: 
       {/* Stacked bar chart (CSS/flex) */}
       <div className="rounded-xl border bg-card p-4">
         <div className="overflow-x-auto px-1 pb-1">
-          <div
-            data-usage-chart-track
-            className="grid h-40 w-full items-end justify-center gap-[3px]"
-            style={{ gridTemplateColumns: `repeat(${chartColumnCount}, minmax(8px, 32px))` }}
-          >
-            {points.map((p) => (
-              <div
-                key={p.date}
-                className="group relative flex h-full min-w-0 flex-col justify-end"
-                title={`${dayjs(p.date).format('MMM D')}: ${Math.round(p.total)}% of period usage`}
-              >
-                <div className="flex w-full flex-col-reverse" style={{ height: `${(p.total / max) * 100}%` }}>
-                  {p.segs
-                    .filter((s) => s.value > 0)
-                    .map((s) => (
+          <TooltipProvider delayDuration={100}>
+            <div
+              data-usage-chart-track
+              className="grid h-40 w-full items-end justify-center gap-[3px]"
+              style={{ gridTemplateColumns: `repeat(${chartColumnCount}, minmax(8px, 32px))` }}
+            >
+              {points.map((p) => {
+                const activeSegments = p.segs.filter((segment) => segment.value > 0);
+                const accessibleLabel = `${dayjs(p.date).format('MMMM D, YYYY')}: ${formatAIUsagePercent(p.total)} of allowance`;
+                return (
+                  <Tooltip key={p.date}>
+                    <TooltipTrigger asChild>
                       <div
-                        key={s.key}
-                        style={{
-                          height: `${(s.value / Math.max(1, p.total)) * 100}%`,
-                          backgroundColor: s.color,
-                        }}
-                        className="w-full first:rounded-t-sm"
-                      />
-                    ))}
-                </div>
-              </div>
-            ))}
-          </div>
+                        data-usage-bar-column
+                        className="relative flex h-full min-w-0 flex-col justify-end outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        tabIndex={0}
+                        aria-label={accessibleLabel}
+                      >
+                        <div className="flex w-full flex-col-reverse" style={{ height: `${(p.total / max) * 100}%` }}>
+                          {activeSegments.map((segment) => (
+                            <div
+                              key={segment.key}
+                              data-usage-bar-segment
+                              style={{
+                                height: `${(segment.value / Math.max(1, p.total)) * 100}%`,
+                                backgroundColor: segment.color,
+                              }}
+                              className="w-full"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" sideOffset={8} className="block min-w-44 space-y-2 p-3">
+                      <div>
+                        <p className="font-semibold">{dayjs(p.date).format('MMMM D, YYYY')}</p>
+                        <p className="text-background/75">{formatAIUsagePercent(p.total)} of allowance</p>
+                      </div>
+                      {activeSegments.length > 0 ? (
+                        <div className="space-y-1 border-t border-background/20 pt-2">
+                          {activeSegments.map((segment) => (
+                            <div key={segment.key} className="flex items-center justify-between gap-4">
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <span className="size-2 shrink-0" style={{ backgroundColor: segment.color }} />
+                                <span className="truncate">{segment.label}</span>
+                              </span>
+                              <span className="tabular-nums">{formatAIUsagePercent(segment.value)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-background/75">No usage</p>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </TooltipProvider>
           <div
             aria-label="Usage period"
             className="mt-2 grid w-full justify-center gap-[3px] text-[10px] text-muted-foreground"
@@ -165,7 +200,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd, mockUsage }: 
           </div>
         </div>
         {/* Legend */}
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+        <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-center">
           {features.length === 0 && (
             <span className="text-[11px] text-muted-foreground">No AI usage recorded for this period.</span>
           )}
@@ -189,7 +224,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd, mockUsage }: 
               <TableHead>Feature</TableHead>
               <TableHead>Model size</TableHead>
               <TableHead className="text-right">Actions</TableHead>
-              <TableHead className="text-right">Share of usage</TableHead>
+              <TableHead className="text-right">Share of allowance</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -223,7 +258,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd, mockUsage }: 
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{formatNumber(f.action_count ?? 0)}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {Math.round(f.pct)}%
+                  {formatAIUsagePercent(f.pct)}
                   {(f.estimated_count ?? 0) > 0 && <span className="ml-1 text-muted-foreground">estimated</span>}
                 </TableCell>
               </TableRow>
