@@ -74,6 +74,16 @@ describe('formatRunTokenUsageTotal', () => {
       tokens_used: 0,
     })).toBe('75k');
   });
+
+  it('does not double-count cached input from an inflated native total', () => {
+    expect(formatRunTokenUsageTotal({
+      runtime_kind: 'native_sdk',
+      cached_input_tokens: 478_720,
+      input_tokens: 586_711,
+      output_tokens: 6_077,
+      tokens_used: 1_072_550,
+    })).toBe('593k');
+  });
 });
 
 describe('formatRunTokenUsageBreakdown', () => {
@@ -90,5 +100,15 @@ describe('formatRunTokenUsageBreakdown', () => {
       'Output: 722',
       'Cached input: 119k',
     ]);
+  });
+
+  it('normalizes an inflated native total in hover text', () => {
+    expect(formatRunTokenUsageBreakdown({
+      runtime_kind: 'native_sdk',
+      cached_input_tokens: 478_720,
+      input_tokens: 586_711,
+      output_tokens: 6_077,
+      tokens_used: 1_072_550,
+    })[0]).toBe('Total: 593k tokens');
   });
 });

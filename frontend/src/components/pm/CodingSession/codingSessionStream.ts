@@ -531,8 +531,8 @@ function transcriptToolCallsFromPayload(payload: Record<string, unknown>, messag
     const argsText = stringifyToolInput(invocation.input) ?? '';
 
     return [{
-      tool_call_id: `${messageID}:tool:${index + 1}`,
-      parent_message_id: messageID,
+      tool_call_id: asString(invocation.tool_call_id) ?? `${messageID}:tool:${index + 1}`,
+      parent_message_id: asString(invocation.parent_message_id) ?? messageID,
       tool_name: toolName,
       args_text: argsText,
       status,

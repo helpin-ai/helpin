@@ -18,7 +18,7 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 		{
 			name: "all read-only tools",
 			steps: []dockLaunchStep{
-				{Instructions: "check repo", AllowedTools: []string{"read_file", "search_files"}},
+				{Instructions: "check repo", AllowedTools: []string{"read_files", "repository_search"}},
 				{Instructions: "check docs", AllowedTools: []string{"search_knowledge"}},
 			},
 			want: true,
@@ -38,14 +38,14 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 		{
 			name: "mutating tool present",
 			steps: []dockLaunchStep{
-				{Instructions: "fix it", AllowedTools: []string{"read_file", "create_task"}},
+				{Instructions: "fix it", AllowedTools: []string{"read_files", "create_task"}},
 			},
 			want: false,
 		},
 		{
 			name: "one clean step and one dirty step",
 			steps: []dockLaunchStep{
-				{Instructions: "read", AllowedTools: []string{"read_file"}},
+				{Instructions: "read", AllowedTools: []string{"read_files"}},
 				{Instructions: "write", AllowedTools: []string{"update_document"}},
 			},
 			want: false,
@@ -53,7 +53,7 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 		{
 			name: "whitespace tolerated",
 			steps: []dockLaunchStep{
-				{Instructions: "read", AllowedTools: []string{" read_file "}},
+				{Instructions: "read", AllowedTools: []string{" read_files "}},
 			},
 			want: true,
 		},
@@ -70,8 +70,8 @@ func TestSupportStepsAreReadOnly(t *testing.T) {
 
 func TestSupportChildResearchKinds(t *testing.T) {
 	steps := []model.CommandBarPlanStep{
-		{AllowedTools: []string{"web_search_exa", "fetch_url"}},
-		{AllowedTools: []string{"checkout_repository", "ripgrep", "read_file"}},
+		{AllowedTools: []string{"web_search", "fetch_url"}},
+		{AllowedTools: []string{"checkout_repositories", "repository_search", "read_files"}},
 	}
 	hasWeb, hasRepository := supportChildResearchKinds(steps)
 	if !hasWeb || !hasRepository {

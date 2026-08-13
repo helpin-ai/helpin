@@ -72,11 +72,11 @@ type agentRunFinalizerSupportCoverageService interface {
 // idempotent (marker in output_summary or natural create-if-not-exists) and a
 // failing finalizer never blocks the others or the status projection.
 type AgentRunFinalizerService struct {
-	runRepo             agentRuntimeProjectionRunRepository
-	agentRepo           agentRunFinalizerAgentRepository
-	taskRepo            agentRunFinalizerTaskRepository
-	epicRepo            agentRunFinalizerEpicRepository
-	conversationRepo    agentRunFinalizerConversationRepository
+	runRepo          agentRuntimeProjectionRunRepository
+	agentRepo        agentRunFinalizerAgentRepository
+	taskRepo         agentRunFinalizerTaskRepository
+	epicRepo         agentRunFinalizerEpicRepository
+	conversationRepo agentRunFinalizerConversationRepository
 	productAnalyticsEmitter
 	supportMessageRepo  agentRunFinalizerSupportMessageRepository
 	ruleEngine          agentRunFinalizerRuleEvaluator

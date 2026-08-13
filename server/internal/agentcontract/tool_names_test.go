@@ -15,7 +15,7 @@ func TestHelpinMCPRuntimeToolNamePrefixesHelpinTools(t *testing.T) {
 	} {
 		got := HelpinMCPRuntimeToolName(alias)
 		if alias == "read_file" {
-			if got != "read_file" {
+			if got != "read_files" {
 				t.Fatalf("expected local tool to stay unprefixed, got %q", got)
 			}
 			continue
@@ -32,7 +32,7 @@ func TestCanonicalToolNameStripsHelpinMCPPrefixAndLegacyAliases(t *testing.T) {
 		HelpinMCPToolPrefix + ToolUpdatePlan:        ToolUpdatePlan,
 		HelpinMCPToolPrefix + ToolRequestHumanInput: ToolRequestUserInput,
 		ToolRequestHumanApproval:                    ToolRequestApproval,
-		"read_file":                                 "read_file",
+		"read_file":                                 "read_files",
 	} {
 		if got := CanonicalToolName(raw); got != want {
 			t.Fatalf("CanonicalToolName(%q)=%q, want %q", raw, got, want)

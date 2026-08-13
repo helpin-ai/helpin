@@ -71,7 +71,7 @@ func ResolveAgentProfile(agent *model.Agent, invocationMode ...string) ResolvedP
 	}
 
 	if strings.TrimSpace(agent.RuntimeKind) == "native_sdk" && agentHasAvailableSkills(agent) {
-		resolved.Tools = appendMissingTools(resolved.Tools, ToolListAvailableSkills, ToolSearchAvailableSkills, ToolReadSkill)
+		resolved.Tools = appendMissingTools(resolved.Tools, ToolFindSkills, ToolReadSkill)
 	}
 
 	// Repo: required if agent has any filesystem or git tools
@@ -140,9 +140,10 @@ func QueueForRuntime(runtimeKind, invocationMode string) string {
 // hasRepoTools returns true if any tool in the set requires repository access.
 func hasRepoTools(tools []string) bool {
 	repoTools := map[string]bool{
-		"read_file": true, "read_file_range": true, "write_file": true,
-		"list_directory": true, "search_files": true, "ripgrep": true,
-		"grep": true, "list_symbols": true, "run_command": true,
+		"read_files": true, "write_file": true,
+		"list_directory": true, "repository_search": true,
+		"list_symbols": true, "run_command": true,
+		"read_symbol": true, "trace_symbol": true,
 		"create_branch": true, "commit_and_push": true, "open_pr": true,
 		ToolScanSemgrep: true, ToolScanTrivy: true, ToolScanGitleaks: true,
 	}

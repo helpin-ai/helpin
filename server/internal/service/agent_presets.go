@@ -16,11 +16,12 @@ const (
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
 	// preferred DeepSeek OpenRouter model.
 	defaultAtlasAgentModel = "deepseek/deepseek-v4-flash-0731"
-	// defaultScribeAgentModel keeps interactive task planning on the product's
-	// preferred fast OpenRouter model.
-	defaultScribeAgentModel = "deepseek/deepseek-v4-flash"
-	// Quill shares Scribe's fast OpenRouter model by default.
-	defaultQuillAgentModel = defaultScribeAgentModel
+	// defaultScribeAgentModel keeps interactive task planning on Codex's
+	// default OpenAI model.
+	defaultScribeAgentModel = defaultOpenAIAgentModel
+	// defaultQuillAgentModel keeps documentation work on the product's fast
+	// OpenRouter model.
+	defaultQuillAgentModel = "deepseek/deepseek-v4-flash"
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
 	defaultAskAgentModel = "deepseek/deepseek-v4-flash-0731"
@@ -422,8 +423,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		agentcontract.ToolPublishTaskPlan,
 		agentcontract.ToolRequestUserInput,
 		agentcontract.ToolRequestApproval,
-		agentcontract.ToolListAvailableSkills,
-		agentcontract.ToolSearchAvailableSkills,
+		agentcontract.ToolFindSkills,
 		agentcontract.ToolReadSkill,
 		"ensure_epic_spec_doc",
 		"write_document_content",
@@ -476,8 +476,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Coding Task Planner",
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Coding Task Planner",
-			RuntimeKind:           "native_sdk",
-			Provider:              &openRouterPresetProvider,
+			RuntimeKind:           "codex",
+			Provider:              &openAIPresetProvider,
 			Model:                 &scribeDefaultModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
@@ -486,7 +486,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"task", "epic", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("native_sdk"),
+			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          taskPlannerPrompt,
 		},
 		{
@@ -503,7 +503,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          appendPresetTools([]string{agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill, "search_workspace", "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"}, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases),
+			AllowedTools:          appendPresetTools([]string{agentcontract.ToolFindSkills, agentcontract.ToolReadSkill, "search_workspace", "list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"}, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "crm_company", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
@@ -570,25 +570,21 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			DefaultTriggerMode:  "manual",
 			AllowedTriggerModes: []string{"manual"},
 			AllowedTools: appendPresetTools([]string{
-				agentcontract.ToolListAvailableSkills,
-				agentcontract.ToolSearchAvailableSkills,
+				agentcontract.ToolFindSkills,
 				agentcontract.ToolReadSkill,
 				"update_plan",
 				"request_user_input",
 				"request_approval",
 				"request_review_checkpoint",
 				"list_repositories",
-				"checkout_repository",
 				"checkout_repositories",
 				"list_commits",
-				"read_file",
-				"read_file_range",
 				"read_files",
 				"list_directory",
-				"search_files",
-				"ripgrep",
-				"grep",
+				"repository_search",
 				"list_symbols",
+				"read_symbol",
+				"trace_symbol",
 				"search_workspace",
 				"list_documents",
 				"list_collections",
@@ -609,7 +605,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 				"list_contacts",
 				"list_buyer_signals",
 				"add_deal_note",
-				"web_search_exa",
+				"web_search",
 				"fetch_url",
 				"crawl_url",
 				"get_release_context",
@@ -682,7 +678,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          appendPresetTools([]string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repository", "checkout_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_spaces", "search_workspace", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "update_document_metadata", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases, safeSupportDiscoveryToolAliases, safeSupportWriteToolAliases),
+			AllowedTools:          appendPresetTools([]string{"web_search", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repositories", "list_commits", "read_files", "list_directory", "repository_search", "list_symbols", "read_symbol", "trace_symbol", "list_spaces", "search_workspace", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "update_document_metadata", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases, safeSupportDiscoveryToolAliases, safeSupportWriteToolAliases),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "crm_company", "support_conversation", "repository"},
 			ApprovalMode:          "never",
@@ -724,10 +720,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 func askAgentPresetTools() []string {
 	return appendPresetTools([]string{
 		// Skills, interaction, and progress.
-		"list_available_skills", "search_available_skills", "read_skill",
+		"find_skills", "read_skill",
 		"request_user_input", "request_approval", "update_plan",
 		// Web research.
-		"web_search_brave", "web_search_exa", "fetch_url", "crawl_url",
+		"web_search", "fetch_url", "crawl_url",
 		// Authenticated browser inspection and private screenshot/video artifacts.
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		// Workspace / PM reads.
@@ -744,11 +740,11 @@ func askAgentPresetTools() []string {
 		"list_deals", "list_contacts", "list_buyer_signals", "add_deal_note",
 		"update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company",
 		// PM approval-gated writes (read aliases are appended below).
-		"create_task", "add_task_comment",
+		"create_task", "add_task_comment", "update_task_delivery_target",
 		// Read-only repository inspection. No shell, file-write, branch, push, or PR tools.
-		"list_repositories", "checkout_repository", "checkout_repositories", "list_commits",
-		"read_file", "read_files", "read_file_range", "list_directory",
-		"search_files", "ripgrep", "grep", "list_symbols",
+		"list_repositories", "checkout_repositories", "list_commits",
+		"read_files", "list_directory", "repository_search", "list_symbols",
+		"read_symbol", "trace_symbol",
 		// Scoped direct execution.
 		"prepare_dock_execution", "activate_dock_execution", "finish_dock_execution",
 		// Agent orchestration.
@@ -850,7 +846,7 @@ func askAgentSystemPrompt() string {
 - For complex or long requests, call update_plan early with a concise outcome-oriented plan, keep exactly one step in_progress, and update it as work advances. This is the Dock's own visible work plan, not a child-agent plan or an approval request. Skip it for simple tasks, and never let planning replace execution.
 - Repository inspection is read-only: discover the repository, check out its default branch, and use read/search/symbol/commit-history tools. Never attempt file edits, shell commands, branches, commits, pushes, merges, or pull requests from the Dock.
 - Treat multi-step requests as one Dock task when every step is covered by your current tools, even when the steps cross domains (for example repository reading followed by document creation). Do not delegate merely because the requested output belongs to a specialist domain.
-- Before delegating, map every remaining step to your actual tools and skills. If they cover the work, execute it directly. If uncertain, call get_my_capabilities and use list_available_skills/search_available_skills/read_skill for relevant guidance. Attempt the applicable tool path before declaring a capability unavailable; for repository reads this means checkout_repository before file search/read tools.
+- Before delegating, map every remaining step to your actual tools and skills. If they cover the work, execute it directly. If uncertain, call get_my_capabilities and use find_skills/read_skill for relevant guidance. Attempt the applicable tool path before declaring a capability unavailable; for repository reads this means checkout_repositories before repository_search/read_files.
 - Read-only tools and routine reversible workspace mutations execute directly. Call the complete tool once; do not request approval first and do not retry it through a child agent.
 - Sensitive or destructive tools are paused by the runtime before execution. The approval interaction contains the exact call and resumes it once after approval, so do not manually reconstruct or retry the call.
 - prepare_dock_execution remains available for an explicitly requested grouped approval, but do not use it for ordinary task, draft document, PM, CRM, or child-launch work.
@@ -862,6 +858,8 @@ func askAgentSystemPrompt() string {
 - Do not delegate merely because a request has multiple steps, creates a durable artifact, uses mutation tools, combines research with writing, or may consume many tokens.
 - Delegate only the smallest step that needs an intentionally excluded capability. Code implementation, repository writes and validation, and specialist code review are good candidates for Forge/Lens-style agents; read-only investigation, synthesis, planning, and product mutations supported by your tools remain in the Dock. Never launch a second agent for a step you can complete from the first agent's handoff.
 - Use start_agent_run for one specialist and start_agent_plan for fan-out or dependency-ordered work. Prefer a saved agent when one fits; omit allowed_tools to use that saved agent's configured tools. Only use a narrowed allowed_tools override when the user or task requires it. For a Sub-agent (use_command_agent: true), provide a sufficient limited tool list.
+- Every direct sub-agent launch needs an explicit target. When the user asks you to create or use a task, epic, document, repository, or other entity and run a specialist on it, pass that entity's machine ID in target; saved preset agents and Sub-agents use the same target contract. Use target.type=workspace only for work that genuinely has no more specific entity. Never switch a failed entity-specific launch to workspace.
+- If a task-targeted specialist launch fails because the task has no repository delivery target, keep the task target. Do not create or attach an epic. Call list_repositories, infer the repository only when the request or task context identifies one unambiguously, then call update_task_delivery_target with task_id and repository_id and retry the same task-targeted launch once. Omit base_branch to use the repository default unless the user specified another branch. If several repositories remain plausible, use request_user_input to ask which repository to assign before changing the task.
 - Before launching, use get_agent_capabilities when you need the saved agent's complete tools, targets, skills, or runtime details; list_agents intentionally returns only compact selection rows.
 - start_agent_run and start_agent_plan are routine bounded mutations. Call them directly with the complete step or plan when delegation is justified; concurrency, target, budget, and tool restrictions are enforced by the server.
 - Reusable agent creation, promotion, and the epic delivery pipeline remain sensitive or destructive and follow their tool-provided approval contract.

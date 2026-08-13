@@ -261,6 +261,13 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		ApprovalMode:          strings.TrimSpace(agent.ApprovalMode),
 		DefaultInvocationMode: strings.TrimSpace(agent.DefaultInvocationMode),
 	}
+	// Ask Agent's repository reads are a managed Dock capability. Merge the
+	// current preset surface at the final runtime boundary as well as during
+	// preset reconciliation so an existing row with a stale allowed_tools
+	// snapshot can use newly shipped read-only tools immediately.
+	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
+		out.AllowedTools = appendPresetTools(out.AllowedTools, askAgentPresetTools())
+	}
 	// Ask Agent owns skill discovery as a managed Dock capability. Keep those
 	// tools registered even before a workspace assigns optional skills; an
 	// empty discovery result is valid and the run contract must still match.
@@ -269,7 +276,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		!hasAvailableRuntimeSkills(out.Skills) {
 		out.AllowedTools = slices.DeleteFunc(out.AllowedTools, func(toolName string) bool {
 			switch agentcontract.CanonicalToolName(toolName) {
-			case agentcontract.ToolListAvailableSkills, agentcontract.ToolSearchAvailableSkills, agentcontract.ToolReadSkill:
+			case agentcontract.ToolFindSkills, agentcontract.ToolReadSkill:
 				return true
 			default:
 				return false
@@ -1120,10 +1127,21 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
-		// Atlas, Scribe, and Quill product defaults moved from OpenAI to DeepSeek on
+		// Scribe's product default moved from DeepSeek on OpenRouter to Codex on
+		// OpenAI. Only migrate the default preset when it still uses the previous
+		// product default, preserving custom routing choices.
+		if presetKey == model.AgentPresetTaskPlanner &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenRouter &&
+			strings.TrimSpace(derefString(existing.Model)) == "deepseek/deepseek-v4-flash" {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
+		// Atlas and Quill product defaults moved from OpenAI to DeepSeek on
 		// OpenRouter. Only migrate the default preset when it still uses a known
 		// legacy product default, preserving custom routing choices.
-		if (presetKey == model.AgentPresetEpicPlanner || presetKey == model.AgentPresetTaskPlanner || presetKey == model.AgentPresetDocumentationAgent) &&
+		if (presetKey == model.AgentPresetEpicPlanner || presetKey == model.AgentPresetDocumentationAgent) &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
 			(strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel ||

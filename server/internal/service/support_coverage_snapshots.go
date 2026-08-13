@@ -11,15 +11,15 @@ import (
 
 // SupportCoverageSnapshotMetrics holds pre-computed coverage metrics.
 type SupportCoverageSnapshotMetrics struct {
-	TotalOpenGaps              int `json:"total_open_gaps"`
-	NewGaps7d                  int `json:"new_gaps_7d"`
-	FixedGaps7d                int `json:"fixed_gaps_7d"`
-	TotalEvidence              int `json:"total_evidence"`
-	HandoffsAfterFixes         int `json:"handoffs_after_fixes"`
-	MissingArticleGaps         int `json:"missing_article_gaps"`
-	WeakArticleGaps            int `json:"weak_article_gaps"`
-	OutdatedOrConflictingGaps  int `json:"outdated_or_conflicting_gaps"`
-	NeedsReviewGaps            int `json:"needs_review_gaps"`
+	TotalOpenGaps             int `json:"total_open_gaps"`
+	NewGaps7d                 int `json:"new_gaps_7d"`
+	FixedGaps7d               int `json:"fixed_gaps_7d"`
+	TotalEvidence             int `json:"total_evidence"`
+	HandoffsAfterFixes        int `json:"handoffs_after_fixes"`
+	MissingArticleGaps        int `json:"missing_article_gaps"`
+	WeakArticleGaps           int `json:"weak_article_gaps"`
+	OutdatedOrConflictingGaps int `json:"outdated_or_conflicting_gaps"`
+	NeedsReviewGaps           int `json:"needs_review_gaps"`
 }
 
 // RefreshWorkspaceSnapshots computes and stores a coverage snapshot
@@ -56,12 +56,12 @@ func (s *SupportCoverageService) RefreshWorkspaceSnapshots(ctx context.Context, 
 
 	metrics := SupportCoverageSnapshotMetrics{
 		TotalOpenGaps:             summary.TotalOpenGaps,
-		NewGaps7d:                summary.NewGapsThisWeek,
-		FixedGaps7d:              summary.GapsFixedThisWeek,
-		MissingArticleGaps:       int(missingCount),
-		WeakArticleGaps:          int(weakCount),
+		NewGaps7d:                 summary.NewGapsThisWeek,
+		FixedGaps7d:               summary.GapsFixedThisWeek,
+		MissingArticleGaps:        int(missingCount),
+		WeakArticleGaps:           int(weakCount),
 		OutdatedOrConflictingGaps: int(outdatedCount),
-		NeedsReviewGaps:          int(reviewCount),
+		NeedsReviewGaps:           int(reviewCount),
 	}
 
 	metricsJSON, err := json.Marshal(metrics)

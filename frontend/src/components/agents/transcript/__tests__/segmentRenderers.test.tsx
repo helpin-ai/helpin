@@ -84,6 +84,38 @@ describe('TranscriptSegmentView — tool', () => {
     expect(container.textContent).not.toContain('▾');
   });
 
+  it('renders the exact returned range for a completed read_files call', () => {
+    const segment: TranscriptSegment = {
+      kind: 'tool',
+      id: 'tool-read-files',
+      toolCall: {
+        tool_call_id: 'tc-read-files',
+        tool_name: 'read_files',
+        args_text: JSON.stringify({ files: [{ path: 'src/service.go', repository: 'backend' }] }),
+        status: 'completed',
+        result: {
+          content: JSON.stringify({
+            count: 1,
+            files: [{
+              path: 'src/service.go',
+              start_line: 12,
+              end_line: 18,
+              content: 'File: src/service.go\n12: package service',
+              has_more: true,
+              next_start_line: 19,
+              continuation_reason: 'output_limit',
+            }],
+          }),
+        },
+      },
+    };
+
+    render(segment, true);
+
+    expect(container.textContent).toContain('Read src/service.go:12-18 · backend');
+    expect(container.textContent).not.toContain('next_start_line');
+  });
+
   it('renders a successful tool with no args or result as a flat, non-expandable one-liner', () => {
     const bareToolSegment: TranscriptSegment = {
       kind: 'tool',

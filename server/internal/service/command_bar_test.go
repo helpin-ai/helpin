@@ -873,7 +873,7 @@ func TestCRMEnrichmentToolsAreCommandAgentOnlyPresetTools(t *testing.T) {
 			t.Fatalf("did not expect CRM Operator to allow %q in first slice", tool)
 		}
 	}
-	for _, tool := range []string{"web_search_exa", "fetch_url", "read_document", "get_document_blocks", "write_document_content", "update_document_block", "link_document_to_object"} {
+	for _, tool := range []string{"web_search", "fetch_url", "read_document", "get_document_blocks", "write_document_content", "update_document_block", "link_document_to_object"} {
 		if !slices.Contains(commandAgent.AllowedTools, tool) {
 			t.Fatalf("expected Command Agent to allow document one-shot tool %q", tool)
 		}

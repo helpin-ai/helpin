@@ -397,6 +397,8 @@ describe('buildCodingSessionStreamState', () => {
     ]);
 
     expect(state.transcript_messages[0]?.tool_calls?.[0]).toMatchObject({
+      tool_call_id: 'tool-failed-1',
+      parent_message_id: 'assistant-failed-tool-1',
       status: 'failed',
       result: { error: 'skill is not available to this agent' },
     });

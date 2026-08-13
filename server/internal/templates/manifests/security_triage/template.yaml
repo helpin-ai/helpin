@@ -42,7 +42,7 @@ agent:
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [update_plan, list_directory, read_file, read_files, read_file_range, search_files, ripgrep, grep, run_command, scan_semgrep, scan_trivy, scan_gitleaks, web_search_exa, create_document, link_document_to_object, ensure_task_label, list_tasks, create_task, add_task_comment]
+    allowed_tools: [update_plan, list_directory, read_files, repository_search, run_command, scan_semgrep, scan_trivy, scan_gitleaks, web_search, create_document, link_document_to_object, ensure_task_label, list_tasks, create_task, add_task_comment]
     allowed_targets: [repository, document]
     approval_mode: always
 trigger:

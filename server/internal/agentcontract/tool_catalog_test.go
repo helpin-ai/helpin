@@ -631,7 +631,7 @@ func TestBrowserToolCatalogContracts(t *testing.T) {
 
 func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 	catalog := ListToolCatalog()
-	want := map[string]bool{"read_file": false, "read_files": false, "read_file_range": false}
+	want := map[string]bool{"read_files": false}
 	for _, tool := range catalog.Tools {
 		if _, ok := want[tool.Name]; !ok {
 			continue
@@ -645,25 +645,12 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 			t.Fatalf("%s schema is not a strict object: %#v", tool.Name, tool.InputSchema)
 		}
 		properties, _ := schema["properties"].(map[string]any)
-		for _, field := range []string{"path", "repo_alias", "repository"} {
-			if tool.Name != "read_files" && properties[field] == nil {
-				t.Fatalf("%s schema missing %s: %#v", tool.Name, field, schema)
-			}
-		}
 		switch tool.Name {
-		case "read_file":
-			if !strings.Contains(tool.Description, "numbered text lines") || !strings.Contains(tool.Description, "exact offset_line") {
-				t.Fatalf("read_file description lacks bounded recovery contract: %s", tool.Description)
-			}
-			limit := properties["limit_lines"].(map[string]any)
-			if limit["minimum"] != float64(1) || limit["maximum"] != float64(240) || properties["offset"] == nil || properties["limit"] == nil {
-				t.Fatalf("read_file compatibility bounds drifted: %#v", properties)
-			}
-		case "read_file_range":
-			if !strings.Contains(tool.Description, "numbered line range") || !strings.Contains(tool.Description, "exact continuation") {
-				t.Fatalf("read_file_range description lacks bounded recovery contract: %s", tool.Description)
-			}
 		case "read_files":
+			if !strings.Contains(tool.Description, "2,100-character content budget") ||
+				!strings.Contains(tool.Description, "next_start_line") {
+				t.Fatalf("read_files description omits bounded continuation contract: %q", tool.Description)
+			}
 			files := properties["files"].(map[string]any)
 			if files["minItems"] != float64(1) || files["maxItems"] != float64(4) {
 				t.Fatalf("read_files array bounds drifted: %#v", files)
@@ -674,8 +661,72 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 			}
 			itemProperties := items["properties"].(map[string]any)
 			limit := itemProperties["limit_lines"].(map[string]any)
-			if limit["minimum"] != float64(1) || limit["maximum"] != float64(120) || itemProperties["repo_alias"] == nil || itemProperties["repository"] == nil {
+			if limit["minimum"] != float64(1) || limit["maximum"] != float64(240) || itemProperties["start_line"] == nil || itemProperties["repository"] == nil {
 				t.Fatalf("read_files item contract drifted: %#v", itemProperties)
+			}
+			if description, _ := limit["description"].(string); !strings.Contains(description, "next_start_line") {
+				t.Fatalf("read_files limit description omits continuation field: %#v", limit)
+			}
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Fatalf("%s missing from tool catalog", name)
+		}
+	}
+}
+
+func TestWebSearchToolCatalogDocumentsProviderPrecedence(t *testing.T) {
+	catalog := ListToolCatalog()
+	for _, tool := range catalog.Tools {
+		if tool.Name != "web_search" {
+			continue
+		}
+		if !strings.Contains(tool.Description, "Exa is preferred") ||
+			!strings.Contains(tool.Description, "fallback for compatible fast searches") {
+			t.Fatalf("web_search description omits provider selection contract: %q", tool.Description)
+		}
+		return
+	}
+	t.Fatal("web_search missing from tool catalog")
+}
+
+// The symbol tools are the catalog's view of agent-runtime's tree-sitter
+// navigation tools. Their value is the exact line range they return, so the
+// catalog must keep advertising that and must stay strict about inputs.
+func TestSymbolNavigationToolCatalogContracts(t *testing.T) {
+	catalog := ListToolCatalog()
+	want := map[string]bool{
+		"list_symbols": false, "read_symbol": false, "trace_symbol": false,
+	}
+	for _, tool := range catalog.Tools {
+		if _, ok := want[tool.Name]; !ok {
+			continue
+		}
+		want[tool.Name] = true
+		if tool.Category != "Code Analysis" {
+			t.Fatalf("%s category = %q, want Code Analysis", tool.Name, tool.Category)
+		}
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok || schema["type"] != "object" || schema["additionalProperties"] != false {
+			t.Fatalf("%s schema is not a strict object: %#v", tool.Name, tool.InputSchema)
+		}
+		properties, _ := schema["properties"].(map[string]any)
+		if properties["repository"] == nil {
+			t.Fatalf("%s schema missing repository; multi-repo selection would be impossible: %#v", tool.Name, schema)
+		}
+		switch tool.Name {
+		case "read_symbol":
+			if properties["symbol"] == nil || properties["kind"] == nil {
+				t.Fatalf("read_symbol must take a symbol and optional kind: %#v", properties)
+			}
+		case "trace_symbol":
+			if properties["symbol"] == nil || properties["direction"] == nil {
+				t.Fatalf("trace_symbol must take symbol and direction: %#v", properties)
+			}
+		case "list_symbols":
+			if !strings.Contains(tool.Description, "line range") {
+				t.Fatalf("list_symbols description lost its line-range contract: %s", tool.Description)
 			}
 		}
 	}

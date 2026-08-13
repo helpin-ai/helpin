@@ -312,6 +312,36 @@
       "presets": []
     },
     {
+      "name": "checkout_repositories",
+      "description": "Checkout one to four connected repositories. Call list_repositories first when the current target does not identify the repository.",
+      "category": "Workspace",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "repositories": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "alias": {"type": "string"},
+                "base_branch": {"type": "string"},
+                "primary": {"type": "boolean"},
+                "repo_full_name": {"type": "string"},
+                "repository_id": {"type": "string"},
+                "work_branch": {"type": "string"}
+              },
+              "type": "object"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": ["repositories"],
+        "type": "object"
+      },
+      "presets": []
+    },
+    {
       "name": "create_branch",
       "description": "Create a new git branch and switch to it.",
       "category": "Git",
@@ -1881,31 +1911,48 @@
       "presets": []
     },
     {
-      "name": "grep",
-      "description": "Simple text/regex search (Go-native, no external dependencies). Use ripgrep for better performance if available.",
+      "name": "repository_search",
+      "description": "Search repository file paths or contents. Provide query for content search, glob for path discovery, or both to restrict content search.",
       "category": "Code Analysis",
       "input_schema": {
+        "additionalProperties": false,
         "properties": {
-          "include": {
-            "description": "Filename glob filter (e.g. '*.go', '*.ts')",
+          "case_insensitive": {
+            "type": "boolean"
+          },
+          "context_lines": {
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "file_type": {
+            "type": "string"
+          },
+          "glob": {
+            "description": "Optional file glob such as **/*.go.",
+            "type": "string"
+          },
+          "match_mode": {
+            "enum": ["regex", "literal"],
             "type": "string"
           },
           "max_results": {
-            "description": "Maximum results to return (default 50)",
+            "maximum": 200,
+            "minimum": 1,
             "type": "integer"
           },
           "path": {
-            "description": "Optional subdirectory to search within (relative to workspace root)",
             "type": "string"
           },
-          "pattern": {
-            "description": "Search pattern (substring or regex)",
+          "query": {
+            "description": "Optional content pattern. At least query or glob is required.",
+            "type": "string"
+          },
+          "repository": {
             "type": "string"
           }
         },
-        "required": [
-          "pattern"
-        ],
+        "required": [],
         "type": "object"
       },
       "presets": []
@@ -2068,11 +2115,22 @@
       "presets": []
     },
     {
-      "name": "list_available_skills",
-      "description": "List the skills available to this agent for the current run. Returns metadata only; use read_skill for instructions for one selected skill.",
+      "name": "find_skills",
+      "description": "Discover optional skills available to this agent. Omit query for the complete compact catalog, or provide query to search metadata.",
       "category": "Skills",
       "input_schema": {
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       },
       "presets": []
@@ -2129,6 +2187,10 @@
             "description": "Optional path filter — only commits touching this file or directory.",
             "type": "string"
           },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
           "since": {
             "description": "Only commits after this date, e.g. \"2026-05-05\" or \"1 month ago\".",
             "type": "string"
@@ -2138,6 +2200,7 @@
             "type": "string"
           }
         },
+        "additionalProperties": false,
         "type": "object"
       },
       "presets": []
@@ -2284,8 +2347,13 @@
           "path": {
             "description": "Directory path relative to the workspace root (empty string for root)",
             "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
           }
         },
+        "additionalProperties": false,
         "required": [
           "path"
         ],
@@ -2653,17 +2721,89 @@
     },
     {
       "name": "list_symbols",
-      "description": "Extract function, type, and class declarations from a source file. Returns only signature lines with line numbers.",
+      "description": "Outline a source file: every function, method, type, and class declaration with its name, kind, and exact start-end line range. Use this to find a declaration, then read_symbol to read it.",
       "category": "Code Analysis",
       "input_schema": {
         "properties": {
           "path": {
             "description": "File path relative to the workspace root",
             "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "presets": []
+    },
+    {
+      "name": "read_symbol",
+      "description": "Locate and read a named declaration. Omit path to search the repository; ambiguous matches return exact candidates.",
+      "category": "Code Analysis",
+      "input_schema": {
+        "properties": {
+          "include_docstring": {
+            "description": "Include the comment block immediately above the declaration. Defaults to true.",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": ["function", "method", "type", "class", "interface", "constructor", "constant", "variable", "module"],
+            "type": "string"
+          },
+          "path": {
+            "description": "Optional file path relative to the workspace root.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Declaration name, e.g. a function, method, type, or class name.",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "symbol"
+        ],
+        "type": "object"
+      },
+      "presets": []
+    },
+    {
+      "name": "trace_symbol",
+      "description": "Trace where a function or method is called, what it calls, or both.",
+      "category": "Code Analysis",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "enum": ["callers", "callees", "both"],
+            "type": "string"
+          },
+          "path": {
+            "description": "Optional file path relative to the workspace root.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
+            "type": "string"
+          },
+          "symbol": {
+            "description": "Function or method name to inspect.",
+            "type": "string"
           }
         },
         "required": [
-          "path"
+          "symbol",
+          "direction"
         ],
         "type": "object"
       },
@@ -3460,96 +3600,8 @@
       "presets": []
     },
     {
-      "name": "read_file",
-      "description": "Read a bounded window of numbered text lines at the given path (relative to the workspace root). Truncated results include the exact offset_line to continue. Use ripgrep/search_files/list_symbols first, then read the exact section you need.",
-      "category": "Filesystem",
-      "input_schema": {
-        "properties": {
-          "limit_lines": {
-            "description": "Optional maximum number of lines to return. Defaults to 120, max 240.",
-            "maximum": 240,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "limit": {
-            "description": "Deprecated maximum line count.",
-            "maximum": 240,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "offset": {
-            "description": "Deprecated 0-based line offset.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "offset_line": {
-            "description": "Optional 1-based line number to start reading from. Defaults to 1.",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "description": "File path relative to the workspace root",
-            "type": "string"
-          },
-          "repo_alias": {
-            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
-            "type": "string"
-          },
-          "repository": {
-            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "path"
-        ],
-        "type": "object"
-      },
-      "presets": []
-    },
-    {
-      "name": "read_file_range",
-      "description": "Read a bounded, numbered line range from a file. Prefer this after search/ripgrep when you know the relevant span; truncated results include the exact continuation line.",
-      "category": "Filesystem",
-      "input_schema": {
-        "properties": {
-          "end_line": {
-            "description": "Last line number to read, 1-based inclusive",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "path": {
-            "description": "File path relative to the workspace root",
-            "type": "string"
-          },
-          "repo_alias": {
-            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
-            "type": "string"
-          },
-          "repository": {
-            "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
-            "type": "string"
-          },
-          "start_line": {
-            "description": "First line number to read, 1-based",
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "path",
-          "start_line",
-          "end_line"
-        ],
-        "type": "object"
-      },
-      "presets": []
-    },
-    {
       "name": "read_files",
-      "description": "Read small bounded windows from a few specific text files in one call. Prefer ripgrep/search_files plus read_file_range first; use this only when you already know the exact files and need small excerpts.",
+      "description": "Read bounded numbered excerpts from one to four known files. The call shares an approximately 2,100-character content budget across its files, so limit_lines is only a ceiling. When has_more is true, continue exactly from next_start_line; do not restart the range or increase limit_lines. Prefer repository_search or list_symbols before reading when paths or declarations are unknown.",
       "category": "Filesystem",
       "input_schema": {
         "properties": {
@@ -3560,22 +3612,18 @@
             "items": {
               "properties": {
                 "limit_lines": {
-                  "description": "Optional maximum number of lines to return for this file. Defaults to 60, max 120.",
-                  "maximum": 120,
+                  "description": "Optional line ceiling for this file. Defaults to 60, max 240. The shared output budget may return fewer lines; follow next_start_line when has_more is true.",
+                  "maximum": 240,
                   "minimum": 1,
                   "type": "integer"
                 },
-                "offset_line": {
+                "start_line": {
                   "description": "Optional 1-based line number to start reading from. Defaults to 1.",
                   "minimum": 1,
                   "type": "integer"
                 },
                 "path": {
                   "description": "File path relative to the workspace root",
-                  "type": "string"
-                },
-                "repo_alias": {
-                  "description": "Optional repository alias/full name/id when multiple repositories are checked out.",
                   "type": "string"
                 },
                 "repository": {
@@ -3813,48 +3861,6 @@
         },
         "required": [
           "questions"
-        ],
-        "type": "object"
-      },
-      "presets": []
-    },
-    {
-      "name": "ripgrep",
-      "description": "Fast regex code search using ripgrep. Preferred over search_files for content search.",
-      "category": "Code Analysis",
-      "input_schema": {
-        "properties": {
-          "case_insensitive": {
-            "description": "Case-insensitive search (default false)",
-            "type": "boolean"
-          },
-          "context_lines": {
-            "description": "Lines of context around each match (0-5, default 0)",
-            "type": "integer"
-          },
-          "file_type": {
-            "description": "Restrict to file type (e.g. 'go', 'ts', 'py', 'js', 'rust', 'java')",
-            "type": "string"
-          },
-          "fixed_strings": {
-            "description": "Treat pattern as literal string instead of regex (default false)",
-            "type": "boolean"
-          },
-          "max_results": {
-            "description": "Maximum result lines to return (default 50, max 200)",
-            "type": "integer"
-          },
-          "path": {
-            "description": "Optional subdirectory to search within (relative to workspace root)",
-            "type": "string"
-          },
-          "pattern": {
-            "description": "Search pattern (regex by default, literal if fixed_strings is true)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "pattern"
         ],
         "type": "object"
       },
@@ -4224,25 +4230,6 @@
       "presets": []
     },
     {
-      "name": "search_available_skills",
-      "description": "Search this agent's available skills by key, title, description, source, runtime, or required tools. Returns metadata only; use read_skill for instructions for one selected skill.",
-      "category": "Skills",
-      "input_schema": {
-        "properties": {
-          "limit": {
-            "description": "Maximum number of matching skills to return. Defaults to 10, max 50.",
-            "type": "integer"
-          },
-          "query": {
-            "description": "Search query. Empty returns the first available skills.",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "presets": []
-    },
-    {
       "name": "search_documents",
       "description": "Search documents by keyword across the workspace. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.",
       "category": "Docs",
@@ -4259,28 +4246,6 @@
         },
         "required": [
           "query"
-        ],
-        "type": "object"
-      },
-      "presets": []
-    },
-    {
-      "name": "search_files",
-      "description": "Search for files matching a glob pattern, optionally grep for content.",
-      "category": "Filesystem",
-      "input_schema": {
-        "properties": {
-          "pattern": {
-            "description": "Glob pattern (e.g. '**/*.go')",
-            "type": "string"
-          },
-          "query": {
-            "description": "Optional text/regex to search within matched files",
-            "type": "string"
-          }
-        },
-        "required": [
-          "pattern"
         ],
         "type": "object"
       },
@@ -5310,189 +5275,45 @@
       "presets": []
     },
     {
-      "name": "web_search_brave",
-      "description": "Search the public web with Brave Search. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results.",
+      "name": "web_search",
+      "description": "Search the public web through the automatically selected configured provider. Exa is preferred when available; Brave is used when Exa is unavailable and as a fallback for compatible fast searches. Use fast mode for ordinary lookup and deep mode for neural search, extraction, or advanced filters.",
       "category": "Web Search",
       "input_schema": {
+        "additionalProperties": false,
         "properties": {
-          "count": {
-            "description": "Maximum number of results to return (default 5, max 10)",
-            "type": "integer"
+          "additional_queries": {
+            "items": {"type": "string"},
+            "type": "array"
           },
-          "domain_allowlist": {
-            "description": "Optional list of domains to prioritize",
-            "items": {
-              "type": "string"
-            },
+          "category": {
+            "enum": ["company", "research paper", "news", "personal site", "financial report", "people"],
+            "type": "string"
+          },
+          "exclude_domains": {
+            "items": {"type": "string"},
             "type": "array"
           },
           "freshness": {
             "description": "Optional freshness hint such as pd, pw, pm, or py",
             "type": "string"
           },
-          "query": {
-            "description": "Search query to run",
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "presets": []
-    },
-    {
-      "name": "web_search_exa",
-      "description": "Search the web with Exa's neural search engine. Supports category filters, semantic search types, content extraction, domain filters, freshness controls, and synthesized structured output. Returns JSON results with titles, URLs, and extracted content.",
-      "category": "Web Search",
-      "input_schema": {
-        "properties": {
-          "additional_queries": {
-            "description": "Optional extra query variations for deep-search modes",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "category": {
-            "description": "Optional category: company, research paper, news, personal site, financial report, or people",
-            "enum": [
-              "company",
-              "research paper",
-              "news",
-              "personal site",
-              "financial report",
-              "people"
-            ],
-            "type": "string"
-          },
-          "contents": {
-            "description": "Optional content extraction settings. Choose exactly one of text, highlights, or summary. Defaults to highlights with max_characters 4000 when omitted.",
-            "properties": {
-              "extras": {
-                "properties": {
-                  "image_links": {
-                    "type": "integer"
-                  },
-                  "links": {
-                    "type": "integer"
-                  }
-                },
-                "type": "object"
-              },
-              "highlights": {
-                "properties": {
-                  "max_characters": {
-                    "type": "integer"
-                  },
-                  "query": {
-                    "type": "string"
-                  }
-                },
-                "type": "object"
-              },
-              "max_age_hours": {
-                "description": "0 always livecrawls, -1 uses cache only",
-                "type": "integer"
-              },
-              "subpage_target": {
-                "description": "Optional keyword or structure used to prioritize subpages"
-              },
-              "subpages": {
-                "description": "Optional number of subpages to crawl per result",
-                "type": "integer"
-              },
-              "summary": {
-                "properties": {
-                  "query": {
-                    "type": "string"
-                  },
-                  "schema": {
-                    "type": "object"
-                  }
-                },
-                "type": "object"
-              },
-              "text": {
-                "properties": {
-                  "include_html_tags": {
-                    "type": "boolean"
-                  },
-                  "max_characters": {
-                    "type": "integer"
-                  }
-                },
-                "type": "object"
-              }
-            },
-            "type": "object"
-          },
-          "end_crawl_date": {
-            "description": "Only return links crawled before this ISO 8601 timestamp",
-            "type": "string"
-          },
-          "end_published_date": {
-            "description": "Only return links published before this ISO 8601 timestamp",
-            "type": "string"
-          },
-          "exclude_domains": {
-            "description": "Exclude results from these domains. Not supported for company or people categories",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "include_domains": {
-            "description": "Only return results from these domains",
-            "items": {
-              "type": "string"
-            },
+            "items": {"type": "string"},
             "type": "array"
           },
-          "moderation": {
-            "description": "Filter unsafe content from results",
-            "type": "boolean"
-          },
-          "num_results": {
-            "description": "Maximum number of results to return (default 5, max 10 in this tool)",
+          "max_results": {
+            "maximum": 10,
+            "minimum": 1,
             "type": "integer"
           },
-          "output_schema": {
-            "description": "Optional JSON schema for synthesized output.content",
-            "type": "object"
+          "mode": {
+            "enum": ["fast", "deep"],
+            "type": "string"
           },
           "query": {
-            "description": "Natural-language search query",
-            "type": "string"
-          },
-          "start_crawl_date": {
-            "description": "Only return links crawled after this ISO 8601 timestamp",
-            "type": "string"
-          },
-          "start_published_date": {
-            "description": "Only return links published after this ISO 8601 timestamp",
-            "type": "string"
-          },
-          "system_prompt": {
-            "description": "Optional synthesis instructions for output shaping and source preferences",
-            "type": "string"
-          },
-          "type": {
-            "description": "Search type: auto (default), neural, fast, instant, deep-lite, deep, or deep-reasoning",
-            "enum": [
-              "auto",
-              "neural",
-              "fast",
-              "instant",
-              "deep-lite",
-              "deep",
-              "deep-reasoning"
-            ],
             "type": "string"
           },
           "user_location": {
-            "description": "Optional two-letter ISO country code such as US to bias results geographically",
             "type": "string"
           }
         },

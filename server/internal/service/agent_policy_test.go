@@ -115,6 +115,9 @@ func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "native_sdk" {
 		t.Fatalf("expected planner runtime default native_sdk, got %q", got)
 	}
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetTaskPlanner); got != "codex" {
+		t.Fatalf("expected Scribe runtime default codex, got %q", got)
+	}
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "native_sdk" {
 		t.Fatalf("expected support runtime default native_sdk, got %q", got)
 	}
@@ -243,19 +246,27 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			}
 			continue
 		}
-		if preset.Key == model.AgentPresetTaskPlanner || preset.Key == model.AgentPresetDocumentationAgent {
+		if preset.Key == model.AgentPresetTaskPlanner {
+			if preset.RuntimeKind != "codex" {
+				t.Errorf("preset %q runtime = %q, want codex", preset.Key, preset.RuntimeKind)
+			}
+			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenAI {
+				t.Errorf("preset %q provider = %+v, want openai", preset.Key, preset.Provider)
+			}
+			if preset.Model == nil || *preset.Model != defaultScribeAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultScribeAgentModel)
+			}
+			continue
+		}
+		if preset.Key == model.AgentPresetDocumentationAgent {
 			if preset.RuntimeKind != "native_sdk" {
 				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
 			}
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}
-			wantModel := defaultScribeAgentModel
-			if preset.Key == model.AgentPresetDocumentationAgent {
-				wantModel = defaultQuillAgentModel
-			}
-			if preset.Model == nil || *preset.Model != wantModel {
-				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, wantModel)
+			if preset.Model == nil || *preset.Model != defaultQuillAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultQuillAgentModel)
 			}
 			continue
 		}
@@ -322,7 +333,7 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 				t.Fatalf("expected documentation target %q in %v", targetType, preset.AllowedTargetTypes)
 			}
 		}
-		for _, toolName := range []string{"list_repositories", "checkout_repository", "checkout_repositories", "read_file", "list_documents", "create_document", "write_document_content", "insert_document_artifact", "browser_open", "browser_screenshot", "browser_record", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
+		for _, toolName := range []string{"list_repositories", "checkout_repositories", "read_files", "list_documents", "create_document", "write_document_content", "insert_document_artifact", "browser_open", "browser_screenshot", "browser_record", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
 			if !slices.Contains(preset.AllowedTools, toolName) {
 				t.Fatalf("expected documentation tool %q in %v", toolName, preset.AllowedTools)
 			}
@@ -366,13 +377,14 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	}
 	for _, toolName := range []string{
 		"get_my_capabilities",
-		"create_task", "create_document", "write_document_content", "insert_document_artifact",
+		"create_task", "update_task_delivery_target", "create_document", "write_document_content", "insert_document_artifact",
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		"list_conversation_messages",
 		"search_workspace", "search_documents",
-		"list_available_skills", "search_available_skills", "read_skill",
-		"list_repositories", "checkout_repository", "checkout_repositories",
-		"ripgrep", "search_files", "list_symbols", "read_file", "read_file_range",
+		"find_skills", "read_skill",
+		"list_repositories", "checkout_repositories",
+		"repository_search", "list_symbols", "read_files",
+		"read_symbol", "trace_symbol",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
@@ -408,6 +420,19 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	if !strings.Contains(*preset.SystemPrompt, "start with the newest 20") || !strings.Contains(*preset.SystemPrompt, "Inspect image attachment URLs") {
 		t.Fatalf("Ask Agent prompt is missing support transcript and image guidance: %s", *preset.SystemPrompt)
 	}
+	for _, required := range []string{
+		"Every direct sub-agent launch needs an explicit target",
+		"saved preset agents and Sub-agents use the same target contract",
+		"Never switch a failed entity-specific launch to workspace",
+		"Do not create or attach an epic",
+		"update_task_delivery_target with task_id and repository_id",
+		"retry the same task-targeted launch once",
+		"If several repositories remain plausible",
+	} {
+		if !strings.Contains(*preset.SystemPrompt, required) {
+			t.Errorf("Ask Agent prompt is missing launch recovery guidance %q", required)
+		}
+	}
 	for _, skillKey := range preset.AvailableSkills {
 		skill, ok := agentcontract.GetBuiltInSkill(skillKey)
 		if !ok {
@@ -436,9 +461,10 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 		t.Fatalf("managed Ask approval mode = %q, want risk_based", preset.ApprovalMode)
 	}
 	for _, toolName := range []string{
-		"checkout_repository", "ripgrep", "read_file",
-		"list_available_skills", "read_skill", "update_plan",
-		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "prepare_dock_execution",
+		"checkout_repositories", "repository_search", "read_files",
+		"read_symbol", "trace_symbol",
+		"find_skills", "read_skill", "update_plan",
+		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "update_task_delivery_target", "prepare_dock_execution",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("managed Ask capability %q was not restored to pinned preset: %v", toolName, preset.AllowedTools)
@@ -506,8 +532,8 @@ func TestListAgentPresetsPlannersIncludeExaSearch(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if !slices.Contains(preset.AllowedTools, "web_search_exa") {
-			t.Fatalf("expected preset %q to include web_search_exa, got %v", preset.Key, preset.AllowedTools)
+		if !slices.Contains(preset.AllowedTools, "web_search") {
+			t.Fatalf("expected preset %q to include web_search, got %v", preset.Key, preset.AllowedTools)
 		}
 		expected[preset.Key] = true
 	}
@@ -1177,7 +1203,7 @@ func TestNormalizeAgentRecordStripsRepositoryEditToolsFromPlannerPresets(t *test
 					t.Fatalf("expected sanitized tool list to exclude %q, got %v", unexpected, tools)
 				}
 			}
-			for _, required := range []string{"read_file", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval} {
+			for _, required := range []string{"read_files", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval} {
 				if !slices.Contains(tools, required) {
 					t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
 				}
@@ -1202,7 +1228,7 @@ func TestNormalizeAgentRecordStripsListEpicTasksFromTaskPlanner(t *testing.T) {
 	if slices.Contains(tools, "list_epic_tasks") {
 		t.Fatalf("expected sanitized task planner tool list to exclude list_epic_tasks, got %v", tools)
 	}
-	for _, required := range []string{"read_file", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval, agentcontract.ToolPublishTaskPlanDoc} {
+	for _, required := range []string{"read_files", "search_documents", agentcontract.ToolUpdatePlan, agentcontract.ToolRequestApproval, agentcontract.ToolPublishTaskPlanDoc} {
 		if !slices.Contains(tools, required) {
 			t.Fatalf("expected sanitized tool list to keep %q, got %v", required, tools)
 		}

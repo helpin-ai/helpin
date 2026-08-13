@@ -12,36 +12,32 @@ import "strings"
 // from model input.
 var supportChildReadOnlyTools = map[string]bool{
 	// Repository inspection (bug checks).
-	"checkout_repository":   true,
 	"checkout_repositories": true,
 	"list_repositories":     true,
 	"list_commits":          true,
-	"read_file":             true,
 	"read_files":            true,
-	"read_file_range":       true,
 	"list_directory":        true,
-	"search_files":          true,
-	"ripgrep":               true,
-	"grep":                  true,
+	"repository_search":     true,
 	"list_symbols":          true,
+	"read_symbol":           true,
+	"trace_symbol":          true,
 	// Docs / knowledge reads.
-	"list_documents":   true,
-	"read_document":    true,
+	"list_documents":      true,
+	"read_document":       true,
 	"get_document_blocks": true,
-	"search_documents": true,
-	"list_collections": true,
-	"list_spaces":      true,
-	"search_knowledge": true,
+	"search_documents":    true,
+	"list_collections":    true,
+	"list_spaces":         true,
+	"search_knowledge":    true,
 	// Product reads.
 	"list_tasks":                 true,
 	"get_task_context":           true,
 	"list_workspace_teams":       true,
 	"list_conversation_messages": true,
 	// Web research.
-	"fetch_url":       true,
-	"crawl_url":       true,
-	"web_search_brave": true,
-	"web_search_exa":   true,
+	"fetch_url":  true,
+	"crawl_url":  true,
+	"web_search": true,
 }
 
 const (

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -113,6 +114,45 @@ func normalizeDockLaunchSteps(steps []dockLaunchStep) []dockLaunchStep {
 		normalized = append(normalized, step)
 	}
 	return normalized
+}
+
+func dockLaunchStepHasDirectInput(step dockLaunchStep) bool {
+	return strings.TrimSpace(step.AgentID) != "" || step.UseCommandAgent ||
+		strings.TrimSpace(step.Target.Type) != "" || strings.TrimSpace(step.Target.ID) != "" ||
+		strings.TrimSpace(step.Instructions) != "" || len(step.AllowedTools) > 0 || len(step.DependsOnStepIndexes) > 0
+}
+
+func validateDirectDockLaunchSteps(steps []dockLaunchStep) error {
+	if len(steps) == 0 {
+		return fmt.Errorf("at least one step is required")
+	}
+	for index, step := range steps {
+		prefix := fmt.Sprintf("step %d: ", index+1)
+		if len(steps) == 1 {
+			prefix = ""
+		}
+		if strings.TrimSpace(step.Instructions) == "" {
+			return fmt.Errorf("%sinstructions are required", prefix)
+		}
+		targetType := normalizeCommandBarTargetType(step.Target.Type)
+		if targetType == "" {
+			return fmt.Errorf("%starget.type is required for direct launches; use workspace only for genuinely workspace-scoped work", prefix)
+		}
+		if err := validateCommandBarSupportedTarget(targetType); err != nil {
+			return fmt.Errorf("%s%w", prefix, err)
+		}
+		if targetType != "workspace" && strings.TrimSpace(step.Target.ID) == "" {
+			return fmt.Errorf("%starget.id is required for target.type %q", prefix, targetType)
+		}
+	}
+	return nil
+}
+
+func repairDockLaunchError(err error) error {
+	if errors.Is(err, ErrTaskDeliveryTargetRequired) {
+		return fmt.Errorf("task target requires a configured repository before this agent can run; keep target.type=\"task\", call list_repositories, set repository_id with update_task_delivery_target, then retry the same task-targeted launch")
+	}
+	return err
 }
 
 // dockActionHash canonicalizes a value by JSON-marshaling it (deterministic
@@ -554,7 +594,7 @@ func (s *InternalCommandService) executeDockLaunch(ctx context.Context, meta mod
 		Steps:       planSteps,
 	}, dispatchPlanParams{parentChatRunID: &chatRun.ID, dockChatID: chatRun.DockChatID, supportConversationID: supportConversationID})
 	if err != nil {
-		return nil, err
+		return nil, repairDockLaunchError(err)
 	}
 	s.consumeDockApproval(ctx, interaction, resp.PlanID)
 
@@ -628,17 +668,20 @@ func dockLaunchStepSchema() map[string]any {
 			"agent_id":          map[string]any{"type": "string", "description": "ID of the saved agent to run (from list_agents). Omit when use_command_agent is true."},
 			"use_command_agent": map[string]any{"type": "boolean", "description": "Run a Sub-agent instead of a saved agent. Requires allowed_tools."},
 			"target": map[string]any{
-				"type": "object",
+				"type":        "object",
+				"description": "Explicit entity the sub-agent should act on. Use the exact task or other referenced entity; use workspace only for genuinely workspace-scoped work.",
 				"properties": map[string]any{
-					"type": map[string]any{"type": "string", "description": "Target entity type: workspace, task, epic, sprint, objective, document, crm_deal, crm_contact, repository, support_conversation."},
-					"id":   map[string]any{"type": "string", "description": "Target entity ID. Defaults to the workspace when omitted."},
+					"type": map[string]any{"type": "string", "enum": []string{"workspace", "task", "epic", "sprint", "objective", "document", "crm_deal", "crm_contact", "repository", "support_conversation"}, "description": "Target entity type."},
+					"id":   map[string]any{"type": "string", "description": "Target entity ID. Required except for workspace, whose ID is derived from trusted run context."},
 				},
+				"required":             []string{"type"},
+				"additionalProperties": false,
 			},
 			"instructions":            map[string]any{"type": "string", "description": "What the sub-agent run should do."},
 			"allowed_tools":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Limited tool list for the sub-agent run (required for use_command_agent)."},
 			"depends_on_step_indexes": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Zero-based indexes of steps that must finish first (DAG plans)."},
 		},
-		"required":             []string{"instructions"},
+		"required":             []string{"instructions", "target"},
 		"additionalProperties": false,
 	}
 }
@@ -659,7 +702,7 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_run",
 			Alias:       "start_agent_run",
 			Category:    "Agents",
-			Description: "Start one bounded sub-agent run. Dock agents using runtime approval policy pass the complete step directly; legacy approved launches may pass only approval_interaction_id. The result is delivered back into this chat when the run finishes.",
+			Description: "Start one bounded sub-agent run. Direct launches must explicitly target the task, epic, repository, workspace, or other entity the run should act on; never omit the target or switch to workspace to work around a target-specific error. Dock agents using runtime approval policy pass the complete step directly; legacy approved launches may pass only approval_interaction_id. The result is delivered back into this chat when the run finishes.",
 			RiskLevel:   commandtools.RiskLevelRoutine,
 			InputSchema: map[string]any{
 				"type": "object",
@@ -671,7 +714,10 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 					"allowed_tools":           dockLaunchStepSchema()["properties"].(map[string]any)["allowed_tools"],
 					"approval_interaction_id": map[string]any{"type": "string", "description": "Optional resolved legacy dock_plan_confirm or support_plan_confirm interaction ID."},
 				},
-				"required":             []string{},
+				"anyOf": []map[string]any{
+					{"required": []string{"instructions", "target"}},
+					{"required": []string{"approval_interaction_id"}},
+				},
 				"additionalProperties": false,
 			},
 		},
@@ -692,6 +738,12 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 					return nil, fmt.Errorf("approved action contains %d steps; use start_agent_plan", len(steps))
 				}
 				req.dockLaunchStep = steps[0]
+			} else if dockLaunchStepHasDirectInput(req.dockLaunchStep) {
+				if err := validateDirectDockLaunchSteps([]dockLaunchStep{req.dockLaunchStep}); err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, fmt.Errorf("provide a direct launch with instructions and target, or approval_interaction_id")
 			}
 			return s.executeDockLaunch(ctx, meta, []dockLaunchStep{req.dockLaunchStep}, req.ApprovalInteractionID, req.Instructions)
 		},
@@ -706,16 +758,19 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 			CommandName: "agents.start_plan",
 			Alias:       "start_agent_plan",
 			Category:    "Agents",
-			Description: "Start a bounded multi-step sub-agent plan. Dock agents using runtime approval policy pass the complete plan directly; legacy approved launches may pass only approval_interaction_id. Results are delivered back into this chat when the plan settles.",
+			Description: "Start a bounded multi-step sub-agent plan. Every direct step must explicitly target the task, epic, repository, workspace, or other entity it should act on. Dock agents using runtime approval policy pass the complete plan directly; legacy approved launches may pass only approval_interaction_id. Results are delivered back into this chat when the plan settles.",
 			RiskLevel:   commandtools.RiskLevelRoutine,
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"prompt":                  map[string]any{"type": "string", "description": "Short description of the overall plan (shown in run surfaces)."},
-					"steps":                   map[string]any{"type": "array", "items": dockLaunchStepSchema(), "description": "Plan steps in order."},
+					"steps":                   map[string]any{"type": "array", "minItems": 1, "items": dockLaunchStepSchema(), "description": "Plan steps in order."},
 					"approval_interaction_id": map[string]any{"type": "string", "description": "Optional resolved legacy dock_plan_confirm or support_plan_confirm interaction ID."},
 				},
-				"required":             []string{},
+				"anyOf": []map[string]any{
+					{"required": []string{"steps"}},
+					{"required": []string{"approval_interaction_id"}},
+				},
 				"additionalProperties": false,
 			},
 		},
@@ -737,6 +792,12 @@ func (s *InternalCommandService) registerAgentOrchestrationCommands() {
 				if strings.TrimSpace(req.Prompt) == "" {
 					req.Prompt = approvedPrompt
 				}
+			} else if len(req.Steps) > 0 {
+				if err := validateDirectDockLaunchSteps(req.Steps); err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, fmt.Errorf("provide direct plan steps with explicit targets, or approval_interaction_id")
 			}
 			return s.executeDockLaunch(ctx, meta, req.Steps, req.ApprovalInteractionID, req.Prompt)
 		},

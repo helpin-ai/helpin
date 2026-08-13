@@ -5,6 +5,17 @@ export interface ToolCallPresentation {
   primaryLabel: string;
   secondaryLabel: string;
   chips: string[];
+  repositoryLabel?: string;
+}
+
+export interface ReadFilesResultEntry {
+  path: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+  hasMore: boolean;
+  nextStartLine?: number;
+  continuationReason?: 'output_limit' | 'line_limit';
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -27,6 +38,59 @@ function parseArgs(argsText: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function parseJSONRecord(value: string | undefined): Record<string, unknown> | null {
+  if (!value?.trim()) return null;
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function asPositiveInteger(value: unknown): number | null {
+  const number = asNumber(value);
+  return number != null && Number.isInteger(number) && number >= 1 ? number : null;
+}
+
+function readFilesResultEntry(value: unknown): ReadFilesResultEntry | null {
+  const record = asRecord(value);
+  const path = asString(record?.path);
+  const startLine = asPositiveInteger(record?.start_line);
+  const endLine = asNumber(record?.end_line);
+  const content = typeof record?.content === 'string' ? record.content : null;
+  const hasMore = typeof record?.has_more === 'boolean' ? record.has_more : null;
+  if (!path || startLine == null || endLine == null || !Number.isInteger(endLine) || content == null || hasMore == null) return null;
+
+  const nextStartLine = asPositiveInteger(record?.next_start_line);
+  if (hasMore && nextStartLine == null) return null;
+  const continuationReason = record?.continuation_reason === 'output_limit' || record?.continuation_reason === 'line_limit'
+    ? record.continuation_reason
+    : undefined;
+  return {
+    path,
+    startLine,
+    endLine,
+    content,
+    hasMore,
+    ...(nextStartLine == null ? {} : { nextStartLine }),
+    ...(continuationReason ? { continuationReason } : {}),
+  };
+}
+
+export function readFilesResultForToolCall(toolCall: CodingSessionLiveToolCall): ReadFilesResultEntry[] | null {
+  if (canonicalToolName(toolCall.tool_name).toLowerCase() !== 'read_files') return null;
+  const result = parseJSONRecord(toolCall.result?.content) ?? parseJSONRecord(toolCall.result?.output_summary);
+  if (!result || !Array.isArray(result.files) || result.files.length === 0) return null;
+  const files = result.files.map(readFilesResultEntry);
+  return files.every((file): file is ReadFilesResultEntry => file != null) ? files : null;
+}
+
+export function readFilesContentForToolCall(toolCall: CodingSessionLiveToolCall): string | null {
+  const files = readFilesResultForToolCall(toolCall);
+  if (!files) return null;
+  return files.map((file) => file.content.trim()).filter(Boolean).join('\n\n');
 }
 
 function titleCaseToolName(toolName: string) {
@@ -58,6 +122,26 @@ function domainChip(domains: string[]) {
   return domains.length === 1 ? domains[0] : `${domains[0]} +${domains.length - 1}`;
 }
 
+export function repositorySelectorForToolCall(toolCall: CodingSessionLiveToolCall): string | null {
+  const parsed = parseArgs(toolCall.args_text);
+  const directSelector = asString(parsed?.repository)
+    ?? asString(parsed?.repository_id)
+    ?? asString(parsed?.repo_full_name)
+    ?? asString(parsed?.repo_alias); // Historical transcripts.
+  if (directSelector) return directSelector;
+
+  if (!Array.isArray(parsed?.files)) return null;
+  const selectors = parsed.files
+    .map(asRecord)
+    .map((file) => asString(file?.repository)
+      ?? asString(file?.repository_id)
+      ?? asString(file?.repo_full_name)
+      ?? asString(file?.repo_alias))
+    .filter((selector): selector is string => Boolean(selector));
+  const uniqueSelectors = [...new Set(selectors)];
+  return uniqueSelectors.length === 1 ? uniqueSelectors[0] : null;
+}
+
 export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallPresentation {
   const toolName = canonicalToolName(toolCall.tool_name).toLowerCase();
   const parsed = parseArgs(toolCall.args_text);
@@ -71,7 +155,21 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
   const cwd = asString(parsed?.cwd);
   const paths = Array.isArray(parsed?.paths)
     ? parsed?.paths.map((value) => asString(value)).filter((value): value is string => Boolean(value))
-    : [];
+    : Array.isArray(parsed?.files)
+      ? parsed.files.map((value) => asString(asRecord(value)?.path)).filter((value): value is string => Boolean(value))
+      : [];
+  const readFilesResult = toolName === 'read_files' ? readFilesResultForToolCall(toolCall) : null;
+
+  const repositoryLabel = repositorySelectorForToolCall(toolCall);
+  const withRepository = (presentation: ToolCallPresentation): ToolCallPresentation => (
+    repositoryLabel
+      ? {
+          ...presentation,
+          primaryLabel: `${presentation.primaryLabel} · ${repositoryLabel}`,
+          repositoryLabel,
+        }
+      : presentation
+  );
 
   const secondaryLabel = titleCaseToolName(displayToolName(toolCall.tool_name));
 
@@ -79,28 +177,106 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     const primaryLabel = `Read ${path}${range ? `:${range}` : ''}`;
     const chips = [];
     if (startLine != null && endLine != null && endLine >= startLine) chips.push(`${endLine - startLine + 1} lines`);
-    return { primaryLabel, secondaryLabel, chips };
+    return withRepository({ primaryLabel, secondaryLabel, chips });
+  }
+
+  // Symbol navigation reads a named declaration rather than a line span, so the
+  // symbol is the useful label; the path is secondary and often absent.
+  const symbolName = asString(parsed?.symbol) ?? asString(parsed?.name);
+
+  if (toolName === 'read_symbol' && symbolName) {
+    return withRepository({
+      primaryLabel: `Read ${symbolName}${path ? ` in ${path}` : ''}`,
+      secondaryLabel,
+      chips: [],
+    });
+  }
+
+  // find_symbol, find_callers, find_callees, read_file, ripgrep, grep and
+  // search_files are no longer registered by the runtime. These branches are not
+  // dead: canonicalToolName does not alias legacy names (see lib/toolNames.ts),
+  // so transcripts recorded before the tool consolidation still arrive under
+  // their original names and argument shapes. Removing them would degrade old
+  // sessions to the generic titleCaseToolName label.
+  if (toolName === 'find_symbol' && symbolName) {
+    const kind = asString(parsed?.kind);
+    return withRepository({
+      primaryLabel: `Find ${symbolName}`,
+      secondaryLabel,
+      chips: kind ? [kind] : [],
+    });
+  }
+
+  if (toolName === 'find_callers' && symbolName) {
+    return withRepository({ primaryLabel: `Find callers of ${symbolName}`, secondaryLabel, chips: [] });
+  }
+
+  if (toolName === 'find_callees' && symbolName) {
+    return withRepository({ primaryLabel: `Find calls made by ${symbolName}`, secondaryLabel, chips: [] });
+  }
+
+  if (toolName === 'trace_symbol' && symbolName) {
+    const direction = asString(parsed?.direction);
+    const label = direction === 'callers'
+      ? `Trace callers of ${symbolName}`
+      : direction === 'callees'
+        ? `Trace calls made by ${symbolName}`
+        : `Trace ${symbolName}`;
+    return withRepository({ primaryLabel: label, secondaryLabel, chips: direction ? [direction] : [] });
+  }
+
+  if (toolName === 'list_symbols' && path) {
+    return withRepository({ primaryLabel: `Outline ${path}`, secondaryLabel, chips: [] });
   }
 
   if ((toolName === 'read_file' || toolName === 'write_file' || toolName === 'edit_file' || toolName === 'str_replace_editor') && path) {
     const verb = toolName === 'write_file' ? 'Write' : toolName === 'edit_file' || toolName === 'str_replace_editor' ? 'Edit' : 'Read';
-    return { primaryLabel: `${verb} ${path}`, secondaryLabel, chips: [] };
+    return withRepository({ primaryLabel: `${verb} ${path}`, secondaryLabel, chips: [] });
   }
 
-  if (toolName === 'read_files' && paths.length > 0) {
-    return {
-      primaryLabel: `Read ${paths[0]}${paths.length > 1 ? ` +${paths.length - 1} more` : ''}`,
+  if (toolName === 'read_files' && (paths.length > 0 || readFilesResult)) {
+    const firstResult = readFilesResult?.[0];
+    const firstPath = firstResult?.path ?? paths[0];
+    const displayFileCount = readFilesResult?.length ?? paths.length;
+    const firstRange = firstResult && firstResult.endLine >= firstResult.startLine
+      ? lineRangeLabel(firstResult.startLine, firstResult.endLine)
+      : null;
+    const continuingFiles = readFilesResult?.filter((file) => file.hasMore) ?? [];
+    const continuationChip = continuingFiles.length === 1
+      ? `continues at ${continuingFiles[0].nextStartLine}`
+      : continuingFiles.length > 1
+        ? `${continuingFiles.length} continue`
+        : null;
+    return withRepository({
+      primaryLabel: `Read ${firstPath}${firstRange ? `:${firstRange}` : ''}${displayFileCount > 1 ? ` +${displayFileCount - 1} more` : ''}`,
       secondaryLabel,
-      chips: [`${paths.length} files`],
-    };
+      chips: [`${displayFileCount} file${displayFileCount === 1 ? '' : 's'}`, ...(continuationChip ? [continuationChip] : [])],
+    });
   }
 
   if ((toolName === 'ripgrep' || toolName === 'grep' || toolName === 'search_files') && pattern) {
-    return {
+    return withRepository({
       primaryLabel: `Search ${quoted(pattern)}${searchPath ? ` in ${searchPath}` : ''}`,
       secondaryLabel,
       chips: [],
-    };
+    });
+  }
+
+  if (toolName === 'repository_search') {
+    const glob = asString(parsed?.glob);
+    const search = asString(parsed?.query) ?? glob;
+    if (search) {
+      return withRepository({
+        primaryLabel: `Search ${quoted(search)}${searchPath ? ` in ${searchPath}` : ''}`,
+        secondaryLabel,
+        chips: glob && glob !== search ? [glob] : [],
+      });
+    }
+  }
+
+  if (toolName === 'find_skills') {
+    const query = asString(parsed?.query);
+    return { primaryLabel: query ? `Find skills for ${quoted(query)}` : 'List available skills', secondaryLabel, chips: [] };
   }
 
   if (toolName === 'web_search_exa') {
@@ -127,6 +303,23 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
       const domainAllowlistChip = domainChip(domainAllowlist);
       if (freshness) chips.push(freshness);
       if (domainAllowlistChip) chips.push(domainAllowlistChip);
+      return { primaryLabel: `Search ${quoted(truncateSearchQuery(query))}`, secondaryLabel, chips };
+    }
+  }
+
+  if (toolName === 'web_search') {
+    const query = asString(parsed?.query);
+    if (query) {
+      const chips = [];
+      const mode = asString(parsed?.mode);
+      const category = asString(parsed?.category);
+      const domains = stringArray(parsed?.include_domains);
+      const domainsChip = domainChip(domains);
+      const maxResults = asNumber(parsed?.max_results);
+      if (mode) chips.push(mode);
+      if (category) chips.push(category);
+      if (domainsChip) chips.push(domainsChip);
+      if (maxResults != null) chips.push(`${maxResults} result${maxResults === 1 ? '' : 's'}`);
       return { primaryLabel: `Search ${quoted(truncateSearchQuery(query))}`, secondaryLabel, chips };
     }
   }
@@ -163,8 +356,8 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     return { primaryLabel: 'Run Command', secondaryLabel, chips };
   }
 
-  if (toolName === 'list_directory' && path) {
-    return { primaryLabel: `List ${path}`, secondaryLabel, chips: [] };
+  if (toolName === 'list_directory' && (path || repositoryLabel)) {
+    return withRepository({ primaryLabel: path ? `List ${path}` : 'List repository root', secondaryLabel, chips: [] });
   }
 
   if (toolName === 'apply_patch') {

@@ -144,6 +144,10 @@ describe('DocsRailNav', () => {
     expect(container.querySelector('[data-slot="docs-quick-links"]')?.className).toContain('px-2')
     expect(container.querySelector('[data-slot="docs-tree-scroll"]')?.className).toContain('px-2')
     expect(container.querySelector('[data-slot="docs-tree-scroll"]')?.className).toContain('no-scrollbar')
+    expect(container.querySelector('[data-slot="docs-quick-links"] button')?.className).toContain('text-sm')
+    expect(collectionRow?.querySelector('span')?.className).toContain('text-sm')
+    expect(treeDocumentRow?.className).toContain('text-sm')
+    expect(container.querySelector('[data-slot="docs-tree-scroll"] > div')?.className).toContain('text-[11px]')
 
     act(() => root.unmount())
     container.remove()

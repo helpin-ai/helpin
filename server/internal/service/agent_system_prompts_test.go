@@ -32,6 +32,26 @@ func TestManagedDocumentPromptsRequireArtifactInsertionTool(t *testing.T) {
 	}
 }
 
+func TestManagedAskAgentExecutionPolicyPrefersNarrowRepositoryReads(t *testing.T) {
+	prompt := agentcontract.EnsureAskAgentExecutionPolicy(model.AgentPresetAskAgent, askAgentSystemPrompt())
+	for _, required := range []string{
+		"Before checkout_repositories, call list_repositories",
+		"returned repository_id (preferred) or exact repo_full_name",
+		"Never pass a display name or bare repository name",
+		"use read_symbol directly when you know a declaration name",
+		"locate exact files or lines with repository_search or list_symbols",
+		"use read_files for bounded known spans",
+		"use list_symbols before paging through a file when you do not know the declaration name",
+		"continue exactly from next_start_line; do not restart the same range or increase limit_lines",
+		"Use trace_symbol for callers or callees",
+		"Do not use reads for broad exploration or re-read a whole file",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("Ask Agent prompt missing repository navigation guidance %q:\n%s", required, prompt)
+		}
+	}
+}
+
 func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testing.T) {
 	prompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	if prompt == nil {
