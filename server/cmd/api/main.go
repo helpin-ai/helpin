@@ -656,6 +656,17 @@ func main() {
 	aiUsageRepo := repository.NewAIUsageRepository(db)
 	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
 	stripeGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
+	settlementCtx, settlementCancel := context.WithCancel(context.Background())
+	settlementDone := make(chan struct{})
+	if stripeGateway != nil {
+		settlementWorker := service.NewAIUsageSettlementWorker(aiUsageRepo, stripeGateway)
+		go func() {
+			defer close(settlementDone)
+			settlementWorker.Run(settlementCtx, time.Minute)
+		}()
+	} else {
+		close(settlementDone)
+	}
 	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
 	billingTestScenarioService := service.NewBillingTestScenarioService(db, billingService, time.Now)
 	billingService.SetPriceConfig(service.BillingPriceConfig{
@@ -1978,6 +1989,7 @@ func main() {
 	agentRuntimeProjectionCancel()
 	customerIOOutboxCancel()
 	productAnalyticsCancel()
+	settlementCancel()
 	select {
 	case <-customerIOOutboxDone:
 	case <-time.After(6 * time.Second):
@@ -1987,6 +1999,11 @@ func main() {
 	case <-productAnalyticsDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("product analytics outbox worker did not stop before shutdown timeout")
+	}
+	select {
+	case <-settlementDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("AI usage settlement worker did not stop before shutdown timeout")
 	}
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()

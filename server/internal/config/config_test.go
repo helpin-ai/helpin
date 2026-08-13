@@ -21,7 +21,7 @@ func TestLoadDefaultsCommandRouterToOpenRouterGeminiFlashLite(t *testing.T) {
 	if cfg.CommandRouterLLMProvider != "openrouter" {
 		t.Fatalf("unexpected command router provider: %q", cfg.CommandRouterLLMProvider)
 	}
-	if cfg.CommandRouterLLMModel != "google/gemini-3.1-flash-lite" {
+	if cfg.CommandRouterLLMModel != "openai/gpt-5.6-luna" {
 		t.Fatalf("unexpected command router model: %q", cfg.CommandRouterLLMModel)
 	}
 	if string(cfg.CommandRouterOpenRouterProviderOptions) != `{"order":["google-vertex/global"],"allow_fallbacks":false}` {

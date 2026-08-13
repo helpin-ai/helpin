@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -61,7 +62,9 @@ func (w *AIUsageSettlementWorker) ProcessPendingSettlements(ctx context.Context,
 		result, err := w.gateway.SettleAIUsage(ctx, AIUsageSettlementCharge{
 			WorkspaceID: settlement.WorkspaceID, PeriodID: settlement.PeriodID,
 			AmountCents: settlement.RoundedInvoiceCents, IdempotencyKey: settlement.IdempotencyKey,
-			SettlementVersion: "v1",
+			SettlementVersion: "v1", PricingVersion: settlement.PricingVersion,
+			CustomerID: settlementStringValue(settlement.StripeCustomerID), SubscriptionID: settlementStringValue(settlement.StripeSubscriptionID),
+			BillingInterval: settlement.BillingInterval, PeriodStart: settlement.PeriodStart, PeriodEnd: settlement.PeriodEnd,
 		})
 		if err != nil {
 			if storeErr := w.store.FailSettlement(ctx, settlement.ID, err.Error()); storeErr != nil {
@@ -75,4 +78,30 @@ func (w *AIUsageSettlementWorker) ProcessPendingSettlements(ctx context.Context,
 		processed++
 	}
 	return processed, nil
+}
+
+// Run polls durable settlements until cancellation.
+func (w *AIUsageSettlementWorker) Run(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if _, err := w.ProcessPendingSettlements(ctx, 50); err != nil {
+			slog.Error("AI usage settlement worker failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func settlementStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

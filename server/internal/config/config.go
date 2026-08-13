@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultCommandRouterLLMProvider                  = "openrouter"
-	defaultCommandRouterLLMModel                     = "google/gemini-3.1-flash-lite"
+	defaultCommandRouterLLMModel                     = "openai/gpt-5.6-luna"
 	defaultCommandRouterOpenRouterProviderOptionsRaw = `{"order":["google-vertex/global"],"allow_fallbacks":false}`
 )
 

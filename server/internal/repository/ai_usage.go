@@ -300,6 +300,11 @@ func (r *AIUsageRepository) ClosePeriod(ctx context.Context, workspaceID string,
 			ExactOverageMicrousd: period.OverageMicrousd, RoundedInvoiceCents: cents,
 			RoundingAdjustmentMicrousd: adjustment, IdempotencyKey: key, Status: model.AIUsageSettlementPending,
 		}
+		var billing model.WorkspaceBilling
+		if err := tx.Select("stripe_customer_id", "stripe_subscription_id").Where("workspace_id = ?", workspaceID).First(&billing).Error; err == nil {
+			created.StripeCustomerID = billing.StripeCustomerID
+			created.StripeSubscriptionID = billing.StripeSubscriptionID
+		}
 		if err := tx.Create(&created).Error; err != nil {
 			return fmt.Errorf("create AI usage settlement: %w", err)
 		}
@@ -344,8 +349,12 @@ func (r *AIUsageRepository) ListStaleReservations(ctx context.Context, before ti
 // ListPendingSettlements returns exact-overage work in stable creation order.
 func (r *AIUsageRepository) ListPendingSettlements(ctx context.Context, limit int) ([]model.AIUsageSettlement, error) {
 	var settlements []model.AIUsageSettlement
-	err := r.db.WithContext(ctx).Where("status = ?", model.AIUsageSettlementPending).
-		Order("created_at, id").Limit(limit).Find(&settlements).Error
+	err := r.db.WithContext(ctx).Table("billing_ai_usage_settlements s").
+		Select("s.*, p.pricing_version, p.period_start, p.period_end, wb.billing_interval").
+		Joins("JOIN billing_ai_usage_periods p ON p.id = s.period_id").
+		Joins("JOIN workspace_billing wb ON wb.workspace_id = s.workspace_id").
+		Where("s.status = ?", model.AIUsageSettlementPending).
+		Order("s.created_at, s.id").Limit(limit).Scan(&settlements).Error
 	return settlements, err
 }
 

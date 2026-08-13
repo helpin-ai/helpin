@@ -55,6 +55,8 @@ type AIUsageSettlement struct {
 	AttemptCount                                                                 int
 	LastError                                                                    *string
 	CreatedAt, UpdatedAt                                                         time.Time
+	PricingVersion, BillingInterval                                              string    `gorm:"->;-:migration"`
+	PeriodStart, PeriodEnd                                                       time.Time `gorm:"->;-:migration"`
 }
 
 func (AIUsageSettlement) TableName() string { return "billing_ai_usage_settlements" }
