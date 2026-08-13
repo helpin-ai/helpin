@@ -182,6 +182,9 @@ func renderNode(b *strings.Builder, n *Node) {
 		icon := strAttr(n.Attrs, "icon")
 		badge := strAttr(n.Attrs, "badgeText")
 		sourceStyle := strAttr(n.Attrs, "sourceStyle")
+		if sourceStyle == "" && (icon != "" || badge != "") {
+			sourceStyle = "helpScoutCard"
+		}
 		b.WriteString(`<details class="docs-toggle-section" data-toggle-section`)
 		if boolAttr(n.Attrs, "open") {
 			b.WriteString(` open`)
@@ -205,30 +208,24 @@ func renderNode(b *strings.Builder, n *Node) {
 			b.WriteByte('"')
 		}
 		b.WriteString(`>`)
-		if icon != "" || badge != "" || sourceStyle != "" {
-			b.WriteString(`<summary>`)
-			if icon != "" {
-				b.WriteString(`<span class="docs-toggle-icon">`)
-				b.WriteString(html.EscapeString(icon))
-				b.WriteString(`</span>`)
-			}
-			b.WriteString(`<span class="docs-toggle-title">`)
-			b.WriteString(html.EscapeString(title))
+		b.WriteString(`<summary>`)
+		if icon != "" {
+			b.WriteString(`<span class="docs-toggle-icon">`)
+			b.WriteString(html.EscapeString(icon))
 			b.WriteString(`</span>`)
-			if badge != "" {
-				b.WriteString(`<span class="docs-toggle-badge">`)
-				b.WriteString(html.EscapeString(badge))
-				b.WriteString(`</span>`)
-			}
-			b.WriteString(`</summary>`)
-		} else {
-			b.WriteString(`<summary>`)
-			b.WriteString(html.EscapeString(title))
-			b.WriteString(`</summary>`)
 		}
-		b.WriteString("\n")
+		b.WriteString(`<span class="docs-toggle-title">`)
+		b.WriteString(html.EscapeString(title))
+		b.WriteString(`</span>`)
+		if badge != "" {
+			b.WriteString(`<span class="docs-toggle-badge">`)
+			b.WriteString(html.EscapeString(badge))
+			b.WriteString(`</span>`)
+		}
+		b.WriteString(`<span class="docs-toggle-chevron" aria-hidden="true"></span></summary>`)
+		b.WriteString("\n<div class=\"docs-toggle-content\" data-toggle-content>\n")
 		renderChildren(b, n)
-		b.WriteString("</details>\n")
+		b.WriteString("</div>\n</details>\n")
 
 	case "aiSection":
 		renderChildren(b, n)
