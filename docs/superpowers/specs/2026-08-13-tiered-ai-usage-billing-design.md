@@ -182,10 +182,20 @@ values are not changed automatically by external price lookup.
 | Claude Opus 4.8 | Flagship |
 | GPT-5.5 Pro | Unsupported |
 
-Planning, coding, and review built-ins use approved Large routes. Other built-in production tasks
-initially use approved Small routes. Existing recognized aliases canonicalize to catalog entries.
-Unknown, unpriced, over-Flagship, or ambiguous routes remain visible on legacy custom agents but
-cannot launch.
+Built-in routing preserves the product-owned defaults from `develop`:
+
+- Atlas epic planning uses DeepSeek V4 Flash 0731 on an approved Small route.
+- Scribe task planning uses GPT-5.6 Terra through OpenAI on an approved Large route.
+- Coding and review built-ins use approved Large routes.
+- Quill documentation uses DeepSeek V4 Flash on an approved Small route.
+- Ask uses DeepSeek V4 Flash 0731 on an approved Small route.
+- Other built-in production tasks initially use approved Small routes unless they have an explicit
+  product-owned route.
+
+The exact configured route determines the billed model size; task nature does not override an
+explicit built-in route. An unconfigured planning, coding, or review fallback still uses Large.
+Existing recognized aliases canonicalize to catalog entries. Unknown, unpriced, over-Flagship,
+or ambiguous routes remain visible on legacy custom agents but cannot launch.
 
 Custom agents select from a catalog grouped by model size. Built-in agents show a non-editable
 size. Free-text model entry is removed.
@@ -460,6 +470,8 @@ Go tests/build/vet plus frontend and website tests/builds.
   allowance.
 - The replacement activates immediately instead of collecting several days of shadow data.
 - The supplied launch rates are authoritative and are not changed during implementation.
+- Built-in model routing from `develop` remains authoritative, including Small-tier Atlas and
+  Large-tier Scribe planning.
 
 ## Out of Scope
 

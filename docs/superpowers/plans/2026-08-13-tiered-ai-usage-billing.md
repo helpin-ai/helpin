@@ -471,9 +471,11 @@ type CompletionUsage struct {
 type UsageResult struct { ChargedMicrousd, AbsorbedMicrousd int64 }
 ```
 
-Test that Large planning uses the catalog Large route, Small support work uses Small, unsupported
-custom models return `ErrModelUnavailableUnderPricing`, paid tools enlarge bounds, promotional
-features produce telemetry without a charged reservation, and Founder never blocks.
+Test that an unconfigured planning fallback uses the catalog Large route, explicit built-in routes
+retain their catalog-derived tier (including Small Atlas and Large Scribe), Small support work uses
+Small, unsupported custom models return `ErrModelUnavailableUnderPricing`, paid tools enlarge
+bounds, promotional features produce telemetry without a charged reservation, and Founder never
+blocks.
 
 - [ ] **Step 2: Run tests and verify failure**
 
@@ -850,9 +852,11 @@ git commit -m "feat: expose percentage-based AI usage APIs"
 
 - [ ] **Step 1: Write policy tests**
 
-Assert planning/coding/review built-ins resolve to Large; other built-ins resolve to Small; custom
-agents accept enabled catalog models only; aliases canonicalize; unknown legacy models remain
-readable but launch returns the typed pricing error; GPT-5.5 Pro is rejected.
+Assert Atlas resolves to Small-tier DeepSeek V4 Flash 0731; Scribe resolves to Large-tier GPT-5.6
+Terra through OpenAI; coding/review built-ins resolve to Large; Quill and Ask resolve to their
+Small-tier DeepSeek routes; other built-ins resolve to their explicit product-owned route or the
+Small fallback. Custom agents accept enabled catalog models only; aliases canonicalize; unknown
+legacy models remain readable but launch returns the typed pricing error; GPT-5.5 Pro is rejected.
 
 - [ ] **Step 2: Run tests and verify failure**
 
