@@ -11,8 +11,8 @@ import (
 
 type recurringTestEnv struct {
 	taskEnv taskTestEnv
-	svc      *PMRecurringTemplateService
-	repo     *repository.PMRecurringTemplateRepository
+	svc     *PMRecurringTemplateService
+	repo    *repository.PMRecurringTemplateRepository
 }
 
 func newRecurringTestEnv(t *testing.T) recurringTestEnv {
@@ -34,8 +34,8 @@ func newRecurringTestEnv(t *testing.T) recurringTestEnv {
 	taskEnv.svc.SetRecurringService(recurringSvc)
 	return recurringTestEnv{
 		taskEnv: taskEnv,
-		svc:      recurringSvc,
-		repo:     recurringRepo,
+		svc:     recurringSvc,
+		repo:    recurringRepo,
 	}
 }
 
@@ -55,7 +55,7 @@ func TestPMRecurringTemplateService_CreateFromStory(t *testing.T) {
 
 	tmpl, err := env.svc.Create(ctx, model.CreateRecurringTemplateRequest{
 		WorkspaceID: env.taskEnv.wsID,
-		TaskID:     story.Task.ID,
+		TaskID:      story.Task.ID,
 		Title:       "Weekly Ops Check",
 		Config:      cfg,
 	}, env.taskEnv.userID)
@@ -92,7 +92,7 @@ func TestPMRecurringTemplateService_ProcessDueTemplates(t *testing.T) {
 	story := createTestTask(t, env.taskEnv, "Daily Standup")
 	tmpl, err := env.svc.Create(ctx, model.CreateRecurringTemplateRequest{
 		WorkspaceID: env.taskEnv.wsID,
-		TaskID:     story.Task.ID,
+		TaskID:      story.Task.ID,
 		Title:       "Daily Standup",
 		Config: model.PMRecurringTemplateConfig{
 			ScheduleType: model.PMRecurringScheduleTypeTime,
@@ -151,7 +151,7 @@ func TestPMRecurringTemplateService_CompletionBasedGeneration(t *testing.T) {
 	story := createTestTask(t, env.taskEnv, "Post-deploy Checklist")
 	tmpl, err := env.svc.Create(ctx, model.CreateRecurringTemplateRequest{
 		WorkspaceID: env.taskEnv.wsID,
-		TaskID:     story.Task.ID,
+		TaskID:      story.Task.ID,
 		Title:       "Post-deploy Checklist",
 		Config: model.PMRecurringTemplateConfig{
 			ScheduleType:    model.PMRecurringScheduleTypeCompletion,
@@ -200,7 +200,7 @@ func TestPMRecurringTemplateService_UpdateRefreshesSeedFromStory(t *testing.T) {
 	story := createTestTask(t, env.taskEnv, "Monthly Audit")
 	tmpl, err := env.svc.Create(ctx, model.CreateRecurringTemplateRequest{
 		WorkspaceID: env.taskEnv.wsID,
-		TaskID:     story.Task.ID,
+		TaskID:      story.Task.ID,
 		Title:       "Monthly Audit",
 		Config: model.PMRecurringTemplateConfig{
 			ScheduleType: model.PMRecurringScheduleTypeTime,

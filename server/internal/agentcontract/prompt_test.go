@@ -1,6 +1,7 @@
 package agentcontract
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -499,16 +500,50 @@ func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *test
 	)
 
 	for _, expected := range []string{
-		"Start by locating the relevant code with `list_directory`, `ripgrep`, `search_files`, or `list_symbols` before reading large files.",
-		"Prefer search-first, then narrow reads: use `ripgrep`, `search_files`, or `list_symbols` to find exact files or symbols before any broad file read.",
-		"`read_file` now returns a smaller bounded window by default; use offset_line to continue and use `read_file_range` for targeted spans.",
-		"Prefer `read_file_range` once you know the relevant lines. Do not use `read_files` for broad repo exploration; reserve it for a few known files with small excerpts.",
+		"When you know a declaration's name, use `read_symbol`; it locates a unique declaration",
+		"Otherwise locate relevant code with `list_directory`, `repository_search`, or `list_symbols` before reading files.",
+		"Before changing or deleting a declaration, call `trace_symbol` to see what depends on it.",
+		"Use `read_files` for one to four known files or line windows.",
+		"For structured source, use `list_symbols` before paging through a file when you do not know the declaration name.",
+		"continue exactly from next_start_line; do not restart the same range or increase limit_lines",
 		"Prefer `edit_file` for focused in-place changes and `apply_patch` for coordinated multi-file edits.",
 		"Use `write_file` for new files or full rewrites only after you have read the current file state.",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected prompt to contain %q\n%s", expected, prompt)
 		}
+	}
+}
+
+func TestBuildSystemPromptAdHocRepositoryRunIncludesNarrowReadGuidance(t *testing.T) {
+	systemPrompt := "You are a repository researcher."
+	prompt := BuildSystemPrompt(
+		&model.Agent{
+			Name:         "Researcher",
+			RuntimeKind:  "native_sdk",
+			SystemPrompt: &systemPrompt,
+			AllowedTools: json.RawMessage(`["read_file","read_files","read_file_range","ripgrep","list_symbols","read_symbol","find_symbol"]`),
+		},
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+	)
+
+	for _, expected := range []string{
+		"When you know a declaration's name, use `read_symbol`",
+		"Use `read_files` for one to four known files or line windows",
+		"use `list_symbols` before paging through a file when you do not know the declaration name",
+		"continue exactly from next_start_line; do not restart the same range or increase limit_lines",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected ad-hoc repository prompt to contain %q\n%s", expected, prompt)
+		}
+	}
+	if strings.Contains(prompt, "This run is planning-only") {
+		t.Fatalf("ad-hoc repository question must not be mislabeled as a planning run\n%s", prompt)
 	}
 }
 
@@ -652,7 +687,7 @@ func TestBuildRuntimeSystemPromptDescribesAvailableSkillsWhenSkillTextDisabled(t
 	}
 	for _, expected := range []string{
 		"Available Skills",
-		"Do not load every available skill by default.",
+		"Use find_skills to inspect options",
 	} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected runtime prompt to include %q\n%s", expected, prompt)

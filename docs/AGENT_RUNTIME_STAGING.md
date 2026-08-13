@@ -45,7 +45,7 @@ config. Set/verify:
 | `AGENT_RUNTIME_APP_CONFIG` | merged JSON, see below | Append the `helpin` entry to the EXISTING value. Do not touch the usermaven object. |
 | `AGENT_RUNTIME_EVENT_SINK` | `log,nats` | Enables NATS publishing alongside logs. |
 | `AGENT_RUNTIME_NATS_URL` | same NATS URL as Helpin's `NATS_URL` | See "NATS sharing" below. |
-| `EXA_API_KEY` | Exa provider key | Required when Helpin agents enable `web_search_exa`. Restart both the runtime API and durable worker after adding or rotating it. |
+| `EXA_API_KEY` | Exa provider key | Enables the deep mode of canonical `web_search`. Restart both the runtime API and durable worker after adding or rotating it. |
 | `AGENT_RUNTIME_BROWSER_ENABLED` | `true` | Enables the shared Kernel browser infrastructure; apps still opt in independently in `AGENT_RUNTIME_APP_CONFIG`. |
 | `KERNEL_API_KEY` | Kernel API key | Shared runtime infrastructure credential; never exposed to host apps or models. |
 | `AGENT_RUNTIME_BROWSER_SESSION_TIMEOUT_SECONDS` | `300` | Idle safety timeout; paused turns retain the session, while terminal runs close it explicitly. |

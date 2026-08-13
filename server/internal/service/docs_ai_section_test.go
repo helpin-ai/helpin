@@ -15,7 +15,7 @@ func TestAISectionRunToolsForAgentUsesSafeDocumentResearchSubset(t *testing.T) {
 			"write_document_content",
 			"search_documents",
 			"read_document",
-			"web_search_exa",
+			"web_search",
 			"fetch_url",
 			"publish_ai_section_candidate",
 			"create_task",
@@ -24,7 +24,7 @@ func TestAISectionRunToolsForAgentUsesSafeDocumentResearchSubset(t *testing.T) {
 	}
 
 	tools := aiSectionRunToolsForAgent(agent)
-	for _, expected := range []string{"search_documents", "read_document", "web_search_exa", "fetch_url", "publish_ai_section_candidate", "list_contacts"} {
+	for _, expected := range []string{"search_documents", "read_document", "web_search", "fetch_url", "publish_ai_section_candidate", "list_contacts"} {
 		if !slices.Contains(tools, expected) {
 			t.Fatalf("expected %q in AI section tools, got %v", expected, tools)
 		}

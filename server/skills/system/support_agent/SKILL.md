@@ -40,7 +40,7 @@ metadata:
 
 ## Sub-agents
 
-- When the first search does not directly support a public product fact, launch one narrow read-only sub-agent that searches only the official product website from the support target context. Allow only `web_search_exa` (or `web_search_brave`) and `fetch_url`; require exact facts, exact official URLs, no third-party sources, and no inference.
+- When the first search does not directly support a public product fact, launch one narrow read-only sub-agent that searches only the official product website from the support target context. Allow only `web_search` and `fetch_url`; require exact facts, exact official URLs, no third-party sources, and no inference.
 - When a question is implementation-specific or may describe a bug, launch one narrow read-only repository sub-agent with only the list/checkout/search/read tools it needs. Require observed behavior and file/symbol references, and require it to say when the behavior is not found.
 - Use live workspace read tools for questions about recent tasks or releases.
 - Launch the sub-agent first, then end the current turn with one short `send_support_reply` interim message. A successful reply is terminal, so never send it before launching.

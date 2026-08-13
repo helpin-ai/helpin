@@ -64,7 +64,7 @@ Examples:
 
 - `create_document`: product mutation, so command-backed is appropriate
 - `list_collections`: product read/query, so runtime-tool-only is appropriate unless a broader shared backend contract emerges
-- `web_search_exa`: external search capability, so runtime-tool-only is appropriate
+- `web_search`: external search capability, so runtime-tool-only is appropriate
 
 ### Agent-Facing Runtime Tools
 
@@ -182,13 +182,11 @@ requirements are carried separately as structured runtime policy. Optional
 skills use these runtime-owned tools on both
 `native_sdk` and Codex:
 
-- `list_available_skills {}` returns metadata for the current agent's optional skills.
-- `search_available_skills {"query"?: string, "limit"?: integer}` searches that metadata.
+- `find_skills {"query"?: string, "limit"?: integer}` lists or searches metadata for the current agent's optional skills.
 - `read_skill {"key"?: string, "skill_id"?: string, "path"?: string, "max_bytes"?: integer}` reads one selected package. Exactly one of `key` or `skill_id` is required; `path` defaults to `SKILL.md` and must remain inside the package.
 
-The legacy runtime-local `skills.list_files` and `skills.read_file` tools remain
-available for compatibility, but Helpin prompts and profiles must use the
-canonical tools above.
+Runtime-local staged skill package tools remain namespaced and separate from
+the canonical optional-skill catalog tools above.
 
 Do not interpret "business tool" to mean "must be command-backed". The key question is whether the tool is a reusable mutation with product invariants, not whether it merely touches product data or reads from product tables.
 
@@ -373,7 +371,7 @@ If a field does not fit one of those patterns, document why it needs to exist.
 
 Use `snake_case` action names for canonical aliases:
 
-- `read_file`
+- `read_files`
 - `list_documents`
 - `update_task_state`
 - `request_user_input`

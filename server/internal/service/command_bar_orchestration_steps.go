@@ -61,6 +61,7 @@ func (s *AgentService) startCommandBarPlanStep(ctx context.Context, workspaceID,
 		AllowedTools:      step.AllowedTools,
 	}, actor, triggerContext, event, parentRunID, startTargetRunOptions{allowActiveParentRun: parentRunID != nil})
 }
+
 // AdvanceCommandBarPlanAfterRun advances the command-bar plan that owns the
 // given terminal run, loading the run's persisted state. Agent Runtime
 // finalization calls this after the terminal status is already persisted.

@@ -16,7 +16,7 @@ Adapted from the MIT-licensed `lead-magnets`, `free-tools`, `directory-submissio
 Use:
 
 - Marketing context, Docs, CRM signals, support questions, and task history.
-- Public research from `web_search_exa`, `fetch_url`, or `crawl_url` when available and relevant.
+- Public research from `web_search`, `fetch_url`, or `crawl_url` when available and relevant.
 - User-provided offers, audiences, constraints, examples, or existing funnel notes.
 
 Do not submit listings, publish forms, change referral incentives, or connect external tools.

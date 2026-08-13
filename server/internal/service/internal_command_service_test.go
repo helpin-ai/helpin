@@ -119,8 +119,8 @@ func TestSafeOperationalToolExecutorParity(t *testing.T) {
 func TestGroupDockCapabilitiesSupportsSelfExecutionDecision(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 	summary := svc.groupDockCapabilities([]string{
-		"list_available_skills", "search_available_skills", "read_skill",
-		"checkout_repository", "read_file", "ripgrep",
+		"find_skills", "read_skill",
+		"checkout_repositories", "read_files", "repository_search",
 		"create_document", "prepare_dock_execution",
 	})
 	if summary["can_load_skills"] != true {
@@ -509,7 +509,7 @@ func TestListAgentsCommandReturnsOnlyActorVisibleAgents(t *testing.T) {
 		Status:                "idle",
 		RuntimeKind:           "codex",
 		AllowedTargets:        json.RawMessage(`["workspace","document","repository"]`),
-		AllowedTools:          json.RawMessage(`["list_documents","read_document","checkout_repository"]`),
+		AllowedTools:          json.RawMessage(`["list_documents","read_document","checkout_repositories"]`),
 		AllowedCommands:       json.RawMessage(`[]`),
 		Skills:                model.AgentSkillRefs{},
 		ExecutionConfig:       model.JSONBlob(`{}`),

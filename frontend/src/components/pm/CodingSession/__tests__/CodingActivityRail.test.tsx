@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CodingActivityRail } from '../CodingActivityRail';
-import type { CodingSessionEvent } from '@/lib/pmTypes';
+import type { CodingSessionEvent, CodingSessionLiveToolCall } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -46,6 +46,40 @@ describe('CodingActivityRail', () => {
 
     const scrollRegion = container.querySelector('[data-coding-session-activity-rail-scroll]');
     expect(scrollRegion?.className).toContain('pb-[calc(env(safe-area-inset-bottom)+4rem)]');
+  });
+
+  it('renders structured read_files results as source with exact continuation details', () => {
+    const toolCall: CodingSessionLiveToolCall = {
+      tool_call_id: 'tool-read-files',
+      tool_name: 'read_files',
+      args_text: JSON.stringify({ files: [{ path: 'src/a.ts' }, { path: 'src/b.ts' }] }),
+      status: 'completed',
+      result: {
+        content: JSON.stringify({
+          count: 2,
+          files: [
+            { path: 'src/a.ts', start_line: 1, end_line: 2, content: 'File: src/a.ts\n1: first', has_more: false },
+            { path: 'src/b.ts', start_line: 5, end_line: 6, content: 'File: src/b.ts\n5: second', has_more: true, next_start_line: 7, continuation_reason: 'output_limit' },
+          ],
+        }),
+      },
+    };
+
+    act(() => {
+      root.render(<CodingActivityRail events={[]} completedToolCalls={[toolCall]} />);
+    });
+
+    expect(container.textContent).toContain('Read src/a.ts:1-2 +1 more');
+    expect(container.textContent).toContain('continues at 7');
+    const lineChip = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('5 lines'));
+    expect(lineChip).toBeDefined();
+    act(() => lineChip?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(container.textContent).toContain('File: src/a.ts');
+    const showMore = [...container.querySelectorAll('button')].find((button) => button.textContent?.startsWith('Show more'));
+    expect(showMore).toBeDefined();
+    act(() => showMore?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(container.textContent).toContain('File: src/b.ts');
+    expect(container.textContent).not.toContain('next_start_line');
   });
 
   it('renders persisted review findings artifacts as readable history cards', () => {

@@ -50,6 +50,7 @@ import {
 } from '@/lib/agentRuntime';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
+import { getAgentTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
@@ -339,7 +340,7 @@ Treat these configured values as already resolved and authoritative. Do not plan
 
 Use the configured competitor list when it is not empty. If no competitors are configured, discover competitors with web search and cite sources.
 
-For each competitor, first use web_search_exa (or the runtime's built-in web search when available) to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog. A missing search provider is a tool limitation, not evidence that a competitor has no public changelog.
+For each competitor, first use web_search (or the runtime's built-in web search when available) to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog. A missing search provider is a tool limitation, not evidence that a competitor has no public changelog.
 
 Create exactly one competitors changelog tracking report task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
@@ -4146,7 +4147,7 @@ export function AgentsPage() {
                             </div>
                             <div>
                               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tokens</p>
-                              <p className="font-mono text-sm">{(run.tokens_used ?? 0).toLocaleString()}</p>
+                              <p className="font-mono text-sm">{getAgentTokenUsageTotal(run).toLocaleString()}</p>
                             </div>
                             <div>
                               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">When</p>

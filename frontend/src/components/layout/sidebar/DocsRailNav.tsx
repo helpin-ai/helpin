@@ -183,7 +183,7 @@ function DocumentRow({
           aria-current={active ? 'page' : undefined}
           onClick={onOpen}
           className={cn(
-            'flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+            'flex min-h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
             active && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
           )}
         >
@@ -260,7 +260,7 @@ function CollectionBranch({
             className="h-3.5 w-3.5 shrink-0"
             fallback={<FolderOpenIcon className="h-3.5 w-3.5 shrink-0" />}
           />
-          <span className="truncate text-[13px] font-medium">{node.collection.name}</span>
+          <span className="truncate text-sm font-medium">{node.collection.name}</span>
           <span className="ml-auto w-6 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{directCount}</span>
         </button>
         {canEditDocs && (
@@ -649,7 +649,7 @@ export function DocsRailNav({
             type="button"
             onClick={() => onNavigate(item.link)}
             className={cn(
-              'flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              'flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
               isActive(item.link) && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
             )}
           >
@@ -661,7 +661,7 @@ export function DocsRailNav({
           type="button"
           onClick={() => navigateToSpace(activeSpaceId)}
           className={cn(
-            'flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+            'flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
             isActive(`/w/${wsSlug}/docs/spaces/${activeSpaceId}`) && 'bg-sidebar-accent font-medium text-sidebar-accent-foreground',
           )}
         >
@@ -674,7 +674,7 @@ export function DocsRailNav({
       <div className="mx-3 h-px bg-sidebar-border/80" />
 
       <div data-slot="docs-tree-scroll" className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3 pt-2">
-        <div className="flex min-h-7 items-center justify-between px-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="flex min-h-7 items-center justify-between px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
           <span>In this space</span>
           {canEditDocs && (
             <button
@@ -753,7 +753,7 @@ export function DocsRailNav({
                     )}
                   >
                     <InboxIcon className="h-3.5 w-3.5" />
-                    <span className="truncate text-[13px] font-medium">Uncategorized</span>
+                    <span className="truncate text-sm font-medium">Uncategorized</span>
                     <span className="ml-auto w-6 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">{uncollectedDocuments.length}</span>
                   </button>
                 </div>

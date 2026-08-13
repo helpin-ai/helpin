@@ -53,10 +53,16 @@ export function formatAgentTokenUsage(
   return emptyLabel;
 }
 
-function totalTokenCount(usage: TokenUsageShape) {
+export function getAgentTokenUsageTotal(usage: TokenUsageShape) {
+  const inputTokens = usage.input_tokens ?? 0;
+  const outputTokens = usage.output_tokens ?? 0;
+  if ((usage.runtime_kind === 'native_sdk' || usage.runtime_kind === 'codex')
+    && (inputTokens > 0 || outputTokens > 0)) {
+    return inputTokens + outputTokens;
+  }
   const totalTokens = usage.tokens_used ?? 0;
   if (totalTokens > 0) return totalTokens;
-  return (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0);
+  return inputTokens + outputTokens;
 }
 
 export function formatAgentTokenUsageTotal(
@@ -66,7 +72,7 @@ export function formatAgentTokenUsageTotal(
     includeUnit?: boolean;
   },
 ) {
-  const totalTokens = totalTokenCount(usage);
+  const totalTokens = getAgentTokenUsageTotal(usage);
   if (totalTokens <= 0) return options?.emptyLabel ?? '-';
   const compact = formatCompactTokenCount(totalTokens);
   return options?.includeUnit ? `${compact} tokens` : compact;
@@ -74,7 +80,7 @@ export function formatAgentTokenUsageTotal(
 
 export function formatAgentTokenUsageBreakdown(usage: TokenUsageShape) {
   const lines: string[] = [];
-  const totalTokens = totalTokenCount(usage);
+  const totalTokens = getAgentTokenUsageTotal(usage);
   const inputTokens = usage.input_tokens ?? 0;
   const outputTokens = usage.output_tokens ?? 0;
   const cachedInputTokens = usage.cached_input_tokens ?? 0;
@@ -120,4 +126,14 @@ export function formatSessionTokenUsage(
   },
 ) {
   return formatAgentTokenUsage(session, options);
+}
+
+export function formatSessionTokenUsageTotal(
+  session: Pick<CodingSession, 'runtime_kind' | 'tokens_used' | 'cached_input_tokens' | 'input_tokens' | 'output_tokens'>,
+  options?: {
+    emptyLabel?: string;
+    includeUnit?: boolean;
+  },
+) {
+  return formatAgentTokenUsageTotal(session, options);
 }

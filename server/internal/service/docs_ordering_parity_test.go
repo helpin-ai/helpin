@@ -188,26 +188,26 @@ func TestDocsOrdering_ThreeSurfaceParity(t *testing.T) {
 	// After coll-3 (no children): nothing to recurse.
 
 	expected := []dfsItem{
-		{ID: "doc-u1", Type: "doc"},   // sort_key "b"
+		{ID: "doc-u1", Type: "doc"},        // sort_key "b"
 		{ID: "coll-2", Type: "collection"}, // sort_key "g"
 		// coll-2 children: none
-		{ID: "doc-u2", Type: "doc"},   // sort_key "h"
+		{ID: "doc-u2", Type: "doc"},        // sort_key "h"
 		{ID: "coll-1", Type: "collection"}, // sort_key "m"
 		// coll-1 children (recursed):
-		{ID: "doc-c1", Type: "doc"},        // sort_key "c"
-		{ID: "sub-1", Type: "collection"},  // sort_key "d"
+		{ID: "doc-c1", Type: "doc"},       // sort_key "c"
+		{ID: "sub-1", Type: "collection"}, // sort_key "d"
 		// sub-1 children: none
-		{ID: "doc-c2", Type: "doc"},        // sort_key "f"
-		{ID: "doc-c3", Type: "doc"},        // sort_key "k"
-		{ID: "sub-2", Type: "collection"},  // sort_key "p"
+		{ID: "doc-c2", Type: "doc"},       // sort_key "f"
+		{ID: "doc-c3", Type: "doc"},       // sort_key "k"
+		{ID: "sub-2", Type: "collection"}, // sort_key "p"
 		// sub-2 children: none
-		{ID: "doc-c4", Type: "doc"},        // sort_key "r"
+		{ID: "doc-c4", Type: "doc"}, // sort_key "r"
 		// back to top-level
-		{ID: "doc-u3", Type: "doc"},   // sort_key "n"
+		{ID: "doc-u3", Type: "doc"},        // sort_key "n"
 		{ID: "coll-3", Type: "collection"}, // sort_key "s"
 		// coll-3 children: none
-		{ID: "doc-u4", Type: "doc"},   // sort_key "t"
-		{ID: "doc-u5", Type: "doc"},   // sort_key "z"
+		{ID: "doc-u4", Type: "doc"}, // sort_key "t"
+		{ID: "doc-u5", Type: "doc"}, // sort_key "z"
 	}
 
 	// --- Assert ---

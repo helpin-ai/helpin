@@ -140,6 +140,114 @@ describe('collectSegments', () => {
     expect(toolIds).toEqual(['seg-read', 'fallback-patch']);
   });
 
+  it('uses the persisted interleaved timeline instead of an earlier aggregate tool block', () => {
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [
+          message({
+            event_id: 'aggregate-tools',
+            sequence_no: 1,
+            tool_calls: [
+              toolCall({
+                tool_call_id: 'tool-list',
+                tool_name: 'list_directory',
+                args_text: '{"path":"src"}',
+              }),
+              toolCall({
+                tool_call_id: 'tool-read',
+                tool_name: 'read_files',
+                args_text: '{"paths":["src/app.ts"]}',
+              }),
+            ],
+          }),
+          message({
+            event_id: 'interleaved-turn',
+            sequence_no: 2,
+            turn_segments: [
+              assistantSegment('assistant-first', 'I will inspect the repository.'),
+              toolSegment('timeline-list', toolCall({
+                tool_call_id: 'tool-list',
+                tool_name: 'list_directory',
+                args_text: '{"path":"src"}',
+              })),
+              assistantSegment('assistant-second', 'Now I will read the relevant file.'),
+              toolSegment('timeline-read', toolCall({
+                tool_call_id: 'tool-read',
+                tool_name: 'read_files',
+                args_text: '{"paths":["src/app.ts"]}',
+              })),
+              assistantSegment('assistant-final', 'The inspection is complete.'),
+            ],
+          }),
+        ],
+      }),
+      { includeLive: false },
+    );
+
+    expect(segments.map((segment) => (
+      segment.kind === 'assistant' ? segment.content : segment.toolCall.tool_call_id
+    ))).toEqual([
+      'I will inspect the repository.',
+      'tool-list',
+      'Now I will read the relevant file.',
+      'tool-read',
+      'The inspection is complete.',
+    ]);
+  });
+
+  it('reconciles legacy aggregate tools by normalized arguments without collapsing repeats', () => {
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [
+          message({
+            event_id: 'legacy-aggregate',
+            sequence_no: 1,
+            tool_calls: [
+              toolCall({
+                tool_call_id: 'synthetic-list-1',
+                tool_name: 'list_directory',
+                args_text: '{\n  "depth": 2,\n  "path": "src"\n}',
+              }),
+              toolCall({
+                tool_call_id: 'synthetic-list-2',
+                tool_name: 'list_directory',
+                args_text: '{"path":"src","depth":2}',
+              }),
+            ],
+          }),
+          message({
+            event_id: 'legacy-timeline',
+            sequence_no: 2,
+            turn_segments: [
+              assistantSegment('legacy-first', 'First pass.'),
+              toolSegment('legacy-tool-1', toolCall({
+                tool_call_id: 'runtime-list-1',
+                tool_name: 'list_directory',
+                args_text: '{"path":"src","depth":2}',
+              })),
+              assistantSegment('legacy-second', 'Second pass.'),
+              toolSegment('legacy-tool-2', toolCall({
+                tool_call_id: 'runtime-list-2',
+                tool_name: 'list_directory',
+                args_text: '{ "depth": 2, "path": "src" }',
+              })),
+            ],
+          }),
+        ],
+      }),
+      { includeLive: false },
+    );
+
+    expect(segments.map((segment) => (
+      segment.kind === 'assistant' ? segment.content : segment.toolCall.tool_call_id
+    ))).toEqual([
+      'First pass.',
+      'runtime-list-1',
+      'Second pass.',
+      'runtime-list-2',
+    ]);
+  });
+
   it('includes live reasoning + turn segments only when includeLive is true', () => {
     const input = stream({
       live_reasoning_message: { message_id: 'r1', content: 'thinking', status: 'streaming' },
@@ -381,6 +489,46 @@ describe('collectSegments', () => {
       kind: 'tool',
       id: 'runtime-native-id',
       toolCall: { status: 'completed' },
+    });
+  });
+
+  it('keeps paused-run tools at their live timeline positions when persisted IDs are legacy', () => {
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [message({
+          event_id: 'paused-aggregate',
+          tool_calls: [toolCall({
+            tool_call_id: 'synthetic-read',
+            tool_name: 'read_files',
+            args_text: '{\n  "paths": ["src/app.ts"],\n  "limit": 10\n}',
+            status: 'completed',
+            duration_ms: 27,
+          })],
+        })],
+        live_turn_segments: [
+          assistantSegment('paused-first', 'I will inspect the file.'),
+          toolSegment('paused-read', toolCall({
+            tool_call_id: 'runtime-read',
+            tool_name: 'read_files',
+            args_text: '{"limit":10,"paths":["src/app.ts"]}',
+            status: 'running',
+          })),
+          assistantSegment('paused-final', 'The run is waiting for input.'),
+        ],
+      }),
+      { includeLive: true },
+    );
+
+    expect(segments.map((segment) => (
+      segment.kind === 'assistant' ? segment.content : segment.toolCall.tool_call_id
+    ))).toEqual([
+      'I will inspect the file.',
+      'synthetic-read',
+      'The run is waiting for input.',
+    ]);
+    expect(segments[1]).toMatchObject({
+      kind: 'tool',
+      toolCall: { status: 'completed', duration_ms: 27 },
     });
   });
 
