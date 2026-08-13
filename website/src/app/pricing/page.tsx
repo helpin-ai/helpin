@@ -17,7 +17,7 @@ const PLANS = [
     Icon: Users,
     color: 'oklch(0.52 0.16 250)',
     seats: 'Unlimited',
-    aiUsage: '100%',
+    aiUsage: 'Standard',
     cta: 'Start Starter trial',
     href: `${SIGNUP_URL}?plan=starter`,
     popular: false,
@@ -40,7 +40,7 @@ const PLANS = [
     Icon: Building2,
     color: 'oklch(0.55 0.18 310)',
     seats: 'Unlimited',
-    aiUsage: '100%',
+    aiUsage: '3× Starter',
     cta: 'Start Growth trial',
     href: `${SIGNUP_URL}?plan=growth`,
     popular: true,
@@ -97,7 +97,7 @@ const COMPARISON_FEATURES = [
   { name: 'AI article translation', starter: false, growth: true },
 
   { name: 'AI Agents', category: true },
-  { name: 'Included AI usage', starter: '100% monthly', growth: '100% monthly' },
+  { name: 'Included AI usage', starter: 'Standard monthly allowance', growth: '3× Starter allowance' },
   { name: 'Built-in agents', starter: true, growth: true },
   { name: 'Custom agents', starter: false, growth: true },
   { name: 'Agent scheduling', starter: false, growth: true },
@@ -128,7 +128,7 @@ const FAQS = [
   },
   {
     q: 'How is AI usage measured?',
-    a: 'We meter actual input, cache-read, cache-write, output, and reasoning tokens at the published rate for the model size. Settings shows consumption as a simple percentage.',
+    a: 'Usage reflects the model size and the amount of AI work completed. Routine tasks use the allowance more slowly than demanding planning, coding, and review work. Settings shows consumption as a simple percentage.',
   },
   {
     q: 'Can I switch plans anytime?',
@@ -294,10 +294,10 @@ export default function PricingPage() {
                     <p className="text-[10px] text-muted-foreground uppercase tracking-wide leading-tight mt-1">Seats</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-lg font-bold text-foreground leading-tight">{plan.aiUsage}<span className="text-xs font-normal text-muted-foreground"> included</span></p>
+                    <p className="text-lg font-bold text-foreground leading-tight">{plan.aiUsage}</p>
                     <a href="#ai-usage" className="text-[10px] text-muted-foreground uppercase tracking-wide hover:text-pop cursor-pointer leading-tight mt-1 block"
                       onClick={(e) => { e.preventDefault(); document.getElementById('ai-usage')?.scrollIntoView({ behavior: 'smooth' }); }}>
-                      AI usage ↓
+                      AI allowance ↓
                     </a>
                   </div>
                 </div>
@@ -377,7 +377,7 @@ export default function PricingPage() {
             AI usage, explained simply.
           </h2>
           <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-            Each plan includes a monthly AI allowance. You see how much is used as a percentage; behind the scenes, usage is based on actual provider tokens.
+            Every plan includes a monthly allowance for AI work. Routine tasks use less, while longer and more advanced work uses more. You always see a simple percentage used and remaining.
           </p>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -385,15 +385,13 @@ export default function PricingPage() {
               const icons = [MessageCircle, Send, Code2, Zap];
               const colors = ['#b56c31', '#ad5544', '#27879a', '#4b77bd'];
               const Icon = icons[index];
-              const input = tier.rates.input_microusd_per_million / 1_000_000;
-              const output = tier.rates.output_microusd_per_million / 1_000_000;
               return (
                 <div key={tier.key} className="rounded-xl border border-border p-4 text-center">
                   <div className="w-9 h-9 rounded-lg flex items-center justify-center mx-auto mb-3 bg-muted">
                     <Icon className="w-[16px] h-[16px]" style={{ color: colors[index] }} />
                   </div>
                   <p className="text-sm font-medium text-foreground mb-1">{tier.label}</p>
-                  <p className="text-xs text-muted-foreground">${input.toFixed(input < 0.1 ? 3 : 2)} input · ${output.toFixed(2)} output / 1M tokens</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{tier.description}</p>
                 </div>
               );
             })}
@@ -401,7 +399,7 @@ export default function PricingPage() {
 
           <div className="mt-10 rounded-xl bg-muted/50 p-6 text-center">
             <p className="text-sm text-muted-foreground leading-relaxed max-w-lg mx-auto">
-              Cache reads and cache writes have separate lower rates. Paid workspaces can enable exact extra AI usage, settled monthly. Customer-funded model access pays the provider directly and uses a 10% Helpin orchestration amount.
+              Your allowance resets on your renewal date. If you enable extra AI usage, agents can keep working after the included allowance is used and only the additional usage is billed. Connect your own provider account when you prefer to pay the provider directly.
             </p>
           </div>
         </div>
