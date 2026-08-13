@@ -423,6 +423,63 @@ describe('ChatWindow', () => {
     expect(queryByText('Contact us')).toBeNull();
   });
 
+  it('does not reopen a programmatically opened article after navigating to Messages', () => {
+    const openArticleRequest = { key: 1, articleSlug: 'getting-started' };
+    const widgetProps = {
+      config: baseConfig,
+      messages: [],
+      isOpen: true,
+      onClose: () => {},
+      onSendMessage: () => {},
+      onQuickReply: () => {},
+      showPreChatForm: false,
+      onPreChatSubmit: () => {},
+      host: 'https://example.com',
+      widgetKey: 'widget-key',
+      openArticleRequest,
+    };
+    const { container, getByText, rerender } = render(
+      <ChatWindow {...widgetProps} onViewChange={vi.fn()} />,
+    );
+
+    expect(container.querySelector('.helpin-article-view')).toBeTruthy();
+    fireEvent.click(getByText('Messages'));
+    expect(container.querySelector('.helpin-messages-view')).toBeTruthy();
+
+    rerender(<ChatWindow {...widgetProps} onViewChange={vi.fn()} />);
+
+    expect(container.querySelector('.helpin-messages-view')).toBeTruthy();
+    expect(container.querySelector('.helpin-article-view')).toBeNull();
+  });
+
+  it('does not reopen a programmatically opened article after navigating back', () => {
+    const openArticleRequest = { key: 1, articleSlug: 'getting-started' };
+    const widgetProps = {
+      config: baseConfig,
+      messages: [],
+      isOpen: true,
+      onClose: () => {},
+      onSendMessage: () => {},
+      onQuickReply: () => {},
+      showPreChatForm: false,
+      onPreChatSubmit: () => {},
+      host: 'https://example.com',
+      widgetKey: 'widget-key',
+      openArticleRequest,
+    };
+    const { container, getByLabelText, rerender } = render(
+      <ChatWindow {...widgetProps} onViewChange={vi.fn()} />,
+    );
+
+    fireEvent.click(getByLabelText('Back'));
+    expect(container.querySelector('.helpin-help-view')).toBeTruthy();
+
+    rerender(<ChatWindow {...widgetProps} onViewChange={vi.fn()} />);
+
+    expect(container.querySelector('.helpin-help-view')).toBeTruthy();
+    expect(container.querySelector('.helpin-article-view')).toBeNull();
+  });
+
   it('starts a fresh conversation from empty Messages view', () => {
     const handleStartNewConversation = vi.fn();
     const { getByText } = render(

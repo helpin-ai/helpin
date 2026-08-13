@@ -412,11 +412,13 @@ export class WidgetManager {
   }
 
   openMessages(): void {
+    this.openArticleRequest = null;
     this.currentView = 'messages';
     this.open();
   }
 
   openNewMessage(content?: string): void {
+    this.openArticleRequest = null;
     this.resetActiveConversation();
     this.currentView = 'conversation';
 
@@ -434,6 +436,7 @@ export class WidgetManager {
   }
 
   openConversation(conversationId: string): void {
+    this.openArticleRequest = null;
     this.currentView = 'home';
     this.open();
   }
@@ -642,6 +645,9 @@ export class WidgetManager {
       onCsatSubmit: (rating: number, feedback?: string) => this.handleCsatSubmit(rating, feedback),
       onViewChange: (view: WidgetView) => {
         this.currentView = view;
+        if (view !== 'help-article') {
+          this.openArticleRequest = null;
+        }
         // Refresh conversations list from server when navigating to Messages tab
         if (view === 'messages' && this.wsConnection?.readyState === WebSocket.OPEN) {
           this.wsSend('conversations:list', {});

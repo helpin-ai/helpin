@@ -1,5 +1,5 @@
 import { FunctionComponent } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ActiveTeammate, Message, Conversation, WidgetConfig } from '../types';
 import { BottomNav, type WidgetBaseView, WidgetView } from './BottomNav';
 import { HomeView } from './HomeView';
@@ -128,6 +128,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const [activeHelpSpaceSlug, setActiveHelpSpaceSlug] = useState<string | null>(null);
   const [activeCollectionSlug, setActiveCollectionSlug] = useState<string | null>(null);
   const [activeArticleKey, setActiveArticleKey] = useState<string | null>(null);
+  const handledArticleRequestKeyRef = useRef<number | null>(null);
+  const onViewChangeRef = useRef(onViewChange);
   // Breadcrumb stack of ancestor collection slugs the user drilled
   // through to reach activeCollectionSlug, oldest-first. Pop on back
   // to walk up the tree one level at a time. Empty when the user is
@@ -147,6 +149,10 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   useEffect(() => {
     setActiveView(initialView);
   }, [initialView]);
+
+  useEffect(() => {
+    onViewChangeRef.current = onViewChange;
+  }, [onViewChange]);
 
   useEffect(() => {
     setHumanSupportRequested(false);
@@ -178,16 +184,22 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
   useEffect(() => {
     const requestedArticleKey = openArticleRequest?.articleKey ?? openArticleRequest?.articleSlug;
-    if (!requestedArticleKey) {
+    const requestKey = openArticleRequest?.key;
+    if (!requestedArticleKey || requestKey === undefined || handledArticleRequestKeyRef.current === requestKey) {
       return;
     }
 
+    // openArticleRequest is a command, not persistent navigation state. The
+    // SDK can rerender the widget with the same request object after a user
+    // clicks Back or Messages; consume each key once so that rerender cannot
+    // force the article back onto the screen.
+    handledArticleRequestKeyRef.current = requestKey;
     setActiveArticleKey(requestedArticleKey);
     setActiveCollectionSlug(null);
     setActiveHelpSpaceSlug(null);
     setActiveView('help-article');
-    onViewChange?.('help-article');
-  }, [onViewChange, openArticleRequest]);
+    onViewChangeRef.current?.('help-article');
+  }, [openArticleRequest?.articleKey, openArticleRequest?.articleSlug, openArticleRequest?.key]);
 
   useEffect(() => {
     let frameId: number | undefined;
