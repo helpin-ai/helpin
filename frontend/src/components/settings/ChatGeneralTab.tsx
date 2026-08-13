@@ -43,11 +43,14 @@ import {
 } from './chat-widget/responseModes';
 import { getChatWidgetAIAssistantEnableBlocker, getChatWidgetAIAssistantToggleToast } from './chat-widget/aiAssistantReadiness';
 import { DEFAULT_AI_HANDOFF_FOLLOWUPS, formatAIHandoffFollowupOption } from './chat-widget/handoffFollowups';
+import { buildWidgetInstallPrompt, type WidgetInstallFramework } from './chat-widget/installPrompts';
+import { WidgetInstallAIPrompt } from './chat-widget/WidgetInstallAIPrompt';
 import { CuratedGuidanceField } from './CuratedGuidanceField';
 
 /* ── Main component ──────────────────────────────────────────────────── */
 
 type ChatGeneralTabMode = 'chat-widget' | 'ai-assistant';
+const HELPIN_WIDGET_HOST = 'https://client.helpin.ai';
 
 export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspaceId: string; mode?: ChatGeneralTabMode }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
@@ -61,7 +64,7 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
   const { data: supportAgents = [] } = useSupportAgents(workspaceId);
   const { data: supportMailboxes = [] } = useSupportMailboxes(workspaceId);
 
-  const [snippetTab, setSnippetTab] = useState<'html' | 'react' | 'nextjs'>('html');
+  const [snippetTab, setSnippetTab] = useState<WidgetInstallFramework>('html');
 
   // Identity state
   const [requireEmail, setRequireEmail] = useState(true);
@@ -333,9 +336,13 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
   };
 
 
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success(`${label} copied`);
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error(`Couldn't copy ${label.toLowerCase()}`);
+    }
   };
 
   const handleLogoFileSelect = (file: File) => {
@@ -393,7 +400,7 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-widget-key', '${widgetKey}');
-    t.setAttribute('data-host', 'https://client.helpin.ai');
+    t.setAttribute('data-host', '${HELPIN_WIDGET_HOST}');
     t.src = 'https://cdn.helpin.ai/lib.js';
     s.parentNode.insertBefore(t, s);
   })();
@@ -428,15 +435,15 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
   });
 </script>`;
 
-  const reactSnippet = `// 1. Install the package
-npm install @helpin-ai/react
+  const reactSnippet = `// 1. Install the packages
+npm install @helpin-ai/react @helpin-ai/sdk-js
 
 // 2. Wrap your app with HelpinProvider
 import { createClient, HelpinProvider } from '@helpin-ai/react';
 
 const client = createClient({
   widgetKey: '${widgetKey}',
-  host: 'https://client.helpin.ai',
+  host: '${HELPIN_WIDGET_HOST}',
   // The React package loads the live widget runtime from Helpin's CDN.
   // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
@@ -450,6 +457,7 @@ function App() {
 }
 
 // 3. Identify users (optional)
+import { useEffect } from 'react';
 import { useHelpin } from '@helpin-ai/react';
 
 function Dashboard() {
@@ -483,41 +491,79 @@ function Dashboard() {
   }, []);
 }`;
 
-  const nextjsSnippet = `// 1. Install the package
-npm install @helpin-ai/nextjs
+  const vueSnippet = `// 1. Install the packages
+npm install @helpin-ai/vue @helpin-ai/sdk-js
 
-// 2. Add to your root layout (app/layout.tsx)
-import { HelpinProvider, createClient } from '@helpin-ai/nextjs';
+// 2. Install the plugin in main.ts
+import { createApp } from 'vue';
+import { createClient, HelpinPlugin } from '@helpin-ai/vue';
+import App from './App.vue';
 
 const client = createClient({
   widgetKey: '${widgetKey}',
-  host: 'https://client.helpin.ai',
-  // The Next.js package loads the live widget runtime from Helpin's CDN.
-  // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
+  host: '${HELPIN_WIDGET_HOST}',
 });
+
+createApp(App)
+  .use(HelpinPlugin, { client })
+  .mount('#app');
+
+// 3. Identify users from a descendant component (optional)
+<script setup lang="ts">
+import { onMounted } from 'vue';
+import { useHelpin } from '@helpin-ai/vue';
+
+const helpin = useHelpin();
+
+onMounted(() => {
+  void helpin.id({
+    id: 'user-123',
+    email: 'user@example.com',
+    first_name: 'Jane',
+    last_name: 'Doe',
+  });
+});
+</script>`;
+
+  const nextjsSnippet = `// 1. Install the packages
+npm install @helpin-ai/nextjs @helpin-ai/sdk-js
+
+// 2. Create a Client Component provider (app/providers.tsx)
+'use client';
+
+import { useMemo } from 'react';
+import { createClient, HelpinProvider } from '@helpin-ai/nextjs';
+
+export function Providers({ children }) {
+  const client = useMemo(() => createClient({
+    widgetKey: '${widgetKey}',
+    host: '${HELPIN_WIDGET_HOST}',
+  }), []);
+
+  return <HelpinProvider client={client}>{children}</HelpinProvider>;
+}
+
+// 3. Wrap your app from app/layout.tsx
+import { Providers } from './providers';
 
 export default function RootLayout({ children }) {
   return (
     <html>
-      <body>
-        <HelpinProvider client={client}>
-          {children}
-        </HelpinProvider>
-      </body>
+      <body><Providers>{children}</Providers></body>
     </html>
   );
 }
 
-// 3. Identify users (optional)
+// 4. Identify users from a Client Component (optional)
 'use client';
+import { useEffect } from 'react';
 import { useHelpin } from '@helpin-ai/nextjs';
 
 function Dashboard() {
-  const { id, lead } = useHelpin();
+  const { id } = useHelpin();
 
   useEffect(() => {
-    // Identify a logged-in user
-    id({
+    void id({
       id: 'user-123',
       email: 'user@example.com',
       first_name: 'Jane',
@@ -528,20 +574,14 @@ function Dashboard() {
         created_at: '2024-01-15T00:00:00Z',
       },
     });
-
-    // Or capture a lead
-    lead({
-      email: 'visitor@example.com',
-      first_name: 'New',
-      last_name: 'Lead',
-      company: {
-        id: 'company-123',
-        name: 'Acme Inc',
-        created_at: '2024-01-15T00:00:00Z',
-      },
-    });
-  }, []);
+  }, [id]);
 }`;
+
+  const installPrompt = buildWidgetInstallPrompt({
+    framework: snippetTab,
+    widgetKey,
+    host: HELPIN_WIDGET_HOST,
+  });
 
   // Derive help spaces for the widget preview
   const previewHelpSpaces = docsSpaces
@@ -998,7 +1038,7 @@ function Dashboard() {
                     <Label className="text-sm">Widget Key</Label>
                     <div className="flex items-center gap-2">
                       <Input value={widgetKey} readOnly className="font-mono text-sm" />
-                      <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => copyToClipboard(widgetKey, 'Widget key')}>
+                      <Button type="button" variant="outline" size="icon" className="shrink-0" aria-label="Copy widget key" onClick={() => void copyToClipboard(widgetKey, 'Widget key')}>
                         <Copy01Icon className="h-4 w-4" />
                       </Button>
                     </div>
@@ -1006,7 +1046,7 @@ function Dashboard() {
 
                   <div className="space-y-3">
                     <Label className="text-sm">Installation Method</Label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                       {([
                         { id: 'html' as const, label: 'HTML / JS', icon: (
                           <img src="/icons/html-js.svg" alt="HTML/JS" className="h-4 w-4" />
@@ -1014,13 +1054,18 @@ function Dashboard() {
                         { id: 'react' as const, label: 'React', icon: (
                           <img src="/icons/react.png" alt="React" className="h-4 w-4" />
                         )},
+                        { id: 'vue' as const, label: 'Vue', icon: (
+                          <CodeIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        )},
                         { id: 'nextjs' as const, label: 'Next.js', icon: (
                           <img src="/icons/nextjs.svg" alt="Next.js" className="h-4 w-4 dark:invert" />
                         )},
                       ] as const).map(tab => (
                         <button
+                          type="button"
                           key={tab.id}
                           onClick={() => setSnippetTab(tab.id)}
+                          aria-pressed={snippetTab === tab.id}
                           className={cn(
                             'flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-xs transition-colors',
                             snippetTab === tab.id
@@ -1033,22 +1078,39 @@ function Dashboard() {
                         </button>
                       ))}
                     </div>
-                    <CodeBlock
-                      code={
-                        snippetTab === 'html' ? htmlSnippet
-                        : snippetTab === 'react' ? reactSnippet
-                        : nextjsSnippet
-                      }
-                      language={snippetTab === 'html' ? 'markup' : 'typescript'}
-                      showLineNumbers
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {snippetTab === 'html'
-                        ? 'Step 1: Add the pixel script. Step 2: Identify logged-in users (optional).'
-                        : snippetTab === 'react'
-                        ? 'Install @helpin-ai/react from npm. The package loads the live widget runtime from Helpin CDN.'
-                        : 'Install @helpin-ai/nextjs from npm. The package loads the live widget runtime from Helpin CDN.'}
-                    </p>
+                    <Tabs defaultValue="manual" className="gap-3">
+                      <TabsList className="grid h-9 w-full grid-cols-2 bg-muted/60 p-1">
+                        <TabsTrigger value="manual" className="h-7 text-xs">Manual setup</TabsTrigger>
+                        <TabsTrigger value="ai" className="h-7 text-xs">Install with AI</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="manual" className="mt-0 space-y-2">
+                        <CodeBlock
+                          code={
+                            snippetTab === 'html' ? htmlSnippet
+                            : snippetTab === 'react' ? reactSnippet
+                            : snippetTab === 'vue' ? vueSnippet
+                            : nextjsSnippet
+                          }
+                          language={snippetTab === 'html' ? 'markup' : 'typescript'}
+                          showLineNumbers
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {snippetTab === 'html'
+                            ? 'Add the pixel once, then identify logged-in users when their session is ready.'
+                            : snippetTab === 'react'
+                            ? 'Install the React SDK and place HelpinProvider at the application root.'
+                            : snippetTab === 'vue'
+                            ? 'Install the Vue SDK and register HelpinPlugin in your application bootstrap.'
+                            : 'Initialize Helpin from a Client Component so server rendering remains safe.'}
+                        </p>
+                      </TabsContent>
+                      <TabsContent value="ai" className="mt-0">
+                        <WidgetInstallAIPrompt
+                          prompt={installPrompt}
+                          onCopy={() => void copyToClipboard(installPrompt, 'AI installation prompt')}
+                        />
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 </>
               )}
