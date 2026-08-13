@@ -415,32 +415,6 @@ func invoiceLineIsProration(line *stripe.InvoiceLineItem) bool {
 	return false
 }
 
-func (g *Gateway) BillCreditBlock(ctx context.Context, input service.BillingCreditBlockCharge) error {
-	if strings.TrimSpace(input.CustomerID) == "" {
-		return fmt.Errorf("stripe customer ID is required")
-	}
-	description := "Extra AI usage"
-	params := &stripe.InvoiceItemParams{
-		Params: stripe.Params{
-			Context: ctx,
-		},
-		Customer:     stripe.String(input.CustomerID),
-		Subscription: stripe.String(input.SubscriptionID),
-		Description:  stripe.String(description),
-		Metadata: map[string]string{
-			"workspace_id": input.WorkspaceID,
-			"blocks":       fmt.Sprintf("%d", input.Blocks),
-		},
-	}
-	params.Amount = stripe.Int64(int64(input.AmountCents))
-	params.Currency = stripe.String(string(stripe.CurrencyUSD))
-	params.SetIdempotencyKey(input.IdempotencyKey)
-	if _, err := invoiceitem.New(params); err != nil {
-		return fmt.Errorf("create stripe credit invoice item: %w", err)
-	}
-	return nil
-}
-
 // SettleAIUsage creates one exact extra-usage invoice item and, for annual plans, an out-of-cycle invoice.
 func (g *Gateway) SettleAIUsage(ctx context.Context, input service.AIUsageSettlementCharge) (service.StripeSettlementResult, error) {
 	if strings.TrimSpace(input.CustomerID) == "" {
