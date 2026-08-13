@@ -28,6 +28,23 @@ func NewBillingRepository(db *gorm.DB) *BillingRepository {
 	return &BillingRepository{db: db}
 }
 
+// GetOpenAIUsagePeriod returns the current transactional allowance period.
+func (r *BillingRepository) GetOpenAIUsagePeriod(ctx context.Context, workspaceID string) (*model.AIUsagePeriod, error) {
+	if !r.db.Migrator().HasTable(&model.AIUsagePeriod{}) {
+		return nil, nil
+	}
+	var period model.AIUsagePeriod
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status = ?", workspaceID, model.AIUsagePeriodOpen).
+		Order("period_start DESC").First(&period).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get open AI usage period: %w", err)
+	}
+	return &period, nil
+}
+
 // ProcessStripeLifecycleEvent atomically deduplicates a Stripe webhook, applies
 // its billing mutation, snapshots recipients, enqueues Customer.io delivery,
 // and marks the webhook processed.

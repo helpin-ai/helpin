@@ -104,6 +104,15 @@ export interface UsageFeatureRow {
   usage: number;
   credits: number;
   pct: number;
+  model_tier?: 'small' | 'medium' | 'large' | 'flagship';
+  action_count?: number;
+  charged_microusd?: number;
+  input_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  output_tokens?: number;
+  reasoning_tokens?: number;
+  estimated_count?: number;
 }
 
 export interface UsageResponse {

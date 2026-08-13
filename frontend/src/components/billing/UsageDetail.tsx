@@ -126,7 +126,7 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
               <div
                 key={p.date}
                 className="group relative flex h-full min-w-0 flex-col justify-end"
-                title={`${dayjs(p.date).format('MMM D')}: ${formatNumber(p.total)} usage units`}
+                title={`${dayjs(p.date).format('MMM D')}: ${Math.round(p.total)}% of period usage`}
               >
                 <div className="flex w-full flex-col-reverse" style={{ height: `${(p.total / max) * 100}%` }}>
                   {p.segs
@@ -184,9 +184,9 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
           <TableHeader>
             <TableRow>
               <TableHead>Feature</TableHead>
-              <TableHead className="text-right">Typical minimum</TableHead>
+              <TableHead>Model size</TableHead>
               <TableHead className="text-right">Actions</TableHead>
-              <TableHead className="text-right">AI usage (%)</TableHead>
+              <TableHead className="text-right">Share of usage</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -208,13 +208,13 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd }: Props) {
                     {f.label}
                   </span>
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">
-                  {f.cost > 0 ? `${f.cost} units` : 'variable'}
+                <TableCell className="capitalize text-muted-foreground">
+                  {f.model_tier ?? '—'}
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{formatNumber(f.usage)}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatNumber(f.action_count ?? f.usage)}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {formatNumber(f.credits)}{' '}
-                  <span className="text-muted-foreground">({Math.round(f.pct)}%)</span>
+                  {Math.round(f.pct)}%
+                  {(f.estimated_count ?? 0) > 0 && <span className="ml-1 text-muted-foreground">estimated</span>}
                 </TableCell>
               </TableRow>
             ))}

@@ -96,11 +96,11 @@ const COMPARISON_FEATURES = [
   { name: 'AI article translation', starter: false, growth: true },
 
   { name: 'AI Agents', category: true },
-  { name: 'Monthly AI credits', starter: '5,000', growth: '25,000' },
+  { name: 'Included AI usage', starter: '100% monthly', growth: '100% monthly' },
   { name: 'Built-in agents', starter: true, growth: true },
   { name: 'Custom agents', starter: false, growth: true },
   { name: 'Agent scheduling', starter: false, growth: true },
-  { name: 'Extra usage packs', starter: '$50 / 5,000', growth: '$50 / 5,000' },
+  { name: 'Extra AI usage', starter: 'Exact metered usage', growth: 'Exact metered usage' },
 
   { name: 'Platform', category: true },
   { name: 'GitHub integration', starter: true, growth: true },
@@ -122,12 +122,12 @@ const FAQS = [
     a: 'No. Every plan includes all modules — PM, Support, Sales, and Docs. We don\'t sell features separately. Your whole team gets access to everything from day one.',
   },
   {
-    q: 'What happens if I exceed my AI credit limit?',
-    a: 'Paid workspaces can enable on-demand credits, billed at $50 per 5,000-credit block. You can also move from Starter to Growth when your team needs more included usage.',
+    q: 'What happens if I use all of my included AI usage?',
+    a: 'Paid workspaces can allow extra AI usage. Only exact usage beyond the allowance is settled each month, before applicable taxes — there are no prepaid blocks.',
   },
   {
-    q: 'What counts as an AI credit?',
-    a: 'Credits are consumed based on the type of work. A support AI reply uses 5 credits, a CRM/deal action uses 10, document generation uses 20, planning uses 50, and coding or review runs use 100.',
+    q: 'How is AI usage measured?',
+    a: 'We meter actual input, cache-read, cache-write, output, and reasoning tokens at the published rate for the model size. Settings shows consumption as a simple percentage.',
   },
   {
     q: 'Can I switch plans anytime?',
@@ -368,41 +368,37 @@ export default function PricingPage() {
       </section>
 
       {/* ══════════════════════════════════
-          AI CREDITS EXPLAINED
+          AI USAGE EXPLAINED
           ══════════════════════════════════ */}
-      <section id="credits" className="py-16 md:py-24 border-t border-border scroll-mt-20">
+      <section id="ai-usage" className="py-16 md:py-24 border-t border-border scroll-mt-20">
         <div className="mx-auto max-w-4xl px-6 lg:px-8">
           <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground text-center mb-6">
-            AI credits, explained simply.
+            AI usage, explained simply.
           </h2>
           <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-            Every plan includes AI credits that power your agents. Credits are consumed when agents work.
+            Each plan includes a monthly AI allowance. You see how much is used as a percentage; behind the scenes, usage is based on actual provider tokens.
           </p>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { action: 'Support AI reply', credits: '5', Icon: MessageCircle, color: 'oklch(0.58 0.15 55)', bg: 'oklch(0.58 0.15 55 / 0.08)' },
-              { action: 'CRM/deal action', credits: '10', Icon: Send, color: 'oklch(0.52 0.14 28)', bg: 'oklch(0.52 0.14 28 / 0.08)' },
-              { action: 'Document generation', credits: '20', Icon: FileText, color: 'oklch(0.55 0.16 160)', bg: 'oklch(0.55 0.16 160 / 0.08)' },
-              { action: 'Planning run', credits: '50', Icon: Layers, color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)' },
-              { action: 'Coding run', credits: '100', Icon: Code2, color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)' },
-              { action: 'Review run', credits: '100', Icon: CheckCircle, color: 'oklch(0.48 0.15 155)', bg: 'oklch(0.48 0.15 155 / 0.08)' },
-              { action: 'Knowledge search', credits: 'Included in action', Icon: Search, color: 'oklch(0.55 0.15 130)', bg: 'oklch(0.55 0.15 130 / 0.08)' },
-              { action: 'On-demand block', credits: '5,000 for $50', Icon: Zap, color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)' },
+              { action: 'Small', credits: '$0.22 input · $1.32 output', Icon: MessageCircle, color: 'oklch(0.58 0.15 55)', bg: 'oklch(0.58 0.15 55 / 0.08)' },
+              { action: 'Medium', credits: '$0.44 input · $3.52 output', Icon: Send, color: 'oklch(0.52 0.14 28)', bg: 'oklch(0.52 0.14 28 / 0.08)' },
+              { action: 'Large', credits: '$2.20 input · $13.20 output', Icon: Code2, color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)' },
+              { action: 'Flagship', credits: '$11.00 input · $49.50 output', Icon: Zap, color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)' },
             ].map((item) => (
               <div key={item.action} className="rounded-xl border border-border p-4 text-center">
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center mx-auto mb-3" style={{ background: item.bg }}>
                   <item.Icon className="w-[16px] h-[16px]" style={{ color: item.color }} />
                 </div>
                 <p className="text-sm font-medium text-foreground mb-1">{item.action}</p>
-                <p className="text-xs text-muted-foreground">{item.credits} credits</p>
+                <p className="text-xs text-muted-foreground">{item.credits} / 1M tokens</p>
               </div>
             ))}
           </div>
 
           <div className="mt-10 rounded-xl bg-muted/50 p-6 text-center">
             <p className="text-sm text-muted-foreground leading-relaxed max-w-lg mx-auto">
-              <strong className="text-foreground">Need more?</strong> Paid workspaces can enable on-demand 5,000-credit blocks.
+              Cache reads and cache writes have separate lower rates. Paid workspaces can enable exact extra AI usage, settled monthly. Customer-funded model access pays the provider directly and uses a 10% Helpin orchestration amount.
             </p>
           </div>
         </div>

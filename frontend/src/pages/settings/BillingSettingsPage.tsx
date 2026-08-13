@@ -132,11 +132,11 @@ const COMPARISON_FEATURES: Array<{
   { name: 'Buyer signal detection', starter: true, growth: true },
   { name: 'Deal automation', starter: false, growth: true },
   { name: 'AI Agents', category: true },
-  { name: 'Monthly AI usage', starter: '5,000 units', growth: '25,000 units' },
+  { name: 'Included AI usage', starter: '100% each month', growth: '100% each month' },
   { name: 'Built-in agents', starter: true, growth: true },
   { name: 'Custom agents', starter: false, growth: true },
   { name: 'Agent scheduling', starter: false, growth: true },
-  { name: 'Extra AI usage packs', starter: '$50 / 5,000 units', growth: '$50 / 5,000 units' },
+  { name: 'Extra AI usage', starter: 'Exact metered usage', growth: 'Exact metered usage' },
   { name: 'Platform', category: true },
   { name: 'Users', starter: 'Unlimited', growth: 'Unlimited' },
   { name: 'Teams', starter: '10', growth: 'Unlimited' },
@@ -162,7 +162,7 @@ const BILLING_FAQS = [
   },
   {
     q: 'What happens if I exceed my AI usage limit?',
-    a: 'The Starter and Growth plans can enable extra AI usage at $50 per 5,000-unit pack.',
+    a: 'Starter and Growth can allow exact metered usage beyond the included allowance. It is settled monthly with no prepaid packs.',
   },
   {
     q: 'Can I switch plans anytime?',
@@ -376,9 +376,12 @@ function BillingSettingsContent({
     return () => window.clearInterval(interval);
   }, [billing?.manage_billing_enabled, billing?.stripe_subscription_id, checkoutConfirming, checkoutResult, refetch]);
 
-  const creditPct = useMemo(() => {
+  const usagePct = useMemo(() => {
+    if (billing?.ai_usage_allowance_microusd) {
+      return Math.round(((billing.ai_usage_used_microusd ?? 0) / billing.ai_usage_allowance_microusd) * 100);
+    }
     if (!billing?.included_credits) return 0;
-    return Math.min(100, Math.round((billing.credits_used / billing.included_credits) * 100));
+    return Math.round((billing.credits_used / billing.included_credits) * 100);
   }, [billing]);
 
   const startCheckout = async (plan: BillingPlan, interval: BillingInterval) => {
@@ -662,7 +665,7 @@ function BillingSettingsContent({
             <div className="grid border-t bg-muted/20 sm:grid-cols-3">
               <PlanMetric label="Billing period" value={periodCopy(billing)} />
               <PlanMetric label={nextChargeMetricLabel(billing)} value={nextChargeMetricValue(billing)} />
-              <PlanMetric label="Monthly AI usage" value={`${formatNumber(billing.included_credits)} units / month`} />
+              <PlanMetric label="Included AI usage" value="100% each month" />
             </div>
           </CardContent>
         </Card>
@@ -694,25 +697,25 @@ function BillingSettingsContent({
       <section className="space-y-3">
         <SectionHeading
           title="Extra AI usage"
-          description="Allow extra AI usage packs when included usage runs out."
+          description="Allow exact metered AI usage after the included allowance is consumed."
         />
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-1">
-                <p className="text-sm font-medium">{billing.on_demand_enabled ? 'Enabled' : 'Disabled'}</p>
+                <p className="text-sm font-medium">{(billing.extra_ai_usage_enabled ?? billing.on_demand_enabled) ? 'Enabled' : 'Disabled'}</p>
                 <p className="text-sm text-muted-foreground">
                   {isFounderPlan
-                    ? 'The Founder plan includes 100,000 AI usage units each month. Extra usage packs are not available on this plan.'
-                    : billing.on_demand_available
-                    ? '$50 per 5,000-unit pack, added to your next invoice.'
+                    ? 'Founder has an internal monthly soft budget. Usage is never blocked or invoiced and may exceed 100%.'
+                    : (billing.extra_ai_usage_available ?? billing.on_demand_available)
+                    ? 'Only the exact extra usage is added to the monthly invoice, before applicable tax.'
                     : 'Available on the Starter and Growth plans with an active subscription.'}
                 </p>
               </div>
               <Switch
-                checked={billing.on_demand_enabled}
+                checked={billing.extra_ai_usage_enabled ?? billing.on_demand_enabled}
                 onCheckedChange={(checked) => void toggleOnDemand(checked)}
-                disabled={!canManageBilling || !billing.on_demand_available || setOnDemand.isPending}
+                disabled={!canManageBilling || !(billing.extra_ai_usage_available ?? billing.on_demand_available) || setOnDemand.isPending}
               />
             </div>
           </CardContent>
@@ -722,23 +725,29 @@ function BillingSettingsContent({
       <section className="space-y-3">
         <SectionHeading
           title="AI usage"
-          description={`Current billing period resets on ${formatDate(billing.current_period_end)}.`}
+          description={`Current allowance resets on ${formatDate(billing.ai_usage_period_end || billing.current_period_end)}.`}
         />
         <Card>
           <CardContent className="space-y-5 p-5">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium">Monthly AI usage</span>
+                <span className="font-medium">{usagePct}% used</span>
                 <span className="text-muted-foreground">
-                  {formatNumber(billing.credits_remaining)} remaining
+                  {billing.ai_usage_unlimited ? 'Internal soft budget' : `${Math.max(0, 100 - usagePct)}% remaining`}
                 </span>
               </div>
-              <Progress value={creditPct} />
+              <Progress value={Math.min(100, usagePct)} />
+              {billing.ai_usage_reserved_microusd > 0 && (
+                <p className="text-xs text-muted-foreground">An active AI run has reserved part of the remaining allowance.</p>
+              )}
+              {billing.ai_usage_overage_microusd > 0 && !billing.ai_usage_unlimited && (
+                <p className="text-xs text-muted-foreground">Extra AI usage is accruing for this period.</p>
+              )}
             </div>
             <UsageDetail
               workspaceId={workspaceId}
-              periodStart={billing.current_period_start}
-              periodEnd={billing.current_period_end}
+              periodStart={billing.ai_usage_period_start || billing.current_period_start}
+              periodEnd={billing.ai_usage_period_end || billing.current_period_end}
             />
           </CardContent>
         </Card>
