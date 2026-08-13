@@ -1,0 +1,282 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+)
+
+// MeteringRequest identifies and bounds one priced model execution.
+type MeteringRequest struct {
+	WorkspaceID, TaskNature, FeatureKey, Provider, Model, Route, ServiceTier string
+	FundingMode                                                              aiusage.FundingMode
+	InputTokensEstimate, MaximumOutputTokens                                 int64
+	AllowedPaidTools                                                         []string
+	ExecutionID, IdempotencyKey                                              string
+	Promotional                                                              bool
+}
+
+// MeteringContext is the immutable pricing identity carried through execution.
+type MeteringContext struct {
+	Route                               aiusage.ResolvedRoute
+	ReservationID, PricingVersion       string
+	MaxBillableMicrousd                 int64
+	Promotional                         bool
+	WorkspaceID, TaskNature, FeatureKey string
+	FundingMode                         aiusage.FundingMode
+	IdempotencyKey, EnforcementMode     string
+}
+
+// PreflightRequest contains one execution's metering request.
+type PreflightRequest struct{ Metering MeteringRequest }
+
+// CompletionUsage contains terminal provider telemetry.
+type CompletionUsage struct {
+	Context           MeteringContext
+	Telemetry         aiusage.TokenTelemetry
+	PaidTools         []aiusage.PaidToolUsage
+	MeasurementStatus string
+}
+
+// UsageResult reports customer-charged and internally absorbed value.
+type UsageResult struct {
+	ChargedMicrousd, AbsorbedMicrousd int64
+}
+
+// AIUsageStore is the transactional persistence needed by direct-call metering.
+type AIUsageStore interface {
+	Reserve(context.Context, repository.AIUsageReservationRequest) (*model.AIUsageReservation, error)
+	Reconcile(context.Context, repository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error)
+	Release(context.Context, string, string) error
+	RecordUncharged(context.Context, model.AIUsageLedgerEntry) error
+}
+
+// AIUsageEstimateSource supplies an observed reservation P90 when reliable.
+type AIUsageEstimateSource interface {
+	P90Microusd(context.Context, string, aiusage.Tier, aiusage.FundingMode) (int64, bool, error)
+}
+
+// AIUsageService prices, reserves, and reconciles actual AI usage.
+type AIUsageService struct {
+	catalog   *aiusage.Catalog
+	store     AIUsageStore
+	estimates AIUsageEstimateSource
+}
+
+// NewAIUsageService creates the token-priced AI usage service.
+func NewAIUsageService(catalog *aiusage.Catalog, store AIUsageStore, estimates AIUsageEstimateSource) *AIUsageService {
+	return &AIUsageService{catalog: catalog, store: store, estimates: estimates}
+}
+
+// ResolveMeteringContext resolves an exact eligible route and enforces built-in task sizing.
+func (s *AIUsageService) ResolveMeteringContext(input MeteringRequest) (MeteringContext, error) {
+	if s == nil || s.catalog == nil {
+		return MeteringContext{}, model.ErrPricingConfigurationMissing
+	}
+	resolved, err := s.catalog.Resolve(input.Provider, input.Model, input.Route, input.ServiceTier)
+	if err != nil {
+		switch {
+		case errors.Is(err, aiusage.ErrPricingConfigurationMissing):
+			return MeteringContext{}, fmt.Errorf("%w: %v", model.ErrPricingConfigurationMissing, err)
+		default:
+			return MeteringContext{}, fmt.Errorf("%w: %v", model.ErrModelUnavailableUnderPricing, err)
+		}
+	}
+	if required, enforced := requiredBuiltInTier(input.TaskNature); enforced && resolved.Tier != required {
+		return MeteringContext{}, fmt.Errorf("%w: %s tasks require %s", model.ErrModelUnavailableUnderPricing, input.TaskNature, required)
+	}
+	funding := input.FundingMode
+	if funding == "" {
+		funding = aiusage.FundingHelpinHosted
+	}
+	return MeteringContext{
+		Route: resolved, PricingVersion: s.catalog.PricingVersion, Promotional: input.Promotional,
+		WorkspaceID: input.WorkspaceID, TaskNature: input.TaskNature, FeatureKey: input.FeatureKey,
+		FundingMode: funding, IdempotencyKey: input.IdempotencyKey,
+	}, nil
+}
+
+// Preflight reserves the greater of the observed P90 and deterministic maximum call charge.
+func (s *AIUsageService) Preflight(ctx context.Context, input PreflightRequest) (*MeteringContext, error) {
+	metering, err := s.ResolveMeteringContext(input.Metering)
+	if err != nil {
+		return nil, err
+	}
+	bound, err := s.deterministicBound(input.Metering, metering)
+	if err != nil {
+		return nil, err
+	}
+	if s.estimates != nil {
+		p90, available, estimateErr := s.estimates.P90Microusd(ctx, input.Metering.TaskNature, metering.Route.Tier, metering.FundingMode)
+		if estimateErr != nil {
+			return nil, fmt.Errorf("load AI usage estimate: %w", estimateErr)
+		}
+		if available && p90 > bound {
+			bound = p90
+		}
+	}
+	metering.MaxBillableMicrousd = bound
+	if metering.Promotional {
+		return &metering, nil
+	}
+	if s.store == nil {
+		return nil, model.ErrPricingConfigurationMissing
+	}
+	reservation, err := s.store.Reserve(ctx, repository.AIUsageReservationRequest{
+		WorkspaceID: input.Metering.WorkspaceID, TaskNature: input.Metering.TaskNature,
+		ModelTier: string(metering.Route.Tier), ExecutionID: input.Metering.ExecutionID,
+		IdempotencyKey: input.Metering.IdempotencyKey, ReservedMicrousd: bound,
+	})
+	if err != nil {
+		return nil, err
+	}
+	metering.ReservationID = reservation.ID
+	metering.EnforcementMode = reservation.EnforcementMode
+	return &metering, nil
+}
+
+// Reconcile converts actual telemetry into one immutable, idempotent ledger entry.
+func (s *AIUsageService) Reconcile(ctx context.Context, input CompletionUsage) (*UsageResult, error) {
+	normalized, err := aiusage.NormalizeTokens(input.Telemetry)
+	if err != nil {
+		return nil, err
+	}
+	toolMicrousd, toolSnapshot, err := s.priceObservedTools(input.PaidTools)
+	if err != nil {
+		return nil, err
+	}
+	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{
+		FundingMode: input.Context.FundingMode, Tokens: normalized, Rates: input.Context.Route.Rates,
+		PaidToolMicrousd: toolMicrousd,
+	})
+	if err != nil {
+		return nil, err
+	}
+	entry := model.AIUsageLedgerEntry{
+		WorkspaceID: input.Context.WorkspaceID, EntryKind: "usage", FeatureKey: input.Context.FeatureKey,
+		Category: input.Context.TaskNature, ModelTier: string(input.Context.Route.Tier), Provider: input.Context.Route.Provider,
+		CanonicalModel: input.Context.Route.CanonicalModel, Route: input.Context.Route.Route,
+		ServiceTier: input.Context.Route.ServiceTier, FundingMode: string(input.Context.FundingMode),
+		PricingVersion: input.Context.PricingVersion, RateSnapshot: model.JSONBlob(input.Context.Route.RateSnapshot),
+		ToolUsage: model.JSONBlob(toolSnapshot), InputTokensTotal: normalized.InputTokensTotal,
+		UncachedInputTokens: normalized.UncachedInputTokens, CacheReadTokens: normalized.CacheReadTokens,
+		CacheWriteTokens: normalized.CacheWriteTokens, OutputTokens: normalized.OutputTokens,
+		ReasoningTokens: normalized.ReasoningTokens, PublishedChargeMicrousd: charge.PublishedEquivalentMicrousd,
+		MeasurementStatus: input.MeasurementStatus, IdempotencyKey: input.Context.IdempotencyKey + ":usage",
+	}
+	if input.Context.Promotional {
+		entry.EntryKind = "promotional"
+		entry.FinalChargedMicrousd = 0
+		if err := s.store.RecordUncharged(ctx, entry); err != nil {
+			return nil, err
+		}
+		return &UsageResult{}, nil
+	}
+
+	charged := charge.FinalMicrousd
+	absorbed := int64(0)
+	if input.Context.EnforcementMode == model.AIUsageEnforcementStrict && charged > input.Context.MaxBillableMicrousd {
+		absorbed = charged - input.Context.MaxBillableMicrousd
+		charged = input.Context.MaxBillableMicrousd
+	}
+	entry.FinalChargedMicrousd = charged
+	metadata, _ := json.Marshal(map[string]int64{"absorbed_microusd": absorbed})
+	entry.Metadata = model.JSONBlob(metadata)
+	if _, err := s.store.Reconcile(ctx, repository.AIUsageReconcileRequest{
+		ReservationID: input.Context.ReservationID, Entry: entry,
+		ChargedMicrousd: charged, AbsorbedMicrousd: absorbed,
+	}); err != nil {
+		return nil, err
+	}
+	return &UsageResult{ChargedMicrousd: charged, AbsorbedMicrousd: absorbed}, nil
+}
+
+// Fail releases a reservation after provider failure.
+func (s *AIUsageService) Fail(ctx context.Context, reservationID string) error {
+	return s.store.Release(ctx, reservationID, "provider_failure")
+}
+
+func (s *AIUsageService) deterministicBound(input MeteringRequest, metering MeteringContext) (int64, error) {
+	if input.InputTokensEstimate < 0 || input.MaximumOutputTokens < 0 {
+		return 0, fmt.Errorf("invalid AI usage token bound")
+	}
+	maximumOutput := input.MaximumOutputTokens
+	if maximumOutput > metering.Route.MaximumOutput {
+		maximumOutput = metering.Route.MaximumOutput
+	}
+	toolMicrousd, err := s.priceAllowedTools(input.AllowedPaidTools)
+	if err != nil {
+		return 0, err
+	}
+	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{
+		FundingMode: metering.FundingMode,
+		Tokens:      aiusage.NormalizedTokens{InputTokensTotal: input.InputTokensEstimate, UncachedInputTokens: input.InputTokensEstimate, OutputTokens: maximumOutput},
+		Rates:       metering.Route.Rates, PaidToolMicrousd: toolMicrousd,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return charge.FinalMicrousd, nil
+}
+
+func (s *AIUsageService) priceAllowedTools(keys []string) (int64, error) {
+	var total int64
+	for _, key := range keys {
+		rate, ok := s.toolRate(key)
+		if !ok {
+			return 0, fmt.Errorf("%w: paid tool %q", model.ErrPricingConfigurationMissing, key)
+		}
+		if total > math.MaxInt64-rate {
+			return 0, aiusage.ErrChargeOverflow
+		}
+		total += rate
+	}
+	return total, nil
+}
+
+func (s *AIUsageService) priceObservedTools(tools []aiusage.PaidToolUsage) (int64, []byte, error) {
+	var total int64
+	for _, usage := range tools {
+		rate, ok := s.toolRate(usage.Key)
+		if !ok || usage.Count < 0 {
+			return 0, nil, fmt.Errorf("%w: paid tool %q", model.ErrPricingConfigurationMissing, usage.Key)
+		}
+		if usage.Count != 0 && rate > math.MaxInt64/usage.Count {
+			return 0, nil, aiusage.ErrChargeOverflow
+		}
+		component := rate * usage.Count
+		if total > math.MaxInt64-component {
+			return 0, nil, aiusage.ErrChargeOverflow
+		}
+		total += component
+	}
+	snapshot, err := json.Marshal(tools)
+	return total, snapshot, err
+}
+
+func (s *AIUsageService) toolRate(key string) (int64, bool) {
+	for _, tool := range s.catalog.Tools {
+		if strings.EqualFold(strings.TrimSpace(tool.Key), strings.TrimSpace(key)) {
+			return tool.CustomerMicrousd, true
+		}
+	}
+	return 0, false
+}
+
+func requiredBuiltInTier(taskNature string) (aiusage.Tier, bool) {
+	switch strings.ToLower(strings.TrimSpace(taskNature)) {
+	case "planning", "coding", "review":
+		return aiusage.TierLarge, true
+	case "custom", "custom_agent":
+		return "", false
+	default:
+		return aiusage.TierSmall, true
+	}
+}

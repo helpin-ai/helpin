@@ -55,6 +55,9 @@ func TestAIUsageReserveDuplicateReturnsOriginal(t *testing.T) {
 	if first.ID != second.ID {
 		t.Fatalf("duplicate IDs = %q and %q", first.ID, second.ID)
 	}
+	if second.EnforcementMode != model.AIUsageEnforcementStrict {
+		t.Fatalf("duplicate enforcement mode = %q, want strict", second.EnforcementMode)
+	}
 	var period model.AIUsagePeriod
 	repo.db.First(&period, "id = ?", "period")
 	if period.ReservedMicrousd != 600_000 {

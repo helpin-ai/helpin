@@ -49,6 +49,11 @@ func (r *AIUsageRepository) Reserve(ctx context.Context, input AIUsageReservatio
 	var reservation model.AIUsageReservation
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("idempotency_key = ?", input.IdempotencyKey).First(&reservation).Error; err == nil {
+			var period model.AIUsagePeriod
+			if err := tx.Select("enforcement_mode").First(&period, "id = ?", reservation.PeriodID).Error; err != nil {
+				return fmt.Errorf("load reserved AI usage period: %w", err)
+			}
+			reservation.EnforcementMode = period.EnforcementMode
 			return nil
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("check AI usage reservation: %w", err)
@@ -72,6 +77,7 @@ func (r *AIUsageRepository) Reserve(ctx context.Context, input AIUsageReservatio
 			input.ExpiresAt = now.Add(time.Hour)
 		}
 		reservation = model.AIUsageReservation{ID: uuid.NewString(), WorkspaceID: input.WorkspaceID, PeriodID: period.ID, TaskNature: input.TaskNature, ModelTier: input.ModelTier, ExecutionID: input.ExecutionID, IdempotencyKey: input.IdempotencyKey, ReservedMicrousd: input.ReservedMicrousd, Status: model.AIUsageReservationActive, HeartbeatAt: input.HeartbeatAt, ExpiresAt: input.ExpiresAt}
+		reservation.EnforcementMode = period.EnforcementMode
 		if err := tx.Create(&reservation).Error; err != nil {
 			return fmt.Errorf("create AI usage reservation: %w", err)
 		}
@@ -84,6 +90,31 @@ func (r *AIUsageRepository) Reserve(ctx context.Context, input AIUsageReservatio
 		return nil, err
 	}
 	return &reservation, nil
+}
+
+// RecordUncharged writes promotional or absorbed telemetry without consuming allowance.
+func (r *AIUsageRepository) RecordUncharged(ctx context.Context, entry model.AIUsageLedgerEntry) error {
+	if entry.WorkspaceID == "" || entry.IdempotencyKey == "" || entry.FinalChargedMicrousd != 0 {
+		return fmt.Errorf("invalid uncharged AI usage entry")
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing model.AIUsageLedgerEntry
+		if err := tx.Where("idempotency_key = ?", entry.IdempotencyKey).First(&existing).Error; err == nil {
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("check uncharged AI usage entry: %w", err)
+		}
+		var period model.AIUsagePeriod
+		if err := tx.Where("workspace_id = ? AND status = ?", entry.WorkspaceID, model.AIUsagePeriodOpen).First(&period).Error; err != nil {
+			return fmt.Errorf("load open AI usage period: %w", err)
+		}
+		entry.ID = uuid.NewString()
+		entry.PeriodID = period.ID
+		if err := tx.Create(&entry).Error; err != nil {
+			return fmt.Errorf("create uncharged AI usage entry: %w", err)
+		}
+		return nil
+	})
 }
 
 // ResizeReservation changes an active hold while enforcing the period allowance.

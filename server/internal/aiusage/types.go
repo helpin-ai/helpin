@@ -86,6 +86,12 @@ type ToolRate struct {
 	SafeToExpose     bool   `json:"safe_to_expose"`
 }
 
+// PaidToolUsage is the observed call count for a priced provider-native tool.
+type PaidToolUsage struct {
+	Key   string `json:"key"`
+	Count int64  `json:"count"`
+}
+
 // Catalog is the immutable AI pricing and eligibility catalog.
 type Catalog struct {
 	PricingVersion string            `json:"pricing_version"`

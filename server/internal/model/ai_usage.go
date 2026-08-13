@@ -41,6 +41,7 @@ type AIUsageReservation struct {
 	ID, WorkspaceID, PeriodID, TaskNature, ModelTier, ExecutionID, IdempotencyKey string
 	ReservedMicrousd, ConsumedMicrousd                                            int64
 	Status                                                                        string
+	EnforcementMode                                                               string `gorm:"-"`
 	ExpiresAt, HeartbeatAt, CreatedAt, UpdatedAt                                  time.Time
 }
 
