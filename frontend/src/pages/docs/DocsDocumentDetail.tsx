@@ -71,6 +71,7 @@ import {
   usePermissions,
   useToggleDocShare,
   useToggleDocLock,
+  useCreateDocsVersion,
   useRevertDocsVersion,
   useDocsBlocks,
   useDocsChangeProposal,
@@ -447,6 +448,7 @@ export function DocsDocumentDetail({
   const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
 
   const saveContent = useSaveDocsContent(wsId)
+  const createRepairVersion = useCreateDocsVersion(wsId)
   const applyChangeProposal = useApplyDocsChangeProposal(wsId)
   const discardChangeProposal = useDiscardDocsChangeProposal(wsId)
   const applyingProposalId = applyChangeProposal.isPending ? applyChangeProposal.variables?.proposalId ?? null : null
@@ -952,6 +954,15 @@ export function DocsDocumentDetail({
     ],
   )
 
+  const handleRepairInvalidContent = useCallback(async (repairedContent: JSONContent) => {
+    await createRepairVersion.mutateAsync({
+      docId,
+      snapshot_label: 'Before automatic content repair',
+    })
+    await handleSave(repairedContent)
+    toast.success('Document repaired. The original is available in version history.')
+  }, [createRepairVersion, docId, handleSave])
+
   const isExternalHelpCenter = space?.type === 'external_capable'
   const { data: helpcenterConfig } = useDocsHelpcenterConfig(wsId)
   const defaultLocale = localesConfig?.default_locale ?? 'en'
@@ -1205,6 +1216,11 @@ export function DocsDocumentDetail({
     })
     await persistTranslationDraft(next)
   }, [activeLocale, articleTranslationsByLocale, docId, persistTranslationDraft])
+
+  const handleRepairInvalidTranslationContent = useCallback(async (repairedContent: JSONContent) => {
+    await handleTranslationContentSave(repairedContent)
+    toast.success('Translation repaired and saved.')
+  }, [handleTranslationContentSave])
 
   const handleSelectLocale = useCallback((locale: string) => {
     setPreviewVersion(null)
@@ -1871,6 +1887,14 @@ export function DocsDocumentDetail({
                   : activeTranslationDraft.content
               }
               onSave={isSourceLocaleActive ? handleSave : handleTranslationContentSave}
+              onRepairInvalidContent={
+                effectiveReadOnly
+                  ? undefined
+                  : isSourceLocaleActive
+                    ? handleRepairInvalidContent
+                    : handleRepairInvalidTranslationContent
+              }
+              repairCreatesRecoveryVersion={isSourceLocaleActive}
               readOnly={effectiveReadOnly}
               uploadConfig={
                 !effectiveReadOnly

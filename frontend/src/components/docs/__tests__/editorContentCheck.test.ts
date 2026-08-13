@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, afterEach } from 'vitest'
 import { Editor } from '@tiptap/core'
-import Document from '@tiptap/extension-document'
-import Paragraph from '@tiptap/extension-paragraph'
-import Text from '@tiptap/extension-text'
+import StarterKit from '@tiptap/starter-kit'
 
 /**
  * The docs editor relies on TipTap's content check to refuse autosaving over a
@@ -18,7 +16,7 @@ function createEditor(content: unknown, onContentError?: (error: unknown) => voi
   document.body.appendChild(element)
   editor = new Editor({
     element,
-    extensions: [Document, Paragraph, Text],
+    extensions: [StarterKit],
     content: content as never,
     enableContentCheck: true,
     onContentError: ({ error }) => onContentError?.(error),
@@ -46,6 +44,25 @@ describe('TipTap content check', () => {
     const errors: unknown[] = []
     createEditor(
       { type: 'doc', content: [{ type: 'notARealNode', content: [{ type: 'text', text: 'Hi' }] }] },
+      (error) => errors.push(error),
+    )
+    expect(errors).toHaveLength(1)
+  })
+
+  it('reports an error for duplicate marks on the same text node', () => {
+    const errors: unknown[] = []
+    createEditor(
+      {
+        type: 'doc',
+        content: [{
+          type: 'paragraph',
+          content: [{
+            type: 'text',
+            text: 'Bold',
+            marks: [{ type: 'bold' }, { type: 'bold' }],
+          }],
+        }],
+      },
       (error) => errors.push(error),
     )
     expect(errors).toHaveLength(1)
