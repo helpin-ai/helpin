@@ -3601,7 +3601,7 @@
     },
     {
       "name": "read_files",
-      "description": "Read bounded numbered excerpts from one to four known files. Prefer repository_search or list_symbols first when paths or lines are unknown.",
+      "description": "Read bounded numbered excerpts from one to four known files. The call shares an approximately 2,100-character content budget across its files, so limit_lines is only a ceiling. When has_more is true, continue exactly from next_start_line; do not restart the range or increase limit_lines. Prefer repository_search or list_symbols before reading when paths or declarations are unknown.",
       "category": "Filesystem",
       "input_schema": {
         "properties": {
@@ -3612,7 +3612,7 @@
             "items": {
               "properties": {
                 "limit_lines": {
-                  "description": "Optional maximum number of lines to return for this file. Defaults to 60, max 240.",
+                  "description": "Optional line ceiling for this file. Defaults to 60, max 240. The shared output budget may return fewer lines; follow next_start_line when has_more is true.",
                   "maximum": 240,
                   "minimum": 1,
                   "type": "integer"

@@ -8,6 +8,16 @@ export interface ToolCallPresentation {
   repositoryLabel?: string;
 }
 
+export interface ReadFilesResultEntry {
+  path: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+  hasMore: boolean;
+  nextStartLine?: number;
+  continuationReason?: 'output_limit' | 'line_limit';
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -28,6 +38,59 @@ function parseArgs(argsText: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function parseJSONRecord(value: string | undefined): Record<string, unknown> | null {
+  if (!value?.trim()) return null;
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function asPositiveInteger(value: unknown): number | null {
+  const number = asNumber(value);
+  return number != null && Number.isInteger(number) && number >= 1 ? number : null;
+}
+
+function readFilesResultEntry(value: unknown): ReadFilesResultEntry | null {
+  const record = asRecord(value);
+  const path = asString(record?.path);
+  const startLine = asPositiveInteger(record?.start_line);
+  const endLine = asNumber(record?.end_line);
+  const content = typeof record?.content === 'string' ? record.content : null;
+  const hasMore = typeof record?.has_more === 'boolean' ? record.has_more : null;
+  if (!path || startLine == null || endLine == null || !Number.isInteger(endLine) || content == null || hasMore == null) return null;
+
+  const nextStartLine = asPositiveInteger(record?.next_start_line);
+  if (hasMore && nextStartLine == null) return null;
+  const continuationReason = record?.continuation_reason === 'output_limit' || record?.continuation_reason === 'line_limit'
+    ? record.continuation_reason
+    : undefined;
+  return {
+    path,
+    startLine,
+    endLine,
+    content,
+    hasMore,
+    ...(nextStartLine == null ? {} : { nextStartLine }),
+    ...(continuationReason ? { continuationReason } : {}),
+  };
+}
+
+export function readFilesResultForToolCall(toolCall: CodingSessionLiveToolCall): ReadFilesResultEntry[] | null {
+  if (canonicalToolName(toolCall.tool_name).toLowerCase() !== 'read_files') return null;
+  const result = parseJSONRecord(toolCall.result?.content) ?? parseJSONRecord(toolCall.result?.output_summary);
+  if (!result || !Array.isArray(result.files) || result.files.length === 0) return null;
+  const files = result.files.map(readFilesResultEntry);
+  return files.every((file): file is ReadFilesResultEntry => file != null) ? files : null;
+}
+
+export function readFilesContentForToolCall(toolCall: CodingSessionLiveToolCall): string | null {
+  const files = readFilesResultForToolCall(toolCall);
+  if (!files) return null;
+  return files.map((file) => file.content.trim()).filter(Boolean).join('\n\n');
 }
 
 function titleCaseToolName(toolName: string) {
@@ -61,10 +124,22 @@ function domainChip(domains: string[]) {
 
 export function repositorySelectorForToolCall(toolCall: CodingSessionLiveToolCall): string | null {
   const parsed = parseArgs(toolCall.args_text);
-  return asString(parsed?.repository)
+  const directSelector = asString(parsed?.repository)
     ?? asString(parsed?.repository_id)
     ?? asString(parsed?.repo_full_name)
     ?? asString(parsed?.repo_alias); // Historical transcripts.
+  if (directSelector) return directSelector;
+
+  if (!Array.isArray(parsed?.files)) return null;
+  const selectors = parsed.files
+    .map(asRecord)
+    .map((file) => asString(file?.repository)
+      ?? asString(file?.repository_id)
+      ?? asString(file?.repo_full_name)
+      ?? asString(file?.repo_alias))
+    .filter((selector): selector is string => Boolean(selector));
+  const uniqueSelectors = [...new Set(selectors)];
+  return uniqueSelectors.length === 1 ? uniqueSelectors[0] : null;
 }
 
 export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallPresentation {
@@ -83,6 +158,7 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     : Array.isArray(parsed?.files)
       ? parsed.files.map((value) => asString(asRecord(value)?.path)).filter((value): value is string => Boolean(value))
       : [];
+  const readFilesResult = toolName === 'read_files' ? readFilesResultForToolCall(toolCall) : null;
 
   const repositoryLabel = repositorySelectorForToolCall(toolCall);
   const withRepository = (presentation: ToolCallPresentation): ToolCallPresentation => (
@@ -116,6 +192,12 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     });
   }
 
+  // find_symbol, find_callers, find_callees, read_file, ripgrep, grep and
+  // search_files are no longer registered by the runtime. These branches are not
+  // dead: canonicalToolName does not alias legacy names (see lib/toolNames.ts),
+  // so transcripts recorded before the tool consolidation still arrive under
+  // their original names and argument shapes. Removing them would degrade old
+  // sessions to the generic titleCaseToolName label.
   if (toolName === 'find_symbol' && symbolName) {
     const kind = asString(parsed?.kind);
     return withRepository({
@@ -152,11 +234,23 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
     return withRepository({ primaryLabel: `${verb} ${path}`, secondaryLabel, chips: [] });
   }
 
-  if (toolName === 'read_files' && paths.length > 0) {
+  if (toolName === 'read_files' && (paths.length > 0 || readFilesResult)) {
+    const firstResult = readFilesResult?.[0];
+    const firstPath = firstResult?.path ?? paths[0];
+    const displayFileCount = readFilesResult?.length ?? paths.length;
+    const firstRange = firstResult && firstResult.endLine >= firstResult.startLine
+      ? lineRangeLabel(firstResult.startLine, firstResult.endLine)
+      : null;
+    const continuingFiles = readFilesResult?.filter((file) => file.hasMore) ?? [];
+    const continuationChip = continuingFiles.length === 1
+      ? `continues at ${continuingFiles[0].nextStartLine}`
+      : continuingFiles.length > 1
+        ? `${continuingFiles.length} continue`
+        : null;
     return withRepository({
-      primaryLabel: `Read ${paths[0]}${paths.length > 1 ? ` +${paths.length - 1} more` : ''}`,
+      primaryLabel: `Read ${firstPath}${firstRange ? `:${firstRange}` : ''}${displayFileCount > 1 ? ` +${displayFileCount - 1} more` : ''}`,
       secondaryLabel,
-      chips: [`${paths.length} files`],
+      chips: [`${displayFileCount} file${displayFileCount === 1 ? '' : 's'}`, ...(continuationChip ? [continuationChip] : [])],
     });
   }
 

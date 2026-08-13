@@ -156,6 +156,8 @@ func TestEchoSystemPromptUsesCustomerSafeResearchFallback(t *testing.T) {
 		"never mention a knowledge base",
 		"search only the official product website",
 		"implementation-specific behavior",
+		"list_symbols, read_symbol, and read_files",
+		"Prefer read_symbol when a declaration is known",
 		"Call start_agent_run first",
 		"Do not send the interim reply before launching",
 		"required_confidence",

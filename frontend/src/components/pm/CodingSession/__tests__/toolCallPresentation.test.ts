@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { describeToolCall } from '../toolCallPresentation';
+import { describeToolCall, readFilesContentForToolCall, repositorySelectorForToolCall } from '../toolCallPresentation';
 import type { CodingSessionLiveToolCall } from '@/lib/pmTypes';
 
 function buildToolCall(overrides: Partial<CodingSessionLiveToolCall> & Pick<CodingSessionLiveToolCall, 'tool_name' | 'args_text'>): CodingSessionLiveToolCall {
@@ -72,6 +72,85 @@ describe('describeToolCall', () => {
       chips: [],
       repositoryLabel: 'events-pipeline',
     });
+  });
+
+  it('uses completed read_files ranges and exact continuation metadata', () => {
+    const toolCall = buildToolCall({
+      tool_name: 'read_files',
+      args_text: JSON.stringify({ files: [{ path: 'main.go', repository: 'service-api' }] }),
+      result: {
+        content: JSON.stringify({
+          count: 1,
+          files: [{
+            path: 'main.go',
+            start_line: 20,
+            end_line: 26,
+            content: 'File: main.go\n20: package main',
+            has_more: true,
+            next_start_line: 27,
+            continuation_reason: 'output_limit',
+          }],
+        }),
+      },
+    });
+
+    expect(describeToolCall(toolCall)).toEqual({
+      primaryLabel: 'Read main.go:20-26 · service-api',
+      secondaryLabel: 'Read Files',
+      chips: ['1 file', 'continues at 27'],
+      repositoryLabel: 'service-api',
+    });
+    expect(readFilesContentForToolCall(toolCall)).toBe('File: main.go\n20: package main');
+  });
+
+  it('summarizes multiple completed read_files results without exposing the JSON envelope', () => {
+    const toolCall = buildToolCall({
+      tool_name: 'read_files',
+      args_text: JSON.stringify({ files: [{ path: 'a.ts' }, { path: 'b.ts' }] }),
+      result: {
+        content: JSON.stringify({
+          count: 2,
+          files: [
+            { path: 'a.ts', start_line: 1, end_line: 4, content: 'File: a.ts\n1: export {}', has_more: false },
+            { path: 'b.ts', start_line: 8, end_line: 10, content: 'File: b.ts\n8: export {}', has_more: true, next_start_line: 11, continuation_reason: 'line_limit' },
+          ],
+        }),
+      },
+    });
+
+    expect(describeToolCall(toolCall)).toMatchObject({
+      primaryLabel: 'Read a.ts:1-4 +1 more',
+      chips: ['2 files', 'continues at 11'],
+    });
+    expect(readFilesContentForToolCall(toolCall)).toBe('File: a.ts\n1: export {}\n\nFile: b.ts\n8: export {}');
+  });
+
+  it('falls back to requested paths when a read_files result is absent or malformed', () => {
+    const presentation = describeToolCall(buildToolCall({
+      tool_name: 'read_files',
+      args_text: JSON.stringify({ files: [{ path: 'main.go' }] }),
+      result: { content: '{not valid json' },
+    }));
+
+    expect(presentation).toEqual({
+      primaryLabel: 'Read main.go',
+      secondaryLabel: 'Read Files',
+      chips: ['1 file'],
+    });
+  });
+
+  it('derives a repository label from nested read_files selectors only when unambiguous', () => {
+    const oneRepository = buildToolCall({
+      tool_name: 'read_files',
+      args_text: JSON.stringify({ files: [{ path: 'a.go', repository: 'api' }, { path: 'b.go', repository: 'api' }] }),
+    });
+    const multipleRepositories = buildToolCall({
+      tool_name: 'read_files',
+      args_text: JSON.stringify({ files: [{ path: 'a.go', repository: 'api' }, { path: 'b.go', repository: 'worker' }] }),
+    });
+
+    expect(repositorySelectorForToolCall(oneRepository)).toBe('api');
+    expect(repositorySelectorForToolCall(multipleRepositories)).toBeNull();
   });
 
   it('formats run_command with command and cwd', () => {

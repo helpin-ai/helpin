@@ -647,6 +647,10 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 		properties, _ := schema["properties"].(map[string]any)
 		switch tool.Name {
 		case "read_files":
+			if !strings.Contains(tool.Description, "2,100-character content budget") ||
+				!strings.Contains(tool.Description, "next_start_line") {
+				t.Fatalf("read_files description omits bounded continuation contract: %q", tool.Description)
+			}
 			files := properties["files"].(map[string]any)
 			if files["minItems"] != float64(1) || files["maxItems"] != float64(4) {
 				t.Fatalf("read_files array bounds drifted: %#v", files)
@@ -659,6 +663,9 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 			limit := itemProperties["limit_lines"].(map[string]any)
 			if limit["minimum"] != float64(1) || limit["maximum"] != float64(240) || itemProperties["start_line"] == nil || itemProperties["repository"] == nil {
 				t.Fatalf("read_files item contract drifted: %#v", itemProperties)
+			}
+			if description, _ := limit["description"].(string); !strings.Contains(description, "next_start_line") {
+				t.Fatalf("read_files limit description omits continuation field: %#v", limit)
 			}
 		}
 	}

@@ -166,7 +166,10 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 				RuntimeToolNameForPrompt("repository_search"),
 				RuntimeToolNameForPrompt("list_symbols"),
 			))
-			parts = append(parts, fmt.Sprintf("- Use `%s` for one to four known files or line windows, continuing with start_line when needed. Do not use it for broad exploration.", RuntimeToolNameForPrompt("read_files")))
+			parts = append(parts, fmt.Sprintf("- Use `%s` for one to four known files or line windows. For structured source, use `%s` before paging through a file when you do not know the declaration name. When a read returns has_more, continue exactly from next_start_line; do not restart the same range or increase limit_lines. Do not use reads for broad exploration.",
+				RuntimeToolNameForPrompt("read_files"),
+				RuntimeToolNameForPrompt("list_symbols"),
+			))
 			if hasFileMutationTools {
 				parts = append(parts, fmt.Sprintf("- Before changing or deleting a declaration, call `%s` to see what depends on it.",
 					RuntimeToolNameForPrompt("trace_symbol"),

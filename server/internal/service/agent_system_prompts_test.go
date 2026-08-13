@@ -41,6 +41,8 @@ func TestManagedAskAgentExecutionPolicyPrefersNarrowRepositoryReads(t *testing.T
 		"use read_symbol directly when you know a declaration name",
 		"locate exact files or lines with repository_search or list_symbols",
 		"use read_files for bounded known spans",
+		"use list_symbols before paging through a file when you do not know the declaration name",
+		"continue exactly from next_start_line; do not restart the same range or increase limit_lines",
 		"Use trace_symbol for callers or callees",
 		"Do not use reads for broad exploration or re-read a whole file",
 	} {
