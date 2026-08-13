@@ -1244,7 +1244,8 @@ func main() {
 		cfg.OpenAIEmbeddingModel,
 	)
 
-	crmContactService := service.NewCRMContactService(crmContactRepo)
+	crmContactService := service.NewCRMContactService(crmContactRepo).
+		SetIdentitySync(crmActivityRepo, wsPublisher)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
 	crmContactService.SetProductAnalyticsService(productAnalytics)
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)

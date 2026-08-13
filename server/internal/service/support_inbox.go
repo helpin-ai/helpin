@@ -4032,6 +4032,7 @@ func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, 
 	}
 
 	var normalizedContactID *string
+	var linkedContact *model.CRMContact
 	if contactID != nil {
 		trimmed := strings.TrimSpace(*contactID)
 		if trimmed != "" {
@@ -4042,6 +4043,7 @@ func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, 
 			if contact == nil || contact.WorkspaceID != workspaceID {
 				return nil, fmt.Errorf("contact not found")
 			}
+			linkedContact = contact
 			normalizedContactID = &trimmed
 		}
 	}
@@ -4054,6 +4056,17 @@ func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, 
 	fields := map[string]any{
 		"crm_contact_id": normalizedContactID,
 		"updated_at":     time.Now().UTC(),
+	}
+	if linkedContact != nil {
+		contactName := strings.TrimSpace(strings.Join(
+			[]string{linkedContact.FirstName, derefString(linkedContact.LastName)}, " ",
+		))
+		fields["customer_name"] = contactName
+		fields["customer_email"] = linkedContact.Email
+		fields["customer_phone"] = linkedContact.Phone
+		ticket.CustomerName = &contactName
+		ticket.CustomerEmail = linkedContact.Email
+		ticket.CustomerPhone = linkedContact.Phone
 	}
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
 		return nil, err

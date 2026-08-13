@@ -118,6 +118,8 @@ export function useUpdateContact(wsId: string) {
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.contacts(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.crm.contact(wsId, id) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.contactActivities(wsId, id) })
+      qc.invalidateQueries({ queryKey: ['support', wsId] })
     },
   })
 }

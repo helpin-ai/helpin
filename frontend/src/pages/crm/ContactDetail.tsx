@@ -65,6 +65,7 @@ import {
   useTasks,
   useCreateAssociation,
   useDeleteAssociation,
+  useWorkspaceMembers,
 } from '@/hooks/queries';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { CalendarEvents } from '@/components/crm/CalendarEvents';
@@ -648,6 +649,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const { data: supportConversationsData, refetch: refetchSupportConversations } = useContactSupportConversations(wsId, contactId);
   const { data: emailAccounts } = useEmailAccounts(wsId);
   const { data: tasksData } = useTasks(wsId, { contact_id: contactId });
+  const { data: workspaceMembers = [] } = useWorkspaceMembers(wsId);
 
   const updateContact = useUpdateContact(wsId);
   const deleteContact = useDeleteContact(wsId);
@@ -732,6 +734,10 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const meetingCount = syncedMeetingCount + manualMeetings.length;
   const notesAndCalls = (activitiesData?.data ?? []).filter(
     (a) => a.activity_type === 'note' || a.activity_type === 'call',
+  );
+  const activityActorNames = useMemo(
+    () => new Map(workspaceMembers.map((member) => [member.id, member.full_name || member.email])),
+    [workspaceMembers],
   );
 
   const linkedAssociations = useMemo(() => {
@@ -1230,6 +1236,8 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                     <div className="space-y-1">
                       {notesAndCalls.map((activity) => {
                         const Icon = activity.activity_type === 'call' ? TelephoneIcon : Message01Icon;
+                        const actorName = activity.owner_member_id ? activityActorNames.get(activity.owner_member_id) : undefined;
+                        const immutable = activity.metadata?.immutable === true;
                         return (
                           <div key={activity.id} className="group flex gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/30">
                             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -1241,7 +1249,8 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                                 <span className="text-xs text-muted-foreground">
                                   {formatDistanceToNow(new Date(activity.occurred_at), { addSuffix: true })}
                                 </span>
-                                <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                                {actorName && <span className="text-xs text-muted-foreground">by {actorName}</span>}
+                                {!immutable && <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -1250,7 +1259,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                                   >
                                     <Delete01Icon className="h-3 w-3" />
                                   </Button>
-                                </div>
+                                </div>}
                               </div>
                               {activity.subject && <p className="mt-0.5 text-sm">{activity.subject}</p>}
                               {activity.body && (
