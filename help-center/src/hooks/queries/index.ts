@@ -127,12 +127,7 @@ export function useAPIReference(
           multilingualEnabled,
         ),
       ),
-    enabled:
-      typeof window !== 'undefined' &&
-      !!subdomain &&
-      !!locale &&
-      !!spaceSlug &&
-      !!referenceSlug,
+    enabled: !!subdomain && !!locale && !!spaceSlug && !!referenceSlug,
     retry: false,
   })
 }

@@ -62,8 +62,8 @@ func (h *DocsHandler) CreateAPIReference(w http.ResponseWriter, r *http.Request)
 	reference, err := h.apiReferenceSvc.Create(
 		r.Context(),
 		getWorkspaceID(r),
-		middleware.GetUserID(r.Context()),
 		chi.URLParam(r, "spaceId"),
+		middleware.GetUserID(r.Context()),
 		req,
 	)
 	if err != nil {
@@ -99,8 +99,8 @@ func (h *DocsHandler) UpdateAPIReference(w http.ResponseWriter, r *http.Request)
 	reference, err := h.apiReferenceSvc.Update(
 		r.Context(),
 		getWorkspaceID(r),
-		middleware.GetUserID(r.Context()),
 		chi.URLParam(r, "referenceId"),
+		middleware.GetUserID(r.Context()),
 		req,
 	)
 	if err != nil {
@@ -118,8 +118,8 @@ func (h *DocsHandler) SyncAPIReference(w http.ResponseWriter, r *http.Request) {
 	reference, err := h.apiReferenceSvc.Sync(
 		r.Context(),
 		getWorkspaceID(r),
-		middleware.GetUserID(r.Context()),
 		chi.URLParam(r, "referenceId"),
+		middleware.GetUserID(r.Context()),
 	)
 	if err != nil {
 		writeDocsAPIReferenceError(w, err)
