@@ -3,6 +3,7 @@ import { ArrowDown01Icon, Tick01Icon } from '@/lib/icons';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { pickerTriggerVariants, type PickerTriggerVariant } from '@/components/ui/picker-trigger';
 
 interface SidebarPopoverSelectOption<T extends string = string> {
   value: T;
@@ -40,6 +41,8 @@ export interface SidebarPopoverSelectProps<T extends string = string> {
   emptyContent?: React.ReactNode;
   /** Optional trigger button class override */
   triggerClassName?: string;
+  /** Optional visual treatment for the trigger. Omit to preserve the existing compact style. */
+  triggerVariant?: PickerTriggerVariant;
   /** Show a chevron icon on the trigger */
   showChevron?: boolean;
 }
@@ -58,6 +61,7 @@ export function SidebarPopoverSelect<T extends string>({
   onOpenChange,
   emptyContent,
   triggerClassName,
+  triggerVariant,
   showChevron = false,
 }: SidebarPopoverSelectProps<T>) {
   const [open, setOpen] = useState(false);
@@ -78,7 +82,10 @@ export function SidebarPopoverSelect<T extends string>({
             disabled={disabled}
             onClick={() => updateOpen(true)}
             className={cn(
-              'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
+              'inline-flex min-w-0 max-w-full items-center gap-1.5 px-1.5 py-0.5 text-[12px] text-foreground cursor-pointer disabled:pointer-events-none',
+              triggerVariant
+                ? pickerTriggerVariants({ variant: triggerVariant })
+                : 'rounded-md transition-colors hover:bg-accent disabled:opacity-50',
               triggerClassName,
             )}
           >
@@ -132,7 +139,10 @@ export function SidebarPopoverSelect<T extends string>({
           disabled={disabled}
           onClick={() => updateOpen(true)}
           className={cn(
-            'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
+            'inline-flex min-w-0 max-w-full items-center gap-1.5 px-1.5 py-0.5 text-[12px] text-foreground cursor-pointer disabled:pointer-events-none',
+            triggerVariant
+              ? pickerTriggerVariants({ variant: triggerVariant })
+              : 'rounded-md transition-colors hover:bg-accent disabled:opacity-50',
             triggerClassName,
           )}
         >

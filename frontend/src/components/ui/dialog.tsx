@@ -50,9 +50,11 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  variant = "default",
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  variant?: "default" | "flush"
 }) {
   return (
     <DialogPortal>
@@ -62,6 +64,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "pointer-events-auto relative z-50 grid w-full max-w-[calc(100%-2rem)] gap-6 rounded-xl border border-border bg-popover p-6 text-sm text-popover-foreground shadow-sm duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          variant === "flush" && "gap-0 p-0",
           className
         )}
         {...props}

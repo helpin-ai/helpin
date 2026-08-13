@@ -191,13 +191,14 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
         members={props.members}
         onCommentsChange={props.onCommentsChange}
         composerPlacement="top"
+        composerVariant="update"
         hideThreadList
         hideEmptyState
       />
 
-      <div className="flex min-w-0 flex-wrap items-center gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-1 border-b border-border/50">
         <Tabs value={filter} onValueChange={(value) => setFilter(value as TaskUpdateFilter)}>
-          <TabsList aria-label="Update type">
+          <TabsList variant="line" aria-label="Update type" className="h-9 p-0">
             {UPDATE_FILTERS.map(({ value, label }) => (
               <TabsTrigger key={value} value={value}>
                 {label}
@@ -225,6 +226,7 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
                 teams={props.teams}
                 members={props.members}
                 onCommentsChange={(next) => updateSingleComment(entry.comment!.comment.id, next)}
+                composerVariant="update"
                 hideTopLevelComposer
                 hideEmptyState
               />

@@ -25,7 +25,7 @@ describe('TaskDetailSectionHeading', () => {
     expect(updatesSource).toContain('<CommentThread');
     expect(updatesSource).toContain("from '@/components/ui/tabs'");
     expect(updatesSource).toContain('<Tabs value={filter}');
-    expect(updatesSource).toContain('<TabsList aria-label="Update type">');
+    expect(updatesSource).toContain('<TabsList variant="line" aria-label="Update type"');
     expect(updatesSource).toContain('<TabsTrigger');
     expect(updatesSource).toContain('<AgentAvatar');
     expect(updatesSource).toContain('<UserAvatar');
