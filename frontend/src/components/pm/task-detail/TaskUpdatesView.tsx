@@ -180,7 +180,7 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <CommentThread
         workspaceId={props.workspaceId}
         entityType="task"
@@ -195,7 +195,7 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
         hideEmptyState
       />
 
-      <div className="flex items-center gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-1">
         <Tabs value={filter} onValueChange={(value) => setFilter(value as TaskUpdateFilter)}>
           <TabsList aria-label="Update type">
             {UPDATE_FILTERS.map(({ value, label }) => (
@@ -213,7 +213,7 @@ export function TaskUpdatesView(props: TaskUpdatesViewProps) {
       ) : entries.length === 0 ? (
         <p className="py-8 text-sm text-muted-foreground">No updates yet.</p>
       ) : (
-        <div className="divide-y divide-border/50">
+        <div className="min-w-0 divide-y divide-border/50 overflow-hidden">
           {entries.map((entry) => entry.kind === 'comment' && entry.comment ? (
             <div key={entry.id} className="py-2">
               <CommentThread

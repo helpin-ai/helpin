@@ -1127,7 +1127,7 @@ function TaskDetailPanelBody({
   }, [form?.team_id, onTaskUpdated, taskDetail.task.id, taskLabels, workspaceId]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
@@ -1321,9 +1321,9 @@ function TaskDetailPanelBody({
       ) : null}
 
       {/* ── Two-column grid ─────────────────────────────────────── */}
-      <div className="relative grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
+      <div className="relative grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_300px] overflow-hidden">
         {/* ── Left column (main content) ────────────────────────── */}
-        <div className="flex min-h-0 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-col">
           <div role="tablist" aria-label="Task detail views" className="flex items-center gap-6 border-b border-border/60 px-10">
             {(['overview', 'updates', 'delivery'] as TaskDetailView[]).map((view) => (
               <button
@@ -1350,7 +1350,7 @@ function TaskDetailPanelBody({
             ))}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-10 py-5 pb-40">
+          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-10 py-5 pb-40">
           {activeView === 'overview' && (
           <>
           {/* Title */}
@@ -1991,7 +1991,7 @@ export function TaskDetailPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="p-0 data-[side=right]:w-[80vw] data-[side=right]:!max-w-[1200px]"
+        className="max-w-[100vw] overflow-hidden p-0 data-[side=right]:w-[80vw] data-[side=right]:!max-w-[1200px]"
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(event) => {
