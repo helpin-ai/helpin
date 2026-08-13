@@ -450,6 +450,50 @@ func (g *Gateway) BillCreditBlock(ctx context.Context, input service.BillingCred
 	return nil
 }
 
+// SettleAIUsage creates one exact extra-usage invoice item and, for annual plans, an out-of-cycle invoice.
+func (g *Gateway) SettleAIUsage(ctx context.Context, input service.AIUsageSettlementCharge) (service.StripeSettlementResult, error) {
+	if strings.TrimSpace(input.CustomerID) == "" {
+		return service.StripeSettlementResult{}, fmt.Errorf("stripe customer ID is required")
+	}
+	description := fmt.Sprintf("Extra AI usage — %s to %s", input.PeriodStart.Format("Jan 2, 2006"), input.PeriodEnd.Format("Jan 2, 2006"))
+	metadata := map[string]string{
+		"workspace_id": input.WorkspaceID, "ai_usage_period_id": input.PeriodID,
+		"pricing_version": input.PricingVersion, "settlement_version": input.SettlementVersion,
+	}
+	itemParams := &stripe.InvoiceItemParams{
+		Params: stripe.Params{Context: ctx}, Customer: stripe.String(input.CustomerID),
+		Amount: stripe.Int64(input.AmountCents), Currency: stripe.String(string(stripe.CurrencyUSD)),
+		Description: stripe.String(description), Metadata: metadata,
+	}
+	if input.SubscriptionID != "" {
+		itemParams.Subscription = stripe.String(input.SubscriptionID)
+	}
+	if input.DraftInvoiceID != "" {
+		itemParams.Invoice = stripe.String(input.DraftInvoiceID)
+	}
+	itemParams.SetIdempotencyKey(input.IdempotencyKey + ":item")
+	item, err := invoiceitem.New(itemParams)
+	if err != nil {
+		return service.StripeSettlementResult{}, fmt.Errorf("create Stripe AI usage invoice item: %w", err)
+	}
+	result := service.StripeSettlementResult{InvoiceItemID: item.ID, InvoiceID: input.DraftInvoiceID}
+	if input.BillingInterval != "annual" {
+		return result, nil
+	}
+	invoiceParams := &stripe.InvoiceParams{
+		Params: stripe.Params{Context: ctx}, Customer: stripe.String(input.CustomerID),
+		Description: stripe.String(description), Metadata: metadata,
+		AutoAdvance: stripe.Bool(true), CollectionMethod: stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)),
+	}
+	invoiceParams.SetIdempotencyKey(input.IdempotencyKey + ":invoice")
+	created, err := invoice.New(invoiceParams)
+	if err != nil {
+		return service.StripeSettlementResult{}, fmt.Errorf("create Stripe AI usage invoice: %w", err)
+	}
+	result.InvoiceID = created.ID
+	return result, nil
+}
+
 // EnsureCustomer finds or creates the Stripe customer for an organization.
 func (g *Gateway) EnsureCustomer(ctx context.Context, orgID, email string) (string, error) {
 	_ = ctx

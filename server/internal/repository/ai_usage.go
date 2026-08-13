@@ -340,3 +340,33 @@ func (r *AIUsageRepository) ListStaleReservations(ctx context.Context, before ti
 		Order("heartbeat_at, id").Limit(limit).Find(&reservations).Error
 	return reservations, err
 }
+
+// ListPendingSettlements returns exact-overage work in stable creation order.
+func (r *AIUsageRepository) ListPendingSettlements(ctx context.Context, limit int) ([]model.AIUsageSettlement, error) {
+	var settlements []model.AIUsageSettlement
+	err := r.db.WithContext(ctx).Where("status = ?", model.AIUsageSettlementPending).
+		Order("created_at, id").Limit(limit).Find(&settlements).Error
+	return settlements, err
+}
+
+// CompleteSettlement records Stripe identities after an idempotent charge.
+func (r *AIUsageRepository) CompleteSettlement(ctx context.Context, id, invoiceItemID, invoiceID string) error {
+	updates := map[string]any{"status": "settled", "last_error": nil}
+	if invoiceItemID != "" {
+		updates["stripe_invoice_item_id"] = invoiceItemID
+	}
+	if invoiceID != "" {
+		updates["stripe_invoice_id"] = invoiceID
+	}
+	return r.db.WithContext(ctx).Model(&model.AIUsageSettlement{}).Where("id = ? AND status = ?", id, model.AIUsageSettlementPending).Updates(updates).Error
+}
+
+// FailSettlement retains a pending row for retry with a sanitized failure summary.
+func (r *AIUsageRepository) FailSettlement(ctx context.Context, id, message string) error {
+	if len(message) > 500 {
+		message = message[:500]
+	}
+	return r.db.WithContext(ctx).Model(&model.AIUsageSettlement{}).Where("id = ?", id).Updates(map[string]any{
+		"attempt_count": gorm.Expr("attempt_count + 1"), "last_error": message,
+	}).Error
+}
