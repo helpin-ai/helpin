@@ -5276,7 +5276,7 @@
     },
     {
       "name": "web_search",
-      "description": "Search the public web through the configured provider. Use fast mode for ordinary lookup and deep mode for neural search, extraction, or advanced filters.",
+      "description": "Search the public web through the automatically selected configured provider. Exa is preferred when available; Brave is used when Exa is unavailable and as a fallback for compatible fast searches. Use fast mode for ordinary lookup and deep mode for neural search, extraction, or advanced filters.",
       "category": "Web Search",
       "input_schema": {
         "additionalProperties": false,

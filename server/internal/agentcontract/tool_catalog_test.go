@@ -676,6 +676,21 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 	}
 }
 
+func TestWebSearchToolCatalogDocumentsProviderPrecedence(t *testing.T) {
+	catalog := ListToolCatalog()
+	for _, tool := range catalog.Tools {
+		if tool.Name != "web_search" {
+			continue
+		}
+		if !strings.Contains(tool.Description, "Exa is preferred") ||
+			!strings.Contains(tool.Description, "fallback for compatible fast searches") {
+			t.Fatalf("web_search description omits provider selection contract: %q", tool.Description)
+		}
+		return
+	}
+	t.Fatal("web_search missing from tool catalog")
+}
+
 // The symbol tools are the catalog's view of agent-runtime's tree-sitter
 // navigation tools. Their value is the exact line range they return, so the
 // catalog must keep advertising that and must stay strict about inputs.
