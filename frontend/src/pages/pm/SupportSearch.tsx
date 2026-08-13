@@ -340,7 +340,7 @@ export function SupportSearchPage() {
   }, [activeSearch]);
 
   const updateDraft = (key: keyof SupportSearchRouteSearch, value: string | number | undefined) => {
-    setDraft((current) => cleanedSearch({ ...current, [key]: value, page: undefined }));
+    setDraft((current) => ({ ...current, [key]: value, page: undefined }));
   };
 
   const applySearch = (event?: FormEvent) => {
