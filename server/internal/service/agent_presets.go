@@ -13,12 +13,18 @@ const (
 	defaultAnthropicAgentModel  = "claude-opus-4-8"
 	defaultOpenAIAgentModel     = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
-	// Planning presets use the approved Large model size.
-	defaultAtlasAgentModel  = "openai/gpt-5.6-terra"
-	defaultScribeAgentModel = "openai/gpt-5.6-terra"
-	// Other built-in work starts on the approved Small model size.
-	defaultQuillAgentModel = "openai/gpt-5.6-luna"
-	defaultAskAgentModel   = "openai/gpt-5.6-luna"
+	// defaultAtlasAgentModel keeps interactive epic planning on the product's
+	// preferred DeepSeek OpenRouter model.
+	defaultAtlasAgentModel = "deepseek/deepseek-v4-flash-0731"
+	// defaultScribeAgentModel keeps interactive task planning on Codex's
+	// default OpenAI model.
+	defaultScribeAgentModel = defaultOpenAIAgentModel
+	// defaultQuillAgentModel keeps documentation work on the product's fast
+	// OpenRouter model.
+	defaultQuillAgentModel = "deepseek/deepseek-v4-flash"
+	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
+	// agent mostly routes tools and summarizes, so a flash-tier model fits.
+	defaultAskAgentModel = "deepseek/deepseek-v4-flash-0731"
 )
 
 var newPMReadToolAliases = []string{
