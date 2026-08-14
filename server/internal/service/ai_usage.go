@@ -279,6 +279,22 @@ func (s *AIUsageService) Heartbeat(ctx context.Context, metering MeteringContext
 	return resizer.ResizeReservation(ctx, metering.ReservationID, metering.MaxBillableMicrousd, time.Now().UTC())
 }
 
+// SuspendReservation releases the unused hold while an interactive run is
+// waiting for its next human message. The reservation remains active so
+// Heartbeat can restore its conservative bound before the next turn resumes.
+func (s *AIUsageService) SuspendReservation(ctx context.Context, metering MeteringContext) error {
+	if metering.ReservationID == "" {
+		return nil
+	}
+	resizer, ok := s.store.(interface {
+		ResizeReservation(context.Context, string, int64, time.Time) error
+	})
+	if !ok {
+		return nil
+	}
+	return resizer.ResizeReservation(ctx, metering.ReservationID, 0, time.Now().UTC())
+}
+
 func (s *AIUsageService) deterministicBound(input MeteringRequest, metering MeteringContext) (int64, error) {
 	if input.InputTokensEstimate < 0 || input.MaximumOutputTokens < 0 {
 		return 0, fmt.Errorf("invalid AI usage token bound")

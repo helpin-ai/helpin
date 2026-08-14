@@ -625,6 +625,13 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		}, []string{"object_type", "object_id"}),
 	},
 	{
+		CommandName: "crm.create_deal",
+		Alias:       "create_crm_deal",
+		Category:    "CRM / Operations",
+		Description: "Create a CRM deal for an existing contact. Use list_crm_pipelines first. If more than one pipeline exists and the user did not choose one, ask which pipeline to use. Always ask which stage to use when the user did not specify it.",
+		InputSchema: createCRMDealSchema(),
+	},
+	{
 		CommandName: "crm.update_contact",
 		Alias:       "update_crm_contact",
 		Category:    "CRM / Operations",
@@ -1759,6 +1766,20 @@ func updateCRMDealSchema() map[string]any {
 		"probability":       map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
 		"clear_probability": map[string]any{"type": "boolean"},
 	}, []string{"deal_id"})
+}
+
+func createCRMDealSchema() map[string]any {
+	return closedObjectSchema(map[string]any{
+		"name":            map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
+		"contact_id":      optionalIDSchema("Existing CRM contact to associate with the deal."),
+		"pipeline_id":     optionalIDSchema("Existing pipeline ID. May be omitted only when the workspace has exactly one pipeline."),
+		"stage_id":        optionalIDSchema("Stage ID explicitly selected by the user from the chosen pipeline."),
+		"amount":          map[string]any{"type": "number", "minimum": 0},
+		"currency":        map[string]any{"type": "string", "minLength": 3, "maxLength": 3},
+		"close_date":      map[string]any{"type": "string", "format": "date"},
+		"owner_member_id": optionalIDSchema("Optional active workspace member who should own the deal."),
+		"probability":     map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
+	}, []string{"name", "contact_id", "stage_id"})
 }
 
 func addCRMActivitySchema() map[string]any {

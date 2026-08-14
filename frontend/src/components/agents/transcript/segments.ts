@@ -41,6 +41,8 @@ export interface CollectSegmentsOptions {
    * from the prompt artifact. Rendered first when `context` is in scope.
    */
   leadingContext?: CodingSessionTranscriptMessage | null;
+  /** Keep only the latest assistant prose within each user/decision interval. */
+  compactAssistantProgress?: boolean;
 }
 
 /** Every renderable kind — the slider's scope. */
@@ -106,6 +108,31 @@ function toolCallSemanticKey(toolCall: CodingSessionLiveToolCall): string {
 
 function incrementCount(counts: Map<string, number>, key: string): void {
   counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
+function compactAssistantProgress(segments: TranscriptSegment[]): TranscriptSegment[] {
+  const keep = new Array<boolean>(segments.length).fill(true);
+  let latestAssistantIndex: number | null = null;
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (segment.kind === 'user' || segment.kind === 'review_decision') {
+      latestAssistantIndex = null;
+      continue;
+    }
+    if (segment.kind !== 'assistant') continue;
+    if (latestAssistantIndex !== null) keep[latestAssistantIndex] = false;
+    latestAssistantIndex = index;
+  }
+
+  return segments.filter((_, index) => keep[index]);
+}
+
+function maybeCompactAssistantProgress(
+  segments: TranscriptSegment[],
+  enabled: boolean | undefined,
+): TranscriptSegment[] {
+  return enabled ? compactAssistantProgress(segments) : segments;
 }
 
 /**
@@ -295,10 +322,11 @@ export function collectSegments(
     // settled: they keep their transcript position and their live
     // counterparts are dropped. Only the current turn's tail follows the
     // live timeline's ordering.
-    let lastUserIndex = -1;
+    let lastConversationBoundaryIndex = -1;
     for (let index = out.length - 1; index >= 0; index -= 1) {
-      if (out[index].kind === 'user') {
-        lastUserIndex = index;
+      const kind = out[index].kind;
+      if (kind === 'user' || (opts.compactAssistantProgress && kind === 'review_decision')) {
+        lastConversationBoundaryIndex = index;
         break;
       }
     }
@@ -321,7 +349,7 @@ export function collectSegments(
         ));
         if (persisted) {
           consumedPersistedIndexes.add(persisted.outIndex);
-          if (persisted.outIndex < lastUserIndex) continue;
+          if (persisted.outIndex < lastConversationBoundaryIndex) continue;
           matchedPersistedIndexes.add(persisted.outIndex);
           // The persisted body is authoritative and complete, but the live
           // timeline supplies its correct position among tool calls.
@@ -347,7 +375,7 @@ export function collectSegments(
         ));
         if (persisted) {
           consumedPersistedIndexes.add(persisted.outIndex);
-          if (persisted.outIndex < lastUserIndex) continue;
+          if (persisted.outIndex < lastConversationBoundaryIndex) continue;
           matchedPersistedIndexes.add(persisted.outIndex);
           liveOut.push(persisted.segment);
         } else {
@@ -359,13 +387,13 @@ export function collectSegments(
     // A cumulative live snapshot is the best ordering source while a run is
     // active. Remove persisted rows represented by that timeline, then insert
     // their authoritative content at the corresponding live positions.
-    return [
+    return maybeCompactAssistantProgress([
       ...out.filter((_, index) => !matchedPersistedIndexes.has(index)),
       ...liveOut,
-    ];
+    ], opts.compactAssistantProgress);
   }
 
-  return out;
+  return maybeCompactAssistantProgress(out, opts.compactAssistantProgress);
 }
 
 /** True when the stream has at least one renderable segment in scope. */

@@ -345,10 +345,11 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 
 func TestOperationalPresetsExposeRelevantSafeTools(t *testing.T) {
 	expected := map[string][]string{
-		model.AgentPresetCRMOperator:        {"get_crm_contact", "get_crm_company", "get_crm_deal", "list_crm_companies", "list_crm_pipelines", "list_crm_associations", "update_crm_contact", "update_crm_company", "update_crm_deal", "add_crm_activity", "link_crm_objects", "unlink_crm_association", "set_primary_contact_company"},
+		model.AgentPresetCRMOperator:        {"get_crm_contact", "get_crm_company", "get_crm_deal", "list_crm_companies", "list_crm_pipelines", "list_crm_associations", "create_crm_deal", "update_crm_contact", "update_crm_company", "update_crm_deal", "add_crm_activity", "link_crm_objects", "unlink_crm_association", "set_primary_contact_company"},
 		model.AgentPresetDocumentationAgent: {"update_document_metadata"},
 		model.AgentPresetSupportAgent:       {"list_support_conversations", "assign_support_conversation", "update_support_conversation_subject"},
-		model.AgentPresetCommandAgent:       {"get_crm_contact", "update_crm_contact", "list_support_conversations", "assign_support_conversation", "link_support_conversation_task", "update_document_metadata"},
+		model.AgentPresetCommandAgent:       {"get_crm_contact", "create_crm_deal", "update_crm_contact", "list_support_conversations", "assign_support_conversation", "link_support_conversation_task", "update_document_metadata"},
+		model.AgentPresetAskAgent:           {"get_crm_contact", "list_crm_pipelines", "create_crm_deal"},
 	}
 	byKey := map[string]model.AgentPresetDefinition{}
 	for _, preset := range ListAgentPresets() {
@@ -363,6 +364,15 @@ func TestOperationalPresetsExposeRelevantSafeTools(t *testing.T) {
 			if !slices.Contains(preset.AllowedTools, tool) {
 				t.Errorf("preset %s missing %s", key, tool)
 			}
+		}
+	}
+}
+
+func TestAskAgentRequiresExplicitDealPlacementChoices(t *testing.T) {
+	prompt := askAgentSystemPrompt()
+	for _, required := range []string{"call list_crm_pipelines", "multiple pipelines", "always ask which stage", "never silently choose a stage"} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("Ask Agent deal creation guidance missing %q", required)
 		}
 	}
 }
@@ -414,8 +424,8 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	if preset.SystemPrompt == nil || !strings.Contains(*preset.SystemPrompt, "primary execution agent") {
 		t.Fatalf("Ask Agent skill availability must preserve its managed Dock prompt, got %v", preset.SystemPrompt)
 	}
-	if !strings.Contains(*preset.SystemPrompt, "routine reversible workspace mutations execute directly") || !strings.Contains(*preset.SystemPrompt, "Call them directly with the complete step or plan") {
-		t.Fatalf("Ask Agent prompt is missing risk-based direct execution guidance: %s", *preset.SystemPrompt)
+	if !strings.Contains(*preset.SystemPrompt, "Repository inspection is read-only") || !strings.Contains(*preset.SystemPrompt, "Sensitive or destructive tools are paused by the runtime") {
+		t.Fatalf("Ask Agent prompt is missing domain execution guidance: %s", *preset.SystemPrompt)
 	}
 	if !strings.Contains(*preset.SystemPrompt, "start with the newest 20") || !strings.Contains(*preset.SystemPrompt, "Inspect image attachment URLs") {
 		t.Fatalf("Ask Agent prompt is missing support transcript and image guidance: %s", *preset.SystemPrompt)

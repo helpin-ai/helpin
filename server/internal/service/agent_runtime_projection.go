@@ -30,6 +30,7 @@ const (
 	agentRuntimeUsageConsumedAtSummaryKey         = "agent_runtime_usage_consumed_at"
 	agentRuntimeTranscriptReconciledVersionKey    = "agent_runtime_transcript_reconciled_runtime_updated_at"
 	agentRuntimeV2ReplayThroughSummaryKey         = "agent_runtime_v2_replay_through"
+	agentRuntimeLatestUsageSummaryKey             = "agent_runtime_latest_usage"
 	agentRuntimeV2ReplayPageSize                  = 250
 	agentRuntimeEventCodexAuthStateChanged        = "codex_auth.state_changed"
 	agentRuntimeExecutionStageAuthCompleted       = "auth_completed"
@@ -320,6 +321,31 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 		if runtimeRunID == "" {
 			continue
 		}
+		if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" {
+			runtimeRun, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID)
+			if err != nil {
+				slog.WarnContext(ctx, "agent runtime cancellation reconciliation failed",
+					"workspace_id", run.WorkspaceID,
+					"run_id", run.ID,
+					"runtime_run_id", runtimeRunID,
+					"error", err,
+				)
+				continue
+			}
+			event, ok := cancellationAcknowledgementEvent(runtimeRun, run, s.nowUTC())
+			if !ok {
+				continue
+			}
+			if err := s.ApplyEvent(ctx, event); err != nil {
+				slog.WarnContext(ctx, "agent runtime cancellation acknowledgement apply failed",
+					"workspace_id", run.WorkspaceID,
+					"run_id", run.ID,
+					"runtime_run_id", runtimeRunID,
+					"error", err,
+				)
+			}
+			continue
+		}
 		if s.eventProtocol == "v2" {
 			if err := s.replayV2Events(ctx, &run, runtimeRunID); err != nil {
 				slog.WarnContext(ctx, "agent runtime v2 event replay failed",
@@ -596,6 +622,27 @@ func reconciliationEventForRuntimeRun(runtimeRun *AgentRuntimeRun, localRun mode
 	return event, true
 }
 
+// cancellationAcknowledgementEvent treats a successful runtime cancellation
+// command as authoritative even when the runtime response still contains its
+// pre-cancellation status. The cancellation endpoint accepting the command is
+// the durable boundary; asynchronous events remain safe, idempotent replays.
+func cancellationAcknowledgementEvent(runtimeRun *AgentRuntimeRun, localRun model.AgentRun, fallback time.Time) (AgentRuntimeEventEnvelope, bool) {
+	acknowledged := AgentRuntimeRun{
+		ID:        strings.TrimSpace(derefString(localRun.ExternalRuntimeID)),
+		HostRunID: strings.TrimSpace(localRun.ID),
+		Status:    model.AgentRunStatusCancelled,
+	}
+	if runtimeRun != nil {
+		acknowledged = *runtimeRun
+		acknowledged.Status = model.AgentRunStatusCancelled
+	}
+	if acknowledged.CompletedAt == nil {
+		completedAt := fallback
+		acknowledged.CompletedAt = &completedAt
+	}
+	return reconciliationEventForRuntimeRun(&acknowledged, localRun, fallback)
+}
+
 func runtimeRunEventTime(runtimeRun *AgentRuntimeRun, fallback time.Time) time.Time {
 	if runtimeRun != nil {
 		if runtimeRun.CompletedAt != nil && !runtimeRun.CompletedAt.IsZero() {
@@ -706,6 +753,10 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			run.CompletedAt = &now
 			changed = true
 		}
+		if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" {
+			run.ExecutionStage = nil
+			changed = true
+		}
 		changed = setRunStatus(run, model.AgentRunStatusCancelled, model.AgentRunPauseReasonNone) || changed
 	case agentruntime.EventUsageCheckpoint:
 	case "workspace.prepared":
@@ -787,19 +838,8 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if applyRuntimeUsage(run, usage) {
 			changed = true
 		}
-		if strings.TrimSpace(event.Type) == agentruntime.EventRunPaused && run.DockChatID != nil &&
-			run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage &&
-			s.usageMeter != nil && s.usageMeter.usage != nil {
-			if err := s.usageMeter.checkpointAgentRun(ctx, run, usage); err != nil {
-				slog.ErrorContext(ctx, "agent runtime chat-turn usage checkpoint failed",
-					"error", err,
-					"workspace_id", run.WorkspaceID,
-					"run_id", run.ID,
-					"runtime_run_id", strings.TrimSpace(derefString(run.ExternalRuntimeID)),
-				)
-			} else {
-				changed = true
-			}
+		if storeLatestAgentRuntimeUsage(run, usage) {
+			changed = true
 		}
 		terminalUsageChanged, err := s.maybeConsumeTerminalUsage(ctx, run, event, usage)
 		if err != nil {
@@ -821,6 +861,34 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		if overageChanged {
 			changed = true
+		}
+	}
+	if shouldCheckpointPausedDockChat(run, event.Type) && s.usageMeter != nil && s.usageMeter.usage != nil {
+		if metering, ok := agentRunMeteringContext(run); ok {
+			canSuspendReservation := true
+			if usage, hasUsage := latestAgentRuntimeUsage(run); hasUsage {
+				if err := s.usageMeter.checkpointAgentRun(ctx, run, usage); err != nil {
+					canSuspendReservation = false
+					slog.ErrorContext(ctx, "agent runtime chat-turn usage checkpoint failed",
+						"error", err,
+						"workspace_id", run.WorkspaceID,
+						"run_id", run.ID,
+						"runtime_run_id", strings.TrimSpace(derefString(run.ExternalRuntimeID)),
+					)
+				} else {
+					changed = true
+				}
+			}
+			if canSuspendReservation {
+				if err := s.usageMeter.usage.SuspendReservation(ctx, metering); err != nil {
+					slog.ErrorContext(ctx, "agent runtime paused chat reservation suspension failed",
+						"error", err,
+						"workspace_id", run.WorkspaceID,
+						"run_id", run.ID,
+						"reservation_id", metering.ReservationID,
+					)
+				}
+			}
 		}
 	}
 	if s.runFinalizers != nil && isTerminalRuntimeEvent(event.Type) && !wasTerminal && isTerminalAgentRunStatus(run.Status) {
@@ -2823,6 +2891,69 @@ func usageFromMap(values map[string]any) (agentRuntimeUsagePayload, bool) {
 		return agentRuntimeUsagePayload{}, false
 	}
 	return usage, true
+}
+
+func shouldCheckpointPausedDockChat(run *model.AgentRun, eventType string) bool {
+	if run == nil || run.DockChatID == nil || run.Status != model.AgentRunStatusPaused ||
+		run.PauseReason != model.AgentRunPauseReasonUserMessage {
+		return false
+	}
+	switch strings.TrimSpace(eventType) {
+	case agentruntime.EventRunPaused, agentruntime.EventUsageCheckpoint:
+		return true
+	default:
+		return false
+	}
+}
+
+func storeLatestAgentRuntimeUsage(run *model.AgentRun, usage agentRuntimeUsagePayload) bool {
+	if run == nil {
+		return false
+	}
+	body := map[string]any{}
+	if len(run.OutputSummary) > 0 && strings.TrimSpace(string(run.OutputSummary)) != "null" {
+		_ = json.Unmarshal(run.OutputSummary, &body)
+	}
+	body[agentRuntimeLatestUsageSummaryKey] = map[string]int{
+		"total_tokens":            usage.TotalTokens,
+		"input_tokens":            usage.InputTokens,
+		"cached_input_tokens":     usage.CachedInputTokens,
+		"output_tokens":           usage.OutputTokens,
+		"reasoning_output_tokens": usage.ReasoningOutputTokens,
+	}
+	payload, err := json.Marshal(body)
+	if err != nil || agentRuntimeProjectionJSONRawEqual(run.OutputSummary, payload) {
+		return false
+	}
+	run.OutputSummary = payload
+	return true
+}
+
+func latestAgentRuntimeUsage(run *model.AgentRun) (agentRuntimeUsagePayload, bool) {
+	if run == nil {
+		return agentRuntimeUsagePayload{}, false
+	}
+	if len(run.OutputSummary) > 0 {
+		var body map[string]json.RawMessage
+		if json.Unmarshal(run.OutputSummary, &body) == nil {
+			var values map[string]any
+			if json.Unmarshal(body[agentRuntimeLatestUsageSummaryKey], &values) == nil {
+				if usage, ok := usageFromMap(values); ok {
+					return usage, true
+				}
+			}
+		}
+	}
+	usage := agentRuntimeUsagePayload{
+		TotalTokens:       run.TokensUsed,
+		InputTokens:       run.InputTokens,
+		CachedInputTokens: run.CachedInputTokens,
+		OutputTokens:      run.OutputTokens,
+	}
+	if usage.TotalTokens == 0 {
+		usage.TotalTokens = usage.InputTokens + usage.OutputTokens
+	}
+	return usage, !agentRunUsageIsZero(usage)
 }
 
 func applyRuntimeUsage(run *model.AgentRun, usage agentRuntimeUsagePayload) bool {

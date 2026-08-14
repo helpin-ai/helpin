@@ -52,6 +52,76 @@ func TestManagedAskAgentExecutionPolicyPrefersNarrowRepositoryReads(t *testing.T
 	}
 }
 
+func TestManagedAskAgentExecutionPolicyIsEfficientAndAlwaysCurrent(t *testing.T) {
+	tests := []struct {
+		name   string
+		prompt string
+	}{
+		{name: "managed", prompt: askAgentSystemPrompt()},
+		{name: "custom", prompt: "You are the workspace concierge. Preserve this custom identity."},
+		{name: "stale header", prompt: "Custom identity.\n\n## Required Ask Agent execution policy\n\nUse the old rules."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := &model.Agent{
+				PresetKey:    model.AgentPresetAskAgent,
+				RuntimeKind:  "native_sdk",
+				SystemPrompt: &tt.prompt,
+			}
+			effective := runtimeAgentFromHelpinAgent(agent, "helpin").SystemPrompt
+			for _, required := range []string{
+				"## Required Ask Agent execution policy v2",
+				"Begin with the smallest targeted action",
+				"After every tool result",
+				"resolve a material uncertainty",
+				"Do not explore merely to build a complete picture",
+				"Distinguish confirmed findings",
+				"Do not announce routine tool calls",
+			} {
+				if !strings.Contains(effective, required) {
+					t.Fatalf("effective Ask prompt missing %q:\n%s", required, effective)
+				}
+			}
+			if count := strings.Count(effective, "## Required Ask Agent execution policy v2"); count != 1 {
+				t.Fatalf("current Ask execution policy count = %d, want 1:\n%s", count, effective)
+			}
+		})
+	}
+
+	once := agentcontract.EnsureAskAgentExecutionPolicy(model.AgentPresetAskAgent, "Custom identity.")
+	twice := agentcontract.EnsureAskAgentExecutionPolicy(model.AgentPresetAskAgent, once)
+	if count := strings.Count(twice, "## Required Ask Agent execution policy v2"); count != 1 {
+		t.Fatalf("repeated Ask policy assembly count = %d, want 1:\n%s", count, twice)
+	}
+}
+
+func TestAskAgentPresetPromptDoesNotDuplicateProductExecutionPolicy(t *testing.T) {
+	prompt := askAgentSystemPrompt()
+	for _, duplicated := range []string{
+		"Prefer doing sequential work yourself",
+		"For complex or long requests, call update_plan early",
+		"Do not delegate merely because a request has multiple steps",
+	} {
+		if strings.Contains(prompt, duplicated) {
+			t.Fatalf("Ask preset prompt duplicates product execution policy %q:\n%s", duplicated, prompt)
+		}
+	}
+}
+
+func TestAskAgentDoesNotRetryPricingConfigurationFailures(t *testing.T) {
+	prompt := askAgentSystemPrompt()
+	for _, required := range []string{
+		"model unavailable under current pricing",
+		"pricing configuration missing",
+		"non-retriable",
+		"do not retry it through another agent, target, or launch method",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("Ask Agent prompt missing non-retriable pricing guidance %q", required)
+		}
+	}
+}
+
 func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testing.T) {
 	prompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	if prompt == nil {

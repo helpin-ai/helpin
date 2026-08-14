@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
-	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -53,7 +51,8 @@ func (h *SupportAttachmentHandler) Create(w http.ResponseWriter, r *http.Request
 // ConfirmUpload handles PATCH /support/inbox/attachments/{attachmentId}/confirm (authenticated).
 func (h *SupportAttachmentHandler) ConfirmUpload(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "attachmentId")
-	if err := h.attachmentService.ConfirmUpload(r.Context(), id); err != nil {
+	userID := middleware.GetUserID(r.Context())
+	if err := h.attachmentService.ConfirmUpload(r.Context(), id, "user", &userID, nil); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -90,24 +89,17 @@ func (h *SupportAttachmentHandler) WidgetCreate(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Auto-create conversation if one doesn't exist yet (e.g. file uploaded before first message).
-	if session.ConversationID == nil {
-		conv, err := h.inboxService.WidgetCreateConversation(r.Context(), sessionToken)
-		if err != nil {
-			slog.ErrorContext(r.Context(), "auto-create conversation for attachment", "error", err, "session_id", session.ID)
-			writeError(w, http.StatusInternalServerError, "failed to create conversation")
-			return
-		}
-		session.ConversationID = &conv.ID
-	}
-
 	var req model.CreateSupportAttachmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	resp, err := h.attachmentService.Create(r.Context(), req, session.WorkspaceID, *session.ConversationID, "customer", nil, &session.ID)
+	conversationID := ""
+	if session.ConversationID != nil {
+		conversationID = *session.ConversationID
+	}
+	resp, err := h.attachmentService.Create(ctx, req, session.WorkspaceID, conversationID, "customer", nil, &session.ID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -133,11 +125,8 @@ func (h *SupportAttachmentHandler) WidgetConfirmUpload(w http.ResponseWriter, r 
 		writeError(w, http.StatusUnauthorized, "invalid session")
 		return
 	}
-	_ = session // validated — no further fields needed
-
 	id := chi.URLParam(r, "attachmentId")
-	if err := h.attachmentService.ConfirmUpload(r.Context(), id); err != nil {
-		slog.ErrorContext(r.Context(), "widget confirm attachment upload", "error", err, "attachment_id", id)
+	if err := h.attachmentService.ConfirmUpload(ctx, id, "customer", nil, &session.ID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

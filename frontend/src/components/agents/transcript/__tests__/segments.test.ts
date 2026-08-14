@@ -99,6 +99,114 @@ describe('collectSegments', () => {
     expect(segments[2]).toMatchObject({ kind: 'assistant', content: 'Second' });
   });
 
+  it('compacts assistant progress within a turn while preserving every tool', () => {
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [
+          message({ event_id: 'user', role: 'user', content: 'Investigate this issue.', sequence_no: 1 }),
+          message({
+            event_id: 'assistant-turn',
+            sequence_no: 2,
+            turn_segments: [
+              assistantSegment('a1', 'I will inspect the conversation.'),
+              toolSegment('t1', toolCall({ tool_call_id: 'tc-conversation', tool_name: 'list_conversation_messages' })),
+              assistantSegment('a2', 'Now I will inspect the implementation.'),
+              toolSegment('t2', toolCall({ tool_call_id: 'tc-repository', tool_name: 'repository_search' })),
+              assistantSegment('a3', 'The issue is caused by transcript pagination.'),
+            ],
+          }),
+        ],
+      }),
+      { includeLive: false, compactAssistantProgress: true },
+    );
+
+    expect(segments.map((segment) => (
+      segment.kind === 'assistant'
+        ? segment.content
+        : segment.kind === 'tool'
+          ? segment.toolCall.tool_call_id
+          : segment.kind
+    ))).toEqual(['user', 'tc-conversation', 'tc-repository', 'The issue is caused by transcript pagination.']);
+  });
+
+  it('keeps the latest assistant response in every user turn', () => {
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [
+          message({ event_id: 'u1', role: 'user', content: 'First question', sequence_no: 1 }),
+          message({ event_id: 'a1-progress', content: 'Checking first question.', sequence_no: 2 }),
+          message({ event_id: 'a1-final', content: 'First answer.', sequence_no: 3 }),
+          message({ event_id: 'u2', role: 'user', content: 'Second question', sequence_no: 4 }),
+          message({ event_id: 'a2-progress', content: 'Checking second question.', sequence_no: 5 }),
+          message({ event_id: 'a2-final', content: 'Second answer.', sequence_no: 6 }),
+        ],
+      }),
+      { includeLive: false, compactAssistantProgress: true },
+    );
+
+    expect(segments.map((segment) => (
+      segment.kind === 'assistant' ? segment.content : `user:${segment.message.content}`
+    ))).toEqual(['user:First question', 'First answer.', 'user:Second question', 'Second answer.']);
+  });
+
+  it('uses approval decisions as boundaries for cumulative live progress', () => {
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [
+          message({ event_id: 'user', role: 'user', content: 'Create the document.', sequence_no: 1 }),
+          message({ event_id: 'approval-prompt', message_id: 'approval-prompt', content: 'Approve creating the document?', sequence_no: 2 }),
+          message({
+            event_id: 'approval-decision',
+            role: 'user',
+            message_type: 'approval_request_resolution',
+            content: 'Approved.',
+            sequence_no: 3,
+          }),
+          message({ event_id: 'resumed-progress', message_id: 'resumed-progress', content: 'Creating the document now.', sequence_no: 4 }),
+        ],
+        live_turn_segments: [
+          assistantSegment('approval-prompt', 'Approve creating the document?'),
+          assistantSegment('resumed-progress', 'Creating the document now.'),
+          toolSegment('create-tool', toolCall({ tool_call_id: 'create-tool', tool_name: 'create_document' })),
+          assistantSegment('resumed-final', 'The document was created.', 'streaming'),
+        ],
+      }),
+      { includeLive: true, compactAssistantProgress: true },
+    );
+
+    expect(segments.map((segment) => {
+      if (segment.kind === 'assistant') return segment.content;
+      if (segment.kind === 'tool') return segment.toolCall.tool_call_id;
+      if (segment.kind === 'review_decision') return `decision:${segment.message.content}`;
+      return `user:${segment.message.content}`;
+    })).toEqual([
+      'user:Create the document.',
+      'Approve creating the document?',
+      'decision:Approved.',
+      'create-tool',
+      'The document was created.',
+    ]);
+  });
+
+  it.each([
+    ['clarification', 'Which repository should I inspect?'],
+    ['child launch', 'Started Lens. I will report back when it finishes.'],
+    ['failed run', 'I could not finish because the provider disconnected.'],
+    ['cancelled run', 'The run was cancelled before completion.'],
+  ])('keeps the latest %s message visible', (_, finalMessage) => {
+    const segments = collectSegments(
+      stream({
+        transcript_messages: [
+          message({ event_id: 'progress', content: 'I am checking the workspace.', sequence_no: 1 }),
+          message({ event_id: 'latest', content: finalMessage, sequence_no: 2 }),
+        ],
+      }),
+      { includeLive: false, compactAssistantProgress: true },
+    );
+
+    expect(segments).toMatchObject([{ kind: 'assistant', content: finalMessage }]);
+  });
+
   it('drops update_plan tool calls (including mcp-prefixed names)', () => {
     const segments = collectSegments(
       stream({

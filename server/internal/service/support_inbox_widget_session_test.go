@@ -1040,7 +1040,7 @@ func TestSupportInboxServiceUpgradeWidgetSessionUpdatesOnlyCurrentSessionCompany
 	}
 }
 
-func TestSupportInboxServiceWidgetCreateConversationCopiesSessionCompany(t *testing.T) {
+func TestSupportInboxServiceFirstWidgetMessageCopiesSessionCompany(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 	const workspaceID = "ws-widget-create-company"
@@ -1062,19 +1062,24 @@ func TestSupportInboxServiceWidgetCreateConversationCopiesSessionCompany(t *test
 		t.Fatalf("create session: %v", err)
 	}
 	conversationRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
 	svc := NewSupportInboxService(
 		conversationRepo,
 		repository.NewSupportMailboxRepository(db),
-		nil, nil, nil,
+		messageRepo, nil, nil,
 		repository.NewSupportInboxInstallationRepository(db),
 		sessionRepo,
 		nil, nil, nil,
 		repository.NewCRMContactRepository(db),
 		nil, nil, nil, nil,
 	)
-	created, err := svc.WidgetCreateConversation(ctx, session.SessionToken)
+	message, err := svc.WidgetCreateMessage(ctx, session.SessionToken, "I need help", nil)
 	if err != nil {
-		t.Fatalf("WidgetCreateConversation: %v", err)
+		t.Fatalf("WidgetCreateMessage: %v", err)
+	}
+	created, err := conversationRepo.GetByID(ctx, workspaceID, message.ConversationID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get created conversation: %v", err)
 	}
 	if created.CRMCompanyID == nil || *created.CRMCompanyID != company.ID {
 		t.Fatalf("created conversation crm_company_id = %v, want %q", created.CRMCompanyID, company.ID)
@@ -1404,5 +1409,191 @@ func TestWidgetCreateMessageReopensResolvedConversation(t *testing.T) {
 	}
 	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateWaitingForHuman {
 		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateWaitingForHuman)
+	}
+}
+
+func TestWidgetCreateMessageClaimsStagedAttachmentWithFirstConversation(t *testing.T) {
+	db := newTestDB(t)
+	createSupportAttachmentTestTable(t, db)
+	ctx := context.Background()
+	const workspaceID = "ws-widget-staged-attachment"
+	seedWorkspace(t, db, workspaceID, "Widget Staged Attachment", "widget-staged-attachment", "user-123")
+
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	attachmentRepo := repository.NewSupportAttachmentRepository(db)
+	session := &model.SupportWidgetSession{
+		WorkspaceID:  workspaceID,
+		SessionToken: "widget-staged-attachment-token",
+		AnonymousID:  "anon-widget-staged-attachment",
+		IsAnonymous:  true,
+		ExpiresAt:    time.Now().Add(time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	attachment := &model.SupportAttachment{
+		WorkspaceID:    workspaceID,
+		FileName:       "receipt.pdf",
+		FileSize:       512,
+		ContentType:    "application/pdf",
+		StorageKey:     "workspaces/ws-widget-staged-attachment/support/sessions/staged/receipt.pdf",
+		IsUploaded:     true,
+		UploadedByType: "customer",
+		SessionID:      &session.ID,
+	}
+	if err := attachmentRepo.Create(ctx, attachment); err != nil {
+		t.Fatalf("create staged attachment: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		conversationRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		nil,
+		nil,
+		repository.NewSupportInboxInstallationRepository(db),
+		sessionRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	).SetAttachmentService(NewSupportAttachmentService(attachmentRepo, nil))
+
+	var before int64
+	if err := db.Model(&model.SupportConversation{}).Where("workspace_id = ?", workspaceID).Count(&before).Error; err != nil {
+		t.Fatalf("count conversations before send: %v", err)
+	}
+	if before != 0 {
+		t.Fatalf("conversation count before send = %d, want 0", before)
+	}
+
+	message, err := svc.WidgetCreateMessage(ctx, session.SessionToken, "", []string{attachment.ID})
+	if err != nil {
+		t.Fatalf("WidgetCreateMessage: %v", err)
+	}
+	if message.ConversationID == "" {
+		t.Fatal("message conversation_id is empty")
+	}
+	createdConversation, err := conversationRepo.GetByID(ctx, workspaceID, message.ConversationID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("get created conversation: %v", err)
+	}
+	if createdConversation == nil || createdConversation.Subject != "Attachment" {
+		t.Fatalf("conversation subject = %#v, want Attachment", createdConversation)
+	}
+	if len(message.Attachments) != 1 || message.Attachments[0].ID != attachment.ID {
+		t.Fatalf("message attachments = %#v, want staged attachment", message.Attachments)
+	}
+
+	linked, err := attachmentRepo.GetByID(ctx, attachment.ID)
+	if err != nil {
+		t.Fatalf("get linked attachment: %v", err)
+	}
+	if linked == nil || linked.ConversationID == nil || *linked.ConversationID != message.ConversationID {
+		t.Fatalf("linked conversation_id = %#v, want %q", linked, message.ConversationID)
+	}
+	if linked.MessageID == nil || *linked.MessageID != message.ID {
+		t.Fatalf("linked message_id = %#v, want %q", linked.MessageID, message.ID)
+	}
+}
+
+func TestWidgetCreateMessageRejectsAttachmentFromAnotherSessionBeforeCreatingConversation(t *testing.T) {
+	db := newTestDB(t)
+	createSupportAttachmentTestTable(t, db)
+	ctx := context.Background()
+	const workspaceID = "ws-widget-foreign-attachment"
+	seedWorkspace(t, db, workspaceID, "Widget Foreign Attachment", "widget-foreign-attachment", "user-123")
+
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	attachmentRepo := repository.NewSupportAttachmentRepository(db)
+	ownerSession := &model.SupportWidgetSession{
+		WorkspaceID: workspaceID, SessionToken: "owner-session", AnonymousID: "owner-anon", IsAnonymous: true,
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	requesterSession := &model.SupportWidgetSession{
+		WorkspaceID: workspaceID, SessionToken: "requester-session", AnonymousID: "requester-anon", IsAnonymous: true,
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	for _, session := range []*model.SupportWidgetSession{ownerSession, requesterSession} {
+		if err := sessionRepo.Create(ctx, session); err != nil {
+			t.Fatalf("create session: %v", err)
+		}
+	}
+	attachment := &model.SupportAttachment{
+		WorkspaceID: workspaceID, FileName: "private.pdf", FileSize: 128, ContentType: "application/pdf",
+		StorageKey: "private.pdf", IsUploaded: true, UploadedByType: "customer", SessionID: &ownerSession.ID,
+	}
+	if err := attachmentRepo.Create(ctx, attachment); err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		conversationRepo, repository.NewSupportMailboxRepository(db), messageRepo, nil, nil,
+		repository.NewSupportInboxInstallationRepository(db), sessionRepo,
+		nil, nil, nil, nil, nil, nil, nil, nil,
+	).SetAttachmentService(NewSupportAttachmentService(attachmentRepo, nil))
+
+	if _, err := svc.WidgetCreateMessage(ctx, requesterSession.SessionToken, "Use another session's file.", []string{attachment.ID}); err == nil {
+		t.Fatal("WidgetCreateMessage succeeded with another session's attachment")
+	}
+	var conversationCount int64
+	if err := db.Model(&model.SupportConversation{}).Where("workspace_id = ?", workspaceID).Count(&conversationCount).Error; err != nil {
+		t.Fatalf("count conversations: %v", err)
+	}
+	if conversationCount != 0 {
+		t.Fatalf("conversation count = %d, want 0 after rejected attachment", conversationCount)
+	}
+}
+
+func TestWidgetCreateMessageRemovesNewConversationWhenFirstMessageFails(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	const workspaceID = "ws-widget-first-message-failure"
+	seedWorkspace(t, db, workspaceID, "Widget First Message Failure", "widget-first-message-failure", "user-123")
+
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	session := &model.SupportWidgetSession{
+		WorkspaceID: workspaceID, SessionToken: "first-message-failure-session", AnonymousID: "first-message-failure-anon",
+		IsAnonymous: true, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := db.Exec(`CREATE TRIGGER reject_widget_message BEFORE INSERT ON support_messages
+		BEGIN SELECT RAISE(FAIL, 'forced first-message failure'); END`).Error; err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		conversationRepo, repository.NewSupportMailboxRepository(db), repository.NewSupportMessageRepository(db), nil, nil,
+		repository.NewSupportInboxInstallationRepository(db), sessionRepo,
+		nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	if _, err := svc.WidgetCreateMessage(ctx, session.SessionToken, "This insert will fail.", nil); err == nil {
+		t.Fatal("WidgetCreateMessage succeeded despite forced message failure")
+	}
+
+	var conversationCount int64
+	if err := db.Model(&model.SupportConversation{}).Where("workspace_id = ?", workspaceID).Count(&conversationCount).Error; err != nil {
+		t.Fatalf("count conversations: %v", err)
+	}
+	if conversationCount != 0 {
+		t.Fatalf("conversation count = %d, want 0 after first-message failure", conversationCount)
+	}
+	storedSession, err := sessionRepo.GetByToken(ctx, session.SessionToken)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+	if storedSession == nil || storedSession.ConversationID != nil {
+		t.Fatalf("session conversation_id = %#v, want nil", storedSession)
 	}
 }

@@ -570,6 +570,7 @@ export function AskAgentsDock({
             onPresenceChange={handleChatPresenceChange}
             onRunIdChange={handleChatRunIdChange}
             requiredPageContext={requiredPageContext}
+            showComposerShortcutHint={requiredPageContext?.entity_type !== 'support_conversation'}
             scrollToLatestRequest={chatScrollRequest}
           />
         ) : (

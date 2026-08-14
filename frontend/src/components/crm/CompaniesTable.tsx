@@ -136,14 +136,6 @@ export function CompaniesTable({
 
   const tableColumns = useMemo(
     () => [
-      columnHelper.accessor('display_id', {
-        id: 'displayId',
-        header: 'ID',
-        size: 90,
-        cell: (info) => (
-          <span className="font-mono text-xs text-muted-foreground">{info.getValue()}</span>
-        ),
-      }),
       columnHelper.accessor('name', {
         id: 'name',
         header: 'Name',

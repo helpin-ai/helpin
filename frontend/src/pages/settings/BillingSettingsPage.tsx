@@ -39,7 +39,7 @@ import type { BillingTestScenarioID, PlanChangePreview, UsageResponse } from '@/
 import type { BillingInterval, BillingPlan, WorkspaceBillingSummary } from '@/lib/types';
 import { SettingsPageFrame } from './SettingsPageFrame';
 import { getBillingNoticePresentation } from './billingNoticePresentation';
-import { formatAIUsagePercent } from '@/lib/aiUsage';
+import { calculateAIUsagePercent, formatAIUsagePercent } from '@/lib/aiUsage';
 
 const PLAN_OPTIONS: Array<{
   id: BillingPlan;
@@ -408,10 +408,10 @@ function BillingSettingsContent({
 
   const usagePct = useMemo(() => {
     if (billing?.ai_usage_allowance_microusd) {
-      return Math.round(((billing.ai_usage_used_microusd ?? 0) / billing.ai_usage_allowance_microusd) * 100);
+      return calculateAIUsagePercent(billing.ai_usage_used_microusd ?? 0, billing.ai_usage_allowance_microusd);
     }
     if (!billing?.included_credits) return 0;
-    return Math.round(((billing.credits_used ?? 0) / billing.included_credits) * 100);
+    return calculateAIUsagePercent(billing.credits_used ?? 0, billing.included_credits);
   }, [billing]);
   const reservedPct = billing?.ai_usage_allowance_microusd
     ? (100 * (billing.ai_usage_reserved_microusd ?? 0)) / billing.ai_usage_allowance_microusd
@@ -764,9 +764,9 @@ function BillingSettingsContent({
           <CardContent className="space-y-5 p-5">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium">{usagePct}% used</span>
+                <span className="font-medium">{formatAIUsagePercent(usagePct)} used</span>
                 <span className="text-muted-foreground">
-                  {billing.ai_usage_unlimited ? 'Internal soft budget' : `${Math.max(0, 100 - usagePct)}% remaining`}
+                  {billing.ai_usage_unlimited ? 'Internal soft budget' : `${formatAIUsagePercent(Math.max(0, 100 - usagePct))} remaining`}
                 </span>
               </div>
               <div

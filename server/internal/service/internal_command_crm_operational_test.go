@@ -89,6 +89,62 @@ func TestCRMOperationalDealAndActivityCommandsValidateWorkspaceObjects(t *testin
 	}
 }
 
+func TestCRMCreateDealUsesExplicitPipelineAndStage(t *testing.T) {
+	db := setupCRMOperationalCommandTestDB(t)
+	env := newCRMOperationalCommandTestEnv(t, db)
+	ctx := context.Background()
+
+	output, err := env.commands.Execute(ctx, env.meta("workspace", "ws-crm-1"), "crm.create_deal", json.RawMessage(`{
+		"name":"Analytical Engine expansion","contact_id":"contact-1","pipeline_id":"pipeline-1","stage_id":"stage-open","amount":12500,"currency":"eur","close_date":"2027-09-30","probability":35
+	}`))
+	if err != nil {
+		t.Fatalf("create deal: %v", err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["name"] != "Analytical Engine expansion" || result["pipeline_id"] != "pipeline-1" || result["stage_id"] != "stage-open" || result["contact_id"] != "contact-1" || result["currency"] != "EUR" {
+		t.Fatalf("unexpected created deal: %#v", result)
+	}
+	dealID, _ := result["deal_id"].(string)
+	var associationCount int64
+	if err := db.Model(&model.CRMAssociation{}).Where("workspace_id = ? AND from_object_type = ? AND from_object_id = ? AND to_object_type = ? AND to_object_id = ?", "ws-crm-1", model.CRMObjectDeal, dealID, model.CRMObjectContact, "contact-1").Count(&associationCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if associationCount != 1 {
+		t.Fatalf("deal/contact association count = %d, want 1", associationCount)
+	}
+}
+
+func TestCRMCreateDealRequiresChoicesInsteadOfGuessing(t *testing.T) {
+	db := setupCRMOperationalCommandTestDB(t)
+	env := newCRMOperationalCommandTestEnv(t, db)
+	ctx := context.Background()
+
+	_, err := env.commands.Execute(ctx, env.meta("workspace", "ws-crm-1"), "crm.create_deal", json.RawMessage(`{"name":"Expansion","contact_id":"contact-1","stage_id":"stage-open"}`))
+	if err == nil || !strings.Contains(err.Error(), "multiple pipelines") {
+		t.Fatalf("expected pipeline choice error, got %v", err)
+	}
+	_, err = env.commands.Execute(ctx, env.meta("workspace", "ws-crm-1"), "crm.create_deal", json.RawMessage(`{"name":"Expansion","contact_id":"contact-1","pipeline_id":"pipeline-1"}`))
+	if err == nil || !strings.Contains(err.Error(), "ask the user which stage") {
+		t.Fatalf("expected stage choice error, got %v", err)
+	}
+}
+
+func TestCRMCreateDealRejectsContactFromAnotherWorkspace(t *testing.T) {
+	db := setupCRMOperationalCommandTestDB(t)
+	env := newCRMOperationalCommandTestEnv(t, db)
+	email := "other@example.com"
+	if err := db.Create(&model.CRMContact{ID: "contact-other", WorkspaceID: "ws-crm-2", DisplayID: "CON-2", FirstName: "Other", Email: &email, LifecycleStage: model.CRMLifecycleLead, LeadStatus: model.CRMLeadStatusNew}).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := env.commands.Execute(context.Background(), env.meta("workspace", "ws-crm-1"), "crm.create_deal", json.RawMessage(`{"name":"Wrong workspace","contact_id":"contact-other"}`))
+	if err == nil || !strings.Contains(err.Error(), "contact not found") {
+		t.Fatalf("expected workspace-scoped contact error, got %v", err)
+	}
+}
+
 func TestCRMOperationalDiscoveryIsWorkspaceScopedAndBounded(t *testing.T) {
 	db := setupCRMOperationalCommandTestDB(t)
 	env := newCRMOperationalCommandTestEnv(t, db)
@@ -145,7 +201,7 @@ func setupCRMOperationalCommandTestDB(t *testing.T) *gorm.DB {
 	for _, stmt := range []string{
 		`CREATE TABLE crm_pipelines (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, is_default BOOLEAN NOT NULL DEFAULT 0, position INTEGER NOT NULL DEFAULT 0, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY, pipeline_id TEXT NOT NULL, name TEXT NOT NULL, stage_type TEXT NOT NULL DEFAULT 'open', position INTEGER NOT NULL DEFAULT 0, probability INTEGER NOT NULL DEFAULT 0, created_at DATETIME, updated_at DATETIME)`,
-		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, display_id TEXT NOT NULL, name TEXT NOT NULL, pipeline_id TEXT NOT NULL, stage_id TEXT NOT NULL, amount REAL, currency TEXT NOT NULL DEFAULT 'USD', close_date DATETIME, owner_member_id TEXT, probability INTEGER, custom_properties TEXT NOT NULL DEFAULT '{}', created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL, display_id TEXT NOT NULL, name TEXT NOT NULL, pipeline_id TEXT NOT NULL, stage_id TEXT NOT NULL, amount REAL, currency TEXT NOT NULL DEFAULT 'USD', close_date DATETIME, owner_member_id TEXT, probability INTEGER, custom_properties TEXT NOT NULL DEFAULT '{}', created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE crm_activities (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL, activity_type TEXT NOT NULL DEFAULT 'note', contact_id TEXT, company_id TEXT, deal_id TEXT, owner_member_id TEXT, subject TEXT, body TEXT, occurred_at DATETIME NOT NULL, metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME, updated_at DATETIME)`,
 	} {
 		if err := db.Exec(stmt).Error; err != nil {

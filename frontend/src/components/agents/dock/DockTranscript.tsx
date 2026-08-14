@@ -15,6 +15,8 @@ const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'review_decision
 export interface DockSubAgentTimelineItem {
   id: string;
   createdAt: string;
+  /** Exact sequence of the hidden result marker, when the attempt settled. */
+  resultSequence?: number;
   runCount: number;
   content: ReactNode;
 }
@@ -65,6 +67,38 @@ function segmentTimestamp(segment: ReturnType<typeof collectSegments>[number], t
   return Number.isFinite(timestamp) ? timestamp : times.get(segment.id) ?? null;
 }
 
+function transcriptSegmentSequences(stream: CodingSessionStreamState): Map<string, number> {
+  const sequences = new Map<string, number>();
+  const remember = (id: string | undefined, sequence: number) => {
+    if (id) sequences.set(id, sequence);
+  };
+  for (const message of stream.transcript_messages) {
+    remember(message.event_id, message.sequence_no);
+    remember(message.message_id, message.sequence_no);
+    for (const segment of message.turn_segments ?? []) {
+      remember(segment.segment_id, message.sequence_no);
+      if (segment.kind === 'assistant_message') {
+        remember(segment.assistant_message.message_id, message.sequence_no);
+      } else {
+        remember(segment.tool_call.tool_call_id, message.sequence_no);
+      }
+    }
+  }
+  return sequences;
+}
+
+function segmentSequence(
+  segment: ReturnType<typeof collectSegments>[number],
+  sequences: Map<string, number>,
+): number | null {
+  if (segment.kind === 'user' || segment.kind === 'status' || segment.kind === 'context' || segment.kind === 'review_decision') {
+    return segment.message.sequence_no;
+  }
+  if (segment.kind === 'assistant') return sequences.get(segment.id) ?? (segment.messageId ? sequences.get(segment.messageId) : undefined) ?? null;
+  if (segment.kind === 'tool') return sequences.get(segment.id) ?? sequences.get(segment.toolCall.tool_call_id) ?? null;
+  return sequences.get(segment.id) ?? null;
+}
+
 function SubAgentTimelineGroup({ items }: { items: DockSubAgentTimelineItem[] }) {
   const runCount = items.reduce((count, item) => count + Math.max(item.runCount, 1), 0);
   return (
@@ -96,6 +130,7 @@ export function DockTranscript({
   workspaceId,
   fallbackActor,
   showUserMessages = true,
+  compactAssistantProgress = false,
   subAgentRuns = [],
   className,
 }: {
@@ -108,6 +143,8 @@ export function DockTranscript({
   fallbackActor?: CodingSessionActor | null;
   /** Main chat shows user turns; embedded execution strips stay agent-only. */
   showUserMessages?: boolean;
+  /** Root Ask chat keeps only the latest assistant prose in each interval. */
+  compactAssistantProgress?: boolean;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
   className?: string;
@@ -130,11 +167,13 @@ export function DockTranscript({
   const segments = collectSegments(stream, {
     includeLive: active,
     include: showUserMessages ? DOCK_CHAT_SEGMENT_KINDS : DOCK_SEGMENT_KINDS,
+    compactAssistantProgress,
   });
   if (segments.length === 0 && subAgentRuns.length === 0) return null;
   const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;
   const entries = groupAdjacentDockTools(segments);
   const times = transcriptSegmentTimes(stream);
+  const sequences = transcriptSegmentSequences(stream);
   const runsByBoundary = new Map<number, DockSubAgentTimelineItem[]>();
   for (const item of [...subAgentRuns].sort((left, right) => {
     const timeDelta = Date.parse(left.createdAt) - Date.parse(right.createdAt);
@@ -148,6 +187,13 @@ export function DockTranscript({
         return timestamp !== null && timestamp > itemTimestamp;
       });
       if (laterEntry >= 0) boundary = laterEntry;
+    }
+    if (item.resultSequence !== undefined) {
+      const resultBoundary = entries.findIndex((entry) => {
+        const sequence = segmentSequence(entry.segment, sequences);
+        return sequence !== null && sequence >= item.resultSequence!;
+      });
+      if (resultBoundary >= 0) boundary = Math.min(boundary, resultBoundary);
     }
     const existing = runsByBoundary.get(boundary) ?? [];
     existing.push(item);
