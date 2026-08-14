@@ -81,7 +81,11 @@ export function LocalizedHomePage() {
 
       {firstSpace && (
         nav.length > 0 ? (
-          <Sidebar locale={locale} navigation={nav} />
+          <Sidebar
+            locale={locale}
+            navigation={nav}
+            spaceSlug={firstSpace.slug}
+          />
         ) : (
           <SidebarSkeleton />
         )

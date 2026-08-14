@@ -111,6 +111,23 @@ export interface Space {
   description: string | null
 }
 
+// API references
+
+export interface APIReferenceSummary {
+  id: string
+  space_id: string
+  name: string
+  slug: string
+  api_version: string
+  operation_count: number
+}
+
+export interface APIReference extends APIReferenceSummary {
+  openapi_version: string
+  specification: Record<string, unknown>
+  published_at?: string
+}
+
 // ─── Collections (Categories) ───────────────────────────────────────────────
 
 export interface Collection {

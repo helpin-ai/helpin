@@ -1,6 +1,7 @@
 import type { SpecClarification } from './project';
 import type { AgentSkillRef } from './skills';
 import type { AutomationRule } from './automations';
+import type { CodingSessionLiveTurnSegment } from './codingSession';
 
 // ── Agents ──────────────────────────────────────────────────────────
 
@@ -223,10 +224,17 @@ export interface AgentRunMessage {
   id: string;
   workspace_id: string;
   run_id: string;
+  dock_chat_id?: string;
+  dock_chat_sequence?: number;
+  client_message_id?: string;
+  delivery_status?: 'pending' | 'sent' | 'failed';
+  runtime_message_id?: string;
+  actor_user_id?: string;
   role: string;
   content: string;
   message_type: string;
   content_blocks?: Array<Record<string, unknown>>;
+  turn_segments?: CodingSessionLiveTurnSegment[];
   tool_invocations?: Array<Record<string, unknown>>;
   token_usage?: Record<string, unknown>;
   sequence_no: number;

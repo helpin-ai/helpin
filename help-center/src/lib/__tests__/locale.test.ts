@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildCanonicalArticlePath,
+  buildCanonicalAPIReferencePath,
   buildCanonicalCollectionPath,
   buildCanonicalHomePath,
   buildCanonicalSearchPath,
@@ -43,6 +44,37 @@ describe('locale helpers', () => {
     expect(buildCanonicalSearchPath(true, 'en', 'billing', 'facturation')).toBe(
       '/en/search?q=billing&space=facturation',
     )
+  })
+
+  it('builds canonical API-reference paths and preserves them across locales', () => {
+    expect(
+      buildCanonicalAPIReferencePath(false, 'en', 'developers', 'product-api'),
+    ).toBe('/developers/api/product-api')
+    expect(
+      buildCanonicalAPIReferencePath(true, 'fr', 'developpeurs', 'product-api'),
+    ).toBe('/fr/developpeurs/api/product-api')
+
+    expect(
+      resolveLocaleSwitchPath({
+        multilingualEnabled: true,
+        targetLocale: 'fr',
+        defaultLocale: 'en',
+        current: {
+          kind: 'api_reference',
+          spaceId: 'space-1',
+          apiReferenceSlug: 'product-api',
+        },
+        targetSpaces: [
+          {
+            id: 'space-1',
+            name: 'Développeurs',
+            slug: 'developpeurs',
+            icon: null,
+            description: null,
+          },
+        ],
+      }),
+    ).toBe('/fr/developpeurs/api/product-api')
   })
 
   it('builds locale-aware article and collection paths', () => {

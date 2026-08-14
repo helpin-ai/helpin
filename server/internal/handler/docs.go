@@ -83,12 +83,18 @@ type DocsHandler struct {
 	supportEventRecorder service.SupportEventRecorder
 	supportWidgetConfig  supportWidgetConfigProvider
 	aiSearchSvc          *service.HelpcenterAISearchService
+	apiReferenceSvc      *service.DocsAPIReferenceService
 }
 
 // SetHelpcenterAISearchService injects the public semantic-search / AI-answer
 // service (nil leaves the endpoints returning 404-equivalent responses).
 func (h *DocsHandler) SetHelpcenterAISearchService(svc *service.HelpcenterAISearchService) {
 	h.aiSearchSvc = svc
+}
+
+// SetAPIReferenceService injects OpenAPI reference management and public rendering support.
+func (h *DocsHandler) SetAPIReferenceService(svc *service.DocsAPIReferenceService) {
+	h.apiReferenceSvc = svc
 }
 
 type supportWidgetConfigProvider interface {

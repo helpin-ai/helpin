@@ -27,6 +27,7 @@ type DockChat struct {
 	ModuleID              *ModuleID          `json:"module_id,omitempty" gorm:"type:text;index"`
 	SupportConversationID *string            `json:"support_conversation_id,omitempty" gorm:"type:uuid;index;uniqueIndex:idx_dock_chats_support_conversation,priority:3"`
 	ActiveRunID           *string            `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
+	NextMessageSequence   int64              `json:"-" gorm:"->"`
 	// ActiveRunStatus is a read-only projection used by chat roster surfaces.
 	// It is hydrated from ActiveRunID and is not stored on the chat row.
 	ActiveRunStatus string     `json:"active_run_status,omitempty" gorm:"-"`
@@ -56,9 +57,10 @@ type UpdateDockChatRequest struct {
 
 // SendDockChatMessageRequest is the payload for a user chat turn.
 type SendDockChatMessageRequest struct {
-	Content     string                 `json:"content"`
-	PageContext map[string]interface{} `json:"page_context,omitempty"`
-	References  []DockEntityReference  `json:"references,omitempty"`
+	ClientMessageID string                 `json:"client_message_id"`
+	Content         string                 `json:"content"`
+	PageContext     map[string]interface{} `json:"page_context,omitempty"`
+	References      []DockEntityReference  `json:"references,omitempty"`
 }
 
 // DockEntityReference identifies supplemental workspace context attached to a dock turn.
@@ -77,10 +79,18 @@ type GenerateDockChatTitleRequest struct {
 // DockChatDetail is the read model returned for a single chat: the chat row
 // plus a summary of its current backing run and the plans launched from it.
 type DockChatDetail struct {
-	Chat    DockChat                `json:"chat"`
-	Run     *AgentRun               `json:"run,omitempty"`
-	PlanIDs []string                `json:"plan_ids"`
-	Plans   []CommandBarPlanSummary `json:"plans,omitempty"`
+	Chat            DockChat                `json:"chat"`
+	Run             *AgentRun               `json:"run,omitempty"`
+	AcceptedMessage *AgentRunMessage        `json:"accepted_message,omitempty"`
+	PlanIDs         []string                `json:"plan_ids"`
+	Plans           []CommandBarPlanSummary `json:"plans,omitempty"`
+}
+
+// DockChatMessageListResponse is one stable cursor page of persisted messages
+// spanning every agent run that has backed the chat.
+type DockChatMessageListResponse struct {
+	Messages   []AgentRunMessage `json:"messages"`
+	NextBefore *int64            `json:"next_before,omitempty"`
 }
 
 // DockChatListResponse is one stable cursor page of the user's conversations.

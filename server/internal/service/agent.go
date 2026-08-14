@@ -4161,7 +4161,8 @@ type startTargetRunOptions struct {
 	// dockChatID marks the run as the backing run of a dock chat. Dock chat
 	// runs are keyed by their chat, not their target, so the per-target
 	// active-run guard does not apply to them.
-	dockChatID *string
+	dockChatID      *string
+	clientMessageID string
 }
 
 func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
@@ -4742,6 +4743,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			parentRunID:          parentRunID,
 			allowActiveParentRun: opts.allowActiveParentRun,
 			dockChatID:           opts.dockChatID,
+			clientMessageID:      opts.clientMessageID,
 			actorID:              actorID,
 			input:                input,
 			trigger:              trigger,
@@ -4946,8 +4948,9 @@ func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorI
 // SendRunMessage appends a user message to a paused interactive run and resumes the workflow.
 func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, actorID string, req model.SendAgentRunMessageRequest) (*model.AgentRunMessage, error) {
 	_, message, err := s.resumeRunWithIntent(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
-		Intent:  model.AgentRunResumeIntentReply,
-		Content: req.Content,
+		Intent:          model.AgentRunResumeIntentReply,
+		Content:         req.Content,
+		ClientMessageID: req.ClientMessageID,
 	})
 	if err != nil {
 		return nil, err
@@ -5115,17 +5118,42 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 			}
 		}
 	}
+	var message *model.AgentRunMessage
+	if shouldAddMessage && strings.TrimSpace(req.ClientMessageID) != "" {
+		if clientMessageID := strings.TrimSpace(req.ClientMessageID); clientMessageID != "" {
+			existing, err := s.runMessageRepo.GetByClientMessageID(ctx, workspaceID, clientMessageID)
+			if err != nil {
+				return nil, nil, err
+			}
+			message = existing
+		}
+		if message == nil {
+			var err error
+			message, err = s.createRunMessageWithClientID(ctx, run, messageRole, messageType, replyText, actorID, req.ClientMessageID)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+	}
 	if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
 		Intent:          runtimeIntent,
 		Content:         runtimeContent,
 		ResponsePayload: responsePayload,
 		ExternalActorID: actorID,
+		ResumeID:        strings.TrimSpace(req.ClientMessageID),
 	}); err != nil {
+		if message != nil {
+			_ = s.runMessageRepo.UpdateDeliveryStatus(ctx, workspaceID, message.ID, "failed")
+		}
 		return nil, nil, fmt.Errorf("resume agent runtime run failed: %w", err)
 	}
-
-	var message *model.AgentRunMessage
-	if shouldAddMessage {
+	if message != nil {
+		message.DeliveryStatus = "sent"
+		if err := s.runMessageRepo.UpdateDeliveryStatus(ctx, workspaceID, message.ID, "sent"); err != nil {
+			return nil, nil, err
+		}
+	}
+	if shouldAddMessage && message == nil {
 		var err error
 		message, err = s.createRunMessage(ctx, run, messageRole, messageType, replyText, actorID)
 		if err != nil {
@@ -5948,6 +5976,7 @@ type createRunParams struct {
 	parentRunID          *string
 	allowActiveParentRun bool
 	dockChatID           *string
+	clientMessageID      string
 	taskID               *string
 	conversationID       *string
 	actorID              *string
@@ -6059,7 +6088,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	// that legacy setup working while making the launch prompt durable whenever
 	// the run-message repository is available (as it is in production).
 	if initialContext := initialAgentRunContext(run); initialContext != "" && s.runMessageRepo != nil {
-		if _, err := s.createRunMessage(ctx, run, "user", "prompt", initialContext, derefString(run.TriggeredByUserID)); err != nil {
+		if _, err := s.createRunMessageWithClientID(ctx, run, "user", "prompt", initialContext, derefString(run.TriggeredByUserID), params.clientMessageID); err != nil {
 			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 			s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, err)
 			return nil, err
@@ -6155,6 +6184,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			return nil, err
 		}
 	}
+	if s.runMessageRepo != nil && run.DockChatID != nil {
+		if err := s.runMessageRepo.UpdatePendingDeliveryByRun(ctx, run.WorkspaceID, run.ID, "sent"); err != nil {
+			return nil, err
+		}
+	}
 	run.ExternalRuntime = strPtr(agentRuntimeName)
 	run.ExternalRuntimeID = strPtr(strings.TrimSpace(runtimeRun.ID))
 	if err := s.runRepo.Update(ctx, run); err != nil {
@@ -6217,6 +6251,9 @@ func (s *AgentService) failRunStart(ctx context.Context, run *model.AgentRun, ag
 		}
 	}
 	_ = s.runRepo.Update(ctx, run)
+	if s.runMessageRepo != nil && run.DockChatID != nil {
+		_ = s.runMessageRepo.UpdatePendingDeliveryByRun(ctx, run.WorkspaceID, run.ID, "failed")
+	}
 	if agent != nil && s.agentRepo != nil {
 		_ = s.markAgentIdle(ctx, workspaceID, agent.ID)
 	}
@@ -6387,6 +6424,10 @@ func initialAgentRunContext(run *model.AgentRun) string {
 }
 
 func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content, actorUserID string) (*model.AgentRunMessage, error) {
+	return s.createRunMessageWithClientID(ctx, run, role, messageType, content, actorUserID, "")
+}
+
+func (s *AgentService) createRunMessageWithClientID(ctx context.Context, run *model.AgentRun, role, messageType, content, actorUserID, clientMessageID string) (*model.AgentRunMessage, error) {
 	if s.runMessageRepo == nil {
 		return nil, fmt.Errorf("run messages are not configured")
 	}
@@ -6394,14 +6435,21 @@ func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun
 	if err != nil {
 		return nil, err
 	}
+	deliveryStatus := "sent"
+	if strings.TrimSpace(clientMessageID) != "" {
+		deliveryStatus = "pending"
+	}
 	message := &model.AgentRunMessage{
-		WorkspaceID: run.WorkspaceID,
-		RunID:       run.ID,
-		ActorUserID: stringPtrIfNotEmpty(actorUserID),
-		Role:        role,
-		Content:     content,
-		MessageType: messageType,
-		SequenceNo:  sequenceNo,
+		WorkspaceID:     run.WorkspaceID,
+		RunID:           run.ID,
+		DockChatID:      run.DockChatID,
+		ClientMessageID: stringPtrIfNotEmpty(clientMessageID),
+		DeliveryStatus:  deliveryStatus,
+		ActorUserID:     stringPtrIfNotEmpty(actorUserID),
+		Role:            role,
+		Content:         content,
+		MessageType:     messageType,
+		SequenceNo:      sequenceNo,
 	}
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return nil, err

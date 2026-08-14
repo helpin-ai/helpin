@@ -307,6 +307,8 @@ func recordChildResultRunMessage(ctx context.Context, runMessageRepo *repository
 	message := &model.AgentRunMessage{
 		WorkspaceID:      chatRun.WorkspaceID,
 		RunID:            chatRun.ID,
+		DockChatID:       chatRun.DockChatID,
+		DeliveryStatus:   "sent",
 		RuntimeMessageID: resumeID,
 		Role:             "user",
 		Content:          content,

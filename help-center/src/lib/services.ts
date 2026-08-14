@@ -9,6 +9,8 @@ import type {
   SearchResult,
   AIAnswerResponse,
   NavItem,
+  APIReference,
+  APIReferenceSummary,
 } from './types'
 
 function buildHelpCenterPath(
@@ -57,6 +59,39 @@ export const helpCenterService = {
         multilingualEnabled,
         `/spaces/${spaceSlug}/navigation`,
         `/spaces/${spaceSlug}/navigation`,
+      ),
+    ),
+
+  getAPIReferences: (
+    subdomain: string,
+    locale: string,
+    spaceSlug: string,
+    multilingualEnabled: boolean,
+  ) =>
+    api.get<APIReferenceSummary[]>(
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/spaces/${spaceSlug}/api-references`,
+        `/spaces/${spaceSlug}/api-references`,
+      ),
+    ),
+
+  getAPIReference: (
+    subdomain: string,
+    locale: string,
+    spaceSlug: string,
+    referenceSlug: string,
+    multilingualEnabled: boolean,
+  ) =>
+    api.get<APIReference>(
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/spaces/${spaceSlug}/api-references/${referenceSlug}`,
+        `/spaces/${spaceSlug}/api-references/${referenceSlug}`,
       ),
     ),
 

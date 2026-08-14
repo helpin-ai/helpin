@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   getChat: vi.fn(),
   updateChat: vi.fn(),
   sendMessage: vi.fn(),
+  listMessages: vi.fn(),
   generateTitle: vi.fn(),
   getChatRun: vi.fn(),
   listChatRunEvents: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock('@/lib/services/dockChatService', () => ({
     getChat: mocks.getChat,
     updateChat: mocks.updateChat,
     sendMessage: mocks.sendMessage,
+    listMessages: mocks.listMessages,
     generateTitle: mocks.generateTitle,
     getChatRun: mocks.getChatRun,
     listChatRunEvents: mocks.listChatRunEvents,
@@ -155,6 +157,7 @@ beforeEach(() => {
   mocks.createChat.mockResolvedValue({ data: null, error: 'not configured' });
   mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
   mocks.getChat.mockResolvedValue({ data: chatDetail(), error: null });
+  mocks.listMessages.mockResolvedValue({ data: { messages: [], next_before: null }, error: null });
   mocks.getChatRun.mockResolvedValue({ data: null, error: null });
   mocks.generateTitle.mockResolvedValue({ data: null, error: null });
   mocks.getRunSnapshot.mockResolvedValue({
@@ -577,9 +580,46 @@ describe('AskAgentsDock', () => {
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       'ws-1',
       'chat-1',
-      expect.objectContaining({ content: 'list open tasks' }),
+      expect.objectContaining({
+        content: 'list open tasks',
+        client_message_id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
+      }),
     );
     expect(mocks.generateTitle).not.toHaveBeenCalled();
+  });
+
+  it('keeps an identical optimistic message visible until its own id is accepted', async () => {
+    mocks.listMessages.mockResolvedValue({
+      data: {
+        messages: [{
+          id: 'message-old', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+          dock_chat_sequence: 1, client_message_id: '11111111-1111-4111-8111-111111111111',
+          role: 'user', content: 'yes', message_type: 'prompt', sequence_no: 1,
+          created_at: '2026-08-01T00:00:01Z', delivery_status: 'sent',
+        }],
+        next_before: null,
+      },
+      error: null,
+    });
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
+
+    await renderDock();
+    await waitForText('yes');
+    const textarea = dockTextarea();
+    await waitForCondition(() => !textarea.disabled, 'Dock composer did not become ready');
+    await act(async () => {
+      setTextareaValue(textarea, 'yes');
+    });
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+	await flush();
+	expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+	expect(mocks.sendMessage.mock.calls[0]?.[2]?.client_message_id).not.toBe('11111111-1111-4111-8111-111111111111');
+    await waitForCondition(
+      () => document.body.textContent?.includes('Sending…') === true,
+      'The repeated optimistic message was removed by the older identical message',
+    );
   });
 
   it('generates a semantic title after the first message without blocking send', async () => {
@@ -705,6 +745,7 @@ describe('AskAgentsDock', () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
     await flush();
+	const firstClientMessageID = mocks.sendMessage.mock.calls[0]?.[2]?.client_message_id;
 
     await waitForText('network unreachable');
     const retry = Array.from(document.body.querySelectorAll('[data-helpin-dock] button'))
@@ -729,6 +770,34 @@ describe('AskAgentsDock', () => {
       'chat-1',
       expect.objectContaining({ content: 'list open tasks' }),
     );
+	expect(mocks.sendMessage.mock.calls[1]?.[2]?.client_message_id).toBe(firstClientMessageID);
+  });
+
+  it('loads persisted chat history independently of the active backing run', async () => {
+    mocks.listMessages.mockResolvedValue({
+      data: {
+        messages: [
+          {
+            id: 'message-old-user', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 1, role: 'user', content: 'What changed?', message_type: 'prompt',
+            sequence_no: 1, created_at: '2026-08-01T00:00:01Z', delivery_status: 'sent',
+          },
+          {
+            id: 'message-old-assistant', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 2, runtime_message_id: 'runtime-old-answer', role: 'assistant',
+            content: 'The earlier run completed successfully.', message_type: 'assistant_turn',
+            sequence_no: 2, created_at: '2026-08-01T00:00:02Z', delivery_status: 'sent',
+          },
+        ],
+        next_before: null,
+      },
+      error: null,
+    });
+
+    await renderDock();
+    await waitForText('The earlier run completed successfully.');
+
+    expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50);
   });
 
   it('reconciles immediately when a message continues on the same run', async () => {

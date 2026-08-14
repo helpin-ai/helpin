@@ -91,7 +91,7 @@ export interface DockTranscriptTransform {
  * user messages and extracts <child_run_result> messages into structured
  * entries (removing the raw JSON bubble from the transcript).
  */
-export function transformDockStream(stream: CodingSessionStreamState): DockTranscriptTransform {
+export function transformDockStream(stream: CodingSessionStreamState, order: 'time' | 'sequence' = 'time'): DockTranscriptTransform {
   const childResults: DockChildResultEntry[] = [];
   const messages = [];
   for (const message of stream.transcript_messages) {
@@ -116,6 +116,7 @@ export function transformDockStream(stream: CodingSessionStreamState): DockTrans
   // sequence than the assistant reply it caused). Timestamps are
   // conversation-true, so the chat orders by time with sequence as tiebreak.
   messages.sort((a, b) => {
+	if (order === 'sequence') return a.sequence_no - b.sequence_no;
     const timeDelta = Date.parse(a.timestamp) - Date.parse(b.timestamp);
     if (!Number.isNaN(timeDelta) && timeDelta !== 0) return timeDelta;
     return a.sequence_no - b.sequence_no;

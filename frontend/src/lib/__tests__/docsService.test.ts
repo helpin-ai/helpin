@@ -54,6 +54,45 @@ describe('docsService.getCollectionDeleteImpact', () => {
   })
 })
 
+describe('docsService API references', () => {
+  afterEach(() => {
+    getMock.mockReset()
+    postMock.mockReset()
+  })
+
+  it('lists references inside the selected space', async () => {
+    getMock.mockResolvedValueOnce({ data: [], error: null, status: 200 })
+
+    await docsService.listAPIReferences('ws-1', 'space-1')
+
+    expect(getMock).toHaveBeenCalledWith(
+      '/docs/spaces/space-1/api-references?workspace_id=ws-1',
+    )
+  })
+
+  it('imports a managed draft and publishes it explicitly', async () => {
+    postMock.mockResolvedValue({ data: { id: 'reference-1' }, error: null, status: 200 })
+    const payload = {
+      name: 'Product API',
+      source_type: 'url' as const,
+      source_url: 'https://api.example.com/openapi.json',
+    }
+
+    await docsService.createAPIReference('ws-1', 'space-1', payload)
+    await docsService.publishAPIReference('ws-1', 'reference-1')
+
+    expect(postMock).toHaveBeenNthCalledWith(
+      1,
+      '/docs/spaces/space-1/api-references?workspace_id=ws-1',
+      payload,
+    )
+    expect(postMock).toHaveBeenNthCalledWith(
+      2,
+      '/docs/api-references/reference-1/publish?workspace_id=ws-1',
+    )
+  })
+})
+
 describe('docsService.updateArticleSlug', () => {
   afterEach(() => {
     postMock.mockReset()

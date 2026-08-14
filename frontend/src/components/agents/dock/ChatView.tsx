@@ -6,7 +6,7 @@ import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { parseDockPlanConfirm } from '@/lib/dockTypes';
 import type { DockChatDetail, DockEntityReference } from '@/lib/dockTypes';
-import type { AgentRun, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
+import type { AgentRun, AgentRunMessage, CodingSessionInteraction, CodingSessionStreamState, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
 import { DockUserMessage } from './DockUserMessage';
@@ -46,6 +46,59 @@ interface ChatViewProps {
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
 
+function newClientMessageID() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const value = Math.floor(Math.random() * 16);
+    return (character === 'x' ? value : ((value & 0x3) | 0x8)).toString(16);
+  });
+}
+
+function mergePersistedChatMessages(
+  stream: CodingSessionStreamState | null,
+  messages: AgentRunMessage[],
+): CodingSessionStreamState | null {
+  if (!stream && messages.length === 0) return null;
+  const persisted = messages
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .map((message) => ({
+      event_id: `msg:${message.id}`,
+      message_id: message.runtime_message_id || message.id,
+      role: message.role as 'user' | 'assistant',
+      content: message.content,
+      message_type: message.message_type,
+      timestamp: message.created_at,
+      sequence_no: message.dock_chat_sequence ?? message.sequence_no,
+      actor_user_id: message.actor_user_id,
+      turn_segments: message.role === 'assistant' ? message.turn_segments : undefined,
+    }));
+  const persistedIDs = new Set(persisted.map((message) => message.message_id));
+  const extras = (stream?.transcript_messages ?? []).filter(
+    (message) => !message.message_id || !persistedIDs.has(message.message_id),
+  );
+  const maxSequence = persisted.reduce((maximum, message) => Math.max(maximum, message.sequence_no), 0);
+  return {
+    transcript_messages: [
+      ...persisted,
+      ...extras.map((message, index) => ({ ...message, sequence_no: maxSequence + index + 1 })),
+    ],
+    live_assistant_message: stream?.live_assistant_message ?? null,
+    live_reasoning_message: stream?.live_reasoning_message ?? null,
+    live_turn_segments: stream?.live_turn_segments ?? [],
+    activity_events: stream?.activity_events ?? [],
+    current_plan: stream?.current_plan ?? null,
+    completed_tool_calls: stream?.completed_tool_calls ?? [],
+  };
+}
+
+function mergeMessagePages(current: AgentRunMessage[], incoming: AgentRunMessage[]) {
+  const messages = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) messages.set(message.id, message);
+  return [...messages.values()].sort(
+    (left, right) => (left.dock_chat_sequence ?? left.sequence_no) - (right.dock_chat_sequence ?? right.sequence_no),
+  );
+}
+
 /**
  * One dock chat: the backing chat-mode run's transcript, the composer, the
  * confirm/interaction cards, and strips for child plans launched from this
@@ -79,12 +132,16 @@ export function ChatView({
   }, [onDraftChange]);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [pendingEcho, setPendingEcho] = useState<string | null>(null);
+  const [pendingEcho, setPendingEcho] = useState<{ id: string; content: string } | null>(null);
+  const [persistedMessages, setPersistedMessages] = useState<AgentRunMessage[]>([]);
+  const [nextMessagesBefore, setNextMessagesBefore] = useState<number | null>(null);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [references, setReferences] = useState<DockEntityReference[]>([]);
   const [sendError, setSendError] = useState<{
     message: string;
     content: string;
     references: DockEntityReference[];
+    clientMessageId: string;
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
@@ -123,14 +180,38 @@ export function ChatView({
     return res.data ?? null;
   }, [chatId, workspaceId]);
 
+  const refreshMessages = useCallback(async () => {
+    const res = await dockChatService.listMessages(workspaceId, chatId, undefined, 50);
+    if (res.data) {
+      setPersistedMessages((current) => mergeMessagePages(current, res.data?.messages ?? []));
+      setNextMessagesBefore(res.data.next_before ?? null);
+    }
+    return res.data?.messages ?? [];
+  }, [chatId, workspaceId]);
+
+  const loadEarlierMessages = useCallback(async () => {
+    if (!nextMessagesBefore || loadingEarlier) return;
+    setLoadingEarlier(true);
+    try {
+      const res = await dockChatService.listMessages(workspaceId, chatId, nextMessagesBefore, 50);
+      if (!res.data) return;
+      setPersistedMessages((current) => mergeMessagePages(current, res.data?.messages ?? []));
+      setNextMessagesBefore(res.data.next_before ?? null);
+    } finally {
+      setLoadingEarlier(false);
+    }
+  }, [chatId, loadingEarlier, nextMessagesBefore, workspaceId]);
+
   // Load chat on mount / chat switch.
   useEffect(() => {
     autoFollowRef.current = true;
     const timer = window.setTimeout(() => {
-      void refreshDetail().finally(() => setDetailLoading(false));
+      setPersistedMessages([]);
+      setNextMessagesBefore(null);
+      void Promise.all([refreshDetail(), refreshMessages()]).finally(() => setDetailLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [refreshDetail]);
+  }, [refreshDetail, refreshMessages]);
 
   // Refresh the run summary when its WS event fires (stream refetch is
   // handled inside useAgentRunStream; this keeps status/pause_reason fresh).
@@ -203,7 +284,14 @@ export function ChatView({
     };
   }, [chatId, pausedOnInteraction, workspaceId]);
 
-  const transformed = useMemo(() => (streamState ? transformDockStream(streamState) : null), [streamState]);
+  const mergedStream = useMemo(
+    () => mergePersistedChatMessages(streamState, persistedMessages),
+    [persistedMessages, streamState],
+  );
+  const transformed = useMemo(
+    () => (mergedStream ? transformDockStream(mergedStream, 'sequence') : null),
+    [mergedStream],
+  );
   const presenceState = deriveAskAgentAvatarState({
     run: run ?? streamController.session,
     stream: transformed?.stream ?? streamState,
@@ -216,17 +304,15 @@ export function ChatView({
   }, [onPresenceChange, presenceState]);
   useEffect(() => () => onPresenceChange?.(null), [onPresenceChange]);
 
-  // Drop the optimistic echo once the transcript contains it.
+  // Reconcile the optimistic echo by its durable client id, never by text.
   useEffect(() => {
-    if (!pendingEcho || !transformed) return;
-    const matched = transformed.stream.transcript_messages.some(
-      (message) => message.role === 'user' && message.content.trim() === pendingEcho.trim(),
-    );
+    if (!pendingEcho) return;
+    const matched = persistedMessages.some((message) => message.client_message_id === pendingEcho.id);
     if (matched) {
       const timer = window.setTimeout(() => setPendingEcho(null), 0);
       return () => window.clearTimeout(timer);
     }
-  }, [pendingEcho, transformed]);
+  }, [pendingEcho, persistedMessages]);
 
   // Track whether the user is near the tail; only then keep auto-following.
   useEffect(() => {
@@ -274,25 +360,30 @@ export function ChatView({
   );
 
   const sendContent = useCallback(
-    async (content: string, messageReferences: DockEntityReference[] = references) => {
+    async (content: string, messageReferences: DockEntityReference[] = references, retryClientMessageID?: string) => {
       if (!content || sending) return;
+	  const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
       setSendError(null);
-      setPendingEcho(content);
+      setPendingEcho({ id: clientMessageId, content });
       autoFollowRef.current = true;
       setAtBottom(true);
       try {
         const res = await dockChatService.sendMessage(workspaceId, chatId, {
+          client_message_id: clientMessageId,
           content,
           page_context: effectivePageContext ?? undefined,
           references: messageReferences.length > 0 ? messageReferences : undefined,
         });
         if (res.error || !res.data) {
           setPendingEcho(null);
-          setSendError({ message: res.error ?? 'Failed to send message', content, references: messageReferences });
+          setSendError({ message: res.error ?? 'Failed to send message', content, references: messageReferences, clientMessageId });
           return;
         }
+		if (res.data.accepted_message) {
+		  setPersistedMessages((current) => mergeMessagePages(current, [res.data!.accepted_message!]));
+		}
         setReferences([]);
         setDetail(res.data);
         onChatChanged?.();
@@ -311,13 +402,14 @@ export function ChatView({
           // Same backing run: reconcile the persisted user message immediately.
           void refetch();
         }
+		void refreshMessages();
         // Successor run: useAgentRunStream will reset and fetch with the returned
         // run id instead of invoking this render's predecessor refetch closure.
       } finally {
         setSending(false);
       }
     },
-    [chatId, detail?.chat.title, effectivePageContext, onChatChanged, references, refetch, run?.id, sending, workspaceId],
+    [chatId, detail?.chat.title, effectivePageContext, onChatChanged, references, refetch, refreshMessages, run?.id, sending, workspaceId],
   );
 
   const submit = async () => {
@@ -391,6 +483,18 @@ export function ChatView({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scrollRef} data-agent-dock-chat-scroll className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+		{nextMessagesBefore && (
+		  <div className="flex justify-center">
+		    <button
+		      type="button"
+		      className="text-xs font-medium text-muted-foreground hover:text-foreground"
+		      disabled={loadingEarlier}
+		      onClick={() => void loadEarlierMessages()}
+		    >
+		      {loadingEarlier ? 'Loading…' : 'Load earlier messages'}
+		    </button>
+		  </div>
+		)}
         {detailLoading && !detail && (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading chat…</p>
         )}
@@ -412,7 +516,7 @@ export function ChatView({
         {currentPlan && (
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}
-        {pendingEcho && <DockUserMessage content={pendingEcho} pending />}
+        {pendingEcho && <DockUserMessage content={pendingEcho.content} pending />}
         {sendError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
             <p className="mb-1 line-clamp-2 text-foreground/80">{sendError.content}</p>
@@ -422,7 +526,7 @@ export function ChatView({
                 <button
                   type="button"
                   className="font-medium text-foreground hover:underline"
-                  onClick={() => void sendContent(sendError.content, sendError.references)}
+                  onClick={() => void sendContent(sendError.content, sendError.references, sendError.clientMessageId)}
                 >
                   Retry
                 </button>

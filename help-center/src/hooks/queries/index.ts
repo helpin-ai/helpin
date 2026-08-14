@@ -82,6 +82,56 @@ export function useSpaceNavigation(
   })
 }
 
+export function useAPIReferences(
+  subdomain: string,
+  locale: string,
+  spaceSlug: string,
+  multilingualEnabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.spaces.apiReferences(subdomain, locale, spaceSlug),
+    queryFn: async () =>
+      unwrap(
+        await helpCenterService.getAPIReferences(
+          subdomain,
+          locale,
+          spaceSlug,
+          multilingualEnabled,
+        ),
+      ),
+    enabled: !!subdomain && !!locale && !!spaceSlug,
+  })
+}
+
+export function useAPIReference(
+  subdomain: string,
+  locale: string,
+  spaceSlug: string,
+  referenceSlug: string,
+  multilingualEnabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.spaces.apiReference(
+      subdomain,
+      locale,
+      spaceSlug,
+      referenceSlug,
+    ),
+    queryFn: async () =>
+      unwrap(
+        await helpCenterService.getAPIReference(
+          subdomain,
+          locale,
+          spaceSlug,
+          referenceSlug,
+          multilingualEnabled,
+        ),
+      ),
+    enabled: !!subdomain && !!locale && !!spaceSlug && !!referenceSlug,
+    retry: false,
+  })
+}
+
 export function collectionQueryOptions(
   subdomain: string,
   locale: string,

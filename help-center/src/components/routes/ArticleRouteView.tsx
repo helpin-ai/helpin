@@ -93,7 +93,11 @@ export function ArticleRouteView({
             </span>
           </div>
           {navigation.length > 0 ? (
-            <Sidebar locale={locale} navigation={navigation} />
+            <Sidebar
+              locale={locale}
+              navigation={navigation}
+              spaceSlug={resolvedSpaceSlug}
+            />
           ) : (
             <SidebarSkeleton />
           )}

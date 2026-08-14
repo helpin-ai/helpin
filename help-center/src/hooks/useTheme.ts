@@ -20,13 +20,17 @@ export function useTheme(configThemeMode?: HelpcenterThemeMode) {
 
   const [theme, setThemeState] = useState<Theme>(() => {
     if (isForced) return configThemeMode as Theme
-    return getStoredTheme()
+    // Match the server render. The inline head script applies the stored theme
+    // before paint, then the effect below synchronizes React state after hydration.
+    return 'light'
   })
 
   useEffect(() => {
     if (isForced) {
       setThemeState(configThemeMode as Theme)
+      return
     }
+    setThemeState(getStoredTheme())
   }, [isForced, configThemeMode])
 
   useEffect(() => {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -282,6 +283,34 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 	if err != nil {
 		return nil, err
 	}
+	clientMessageID := strings.TrimSpace(req.ClientMessageID)
+	if clientMessageID == "" {
+		clientMessageID = uuid.NewString()
+	} else if _, err := uuid.Parse(clientMessageID); err != nil {
+		return nil, fmt.Errorf("client_message_id must be a UUID")
+	}
+	if s.runMessageRepo != nil {
+		existing, err := s.runMessageRepo.GetByClientMessageID(ctx, workspaceID, clientMessageID)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			if existing.DockChatID == nil || strings.TrimSpace(*existing.DockChatID) != chat.ID {
+				return nil, fmt.Errorf("client_message_id is already used by another chat")
+			}
+			if existing.DeliveryStatus != "failed" {
+				detail, err := s.chatDetail(ctx, chat)
+				if detail != nil {
+					detail.AcceptedMessage = existing
+				}
+				return detail, err
+			}
+			// A confirmed failed attempt was never part of the AI conversation.
+			// Give an explicit retry a fresh delivery identity while retaining the
+			// failed row for operations/audit history.
+			clientMessageID = uuid.NewString()
+		}
+	}
 
 	references, err := normalizeDockChatReferences(req.References)
 	if err != nil {
@@ -300,7 +329,7 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 	switch {
 	case currentRun == nil || !model.IsAgentRunActiveStatus(currentRun.Status):
 		// First message, or the previous backing run ended.
-		if err := s.startChatRun(ctx, chat, userID, composed, currentRun); err != nil {
+		if err := s.startChatRun(ctx, chat, userID, composed, currentRun, clientMessageID); err != nil {
 			return nil, err
 		}
 	case model.IsAgentRunPausedStatus(currentRun.Status):
@@ -316,16 +345,17 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 			if _, err := s.agentService.CancelRun(ctx, workspaceID, currentRun.ID, userID); err != nil {
 				return nil, fmt.Errorf("rotate stale chat run: %w", err)
 			}
-			if err := s.startChatRun(ctx, chat, userID, composed, currentRun); err != nil {
+			if err := s.startChatRun(ctx, chat, userID, composed, currentRun, clientMessageID); err != nil {
 				return nil, err
 			}
-		} else if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed}); err != nil {
+		} else if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed, ClientMessageID: clientMessageID}); err != nil {
 			if !isChatRunExpiredError(err) {
 				return nil, err
 			}
 			// The runtime idle-expired the run; it is completed on its side.
 			// Continue the conversation through a successor run.
-			if err := s.startChatRun(ctx, chat, userID, composed, currentRun); err != nil {
+			clientMessageID = uuid.NewString()
+			if err := s.startChatRun(ctx, chat, userID, composed, currentRun, clientMessageID); err != nil {
 				return nil, err
 			}
 		}
@@ -343,7 +373,34 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 	if err != nil || chat == nil {
 		return nil, fmt.Errorf("reload dock chat: %w", err)
 	}
-	return s.chatDetail(ctx, chat)
+	detail, err := s.chatDetail(ctx, chat)
+	if err != nil {
+		return nil, err
+	}
+	if s.runMessageRepo != nil {
+		detail.AcceptedMessage, err = s.runMessageRepo.GetByClientMessageID(ctx, workspaceID, clientMessageID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return detail, nil
+}
+
+// ListMessages returns one stable page from the chat's persisted transcript,
+// including messages belonging to predecessor backing runs.
+func (s *DockChatService) ListMessages(ctx context.Context, workspaceID, userID, chatID string, before *int64, limit int) (*model.DockChatMessageListResponse, error) {
+	chat, err := s.accessibleChat(ctx, workspaceID, userID, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if s.runMessageRepo == nil {
+		return &model.DockChatMessageListResponse{Messages: []model.AgentRunMessage{}}, nil
+	}
+	messages, nextBefore, err := s.runMessageRepo.ListByDockChat(ctx, workspaceID, chat.ID, before, limit)
+	if err != nil {
+		return nil, err
+	}
+	return &model.DockChatMessageListResponse{Messages: messages, NextBefore: nextBefore}, nil
 }
 
 func (s *DockChatService) runUsesCurrentScopedTools(ctx context.Context, chat *model.DockChat, userID string, run *model.AgentRun) (bool, error) {
@@ -591,7 +648,7 @@ func validDockChatModule(moduleID model.ModuleID) bool {
 
 // startChatRun starts a (possibly successor) backing run for the chat and
 // repoints the chat at it.
-func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, previousRun *model.AgentRun) error {
+func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, previousRun *model.AgentRun, clientMessageID string) error {
 	agent, err := s.agentService.ensureBuiltInAgent(ctx, chat.WorkspaceID, userID, model.AgentPresetAskAgent)
 	if err != nil {
 		return fmt.Errorf("ensure ask agent: %w", err)
@@ -641,7 +698,7 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		trigger,
 		nil,
 		parentRunID,
-		startTargetRunOptions{dockChatID: &chat.ID},
+		startTargetRunOptions{dockChatID: &chat.ID, clientMessageID: clientMessageID},
 	)
 	if err != nil {
 		return err
