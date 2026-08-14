@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -82,6 +83,84 @@ func (r *SupportAttachmentRepository) LinkToMessage(ctx context.Context, attachm
 		return fmt.Errorf("link support attachments to message: %w", err)
 	}
 	return nil
+}
+
+// ValidateWidgetAttachments verifies that the complete set belongs to one
+// widget session and has not already been consumed by another message.
+func (r *SupportAttachmentRepository) ValidateWidgetAttachments(
+	ctx context.Context,
+	attachmentIDs []string,
+	workspaceID, sessionID string,
+	conversationID *string,
+) error {
+	ids := uniqueNonEmptyStrings(attachmentIDs)
+	if len(ids) == 0 {
+		return fmt.Errorf("attachment_ids are invalid")
+	}
+	query := r.widgetAttachmentScope(ctx, ids, workspaceID, sessionID, conversationID)
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return fmt.Errorf("validate widget attachments: %w", err)
+	}
+	if count != int64(len(ids)) {
+		return fmt.Errorf("one or more attachments are unavailable")
+	}
+	return nil
+}
+
+// LinkWidgetAttachments claims all validated uploads for one message. The
+// scoped update prevents attachment IDs from crossing sessions or threads.
+func (r *SupportAttachmentRepository) LinkWidgetAttachments(
+	ctx context.Context,
+	attachmentIDs []string,
+	workspaceID, sessionID, conversationID, messageID string,
+	expectedConversationID *string,
+) error {
+	ids := uniqueNonEmptyStrings(attachmentIDs)
+	if len(ids) == 0 {
+		return fmt.Errorf("attachment_ids are invalid")
+	}
+	result := r.widgetAttachmentScope(ctx, ids, workspaceID, sessionID, expectedConversationID).
+		Updates(map[string]any{"conversation_id": conversationID, "message_id": messageID})
+	if result.Error != nil {
+		return fmt.Errorf("link widget attachments: %w", result.Error)
+	}
+	if result.RowsAffected != int64(len(ids)) {
+		return fmt.Errorf("one or more attachments are unavailable")
+	}
+	return nil
+}
+
+func (r *SupportAttachmentRepository) widgetAttachmentScope(
+	ctx context.Context,
+	attachmentIDs []string,
+	workspaceID, sessionID string,
+	conversationID *string,
+) *gorm.DB {
+	query := r.db.WithContext(ctx).Model(&model.SupportAttachment{}).
+		Where("id IN ? AND workspace_id = ? AND session_id = ? AND uploaded_by_type = ? AND is_uploaded = ? AND message_id IS NULL",
+			attachmentIDs, workspaceID, sessionID, "customer", true)
+	if conversationID == nil || strings.TrimSpace(*conversationID) == "" {
+		return query.Where("conversation_id IS NULL")
+	}
+	return query.Where("conversation_id IS NULL OR conversation_id = ?", strings.TrimSpace(*conversationID))
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 // ListByMessageIDs returns uploaded attachments for a batch of message IDs.

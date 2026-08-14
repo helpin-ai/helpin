@@ -57,9 +57,22 @@ func (s *SupportAttachmentService) Create(
 		return nil, fmt.Errorf("file type %s is not allowed", req.ContentType)
 	}
 
+	conversationID = strings.TrimSpace(conversationID)
+	var conversationIDPtr *string
+	storageScope := ""
+	if conversationID != "" {
+		conversationIDPtr = &conversationID
+		storageScope = conversationID
+	} else {
+		if sessionID == nil || strings.TrimSpace(*sessionID) == "" {
+			return nil, fmt.Errorf("conversation_id is required")
+		}
+		storageScope = "sessions/" + strings.TrimSpace(*sessionID)
+	}
+
 	attachment := &model.SupportAttachment{
 		WorkspaceID:    workspaceID,
-		ConversationID: conversationID,
+		ConversationID: conversationIDPtr,
 		FileName:       strings.TrimSpace(req.FileName),
 		FileSize:       req.FileSize,
 		ContentType:    req.ContentType,
@@ -72,9 +85,10 @@ func (s *SupportAttachmentService) Create(
 		return nil, err
 	}
 
-	// Build storage key: workspaces/{ws_id}/support/{conv_id}/{attachment_id}-{filename}
+	// A widget upload can precede its first message. Stage it under the widget
+	// session until WidgetCreateMessage assigns the durable conversation.
 	storageKey := fmt.Sprintf("workspaces/%s/support/%s/%s-%s",
-		workspaceID, conversationID, attachment.ID, attachment.FileName)
+		workspaceID, storageScope, attachment.ID, attachment.FileName)
 
 	var publicURL string
 	if s.s3Client.HasPublicURL() {
@@ -100,7 +114,7 @@ func (s *SupportAttachmentService) Create(
 }
 
 // ConfirmUpload marks a support attachment as successfully uploaded.
-func (s *SupportAttachmentService) ConfirmUpload(ctx context.Context, id string) error {
+func (s *SupportAttachmentService) ConfirmUpload(ctx context.Context, id, uploaderType string, uploaderUserID, sessionID *string) error {
 	attachment, err := s.attachmentRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
@@ -108,10 +122,45 @@ func (s *SupportAttachmentService) ConfirmUpload(ctx context.Context, id string)
 	if attachment == nil {
 		return fmt.Errorf("attachment not found")
 	}
+	if err := authorizeSupportAttachment(attachment, uploaderType, uploaderUserID, sessionID); err != nil {
+		return err
+	}
 	if attachment.IsUploaded {
-		return nil // idempotent
+		return nil // idempotent for the owning uploader
 	}
 	return s.attachmentRepo.ConfirmUpload(ctx, id)
+}
+
+// ValidateWidgetAttachments confirms that every requested attachment is an
+// uploaded, unconsumed attachment owned by this widget session. A staged
+// attachment has no conversation; an attachment uploaded in an existing
+// thread must belong to that exact active conversation.
+func (s *SupportAttachmentService) ValidateWidgetAttachments(
+	ctx context.Context,
+	attachmentIDs []string,
+	workspaceID, sessionID string,
+	conversationID *string,
+) error {
+	if len(attachmentIDs) == 0 {
+		return nil
+	}
+	return s.attachmentRepo.ValidateWidgetAttachments(ctx, attachmentIDs, workspaceID, sessionID, conversationID)
+}
+
+// LinkWidgetAttachments atomically claims staged widget uploads for the
+// successful message and its newly-created (or existing) conversation.
+func (s *SupportAttachmentService) LinkWidgetAttachments(
+	ctx context.Context,
+	attachmentIDs []string,
+	workspaceID, sessionID, conversationID, messageID string,
+	expectedConversationID *string,
+) error {
+	if len(attachmentIDs) == 0 {
+		return nil
+	}
+	return s.attachmentRepo.LinkWidgetAttachments(
+		ctx, attachmentIDs, workspaceID, sessionID, conversationID, messageID, expectedConversationID,
+	)
 }
 
 // LinkToMessage associates uploaded attachments with a message.
@@ -166,7 +215,7 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 	attachment := &model.SupportAttachment{
 		ID:             attachmentID,
 		WorkspaceID:    strings.TrimSpace(req.WorkspaceID),
-		ConversationID: strings.TrimSpace(req.ConversationID),
+		ConversationID: supportAttachmentStringPtr(strings.TrimSpace(req.ConversationID)),
 		MessageID:      &messageID,
 		FileName:       fileName,
 		FileSize:       fileSize,
@@ -256,18 +305,8 @@ func (s *SupportAttachmentService) Delete(ctx context.Context, id, uploaderType 
 		return fmt.Errorf("attachment not found")
 	}
 
-	// Authorization: verify the caller owns the attachment.
-	switch uploaderType {
-	case "user":
-		if uploaderUserID == nil || attachment.UploadedByID == nil || *attachment.UploadedByID != *uploaderUserID {
-			return fmt.Errorf("only the uploader can delete this attachment")
-		}
-	case "customer":
-		if sessionID == nil || attachment.SessionID == nil || *attachment.SessionID != *sessionID {
-			return fmt.Errorf("only the uploader can delete this attachment")
-		}
-	default:
-		return fmt.Errorf("invalid uploader type")
+	if err := authorizeSupportAttachment(attachment, uploaderType, uploaderUserID, sessionID); err != nil {
+		return err
 	}
 
 	if s.s3Client != nil && attachment.StorageKey != "" && attachment.IsUploaded {
@@ -277,4 +316,24 @@ func (s *SupportAttachmentService) Delete(ctx context.Context, id, uploaderType 
 	}
 
 	return s.attachmentRepo.Delete(ctx, id)
+}
+
+func authorizeSupportAttachment(attachment *model.SupportAttachment, uploaderType string, uploaderUserID, sessionID *string) error {
+	switch uploaderType {
+	case "user":
+		if uploaderUserID == nil || attachment.UploadedByID == nil || *attachment.UploadedByID != *uploaderUserID {
+			return fmt.Errorf("only the uploader can modify this attachment")
+		}
+	case "customer":
+		if sessionID == nil || attachment.SessionID == nil || *attachment.SessionID != *sessionID {
+			return fmt.Errorf("only the uploader can modify this attachment")
+		}
+	default:
+		return fmt.Errorf("invalid uploader type")
+	}
+	return nil
+}
+
+func supportAttachmentStringPtr(value string) *string {
+	return &value
 }
