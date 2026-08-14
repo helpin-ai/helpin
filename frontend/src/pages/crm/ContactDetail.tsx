@@ -446,7 +446,7 @@ function buildEnrichedDetailRows(contact: CRMContact): EnrichedDetailRow[] {
   if (!agentEnrichment) return rows;
 
   for (const [key, rawValue] of Object.entries(agentEnrichment)) {
-    if (key === 'notes') continue;
+    if (['notes', 'email', 'phone', 'job_title', 'avatar_url', 'linkedin_url', 'location'].includes(key)) continue;
 
     const valueRecord = asRecord(rawValue);
     const fieldValue = nonEmptyString(valueRecord?.value ?? rawValue);

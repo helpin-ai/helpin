@@ -1130,6 +1130,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			annual_revenue REAL,
 			description TEXT,
 			logo_url TEXT,
+			linkedin_url TEXT,
+			headquarters TEXT,
 			owner_member_id TEXT,
 			custom_properties TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME,

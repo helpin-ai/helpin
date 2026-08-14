@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowDown01Icon } from '@/lib/icons';
 import type { CRMEnrichmentResult } from '@/lib/crmTypes';
 import { cn } from '@/lib/utils';
+import { useApplyEnrichmentSuggestion } from '@/hooks/queries/useCRM';
 
 type EnrichmentSummaryProps = {
   result: CRMEnrichmentResult;
   compact?: boolean;
+  workspaceId?: string;
 };
 
 type EnrichmentFieldResult = {
@@ -27,9 +30,11 @@ export function isVisibleEnrichmentResult(result: CRMEnrichmentResult) {
 export function EnrichmentHistoryList({
   results,
   compact = false,
+  workspaceId,
 }: {
   results: CRMEnrichmentResult[];
   compact?: boolean;
+  workspaceId?: string;
 }) {
   const [showHistory, setShowHistory] = useState(false);
   const visibleResults = useMemo(
@@ -44,7 +49,7 @@ export function EnrichmentHistoryList({
   return (
     <div className={cn('space-y-2', compact ? 'text-[11px]' : 'text-xs')}>
       <div className={cn('rounded-md border', compact ? 'border-border/60 p-2.5' : 'p-3')}>
-        <EnrichmentSummary result={latest} compact={compact} />
+        <EnrichmentSummary result={latest} compact={compact} workspaceId={workspaceId} />
       </div>
 
       {older.length > 0 ? (
@@ -63,7 +68,7 @@ export function EnrichmentHistoryList({
             <div className="space-y-2 border-l border-border/70 pl-2">
               {older.map((result) => (
                 <div key={result.id} className={cn('rounded-md border border-border/50 bg-muted/20', compact ? 'p-2' : 'p-3')}>
-                  <EnrichmentSummary result={result} compact={compact} />
+                  <EnrichmentSummary result={result} compact={compact} workspaceId={workspaceId} />
                 </div>
               ))}
             </div>
@@ -74,10 +79,12 @@ export function EnrichmentHistoryList({
   );
 }
 
-export function EnrichmentSummary({ result, compact = false }: EnrichmentSummaryProps) {
+export function EnrichmentSummary({ result, compact = false, workspaceId }: EnrichmentSummaryProps) {
   const data = result.data ?? {};
   const applied = asArray<EnrichmentFieldResult>(data.applied);
   const skipped = asArray<EnrichmentFieldResult>(data.skipped);
+  const acceptedSuggestions = asArray<EnrichmentFieldResult>(data.accepted_suggestions);
+  const reviewItems = skipped.filter((item) => item.reason !== 'accepted_suggestion');
   const requested = asArray<EnrichmentFieldResult>(data.requested_fields);
   const status = valueToString(data.status) || (applied.length > 0 ? 'applied' : 'recorded');
   const evidenceSummary = valueToString(data.evidence_summary || data.evidence);
@@ -120,8 +127,11 @@ export function EnrichmentSummary({ result, compact = false }: EnrichmentSummary
       {applied.length > 0 ? (
         <EnrichmentFieldList title="Applied" items={applied} tone="applied" compact={compact} />
       ) : null}
-      {skipped.length > 0 ? (
-        <EnrichmentFieldList title="Skipped" items={skipped} tone="skipped" compact={compact} />
+      {acceptedSuggestions.length > 0 ? (
+        <EnrichmentFieldList title="Accepted suggestions" items={acceptedSuggestions} tone="applied" compact={compact} />
+      ) : null}
+      {reviewItems.length > 0 ? (
+        <EnrichmentFieldList title="Needs review" items={reviewItems} tone="skipped" compact={compact} result={result} workspaceId={workspaceId} />
       ) : null}
 
       {applied.length === 0 && skipped.length === 0 && requested.length > 0 ? (
@@ -140,12 +150,28 @@ function EnrichmentFieldList({
   items,
   tone,
   compact,
+  result,
+  workspaceId,
 }: {
   title: string;
   items: EnrichmentFieldResult[];
   tone: 'applied' | 'skipped' | 'neutral';
   compact: boolean;
+  result?: CRMEnrichmentResult;
+  workspaceId?: string;
 }) {
+  const applySuggestion = useApplyEnrichmentSuggestion(workspaceId ?? '');
+
+  const handleApply = async (field: string) => {
+    if (!workspaceId || !result) return;
+    try {
+      await applySuggestion.mutateAsync({ enrichmentId: result.id, field });
+      toast.success('Enrichment suggestion applied');
+    } catch {
+      toast.error('Could not apply enrichment suggestion');
+    }
+  };
+
   return (
     <div className="space-y-1">
       <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -172,6 +198,26 @@ function EnrichmentFieldList({
               <div className="mt-0.5 text-[10px] text-muted-foreground">
                 {humanizeKey(valueToString(item.reason))}
               </div>
+            ) : null}
+            {item.reason === 'existing_value_protected' && workspaceId && result ? (
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <span className="text-[10px] text-muted-foreground">Current value kept</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-[10px]"
+                  disabled={applySuggestion.isPending}
+                  onClick={() => void handleApply(valueToString(item.field))}
+                >
+                  Use suggested value
+                </Button>
+              </div>
+            ) : null}
+            {item.source_url ? (
+              <a className="mt-1 block truncate text-[10px] text-muted-foreground underline-offset-2 hover:underline" href={valueToString(item.source_url)} target="_blank" rel="noreferrer">
+                View source
+              </a>
             ) : null}
           </div>
         ))}

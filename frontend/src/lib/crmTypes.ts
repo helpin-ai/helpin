@@ -116,6 +116,8 @@ export interface CRMCompany {
   annual_revenue?: number;
   description?: string;
   logo_url?: string;
+  linkedin_url?: string;
+  headquarters?: string;
   owner_member_id?: string;
   custom_properties: Record<string, unknown>;
   created_at: string;
@@ -132,6 +134,8 @@ export interface CreateCRMCompanyRequest {
   annual_revenue?: number;
   description?: string;
   logo_url?: string;
+  linkedin_url?: string;
+  headquarters?: string;
   owner_member_id?: string;
   custom_properties?: Record<string, unknown>;
 }
@@ -145,6 +149,8 @@ export interface UpdateCRMCompanyRequest {
   annual_revenue?: number;
   description?: string;
   logo_url?: string;
+  linkedin_url?: string;
+  headquarters?: string;
   owner_member_id?: string;
   custom_properties?: Record<string, unknown>;
 }

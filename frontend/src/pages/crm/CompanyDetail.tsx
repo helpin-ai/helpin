@@ -10,6 +10,8 @@ import {
   Loading01Icon,
   Delete01Icon,
   UserGroupIcon,
+  LinkSquare01Icon,
+  MapPinIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
@@ -22,6 +24,7 @@ import { useCompany, useUpdateCompany, useDeleteCompany, useCompanyActivities, u
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { AssociationsList } from '@/components/crm/AssociationsList';
+import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
 import { useTitle } from '@/hooks/useTitle';
 import type { UpdateCRMCompanyRequest } from '@/lib/crmTypes';
 
@@ -32,6 +35,8 @@ interface FormState {
   employee_count: string;
   annual_revenue: string;
   description: string;
+  linkedin_url: string;
+  headquarters: string;
 }
 
 function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
@@ -65,7 +70,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   useTitle(form?.name ?? 'Company');
 
   useEffect(() => {
-    if (company && !form) {
+    if (company) {
       setForm({
         name: company.name,
         domain: company.domain ?? '',
@@ -73,9 +78,11 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
         employee_count: company.employee_count != null ? String(company.employee_count) : '',
         annual_revenue: company.annual_revenue != null ? String(company.annual_revenue) : '',
         description: company.description ?? '',
+        linkedin_url: company.linkedin_url ?? '',
+        headquarters: company.headquarters ?? '',
       });
     }
-  }, [company, form]);
+  }, [company]);
 
   useEffect(() => {
     if (saving || Object.keys(pendingPatch).length === 0 || !wsId || !companyId) return;
@@ -263,7 +270,19 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
               <input className="w-full bg-transparent text-xs outline-none" type="number" value={form.annual_revenue}
                 onChange={(e) => updateField('annual_revenue', e.target.value, { annual_revenue: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder="—" />
             </MetadataRow>
+            <MetadataRow icon={LinkSquare01Icon} label="LinkedIn">
+              <input className="w-full bg-transparent text-xs outline-none" value={form.linkedin_url}
+                onChange={(e) => updateField('linkedin_url', e.target.value, { linkedin_url: e.target.value })} placeholder="—" />
+            </MetadataRow>
+            <MetadataRow icon={MapPinIcon} label="HQ">
+              <input className="w-full bg-transparent text-xs outline-none" value={form.headquarters}
+                onChange={(e) => updateField('headquarters', e.target.value, { headquarters: e.target.value })} placeholder="—" />
+            </MetadataRow>
           </div>
+
+          <Separator className="my-4" />
+          <h3 className="mb-2 text-[11px] font-medium uppercase tracking-tight text-foreground">Enrichment</h3>
+          <EnrichmentRailCard workspaceId={wsId} objectType="company" objectId={companyId} />
 
           <Separator className="my-4" />
           <AssociationsList workspaceId={wsId} slug={wsSlug} associations={associations ?? []}

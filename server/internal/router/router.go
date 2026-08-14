@@ -1525,6 +1525,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Enrichments — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/enrichments", h.CRMEnrichment.List)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/enrichments", h.CRMEnrichment.Create)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/enrichments/{id}/apply-suggestion", h.CRMEnrichment.ApplySuggestion)
 
 				// Signals — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals", h.CRMSignal.ListSignals)

@@ -1931,6 +1931,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("parse contact enrichment input: %w", err)
 			}
 			req.ContactID = strings.TrimSpace(firstNonEmptyCommand(req.ContactID, meta.TargetID))
+			req.ActorUserID = meta.ActorID
 			if req.ContactID == "" {
 				return nil, fmt.Errorf("contact_id is required")
 			}
@@ -1956,6 +1957,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("parse company enrichment input: %w", err)
 			}
 			req.CompanyID = strings.TrimSpace(firstNonEmptyCommand(req.CompanyID, meta.TargetID))
+			req.ActorUserID = meta.ActorID
 			if req.CompanyID == "" {
 				return nil, fmt.Errorf("company_id is required")
 			}

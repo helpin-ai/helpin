@@ -307,6 +307,12 @@ func (s *CRMImportService) importCompany(ctx context.Context, workspaceID string
 	if v := fields["description"]; v != "" {
 		company.Description = &v
 	}
+	if v := fields["linkedin_url"]; v != "" {
+		company.LinkedInURL = &v
+	}
+	if v := fields["headquarters"]; v != "" {
+		company.Headquarters = &v
+	}
 
 	return s.companyRepo.Create(ctx, company)
 }

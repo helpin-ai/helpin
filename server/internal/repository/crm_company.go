@@ -21,6 +21,9 @@ func NewCRMCompanyRepository(db *gorm.DB) *CRMCompanyRepository {
 	return &CRMCompanyRepository{db: db}
 }
 
+// DB returns the underlying database for coordinated transactions.
+func (r *CRMCompanyRepository) DB() *gorm.DB { return r.db }
+
 // WithTx returns a new CRMCompanyRepository using the given transaction.
 func (r *CRMCompanyRepository) WithTx(tx *gorm.DB) *CRMCompanyRepository {
 	return &CRMCompanyRepository{db: tx}

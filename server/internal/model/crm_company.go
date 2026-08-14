@@ -15,6 +15,8 @@ type CRMCompany struct {
 	AnnualRevenue    *float64  `json:"annual_revenue"`
 	Description      *string   `json:"description"`
 	LogoURL          *string   `json:"logo_url"`
+	LinkedInURL      *string   `json:"linkedin_url" gorm:"column:linkedin_url"`
+	Headquarters     *string   `json:"headquarters"`
 	OwnerMemberID    *string   `json:"owner_member_id" gorm:"type:uuid;index"`
 	CustomProperties JSONB     `json:"custom_properties" gorm:"type:jsonb;default:'{}'"`
 	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
@@ -34,6 +36,8 @@ type CreateCRMCompanyRequest struct {
 	AnnualRevenue    *float64               `json:"annual_revenue"`
 	Description      *string                `json:"description"`
 	LogoURL          *string                `json:"logo_url"`
+	LinkedInURL      *string                `json:"linkedin_url"`
+	Headquarters     *string                `json:"headquarters"`
 	OwnerMemberID    *string                `json:"owner_member_id"`
 	CustomProperties map[string]interface{} `json:"custom_properties"`
 }
@@ -48,6 +52,8 @@ type UpdateCRMCompanyRequest struct {
 	AnnualRevenue    *float64               `json:"annual_revenue"`
 	Description      *string                `json:"description"`
 	LogoURL          *string                `json:"logo_url"`
+	LinkedInURL      *string                `json:"linkedin_url"`
+	Headquarters     *string                `json:"headquarters"`
 	OwnerMemberID    *string                `json:"owner_member_id"`
 	ClearOwner       bool                   `json:"clear_owner"`
 	CustomProperties map[string]interface{} `json:"custom_properties"`

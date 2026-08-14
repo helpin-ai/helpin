@@ -601,6 +601,21 @@ export function useCreateEnrichment(wsId: string) {
   })
 }
 
+export function useApplyEnrichmentSuggestion(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ enrichmentId, field }: { enrichmentId: string; field: string }) =>
+      unwrap(await crmEnrichmentService.applySuggestion(wsId, enrichmentId, field)),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.enrichments(wsId) })
+      qc.invalidateQueries({ queryKey: ['crm', wsId] })
+      if (result.object_type === 'contact') {
+        qc.invalidateQueries({ queryKey: queryKeys.crm.contactActivities(wsId, result.object_id) })
+      }
+    },
+  })
+}
+
 export function useBuyerSignals(wsId: string, filters?: { contact_id?: string; deal_id?: string; signal_type?: string }) {
   return useQuery({
     queryKey: [...queryKeys.crm.signals(wsId), filters],

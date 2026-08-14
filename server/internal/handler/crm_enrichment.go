@@ -3,6 +3,8 @@ package handler
 import (
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -10,6 +12,22 @@ import (
 // CRMEnrichmentHandler handles CRM enrichment HTTP endpoints.
 type CRMEnrichmentHandler struct {
 	enrichmentService *service.CRMEnrichmentService
+}
+
+// ApplySuggestion handles POST /api/crm/enrichments/{id}/apply-suggestion.
+func (h *CRMEnrichmentHandler) ApplySuggestion(w http.ResponseWriter, r *http.Request) {
+	var req model.ApplyCRMEnrichmentSuggestionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.ActorUserID = middleware.GetUserID(r.Context())
+	result, err := h.enrichmentService.ApplySuggestion(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // NewCRMEnrichmentHandler creates a new CRMEnrichmentHandler.

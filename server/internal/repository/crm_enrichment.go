@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -17,6 +18,34 @@ type CRMEnrichmentRepository struct {
 // NewCRMEnrichmentRepository creates a new CRMEnrichmentRepository.
 func NewCRMEnrichmentRepository(db *gorm.DB) *CRMEnrichmentRepository {
 	return &CRMEnrichmentRepository{db: db}
+}
+
+// DB returns the underlying database for coordinated transactions.
+func (r *CRMEnrichmentRepository) DB() *gorm.DB { return r.db }
+
+// WithTx returns a repository backed by tx.
+func (r *CRMEnrichmentRepository) WithTx(tx *gorm.DB) *CRMEnrichmentRepository {
+	return &CRMEnrichmentRepository{db: tx}
+}
+
+// GetByID returns an enrichment result by ID.
+func (r *CRMEnrichmentRepository) GetByID(ctx context.Context, id string) (*model.CRMEnrichmentResult, error) {
+	var result model.CRMEnrichmentResult
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&result).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get enrichment: %w", err)
+	}
+	return &result, nil
+}
+
+// Update persists an enrichment result.
+func (r *CRMEnrichmentRepository) Update(ctx context.Context, enrichment *model.CRMEnrichmentResult) error {
+	if err := r.db.WithContext(ctx).Save(enrichment).Error; err != nil {
+		return fmt.Errorf("update enrichment: %w", err)
+	}
+	return nil
 }
 
 // Create inserts an enrichment result.
