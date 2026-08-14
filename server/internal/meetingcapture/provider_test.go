@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -107,7 +108,29 @@ func TestRecallProviderVerifyWebhook(t *testing.T) {
 	}
 }
 
-func TestVexaProviderVerifyWebhook(t *testing.T) {
+func TestRecallProviderNormalizesTranscriptDoneWebhook(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{
+		"event":"transcript.done",
+		"data":{
+			"bot":{"id":"bot-1"},
+			"recording":{"id":"recording-1"},
+			"transcript":{"id":"transcript-1"}
+		}
+	}`)
+	provider := NewRecallProvider(RecallConfig{APIKey: "key", WebhookSecret: "whsec_dGVzdA=="})
+	event, err := provider.NormalizeWebhook(http.Header{"Webhook-Id": []string{"event-1"}}, payload)
+	if err != nil {
+		t.Fatalf("NormalizeWebhook: %v", err)
+	}
+	if event.EventID != "event-1" || event.ProviderCaptureID != "bot-1" ||
+		event.ProviderRecordingID != "recording-1" || event.ProviderTranscriptID != "transcript-1" ||
+		!event.TranscriptReady || event.Status != "processing" {
+		t.Fatalf("event = %#v", event)
+	}
+}
+
+func TestVexaProviderVerifyLegacyWebhook(t *testing.T) {
 	t.Parallel()
 	payload := []byte(`{"event_type":"meeting.status_change"}`)
 	headers := http.Header{"Authorization": []string{"Bearer vexa-secret"}}
@@ -138,6 +161,93 @@ func TestVexaProviderNormalizesOfficialStatusWebhook(t *testing.T) {
 	}
 	if !event.TranscriptReady || event.Status != "processing" {
 		t.Fatalf("event = %#v", event)
+	}
+}
+
+func TestVexaProviderVerifySignedWebhook(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{"event_type":"meeting.completed"}`)
+	timestamp := jsonNumber(time.Now().Unix())
+	mac := hmac.New(sha256.New, []byte("vexa-secret"))
+	mac.Write([]byte(timestamp + "."))
+	mac.Write(payload)
+	headers := http.Header{
+		"X-Webhook-Timestamp": []string{timestamp},
+		"X-Webhook-Signature": []string{"sha256=" + hex.EncodeToString(mac.Sum(nil))},
+	}
+	provider := NewVexaProvider(VexaConfig{APIKey: "key", WebhookSecret: "vexa-secret"})
+	if err := provider.VerifyWebhook(headers, payload); err != nil {
+		t.Fatalf("VerifyWebhook: %v", err)
+	}
+	if err := provider.VerifyWebhook(headers, []byte(`{"tampered":true}`)); err == nil {
+		t.Fatal("expected tampered payload to fail verification")
+	}
+	headers.Set("X-Webhook-Timestamp", jsonNumber(time.Now().Add(-6*time.Minute).Unix()))
+	if err := provider.VerifyWebhook(headers, payload); err == nil {
+		t.Fatal("expected stale timestamp to fail verification")
+	}
+}
+
+func TestVexaProviderNormalizesV1CompletedWebhook(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{
+		"event_id":"evt-1",
+		"event_type":"meeting.completed",
+		"api_version":"webhook.v1",
+		"created_at":"2026-08-14T12:00:00Z",
+		"data":{"meeting":{"platform":"google_meet","native_meeting_id":"abc-defg-hij","status":"completed"}}
+	}`)
+	provider := NewVexaProvider(VexaConfig{APIKey: "key", WebhookSecret: "secret"})
+	event, err := provider.NormalizeWebhook(http.Header{}, payload)
+	if err != nil {
+		t.Fatalf("NormalizeWebhook: %v", err)
+	}
+	if event.EventID != "evt-1" || event.ProviderCaptureID != "google_meet:abc-defg-hij" || !event.TranscriptReady || event.Status != "processing" {
+		t.Fatalf("event = %#v", event)
+	}
+}
+
+func TestVexaProviderGetsCurrentTranscriptSegments(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/transcripts/google_meet/abc-defg-hij" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"segments":[{"segment_id":"segment-1","speaker":"Azhar","text":"Ship it","start":1.5,"end":3.25,"language":"en","confidence":0.98,"completed":true}]}`))
+	}))
+	defer server.Close()
+
+	provider := NewVexaProvider(VexaConfig{BaseURL: server.URL, APIKey: "key", WebhookSecret: "secret", HTTPClient: server.Client()})
+	transcript, err := provider.GetTranscript(context.Background(), "google_meet:abc-defg-hij")
+	if err != nil {
+		t.Fatalf("GetTranscript: %v", err)
+	}
+	if len(transcript.Segments) != 1 || transcript.Segments[0].StartSeconds != 1.5 || transcript.Segments[0].EndSeconds != 3.25 {
+		t.Fatalf("transcript = %#v", transcript)
+	}
+}
+
+func TestVexaProviderAcceptsLegacyTeamsURLWithoutPasscode(t *testing.T) {
+	t.Parallel()
+	meetingURL := "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0?context=example"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["meeting_url"] != meetingURL {
+			t.Fatalf("meeting_url = %#v", body["meeting_url"])
+		}
+		_, _ = w.Write([]byte(`{"status":"requested"}`))
+	}))
+	defer server.Close()
+
+	provider := NewVexaProvider(VexaConfig{BaseURL: server.URL, APIKey: "key", WebhookSecret: "secret", HTTPClient: server.Client()})
+	_, err := provider.StartCapture(context.Background(), StartCaptureInput{
+		MeetingURL: meetingURL, Platform: "teams", NativeMeetingID: "19:meeting_example@thread.v2",
+	})
+	if err != nil {
+		t.Fatalf("StartCapture: %v", err)
 	}
 }
 

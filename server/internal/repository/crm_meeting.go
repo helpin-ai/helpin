@@ -132,6 +132,26 @@ func (r *CRMMeetingRepository) CreateCapture(ctx context.Context, capture *model
 	return nil
 }
 
+// WithCaptureLaunchLock serializes one idempotency key across API replicas.
+// PostgreSQL advisory locks avoid launching duplicate provider bots before the
+// unique capture row exists. Tests and non-PostgreSQL tools run inline.
+func (r *CRMMeetingRepository) WithCaptureLaunchLock(
+	ctx context.Context,
+	workspaceID, idempotencyKey string,
+	fn func(*CRMMeetingRepository) error,
+) error {
+	if r.db.Dialector.Name() != "postgres" {
+		return fn(r)
+	}
+	lockKey := strings.TrimSpace(workspaceID) + "\x00" + strings.TrimSpace(idempotencyKey)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
+			return fmt.Errorf("lock meeting capture launch: %w", err)
+		}
+		return fn(NewCRMMeetingRepository(tx))
+	})
+}
+
 // GetCaptureByIdempotencyKey returns an earlier launch response, if any.
 func (r *CRMMeetingRepository) GetCaptureByIdempotencyKey(ctx context.Context, workspaceID, key string) (*model.CRMMeetingCapture, error) {
 	var capture model.CRMMeetingCapture
@@ -195,6 +215,21 @@ func (r *CRMMeetingRepository) CreateProviderEvent(ctx context.Context, event *m
 	return result.RowsAffected > 0, nil
 }
 
+// GetProviderEvent returns a previously received event for replay recovery.
+func (r *CRMMeetingRepository) GetProviderEvent(ctx context.Context, provider, eventID string) (*model.CRMMeetingProviderEvent, error) {
+	var event model.CRMMeetingProviderEvent
+	err := r.db.WithContext(ctx).
+		Where("provider = ? AND event_id = ?", provider, eventID).
+		First(&event).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get meeting provider event: %w", err)
+	}
+	return &event, nil
+}
+
 // MarkProviderEventProcessed records successful event application.
 func (r *CRMMeetingRepository) MarkProviderEventProcessed(ctx context.Context, eventID string) error {
 	if err := r.db.WithContext(ctx).Model(&model.CRMMeetingProviderEvent{}).
@@ -225,7 +260,7 @@ func (r *CRMMeetingRepository) UpsertTranscript(ctx context.Context, transcript 
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "meeting_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"source_provider", "language", "plain_text", "segments", "checksum", "updated_at",
+			"capture_id", "source_provider", "language", "plain_text", "segments", "checksum", "updated_at",
 		}),
 	}).Create(transcript).Error; err != nil {
 		return fmt.Errorf("upsert meeting transcript: %w", err)

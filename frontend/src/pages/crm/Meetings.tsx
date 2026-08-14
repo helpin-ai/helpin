@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateMeetingDialog } from '@/components/crm/CreateMeetingDialog';
 import { useCRMMeetings, useCRMMeetingSettings } from '@/hooks/queries/useCRMMeetings';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMMeeting, CRMMeetingStatus } from '@/lib/crmMeetingTypes';
@@ -46,6 +47,10 @@ export function MeetingsPage() {
   const workspaceSlug = workspace?.slug ?? '';
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const permissions = usePermissions(access);
+  const canEdit = permissions.has('crm.edit');
+  const canAdmin = permissions.has('crm.admin');
   const [showCreate, setShowCreate] = useState(false);
   const filters = useMemo(() => ({ search: search.trim() || undefined, per_page: 50 }), [search]);
   const { data, isLoading } = useCRMMeetings(workspaceId, filters);
@@ -59,10 +64,10 @@ export function MeetingsPage() {
           <p className="text-sm text-muted-foreground">Capture conversations and turn commitments into CRM intelligence and project work.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigate({ to: '/w/$slug/settings/crm-meetings', params: { slug: workspaceSlug } })}>
+          {canAdmin && <Button variant="outline" size="sm" onClick={() => navigate({ to: '/w/$slug/settings/crm-meetings', params: { slug: workspaceSlug } })}>
             <Settings02Icon className="h-4 w-4" /> Settings
-          </Button>
-          <Button size="sm" onClick={() => setShowCreate(true)}><PlusSignIcon className="h-4 w-4" /> Add meeting</Button>
+          </Button>}
+          {canEdit && <Button size="sm" onClick={() => setShowCreate(true)}><PlusSignIcon className="h-4 w-4" /> Add meeting</Button>}
         </div>
       </div>
 
@@ -72,7 +77,7 @@ export function MeetingsPage() {
             <p className="text-sm font-medium">Enable Meeting Intelligence</p>
             <p className="mt-1 text-xs text-muted-foreground">Configure Recall to let the Helpin notetaker join calls. Vexa remains available behind the same provider switch.</p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => navigate({ to: '/w/$slug/settings/crm-meetings', params: { slug: workspaceSlug } })}>Configure</Button>
+          {canAdmin && <Button size="sm" variant="outline" onClick={() => navigate({ to: '/w/$slug/settings/crm-meetings', params: { slug: workspaceSlug } })}>Configure</Button>}
         </div>
       )}
 
@@ -98,13 +103,13 @@ export function MeetingsPage() {
               <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg border bg-muted/30"><Camera01Icon className="h-5 w-5 text-muted-foreground" /></div>
               <h2 className="mt-4 text-base font-semibold">{search ? 'No matching meetings' : 'Your meeting intelligence lives here'}</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{search ? 'Try a different title.' : 'Add a meeting link to capture a transcript, summary, decisions, risks, and action items.'}</p>
-              {!search && <Button className="mt-4" size="sm" onClick={() => setShowCreate(true)}><PlusSignIcon className="h-4 w-4" /> Add meeting</Button>}
+              {!search && canEdit && <Button className="mt-4" size="sm" onClick={() => setShowCreate(true)}><PlusSignIcon className="h-4 w-4" /> Add meeting</Button>}
             </div>
           </div>
         )}
       </div>
 
-      <CreateMeetingDialog open={showCreate} onOpenChange={setShowCreate} workspaceId={workspaceId} workspaceSlug={workspaceSlug} />
+      {canEdit && <CreateMeetingDialog open={showCreate} onOpenChange={setShowCreate} workspaceId={workspaceId} workspaceSlug={workspaceSlug} />}
     </div>
   );
 }

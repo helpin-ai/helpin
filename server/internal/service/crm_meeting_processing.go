@@ -96,21 +96,28 @@ func (s *CRMMeetingProcessingService) Process(ctx context.Context, workspaceID, 
 	if err != nil {
 		return err
 	}
-	providerTranscript, err := provider.GetTranscript(ctx, capture.ProviderCaptureID)
-	if err != nil {
-		return fmt.Errorf("get %s meeting transcript: %w", capture.Provider, err)
-	}
-	transcript, err := canonicalMeetingTranscript(workspaceID, meetingID, capture.Provider, providerTranscript)
+	transcript, err := s.repo.GetTranscript(ctx, workspaceID, meetingID)
 	if err != nil {
 		return err
 	}
-	if err := s.repo.UpsertTranscript(ctx, transcript); err != nil {
-		return err
+	if transcript == nil || transcript.CaptureID != capture.ID {
+		providerTranscript, transcriptErr := provider.GetTranscript(ctx, capture.ProviderCaptureID)
+		if transcriptErr != nil {
+			return fmt.Errorf("get %s meeting transcript: %w", capture.Provider, transcriptErr)
+		}
+		transcript, transcriptErr = canonicalMeetingTranscript(workspaceID, meetingID, capture.ID, capture.Provider, providerTranscript)
+		if transcriptErr != nil {
+			return transcriptErr
+		}
+		if transcriptErr := s.repo.UpsertTranscript(ctx, transcript); transcriptErr != nil {
+			return transcriptErr
+		}
+		capture.ProviderTranscriptID = trimStringPtr(&providerTranscript.ProviderTranscriptID)
+		if transcriptErr := s.repo.UpdateCapture(ctx, capture); transcriptErr != nil {
+			return transcriptErr
+		}
 	}
-	capture.ProviderTranscriptID = trimStringPtr(&providerTranscript.ProviderTranscriptID)
-	if err := s.repo.UpdateCapture(ctx, capture); err != nil {
-		return err
-	}
+	meeting.Participants = meetingParticipants(transcript)
 	meeting.Status = model.CRMMeetingStatusProcessing
 	meeting.SummaryStatus = model.CRMMeetingSummaryProcessing
 	meeting.FailureCode = nil
@@ -153,7 +160,7 @@ func (s *CRMMeetingProcessingService) Process(ctx context.Context, workspaceID, 
 	if err := s.repo.Update(ctx, meeting); err != nil {
 		return err
 	}
-	if meeting.RecordingObjectKey != nil {
+	if provider != nil {
 		if err := provider.DeleteArtifacts(ctx, capture.ProviderCaptureID); err != nil {
 			slog.WarnContext(ctx, "provider artifact cleanup failed", "workspace_id", workspaceID, "meeting_id", meetingID, "provider", capture.Provider, "error", err)
 		}
@@ -187,7 +194,7 @@ func (s *CRMMeetingProcessingService) loadCapture(
 }
 
 func canonicalMeetingTranscript(
-	workspaceID, meetingID, provider string,
+	workspaceID, meetingID, captureID, provider string,
 	input *meetingcapture.Transcript,
 ) (*model.CRMMeetingTranscript, error) {
 	if input == nil || len(input.Segments) == 0 {
@@ -228,6 +235,7 @@ func canonicalMeetingTranscript(
 	return &model.CRMMeetingTranscript{
 		WorkspaceID:    workspaceID,
 		MeetingID:      meetingID,
+		CaptureID:      captureID,
 		SourceProvider: provider,
 		Language:       trimStringPtr(&input.Language),
 		PlainText:      plainText,
@@ -350,8 +358,14 @@ func (s *CRMMeetingProcessingService) copyRecording(
 	capture *model.CRMMeetingCapture,
 	provider meetingCaptureProvider,
 ) error {
-	if !meeting.RecordAudio || meeting.RecordingObjectKey != nil || s.artifactStore == nil {
+	if !meeting.RecordAudio || meeting.RecordingObjectKey != nil {
 		return nil
+	}
+	if s.artifactStore == nil {
+		return fmt.Errorf("meeting recording storage is not configured")
+	}
+	if provider == nil {
+		return fmt.Errorf("%s meeting provider is not configured", capture.Provider)
 	}
 	recording, err := provider.GetRecording(ctx, capture.ProviderCaptureID)
 	if err != nil {
@@ -538,6 +552,30 @@ func (s *CRMMeetingProcessingService) failProcessing(ctx context.Context, meetin
 		return err
 	}
 	return cause
+}
+
+func meetingParticipants(transcript *model.CRMMeetingTranscript) model.JSONBlob {
+	participants := make([]map[string]string, 0)
+	seen := make(map[string]struct{})
+	if transcript != nil {
+		for _, segment := range transcript.Segments {
+			name := strings.TrimSpace(segment.SpeakerName)
+			id := strings.TrimSpace(segment.SpeakerID)
+			key := strings.ToLower(name)
+			if id != "" {
+				key = "id:" + id
+			}
+			if key == "" {
+				continue
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			participants = append(participants, map[string]string{"id": id, "name": name})
+		}
+	}
+	return jsonBlob(participants)
 }
 
 func jsonBlob(value interface{}) model.JSONBlob {

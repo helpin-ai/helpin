@@ -133,6 +133,7 @@ type CRMMeetingTranscript struct {
 	ID             string                       `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID    string                       `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	MeetingID      string                       `json:"meeting_id" gorm:"type:uuid;not null;uniqueIndex"`
+	CaptureID      string                       `json:"capture_id" gorm:"type:uuid;not null;index"`
 	SourceProvider string                       `json:"source_provider" gorm:"not null"`
 	Language       *string                      `json:"language"`
 	PlainText      string                       `json:"plain_text" gorm:"type:text;not null"`
@@ -259,17 +260,10 @@ type CRMMeetingListFilters struct {
 
 // UpdateCRMMeetingSettingsRequest updates workspace meeting policy.
 type UpdateCRMMeetingSettingsRequest struct {
-	Enabled                 *bool   `json:"enabled"`
-	DefaultProvider         *string `json:"default_provider"`
-	BotName                 *string `json:"bot_name"`
-	AutoJoinMode            *string `json:"auto_join_mode"`
-	RecordAudioByDefault    *bool   `json:"record_audio_by_default"`
-	DefaultVisibility       *string `json:"default_visibility"`
-	IncludeInternal         *bool   `json:"include_internal"`
-	IncludePrivate          *bool   `json:"include_private"`
-	IncludeSolo             *bool   `json:"include_solo"`
-	TranscriptRetentionDays *int    `json:"transcript_retention_days"`
-	AudioRetentionDays      *int    `json:"audio_retention_days"`
+	Enabled              *bool   `json:"enabled"`
+	DefaultProvider      *string `json:"default_provider"`
+	BotName              *string `json:"bot_name"`
+	RecordAudioByDefault *bool   `json:"record_audio_by_default"`
 }
 
 // AcceptCRMMeetingActionItemRequest configures the canonical PM task to create.

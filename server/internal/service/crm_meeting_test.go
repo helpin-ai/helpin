@@ -13,10 +13,13 @@ func TestParseMeetingURL(t *testing.T) {
 	}{
 		{name: "Google Meet", url: "https://meet.google.com/abc-defg-hij", platform: "google_meet", nativeID: "abc-defg-hij"},
 		{name: "Zoom", url: "https://acme.zoom.us/j/123456789", platform: "zoom", nativeID: "123456789"},
-		{name: "Teams", url: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example", platform: "teams", nativeID: "19%3ameeting_example"},
+		{name: "Teams legacy", url: "https://teams.microsoft.com/l/meetup-join/19%3ameeting_example%40thread.v2/0?context=example", platform: "teams", nativeID: "19:meeting_example@thread.v2"},
+		{name: "Teams short", url: "https://teams.live.com/meet/9348696861013?p=example", platform: "teams", nativeID: "9348696861013"},
 		{name: "Webex", url: "https://acme.webex.com/meet/alex", platform: "webex", nativeID: "alex"},
+		{name: "Webex MTID", url: "https://acme.webex.com/acme/j.php?MTID=m123", platform: "webex", nativeID: "m123"},
 		{name: "HTTP rejected", url: "http://meet.google.com/abc-defg-hij", wantError: true},
 		{name: "Unknown host", url: "https://example.com/meeting", wantError: true},
+		{name: "Malformed Zoom", url: "https://acme.zoom.us/not-a-meeting", wantError: true},
 	}
 	for _, test := range tests {
 		test := test

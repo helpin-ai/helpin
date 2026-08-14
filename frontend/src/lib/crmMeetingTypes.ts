@@ -68,6 +68,7 @@ export interface CRMMeetingTranscript {
   id: string;
   workspace_id: string;
   meeting_id: string;
+  capture_id: string;
   source_provider: CRMMeetingProvider;
   language?: string;
   plain_text: string;
@@ -173,7 +174,12 @@ export interface CRMMeetingSettings {
   updated_at?: string;
 }
 
-export type UpdateCRMMeetingSettingsRequest = Partial<Omit<CRMMeetingSettings, 'workspace_id' | 'created_at' | 'updated_at'>>;
+export type UpdateCRMMeetingSettingsRequest = Partial<Pick<CRMMeetingSettings,
+  | 'enabled'
+  | 'default_provider'
+  | 'bot_name'
+  | 'record_audio_by_default'
+>>;
 
 export interface CRMMeetingSettingsResponse {
   settings: CRMMeetingSettings;

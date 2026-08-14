@@ -40,6 +40,7 @@ interface AssociationsListProps {
   currentObjectType: CRMObjectType;
   currentObjectId: string;
   onAssociationRemoved?: () => void;
+  editable?: boolean;
 }
 
 type SectionType = CRMObjectType;
@@ -148,6 +149,7 @@ export function AssociationsList({
   currentObjectType,
   currentObjectId,
   onAssociationRemoved,
+  editable = true,
 }: AssociationsListProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -218,15 +220,17 @@ export function AssociationsList({
     }
   };
 
+  const closePicker = () => {
+    setPickerSection(null);
+    setQuery('');
+    setCRMResults([]);
+    setPMResults([]);
+    setConversationResults([]);
+    setSearching(false);
+  };
+
   useEffect(() => {
-    if (!pickerSection) {
-      setQuery('');
-      setCRMResults([]);
-      setPMResults([]);
-      setConversationResults([]);
-      setSearching(false);
-      return;
-    }
+    if (!pickerSection) return;
 
     const handle = window.setTimeout(async () => {
       if (pickerSection === 'support_conversation') {
@@ -273,7 +277,7 @@ export function AssociationsList({
       to_object_type: toType,
       to_object_id: toId,
     });
-    setPickerSection(null);
+    closePicker();
     onAssociationRemoved?.();
   };
 
@@ -304,7 +308,7 @@ export function AssociationsList({
               count={items.length}
               expanded={expandedSections[type]}
               onToggle={() => setExpandedSections((current) => ({ ...current, [type]: !current[type] }))}
-              onAdd={type === 'meeting' ? undefined : () => setPickerSection(type)}
+              onAdd={!editable || type === 'meeting' ? undefined : () => setPickerSection(type)}
             >
               {visibleItems.map((assoc) => {
                 const Icon = config.icon;
@@ -357,7 +361,7 @@ export function AssociationsList({
                         </span>
                       )}
                     </button>
-                    {assoc.id ? (
+                    {editable && assoc.id ? (
                       <button
                         type="button"
                         className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"
@@ -375,7 +379,7 @@ export function AssociationsList({
         );
       })}
 
-      <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
+      <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) closePicker(); }}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="text-sm">Link {pickerConfig?.title?.replace(/s$/, '') ?? ''}</DialogTitle>

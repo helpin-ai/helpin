@@ -1,6 +1,6 @@
 # CRM Meeting Intelligence
 
-Status: implemented on `feat/meeting-intelligence-providers`; Recall is the initial runtime provider and Vexa is an available configuration switch.
+Status: code-complete on `feat/meeting-intelligence-providers`; Recall is the initial runtime provider, Vexa is an available configuration switch, and production provider canaries remain an operational rollout step.
 
 ## Product boundary
 
@@ -18,7 +18,7 @@ CRMMeetingService ---- workspace setting: default_provider=recall|vexa
        |
        +---- meetingcapture.RecallProvider ---- Recall REST + Svix webhooks
        |
-       `---- meetingcapture.VexaProvider ------ Vexa REST + bearer-secret webhooks
+       `---- meetingcapture.VexaProvider ------ Vexa REST + webhook.v1 HMAC
                      |
                      v
           immutable CRMMeetingCapture
@@ -65,7 +65,7 @@ crm_suggestions                    projected follow-up draft
 pm_tasks                           accepted action items only
 ```
 
-GORM AutoMigrate creates the new tables and columns. Provider capture IDs and request idempotency keys have database uniqueness constraints. Webhook events are deduplicated before lifecycle changes or Temporal starts.
+GORM AutoMigrate creates the new tables and columns. Provider capture IDs and request idempotency keys have database uniqueness constraints. A PostgreSQL advisory lock serializes each workspace/idempotency-key launch across API replicas, and provider bots are stopped when canonical persistence fails. Webhook events are deduplicated, but an event left unprocessed by a transient workflow failure is retried on delivery replay.
 
 ## Processing and billing
 
@@ -165,7 +165,9 @@ VEXA_API_KEY=...
 VEXA_WEBHOOK_SECRET=<dedicated-random-secret>
 ```
 
-Configure Vexa with `PUT /user/webhook` using the Helpin Vexa callback URL and the same dedicated secret. Vexa sends that secret as `Authorization: Bearer <secret>`. The adapter understands `meeting.status_change` and begins processing on `completed`. Vexa Teams URLs must carry the `p` passcode; Zoom `pwd` values are forwarded when present.
+Configure Vexa with `PUT /user/webhook` using the Helpin Vexa callback URL and the same dedicated secret. Current `webhook.v1` deliveries are verified with `X-Webhook-Timestamp` and `X-Webhook-Signature: sha256=<HMAC-SHA256(secret, timestamp.raw-body)>`; the legacy `Authorization: Bearer <secret>` contract remains accepted during migration. Subscribe to `meeting.completed` and `bot.failed` at minimum. The adapter also understands legacy `meeting.status_change` and `transcription.ready` events. Legacy Teams `/l/meetup-join/...` URLs carry their meeting identity in the URL and do not need `p`; short Teams links require `p`. Zoom `pwd` values are forwarded when present.
+
+The adapter is contract-tested against Vexa v0.12.x structures, including nested `data.meeting` envelopes and current transcript `start`/`end` timestamps. A live canary against the selected hosted or self-hosted deployment is still required before changing production away from Recall.
 
 To switch later:
 
@@ -173,17 +175,24 @@ To switch later:
 2. Add the Vexa API and webhook secrets to both API and Temporal worker environments.
 3. Configure the Vexa callback and run one canary meeting through capture, transcript, recording, and deletion.
 4. Select Vexa under Meeting Intelligence settings.
-5. Keep Recall credentials until all Recall-owned in-flight captures have completed and retention cleanup has run.
+5. Keep Recall credentials until every Recall-owned in-flight capture has completed and its provider artifacts have been copied/deleted.
 
 Rollback is the same settings change back to Recall. No data migration is needed.
 
 ## Verification checklist
 
-- provider contract tests cover request auth, launch identity, webhook verification, official Vexa status payloads, and numeric recording IDs
-- meeting URL parsing tests cover supported platforms and invalid input
+Automated coverage completed:
+
+- provider contract tests cover request auth, launch identity, both Vexa verification contracts, `webhook.v1`, current transcript timestamps, legacy Teams links, and numeric recording IDs
+- meeting URL parsing tests cover supported platforms, real legacy/short Teams shapes, and invalid input
+- lifecycle tests cover failed webhook replay, stale capture isolation, provider switching, canonical transcript/intelligence/action persistence, participant derivation, and provider artifact cleanup
 - API and Temporal binaries compile with all DI wiring
 - production frontend build includes list, detail, and settings routes
+
+Operational checks required with deployed credentials:
+
 - manual canary: start, lobby/admission, record, stop, transcript, summary, CRM projections, task acceptance, recording playback, delete
+- replay the same capture idempotency key under concurrent requests; verify one provider bot and one canonical meeting
 - replay the same webhook and capture idempotency key; verify no duplicate workflow, event, or task
 - exhaust AI allowance; verify transcript retention, `blocked_usage`, upgrade UI, and successful retry
 - change provider during a live Recall meeting; verify that meeting finishes on Recall and only the next attempt uses Vexa
@@ -201,7 +210,7 @@ Rollback is the same settings change back to Recall. No data migration is needed
 
 - Recall Create Bot: https://docs.recall.ai/reference/bot_create
 - Recall recording/transcript webhooks: https://docs.recall.ai/docs/recording-webhooks
-- Vexa API overview: https://docs.vexa.ai/user_api_guide
+- Vexa meeting API: https://docs.vexa.ai/api/meetings
 - Vexa webhooks: https://docs.vexa.ai/webhooks
 - Vexa transcripts: https://docs.vexa.ai/api/transcripts
 - Vexa recording storage: https://docs.vexa.ai/recording-storage

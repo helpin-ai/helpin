@@ -4,7 +4,7 @@ import { SettingsPageFrame } from './SettingsPageFrame';
 export function CRMMeetingSettingsPage() {
   return (
     <SettingsPageFrame section="crm-meetings">
-      {({ workspaceId }) => <CRMMeetingSettingsTab workspaceId={workspaceId} />}
+      {({ workspaceId, permissions }) => <CRMMeetingSettingsTab workspaceId={workspaceId} canManage={permissions.has('crm.admin')} />}
     </SettingsPageFrame>
   );
 }

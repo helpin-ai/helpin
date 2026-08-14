@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,27 +9,32 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useCRMMeetingSettings, useUpdateCRMMeetingSettings } from '@/hooks/queries/useCRMMeetings';
-import type { CRMMeetingProvider } from '@/lib/crmMeetingTypes';
+import type { CRMMeetingProvider, CRMMeetingSettingsResponse } from '@/lib/crmMeetingTypes';
 
-export function CRMMeetingSettingsTab({ workspaceId }: { workspaceId: string }) {
+export function CRMMeetingSettingsTab({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }) {
   const { data, isLoading } = useCRMMeetingSettings(workspaceId);
-  const updateSettings = useUpdateCRMMeetingSettings(workspaceId);
-  const [enabled, setEnabled] = useState(false);
-  const [provider, setProvider] = useState<CRMMeetingProvider>('recall');
-  const [botName, setBotName] = useState('Helpin Notetaker');
-  const [recordAudio, setRecordAudio] = useState(false);
-  const [transcriptRetention, setTranscriptRetention] = useState(365);
-  const [audioRetention, setAudioRetention] = useState(30);
 
-  useEffect(() => {
-    if (!data?.settings) return;
-    setEnabled(data.settings.enabled);
-    setProvider(data.settings.default_provider);
-    setBotName(data.settings.bot_name);
-    setRecordAudio(data.settings.record_audio_by_default);
-    setTranscriptRetention(data.settings.transcript_retention_days);
-    setAudioRetention(data.settings.audio_retention_days);
-  }, [data]);
+  if (isLoading) return <Skeleton className="h-80 w-full" />;
+  if (!data) return <p className="text-sm text-muted-foreground">Meeting settings are unavailable.</p>;
+
+  const formKey = `${data.settings.updated_at ?? 'defaults'}:${data.settings.default_provider}:${data.settings.enabled}`;
+  return <CRMMeetingSettingsForm key={formKey} workspaceId={workspaceId} canManage={canManage} data={data} />;
+}
+
+function CRMMeetingSettingsForm({
+  workspaceId,
+  canManage,
+  data,
+}: {
+  workspaceId: string;
+  canManage: boolean;
+  data: CRMMeetingSettingsResponse;
+}) {
+  const updateSettings = useUpdateCRMMeetingSettings(workspaceId);
+  const [enabled, setEnabled] = useState(data.settings.enabled);
+  const [provider, setProvider] = useState<CRMMeetingProvider>(data.settings.default_provider);
+  const [botName, setBotName] = useState(data.settings.bot_name);
+  const [recordAudio, setRecordAudio] = useState(data.settings.record_audio_by_default);
 
   const save = async () => {
     try {
@@ -38,8 +43,6 @@ export function CRMMeetingSettingsTab({ workspaceId }: { workspaceId: string }) 
         default_provider: provider,
         bot_name: botName.trim(),
         record_audio_by_default: recordAudio,
-        transcript_retention_days: transcriptRetention,
-        audio_retention_days: audioRetention,
       });
       toast.success('Meeting intelligence settings saved');
     } catch (error) {
@@ -47,12 +50,15 @@ export function CRMMeetingSettingsTab({ workspaceId }: { workspaceId: string }) 
     }
   };
 
-  if (isLoading) return <Skeleton className="h-80 w-full" />;
-
-  const readiness = data?.provider_readiness ?? { recall: false, vexa: false };
+  const readiness = data.provider_readiness;
 
   return (
     <div className="space-y-4">
+      {!canManage && (
+        <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
+          You can view these settings. A CRM admin is required to change them.
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Meeting capture</CardTitle>
@@ -66,7 +72,7 @@ export function CRMMeetingSettingsTab({ workspaceId }: { workspaceId: string }) 
               <Label>Enable meeting intelligence</Label>
               <p className="mt-1 text-xs text-muted-foreground">Allows members to invite the Helpin notetaker from the Meetings page.</p>
             </div>
-            <Switch checked={enabled} onCheckedChange={setEnabled} />
+            <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!canManage} />
           </div>
 
           <Separator />
@@ -74,7 +80,7 @@ export function CRMMeetingSettingsTab({ workspaceId }: { workspaceId: string }) 
           <div className="grid gap-5 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Capture provider</Label>
-              <Select value={provider} onValueChange={(value) => setProvider(value as CRMMeetingProvider)} disabled={!enabled}>
+              <Select value={provider} onValueChange={(value) => setProvider(value as CRMMeetingProvider)} disabled={!canManage || !enabled}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="recall" disabled={!readiness.recall}>Recall.ai {readiness.recall ? '— ready' : '— not configured'}</SelectItem>
@@ -87,7 +93,7 @@ export function CRMMeetingSettingsTab({ workspaceId }: { workspaceId: string }) 
             </div>
             <div className="space-y-2">
               <Label htmlFor="meeting-bot-name">Notetaker name</Label>
-              <Input id="meeting-bot-name" value={botName} onChange={(event) => setBotName(event.target.value)} disabled={!enabled} maxLength={100} />
+              <Input id="meeting-bot-name" value={botName} onChange={(event) => setBotName(event.target.value)} disabled={!canManage || !enabled} maxLength={100} />
               <p className="text-xs text-muted-foreground">Displayed to participants when the bot joins.</p>
             </div>
           </div>
@@ -102,30 +108,19 @@ export function CRMMeetingSettingsTab({ workspaceId }: { workspaceId: string }) 
                 <Label>Record audio by default</Label>
                 <p className="mt-1 text-xs text-muted-foreground">Audio is private and can be deleted without deleting the transcript.</p>
               </div>
-              <Switch checked={recordAudio} onCheckedChange={setRecordAudio} disabled={!enabled} />
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="grid gap-5 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="transcript-retention">Transcript retention (days)</Label>
-              <Input id="transcript-retention" type="number" min={1} max={3650} value={transcriptRetention} onChange={(event) => setTranscriptRetention(Number(event.target.value))} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="audio-retention">Audio retention (days)</Label>
-              <Input id="audio-retention" type="number" min={1} max={3650} value={audioRetention} onChange={(event) => setAudioRetention(Number(event.target.value))} />
+              <Switch checked={recordAudio} onCheckedChange={setRecordAudio} disabled={!canManage || !enabled} />
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
-        <Button onClick={save} disabled={updateSettings.isPending || !botName.trim()}>
-          {updateSettings.isPending ? 'Saving…' : 'Save settings'}
-        </Button>
-      </div>
+      {canManage && (
+        <div className="flex justify-end">
+          <Button onClick={save} disabled={updateSettings.isPending || !botName.trim()}>
+            {updateSettings.isPending ? 'Saving…' : 'Save settings'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -66,9 +66,7 @@ func (h *CRMMeetingHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.WorkspaceID == "" {
-		req.WorkspaceID = getWorkspaceID(r)
-	}
+	req.WorkspaceID = getWorkspaceID(r)
 	detail, err := h.meetingService.Create(r.Context(), req, middleware.GetUserID(r.Context()), r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		writeBillingAwareError(w, meetingErrorStatus(err), err)
@@ -221,11 +219,21 @@ func (h *CRMMeetingHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.meetingService.HandleWebhook(r.Context(), chi.URLParam(r, "provider"), r.Header, payload); err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "signature") || strings.Contains(strings.ToLower(err.Error()), "verification") {
+		message := strings.ToLower(err.Error())
+		if strings.Contains(message, "signature") || strings.Contains(message, "verification") ||
+			strings.Contains(message, "webhook authorization") || strings.Contains(message, "webhook timestamp") {
 			writeError(w, http.StatusUnauthorized, "invalid webhook signature")
 			return
 		}
-		writeError(w, http.StatusBadRequest, "unable to process meeting webhook")
+		if strings.Contains(message, "decode") || strings.Contains(message, "missing a provider capture id") {
+			writeError(w, http.StatusBadRequest, "invalid meeting webhook payload")
+			return
+		}
+		if strings.Contains(message, "not found") {
+			writeError(w, http.StatusNotFound, "meeting capture not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "unable to process meeting webhook")
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)

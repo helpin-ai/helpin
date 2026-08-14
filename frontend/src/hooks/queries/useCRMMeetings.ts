@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { crmMeetingService } from '@/lib/services/crmMeetingService';
 import { unwrap } from '@/lib/queryUtils';
@@ -41,7 +42,8 @@ export function useCRMMeeting(workspaceId: string, meetingId: string) {
 export function useCreateCRMMeeting(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: CreateCRMMeetingRequest) => unwrap(await crmMeetingService.create(payload)),
+    mutationFn: async ({ payload, idempotencyKey }: { payload: CreateCRMMeetingRequest; idempotencyKey: string }) =>
+      unwrap(await crmMeetingService.create(payload, idempotencyKey)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: crmMeetingKeys.all(workspaceId) }),
   });
 }
@@ -57,11 +59,12 @@ export function useUpdateCRMMeeting(workspaceId: string, meetingId: string) {
   });
 }
 
-function useMeetingCommand(workspaceId: string, meetingId: string, command: () => Promise<unknown>) {
+function useMeetingCommand(workspaceId: string, meetingId: string, command: () => Promise<unknown>, afterSuccess?: () => void) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: command,
     onSuccess: () => {
+      afterSuccess?.();
       queryClient.invalidateQueries({ queryKey: crmMeetingKeys.all(workspaceId) });
       queryClient.invalidateQueries({ queryKey: crmMeetingKeys.detail(workspaceId, meetingId) });
     },
@@ -69,7 +72,13 @@ function useMeetingCommand(workspaceId: string, meetingId: string, command: () =
 }
 
 export function useStartMeetingCapture(workspaceId: string, meetingId: string) {
-  return useMeetingCommand(workspaceId, meetingId, async () => unwrap(await crmMeetingService.startCapture(workspaceId, meetingId)));
+  const idempotencyKey = useRef(crypto.randomUUID());
+  return useMeetingCommand(
+    workspaceId,
+    meetingId,
+    async () => unwrap(await crmMeetingService.startCapture(workspaceId, meetingId, idempotencyKey.current)),
+    () => { idempotencyKey.current = crypto.randomUUID(); },
+  );
 }
 
 export function useStopMeetingCapture(workspaceId: string, meetingId: string) {

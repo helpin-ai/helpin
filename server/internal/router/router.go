@@ -1514,7 +1514,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings/{id}/process", h.CRMMeeting.RetryProcessing)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/{id}/recording", h.CRMMeeting.GetRecording)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/meetings/{id}/recording", h.CRMMeeting.DeleteRecording)
-				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings/{id}/action-items/{itemID}/accept", h.CRMMeeting.AcceptActionItem)
+				r.With(requirePerm(authorization.PermCRMEdit), requirePerm(authorization.PermPMEdit)).Post("/meetings/{id}/action-items/{itemID}/accept", h.CRMMeeting.AcceptActionItem)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings/{id}/action-items/{itemID}/dismiss", h.CRMMeeting.DismissActionItem)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/meeting-settings", h.CRMMeeting.GetSettings)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Put("/meeting-settings", h.CRMMeeting.UpdateSettings)

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -64,15 +65,18 @@ func (p *VexaProvider) StartCapture(ctx context.Context, input StartCaptureInput
 	}
 	meetingURL, _ := url.Parse(input.MeetingURL)
 	passcode := ""
+	legacyTeamsURL := false
 	if meetingURL != nil {
 		passcode = firstNonBlank(meetingURL.Query().Get("p"), meetingURL.Query().Get("pwd"))
+		legacyTeamsURL = input.Platform == "teams" && strings.Contains(meetingURL.Path, "/l/meetup-join/")
 	}
-	if input.Platform == "teams" && passcode == "" {
+	if input.Platform == "teams" && !legacyTeamsURL && passcode == "" {
 		return nil, fmt.Errorf("Vexa Teams capture requires a meeting URL with a p passcode")
 	}
 	body := map[string]interface{}{
 		"platform":            input.Platform,
 		"native_meeting_id":   input.NativeMeetingID,
+		"meeting_url":         input.MeetingURL,
 		"bot_name":            input.BotName,
 		"recording_enabled":   input.RecordAudio,
 		"transcribe_enabled":  true,
@@ -150,14 +154,16 @@ func (p *VexaProvider) GetTranscript(ctx context.Context, captureID string) (*Tr
 	}
 	var response struct {
 		Segments []struct {
-			ID         string  `json:"segment_id"`
-			Speaker    string  `json:"speaker"`
-			Text       string  `json:"text"`
-			Start      float64 `json:"start_time"`
-			End        float64 `json:"end_time"`
-			Language   string  `json:"language"`
-			Confidence float64 `json:"confidence"`
-			Completed  bool    `json:"completed"`
+			ID         string   `json:"segment_id"`
+			Speaker    string   `json:"speaker"`
+			Text       string   `json:"text"`
+			Start      *float64 `json:"start"`
+			End        *float64 `json:"end"`
+			StartTime  *float64 `json:"start_time"`
+			EndTime    *float64 `json:"end_time"`
+			Language   string   `json:"language"`
+			Confidence float64  `json:"confidence"`
+			Completed  bool     `json:"completed"`
 		} `json:"segments"`
 	}
 	path := "/transcripts/" + url.PathEscape(platform) + "/" + url.PathEscape(nativeID)
@@ -177,8 +183,8 @@ func (p *VexaProvider) GetTranscript(ctx context.Context, captureID string) (*Tr
 			ID:           segment.ID,
 			SpeakerName:  firstNonBlank(segment.Speaker, "Unknown speaker"),
 			Text:         strings.TrimSpace(segment.Text),
-			StartSeconds: segment.Start,
-			EndSeconds:   segment.End,
+			StartSeconds: firstVexaTimestamp(segment.Start, segment.StartTime),
+			EndSeconds:   firstVexaTimestamp(segment.End, segment.EndTime),
 			Language:     segment.Language,
 			Confidence:   segment.Confidence,
 		})
@@ -236,6 +242,29 @@ func (p *VexaProvider) VerifyWebhook(headers http.Header, payload []byte) error 
 	if p == nil || p.webhookSecret == "" {
 		return fmt.Errorf("Vexa webhook secret is not configured")
 	}
+	signature := strings.TrimSpace(headers.Get("X-Webhook-Signature"))
+	timestamp := strings.TrimSpace(headers.Get("X-Webhook-Timestamp"))
+	if signature != "" || timestamp != "" {
+		if signature == "" || timestamp == "" {
+			return fmt.Errorf("missing Vexa webhook signature headers")
+		}
+		unixTimestamp, err := strconv.ParseInt(timestamp, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid Vexa webhook timestamp")
+		}
+		deliveredAt := time.Unix(unixTimestamp, 0)
+		if delta := time.Since(deliveredAt); delta > 5*time.Minute || delta < -5*time.Minute {
+			return fmt.Errorf("stale Vexa webhook timestamp")
+		}
+		mac := hmac.New(sha256.New, []byte(p.webhookSecret))
+		mac.Write([]byte(timestamp + "."))
+		mac.Write(payload)
+		expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+		if !hmac.Equal([]byte(signature), []byte(expected)) {
+			return fmt.Errorf("invalid Vexa webhook signature")
+		}
+		return nil
+	}
 	expected := []byte("Bearer " + p.webhookSecret)
 	received := []byte(strings.TrimSpace(headers.Get("Authorization")))
 	if !hmac.Equal(received, expected) {
@@ -246,54 +275,89 @@ func (p *VexaProvider) VerifyWebhook(headers http.Header, payload []byte) error 
 
 // NormalizeWebhook converts Vexa's meeting lifecycle event into Helpin status.
 func (p *VexaProvider) NormalizeWebhook(headers http.Header, payload []byte) (*ProviderEvent, error) {
-	var envelope struct {
-		EventType string `json:"event_type"`
-		Meeting   struct {
-			Platform        string                 `json:"platform"`
-			NativeMeetingID string                 `json:"native_meeting_id"`
-			Status          string                 `json:"status"`
-			UpdatedAt       string                 `json:"updated_at"`
-			Data            map[string]interface{} `json:"data"`
-		} `json:"meeting"`
-		StatusChange struct {
-			To        string `json:"to"`
-			Reason    string `json:"reason"`
-			Timestamp string `json:"timestamp"`
-		} `json:"status_change"`
-	}
+	var envelope vexaWebhookEnvelope
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return nil, fmt.Errorf("decode Vexa webhook: %w", err)
 	}
+	meeting := envelope.Meeting
+	if meeting.Platform == "" && meeting.NativeMeetingID == "" {
+		meeting = envelope.Data.Meeting
+	}
+	statusChange := envelope.StatusChange
+	if statusChange.To == "" {
+		statusChange = envelope.Data.StatusChange
+	}
 	eventType := strings.TrimSpace(envelope.EventType)
-	providerStatus := firstNonBlank(envelope.Meeting.Status, envelope.StatusChange.To)
-	eventID := headers.Get("X-Vexa-Event-Id")
+	providerStatus := firstNonBlank(meeting.Status, statusChange.To)
+	eventID := firstNonBlank(envelope.EventID, headers.Get("X-Vexa-Event-Id"))
 	if eventID == "" {
 		hash := sha256.Sum256(payload)
 		eventID = hex.EncodeToString(hash[:])
 	}
 	failureCode, failureMessage := "", ""
 	if providerStatus == "failed" {
-		failureCode = firstNonBlank(jsonString(envelope.Meeting.Data["failure_code"]), envelope.StatusChange.Reason)
-		failureMessage = firstNonBlank(jsonString(envelope.Meeting.Data["failure_message"]), envelope.StatusChange.Reason)
+		failureCode = firstNonBlank(meeting.FailureStage, jsonString(meeting.Data["failure_code"]), statusChange.Reason)
+		failureMessage = firstNonBlank(jsonString(meeting.Data["failure_message"]), statusChange.Reason, meeting.CompletionReason)
 	}
+	transcriptReady := (eventType == "meeting.completed" && providerStatus == "completed") ||
+		(eventType == "meeting.status_change" && providerStatus == "completed") ||
+		eventType == "transcription.ready"
 	event := &ProviderEvent{
 		EventID:           eventID,
 		EventType:         eventType,
-		ProviderCaptureID: vexaCaptureID(envelope.Meeting.Platform, envelope.Meeting.NativeMeetingID),
+		ProviderCaptureID: vexaCaptureID(meeting.Platform, meeting.NativeMeetingID),
 		ProviderStatus:    providerStatus,
 		Status:            normalizeVexaStatus(providerStatus),
 		FailureCode:       failureCode,
 		FailureMessage:    failureMessage,
-		TranscriptReady:   eventType == "meeting.status_change" && providerStatus == "completed",
+		TranscriptReady:   transcriptReady,
 	}
 	if event.TranscriptReady {
 		event.Status = "processing"
 	}
-	occurredAt := firstNonBlank(envelope.StatusChange.Timestamp, envelope.Meeting.UpdatedAt)
+	occurredAt := firstNonBlank(statusChange.Timestamp, meeting.UpdatedAt, envelope.CreatedAt)
 	if parsed, err := time.Parse(time.RFC3339Nano, occurredAt); err == nil {
 		event.OccurredAt = &parsed
 	}
 	return event, nil
+}
+
+type vexaWebhookMeeting struct {
+	Platform         string                 `json:"platform"`
+	NativeMeetingID  string                 `json:"native_meeting_id"`
+	Status           string                 `json:"status"`
+	CompletionReason string                 `json:"completion_reason"`
+	FailureStage     string                 `json:"failure_stage"`
+	UpdatedAt        string                 `json:"updated_at"`
+	Data             map[string]interface{} `json:"data"`
+}
+
+type vexaWebhookStatusChange struct {
+	To        string `json:"to"`
+	Reason    string `json:"reason"`
+	Timestamp string `json:"timestamp"`
+}
+
+type vexaWebhookEnvelope struct {
+	EventID      string                  `json:"event_id"`
+	EventType    string                  `json:"event_type"`
+	CreatedAt    string                  `json:"created_at"`
+	Meeting      vexaWebhookMeeting      `json:"meeting"`
+	StatusChange vexaWebhookStatusChange `json:"status_change"`
+	Data         struct {
+		Meeting      vexaWebhookMeeting      `json:"meeting"`
+		StatusChange vexaWebhookStatusChange `json:"status_change"`
+	} `json:"data"`
+}
+
+func firstVexaTimestamp(primary, legacy *float64) float64 {
+	if primary != nil {
+		return *primary
+	}
+	if legacy != nil {
+		return *legacy
+	}
+	return 0
 }
 
 func normalizeVexaStatus(status string) string {

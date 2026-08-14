@@ -25,12 +25,12 @@ function filtersQuery(filters: CRMMeetingFilters = {}): string {
   return value ? `&${value}` : '';
 }
 
-async function idempotentPost<T>(path: string, body?: unknown): Promise<ApiResponse<T>> {
+async function idempotentPost<T>(path: string, body?: unknown, idempotencyKey: string = crypto.randomUUID()): Promise<ApiResponse<T>> {
   const response = await fetchWithSessionAuth(API_BASE, path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Idempotency-Key': crypto.randomUUID(),
+      'Idempotency-Key': idempotencyKey,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -46,15 +46,15 @@ export const crmMeetingService = {
     api.get<CRMMeetingListResponse>(`/crm/meetings${qs(workspaceId)}${filtersQuery(filters)}`),
   get: (workspaceId: string, meetingId: string) =>
     api.get<CRMMeetingDetail>(`/crm/meetings/${meetingId}${qs(workspaceId)}`),
-  create: (payload: CreateCRMMeetingRequest) => payload.start_now
-    ? idempotentPost<CRMMeetingDetail>(`/crm/meetings${qs(payload.workspace_id)}`, payload)
+  create: (payload: CreateCRMMeetingRequest, idempotencyKey?: string) => payload.start_now
+    ? idempotentPost<CRMMeetingDetail>(`/crm/meetings${qs(payload.workspace_id)}`, payload, idempotencyKey)
     : api.post<CRMMeetingDetail>(`/crm/meetings${qs(payload.workspace_id)}`, payload),
   update: (workspaceId: string, meetingId: string, payload: UpdateCRMMeetingRequest) =>
     api.put<CRMMeetingDetail>(`/crm/meetings/${meetingId}${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, meetingId: string) =>
     api.del(`/crm/meetings/${meetingId}${qs(workspaceId)}`),
-  startCapture: (workspaceId: string, meetingId: string) =>
-    idempotentPost<CRMMeetingCapture>(`/crm/meetings/${meetingId}/capture${qs(workspaceId)}`),
+  startCapture: (workspaceId: string, meetingId: string, idempotencyKey?: string) =>
+    idempotentPost<CRMMeetingCapture>(`/crm/meetings/${meetingId}/capture${qs(workspaceId)}`, undefined, idempotencyKey),
   stopCapture: (workspaceId: string, meetingId: string) =>
     api.post<CRMMeetingCapture>(`/crm/meetings/${meetingId}/capture/stop${qs(workspaceId)}`, {}),
   retryProcessing: (workspaceId: string, meetingId: string) =>

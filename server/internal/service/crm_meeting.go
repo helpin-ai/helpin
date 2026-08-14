@@ -45,6 +45,7 @@ type CRMMeetingService struct {
 	providers       map[string]meetingCaptureProvider
 	processing      meetingProcessingRunner
 	recordingStore  meetingRecordingStore
+	aiUsageMeter    *AIUsageMeter
 }
 
 // NewCRMMeetingService creates the provider-neutral CRM meeting service.
@@ -77,6 +78,12 @@ func (s *CRMMeetingService) SetProcessingRunner(runner meetingProcessingRunner) 
 // SetRecordingStore injects canonical private recording storage.
 func (s *CRMMeetingService) SetRecordingStore(store meetingRecordingStore) *CRMMeetingService {
 	s.recordingStore = store
+	return s
+}
+
+// SetAIUsageMeter enables launch-time billing preflight before a capture bot is created.
+func (s *CRMMeetingService) SetAIUsageMeter(meter *AIUsageMeter) *CRMMeetingService {
+	s.aiUsageMeter = meter
 	return s
 }
 
@@ -183,6 +190,18 @@ func (s *CRMMeetingService) Create(
 	if req.RecordAudio != nil {
 		recordAudio = *req.RecordAudio
 	}
+	if req.StartNow {
+		if !settings.Enabled {
+			return nil, fmt.Errorf("meeting intelligence is disabled for this workspace")
+		}
+		provider, providerErr := s.provider(settings.DefaultProvider, platform)
+		if providerErr != nil {
+			return nil, providerErr
+		}
+		if err := s.preflightCapture(ctx, req.WorkspaceID, nativeMeetingID, idempotencyKey, provider); err != nil {
+			return nil, err
+		}
+	}
 	meetingURL := strings.TrimSpace(req.MeetingURL)
 	meeting := &model.CRMMeeting{
 		WorkspaceID:      req.WorkspaceID,
@@ -209,6 +228,13 @@ func (s *CRMMeetingService) Create(
 	}
 	if req.StartNow {
 		if _, err := s.StartCapture(ctx, req.WorkspaceID, meeting.ID, idempotencyKey); err != nil {
+			prior, lookupErr := s.repo.GetCaptureByIdempotencyKey(ctx, req.WorkspaceID, idempotencyKey)
+			if lookupErr == nil && prior != nil && prior.MeetingID != meeting.ID {
+				if deleteErr := s.repo.Delete(ctx, req.WorkspaceID, meeting.ID); deleteErr != nil {
+					slog.ErrorContext(ctx, "duplicate meeting cleanup failed", "workspace_id", req.WorkspaceID, "meeting_id", meeting.ID, "error", deleteErr)
+				}
+				return s.Get(ctx, req.WorkspaceID, prior.MeetingID)
+			}
 			return nil, err
 		}
 	}
@@ -274,7 +300,21 @@ func (s *CRMMeetingService) StartCapture(
 	if idempotencyKey == "" {
 		return nil, fmt.Errorf("Idempotency-Key header is required")
 	}
-	if prior, err := s.repo.GetCaptureByIdempotencyKey(ctx, workspaceID, idempotencyKey); err != nil {
+	var capture *model.CRMMeetingCapture
+	err := s.repo.WithCaptureLaunchLock(ctx, workspaceID, idempotencyKey, func(lockedRepo *repository.CRMMeetingRepository) error {
+		var launchErr error
+		capture, launchErr = s.startCaptureLocked(ctx, lockedRepo, workspaceID, meetingID, idempotencyKey)
+		return launchErr
+	})
+	return capture, err
+}
+
+func (s *CRMMeetingService) startCaptureLocked(
+	ctx context.Context,
+	repo *repository.CRMMeetingRepository,
+	workspaceID, meetingID, idempotencyKey string,
+) (*model.CRMMeetingCapture, error) {
+	if prior, err := repo.GetCaptureByIdempotencyKey(ctx, workspaceID, idempotencyKey); err != nil {
 		return nil, err
 	} else if prior != nil {
 		if prior.MeetingID != meetingID {
@@ -282,7 +322,7 @@ func (s *CRMMeetingService) StartCapture(
 		}
 		return prior, nil
 	}
-	meeting, err := s.repo.GetByID(ctx, workspaceID, meetingID)
+	meeting, err := repo.GetByID(ctx, workspaceID, meetingID)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +332,7 @@ func (s *CRMMeetingService) StartCapture(
 	if captureAlreadyActive(meeting.Status) {
 		return nil, fmt.Errorf("meeting capture is already active")
 	}
-	settings, err := s.repo.GetSettings(ctx, workspaceID)
+	settings, err := repo.GetSettings(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -303,6 +343,9 @@ func (s *CRMMeetingService) StartCapture(
 	if err != nil {
 		return nil, err
 	}
+	if err := s.preflightCapture(ctx, workspaceID, meetingID, idempotencyKey, provider); err != nil {
+		return nil, err
+	}
 	captureResult, err := provider.StartCapture(ctx, meetingcapture.StartCaptureInput{
 		WorkspaceID:     workspaceID,
 		MeetingID:       meetingID,
@@ -310,7 +353,6 @@ func (s *CRMMeetingService) StartCapture(
 		Platform:        meeting.Platform,
 		NativeMeetingID: meeting.NativeMeetingID,
 		BotName:         settings.BotName,
-		JoinAt:          meeting.ScheduledStartAt,
 		RecordAudio:     meeting.RecordAudio,
 	})
 	if err != nil {
@@ -326,14 +368,20 @@ func (s *CRMMeetingService) StartCapture(
 		RequestIdempotencyKey: idempotencyKey,
 		Metadata:              model.JSONB{},
 	}
-	if err := s.repo.CreateCapture(ctx, capture); err != nil {
-		return nil, err
+	stopLaunchedCapture := func(cause error) error {
+		if stopErr := provider.StopCapture(ctx, captureResult.ProviderCaptureID); stopErr != nil {
+			slog.ErrorContext(ctx, "meeting capture compensation failed", "workspace_id", workspaceID, "meeting_id", meetingID, "provider", provider.Name(), "provider_capture_id", captureResult.ProviderCaptureID, "error", stopErr)
+		}
+		return cause
+	}
+	if err := repo.CreateCapture(ctx, capture); err != nil {
+		return nil, stopLaunchedCapture(err)
 	}
 	meeting.Status = capture.Status
 	meeting.FailureCode = nil
 	meeting.FailureMessage = nil
-	if err := s.repo.Update(ctx, meeting); err != nil {
-		return nil, err
+	if err := repo.Update(ctx, meeting); err != nil {
+		return nil, stopLaunchedCapture(err)
 	}
 	slog.InfoContext(ctx, "meeting capture started", "workspace_id", workspaceID, "meeting_id", meetingID, "capture_id", capture.ID, "provider", capture.Provider)
 	return capture, nil
@@ -382,6 +430,9 @@ func (s *CRMMeetingService) RetryProcessing(ctx context.Context, workspaceID, me
 	}
 	if meeting == nil {
 		return fmt.Errorf("meeting not found")
+	}
+	if meeting.SummaryStatus != model.CRMMeetingSummaryFailed && meeting.SummaryStatus != model.CRMMeetingSummaryBlockedUsage {
+		return fmt.Errorf("meeting processing can only be retried after a failure or usage block")
 	}
 	if s.processing == nil {
 		return fmt.Errorf("meeting processing is unavailable")
@@ -513,6 +564,18 @@ func (s *CRMMeetingService) provider(name, platform string) (meetingCaptureProvi
 	return provider, nil
 }
 
+func (s *CRMMeetingService) preflightCapture(ctx context.Context, workspaceID, targetID, idempotencyKey string, provider meetingCaptureProvider) error {
+	if s.aiUsageMeter == nil {
+		return nil
+	}
+	return s.aiUsageMeter.Preflight(ctx, AIUsageMeterInput{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureMeetingIntelligence,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, "meeting_capture", targetID, idempotencyKey, "preflight"),
+		Metadata:       map[string]interface{}{"meeting_id": targetID, "provider": provider.Name()},
+	})
+}
+
 // ParseMeetingURL validates supported providers and extracts a native meeting id.
 func ParseMeetingURL(rawURL string) (string, string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
@@ -520,28 +583,37 @@ func ParseMeetingURL(rawURL string) (string, string, error) {
 		return "", "", fmt.Errorf("enter a valid HTTPS meeting URL")
 	}
 	host := strings.ToLower(parsed.Hostname())
-	path := strings.Trim(parsed.EscapedPath(), "/")
-	parts := strings.Split(path, "/")
+	decodedPath, decodeErr := url.PathUnescape(parsed.EscapedPath())
+	if decodeErr != nil {
+		return "", "", fmt.Errorf("enter a valid HTTPS meeting URL")
+	}
+	parts := meetingPathParts(decodedPath)
 	switch {
 	case host == "meet.google.com":
-		if len(parts) == 0 || !validGoogleMeetCode(parts[0]) {
+		if len(parts) != 1 || !validGoogleMeetCode(parts[0]) {
 			return "", "", fmt.Errorf("enter a valid Google Meet URL")
 		}
 		return model.CRMMeetingPlatformGoogleMeet, parts[0], nil
 	case strings.HasSuffix(host, ".zoom.us") || host == "zoom.us":
-		meetingID := lastNonBlank(parts)
-		if meetingID == "" {
+		meetingID := meetingPathValueAfter(parts, "j", "join")
+		if !numericMeetingID(meetingID, 9, 13) {
 			return "", "", fmt.Errorf("enter a valid Zoom meeting URL")
 		}
 		return model.CRMMeetingPlatformZoom, meetingID, nil
 	case host == "teams.live.com" || host == "teams.microsoft.com":
-		meetingID := lastNonBlank(parts)
+		meetingID := meetingPathValueAfter(parts, "meetup-join")
 		if meetingID == "" {
+			meetingID = meetingPathValueAfter(parts, "meet")
+		}
+		if meetingID == "" || meetingID == "0" {
 			return "", "", fmt.Errorf("enter a valid Microsoft Teams meeting URL")
 		}
 		return model.CRMMeetingPlatformTeams, meetingID, nil
 	case strings.HasSuffix(host, ".webex.com") || host == "webex.com":
-		meetingID := lastNonBlank(parts)
+		meetingID := strings.TrimSpace(parsed.Query().Get("MTID"))
+		if meetingID == "" {
+			meetingID = meetingPathValueAfter(parts, "meet")
+		}
 		if meetingID == "" {
 			return "", "", fmt.Errorf("enter a valid Webex meeting URL")
 		}
@@ -556,13 +628,38 @@ func validGoogleMeetCode(value string) bool {
 	return len(parts) == 3 && len(parts[0]) == 3 && len(parts[1]) == 4 && len(parts[2]) == 3
 }
 
-func lastNonBlank(parts []string) string {
-	for index := len(parts) - 1; index >= 0; index-- {
-		if value := strings.TrimSpace(parts[index]); value != "" && value != "j" && value != "join" && value != "meet" {
-			return value
+func meetingPathParts(path string) []string {
+	rawParts := strings.Split(strings.Trim(path, "/"), "/")
+	parts := make([]string, 0, len(rawParts))
+	for _, part := range rawParts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	return parts
+}
+
+func meetingPathValueAfter(parts []string, markers ...string) string {
+	for index, part := range parts {
+		for _, marker := range markers {
+			if strings.EqualFold(part, marker) && index+1 < len(parts) {
+				return strings.TrimSpace(parts[index+1])
+			}
 		}
 	}
 	return ""
+}
+
+func numericMeetingID(value string, minLength, maxLength int) bool {
+	if len(value) < minLength || len(value) > maxLength {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func validMeetingVisibility(value string) bool {
@@ -605,29 +702,8 @@ func applyMeetingSettingsPatch(settings *model.CRMMeetingSettings, req model.Upd
 	if req.BotName != nil {
 		settings.BotName = strings.TrimSpace(*req.BotName)
 	}
-	if req.AutoJoinMode != nil {
-		settings.AutoJoinMode = strings.ToLower(strings.TrimSpace(*req.AutoJoinMode))
-	}
 	if req.RecordAudioByDefault != nil {
 		settings.RecordAudioByDefault = *req.RecordAudioByDefault
-	}
-	if req.DefaultVisibility != nil {
-		settings.DefaultVisibility = strings.ToLower(strings.TrimSpace(*req.DefaultVisibility))
-	}
-	if req.IncludeInternal != nil {
-		settings.IncludeInternal = *req.IncludeInternal
-	}
-	if req.IncludePrivate != nil {
-		settings.IncludePrivate = *req.IncludePrivate
-	}
-	if req.IncludeSolo != nil {
-		settings.IncludeSolo = *req.IncludeSolo
-	}
-	if req.TranscriptRetentionDays != nil {
-		settings.TranscriptRetentionDays = *req.TranscriptRetentionDays
-	}
-	if req.AudioRetentionDays != nil {
-		settings.AudioRetentionDays = *req.AudioRetentionDays
 	}
 }
 

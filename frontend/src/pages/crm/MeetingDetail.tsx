@@ -25,6 +25,7 @@ import {
   useStartMeetingCapture,
   useStopMeetingCapture,
 } from '@/hooks/queries/useCRMMeetings';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
 import { crmMeetingService } from '@/lib/services/crmMeetingService';
@@ -63,6 +64,8 @@ function ActionItemRow({
   teamId,
   teams,
   busy,
+  canCreateTask,
+  canDismiss,
   onTeamChange,
   onAccept,
   onDismiss,
@@ -71,6 +74,8 @@ function ActionItemRow({
   teamId: string;
   teams: Array<{ id: string; name: string }>;
   busy: boolean;
+  canCreateTask: boolean;
+  canDismiss: boolean;
   onTeamChange: (value: string) => void;
   onAccept: () => void;
   onDismiss: () => void;
@@ -89,14 +94,16 @@ function ActionItemRow({
         {item.status !== 'pending' && <Badge variant="secondary">{titleCase(item.status)}</Badge>}
       </div>
       {item.evidence?.excerpt && <blockquote className="mt-3 border-l-2 pl-3 text-xs italic text-muted-foreground">{item.evidence.excerpt}</blockquote>}
-      {item.status === 'pending' && (
+      {item.status === 'pending' && (canCreateTask || canDismiss) && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Select value={teamId} onValueChange={onTeamChange}>
-            <SelectTrigger className="h-8 min-w-44 flex-1"><SelectValue placeholder="Select destination team" /></SelectTrigger>
-            <SelectContent>{teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}</SelectContent>
-          </Select>
-          <Button size="sm" className="h-8" onClick={onAccept} disabled={!teamId || busy}>Create task</Button>
-          <Button size="sm" variant="ghost" className="h-8" onClick={onDismiss} disabled={busy}>Dismiss</Button>
+          {canCreateTask && <>
+            <Select value={teamId} onValueChange={onTeamChange}>
+              <SelectTrigger className="h-8 min-w-44 flex-1"><SelectValue placeholder="Select destination team" /></SelectTrigger>
+              <SelectContent>{teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}</SelectContent>
+            </Select>
+            <Button size="sm" className="h-8" onClick={onAccept} disabled={!teamId || busy}>Create task</Button>
+          </>}
+          {canDismiss && <Button size="sm" variant="ghost" className="h-8" onClick={onDismiss} disabled={busy}>Dismiss</Button>}
         </div>
       )}
     </div>
@@ -108,6 +115,10 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
   const navigate = useNavigate();
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const permissions = usePermissions(access);
+  const canEditCRM = permissions.has('crm.edit');
+  const canEditPM = permissions.has('pm.edit');
   const { data, isLoading, refetch } = useCRMMeeting(workspaceId, meetingId);
   const startCapture = useStartMeetingCapture(workspaceId, meetingId);
   const stopCapture = useStopMeetingCapture(workspaceId, meetingId);
@@ -201,9 +212,9 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
         </div>
         <div className="flex items-center gap-2">
           {meeting.recording_object_key && <Button variant="outline" size="sm" onClick={openRecording} disabled={recordingLoading}>{recordingLoading ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlayCircleIcon className="h-4 w-4" />} Recording</Button>}
-          {canStart && <Button size="sm" onClick={() => runCommand(() => startCapture.mutateAsync(), 'Helpin is joining the meeting')} disabled={startCapture.isPending}><PlayCircleIcon className="h-4 w-4" /> Start capture</Button>}
-          {canStop && <Button size="sm" variant="destructive" onClick={() => runCommand(() => stopCapture.mutateAsync(), 'Capture is finalizing')} disabled={stopCapture.isPending}><StopIcon className="h-4 w-4" /> Stop</Button>}
-          {canRetry && <Button size="sm" onClick={() => runCommand(() => retryProcessing.mutateAsync(), 'Meeting processing restarted')} disabled={retryProcessing.isPending}>Retry processing</Button>}
+          {canEditCRM && canStart && <Button size="sm" onClick={() => runCommand(() => startCapture.mutateAsync(), 'Helpin is joining the meeting')} disabled={startCapture.isPending}><PlayCircleIcon className="h-4 w-4" /> Start capture</Button>}
+          {canEditCRM && canStop && <Button size="sm" variant="destructive" onClick={() => runCommand(() => stopCapture.mutateAsync(), 'Capture is finalizing')} disabled={stopCapture.isPending}><StopIcon className="h-4 w-4" /> Stop</Button>}
+          {canEditCRM && canRetry && <Button size="sm" onClick={() => runCommand(() => retryProcessing.mutateAsync(), 'Meeting processing restarted')} disabled={retryProcessing.isPending}>Retry processing</Button>}
         </div>
       </div>
 
@@ -246,7 +257,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
             <CardHeader><CardTitle className="text-base">Action items</CardTitle><CardDescription>Review proposed work before creating canonical project tasks.</CardDescription></CardHeader>
             <CardContent className="space-y-3">
               {data.action_items.length ? data.action_items.map((item) => (
-                <ActionItemRow key={item.id} item={item} teams={teams} teamId={teamByAction[item.id] ?? defaultTeamId} busy={acceptAction.isPending || dismissAction.isPending} onTeamChange={(value) => setTeamByAction((current) => ({ ...current, [item.id]: value }))} onAccept={() => accept(item)} onDismiss={() => dismiss(item)} />
+                <ActionItemRow key={item.id} item={item} teams={teams} teamId={teamByAction[item.id] ?? defaultTeamId} busy={acceptAction.isPending || dismissAction.isPending} canCreateTask={canEditCRM && canEditPM} canDismiss={canEditCRM} onTeamChange={(value) => setTeamByAction((current) => ({ ...current, [item.id]: value }))} onAccept={() => accept(item)} onDismiss={() => dismiss(item)} />
               )) : <p className="py-6 text-center text-sm text-muted-foreground">No action items were identified.</p>}
             </CardContent>
           </Card>
@@ -277,7 +288,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
           </Card>
           <Card>
             <CardHeader><CardTitle className="text-sm">Associations</CardTitle><CardDescription>Connect this meeting to CRM records and project work.</CardDescription></CardHeader>
-            <CardContent className="pt-0"><AssociationsList workspaceId={workspaceId} slug={slug} associations={data.associations} currentObjectType="meeting" currentObjectId={meetingId} onAssociationRemoved={() => void refetch()} /></CardContent>
+            <CardContent className="pt-0"><AssociationsList workspaceId={workspaceId} slug={slug} associations={data.associations} currentObjectType="meeting" currentObjectId={meetingId} onAssociationRemoved={() => void refetch()} editable={canEditCRM} /></CardContent>
           </Card>
         </aside>
       </div>

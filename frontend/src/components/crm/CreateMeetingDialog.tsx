@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useCreateCRMMeeting, useCRMMeetingSettings } from '@/hooks/queries/useCRMMeetings';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 export function CreateMeetingDialog({
   open,
@@ -26,32 +28,47 @@ export function CreateMeetingDialog({
   const [meetingUrl, setMeetingUrl] = useState('');
   const [startNow, setStartNow] = useState(true);
   const [scheduledStart, setScheduledStart] = useState('');
-  const [recordAudio, setRecordAudio] = useState(false);
-
-  useEffect(() => {
-    if (!open || !settingsData?.settings) return;
-    setRecordAudio(settingsData.settings.record_audio_by_default);
-  }, [open, settingsData]);
+  const [recordAudioOverride, setRecordAudioOverride] = useState<boolean | null>(null);
+  const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null);
+  const idempotencyKey = useRef(crypto.randomUUID());
+  const recordAudio = recordAudioOverride ?? settingsData?.settings.record_audio_by_default ?? false;
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setTitle('');
+      setMeetingUrl('');
+      setStartNow(true);
+      setScheduledStart('');
+      setRecordAudioOverride(null);
+      idempotencyKey.current = crypto.randomUUID();
+    }
+    onOpenChange(nextOpen);
+  };
 
   const submit = async () => {
     try {
       const detail = await createMeeting.mutateAsync({
-        workspace_id: workspaceId,
-        title: title.trim(),
-        meeting_url: meetingUrl.trim(),
-        scheduled_start_at: !startNow && scheduledStart ? new Date(scheduledStart).toISOString() : undefined,
-        record_audio: recordAudio,
-        start_now: startNow,
+        payload: {
+          workspace_id: workspaceId,
+          title: title.trim(),
+          meeting_url: meetingUrl.trim(),
+          scheduled_start_at: !startNow && scheduledStart ? new Date(scheduledStart).toISOString() : undefined,
+          record_audio: recordAudio,
+          start_now: startNow,
+        },
+        idempotencyKey: idempotencyKey.current,
       });
-      onOpenChange(false);
-      setTitle('');
-      setMeetingUrl('');
+      handleOpenChange(false);
       toast.success(startNow ? 'Helpin is joining the meeting' : 'Meeting scheduled');
       void navigate({
         to: '/w/$slug/crm/meetings/$meetingId',
         params: { slug: workspaceSlug, meetingId: detail.meeting.id },
       });
     } catch (error) {
+      const reason = getUpgradeRequiredReason(error);
+      if (reason) {
+        setUpgradeReason(reason);
+        return;
+      }
       toast.error(error instanceof Error ? error.message : 'Unable to create meeting');
     }
   };
@@ -59,7 +76,8 @@ export function CreateMeetingDialog({
   const settingsEnabled = settingsData?.settings.enabled ?? false;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add meeting</DialogTitle>
@@ -98,16 +116,18 @@ export function CreateMeetingDialog({
               <Label>Record audio</Label>
               <p className="mt-1 text-xs text-muted-foreground">Meetings are workspace-visible in this release.</p>
             </div>
-            <Switch checked={recordAudio} onCheckedChange={setRecordAudio} />
+            <Switch checked={recordAudio} onCheckedChange={setRecordAudioOverride} />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>Cancel</Button>
           <Button onClick={submit} disabled={createMeeting.isPending || !title.trim() || !meetingUrl.trim() || (startNow && !settingsEnabled)}>
             {createMeeting.isPending ? 'Creating…' : startNow ? 'Create & join' : 'Schedule meeting'}
           </Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+      <UpgradeRequiredDialog open={upgradeReason !== null} onOpenChange={(dialogOpen) => { if (!dialogOpen) setUpgradeReason(null); }} reason={upgradeReason} />
+    </>
   );
 }
