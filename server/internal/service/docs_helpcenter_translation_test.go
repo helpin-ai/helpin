@@ -592,14 +592,119 @@ func TestDocsHelpcenterLocalizedCollectionLookupUsesPublicIDWithSlugFallback(t *
 		UpdatedAt:    now,
 	})
 
+	seedDocsHelpcenterTranslationServiceDocument(t, db, model.DocsDocument{
+		ID:           "document-localized-fr",
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptr(collectionID),
+		Title:        "French article source",
+		Status:       model.DocStatusPublished,
+		Visibility:   model.SpaceVisibilityWorkspaceWide,
+		Position:     1,
+		SortKey:      "a",
+		CreatedBy:    "user-public",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	seedDocsHelpcenterTranslationServiceArticle(t, db, model.DocsHelpcenterArticle{
+		ID:                "article-localized-fr",
+		DocumentID:        "document-localized-fr",
+		PublicID:          "def456ab",
+		Slug:              "source-article",
+		PublicPublishedAt: &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	seedDocsHelpcenterTranslationServiceArticleTranslation(t, db, model.DocsHelpcenterArticleTranslation{
+		ID:           "translation-localized-fr",
+		DocumentID:   "document-localized-fr",
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptr(collectionID),
+		Locale:       "fr",
+		Title:        "Article français",
+		Slug:         ptr("article-francais"),
+		Status:       model.DocsHelpcenterTranslationStatusPublished,
+		PublishedAt:  &now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	if err := db.Create(&model.DocsHelpcenterArticlePublication{
+		ID:           "publication-localized-fr",
+		DocumentID:   "document-localized-fr",
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptr(collectionID),
+		Locale:       "fr",
+		Title:        "Article français",
+		Slug:         "article-francais",
+		PublishedAt:  now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}).Error; err != nil {
+		t.Fatalf("seed French article publication: %v", err)
+	}
+	seedDocsHelpcenterTranslationServiceDocument(t, db, model.DocsDocument{
+		ID:           "document-localized-fallback",
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptr(collectionID),
+		Title:        "Fallback article",
+		Status:       model.DocStatusPublished,
+		Visibility:   model.SpaceVisibilityWorkspaceWide,
+		Position:     2,
+		SortKey:      "b",
+		CreatedBy:    "user-public",
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+	seedDocsHelpcenterTranslationServiceArticle(t, db, model.DocsHelpcenterArticle{
+		ID:                "article-localized-fallback",
+		DocumentID:        "document-localized-fallback",
+		PublicID:          "fedcba98",
+		Slug:              "fallback-article",
+		PublicPublishedAt: &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	})
+	seedDocsHelpcenterTranslationServiceArticleTranslation(t, db, model.DocsHelpcenterArticleTranslation{
+		ID:           "translation-localized-fallback",
+		DocumentID:   "document-localized-fallback",
+		WorkspaceID:  workspaceID,
+		SpaceID:      spaceID,
+		CollectionID: ptr(collectionID),
+		Locale:       "en",
+		Title:        "Fallback article",
+		Slug:         ptr("fallback-article"),
+		Status:       model.DocsHelpcenterTranslationStatusPublished,
+		PublishedAt:  &now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
+
 	svc := newDocsHelpcenterPublicServiceForTest(db)
 
-	byKey, _, err := svc.GetPublicLocalizedCollectionByCanonicalPath(ctx, workspaceID, "fr", "anything-abc123ef")
+	byKey, articles, err := svc.GetPublicLocalizedCollectionByCanonicalPath(ctx, workspaceID, "fr", "anything-abc123ef")
 	if err != nil {
 		t.Fatalf("GetPublicLocalizedCollectionByCanonicalPath by key: %v", err)
 	}
 	if byKey == nil || byKey.ID != collectionID || byKey.Name != "Premiers pas" {
 		t.Fatalf("localized collection by public key = %+v", byKey)
+	}
+	if len(articles) != 2 || articles[0].Title != "Article français" || articles[1].Title != "Fallback article" {
+		t.Fatalf("localized collection articles = %+v", articles)
+	}
+
+	paths, err := svc.GetPublicCollectionAlternatePaths(ctx, &model.DocsHelpcenterConfig{
+		WorkspaceID:    workspaceID,
+		DefaultLocale:  "en",
+		EnabledLocales: model.DocsStringArray{"en", "fr"},
+	}, collectionID, "abc123ef")
+	if err != nil {
+		t.Fatalf("GetPublicCollectionAlternatePaths: %v", err)
+	}
+	if paths["en"] != "/en/c/getting-started-abc123ef" || paths["fr"] != "/fr/c/premiers-pas-abc123ef" {
+		t.Fatalf("alternate paths = %+v", paths)
 	}
 
 	byOldSlug, _, err := svc.GetPublicLocalizedCollectionByCanonicalPath(ctx, workspaceID, "fr", "premiers-pas")

@@ -10,7 +10,7 @@ import {
   type LocaleRouteState,
 } from '@/lib/locale'
 import { absolutePublicUrl } from '@/lib/publicUrl'
-import type { NavItem, Space } from '@/lib/types'
+import type { CollectionPage, NavItem, Space } from '@/lib/types'
 
 export interface AlternateLink {
   rel: 'alternate'
@@ -20,6 +20,40 @@ export interface AlternateLink {
 
 function absoluteUrl(rootData: RootRouteData, path: string) {
   return absolutePublicUrl(rootData, path)
+}
+
+/**
+ * Builds collection hreflang links from the compact alternate-path map that
+ * ships with the collection response. This keeps SSR metadata complete while
+ * avoiding spaces + navigation requests for every enabled locale.
+ */
+export function buildCollectionAlternateLinks(
+  rootData: RootRouteData,
+  collection: CollectionPage,
+): AlternateLink[] {
+  const paths = collection.alternate_paths ?? {}
+  const links = rootData.config.enabled_locales.flatMap((configuredLocale) => {
+    const locale = configuredLocale.trim().toLowerCase()
+    const path = paths[locale]
+    if (!locale || !path) return []
+    return [{
+      rel: 'alternate' as const,
+      hrefLang: locale,
+      href: absoluteUrl(rootData, path),
+    }]
+  })
+
+  const defaultLocale = rootData.config.default_locale.trim().toLowerCase()
+  const defaultPath = paths[defaultLocale]
+  if (defaultPath) {
+    links.push({
+      rel: 'alternate',
+      hrefLang: 'x-default',
+      href: absoluteUrl(rootData, defaultPath),
+    })
+  }
+
+  return links
 }
 
 async function loadSpacesForLocale(

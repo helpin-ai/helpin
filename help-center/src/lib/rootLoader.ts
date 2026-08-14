@@ -17,6 +17,17 @@ export interface RootRouteData {
   subdomain: string
 }
 
+/**
+ * Groups bootstrap data by effective locale rather than by full pathname so
+ * navigating between collections reuses the already-hydrated root shell.
+ */
+export function getBootstrapLocaleScope(pathname: string) {
+  const firstSegment = pathname.split('/').filter(Boolean)[0]?.toLowerCase() ?? ''
+  if (/^[a-z]{2}(?:-[a-z0-9]+)?$/.test(firstSegment)) {
+    return `locale:${firstSegment}`
+  }
+  return 'default'
+}
 
 export async function loadRootRouteData(
   queryClient: QueryClient,
@@ -24,10 +35,11 @@ export async function loadRootRouteData(
 ): Promise<RootRouteData> {
   const requestContext = await getHelpCenterRequestContext()
   const normalizedPathname = stripBasepath(pathname, requestContext.basepath)
+  const localeScope = getBootstrapLocaleScope(normalizedPathname)
   const bootstrap = await queryClient.ensureQueryData({
     queryKey: queryKeys.helpCenter.bootstrap(
       requestContext.subdomain,
-      normalizedPathname,
+      localeScope,
     ),
     queryFn: async () => {
       const response = await helpCenterService.getBootstrap(

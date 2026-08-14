@@ -250,4 +250,34 @@ describe('loadRootRouteData', () => {
     expect(rootData.spaces.map((space) => space.slug)).toEqual(['docs'])
     expect(requests).toEqual(['/api/hc/usermaven/bootstrap?path=%2Fbrands'])
   })
+
+  it('reuses bootstrap data while navigating within the same locale', async () => {
+    getHelpCenterRequestContext.mockResolvedValue({
+      host: 'replug.helpin.center',
+      protocol: 'https',
+      subdomain: 'replug',
+      basepath: '',
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: 600_000,
+        },
+      },
+    })
+
+    const first = await loadRootRouteData(queryClient, '/fr/brands')
+    const collection = await loadRootRouteData(
+      queryClient,
+      '/fr/c/getting-started-abc123ef',
+    )
+
+    expect(first.activeLocale).toBe('fr')
+    expect(collection.activeLocale).toBe('fr')
+    expect(requests).toEqual([
+      '/api/hc/replug/bootstrap?path=%2Ffr%2Fbrands',
+    ])
+  })
 })
