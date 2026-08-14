@@ -32,6 +32,7 @@ export interface DockChat {
 export interface DockChatDetail {
   chat: DockChat
   run?: AgentRun | null
+  accepted_message?: AgentRunMessage | null
   plan_ids: string[]
   plans?: CommandBarPlanSummary[]
 }
@@ -42,9 +43,15 @@ export interface DockChatListResponse {
 }
 
 export interface SendDockChatMessageRequest {
+  client_message_id: string
   content: string
   page_context?: CommandBarPageContext
   references?: DockEntityReference[]
+}
+
+export interface DockChatMessageListResponse {
+  messages: AgentRunMessage[]
+  next_before?: number | null
 }
 
 export type DockEntityReference = CommandBarPageContext

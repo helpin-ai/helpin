@@ -3,6 +3,8 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -106,6 +108,28 @@ func (h *DockChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, detail)
+}
+
+// ListMessages handles GET /api/dock/chats/{chatID}/messages and returns a
+// stable persisted transcript across all backing runs.
+func (h *DockChatHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
+	var before *int64
+	if raw := strings.TrimSpace(r.URL.Query().Get("before")); raw != "" {
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || value <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid before cursor")
+			return
+		}
+		before = &value
+	}
+	response, err := h.dockChatService.ListMessages(
+		r.Context(), getWorkspaceID(r), middleware.GetUserID(r.Context()), chi.URLParam(r, "chatID"), before, parseIntQuery(r, "limit", 50),
+	)
+	if err != nil {
+		writeDockChatError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 // GenerateTitle handles POST /api/dock/chats/{chatID}/title.

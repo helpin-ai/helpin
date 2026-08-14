@@ -737,7 +737,8 @@ func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
 }
 
 type SendAgentRunMessageRequest struct {
-	Content string `json:"content"`
+	Content         string `json:"content"`
+	ClientMessageID string `json:"client_message_id,omitempty"`
 }
 
 type ContinueAgentRunRequest struct {
@@ -753,6 +754,7 @@ type ResumeAgentRunRequest struct {
 	Content         string          `json:"content,omitempty"`
 	SendMessage     bool            `json:"send_message,omitempty"`
 	ResponsePayload json.RawMessage `json:"response_payload,omitempty"`
+	ClientMessageID string          `json:"client_message_id,omitempty"`
 }
 
 // RuntimeProfile describes the policy attached to a capability profile.

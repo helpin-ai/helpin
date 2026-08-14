@@ -1359,6 +1359,8 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 	message := &model.AgentRunMessage{
 		WorkspaceID:      run.WorkspaceID,
 		RunID:            run.ID,
+		DockChatID:       run.DockChatID,
+		DeliveryStatus:   "sent",
 		RuntimeMessageID: runtimeMessageID,
 		Role:             "assistant",
 		Content:          content,
@@ -1720,6 +1722,8 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 	message := &model.AgentRunMessage{
 		WorkspaceID:      run.WorkspaceID,
 		RunID:            run.ID,
+		DockChatID:       run.DockChatID,
+		DeliveryStatus:   "sent",
 		RuntimeMessageID: runtimeMessageID,
 		Role:             role,
 		Content:          strings.TrimSpace(runtimeMessage.Content),

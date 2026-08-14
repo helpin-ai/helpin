@@ -799,9 +799,101 @@ func (r *AgentRunMessageRepository) NextSequence(ctx context.Context, workspaceI
 }
 
 func (r *AgentRunMessageRepository) Create(ctx context.Context, message *model.AgentRunMessage) error {
+	if message != nil && message.DockChatID != nil && strings.TrimSpace(*message.DockChatID) != "" && message.DockChatSequence == nil {
+		var sequence int64
+		if err := r.db.WithContext(ctx).Raw(`
+			UPDATE dock_chats
+			SET next_message_sequence = next_message_sequence + 1,
+				updated_at = updated_at
+			WHERE workspace_id = ? AND id = ?
+			RETURNING next_message_sequence
+		`, message.WorkspaceID, strings.TrimSpace(*message.DockChatID)).Scan(&sequence).Error; err != nil {
+			return fmt.Errorf("allocate dock chat message sequence: %w", err)
+		}
+		if sequence <= 0 {
+			return fmt.Errorf("allocate dock chat message sequence: dock chat not found")
+		}
+		message.DockChatSequence = &sequence
+	}
 	sanitizeAgentRunMessageForPostgres(message)
-	if err := r.db.WithContext(ctx).Create(message).Error; err != nil {
+	query := r.db.WithContext(ctx)
+	// Legacy/non-Dock run-message tables do not participate in the chat
+	// timeline. Omitting Dock-only columns also keeps focused embedders and
+	// migrations that intentionally expose the older table contract working.
+	if message != nil && message.DockChatID == nil && message.ClientMessageID == nil {
+		query = query.Omit("dock_chat_id", "dock_chat_sequence", "client_message_id", "delivery_status")
+	}
+	if err := query.Create(message).Error; err != nil {
 		return fmt.Errorf("create agent run message: %w", err)
+	}
+	return nil
+}
+
+// GetByClientMessageID returns an idempotently submitted human message.
+func (r *AgentRunMessageRepository) GetByClientMessageID(ctx context.Context, workspaceID, clientMessageID string) (*model.AgentRunMessage, error) {
+	clientMessageID = strings.TrimSpace(clientMessageID)
+	if clientMessageID == "" {
+		return nil, nil
+	}
+	var message model.AgentRunMessage
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND client_message_id = ?", workspaceID, clientMessageID).
+		First(&message).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get agent run message by client id: %w", err)
+	}
+	return &message, nil
+}
+
+// ListByDockChat returns the newest persisted chat messages as an ascending
+// page. before is an exclusive stable cursor; nil starts at the current tail.
+func (r *AgentRunMessageRepository) ListByDockChat(ctx context.Context, workspaceID, dockChatID string, before *int64, limit int) ([]model.AgentRunMessage, *int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dock_chat_id = ? AND dock_chat_sequence IS NOT NULL AND delivery_status <> ?", workspaceID, dockChatID, "failed")
+	if before != nil && *before > 0 {
+		query = query.Where("dock_chat_sequence < ?", *before)
+	}
+	var messages []model.AgentRunMessage
+	if err := query.Order("dock_chat_sequence DESC").Limit(limit + 1).Find(&messages).Error; err != nil {
+		return nil, nil, fmt.Errorf("list dock chat messages: %w", err)
+	}
+	var nextBefore *int64
+	if len(messages) > limit {
+		messages = messages[:limit]
+		if sequence := messages[len(messages)-1].DockChatSequence; sequence != nil {
+			value := *sequence
+			nextBefore = &value
+		}
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+	return messages, nextBefore, nil
+}
+
+// UpdateDeliveryStatus records whether a persisted human message reached the
+// runtime. Failed attempts remain available for audit and idempotent retry.
+func (r *AgentRunMessageRepository) UpdateDeliveryStatus(ctx context.Context, workspaceID, messageID, status string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, messageID).
+		Update("delivery_status", status).Error; err != nil {
+		return fmt.Errorf("update agent run message delivery status: %w", err)
+	}
+	return nil
+}
+
+func (r *AgentRunMessageRepository) UpdatePendingDeliveryByRun(ctx context.Context, workspaceID, runID, status string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Where("workspace_id = ? AND run_id = ? AND delivery_status = ?", workspaceID, runID, "pending").
+		Update("delivery_status", status).Error; err != nil {
+		return fmt.Errorf("update pending run message delivery status: %w", err)
 	}
 	return nil
 }
