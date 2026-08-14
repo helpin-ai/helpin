@@ -71,4 +71,19 @@ describe('borderless task surfaces', () => {
     });
     expect(pickerSources.join('\n')).not.toContain('text-[12px]');
   });
+
+  it('keeps task list rows, inline pickers, and toolbar controls on the PM text-ui scale', () => {
+    const taskListSource = readFileSync(resolve(__dirname, '../TaskListView.tsx'), 'utf8');
+    const displayMenuSource = readFileSync(resolve(__dirname, '../ListDisplayMenu.tsx'), 'utf8');
+
+    expect(taskListSource).toContain('font-mono text-ui text-muted-foreground');
+    expect(taskListSource).toContain('text-left text-sm hover:text-primary');
+    expect(taskListSource).toContain('<Select size="ui"');
+    expect(taskListSource).toContain('className="h-8 text-ui"');
+    expect(taskListSource).toContain('triggerClassName="text-[11px]"');
+    expect(taskListSource).toContain('singleLine');
+    expect(taskListSource).not.toContain('py-0.5 text-xs transition-colors hover:bg-accent');
+    expect(displayMenuSource).toContain('size="icon-sm"');
+    expect(displayMenuSource).toContain('px-2 py-1 text-ui font-medium');
+  });
 });

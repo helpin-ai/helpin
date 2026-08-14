@@ -23,6 +23,7 @@ interface EpicDeliveryPipelineButtonProps {
   epicId: string;
   onStarted: () => Promise<void> | void;
   disabled?: boolean;
+  disabledReason?: string;
 }
 
 /**
@@ -35,6 +36,7 @@ export function EpicDeliveryPipelineButton({
   epicId,
   onStarted,
   disabled = false,
+  disabledReason,
 }: EpicDeliveryPipelineButtonProps) {
   const [busy, setBusy] = useState(false);
 
@@ -62,6 +64,7 @@ export function EpicDeliveryPipelineButton({
       size="sm"
       className="h-7 text-xs"
       disabled={disabled || busy}
+      title={disabled ? disabledReason : undefined}
       onClick={() => void start()}
     >
       {busy ? 'Starting…' : 'Run delivery pipeline'}
@@ -214,11 +217,11 @@ export function EpicDeliveryStatusChip({
             .getElementById(EPIC_DELIVERY_PANEL_ID)
             ?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
       }
-      className="mt-2 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card px-2 py-1.5 text-left hover:bg-accent"
-      title="Jump to delivery"
+      className="mt-4 flex w-full items-center gap-2 border-t border-border/60 pt-4 text-left transition-colors hover:text-foreground"
+      title="Open delivery"
     >
       <StatusDot state={dot} />
-      <span className="text-[11px] font-medium text-foreground/80">Delivery</span>
+      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70">Delivery</span>
       <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
         {planSummaryText(plan, runsById)}
       </span>

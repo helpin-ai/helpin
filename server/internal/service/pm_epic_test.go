@@ -43,6 +43,7 @@ func newEpicTestEnvWithDB(t *testing.T) (svc *PMEpicService, db *gorm.DB, wsID, 
 	activityService := NewPMActivityService(activityRepo)
 
 	svc = NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, repository.NewPMAttachmentRepository(db), workspaceRepo, activityService, nil, nil)
+	svc.SetWorkflowRepository(repository.NewPMWorkflowRepository(db))
 	return svc, db, wsID, userID
 }
 

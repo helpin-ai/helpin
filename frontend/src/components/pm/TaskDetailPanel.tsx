@@ -1359,7 +1359,7 @@ function TaskDetailPanelBody({
             aria-label="Task title"
             value={form.name}
             onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-            className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+            className="w-full border-b border-border/60 bg-transparent pb-2 text-2xl font-bold text-foreground transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/70 focus:outline-none"
             placeholder="Untitled"
           />
 
@@ -1388,7 +1388,8 @@ function TaskDetailPanelBody({
                   content={form.description}
                   onChange={(html) => updateField('description', html, { description: html })}
                   placeholder="Add a description..."
-                  className="border-transparent shadow-none [&_.ProseMirror]:text-sm"
+                  variant="divider"
+                  className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:p-0"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   onUploadReady={handleDescriptionUploadReady}

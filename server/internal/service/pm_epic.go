@@ -21,6 +21,7 @@ type PMEpicService struct {
 	gitRepo             *repository.GitRepositoryRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	workspaceRepo       *repository.WorkspaceRepository
+	workflowRepo        *repository.PMWorkflowRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
@@ -53,6 +54,11 @@ func (s *PMEpicService) SetAgentService(svc *AgentService) {
 // SetGitService enables task delivery-target inheritance after epic linking.
 func (s *PMEpicService) SetGitService(svc *GitService) {
 	s.gitService = svc
+}
+
+// SetWorkflowRepository enables human-readable epic state activity metadata.
+func (s *PMEpicService) SetWorkflowRepository(repo *repository.PMWorkflowRepository) {
+	s.workflowRepo = repo
 }
 
 // requireAdmin checks that the actor has owner or admin role.
@@ -435,10 +441,15 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if err := s.syncProgress(ctx, epic.ID); err != nil {
 		return nil, err
 	}
-	s.logger.InfoContext(ctx, "epic updated", "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
-	if err := s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "updated", nil, nil, nil, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log epic updated activity", "error", err, "epic_id", epic.ID)
+	updatedEpic, err := s.getWithSuggestedHealth(ctx, epic.ID)
+	if err != nil {
+		return nil, err
 	}
+	if updatedEpic == nil {
+		return nil, fmt.Errorf("epic not found")
+	}
+	s.logger.InfoContext(ctx, "epic updated", "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
+	s.logEpicUpdateActivity(ctx, current, updatedEpic, actorID)
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
@@ -475,7 +486,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		}
 	}
 
-	return s.getWithSuggestedHealth(ctx, epic.ID)
+	return updatedEpic, nil
 }
 
 func (s *PMEpicService) validatePlanningRepository(ctx context.Context, workspaceID string, repositoryID *string) error {
@@ -560,9 +571,11 @@ func (s *PMEpicService) UpdateHealth(ctx context.Context, id string, req model.U
 		s.logger.ErrorContext(ctx, "failed to update epic health", "error", err, "epic_id", id)
 		return err
 	}
-	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", id, optionalActor(actorID), "health_updated", stringPtr("health"), nil, &req.Health, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log epic health_updated activity", "error", err, "epic_id", id)
-	}
+	after := *epic
+	after.Epic = epic.Epic
+	after.Epic.Health = req.Health
+	after.Epic.HealthComment = req.Comment
+	s.logEpicUpdateActivity(ctx, epic, &after, actorID)
 	return nil
 }
 
@@ -584,7 +597,11 @@ func (s *PMEpicService) AddLabel(ctx context.Context, epicID, labelID, actorID s
 	if err := s.epicRepo.AddLabel(ctx, epicID, labelID); err != nil {
 		return err
 	}
-	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, nil); err != nil {
+	metadata := map[string]interface{}{}
+	if label, labelErr := s.labelRepo.GetByID(ctx, labelID); labelErr == nil && label != nil {
+		metadata["new_label"] = label.Name
+	}
+	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, metadata); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log epic label_added activity", "error", err, "epic_id", epicID)
 	}
 	return nil
@@ -605,7 +622,11 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 	if err := s.epicRepo.RemoveLabel(ctx, epicID, labelID); err != nil {
 		return err
 	}
-	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil); err != nil {
+	metadata := map[string]interface{}{}
+	if label, labelErr := s.labelRepo.GetByID(ctx, labelID); labelErr == nil && label != nil {
+		metadata["old_label"] = label.Name
+	}
+	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, metadata); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log epic label_removed activity", "error", err, "epic_id", epicID)
 	}
 	return nil

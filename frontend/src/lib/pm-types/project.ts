@@ -579,7 +579,11 @@ export interface ActivityLogEntry {
     id: string;
     email: string;
     full_name: string;
-    avatar_url?: string;
+    avatar_url?: string | null;
+    avatar_style?: string | null;
+    avatar_seed?: string | null;
+    avatar_background_mode?: string | null;
+    avatar_background_color?: string | null;
     created_at: string;
     updated_at: string;
   };

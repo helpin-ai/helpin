@@ -17,6 +17,7 @@ describe('TaskDetailSectionHeading', () => {
   it('unifies comments and activity in Updates while compact sections retain their own headers', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
     const updatesSource = readFileSync(resolve(__dirname, '../TaskUpdatesView.tsx'), 'utf8');
+    const updateRowSource = readFileSync(resolve(__dirname, '../../UpdateActivityRow.tsx'), 'utf8');
     const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
     const checklistSource = readFileSync(resolve(__dirname, '../../ChecklistItems.tsx'), 'utf8');
     const externalLinksSource = readFileSync(resolve(__dirname, '../../ExternalLinks.tsx'), 'utf8');
@@ -27,10 +28,11 @@ describe('TaskDetailSectionHeading', () => {
     expect(updatesSource).toContain('<Tabs value={filter}');
     expect(updatesSource).toContain('<TabsList variant="line" aria-label="Update type"');
     expect(updatesSource).toContain('<TabsTrigger');
-    expect(updatesSource).toContain('<AgentAvatar');
-    expect(updatesSource).toContain('<UserAvatar');
+    expect(updatesSource).toContain('<UpdateActivityRow');
+    expect(updateRowSource).toContain('<AgentAvatar');
+    expect(updateRowSource).toContain('<UserAvatar');
     expect(updatesSource).toContain('!agentActivity.automated');
-    expect(updatesSource).toContain('font-semibold text-foreground/90');
+    expect(updateRowSource).toContain('font-semibold text-foreground/90');
     expect(updatesSource).toContain('taskUpdateAgentPresentation');
     expect(updatesSource).toContain("{ value: 'all', label: 'All' }");
     expect(updatesSource).toContain("{ value: 'discussion', label: 'Discussion' }");

@@ -810,6 +810,7 @@ func main() {
 	pmTaskService.SetTaskTemplateRepository(pmTaskTemplateRepo)
 	pmRoadmapRepo := repository.NewPMRoadmapRepository(db)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmTaskRepo, pmLabelRepo, gitRepositoryRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
+	pmEpicService.SetWorkflowRepository(pmWorkflowRepo)
 	pmEpicService.SetProductAnalyticsService(productAnalytics)
 	pmRoadmapService := service.NewPMRoadmapService(pmEpicService, pmRoadmapRepo)
 	pmSprintService := service.NewPMSprintService(pmSprintRepo, pmTaskRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, settingsRepo, pmActivityService, wsPublisher, notificationService, pmSprintCloseoutRepo)
