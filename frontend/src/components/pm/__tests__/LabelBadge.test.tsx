@@ -35,9 +35,13 @@ describe('LabelBadge', () => {
         element.textContent?.includes('Very Long Label Name') &&
         element.className.includes('truncate'),
     )
+    const badge = container.firstElementChild
 
     expect(textNode?.className).toContain('truncate')
     expect(textNode?.className).toContain('min-w-0')
+    expect(badge?.className).toContain('h-5')
+    expect(badge?.className).toContain('text-[11px]')
+    expect(badge?.className).not.toContain('text-ui')
 
     act(() => {
       root.unmount()

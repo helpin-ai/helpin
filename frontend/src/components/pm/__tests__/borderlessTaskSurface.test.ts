@@ -8,14 +8,38 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 describe('borderless task surfaces', () => {
   it('uses the flush dialog and divider editor without replacing the task sidebar', () => {
     const source = readFileSync(resolve(__dirname, '../CreateTaskModal.tsx'), 'utf8');
+    const layoutSource = readFileSync(resolve(__dirname, '../CreateEntityModalLayout.tsx'), 'utf8');
 
-    expect(source).toContain('variant="flush"');
-    expect(source).toContain('variant="plain"');
+    expect(source).toContain('<CreateEntityDialogContent>');
+    expect(source).toContain('<CreateEntityTitleInput');
     expect(source).toContain('variant="divider"');
-    expect(source).toContain('focus-within:border-foreground/70');
     expect(source).toContain("'borderless'");
     expect(source).toContain('Right sidebar — metadata');
-    expect(source).toContain('grid-cols-[16px_80px_1fr]');
+    expect(source).toContain('className="[&>span]:text-ui"');
+
+    expect(layoutSource).toContain('variant="flush"');
+    expect(layoutSource).toContain('variant="plain"');
+    expect(layoutSource).toContain('focus-within:border-foreground/70');
+    expect(layoutSource).toContain('grid-cols-[16px_80px_1fr]');
+    expect(layoutSource).toContain('self-center text-ui text-muted-foreground');
+    expect(layoutSource).toContain('text-ui [&_button]:text-ui');
+  });
+
+  it('shares the task modal shell and PM control sizes with epic, sprint, and objective creation', () => {
+    const source = readFileSync(resolve(__dirname, '../GlobalCreateModals.tsx'), 'utf8');
+
+    ['epic', 'sprint', 'objective'].forEach((entity) => {
+      expect(source).toContain(`title="Create ${entity}"`);
+      expect(source).toContain(`aria-label="${entity[0].toUpperCase()}${entity.slice(1)} title"`);
+    });
+
+    expect(source.match(/<CreateEntityDialogContent>/g)).toHaveLength(3);
+    expect(source.match(/<CreateEntityModalBody>/g)).toHaveLength(3);
+    expect(source.match(/<CreateEntityModalSidebar/g)).toHaveLength(3);
+    expect(source.match(/<CreateEntityModalFooter>/g)).toHaveLength(3);
+    expect(source.match(/variant="divider"/g)).toHaveLength(3);
+    expect(source).toContain('<Select size="ui"');
+    expect(source).toContain('<SelectTrigger variant="ghost"');
   });
 
   it('uses the update composer and line tabs for task activity', () => {
@@ -32,5 +56,19 @@ describe('borderless task surfaces', () => {
     expect(editorSource).toContain('rounded-full bg-primary');
     expect(threadSource).toContain("variant: composerVariant === 'update' ? 'update' : 'reply'");
     expect(threadSource).toContain("variant={composerVariant === 'update' ? 'update' : undefined}");
+  });
+
+  it('keeps shared PM picker triggers and dropdown options on the PM text-ui scale', () => {
+    const pickerSources = [
+      '../SidebarPopoverSelect.tsx',
+      '../MemberPickerPopover.tsx',
+      '../LabelPicker.tsx',
+      '../EstimatePicker.tsx',
+    ].map((path) => readFileSync(resolve(__dirname, path), 'utf8'));
+
+    pickerSources.forEach((source) => {
+      expect(source).toContain('text-ui');
+    });
+    expect(pickerSources.join('\n')).not.toContain('text-[12px]');
   });
 });

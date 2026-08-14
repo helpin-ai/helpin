@@ -30,7 +30,6 @@ import {
 } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { TiptapEditor } from "@/components/ui/tiptap-editor";
 import {
@@ -96,6 +95,18 @@ import { normalizeTeamType } from "@/lib/teamPresets";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { getOptionalSectionActionClass } from "@/components/pm/optionalSectionActionPill";
 import { AgentPickerCard } from "@/components/pm/AgentPickerCard";
+import {
+  CreateEntityDialogContent,
+  CreateEntityMetadataGrid,
+  CreateEntityMetadataRow as MetadataRow,
+  CreateEntityModalBody,
+  CreateEntityModalFooter,
+  CreateEntityModalFrame,
+  CreateEntityModalHeader,
+  CreateEntityModalMain,
+  CreateEntityModalSidebar,
+  CreateEntityTitleInput,
+} from '@/components/pm/CreateEntityModalLayout';
 import { UpgradeRequiredDialog } from "@/components/billing/UpgradeRequiredDialog";
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from "@/lib/upgradeRequired";
 
@@ -272,35 +283,7 @@ export function isCreateTaskModalDirty({
   return form.name.trim() !== '' || stripHtmlForCompare(currentDescription) !== stripHtmlForCompare(baselineDescription);
 }
 
-// ── Metadata Row ───────────────────────────────────────────────────
-
 const CODE_REPO_TOOLTIP = "Gives agents code context for planning and execution.";
-
-function MetadataRow({
-  icon: Icon,
-  label,
-  tooltip,
-  children,
-}: {
-  icon: React.ElementType;
-  label: string;
-  tooltip?: string;
-  children: React.ReactNode;
-}) {
-  const labelNode = <span className="text-xs text-muted-foreground self-center">{label}</span>;
-
-  return (
-    <>
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      {tooltip ? (
-        <QuickTooltip label={tooltip} side="left">
-          {labelNode}
-        </QuickTooltip>
-      ) : labelNode}
-      <div className="min-w-0 self-center">{children}</div>
-    </>
-  );
-}
 
 function GroupedSidebarPopoverSelect<T extends string>({
   value,
@@ -326,7 +309,7 @@ function GroupedSidebarPopoverSelect<T extends string>({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         >
           {renderTrigger()}
         </button>
@@ -1214,24 +1197,19 @@ export function CreateTaskModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        variant="flush"
-        className="w-[1080px] max-w-[calc(100vw-2rem)] overflow-visible sm:max-w-[calc(100vw-2rem)]"
-        showCloseButton={false}
-      >
+      <CreateEntityDialogContent>
         {stackedOverDrawer ? (
           <div
             aria-hidden="true"
             className="pointer-events-none absolute -left-2 top-3 h-14 w-2 rounded-l-md border-y border-l border-border/70 bg-background shadow-sm"
           />
         ) : null}
-        <div className="flex h-[85vh] max-h-[960px] flex-col">
+        <CreateEntityModalFrame>
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-border/60 px-5 py-[15px]">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="text-[17px] font-semibold tracking-[-0.01em]">
-                {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
-              </span>
+          <CreateEntityModalHeader
+            title={isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
+            onClose={() => handleOpenChange(false)}
+          >
               {!isTemplateMode && (
                 <SidebarPopoverSelect
                   value={selectedTemplateId}
@@ -1266,25 +1244,18 @@ export function CreateTaskModal({
                   triggerClassName="px-2.5 py-1 text-xs"
                 />
               )}
-            </div>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-md text-muted-foreground" onClick={() => handleOpenChange(false)}>
-              <Cancel01Icon className="h-4 w-4" />
-            </Button>
-          </div>
+          </CreateEntityModalHeader>
 
           {/* Two-column grid */}
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto md:grid-cols-[minmax(0,1fr)_300px] md:overflow-hidden">
+          <CreateEntityModalBody>
             {/* Left column — title + description */}
-            <div className="min-h-0 md:overflow-y-auto">
+            <CreateEntityModalMain>
 
               {/* Title */}
-              <div className="border-b border-border/60 px-6 py-[17px] transition-colors focus-within:border-foreground/70">
-                <Input
+              <CreateEntityTitleInput
                   id="task-title"
                   autoFocus
                   placeholder="Title..."
-                  variant="plain"
-                  className="text-xl font-medium tracking-[-0.015em] md:text-xl"
                   value={form.name}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, name: event.target.value }))
@@ -1296,8 +1267,7 @@ export function CreateTaskModal({
                       editor?.focus();
                     }
                   }}
-                />
-              </div>
+              />
 
               {/* Description — Tiptap rich text editor */}
               <div className="relative min-h-[320px]">
@@ -1660,11 +1630,11 @@ export function CreateTaskModal({
               )}
 
               {error ? <p className="border-t border-border/60 px-6 py-3 text-sm text-destructive">{error}</p> : null}
-            </div>
+            </CreateEntityModalMain>
 
             {/* Right sidebar — metadata */}
-            <aside className="min-h-0 overflow-y-auto border-t border-border/50 px-5 py-4 md:border-t-0 md:border-l">
-              <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-3 gap-y-3">
+            <CreateEntityModalSidebar>
+              <CreateEntityMetadataGrid>
                 {/* Team */}
                 {teams.length > 0 && (
                   <MetadataRow icon={UserGroupIcon} label="Team *">
@@ -1858,6 +1828,7 @@ export function CreateTaskModal({
                     selectedLabelIds={form.label_ids}
                     onLabelsChange={setLabels}
                     onChange={(ids) => setForm((prev) => ({ ...prev, label_ids: ids }))}
+                    className="[&>span]:text-ui"
                   />
                 </MetadataRow>
                 )}
@@ -1884,7 +1855,7 @@ export function CreateTaskModal({
 
                 {fieldVis.epic && selectedEpicDeliveryTarget?.repository_id && selectedEpicDeliveryTarget.epic_branch && (
                 <MetadataRow icon={SourceCodeIcon} label="Delivery">
-                  <span className="min-w-0 truncate font-mono text-xs">
+                  <span className="min-w-0 truncate font-mono text-ui">
                     {selectedEpicDeliveryTarget.epic_branch}
                   </span>
                 </MetadataRow>
@@ -1957,7 +1928,7 @@ export function CreateTaskModal({
                     disablePast
                     hideIcon
                     urgencyColor
-                    className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
+                    className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-ui shadow-none hover:bg-accent"
                   />
                 </MetadataRow>
                 )}
@@ -1971,19 +1942,19 @@ export function CreateTaskModal({
                         className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
                         onClick={() => setRecurringDialogOpen(true)}
                       >
-                        {recurringDraft ? <RecurringTemplateBadge compact /> : null}
+                        {recurringDraft ? <RecurringTemplateBadge compact className="text-ui" /> : null}
                         <span className="truncate">{recurringDraftSummary}</span>
                       </button>
                     </MetadataRow>
                   </>
                 )}
 
-              </div>
-            </aside>
-          </div>
+              </CreateEntityMetadataGrid>
+            </CreateEntityModalSidebar>
+          </CreateEntityModalBody>
 
           {/* Footer */}
-          <div className="flex flex-wrap items-center justify-end gap-3 border-t border-border/60 px-5 py-3.5">
+          <CreateEntityModalFooter>
             {!isTemplateMode && (
               <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2">
                 <div className="flex items-center gap-2">
@@ -2014,8 +1985,8 @@ export function CreateTaskModal({
               {submitting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : null}
               {submitting ? "Saving..." : assignedAgentId && !isTemplateMode ? "Save & run agent" : "Save"}
             </Button>
-          </div>
-        </div>
+          </CreateEntityModalFooter>
+        </CreateEntityModalFrame>
 
         <UpgradeRequiredDialog
           open={upgradeDialogReason !== null}
@@ -2063,7 +2034,7 @@ export function CreateTaskModal({
             </DialogContent>
           </Dialog>
         )}
-      </DialogContent>
+      </CreateEntityDialogContent>
     </Dialog>
   );
 }

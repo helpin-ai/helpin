@@ -159,7 +159,7 @@ export function LabelPicker({
           <button
             type="button"
             className={cn(
-              'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent cursor-pointer',
+              'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-ui text-muted-foreground transition-colors hover:bg-accent cursor-pointer',
               selectedLabels.length === 0 && 'text-muted-foreground',
             )}
             onClick={(e) => {
@@ -182,7 +182,7 @@ export function LabelPicker({
             <Command shouldFilter={true}>
               <CommandInput
                 placeholder="Search labels..."
-                className="h-8 text-xs"
+                className="h-8 text-ui"
                 value={search}
                 onValueChange={setSearch}
               />
@@ -190,7 +190,7 @@ export function LabelPicker({
                 <CommandEmpty className="py-1.5 px-2">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-ui text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
                     onClick={createAndSelect}
                     disabled={creating}
                   >
@@ -218,7 +218,7 @@ export function LabelPicker({
                         value={label.name}
                         onSelect={() => toggleLabel(label.id)}
                         className={cn(
-                          'flex items-center gap-2 text-xs',
+                          'flex items-center gap-2 text-ui',
                           isPartial && 'italic text-muted-foreground',
                         )}
                       >

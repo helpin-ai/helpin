@@ -82,7 +82,7 @@ export function SidebarPopoverSelect<T extends string>({
             disabled={disabled}
             onClick={() => updateOpen(true)}
             className={cn(
-              'inline-flex min-w-0 max-w-full items-center gap-1.5 px-1.5 py-0.5 text-[12px] text-foreground cursor-pointer disabled:pointer-events-none',
+              'inline-flex min-w-0 max-w-full items-center gap-1.5 px-1.5 py-0.5 text-ui text-foreground cursor-pointer disabled:pointer-events-none',
               triggerVariant
                 ? pickerTriggerVariants({ variant: triggerVariant })
                 : 'rounded-md transition-colors hover:bg-accent disabled:opacity-50',
@@ -104,9 +104,9 @@ export function SidebarPopoverSelect<T extends string>({
               return 0;
             }}
           >
-            <CommandInput placeholder={searchPlaceholder} className="h-8 text-xs" />
+            <CommandInput placeholder={searchPlaceholder} className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No results</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No results</CommandEmpty>
               {resolvedGroups.map((group, groupIndex) => (
                 group.options.length === 0 ? null : (
                   <CommandGroup key={groupIndex} heading={group.label}>
@@ -115,7 +115,7 @@ export function SidebarPopoverSelect<T extends string>({
                         key={option.value}
                         value={option.label}
                         onSelect={() => { onChange(option.value); updateOpen(false); }}
-                        className="flex items-center gap-2 text-xs"
+                        className="flex items-center gap-2 text-ui"
                       >
                         {renderOption ? renderOption(option.value) : <span className={cn('truncate', option.className)}>{option.label}</span>}
                         {value === option.value && <Tick01Icon className="ml-auto h-3.5 w-3.5 shrink-0 text-primary" />}
@@ -139,7 +139,7 @@ export function SidebarPopoverSelect<T extends string>({
           disabled={disabled}
           onClick={() => updateOpen(true)}
           className={cn(
-            'inline-flex min-w-0 max-w-full items-center gap-1.5 px-1.5 py-0.5 text-[12px] text-foreground cursor-pointer disabled:pointer-events-none',
+            'inline-flex min-w-0 max-w-full items-center gap-1.5 px-1.5 py-0.5 text-ui text-foreground cursor-pointer disabled:pointer-events-none',
             triggerVariant
               ? pickerTriggerVariants({ variant: triggerVariant })
               : 'rounded-md transition-colors hover:bg-accent disabled:opacity-50',
@@ -167,7 +167,7 @@ export function SidebarPopoverSelect<T extends string>({
                     key={option.value}
                     type="button"
                     className={cn(
-                      'flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-xs text-foreground transition-colors cursor-pointer',
+                      'flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-ui text-foreground transition-colors cursor-pointer',
                       value === option.value
                         ? 'bg-accent font-medium'
                         : 'hover:bg-accent',
