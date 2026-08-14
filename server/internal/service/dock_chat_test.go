@@ -8,12 +8,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type dockChatMemberRepo struct{}
+
+func (dockChatMemberRepo) GetMembership(_ context.Context, _, userID string) (*authorization.MemberInfo, error) {
+	return &authorization.MemberInfo{ID: "member-" + userID, Role: model.RoleMember, Status: "active"}, nil
+}
+
+func (dockChatMemberRepo) GetTeamMemberships(context.Context, string) ([]authorization.TeamRole, error) {
+	return nil, nil
+}
+
+type dockChatModuleRepo map[string][]model.ModuleID
+
+func (r dockChatModuleRepo) ListAccessibleModules(_ context.Context, _ string, memberID string, _ []string) ([]model.ModuleID, error) {
+	return r[memberID], nil
+}
 
 type scriptedDockChatTitleLLM struct {
 	response string
@@ -41,7 +58,7 @@ func TestDockChatListCursorPagination(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
-		title TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)
@@ -77,6 +94,70 @@ func TestDockChatListCursorPagination(t *testing.T) {
 	}
 }
 
+func TestDockChatVisibilityScopesListAndReadAccess(t *testing.T) {
+	dbName := fmt.Sprintf("file:dock_chat_visibility_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT,
+		support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create dock chats: %v", err)
+	}
+	now := time.Now().UTC()
+	crm := model.ModuleCRM
+	support := model.ModuleSupport
+	chats := []model.DockChat{
+		{ID: "mine", WorkspaceID: "ws-1", UserID: "user-2", Title: "Mine", Visibility: model.DockChatVisibilityPrivate, CreatedAt: now, UpdatedAt: now},
+		{ID: "other-private", WorkspaceID: "ws-1", UserID: "user-1", Title: "Private", Visibility: model.DockChatVisibilityPrivate, CreatedAt: now.Add(-time.Minute), UpdatedAt: now},
+		{ID: "workspace", WorkspaceID: "ws-1", UserID: "user-1", Title: "Workspace", Visibility: model.DockChatVisibilityWorkspace, CreatedAt: now.Add(-2 * time.Minute), UpdatedAt: now},
+		{ID: "crm", WorkspaceID: "ws-1", UserID: "user-1", Title: "CRM", Visibility: model.DockChatVisibilityModule, ModuleID: &crm, CreatedAt: now.Add(-3 * time.Minute), UpdatedAt: now},
+		{ID: "support", WorkspaceID: "ws-1", UserID: "user-1", Title: "Support", Visibility: model.DockChatVisibilityModule, ModuleID: &support, CreatedAt: now.Add(-4 * time.Minute), UpdatedAt: now},
+	}
+	if err := db.Create(&chats).Error; err != nil {
+		t.Fatalf("seed chats: %v", err)
+	}
+	authz := authorization.NewAuthzService(db, dockChatMemberRepo{}, dockChatModuleRepo{
+		"member-user-2": {model.ModuleCRM},
+	})
+	svc := &DockChatService{chatRepo: repository.NewDockChatRepository(db), authz: authz}
+
+	listed, err := svc.ListChats(context.Background(), "ws-1", "user-2", 20, "")
+	if err != nil {
+		t.Fatalf("list chats: %v", err)
+	}
+	got := make(map[string]bool, len(listed.Chats))
+	for _, chat := range listed.Chats {
+		got[chat.ID] = true
+	}
+	for _, expected := range []string{"mine", "workspace", "crm"} {
+		if !got[expected] {
+			t.Errorf("missing visible chat %q from %#v", expected, got)
+		}
+	}
+	for _, hidden := range []string{"other-private", "support"} {
+		if got[hidden] {
+			t.Errorf("listed hidden chat %q", hidden)
+		}
+	}
+	if _, err := svc.GetChat(context.Background(), "ws-1", "user-2", "crm"); err != nil {
+		t.Fatalf("read CRM-shared chat: %v", err)
+	}
+	if _, err := svc.GetChat(context.Background(), "ws-1", "user-2", "support"); !errors.Is(err, ErrDockChatNotFound) {
+		t.Fatalf("support chat error = %v, want not found", err)
+	}
+	if _, err := svc.UpdateChat(context.Background(), "ws-1", "user-2", "crm", model.UpdateDockChatRequest{Title: strPtr("Changed")}); !errors.Is(err, ErrDockChatNotFound) {
+		t.Fatalf("shared chat update error = %v, want not found", err)
+	}
+	if _, err := svc.OwnedActiveRunForChat(context.Background(), "ws-1", "user-2", "crm"); !errors.Is(err, ErrDockChatNotFound) {
+		t.Fatalf("shared chat mutation error = %v, want not found", err)
+	}
+}
+
 func TestDockChatCreateReusesSupportConversationChat(t *testing.T) {
 	dbName := fmt.Sprintf("file:dock_chat_support_%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
@@ -85,7 +166,7 @@ func TestDockChatCreateReusesSupportConversationChat(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
-		title TEXT, support_conversation_id TEXT, active_run_id TEXT,
+		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT, support_conversation_id TEXT, active_run_id TEXT,
 		last_message_at DATETIME, archived_at DATETIME, created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)
@@ -120,7 +201,7 @@ func TestDockChatListHydratesActiveRunStatus(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
-		title TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)
@@ -183,7 +264,7 @@ func TestDockChatGenerateTitleUsesSemanticCompletion(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
-		title TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)
@@ -221,7 +302,7 @@ func TestDockChatGenerateTitlePreservesManualTitle(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
-		title TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
+		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT, support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME, archived_at DATETIME,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)

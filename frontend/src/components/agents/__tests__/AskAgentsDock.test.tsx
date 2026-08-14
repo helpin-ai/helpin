@@ -7,6 +7,7 @@ import { AskAgentsDock } from '../AskAgentsDock';
 import { PageContextProvider } from '@/components/command-bar/pageContext';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useDockStore } from '@/stores/dockStore';
 import type { DockChat, DockChatDetail, DockRunSummary } from '@/lib/dockTypes';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
@@ -88,6 +89,7 @@ const CHAT: DockChat = {
   workspace_id: 'ws-1',
   user_id: 'user-1',
   title: 'Sprint questions',
+  visibility: 'private',
   active_run_id: null,
   created_at: '2026-08-01T00:00:00Z',
   updated_at: '2026-08-01T00:00:00Z',
@@ -148,6 +150,7 @@ beforeEach(() => {
   useWorkspaceStore.setState({
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
+  useAuthStore.setState({ user: { id: 'user-1', email: 'owner@example.com' } as never });
   mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
   mocks.createChat.mockResolvedValue({ data: null, error: 'not configured' });
   mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
@@ -173,6 +176,7 @@ afterEach(() => {
   container.remove();
   document.body.innerHTML = '';
   useWorkspaceStore.setState({ currentWorkspace: null });
+  useAuthStore.setState({ user: null });
   vi.clearAllMocks();
 });
 
@@ -331,7 +335,7 @@ describe('AskAgentsDock', () => {
     await renderEmbeddedDock(supportContext);
     await waitForCondition(() => mocks.createChat.mock.calls.length === 1, 'support chat was not created');
 
-    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new');
+    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support');
     expect(useDockStore.getState().activeChatId).toBe('chat-new');
   });
 
@@ -819,8 +823,48 @@ describe('AskAgentsDock', () => {
       (newButton as HTMLButtonElement).click();
     });
     await flush();
-    expect(mocks.createChat).toHaveBeenCalledWith('ws-1');
+    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', undefined, null);
     expect(useDockStore.getState().activeChatId).toBe('chat-2');
+  });
+
+  it('shows plain-language visibility and lets the owner share with the workspace', async () => {
+    const sharedChat: DockChat = { ...CHAT, visibility: 'workspace' };
+    mocks.updateChat.mockResolvedValue({ data: sharedChat, error: null });
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const visibilityButton = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label="Only you can see this. Change who can see this chat"]',
+    );
+    expect(visibilityButton).not.toBeNull();
+    await act(async () => {
+      visibilityButton?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    });
+    await waitForText('Who can see this chat?');
+    expect(document.body.textContent).toContain('Customers and external users can never see Ask Agent chats.');
+
+    const workspaceItem = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((item) => item.textContent?.includes('Everyone at Acme'));
+    expect(workspaceItem).toBeTruthy();
+    await act(async () => workspaceItem?.click());
+    await flush();
+
+    expect(mocks.updateChat).toHaveBeenCalledWith('ws-1', 'chat-1', { visibility: 'workspace' });
+    expect(document.body.textContent).toContain('Visible to everyone at Acme');
+  });
+
+  it('shows a shared module chat as read-only to another teammate', async () => {
+    const sharedChat: DockChat = { ...CHAT, visibility: 'module', module_id: 'support' };
+    useAuthStore.setState({ user: { id: 'user-2', email: 'teammate@example.com' } as never });
+    mocks.listChats.mockResolvedValue({ data: { chats: [sharedChat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: sharedChat }), error: null });
+
+    await renderDock();
+    await waitForText('Visible to teammates in Support');
+
+    expect(document.body.textContent).toContain('Only its creator can continue it.');
+    expect(document.body.querySelector('[aria-label*="Change who can see this chat"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label="Actions for Sprint questions"]')).toBeNull();
   });
 
   it('shows attention in the collapsed dock trigger', async () => {

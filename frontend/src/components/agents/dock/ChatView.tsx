@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/stores/authStore';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
@@ -88,6 +89,7 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  const currentUserId = useAuthStore((state) => state.user?.id);
 
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
@@ -103,6 +105,7 @@ export function ChatView({
   }, [initialDraft, onDraftConsumed, setValue]);
 
   const run = detail?.run ?? null;
+  const sharedReadOnly = !!detail?.chat.user_id && !!currentUserId && detail.chat.user_id !== currentUserId;
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
   useEffect(() => {
     onRunIdChange?.(run?.id ?? null);
@@ -324,7 +327,7 @@ export function ChatView({
     await sendContent(content, references);
   };
 
-  const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
+  const canStop = !sharedReadOnly && runActive && (run?.status === 'queued' || run?.status === 'running');
   const handleStop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
@@ -451,7 +454,7 @@ export function ChatView({
             ))}
           </section>
         )}
-        {effectiveInteraction && dockConfirm && (
+        {!sharedReadOnly && effectiveInteraction && dockConfirm && (
           <DockPlanConfirmCard
             payload={dockConfirm}
             onDecision={(decision, note) =>
@@ -462,7 +465,7 @@ export function ChatView({
             }
           />
         )}
-        {effectiveInteraction && !dockConfirm && run && (
+        {!sharedReadOnly && effectiveInteraction && !dockConfirm && run && (
           <PendingInteractionCard
             workspaceId={workspaceId}
             runId={run.id}
@@ -478,10 +481,14 @@ export function ChatView({
       </div>
       {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
       </div>
-      {needsApproval && !atBottom ? (
+      {!sharedReadOnly && needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}
-      {composer.visible && (
+      {sharedReadOnly ? (
+        <div className="border-t border-border/60 px-4 py-3 text-center text-[11px] text-muted-foreground">
+          This chat is shared for visibility. Only its creator can continue it.
+        </div>
+      ) : composer.visible && (
         <div className="border-t border-border/60 p-2">
           <DockInput
             mode="conversation"

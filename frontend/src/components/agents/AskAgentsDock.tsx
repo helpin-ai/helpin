@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { Cancel01Icon, LinkSquare01Icon, Maximize01Icon, Minimize01Icon, MoreVerticalIcon } from '@/lib/icons';
+import { ArrowDown01Icon, Cancel01Icon, CheckmarkCircle02Icon, GlobeIcon, LinkSquare01Icon, LockIcon, Maximize01Icon, Minimize01Icon, MoreVerticalIcon, UserGroupIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AskAgentAvatar, type AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
 import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
@@ -12,11 +12,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useDockStore } from '@/stores/dockStore';
 import { dockChatService } from '@/lib/services/dockChatService';
-import type { DockChat, DockRunSummary } from '@/lib/dockTypes';
+import { dockChatModuleForContext, type DockChat, type DockChatVisibility, type DockRunSummary } from '@/lib/dockTypes';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
 import { DockRoster } from './dock/DockRoster';
 import { ChatView } from './dock/ChatView';
@@ -25,6 +27,7 @@ import { useAgentRunStream, type AgentRunStreamFetchers } from './dock/useAgentR
 import { dockRunContext, dockRunTitle, presentDockRun } from './dock/dockPresentation';
 import { buildCodingSessionPath } from '@/lib/codingSessionSurface';
 import { AnimatedDockChatTitle } from './dock/AnimatedDockChatTitle';
+import { usePageContext } from '@/components/command-bar/pageContext';
 
 type AskAgentsEventDetail = { query?: string; mode?: 'compose' | 'runs'; runId?: string; chatId?: string };
 type DockFocusTarget = 'composer' | 'selection' | 'header';
@@ -49,6 +52,9 @@ export function AskAgentsDock({
 }: AskAgentsDockProps = {}) {
   const embedded = presentation === 'embedded';
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const pageContext = usePageContext();
+  const creationModule = dockChatModuleForContext(requiredPageContext ?? pageContext);
   const {
     collapsed,
     setCollapsed,
@@ -252,6 +258,17 @@ export function AskAgentsDock({
     return true;
   }, [setActiveChatId, setChats, workspaceId]);
 
+  const updateChatVisibility = useCallback(async (chatId: string, visibility: DockChatVisibility) => {
+    if (!workspaceId) return false;
+    const result = await dockChatService.updateChat(workspaceId, chatId, { visibility });
+    if (result.error || !result.data) {
+      toast.error(result.error ?? 'Failed to update who can see this chat');
+      return false;
+    }
+    setChats(useDockStore.getState().chats.map((chat) => chat.id === chatId ? result.data! : chat));
+    return true;
+  }, [setChats, workspaceId]);
+
   useEffect(() => {
     if (!workspaceId) return;
     activateWorkspace(workspaceId);
@@ -299,7 +316,7 @@ export function AskAgentsDock({
     }
     if (ensuredSupportConversationRef.current === associationKey) return;
     ensuredSupportConversationRef.current = associationKey;
-    void dockChatService.createChat(workspaceId, '', associatedSupportConversationId).then((result) => {
+    void dockChatService.createChat(workspaceId, '', associatedSupportConversationId, 'support').then((result) => {
       if (result.error || !result.data) {
         ensuredSupportConversationRef.current = null;
         toast.error(result.error ?? 'Failed to open the conversation chat');
@@ -382,7 +399,7 @@ export function AskAgentsDock({
 
   const newChat = useCallback(async () => {
     if (!workspaceId) return;
-    const result = await dockChatService.createChat(workspaceId);
+    const result = await dockChatService.createChat(workspaceId, '', undefined, creationModule);
     if (result.error || !result.data) {
       toast.error(result.error ?? 'Failed to create chat');
       return;
@@ -392,7 +409,7 @@ export function AskAgentsDock({
     setTab('chats');
     focusTargetRef.current = 'composer';
     setCollapsed(false);
-  }, [chats, setActiveChatId, setChats, setCollapsed, setTab, workspaceId]);
+  }, [chats, creationModule, setActiveChatId, setChats, setCollapsed, setTab, workspaceId]);
 
   useLayoutEffect(() => {
     if (collapsed && !embedded) return;
@@ -527,6 +544,8 @@ export function AskAgentsDock({
           run={null}
           chat={activeChat}
           workspaceSlug={workspace.slug}
+          workspaceName={workspace.name}
+          currentUserId={currentUserId}
           askAgentState={askAgentState}
           onClose={closeDock}
           closeLabel="Back to details"
@@ -535,6 +554,7 @@ export function AskAgentsDock({
           allowMaximize={false}
           onRenameChat={renameChat}
           onArchiveChat={archiveChat}
+          onUpdateVisibility={updateChatVisibility}
         />
         {activeChat ? (
           <ChatView
@@ -634,12 +654,15 @@ export function AskAgentsDock({
                 run={activeRun}
                 chat={activeChat}
                 workspaceSlug={workspace.slug}
+                workspaceName={workspace.name}
+                currentUserId={currentUserId}
                 askAgentState={askAgentState}
                 maximized={maximized}
                 onToggleMaximized={() => setMaximized((value) => !value)}
                 onClose={closeDock}
                 onRenameChat={renameChat}
                 onArchiveChat={archiveChat}
+                onUpdateVisibility={updateChatVisibility}
               />
               {tab === 'agents' ? (
                 activeRun ? (
@@ -718,12 +741,15 @@ function DockPaneHeader({
   run,
   chat,
   workspaceSlug,
+  workspaceName,
+  currentUserId,
   askAgentState,
   maximized,
   onToggleMaximized,
   onClose,
   onRenameChat,
   onArchiveChat,
+  onUpdateVisibility,
   closeLabel = 'Minimize',
   allowMaximize = true,
 }: {
@@ -731,12 +757,15 @@ function DockPaneHeader({
   run: DockRunSummary | null;
   chat: DockChat | null;
   workspaceSlug?: string;
+  workspaceName: string;
+  currentUserId?: string;
   askAgentState: AskAgentAvatarState;
   maximized: boolean;
   onToggleMaximized: () => void;
   onClose: () => void;
   onRenameChat: (chatId: string, title: string) => Promise<boolean>;
   onArchiveChat: (chatId: string) => Promise<boolean>;
+  onUpdateVisibility: (chatId: string, visibility: DockChatVisibility) => Promise<boolean>;
   closeLabel?: string;
   allowMaximize?: boolean;
 }) {
@@ -784,9 +813,18 @@ function DockPaneHeader({
               : <AnimatedDockChatTitle title={chat?.title.trim() || 'New chat'} />}
           </span>
         )}
-        <span className="block truncate font-mono text-[10.5px] text-[#a5a29b]">
-          {tab === 'agents' && run ? dockRunContext(run) : 'Workspace conversation'}
-        </span>
+        {tab === 'agents' && run ? (
+          <span className="block truncate font-mono text-[10.5px] text-[#a5a29b]">{dockRunContext(run)}</span>
+        ) : chat ? (
+          <DockChatVisibilityControl
+            chat={chat}
+            workspaceName={workspaceName}
+            editable={chat.user_id === currentUserId}
+            onChange={(visibility) => onUpdateVisibility(chat.id, visibility)}
+          />
+        ) : (
+          <span className="block truncate text-[10.5px] text-[#a5a29b]">Only you can see this</span>
+        )}
       </span>
       {presentation ? (
         <span className="shrink-0 rounded-full px-2 py-[3px] text-[11px] font-semibold" style={{ backgroundColor: presentation.chipBackground, color: presentation.chipForeground }}>
@@ -813,7 +851,7 @@ function DockPaneHeader({
           <LinkSquare01Icon className="h-3.5 w-3.5" />
         </a>
       ) : null}
-      {tab === 'chats' && chat ? (
+      {tab === 'chats' && chat && chat.user_id === currentUserId ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" aria-label="Conversation actions" className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
@@ -835,6 +873,134 @@ function DockPaneHeader({
         <TooltipContent side="top" className="z-[70]">{closeLabel}</TooltipContent>
       </Tooltip>
     </header>
+  );
+}
+
+const DOCK_CHAT_MODULE_LABELS: Record<NonNullable<DockChat['module_id']>, string> = {
+  support: 'Support',
+  crm: 'CRM',
+  pm: 'Projects',
+  docs: 'Docs',
+};
+
+function DockChatVisibilityControl({
+  chat,
+  workspaceName,
+  editable,
+  onChange,
+}: {
+  chat: DockChat;
+  workspaceName: string;
+  editable: boolean;
+  onChange: (visibility: DockChatVisibility) => Promise<boolean>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const confirm = useConfirm();
+  const visibility = chat.visibility || 'private';
+  const moduleLabel = chat.module_id ? DOCK_CHAT_MODULE_LABELS[chat.module_id] : null;
+  const label = visibility === 'workspace'
+    ? `Visible to everyone at ${workspaceName || 'this workspace'}`
+    : visibility === 'module' && moduleLabel
+      ? `Visible to teammates in ${moduleLabel}`
+      : 'Only you can see this';
+  const Icon = visibility === 'workspace' ? GlobeIcon : visibility === 'module' ? UserGroupIcon : LockIcon;
+
+  if (!editable) {
+    return (
+      <span className="flex min-w-0 items-center gap-1 text-[10.5px] text-[#8a8781]" title={label}>
+        <Icon className="h-3 w-3 shrink-0" />
+        <span className="truncate">{label}</span>
+      </span>
+    );
+  }
+
+  const selectVisibility = async (next: DockChatVisibility) => {
+    if (next === visibility || saving) return;
+    if (next === 'private' && visibility !== 'private') {
+      const confirmed = await confirm({
+        title: 'Make this chat private?',
+        description: 'Teammates who can see it now will lose access to the complete chat history.',
+        confirmText: 'Make private',
+        variant: 'destructive',
+      });
+      if (!confirmed) return;
+    }
+    setSaving(true);
+    await onChange(next);
+    setSaving(false);
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={saving}
+          className="flex max-w-full items-center gap-1 text-[10.5px] text-[#8a8781] transition hover:text-[#4b4945] disabled:opacity-60 dark:hover:text-[#d4d0c7]"
+          aria-label={`${label}. Change who can see this chat`}
+        >
+          <Icon className="h-3 w-3 shrink-0" />
+          <span className="truncate">{saving ? 'Updating visibility…' : label}</span>
+          <ArrowDown01Icon className="h-3 w-3 shrink-0" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="z-[70] w-[290px] p-1.5">
+        <div className="px-2 pb-2 pt-1">
+          <p className="text-xs font-semibold">Who can see this chat?</p>
+        </div>
+        <DockChatVisibilityItem
+          icon={<LockIcon className="h-4 w-4" />}
+          label="Only me"
+          description="Keep this chat personal."
+          selected={visibility === 'private'}
+          onSelect={() => void selectVisibility('private')}
+        />
+        {moduleLabel ? (
+          <DockChatVisibilityItem
+            icon={<UserGroupIcon className="h-4 w-4" />}
+            label={`Teammates in ${moduleLabel}`}
+            description={`Anyone with access to ${moduleLabel} can open this chat.`}
+            selected={visibility === 'module'}
+            onSelect={() => void selectVisibility('module')}
+          />
+        ) : null}
+        <DockChatVisibilityItem
+          icon={<GlobeIcon className="h-4 w-4" />}
+          label={`Everyone at ${workspaceName || 'this workspace'}`}
+          description="All workspace members can open this chat."
+          selected={visibility === 'workspace'}
+          onSelect={() => void selectVisibility('workspace')}
+        />
+        <p className="mx-2 mt-1 border-t border-[#f1efea] py-2 text-[10px] leading-4 text-[#8a8781] dark:border-[#302f2b]">
+          Customers and external users can never see Ask Agent chats.
+        </p>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function DockChatVisibilityItem({
+  icon,
+  label,
+  description,
+  selected,
+  onSelect,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <DropdownMenuItem onSelect={onSelect} className="items-start gap-2.5 rounded-lg px-2 py-2">
+      <span className="mt-0.5 text-[#8a8781]">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs font-medium">{label}</span>
+        <span className="block text-[10px] leading-4 text-[#8a8781]">{description}</span>
+      </span>
+      {selected ? <CheckmarkCircle02Icon className="mt-0.5 h-4 w-4 shrink-0" /> : null}
+    </DropdownMenuItem>
   );
 }
 

@@ -22,6 +22,10 @@ var ErrDockChatNotFound = errors.New("dock chat not found")
 // ErrDockChatInvalidCursor is returned for malformed list pagination cursors.
 var ErrDockChatInvalidCursor = errors.New("invalid dock chat cursor")
 
+// ErrDockChatInvalidVisibility is returned for an unsupported visibility or
+// for module visibility without a valid module context.
+var ErrDockChatInvalidVisibility = errors.New("invalid dock chat visibility")
+
 const (
 	dockChatTriggerType        = "dock_chat"
 	dockChatTitleMaxRunes      = 60
@@ -40,7 +44,7 @@ type dockChatCursor struct {
 	ID         string    `json:"id"`
 }
 
-// DockChatService owns dock chats: user-scoped conversations whose turns are
+// DockChatService owns private and shared dock conversations whose turns are
 // executed by an agent-runtime chat-mode run of the ask_agent preset.
 type DockChatService struct {
 	chatRepo       *repository.DockChatRepository
@@ -97,7 +101,11 @@ func (s *DockChatService) ListChats(ctx context.Context, workspaceID, userID str
 		beforeID = cursor.ID
 	}
 
-	chats, err := s.chatRepo.ListByWorkspaceUser(ctx, workspaceID, userID, limit+1, before, beforeID)
+	modules, err := s.accessibleDockChatModules(ctx, workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	chats, err := s.chatRepo.ListVisible(ctx, workspaceID, userID, modules, limit+1, before, beforeID)
 	if err != nil {
 		return nil, err
 	}
@@ -125,31 +133,48 @@ func (s *DockChatService) ListChats(ctx context.Context, workspaceID, userID str
 // CreateChat creates an empty chat; its backing run starts lazily on the
 // first message.
 func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID string, req model.CreateDockChatRequest) (*model.DockChat, error) {
+	visibility, moduleID, err := s.resolveCreateVisibility(ctx, workspaceID, userID, req)
+	if err != nil {
+		return nil, err
+	}
 	if req.SupportConversationID != nil {
 		conversationID := strings.TrimSpace(*req.SupportConversationID)
 		if conversationID == "" {
 			return nil, errors.New("support conversation id is required")
 		}
 		req.SupportConversationID = &conversationID
-		existing, err := s.chatRepo.GetBySupportConversation(ctx, workspaceID, userID, conversationID)
+		existingChats, err := s.chatRepo.ListBySupportConversation(ctx, workspaceID, conversationID)
 		if err != nil {
 			return nil, fmt.Errorf("find support conversation chat: %w", err)
 		}
-		if existing != nil {
-			return existing, nil
+		for index := range existingChats {
+			allowed, accessErr := s.canAccessChat(ctx, &existingChats[index], userID)
+			if accessErr != nil {
+				return nil, accessErr
+			}
+			if allowed {
+				return &existingChats[index], nil
+			}
 		}
 	}
 	chat := &model.DockChat{
 		WorkspaceID:           workspaceID,
 		UserID:                userID,
 		Title:                 strings.TrimSpace(req.Title),
+		Visibility:            visibility,
+		ModuleID:              moduleID,
 		SupportConversationID: req.SupportConversationID,
 	}
 	if err := s.chatRepo.Create(ctx, chat); err != nil {
 		if req.SupportConversationID != nil {
-			existing, lookupErr := s.chatRepo.GetBySupportConversation(ctx, workspaceID, userID, *req.SupportConversationID)
-			if lookupErr == nil && existing != nil {
-				return existing, nil
+			existingChats, lookupErr := s.chatRepo.ListBySupportConversation(ctx, workspaceID, *req.SupportConversationID)
+			if lookupErr == nil {
+				for index := range existingChats {
+					allowed, accessErr := s.canAccessChat(ctx, &existingChats[index], userID)
+					if accessErr == nil && allowed {
+						return &existingChats[index], nil
+					}
+				}
 			}
 		}
 		return nil, fmt.Errorf("create dock chat: %w", err)
@@ -174,6 +199,22 @@ func (s *DockChatService) UpdateChat(ctx context.Context, workspaceID, userID, c
 			updates["archived_at"] = nil
 		}
 	}
+	if req.Visibility != nil {
+		visibility := *req.Visibility
+		if !validDockChatVisibility(visibility) || (visibility == model.DockChatVisibilityModule && chat.ModuleID == nil) {
+			return nil, ErrDockChatInvalidVisibility
+		}
+		if visibility == model.DockChatVisibilityModule {
+			allowed, accessErr := s.canAccessDockChatModule(ctx, workspaceID, userID, *chat.ModuleID)
+			if accessErr != nil {
+				return nil, accessErr
+			}
+			if !allowed {
+				return nil, ErrDockChatNotFound
+			}
+		}
+		updates["visibility"] = visibility
+	}
 	if len(updates) == 0 {
 		return chat, nil
 	}
@@ -193,17 +234,31 @@ func (s *DockChatService) UpdateChat(ctx context.Context, workspaceID, userID, c
 
 // GetChat returns the chat with a summary of its current backing run.
 func (s *DockChatService) GetChat(ctx context.Context, workspaceID, userID, chatID string) (*model.DockChatDetail, error) {
-	chat, err := s.ownedChat(ctx, workspaceID, userID, chatID)
+	chat, err := s.accessibleChat(ctx, workspaceID, userID, chatID)
 	if err != nil {
 		return nil, err
 	}
 	return s.chatDetail(ctx, chat)
 }
 
-// ActiveRunForChat resolves the chat's current backing run after an ownership
-// check. Handlers use it to proxy run-scoped reads (snapshot, events, cancel)
-// without granting the caller access to arbitrary runs.
+// ActiveRunForChat resolves the chat's current backing run after a visibility
+// check. Handlers use it to proxy read-only run data without granting access
+// to arbitrary runs.
 func (s *DockChatService) ActiveRunForChat(ctx context.Context, workspaceID, userID, chatID string) (*model.AgentRun, error) {
+	chat, err := s.accessibleChat(ctx, workspaceID, userID, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if chat.ActiveRunID == nil {
+		return nil, nil
+	}
+	return s.runRepo.GetByID(ctx, workspaceID, *chat.ActiveRunID)
+}
+
+// OwnedActiveRunForChat resolves a run for a mutating operation. Shared
+// teammates can inspect a chat, but only its creator can approve or cancel
+// work until collaborative message attribution is introduced.
+func (s *DockChatService) OwnedActiveRunForChat(ctx context.Context, workspaceID, userID, chatID string) (*model.AgentRun, error) {
 	chat, err := s.ownedChat(ctx, workspaceID, userID, chatID)
 	if err != nil {
 		return nil, err
@@ -293,6 +348,11 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 
 func (s *DockChatService) runUsesCurrentScopedTools(ctx context.Context, chat *model.DockChat, userID string, run *model.AgentRun) (bool, error) {
 	if chat == nil || run == nil {
+		return false, nil
+	}
+	// Never resume a backing run under a different actor's authority. This is
+	// defensive today and also protects future collaborative chat work.
+	if run.TriggeredByUserID == nil || strings.TrimSpace(*run.TriggeredByUserID) != strings.TrimSpace(userID) {
 		return false, nil
 	}
 	agent, err := s.agentService.ensureBuiltInAgent(ctx, chat.WorkspaceID, userID, model.AgentPresetAskAgent)
@@ -410,6 +470,128 @@ func (s *DockChatService) ownedChat(ctx context.Context, workspaceID, userID, ch
 		return nil, ErrDockChatNotFound
 	}
 	return chat, nil
+}
+
+func (s *DockChatService) accessibleChat(ctx context.Context, workspaceID, userID, chatID string) (*model.DockChat, error) {
+	chat, err := s.chatRepo.GetByID(ctx, workspaceID, chatID)
+	if err != nil {
+		return nil, fmt.Errorf("get dock chat: %w", err)
+	}
+	allowed, err := s.canAccessChat(ctx, chat, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, ErrDockChatNotFound
+	}
+	return chat, nil
+}
+
+func (s *DockChatService) canAccessChat(ctx context.Context, chat *model.DockChat, userID string) (bool, error) {
+	if chat == nil {
+		return false, nil
+	}
+	if strings.TrimSpace(chat.UserID) == strings.TrimSpace(userID) {
+		return true, nil
+	}
+	switch chat.Visibility {
+	case model.DockChatVisibilityWorkspace:
+		if s.authz == nil {
+			return false, nil
+		}
+		_, err := s.authz.ResolveActor(ctx, chat.WorkspaceID, userID)
+		return err == nil, err
+	case model.DockChatVisibilityModule:
+		if chat.ModuleID == nil {
+			return false, nil
+		}
+		return s.canAccessDockChatModule(ctx, chat.WorkspaceID, userID, *chat.ModuleID)
+	default:
+		return false, nil
+	}
+}
+
+func (s *DockChatService) accessibleDockChatModules(ctx context.Context, workspaceID, userID string) ([]model.ModuleID, error) {
+	if s.authz == nil {
+		return nil, nil
+	}
+	actor, err := s.authz.ResolveActor(ctx, workspaceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	modules, err := s.authz.AccessibleModules(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]model.ModuleID, 0, len(modules))
+	for _, moduleID := range modules {
+		if validDockChatModule(moduleID) {
+			result = append(result, moduleID)
+		}
+	}
+	return result, nil
+}
+
+func (s *DockChatService) canAccessDockChatModule(ctx context.Context, workspaceID, userID string, moduleID model.ModuleID) (bool, error) {
+	if !validDockChatModule(moduleID) || s.authz == nil {
+		return false, nil
+	}
+	actor, err := s.authz.ResolveActor(ctx, workspaceID, userID)
+	if err != nil {
+		return false, err
+	}
+	return s.authz.CanAccessModule(ctx, actor, moduleID)
+}
+
+func (s *DockChatService) resolveCreateVisibility(ctx context.Context, workspaceID, userID string, req model.CreateDockChatRequest) (model.DockChatVisibility, *model.ModuleID, error) {
+	moduleID := req.ModuleID
+	if req.SupportConversationID != nil {
+		support := model.ModuleSupport
+		moduleID = &support
+	}
+	if moduleID != nil && !validDockChatModule(*moduleID) {
+		return "", nil, ErrDockChatInvalidVisibility
+	}
+	visibility := model.DockChatVisibilityPrivate
+	if moduleID != nil {
+		visibility = model.DockChatVisibilityModule
+	}
+	if req.Visibility != nil {
+		visibility = *req.Visibility
+	}
+	if !validDockChatVisibility(visibility) || (visibility == model.DockChatVisibilityModule && moduleID == nil) {
+		return "", nil, ErrDockChatInvalidVisibility
+	}
+	if moduleID != nil {
+		allowed, err := s.canAccessDockChatModule(ctx, workspaceID, userID, *moduleID)
+		if err != nil {
+			return "", nil, err
+		}
+		// Services created without authz are used by focused repository tests;
+		// production construction always supplies authz.
+		if s.authz != nil && !allowed {
+			return "", nil, ErrDockChatNotFound
+		}
+	}
+	return visibility, moduleID, nil
+}
+
+func validDockChatVisibility(visibility model.DockChatVisibility) bool {
+	switch visibility {
+	case model.DockChatVisibilityPrivate, model.DockChatVisibilityModule, model.DockChatVisibilityWorkspace:
+		return true
+	default:
+		return false
+	}
+}
+
+func validDockChatModule(moduleID model.ModuleID) bool {
+	switch moduleID {
+	case model.ModuleSupport, model.ModuleCRM, model.ModulePM, model.ModuleDocs:
+		return true
+	default:
+		return false
+	}
 }
 
 // startChatRun starts a (possibly successor) backing run for the chat and

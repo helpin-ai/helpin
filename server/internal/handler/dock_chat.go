@@ -13,10 +13,9 @@ import (
 
 const dockRecentRunWindow = 24 * time.Hour
 
-// DockChatHandler serves the dock's chat surface: user-owned chats backed by
-// agent-runtime chat-mode runs. Run-scoped reads are proxied through the chat
-// (with an ownership check) so users without PM permissions can still use
-// their own dock.
+// DockChatHandler serves the dock's private and shared chats backed by
+// agent-runtime chat-mode runs. Run-scoped reads are proxied through the
+// chat's visibility check.
 type DockChatHandler struct {
 	dockChatService *service.DockChatService
 	agentService    *service.AgentService
@@ -174,7 +173,7 @@ func (h *DockChatHandler) ListChatRunInteractions(w http.ResponseWriter, r *http
 // ResolveChatRunInteraction handles
 // POST /api/dock/chats/{chatID}/interactions/{interactionID}/resolve.
 func (h *DockChatHandler) ResolveChatRunInteraction(w http.ResponseWriter, r *http.Request) {
-	run, ok := h.resolveChatRun(w, r)
+	run, ok := h.resolveOwnedChatRun(w, r)
 	if !ok {
 		return
 	}
@@ -196,7 +195,7 @@ func (h *DockChatHandler) ResolveChatRunInteraction(w http.ResponseWriter, r *ht
 
 // CancelChatRun handles POST /api/dock/chats/{chatID}/run/cancel.
 func (h *DockChatHandler) CancelChatRun(w http.ResponseWriter, r *http.Request) {
-	run, ok := h.resolveChatRun(w, r)
+	run, ok := h.resolveOwnedChatRun(w, r)
 	if !ok {
 		return
 	}
@@ -383,6 +382,21 @@ func (h *DockChatHandler) resolveChatRun(w http.ResponseWriter, r *http.Request)
 	workspaceID := getWorkspaceID(r)
 	userID := middleware.GetUserID(r.Context())
 	run, err := h.dockChatService.ActiveRunForChat(r.Context(), workspaceID, userID, chi.URLParam(r, "chatID"))
+	if err != nil {
+		writeDockChatError(w, err)
+		return nil, false
+	}
+	if run == nil {
+		writeError(w, http.StatusNotFound, "chat has no active run")
+		return nil, false
+	}
+	return run, true
+}
+
+func (h *DockChatHandler) resolveOwnedChatRun(w http.ResponseWriter, r *http.Request) (*model.AgentRun, bool) {
+	workspaceID := getWorkspaceID(r)
+	userID := middleware.GetUserID(r.Context())
+	run, err := h.dockChatService.OwnedActiveRunForChat(r.Context(), workspaceID, userID, chi.URLParam(r, "chatID"))
 	if err != nil {
 		writeDockChatError(w, err)
 		return nil, false

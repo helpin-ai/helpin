@@ -782,10 +782,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/runs/{runID}/promote-agent", h.CommandBar.PromoteRunToAgent)
 			})
 
-			// Dock chats: user-owned conversations backed by agent-runtime
-			// chat-mode runs. Run-scoped reads are proxied through the chat's
-			// ownership check so users without PM permissions can use their
-			// own dock (the generic /agent-runs routes are PM-gated).
+			// Dock chats: private or explicitly shared conversations backed by
+			// agent-runtime chat-mode runs. Run-scoped reads are proxied through
+			// the chat visibility check (the generic /agent-runs routes are PM-gated).
 			r.Route("/dock", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)

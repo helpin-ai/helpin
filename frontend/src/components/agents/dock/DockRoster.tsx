@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { BotIcon, MoreHorizontalIcon, NotificationBubbleIcon, PlusSignIcon } from '@/lib/icons';
+import { BotIcon, GlobeIcon, MoreHorizontalIcon, NotificationBubbleIcon, PlusSignIcon, UserGroupIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import {
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { DockChat, DockRunSummary } from '@/lib/dockTypes';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/stores/authStore';
 import { AnimatedDockChatTitle } from './AnimatedDockChatTitle';
 import {
   dockRunSubtitle,
@@ -224,6 +225,7 @@ function DockAgentAvatar({ summary, dot }: { summary: DockRunSummary; dot: strin
 function ChatRows(props: DockRosterProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const currentUserId = useAuthStore((state) => state.user?.id);
 
   const rename = async (chatId: string) => {
     const title = renameValue.trim();
@@ -290,12 +292,17 @@ function ChatRows(props: DockRosterProps) {
                   <AnimatedDockChatTitle title={chat.title.trim() || 'Untitled chat'} />
                 </span>
               </span>
+              {chat.visibility === 'module' ? (
+                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-[#8a8781]" aria-label="Visible to module teammates" />
+              ) : chat.visibility === 'workspace' ? (
+                <GlobeIcon className="h-3.5 w-3.5 shrink-0 text-[#8a8781]" aria-label="Visible to everyone in the workspace" />
+              ) : null}
               <time className="agent-dock-roster-copy ms-auto shrink-0 font-mono text-[10.5px] text-[#b3b0a9]" dateTime={chat.last_message_at ?? chat.updated_at} data-agent-dock-chat-time>
                 {relativeDockTime(chat.last_message_at ?? chat.updated_at)}
               </time>
             </button>
           )}
-          <DropdownMenu>
+          {chat.user_id === currentUserId ? <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" aria-label={`Actions for ${chat.title || 'Untitled chat'}`} className="agent-dock-chat-menu absolute end-2 top-1/2 z-[2] grid h-7 w-7 -translate-y-1/2 place-items-center rounded-md bg-[#f4f2ee] text-[#8a8781] opacity-0 transition-[opacity,color,background-color] hover:bg-[#eae7e0] hover:text-[#4b4945] group-hover:opacity-100 focus:opacity-100 dark:bg-[#292824] dark:text-[#a9a59d] dark:hover:bg-[#37352f] dark:hover:text-[#eeeae1]">
                 <MoreHorizontalIcon className="h-3.5 w-3.5" />
@@ -305,7 +312,7 @@ function ChatRows(props: DockRosterProps) {
               <DropdownMenuItem onSelect={() => { setRenamingId(chat.id); setRenameValue(chat.title); }}>Rename</DropdownMenuItem>
               <DropdownMenuItem className="text-destructive" onSelect={() => void archive(chat.id)}>Archive</DropdownMenuItem>
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu> : null}
           </div>
         );
       })}
