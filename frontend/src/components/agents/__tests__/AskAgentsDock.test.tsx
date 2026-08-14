@@ -879,6 +879,42 @@ describe('AskAgentsDock', () => {
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50);
   });
 
+  it('renders earlier history as a compact outlined button with an icon', async () => {
+    mocks.listMessages.mockResolvedValue({
+      data: { messages: [], next_before: 51 },
+      error: null,
+    });
+
+    await renderDock();
+    await waitForText('Load earlier messages');
+
+    const loadEarlier = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.trim() === 'Load earlier messages');
+    expect(loadEarlier?.dataset.variant).toBe('outline');
+    expect(loadEarlier?.dataset.size).toBe('xs');
+    expect(loadEarlier?.querySelector('svg')).not.toBeNull();
+  });
+
+  it('shows a spinner while earlier history is loading', async () => {
+    mocks.listMessages
+      .mockResolvedValueOnce({ data: { messages: [], next_before: 51 }, error: null })
+      .mockImplementationOnce(() => new Promise(() => {}));
+
+    await renderDock();
+    await waitForText('Load earlier messages');
+    const loadEarlier = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.trim() === 'Load earlier messages');
+
+    await act(async () => {
+      loadEarlier?.click();
+      await Promise.resolve();
+    });
+
+    expect(loadEarlier?.disabled).toBe(true);
+    expect(loadEarlier?.textContent).toContain('Loading…');
+    expect(loadEarlier?.querySelector('svg')?.classList.contains('animate-spin')).toBe(true);
+  });
+
   it('loads an older failed sub-agent attempt from its visible result marker', async () => {
     mocks.listMessages.mockResolvedValue({
       data: {

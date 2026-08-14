@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { ArrowUp01Icon, Loading01Icon } from '@/lib/icons';
+import { Button } from '@/components/ui/button';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
@@ -511,14 +513,19 @@ export function ChatView({
       <div ref={scrollRef} data-agent-dock-chat-scroll className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
 		{nextMessagesBefore && (
 		  <div className="flex justify-center">
-		    <button
+		    <Button
 		      type="button"
-		      className="text-xs font-medium text-muted-foreground hover:text-foreground"
+		      variant="outline"
+		      size="xs"
+		      className="text-muted-foreground shadow-sm hover:text-foreground"
 		      disabled={loadingEarlier}
 		      onClick={() => void loadEarlierMessages()}
 		    >
+		      {loadingEarlier
+		        ? <Loading01Icon className="animate-spin" aria-hidden="true" />
+		        : <ArrowUp01Icon aria-hidden="true" />}
 		      {loadingEarlier ? 'Loading…' : 'Load earlier messages'}
-		    </button>
+		    </Button>
 		  </div>
 		)}
         {detailLoading && !detail && (
