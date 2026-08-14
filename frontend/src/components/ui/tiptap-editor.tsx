@@ -116,6 +116,7 @@ interface TiptapEditorProps {
   members?: AssignableMember[];
   onEditorReady?: (editor: Editor | null) => void;
   variant?: 'default' | 'divider';
+  contentVariant?: 'default' | 'pm';
 }
 
 function ToolbarButton({
@@ -151,7 +152,7 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, onUploadReady, teams = [], members = [], onEditorReady, variant = 'default' }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, onUploadReady, teams = [], members = [], onEditorReady, variant = 'default', contentVariant = 'default' }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
   const onUploadStateChangeRef = useRef(onUploadStateChange);
@@ -374,7 +375,10 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     content: normalizedContent,
     editorProps: {
       attributes: {
-        class: 'tiptap prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
+        class: cn(
+          'tiptap rich-text-soft prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
+          contentVariant === 'pm' && 'pm-rich-text',
+        ),
       },
       transformPastedText: (text, plain) => (
         plain ? text : normalizePastedMarkdownText(text)

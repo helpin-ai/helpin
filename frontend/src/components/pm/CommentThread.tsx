@@ -369,6 +369,7 @@ export function CommentThread({
   hideThreadList = false,
   composerVariant = 'default',
 }: CommentThreadProps) {
+  const usesPmRichText = entityType === 'task' || entityType === 'epic';
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentBody, setEditingCommentBody] = useState('');
@@ -913,6 +914,7 @@ export function CommentThread({
           onRemoveUploadedFile={(id) => void removeEditPendingAttachment(id)}
           initialContent={editingCommentBody}
           variant={composerVariant === 'update' ? 'update' : undefined}
+          contentVariant={usesPmRichText ? 'pm' : 'default'}
           autoFocus
         />
       </div>
@@ -1014,6 +1016,7 @@ export function CommentThread({
           loading={loading}
           placeholder={placeholder}
           variant={variant}
+          contentVariant={usesPmRichText ? 'pm' : 'default'}
           enableEmojiPicker
           teams={teams}
           members={members}
@@ -1085,11 +1088,15 @@ export function CommentThread({
                   )}
                   <span className="text-[11px] text-muted-foreground">{formatRelativeTimeAgo(entry.comment.created_at)}</span>
                 </div>
-                <div className="mt-0.5 text-[13px] leading-relaxed text-foreground/80">
+                <div className={cn(
+                  'mt-0.5',
+                  usesPmRichText ? 'text-foreground/90' : 'text-[13px] leading-relaxed text-foreground/80',
+                )}>
                   <CommentBody
                     body={entry.comment.body}
                     members={members}
                     teams={teams}
+                    variant={usesPmRichText ? 'pm' : 'default'}
                     className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
                   />
                 </div>

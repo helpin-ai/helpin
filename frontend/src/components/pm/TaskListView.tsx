@@ -93,6 +93,7 @@ import {
   TABLE_HEADER_CELL_SORTABLE,
   TABLE_ROW,
   TABLE_CELL,
+  TABLE_NAME_TEXT,
   TABLE_GROUP_ROW,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
@@ -1358,7 +1359,7 @@ export function TaskListView({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-sm hover:text-primary"
+            className={`flex max-w-full cursor-pointer items-center gap-1.5 text-left ${TABLE_NAME_TEXT} hover:text-primary`}
             onClick={(e) => {
               e.stopPropagation();
               handleOpenTask(info.row.original);

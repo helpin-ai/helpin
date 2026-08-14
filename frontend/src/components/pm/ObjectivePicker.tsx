@@ -107,7 +107,7 @@ export function ObjectivePicker({
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent cursor-pointer"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-ui text-muted-foreground transition-colors hover:bg-accent cursor-pointer"
             onClick={(event) => {
               event.stopPropagation();
               setOpen(true);
@@ -128,10 +128,10 @@ export function ObjectivePicker({
             {availableObjectives.length === 0 ? (
               <div className="flex flex-col items-center gap-1.5 px-3 py-4 text-center">
                 <Target01Icon className="h-4 w-4 text-muted-foreground" />
-                <p className="text-xs text-muted-foreground">No objectives yet</p>
+                <p className="text-ui text-muted-foreground">No objectives yet</p>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-ui font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                   onClick={() => {
                     setOpen(false);
                     useGlobalCreateStore.getState().openCreate('objective');
@@ -143,9 +143,9 @@ export function ObjectivePicker({
               </div>
             ) : (
               <Command>
-                <CommandInput placeholder="Search objectives..." className="h-8 text-xs" />
+                <CommandInput placeholder="Search objectives..." className="h-8 text-ui" />
                 <CommandList>
-                  <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                  <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">
                     No objectives found
                   </CommandEmpty>
                   <CommandGroup>
@@ -155,7 +155,7 @@ export function ObjectivePicker({
                         <CommandItem
                           key={objective.id}
                           value={objective.name}
-                          className="flex items-center gap-2 text-xs"
+                          className="flex items-center gap-2 text-ui"
                           onSelect={() => toggleObjective(objective.id)}
                         >
                           <Target01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

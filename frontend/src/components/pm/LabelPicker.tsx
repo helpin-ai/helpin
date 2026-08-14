@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Tick01Icon, Loading01Icon, PlusSignIcon, Tag01Icon, Cancel01Icon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -88,7 +88,7 @@ interface LabelPickerProps {
   triggerClassName?: string;
   /** Show only the trigger button, no badges — used for compact inline table cells */
   triggerOnly?: boolean;
-  /** Keep badges on one line and collapse overflow into a color summary. */
+  /** Use a compact color summary with names available on hover. */
   singleLine?: boolean;
   /** Label ids present on some but not all items in the selection (rendered italic + muted). */
   partialLabelIds?: string[];
@@ -110,9 +110,6 @@ export function LabelPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
-  const [labelsOverflow, setLabelsOverflow] = useState(false);
-  const labelsViewportRef = useRef<HTMLDivElement>(null);
-  const labelsMeasureRef = useRef<HTMLDivElement>(null);
 
   const availableLabels = labels.filter((l) => {
     if (l.archived) return false;
@@ -120,33 +117,6 @@ export function LabelPicker({
     return !l.team_id || l.team_id === teamId;
   });
   const selectedLabels = availableLabels.filter((l) => selectedLabelIds.includes(l.id));
-
-  useLayoutEffect(() => {
-    if (!singleLine || triggerOnly || selectedLabels.length === 0) {
-      return;
-    }
-
-    const viewport = labelsViewportRef.current;
-    const measure = labelsMeasureRef.current;
-    if (!viewport || !measure) return;
-
-    const updateOverflow = () => {
-      setLabelsOverflow(measure.scrollWidth > viewport.clientWidth + 1);
-    };
-
-    const frame = window.requestAnimationFrame(updateOverflow);
-    if (typeof ResizeObserver === 'undefined') {
-      return () => window.cancelAnimationFrame(frame);
-    }
-
-    const observer = new ResizeObserver(updateOverflow);
-    observer.observe(viewport);
-    observer.observe(measure);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, [selectedLabels, singleLine, triggerOnly]);
 
   const toggleLabel = (labelId: string) => {
     if (selectedLabelIds.includes(labelId)) {
@@ -199,52 +169,39 @@ export function LabelPicker({
     )}>
       {!triggerOnly && singleLine && selectedLabels.length > 0 ? (
         <div
-          ref={labelsViewportRef}
           data-slot="label-picker-viewport"
           className="relative min-w-0 flex-1 overflow-hidden"
         >
-          {labelsOverflow ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  className="flex h-5 min-w-0 items-center gap-1 overflow-hidden px-0.5"
-                  aria-label={selectedLabels.map((label) => label.name).join(', ')}
-                >
-                  {visibleColorLabels.map((label) => (
-                    <span
-                      key={label.id}
-                      className="size-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: label.color?.startsWith('#') ? label.color : label.color ? `#${label.color}` : 'var(--muted-foreground)' }}
-                    />
-                  ))}
-                  {hiddenColorCount > 0 ? (
-                    <span className="shrink-0 text-[10px] text-muted-foreground">+{hiddenColorCount}</span>
-                  ) : null}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="flex max-w-64 flex-col items-start gap-1 py-2">
-                {selectedLabels.map((label) => (
-                  <span key={label.id} className="flex max-w-full items-center gap-1.5">
-                    <span
-                      className="size-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: label.color?.startsWith('#') ? label.color : label.color ? `#${label.color}` : 'var(--muted-foreground)' }}
-                    />
-                    <span className="truncate">{label.name}</span>
-                  </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="flex h-5 min-w-0 items-center gap-1 overflow-hidden px-0.5"
+                aria-label={selectedLabels.map((label) => label.name).join(', ')}
+              >
+                {visibleColorLabels.map((label) => (
+                  <span
+                    key={label.id}
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: label.color?.startsWith('#') ? label.color : label.color ? `#${label.color}` : 'var(--muted-foreground)' }}
+                  />
                 ))}
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <div className="flex min-w-0 items-center gap-1 overflow-hidden">{labelBadges}</div>
-          )}
-          <div
-            ref={labelsMeasureRef}
-            data-slot="label-picker-measure"
-            aria-hidden="true"
-            className="invisible absolute left-0 top-0 flex w-max items-center gap-1"
-          >
-            {labelBadges}
-          </div>
+                {hiddenColorCount > 0 ? (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">+{hiddenColorCount}</span>
+                ) : null}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="flex max-w-64 flex-col items-start gap-1 py-2">
+              {selectedLabels.map((label) => (
+                <span key={label.id} className="flex max-w-full items-center gap-1.5">
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: label.color?.startsWith('#') ? label.color : label.color ? `#${label.color}` : 'var(--muted-foreground)' }}
+                  />
+                  <span className="truncate">{label.name}</span>
+                </span>
+              ))}
+            </TooltipContent>
+          </Tooltip>
         </div>
       ) : !triggerOnly ? labelBadges : null}
 

@@ -15,6 +15,32 @@ vi.mock('@/components/editor/MermaidBlock', () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('RichTextMentionContent', () => {
+  it('applies the shared compact PM rich-text variant', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <RichTextMentionContent
+          html="<p>Shared typography</p>"
+          variant="pm"
+          className="custom-content-class"
+        />,
+      )
+    })
+
+    const content = container.querySelector('.tiptap')
+    expect(content?.classList.contains('pm-rich-text')).toBe(true)
+    expect(content?.classList.contains('prose')).toBe(true)
+    expect(content?.classList.contains('custom-content-class')).toBe(true)
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
   it('renders a saved Mermaid code block as a diagram', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

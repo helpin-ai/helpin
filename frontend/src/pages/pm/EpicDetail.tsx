@@ -32,7 +32,6 @@ import { pmTaskService } from '@/lib/services/pmTaskService';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
-import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
@@ -83,6 +82,8 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { LinkTasksToEpicDialog } from '@/components/pm/LinkTasksToEpicDialog';
 import { getLinkTasksDisabledReason } from '@/components/pm/epicTaskLinking';
 import { EpicUpdatesView } from '@/components/pm/epic-detail/EpicUpdatesView';
+import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
+import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { cn } from '@/lib/utils';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
@@ -237,6 +238,7 @@ export function EpicDetailPage() {
   const descriptionUploadRef = useRef<((files: FileList | File[], insertPos?: number) => Promise<void>) | null>(null);
   const queuedDescriptionDropRef = useRef<File[] | null>(null);
   const descriptionDragCounterRef = useRef(0);
+  const descriptionEditStartRef = useRef('');
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
@@ -255,6 +257,12 @@ export function EpicDetailPage() {
       replace: true,
     });
   }, [navigate]);
+
+  const beginDescriptionEditing = useCallback(() => {
+    if (!form) return;
+    descriptionEditStartRef.current = form.description;
+    setEditingDescription(true);
+  }, [form]);
 
   const resetDescriptionDrag = useCallback(() => {
     descriptionDragCounterRef.current = 0;
@@ -314,8 +322,8 @@ export function EpicDetailPage() {
     }
 
     queuedDescriptionDropRef.current = files;
-    setEditingDescription(true);
-  }, [canEdit, resetDescriptionDrag]);
+    beginDescriptionEditing();
+  }, [beginDescriptionEditing, canEdit, resetDescriptionDrag]);
 
   const { teams, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
@@ -475,6 +483,15 @@ export function EpicDetailPage() {
   const updateField = <K extends keyof EpicFormState>(key: K, value: EpicFormState[K], patch: UpdateEpicRequest) => {
     setForm((current) => current ? { ...current, [key]: value } : current);
     queuePatch(patch);
+  };
+
+  const cancelDescriptionEditing = () => {
+    if (!form) return;
+    const initialDescription = descriptionEditStartRef.current;
+    if (form.description !== initialDescription) {
+      updateField('description', initialDescription, { description: initialDescription });
+    }
+    setEditingDescription(false);
   };
 
   const handleDescriptionAttachmentDelete = useCallback(
@@ -934,7 +951,7 @@ export function EpicDetailPage() {
             ))}
           </div>
 
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden px-6 py-5 pb-40 lg:overflow-y-auto lg:px-10">
+          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden px-6 pt-5 lg:overflow-y-auto lg:px-10">
           {activeView === 'overview' ? (
           <>
           {/* Title */}
@@ -967,12 +984,13 @@ export function EpicDetailPage() {
               </div>
             )}
             {editingDescription ? (
-              <div>
+              <div className="group/description-editor">
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => updateField('description', html, { description: html })}
                   placeholder="Add a description..."
                   variant="divider"
+                  contentVariant="pm"
                   className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:p-0"
                   uploadConfig={{ workspaceId: workspaceId!, entityType: 'editor_upload', entityId: workspaceId! }}
                   onUploadStateChange={setDescriptionPendingUploads}
@@ -980,11 +998,10 @@ export function EpicDetailPage() {
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
-                <div className="mt-2 flex justify-end">
-                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
-                    Done
-                  </Button>
-                </div>
+                <DetailDescriptionEditorActions
+                  onCancel={cancelDescriptionEditing}
+                  onDone={() => setEditingDescription(false)}
+                />
               </div>
             ) : (
                 <div className="relative">
@@ -993,7 +1010,7 @@ export function EpicDetailPage() {
                       html={form.description}
                       members={assignableMembers}
                       teams={mentionTeams}
-                      className="prose prose-sm dark:prose-invert max-w-none text-sm"
+                      variant="pm"
                     />
                   ) : (
                     <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
@@ -1002,7 +1019,7 @@ export function EpicDetailPage() {
                   <button
                     type="button"
                     className="mt-3 inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                    onClick={() => setEditingDescription(true)}
+                    onClick={beginDescriptionEditing}
                   >
                     <PencilEdit01Icon className="h-3 w-3" />
                     Edit description
@@ -1012,8 +1029,8 @@ export function EpicDetailPage() {
             )}
           </div>
 
-          {/* Attachments */}
-          <div className="mt-6 border-t border-border/60 pt-6" id="attachments-section">
+          {/* Attachments: compact action when empty, full section once populated. */}
+          <div id="attachments-section">
             <Attachments
               workspaceId={workspaceId!}
               entityType="epic"
@@ -1022,7 +1039,7 @@ export function EpicDetailPage() {
               onDeleteAttachment={handleDescriptionAttachmentDelete}
               editable={canEdit}
               showAddAction
-              showEmptyState
+              emptyPresentation="inline-action"
             />
           </div>
 
@@ -1177,6 +1194,7 @@ export function EpicDetailPage() {
             ) : null}
           </div>
           )}
+          <div className="h-40 shrink-0" aria-hidden="true" />
           </div>
         </div>
 

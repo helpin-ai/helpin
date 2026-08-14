@@ -63,6 +63,7 @@ import {
   GROUP_ROW_HEIGHT,
   ROW_HEIGHT,
   TABLE_CELL,
+  TABLE_NAME_TEXT,
   TABLE_CONTAINER,
   TABLE_GROUP_ROW,
   TABLE_GROUP_ROW_INNER,
@@ -782,7 +783,7 @@ const MemoEpicGroupRow = memo(function EpicGroupRow({ item, onToggle }: EpicGrou
   return (
     <button
       type="button"
-      className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
+      className={`${TABLE_GROUP_ROW} w-full text-left text-ui`}
       onClick={() => onToggle(item.key)}
     >
       <span className={TABLE_GROUP_ROW_INNER}>
@@ -879,7 +880,7 @@ function InlineEpicStateCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(event) => {
             event.stopPropagation();
             setOpen(true);
@@ -898,9 +899,9 @@ function InlineEpicStateCell({
           onKeyDown={(event) => event.stopPropagation()}
         >
           <Command>
-            <CommandInput placeholder="Search states..." className="h-8 text-xs" />
+            <CommandInput placeholder="Search states..." className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No states found</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No states found</CommandEmpty>
               <CommandGroup>
                 {epicStates.map((epicState) => {
                   const optionCfg = STATE_TYPE_ICON_CONFIG[epicState.state_type as StateType];
@@ -909,7 +910,7 @@ function InlineEpicStateCell({
                     <CommandItem
                       key={epicState.id}
                       value={epicState.name}
-                      className="flex items-center gap-2 text-xs"
+                      className="flex items-center gap-2 text-ui"
                       onSelect={() => {
                         if (epicState.id !== entry.epic.epic_state_id) {
                           void onUpdate(entry.epic.id, { epic_state_id: epicState.id });
@@ -949,7 +950,7 @@ function InlineEpicHealthCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(event) => {
             event.stopPropagation();
             setOpen(true);
@@ -969,15 +970,15 @@ function InlineEpicHealthCell({
           onKeyDown={(event) => event.stopPropagation()}
         >
           <Command>
-            <CommandInput placeholder="Search health..." className="h-8 text-xs" />
+            <CommandInput placeholder="Search health..." className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No match</CommandEmpty>
               <CommandGroup>
                 {ALL_HEALTH_OPTIONS.map((option) => (
                   <CommandItem
                     key={option}
                     value={healthConfig[option].label}
-                    className="flex items-center gap-2 text-xs"
+                    className="flex items-center gap-2 text-ui"
                     onSelect={() => {
                       if (option !== health) {
                         void onUpdate(entry.epic.id, { health: option });
@@ -1066,7 +1067,7 @@ function InlineEpicTeamCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(event) => {
             event.stopPropagation();
             setOpen(true);
@@ -1088,15 +1089,15 @@ function InlineEpicTeamCell({
           onKeyDown={(event) => event.stopPropagation()}
         >
           <Command>
-            <CommandInput placeholder="Search teams..." className="h-8 text-xs" />
+            <CommandInput placeholder="Search teams..." className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No teams found</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No teams found</CommandEmpty>
               <CommandGroup>
                 {teams.map((team) => (
                   <CommandItem
                     key={team.id}
                     value={team.name}
-                    className="flex items-center gap-2 text-xs"
+                    className="flex items-center gap-2 text-ui"
                     onSelect={() => {
                       if (team.id !== entry.epic.team_id) {
                         void onUpdate(entry.epic.id, { team_id: team.id });
@@ -1138,7 +1139,7 @@ function InlineEpicDateCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(event) => {
             event.stopPropagation();
             setOpen(true);
@@ -1197,7 +1198,7 @@ function InlineEpicLabelsCell({
             className="h-2 w-2 shrink-0 rounded-full"
             style={{ backgroundColor: labels[0].color ? (labels[0].color.startsWith('#') ? labels[0].color : `#${labels[0].color}`) : 'var(--muted-foreground)' }}
           />
-          <span className="truncate text-xs text-muted-foreground">
+          <span className="truncate text-ui text-muted-foreground">
             {labels[0].name}{labels.length > 1 ? ` +${labels.length - 1} more` : ''}
           </span>
         </div>
@@ -1234,7 +1235,7 @@ function InlineEpicObjectivesCell({
   return (
     <div onClick={(event) => event.stopPropagation()} className="group/obj flex min-w-0 items-center gap-1">
       {objectives.length > 0 ? (
-        <span className="truncate text-xs text-muted-foreground" title={objectives.map((o) => o.name).join(', ')}>
+        <span className="truncate text-ui text-muted-foreground" title={objectives.map((o) => o.name).join(', ')}>
           {objectives[0].name}{objectives.length > 1 ? ` +${objectives.length - 1} more` : ''}
         </span>
       ) : null}
@@ -1452,9 +1453,9 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Name',
         size: 280,
         cell: (info) => (
-          <div className="flex max-w-full items-center gap-2.5 text-sm">
+          <div className={`flex max-w-full items-center gap-2.5 ${TABLE_NAME_TEXT}`}>
             <Layers01Icon className="h-4 w-4 shrink-0 text-violet-500" />
-            <span className="min-w-0 truncate font-normal">{info.getValue()}</span>
+            <span className="min-w-0 truncate">{info.getValue()}</span>
           </div>
         ),
       }),
@@ -1484,7 +1485,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             : null;
           const StateIcon = stateCfg?.icon ?? MinusSignIcon;
           return (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-ui text-muted-foreground">
               <StateIcon className={`h-3.5 w-3.5 shrink-0 ${stateCfg?.color ?? 'text-muted-foreground'}`} />
               <span className="truncate">{state?.name ?? 'No state'}</span>
             </div>
@@ -1500,7 +1501,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           canEdit ? (
             <InlineEpicHealthCell entry={info.row.original} onUpdate={updateEpicField} />
           ) : (
-            <span className={`text-xs ${healthConfig[info.row.original.epic.health]?.color ?? 'text-muted-foreground'}`}>
+            <span className={`text-ui ${healthConfig[info.row.original.epic.health]?.color ?? 'text-muted-foreground'}`}>
               {healthConfig[info.row.original.epic.health]?.label ?? 'No updates'}
             </span>
           )
@@ -1511,7 +1512,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Progress',
         size: 90,
         cell: (info) => (
-          <div className="flex items-center gap-1.5 text-xs">
+          <div className="flex items-center gap-1.5 text-ui">
             <Sun01Icon className="h-3.5 w-3.5 text-amber-500" />
             <span>{epicCompletionPct(info.row.original)}%</span>
           </div>
@@ -1522,7 +1523,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Tasks',
         size: 90,
         cell: (info) => (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-ui text-muted-foreground">
             {epicDoneTaskCount(info.row.original)}/{epicTaskCount(info.row.original)}
           </span>
         ),
@@ -1532,7 +1533,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Points',
         size: 80,
         cell: (info) => (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-ui text-muted-foreground">
             {info.row.original.stats.done_points}/{info.row.original.stats.total_points}
           </span>
         ),
@@ -1558,7 +1559,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           return ownerName ? (
             <div className="flex items-center gap-2 min-w-0">
               <UserAvatar name={ownerName} />
-              <span className="truncate text-xs text-muted-foreground">{ownerName}</span>
+              <span className="truncate text-ui text-muted-foreground">{ownerName}</span>
             </div>
           ) : (
             <UserIcon className="h-4 w-4 text-muted-foreground/50" />
@@ -1583,7 +1584,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             );
           }
           return objectives.length > 0 ? (
-            <span className="truncate text-xs text-muted-foreground block" title={objectives.map((o) => o.name).join(', ')}>
+            <span className="truncate text-ui text-muted-foreground block" title={objectives.map((o) => o.name).join(', ')}>
               {objectives[0].name}{objectives.length > 1 ? ` +${objectives.length - 1} more` : ''}
             </span>
           ) : (
@@ -1605,7 +1606,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               onUpdate={updateEpicField}
             />
           ) : (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1 text-ui text-muted-foreground">
               {info.row.original.epic.deadline ? (
                 <>
                   <Calendar03Icon className="h-3.5 w-3.5" />
@@ -1631,7 +1632,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               onUpdate={updateEpicField}
             />
           ) : (
-            <span className="truncate text-xs text-muted-foreground">
+            <span className="truncate text-ui text-muted-foreground">
               {findTeamName(info.row.original.epic.team_id) || <MinusSignIcon className="h-3.5 w-3.5" />}
             </span>
           )
@@ -1651,7 +1652,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               onUpdate={updateEpicField}
             />
           ) : (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1 text-ui text-muted-foreground">
               {info.row.original.epic.planned_start_date ? (
                 <>
                   <Calendar03Icon className="h-3.5 w-3.5" />
@@ -1686,7 +1687,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
                     className="h-2 w-2 shrink-0 rounded-full"
                     style={{ backgroundColor: lbls[0].color ? (lbls[0].color.startsWith('#') ? lbls[0].color : `#${lbls[0].color}`) : 'var(--muted-foreground)' }}
                   />
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span className="truncate text-ui text-muted-foreground">
                     {lbls[0].name}{lbls.length > 1 ? ` +${lbls.length - 1} more` : ''}
                   </span>
                 </div>
@@ -1702,7 +1703,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Created',
         size: 100,
         cell: (info) => (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-ui text-muted-foreground">
             {format(parseISO(info.row.original.epic.created_at), 'MMM d')}
           </span>
         ),
@@ -1712,7 +1713,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Updated',
         size: 100,
         cell: (info) => (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-ui text-muted-foreground">
             {format(parseISO(info.row.original.epic.updated_at), 'MMM d')}
           </span>
         ),

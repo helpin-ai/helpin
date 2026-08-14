@@ -13,12 +13,14 @@ vi.mock('@/components/pm/CommentEditor', () => ({
     onImageSelect,
     onSubmit,
     uploadedFiles = [],
+    contentVariant,
   }: {
     onImageSelect?: (files: File[]) => void
     onSubmit: (text: string) => void | Promise<void>
     uploadedFiles?: { id: string; name: string; url?: string }[]
+    contentVariant?: 'default' | 'pm'
   }) => (
-    <div data-testid="comment-editor">
+    <div data-testid="comment-editor" data-content-variant={contentVariant}>
       <button
         type="button"
         data-testid="paste-image"
@@ -301,6 +303,15 @@ describe('CommentThread attachment uploads', () => {
   afterEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
+  })
+
+  it('uses compact PM rich text for task comments', () => {
+    const { container, root } = renderThread()
+
+    expect(container.querySelector('[data-testid="comment-editor"]')?.getAttribute('data-content-variant')).toBe('pm')
+
+    act(() => root.unmount())
+    container.remove()
   })
 
   it('keeps earlier pasted images when a second image is uploaded before submit', async () => {

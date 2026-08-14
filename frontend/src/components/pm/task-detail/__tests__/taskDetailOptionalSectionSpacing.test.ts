@@ -9,6 +9,7 @@ describe('TaskDetailPanel optional section spacing', () => {
   it('keeps overview essentials visible and consolidates linked context in Related', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
     const overviewIndex = panelSource.indexOf("activeView === 'overview'");
+    const attachmentsIndex = panelSource.indexOf('id="attachments-section"');
     const checklistIndex = panelSource.indexOf('<ChecklistItems');
     const deliverySettingsIndex = panelSource.indexOf('<TaskDeliveryRailSection');
     const relatedIndex = panelSource.indexOf('<details id="task-related-section"');
@@ -22,8 +23,8 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).not.toContain('<TaskStandingBriefCard');
     expect(panelSource).not.toContain('handleBriefSuggestion');
     expect(panelSource).toContain('className="mt-6 border-t border-border/60 pt-6" data-testid="checklist-section"');
-    expect(panelSource).toContain('className="mt-6 border-t border-border/60 pt-6" id="attachments-section"');
-    expect(checklistIndex).toBeGreaterThan(overviewIndex);
+    expect(attachmentsIndex).toBeGreaterThan(overviewIndex);
+    expect(checklistIndex).toBeGreaterThan(attachmentsIndex);
     expect(deliverySettingsIndex).toBeGreaterThan(checklistIndex);
     expect(relatedIndex).toBeGreaterThan(deliverySettingsIndex);
     expect(relatedIndex).toBeGreaterThan(checklistIndex);
@@ -63,7 +64,7 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain('<ChecklistItems');
     expect(panelSource).toContain('<Attachments');
     expect(panelSource).toContain('showAddAction');
-    expect(panelSource).toContain('showEmptyState');
+    expect(panelSource).toContain('emptyPresentation="inline-action"');
     expect(agentRunSource).toContain('Execution context');
     expect(agentRunSource).toContain('<TaskDeliveryTimeline');
     expect(agentRunSource).toContain('Working branch');

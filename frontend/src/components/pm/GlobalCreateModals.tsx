@@ -453,6 +453,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
                   placeholder="Add a description (optional)..."
                   variant="divider"
+                  contentVariant="pm"
                   className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:px-6 [&_.tiptap]:py-4"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}

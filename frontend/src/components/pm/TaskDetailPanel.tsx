@@ -49,7 +49,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { Attachments } from '@/components/pm/Attachments';
 import { ChecklistItems } from '@/components/pm/ChecklistItems';
@@ -105,6 +104,8 @@ import { repositoryDefaultBranchLabel } from '@/lib/branchLabels';
 import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import { TaskUpdatesView } from '@/components/pm/task-detail/TaskUpdatesView';
+import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
+import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { resolveTaskTeamWorkflow, resolveTaskWorkflowStates } from '@/components/pm/task-detail/taskWorkflowResolution';
 import {
   isEpicSelectableForTaskTeam,
@@ -438,6 +439,7 @@ function TaskDetailPanelBody({
   const descriptionUploadRef = useRef<((files: FileList | File[], insertPos?: number) => Promise<void>) | null>(null);
   const queuedDescriptionDropRef = useRef<File[] | null>(null);
   const descriptionDragCounterRef = useRef(0);
+  const descriptionEditStartRef = useRef(form.description);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
   const { data: workflows = [] } = useWorkflows(workspaceId);
   const { data: workspaceAccess } = useWorkspaceAccess(workspaceId);
@@ -746,6 +748,19 @@ function TaskDetailPanelBody({
     queuePatch(patch);
   };
 
+  const beginDescriptionEditing = useCallback(() => {
+    descriptionEditStartRef.current = form.description;
+    setEditingDescription(true);
+  }, [form.description]);
+
+  const cancelDescriptionEditing = () => {
+    const initialDescription = descriptionEditStartRef.current;
+    if (form.description !== initialDescription) {
+      updateField('description', initialDescription, { description: initialDescription });
+    }
+    setEditingDescription(false);
+  };
+
   const resetDescriptionDrag = useCallback(() => {
     descriptionDragCounterRef.current = 0;
     setDescriptionDragging(false);
@@ -799,8 +814,8 @@ function TaskDetailPanelBody({
     }
 
     queuedDescriptionDropRef.current = files;
-    setEditingDescription(true);
-  }, [resetDescriptionDrag]);
+    beginDescriptionEditing();
+  }, [beginDescriptionEditing, resetDescriptionDrag]);
 
   const availableEpics = useMemo(
     () =>
@@ -1350,7 +1365,7 @@ function TaskDetailPanelBody({
             ))}
           </div>
 
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-10 py-5 pb-40">
+          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-10 pt-5">
           {activeView === 'overview' && (
           <>
           {/* Title */}
@@ -1383,12 +1398,13 @@ function TaskDetailPanelBody({
               </div>
             )}
             {editingDescription ? (
-              <div>
+              <div className="group/description-editor">
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => updateField('description', html, { description: html })}
                   placeholder="Add a description..."
                   variant="divider"
+                  contentVariant="pm"
                   className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:p-0"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
@@ -1396,11 +1412,10 @@ function TaskDetailPanelBody({
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
-                <div className="mt-2 flex justify-start">
-                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
-                    Done
-                  </Button>
-                </div>
+                <DetailDescriptionEditorActions
+                  onCancel={cancelDescriptionEditing}
+                  onDone={() => setEditingDescription(false)}
+                />
               </div>
             ) : (
               <div className="relative">
@@ -1409,7 +1424,8 @@ function TaskDetailPanelBody({
                     html={form.description}
                     members={assignableMembers}
                     teams={mentionTeams}
-                    className="prose prose-sm dark:prose-invert max-w-none text-sm text-foreground/80 prose-p:text-foreground/80 prose-li:text-foreground/80 prose-strong:text-foreground/90 [&_p:empty]:h-1 [&_p:empty]:my-0"
+                    variant="pm"
+                    className="[&_p:empty]:h-1 [&_p:empty]:my-0"
                     onHtmlChange={(html) => updateField('description', html, { description: html })}
                   />
                 ) : (
@@ -1419,7 +1435,7 @@ function TaskDetailPanelBody({
                   <button
                     type="button"
                     className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                    onClick={() => setEditingDescription(true)}
+                    onClick={beginDescriptionEditing}
                   >
                     <PencilEdit01Icon className="h-3 w-3" />
                     Edit description
@@ -1427,6 +1443,20 @@ function TaskDetailPanelBody({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Attachments: compact action when empty, full section once populated. */}
+          <div id="attachments-section">
+            <Attachments
+              workspaceId={workspaceId}
+              entityType="task"
+              entityId={taskDetail.task.id}
+              memberNameMap={memberNameMap}
+              onDeleteAttachment={handleDescriptionAttachmentDelete}
+              editable={canEdit}
+              showAddAction
+              emptyPresentation="inline-action"
+            />
           </div>
 
           <div className="mt-6 border-t border-border/60 pt-6" data-testid="checklist-section">
@@ -1438,19 +1468,6 @@ function TaskDetailPanelBody({
             />
           </div>
 
-          {/* Attachments */}
-          <div className="mt-6 border-t border-border/60 pt-6" id="attachments-section">
-            <Attachments
-              workspaceId={workspaceId}
-              entityType="task"
-              entityId={taskDetail.task.id}
-              memberNameMap={memberNameMap}
-              onDeleteAttachment={handleDescriptionAttachmentDelete}
-              editable={canEdit}
-              showAddAction
-              showEmptyState
-            />
-          </div>
           </>
           )}
 
@@ -1486,6 +1503,7 @@ function TaskDetailPanelBody({
               />
             )
           )}
+          <div className="h-40 shrink-0" aria-hidden="true" />
           </div>
         </div>
 

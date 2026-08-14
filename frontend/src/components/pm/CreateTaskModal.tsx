@@ -1316,6 +1316,7 @@ export function CreateTaskModal({
                     }
                     placeholder="Add a description..."
                     variant="divider"
+                    contentVariant="pm"
                     className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:px-6 [&_.tiptap]:py-4"
                     uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                     onUploadStateChange={setDescriptionPendingUploads}

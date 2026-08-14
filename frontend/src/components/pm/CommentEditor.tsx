@@ -32,6 +32,7 @@ interface CommentEditorProps {
   enableEmojiPicker?: boolean
   /** Visual variant — 'update' is the divider-based task activity composer. */
   variant?: 'primary' | 'reply' | 'legacy' | 'update'
+  contentVariant?: 'default' | 'pm'
 }
 
 function getFileExtension(filename: string): string {
@@ -85,6 +86,7 @@ export function CommentEditor({
   initialContent,
   onCancel,
   variant = 'legacy',
+  contentVariant = 'default',
   autoFocus = false,
   enableEmojiPicker = false,
 }: CommentEditorProps) {
@@ -175,7 +177,10 @@ export function CommentEditor({
     autofocus: autoFocus,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-[13px] bg-transparent',
+        class: cn(
+          'rich-text-soft prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 bg-transparent',
+          contentVariant === 'pm' ? 'pm-rich-text' : 'text-[13px]',
+        ),
       },
       handlePaste: (_view, event) => {
         if (!onImageSelectRef.current) return false
