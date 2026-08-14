@@ -83,6 +83,7 @@ import { LinkTasksToEpicDialog } from '@/components/pm/LinkTasksToEpicDialog';
 import { getLinkTasksDisabledReason } from '@/components/pm/epicTaskLinking';
 import { EpicUpdatesView } from '@/components/pm/epic-detail/EpicUpdatesView';
 import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
+import { TaskOwnerDistribution } from '@/components/pm/TaskOwnerDistribution';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { cn } from '@/lib/utils';
 
@@ -594,60 +595,6 @@ export function EpicDetailPage() {
     return teams[0]?.id ?? '';
   }, [epic?.epic.team_id, form?.team_id, teams]);
 
-  // Resources: task owner workload summary.
-  const resources = useMemo(() => {
-    const personMap = new Map<string, { id: string; name: string; email: string; taskCount: number; percentage: number }>();
-    const totalTasks = tasks.length;
-    let unassignedTaskCount = 0;
-
-    for (const task of tasks) {
-      const ownerIds = task.owner_member_ids ?? [];
-      if (ownerIds.length === 0) {
-        unassignedTaskCount += 1;
-        continue;
-      }
-      for (const ownerKey of ownerIds) {
-        const assignable = findAssignableMember(assignableMembers, ownerKey);
-        if (assignable) {
-          const existing = personMap.get(assignable.id);
-          if (existing) {
-            existing.taskCount += 1;
-          } else {
-            personMap.set(assignable.id, {
-              id: assignable.id,
-              name: assignableMemberNames.get(assignable.id) ?? assignable.display_name,
-              email: assignable.email,
-              taskCount: 1,
-              percentage: 0,
-            });
-          }
-        }
-      }
-    }
-
-    const owners = Array.from(personMap.values())
-      .map((person) => ({
-        ...person,
-        percentage: totalTasks > 0 ? Math.round((person.taskCount / totalTasks) * 100) : 0,
-      }))
-      .sort((a, b) => b.taskCount - a.taskCount || (a.name || a.email).localeCompare(b.name || b.email));
-
-    if (unassignedTaskCount === 0) {
-      return owners;
-    }
-
-    return [
-      {
-        id: '__unassigned__',
-        name: 'Unassigned',
-        email: '',
-        taskCount: unassignedTaskCount,
-        percentage: totalTasks > 0 ? Math.round((unassignedTaskCount / totalTasks) * 100) : 0,
-      },
-      ...owners,
-    ];
-  }, [tasks, assignableMembers, assignableMemberNames]);
-
   const openTask = useCallback(
     ( task: Task) => {
       openTaskRoute(navigate as never, location as never, slug, task.id);
@@ -1043,26 +990,9 @@ export function EpicDetailPage() {
             />
           </div>
 
-          {/* Resources */}
+          {/* Task ownership distribution */}
           <div className="mt-6">
-            <TaskDetailSectionHeading title={`Task owners (${resources.length})`} icon={UserGroupIcon} />
-            {resources.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No task owners yet.</p>
-            ) : (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {resources.map((person) => (
-                  <div key={person.id} className="inline-flex w-fit max-w-full items-center gap-2 rounded-md border border-border/60 px-3 py-2 sm:max-w-[14rem]">
-                    <UserAvatar name={person.name || person.email} className="h-6 w-6 border-border/60" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-medium">{person.name || person.email}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {person.taskCount} {person.taskCount === 1 ? 'task' : 'tasks'} · {person.percentage}%
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <TaskOwnerDistribution tasks={tasks} members={assignableMembers} />
           </div>
 
           <Separator className="my-6" />
