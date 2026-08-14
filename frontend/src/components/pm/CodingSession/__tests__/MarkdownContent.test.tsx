@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe('MarkdownContent Helpin references', () => {
-  it('renders task and document references as current-workspace links', () => {
+  it('opens task and document references in a new tab', () => {
     useWorkspaceStore.setState({
       currentWorkspace: { id: 'ws-1', slug: 'acme', name: 'Acme' } as never,
     });
@@ -36,7 +36,11 @@ describe('MarkdownContent Helpin references', () => {
       '/w/acme/pm/tasks/task-1',
       '/w/acme/docs/documents/doc-1',
     ]);
-    expect(links.every((link) => !link.hasAttribute('target'))).toBe(true);
+    expect(links.map((link) => link.getAttribute('target'))).toEqual(['_blank', '_blank']);
+    expect(links.map((link) => link.getAttribute('rel'))).toEqual([
+      'noopener noreferrer',
+      'noopener noreferrer',
+    ]);
 
     act(() => root.unmount());
   });

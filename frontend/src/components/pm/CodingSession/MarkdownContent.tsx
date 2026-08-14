@@ -58,6 +58,8 @@ function MarkdownLink(props: (ComponentPropsWithoutRef<'a'> | Record<string, unk
   return (
     <a
       href={route}
+      target="_blank"
+      rel="noopener noreferrer"
       data-helpin-reference={reference.type}
       className="text-primary underline underline-offset-2"
     >
