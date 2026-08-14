@@ -49,6 +49,7 @@ import {
   virtualRowStyle,
 } from '@/lib/tableStyles';
 import type { CRMCompany } from '@/lib/crmTypes';
+import { shouldFetchNextContactPage } from '@/lib/contactInfiniteScroll';
 import type { AssignableMember } from '@/lib/types';
 
 type GroupByOption = 'none' | 'industry' | 'owner';
@@ -69,10 +70,14 @@ const columnHelper = createColumnHelper<CRMCompany>();
 
 interface CompaniesTableProps {
   companies: CRMCompany[];
+  totalCount?: number;
   workspaceId: string;
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
   isLoading: boolean;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  onFetchNextPage?: () => void;
   onRowClick: (id: string) => void;
   onCreateClick?: () => void;
   onCompanyUpdated?: () => void;
@@ -81,10 +86,14 @@ interface CompaniesTableProps {
 
 export function CompaniesTable({
   companies,
+  totalCount,
   workspaceId,
   assignableMembers,
   ownerNameMap,
   isLoading,
+  hasNextPage,
+  isFetchingNextPage,
+  onFetchNextPage,
   onRowClick,
   onCreateClick,
   onCompanyUpdated,
@@ -309,6 +318,20 @@ export function CompaniesTable({
     estimateSize,
     overscan: 20,
   });
+  const virtualItems = virtualizer.getVirtualItems();
+
+  useEffect(() => {
+    if (!onFetchNextPage) return;
+    const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? null;
+    if (shouldFetchNextContactPage({
+      hasNextPage,
+      isFetchingNextPage,
+      loadedCount: rows.length,
+      lastVisibleIndex,
+    })) {
+      onFetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, onFetchNextPage, rows.length, virtualItems]);
 
   if (isLoading) {
     return (
@@ -357,7 +380,10 @@ export function CompaniesTable({
           </SelectContent>
         </Select>
         <span className="text-xs text-muted-foreground">
-          {localCompanies.length} {localCompanies.length === 1 ? 'company' : 'companies'}
+          {totalCount != null && totalCount !== localCompanies.length
+            ? `${localCompanies.length} of ${totalCount}`
+            : localCompanies.length}{' '}
+          {(totalCount ?? localCompanies.length) === 1 ? 'company' : 'companies'}
         </span>
       </div>
 
@@ -428,7 +454,7 @@ export function CompaniesTable({
 
           {/* Virtualized body */}
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
-            {virtualizer.getVirtualItems().map((virtualRow) => {
+            {virtualItems.map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<CRMCompany>;
               const isGrouped = row.getIsGrouped();
 
@@ -452,6 +478,13 @@ export function CompaniesTable({
             })}
           </div>
         </div>
+
+        {isFetchingNextPage && (
+          <div className="flex items-center justify-center py-3">
+            <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-xs text-muted-foreground">Loading more...</span>
+          </div>
+        )}
       </div>
     </div>
   );
