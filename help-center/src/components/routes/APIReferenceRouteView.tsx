@@ -2,7 +2,7 @@ import { OpenAPIReference } from '@/components/api-reference/OpenAPIReference'
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/LoadingState'
 import { useDocsContext } from '@/contexts/DocsContext'
-import { useAPIReference } from '@/hooks/queries'
+import { useAPIReference, useAPIReferences } from '@/hooks/queries'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 interface APIReferenceRouteViewProps {
@@ -26,6 +26,12 @@ export function APIReferenceRouteView({
     referenceSlug,
     multilingualEnabled,
   )
+  const { data: references = [] } = useAPIReferences(
+    subdomain,
+    locale,
+    spaceSlug,
+    multilingualEnabled,
+  )
   useDocumentTitle(data?.name)
 
   if (isLoading) return <LoadingState message="Loading API reference..." />
@@ -39,5 +45,13 @@ export function APIReferenceRouteView({
     )
   }
 
-  return <OpenAPIReference reference={data} />
+  return (
+    <OpenAPIReference
+      reference={data}
+      references={references}
+      locale={locale}
+      spaceSlug={spaceSlug}
+      multilingualEnabled={multilingualEnabled}
+    />
+  )
 }

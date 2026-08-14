@@ -1,4 +1,8 @@
 import { Braces, KeyRound, LayoutDashboard } from 'lucide-react'
+import { DocsLink } from '@/components/DocsLink'
+import { buildCanonicalAPIReferencePath } from '@/lib/locale'
+import type { APIReferenceSummary } from '@/lib/types'
+import { cn } from '@/lib/utils'
 import type {
   OpenAPISpec,
   ParsedOperation,
@@ -9,6 +13,11 @@ import { groupOperations } from './openapi'
 interface APIReferenceSidebarProps {
   spec: OpenAPISpec
   operations: ParsedOperation[]
+  references: APIReferenceSummary[]
+  currentReferenceSlug: string
+  locale: string
+  spaceSlug: string
+  multilingualEnabled: boolean
   activeOperationId: string
   onSelectOperation: (operation: ParsedOperation) => void
 }
@@ -33,6 +42,11 @@ function scrollToAnchor(anchor: string) {
 export function APIReferenceSidebar({
   spec,
   operations,
+  references,
+  currentReferenceSlug,
+  locale,
+  spaceSlug,
+  multilingualEnabled,
   activeOperationId,
   onSelectOperation,
 }: APIReferenceSidebarProps) {
@@ -46,9 +60,41 @@ export function APIReferenceSidebar({
   return (
     <aside className="sticky top-[var(--hc-header-height)] hidden h-[calc(100vh-var(--hc-header-height))] w-[260px] shrink-0 overflow-y-auto border-r border-border/70 bg-background px-3 py-5 lg:block">
       <nav aria-label="API reference navigation" className="space-y-6">
+        {references.length > 0 && (
+          <div className="space-y-1 border-b border-border/70 pb-5">
+            <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+              API References
+            </p>
+            {references.map((reference) => {
+              const active = reference.slug === currentReferenceSlug
+              return (
+                <DocsLink
+                  key={reference.id}
+                  to={buildCanonicalAPIReferencePath(
+                    multilingualEnabled,
+                    locale,
+                    spaceSlug,
+                    reference.slug,
+                  )}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] font-medium transition-colors',
+                    active
+                      ? 'bg-sidebar-active text-sidebar-active-foreground'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                  )}
+                >
+                  <Braces size={13} className="shrink-0" />
+                  <span className="min-w-0 truncate">{reference.name}</span>
+                </DocsLink>
+              )
+            })}
+          </div>
+        )}
+
         <div className="space-y-1">
           <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-            Reference
+            On this page
           </p>
           <button
             type="button"

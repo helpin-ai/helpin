@@ -144,8 +144,12 @@ export function CollectionRouteView({
                 {activeHeading}
               </span>
             </div>
-            {spaceNavigation.length > 0 ? (
-              <Sidebar locale={locale} navigation={spaceNavigation} />
+            {spaceNavigation.length > 0 || apiReferences.length > 0 ? (
+              <Sidebar
+                locale={locale}
+                navigation={spaceNavigation}
+                spaceSlug={matchingSpace.slug}
+              />
             ) : spaceNavigationLoading ? (
               <SidebarSkeleton />
             ) : null}
@@ -277,7 +281,11 @@ export function CollectionRouteView({
             </span>
           </div>
           {activeNavigation.length > 0 ? (
-            <Sidebar locale={locale} navigation={activeNavigation} />
+            <Sidebar
+              locale={locale}
+              navigation={activeNavigation}
+              spaceSlug={collectionSpaceSlug}
+            />
           ) : (
             <SidebarSkeleton />
           )}
