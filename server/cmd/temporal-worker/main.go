@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -28,6 +29,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
+	"github.com/helpin-ai/helpin/server/internal/meetingcapture"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -199,6 +201,7 @@ func main() {
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
+	crmMeetingRepo := repository.NewCRMMeetingRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
@@ -245,6 +248,7 @@ func main() {
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
+	llmProvider = service.NewMeteredLLMProvider(llmProvider, service.NewTokenPricedAIUsageMeter(aiUsageService))
 	supportLLMRouter, supportEmbeddingProvider := llm.NewSupportRouter(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
@@ -562,6 +566,34 @@ func main() {
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	dealMgmtActivities := temporalapp.NewDealManagementActivities(dealAutomationService)
+	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
+	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
+	recallMeetingProvider := meetingcapture.NewRecallProvider(meetingcapture.RecallConfig{
+		BaseURL:       cfg.RecallBaseURL,
+		APIKey:        cfg.RecallAPIKey,
+		WebhookSecret: cfg.RecallWebhookSecret,
+		HTTPClient:    meetingProviderHTTPClient,
+	})
+	vexaMeetingProvider := meetingcapture.NewVexaProvider(meetingcapture.VexaConfig{
+		BaseURL:       cfg.VexaBaseURL,
+		APIKey:        cfg.VexaAPIKey,
+		WebhookSecret: cfg.VexaWebhookSecret,
+		HTTPClient:    meetingProviderHTTPClient,
+	})
+	var meetingProcessor *service.CRMMeetingProcessingService
+	if s3Client != nil {
+		meetingProcessor = service.NewCRMMeetingProcessingService(
+			crmMeetingRepo, crmAssociationRepo, llmProvider, s3Client,
+			&http.Client{Timeout: 30 * time.Minute}, recallMeetingProvider, vexaMeetingProvider,
+		)
+	} else {
+		meetingProcessor = service.NewCRMMeetingProcessingService(
+			crmMeetingRepo, crmAssociationRepo, llmProvider, nil,
+			&http.Client{Timeout: 30 * time.Minute}, recallMeetingProvider, vexaMeetingProvider,
+		)
+	}
+	meetingProcessor.SetCRMOutputs(signalDetectionService, crmActivityService, crmSuggestionService)
+	meetingActivities := temporalapp.NewCRMMeetingActivities(meetingProcessor)
 
 	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
@@ -577,7 +609,7 @@ func main() {
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities, docsImportActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, emailSyncActivities, signalActivities, summaryActivities, meetingActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities, docsImportActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -615,7 +647,7 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities, docsImportActivities *service.DocsImportActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, meetingActivities *temporalapp.CRMMeetingActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities, docsImportActivities *service.DocsImportActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
@@ -655,6 +687,14 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 		w.RegisterActivityWithOptions(summaryActivities.DailyReconciliationActivity, activity.RegisterOptions{
 			Name: "CRMSummaryActivities.DailyReconciliationActivity",
+		})
+	}
+
+	// Register provider-neutral CRM meeting processing.
+	w.RegisterWorkflow(temporalapp.CRMMeetingProcessingWorkflow)
+	if meetingActivities != nil {
+		w.RegisterActivityWithOptions(meetingActivities.ProcessMeetingActivity, activity.RegisterOptions{
+			Name: "CRMMeetingActivities.ProcessMeetingActivity",
 		})
 	}
 

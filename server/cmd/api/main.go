@@ -38,6 +38,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/handler"
 	"github.com/helpin-ai/helpin/server/internal/llm"
+	"github.com/helpin-ai/helpin/server/internal/meetingcapture"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
@@ -325,6 +326,13 @@ func main() {
 			&model.CRMAssociation{},
 			&model.CRMActivity{},
 			&model.CRMImportJob{},
+			&model.CRMMeeting{},
+			&model.CRMMeetingCapture{},
+			&model.CRMMeetingTranscript{},
+			&model.CRMMeetingIntelligence{},
+			&model.CRMMeetingActionItem{},
+			&model.CRMMeetingSettings{},
+			&model.CRMMeetingProviderEvent{},
 			// CRM Phase 3: Email & Calendar
 			&model.CRMEmailAccount{},
 			&model.CRMEmailThread{},
@@ -767,6 +775,7 @@ func main() {
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
+	crmMeetingRepo := repository.NewCRMMeetingRepository(db)
 	pmTaskInsightsRepo := repository.NewPMTaskInsightsRepository(db)
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
@@ -1289,6 +1298,29 @@ func main() {
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService)
 	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
+	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
+	recallMeetingProvider := meetingcapture.NewRecallProvider(meetingcapture.RecallConfig{
+		BaseURL:       cfg.RecallBaseURL,
+		APIKey:        cfg.RecallAPIKey,
+		WebhookSecret: cfg.RecallWebhookSecret,
+		HTTPClient:    meetingProviderHTTPClient,
+	})
+	vexaMeetingProvider := meetingcapture.NewVexaProvider(meetingcapture.VexaConfig{
+		BaseURL:       cfg.VexaBaseURL,
+		APIKey:        cfg.VexaAPIKey,
+		WebhookSecret: cfg.VexaWebhookSecret,
+		HTTPClient:    meetingProviderHTTPClient,
+	})
+	crmMeetingService := service.NewCRMMeetingService(
+		crmMeetingRepo,
+		crmAssociationRepo,
+		pmTaskService,
+		recallMeetingProvider,
+		vexaMeetingProvider,
+	).SetProcessingRunner(service.NewTemporalMeetingProcessingRunner(temporalClient))
+	if s3Client != nil {
+		crmMeetingService.SetRecordingStore(s3Client)
+	}
 	crmSearchService := service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo)
 	commandService := service.NewInternalCommandService(
 		agentService,
@@ -1746,6 +1778,7 @@ func main() {
 		CRMAssociation:      handler.NewCRMAssociationHandler(crmAssociationService),
 		Associations:        handler.NewAssociationsHandler(associationsService, authzService),
 		CRMActivity:         handler.NewCRMActivityHandler(crmActivityService),
+		CRMMeeting:          handler.NewCRMMeetingHandler(crmMeetingService),
 		CRMImport:           handler.NewCRMImportHandler(crmImportService),
 		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
 		CRMCalendar:         handler.NewCRMCalendarHandler(crmCalendarService),

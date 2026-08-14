@@ -330,7 +330,7 @@ func (r *CRMMeetingRepository) GetSettings(ctx context.Context, workspaceID stri
 // UpsertSettings saves workspace policy.
 func (r *CRMMeetingRepository) UpsertSettings(ctx context.Context, settings *model.CRMMeetingSettings) error {
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "workspace_id"}},
+		Columns:   []clause.Column{{Name: "workspace_id"}},
 		UpdateAll: true,
 	}).Create(settings).Error; err != nil {
 		return fmt.Errorf("upsert meeting settings: %w", err)
@@ -367,14 +367,14 @@ func normalizedPagination(pagination model.PMPagination) (int, int) {
 
 func defaultMeetingSettings(workspaceID string) *model.CRMMeetingSettings {
 	return &model.CRMMeetingSettings{
-		WorkspaceID: workspaceID,
-		Enabled: false,
-		DefaultProvider: model.CRMMeetingProviderRecall,
-		BotName: "Helpin Notetaker",
-		AutoJoinMode: "manual",
-		RecordAudioByDefault: false,
-		DefaultVisibility: model.CRMMeetingVisibilityWorkspace,
+		WorkspaceID:             workspaceID,
+		Enabled:                 false,
+		DefaultProvider:         model.CRMMeetingProviderRecall,
+		BotName:                 "Helpin Notetaker",
+		AutoJoinMode:            "manual",
+		RecordAudioByDefault:    false,
+		DefaultVisibility:       model.CRMMeetingVisibilityWorkspace,
 		TranscriptRetentionDays: 365,
-		AudioRetentionDays: 30,
+		AudioRetentionDays:      30,
 	}
 }

@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   ArrowRight01Icon,
   Building03Icon,
+  Camera01Icon,
   Delete01Icon,
   DollarCircleIcon,
   File01Icon,
@@ -49,6 +50,7 @@ const sectionConfig: Record<SectionType, { title: string; icon: React.ElementTyp
   contact: { title: 'Contacts', icon: UserGroupIcon },
   company: { title: 'Companies', icon: Building03Icon },
   deal: { title: 'Deals', icon: DollarCircleIcon },
+  meeting: { title: 'Meetings', icon: Camera01Icon },
   epic: { title: 'Epics', icon: File01Icon },
   task: { title: 'Tasks', icon: GitBranchIcon },
   support_conversation: { title: 'Support', icon: Message01Icon },
@@ -95,7 +97,7 @@ function AssociationsRailSection({
   count: number;
   expanded: boolean;
   onToggle: () => void;
-  onAdd: () => void;
+  onAdd?: () => void;
   children: React.ReactNode;
 }) {
   const canToggle = count > SECTION_PREVIEW_LIMIT;
@@ -108,14 +110,16 @@ function AssociationsRailSection({
           {title}
           {count > 0 && <span className="ml-1.5 font-normal">{count}</span>}
         </h3>
-        <button
-          type="button"
-          className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          onClick={onAdd}
-          aria-label={`Add ${title.toLowerCase()}`}
-        >
-          <span className="text-sm leading-none">+</span>
-        </button>
+        {onAdd && (
+          <button
+            type="button"
+            className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            onClick={onAdd}
+            aria-label={`Add ${title.toLowerCase()}`}
+          >
+            <span className="text-sm leading-none">+</span>
+          </button>
+        )}
       </div>
 
       {count > 0 && (
@@ -160,6 +164,7 @@ export function AssociationsList({
     contact: false,
     company: false,
     deal: false,
+    meeting: false,
     epic: false,
     task: false,
     support_conversation: false,
@@ -170,6 +175,7 @@ export function AssociationsList({
       contact: [],
       company: [],
       deal: [],
+      meeting: [],
       epic: [],
       task: [],
       support_conversation: [],
@@ -188,6 +194,7 @@ export function AssociationsList({
       contact: { to: '/w/$slug/crm/contacts/$contactId', params: { slug, contactId: id } },
       company: { to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: id } },
       deal: { to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: id } },
+      meeting: { to: '/w/$slug/crm/meetings/$meetingId', params: { slug, meetingId: id } },
       epic: { to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: id } },
       support_conversation: { to: '/w/$slug/support/$conversationId', params: { slug, conversationId: id } },
     };
@@ -270,7 +277,7 @@ export function AssociationsList({
     onAssociationRemoved?.();
   };
 
-  const sectionOrder: SectionType[] = ['contact', 'company', 'deal', 'epic', 'task', 'support_conversation'];
+  const sectionOrder: SectionType[] = ['contact', 'company', 'deal', 'meeting', 'epic', 'task', 'support_conversation'];
   const visibleSections = sectionOrder.filter((type) => type !== currentObjectType);
   const pickerConfig = pickerSection ? sectionConfig[pickerSection] : null;
   const pickerPlaceholder =
@@ -297,7 +304,7 @@ export function AssociationsList({
               count={items.length}
               expanded={expandedSections[type]}
               onToggle={() => setExpandedSections((current) => ({ ...current, [type]: !current[type] }))}
-              onAdd={() => setPickerSection(type)}
+              onAdd={type === 'meeting' ? undefined : () => setPickerSection(type)}
             >
               {visibleItems.map((assoc) => {
                 const Icon = config.icon;

@@ -140,6 +140,14 @@ type Config struct {
 	CRMLLMBaseURL  string
 	CRMLLMModel    string
 
+	// CRM meeting capture providers. Recall is the product default; Vexa can be hosted or self-hosted.
+	RecallBaseURL       string
+	RecallAPIKey        string
+	RecallWebhookSecret string
+	VexaBaseURL         string
+	VexaAPIKey          string
+	VexaWebhookSecret   string
+
 	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.6-luna)
 	QueryExpansionModel     string
 	QueryExpansionProvider  string
@@ -351,6 +359,12 @@ func Load() (*Config, error) {
 		CRMLLMAPIKey:                           os.Getenv("CRM_LLM_API_KEY"),
 		CRMLLMBaseURL:                          os.Getenv("CRM_LLM_BASE_URL"),
 		CRMLLMModel:                            os.Getenv("CRM_LLM_MODEL"),
+		RecallBaseURL:                          strings.TrimRight(strings.TrimSpace(os.Getenv("RECALL_BASE_URL")), "/"),
+		RecallAPIKey:                           strings.TrimSpace(os.Getenv("RECALL_API_KEY")),
+		RecallWebhookSecret:                    strings.TrimSpace(os.Getenv("RECALL_WEBHOOK_SECRET")),
+		VexaBaseURL:                            strings.TrimRight(strings.TrimSpace(os.Getenv("VEXA_BASE_URL")), "/"),
+		VexaAPIKey:                             strings.TrimSpace(os.Getenv("VEXA_API_KEY")),
+		VexaWebhookSecret:                      strings.TrimSpace(os.Getenv("VEXA_WEBHOOK_SECRET")),
 		QueryExpansionModel:                    strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.6-luna")),
 		QueryExpansionProvider:                 strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
 		QueryExpansionTimeoutMS:                parsePositiveIntEnv(os.Getenv("QUERY_EXPANSION_TIMEOUT_MS"), 10000),

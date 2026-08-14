@@ -13,8 +13,8 @@ import (
 const maxProviderResponseBytes = 20 << 20
 
 type httpClient struct {
-	baseURL string
-	client  *http.Client
+	baseURL   string
+	client    *http.Client
 	applyAuth func(*http.Request)
 }
 
@@ -23,8 +23,8 @@ func newHTTPClient(baseURL string, client *http.Client, applyAuth func(*http.Req
 		client = &http.Client{}
 	}
 	return &httpClient{
-		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		client: client,
+		baseURL:   strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		client:    client,
 		applyAuth: applyAuth,
 	}
 }

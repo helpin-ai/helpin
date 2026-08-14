@@ -38,7 +38,7 @@ func NewVexaProvider(cfg VexaConfig) *VexaProvider {
 	}
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	return &VexaProvider{
-		apiKey: apiKey,
+		apiKey:        apiKey,
 		webhookSecret: strings.TrimSpace(cfg.WebhookSecret),
 		http: newHTTPClient(baseURL, cfg.HTTPClient, func(req *http.Request) {
 			req.Header.Set("X-API-Key", apiKey)
@@ -49,21 +49,37 @@ func NewVexaProvider(cfg VexaConfig) *VexaProvider {
 // Name returns the stable provider key.
 func (p *VexaProvider) Name() string { return "vexa" }
 
-// Configured reports whether Vexa can launch bots.
-func (p *VexaProvider) Configured() bool { return p != nil && p.apiKey != "" }
+// Configured reports whether Vexa is ready for end-to-end capture and callbacks.
+func (p *VexaProvider) Configured() bool { return p != nil && p.apiKey != "" && p.webhookSecret != "" }
+
+// Supports reports whether Vexa supports the meeting platform.
+func (p *VexaProvider) Supports(platform string) bool {
+	return platform == "google_meet" || platform == "zoom" || platform == "teams"
+}
 
 // StartCapture launches a Vexa bot.
 func (p *VexaProvider) StartCapture(ctx context.Context, input StartCaptureInput) (*Capture, error) {
 	if !p.Configured() {
 		return nil, ErrNotConfigured
 	}
+	meetingURL, _ := url.Parse(input.MeetingURL)
+	passcode := ""
+	if meetingURL != nil {
+		passcode = firstNonBlank(meetingURL.Query().Get("p"), meetingURL.Query().Get("pwd"))
+	}
+	if input.Platform == "teams" && passcode == "" {
+		return nil, fmt.Errorf("Vexa Teams capture requires a meeting URL with a p passcode")
+	}
 	body := map[string]interface{}{
-		"platform": input.Platform,
-		"native_meeting_id": input.NativeMeetingID,
-		"bot_name": input.BotName,
-		"recording_enabled": input.RecordAudio,
-		"transcribe_enabled": true,
+		"platform":            input.Platform,
+		"native_meeting_id":   input.NativeMeetingID,
+		"bot_name":            input.BotName,
+		"recording_enabled":   input.RecordAudio,
+		"transcribe_enabled":  true,
 		"voice_agent_enabled": false,
+	}
+	if passcode != "" {
+		body["passcode"] = passcode
 	}
 	var response map[string]interface{}
 	if err := p.http.doJSON(ctx, http.MethodPost, "/bots", body, &response); err != nil {
@@ -75,8 +91,8 @@ func (p *VexaProvider) StartCapture(ctx context.Context, input StartCaptureInput
 	}
 	return &Capture{
 		ProviderCaptureID: vexaCaptureID(input.Platform, input.NativeMeetingID),
-		ProviderStatus: providerStatus,
-		Status: normalizeVexaStatus(providerStatus),
+		ProviderStatus:    providerStatus,
+		Status:            normalizeVexaStatus(providerStatus),
 	}, nil
 }
 
@@ -115,8 +131,8 @@ func (p *VexaProvider) GetStatus(ctx context.Context, captureID string) (*Captur
 		if meeting.Platform == platform && meeting.NativeMeetingID == nativeID {
 			return &Capture{
 				ProviderCaptureID: captureID,
-				ProviderStatus: meeting.Status,
-				Status: normalizeVexaStatus(meeting.Status),
+				ProviderStatus:    meeting.Status,
+				Status:            normalizeVexaStatus(meeting.Status),
 			}, nil
 		}
 	}
@@ -137,14 +153,14 @@ func (p *VexaProvider) GetTranscript(ctx context.Context, captureID string) (*Tr
 			ID         string  `json:"segment_id"`
 			Speaker    string  `json:"speaker"`
 			Text       string  `json:"text"`
-			Start      float64 `json:"start"`
-			End        float64 `json:"end"`
+			Start      float64 `json:"start_time"`
+			End        float64 `json:"end_time"`
 			Language   string  `json:"language"`
 			Confidence float64 `json:"confidence"`
 			Completed  bool    `json:"completed"`
 		} `json:"segments"`
 	}
-	path := "/transcripts/"+url.PathEscape(platform)+"/"+url.PathEscape(nativeID)
+	path := "/transcripts/" + url.PathEscape(platform) + "/" + url.PathEscape(nativeID)
 	if err := p.http.doJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
 		return nil, err
 	}
@@ -158,13 +174,13 @@ func (p *VexaProvider) GetTranscript(ctx context.Context, captureID string) (*Tr
 			language = segment.Language
 		}
 		segments = append(segments, TranscriptSegment{
-			ID: segment.ID,
-			SpeakerName: firstNonBlank(segment.Speaker, "Unknown speaker"),
-			Text: strings.TrimSpace(segment.Text),
+			ID:           segment.ID,
+			SpeakerName:  firstNonBlank(segment.Speaker, "Unknown speaker"),
+			Text:         strings.TrimSpace(segment.Text),
 			StartSeconds: segment.Start,
-			EndSeconds: segment.End,
-			Language: segment.Language,
-			Confidence: segment.Confidence,
+			EndSeconds:   segment.End,
+			Language:     segment.Language,
+			Confidence:   segment.Confidence,
 		})
 	}
 	if len(segments) == 0 {
@@ -172,8 +188,8 @@ func (p *VexaProvider) GetTranscript(ctx context.Context, captureID string) (*Tr
 	}
 	return &Transcript{
 		ProviderTranscriptID: captureID,
-		Language: language,
-		Segments: segments,
+		Language:             language,
+		Segments:             segments,
 	}, nil
 }
 
@@ -187,7 +203,7 @@ func (p *VexaProvider) GetRecording(ctx context.Context, captureID string) (*Rec
 		return nil, err
 	}
 	var response map[string]interface{}
-	path := "/transcripts/"+url.PathEscape(platform)+"/"+url.PathEscape(nativeID)
+	path := "/transcripts/" + url.PathEscape(platform) + "/" + url.PathEscape(nativeID)
 	if err := p.http.doJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
 		return nil, err
 	}
@@ -197,8 +213,9 @@ func (p *VexaProvider) GetRecording(ctx context.Context, captureID string) (*Rec
 	}
 	return &Recording{
 		ProviderRecordingID: recordingID,
-		DownloadURL: p.http.baseURL+"/recordings/"+url.PathEscape(recordingID)+"/media/"+url.PathEscape(mediaID)+"/raw",
-		ContentType: "audio/webm",
+		DownloadURL:         p.http.baseURL + "/recordings/" + url.PathEscape(recordingID) + "/media/" + url.PathEscape(mediaID) + "/raw",
+		ContentType:         "audio/webm",
+		Headers:             map[string]string{"X-API-Key": p.apiKey},
 	}, nil
 }
 
@@ -214,23 +231,15 @@ func (p *VexaProvider) DeleteArtifacts(ctx context.Context, captureID string) er
 	return p.http.doJSON(ctx, http.MethodDelete, "/meetings/"+url.PathEscape(platform)+"/"+url.PathEscape(nativeID), nil, nil)
 }
 
-// VerifyWebhook verifies Vexa's configured HMAC signature.
+// VerifyWebhook verifies the bearer secret configured through Vexa's user webhook API.
 func (p *VexaProvider) VerifyWebhook(headers http.Header, payload []byte) error {
 	if p == nil || p.webhookSecret == "" {
 		return fmt.Errorf("Vexa webhook secret is not configured")
 	}
-	received := strings.TrimPrefix(strings.TrimSpace(headers.Get("X-Vexa-Signature")), "sha256=")
-	if received == "" {
-		return fmt.Errorf("missing Vexa webhook signature")
-	}
-	decoded, err := hex.DecodeString(received)
-	if err != nil {
-		return fmt.Errorf("invalid Vexa webhook signature")
-	}
-	mac := hmac.New(sha256.New, []byte(p.webhookSecret))
-	mac.Write(payload)
-	if !hmac.Equal(decoded, mac.Sum(nil)) {
-		return fmt.Errorf("invalid Vexa webhook signature")
+	expected := []byte("Bearer " + p.webhookSecret)
+	received := []byte(strings.TrimSpace(headers.Get("Authorization")))
+	if !hmac.Equal(received, expected) {
+		return fmt.Errorf("invalid Vexa webhook authorization")
 	}
 	return nil
 }
@@ -238,48 +247,50 @@ func (p *VexaProvider) VerifyWebhook(headers http.Header, payload []byte) error 
 // NormalizeWebhook converts Vexa's meeting lifecycle event into Helpin status.
 func (p *VexaProvider) NormalizeWebhook(headers http.Header, payload []byte) (*ProviderEvent, error) {
 	var envelope struct {
-		ID        string `json:"id"`
-		Event     string `json:"event"`
-		Type      string `json:"type"`
-		CreatedAt string `json:"created_at"`
-		Data struct {
-			Meeting struct {
-				Platform        string `json:"platform"`
-				NativeMeetingID string `json:"native_meeting_id"`
-				Status          string `json:"status"`
-			} `json:"meeting"`
-			Status string `json:"status"`
-			ErrorCode string `json:"error_code"`
-			ErrorMessage string `json:"error_message"`
-		} `json:"data"`
+		EventType string `json:"event_type"`
+		Meeting   struct {
+			Platform        string                 `json:"platform"`
+			NativeMeetingID string                 `json:"native_meeting_id"`
+			Status          string                 `json:"status"`
+			UpdatedAt       string                 `json:"updated_at"`
+			Data            map[string]interface{} `json:"data"`
+		} `json:"meeting"`
+		StatusChange struct {
+			To        string `json:"to"`
+			Reason    string `json:"reason"`
+			Timestamp string `json:"timestamp"`
+		} `json:"status_change"`
 	}
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return nil, fmt.Errorf("decode Vexa webhook: %w", err)
 	}
-	eventType := firstNonBlank(envelope.Event, envelope.Type)
-	providerStatus := firstNonBlank(envelope.Data.Meeting.Status, envelope.Data.Status)
-	if providerStatus == "" {
-		providerStatus = strings.TrimPrefix(eventType, "meeting.")
-	}
-	eventID := firstNonBlank(envelope.ID, headers.Get("X-Vexa-Event-Id"))
+	eventType := strings.TrimSpace(envelope.EventType)
+	providerStatus := firstNonBlank(envelope.Meeting.Status, envelope.StatusChange.To)
+	eventID := headers.Get("X-Vexa-Event-Id")
 	if eventID == "" {
 		hash := sha256.Sum256(payload)
 		eventID = hex.EncodeToString(hash[:])
 	}
+	failureCode, failureMessage := "", ""
+	if providerStatus == "failed" {
+		failureCode = firstNonBlank(jsonString(envelope.Meeting.Data["failure_code"]), envelope.StatusChange.Reason)
+		failureMessage = firstNonBlank(jsonString(envelope.Meeting.Data["failure_message"]), envelope.StatusChange.Reason)
+	}
 	event := &ProviderEvent{
-		EventID: eventID,
-		EventType: eventType,
-		ProviderCaptureID: vexaCaptureID(envelope.Data.Meeting.Platform, envelope.Data.Meeting.NativeMeetingID),
-		ProviderStatus: providerStatus,
-		Status: normalizeVexaStatus(providerStatus),
-		FailureCode: envelope.Data.ErrorCode,
-		FailureMessage: envelope.Data.ErrorMessage,
-		TranscriptReady: eventType == "meeting.completed" || providerStatus == "completed",
+		EventID:           eventID,
+		EventType:         eventType,
+		ProviderCaptureID: vexaCaptureID(envelope.Meeting.Platform, envelope.Meeting.NativeMeetingID),
+		ProviderStatus:    providerStatus,
+		Status:            normalizeVexaStatus(providerStatus),
+		FailureCode:       failureCode,
+		FailureMessage:    failureMessage,
+		TranscriptReady:   eventType == "meeting.status_change" && providerStatus == "completed",
 	}
 	if event.TranscriptReady {
 		event.Status = "processing"
 	}
-	if parsed, err := time.Parse(time.RFC3339Nano, envelope.CreatedAt); err == nil {
+	occurredAt := firstNonBlank(envelope.StatusChange.Timestamp, envelope.Meeting.UpdatedAt)
+	if parsed, err := time.Parse(time.RFC3339Nano, occurredAt); err == nil {
 		event.OccurredAt = &parsed
 	}
 	return event, nil
@@ -320,15 +331,34 @@ func findVexaRecording(payload map[string]interface{}) (string, string) {
 	recordings, _ := payload["recordings"].([]interface{})
 	for _, value := range recordings {
 		recording, _ := value.(map[string]interface{})
-		recordingID, _ := recording["id"].(string)
+		recordingID := jsonString(recording["id"])
 		files, _ := recording["media_files"].([]interface{})
 		for _, fileValue := range files {
 			file, _ := fileValue.(map[string]interface{})
-			mediaID, _ := file["id"].(string)
+			mediaID := jsonString(file["id"])
 			if recordingID != "" && mediaID != "" {
 				return recordingID, mediaID
 			}
 		}
 	}
 	return "", ""
+}
+
+func jsonString(value interface{}) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case float64:
+		return fmt.Sprintf("%.0f", typed)
+	case float32:
+		return fmt.Sprintf("%.0f", typed)
+	case int:
+		return fmt.Sprintf("%d", typed)
+	case int64:
+		return fmt.Sprintf("%d", typed)
+	case json.Number:
+		return typed.String()
+	default:
+		return ""
+	}
 }

@@ -39,7 +39,7 @@ func NewRecallProvider(cfg RecallConfig) *RecallProvider {
 	}
 	apiKey := strings.TrimSpace(cfg.APIKey)
 	return &RecallProvider{
-		apiKey: apiKey,
+		apiKey:        apiKey,
 		webhookSecret: strings.TrimSpace(cfg.WebhookSecret),
 		http: newHTTPClient(baseURL, cfg.HTTPClient, func(req *http.Request) {
 			req.Header.Set("Authorization", apiKey)
@@ -50,8 +50,15 @@ func NewRecallProvider(cfg RecallConfig) *RecallProvider {
 // Name returns the stable provider key.
 func (p *RecallProvider) Name() string { return "recall" }
 
-// Configured reports whether Recall can launch bots.
-func (p *RecallProvider) Configured() bool { return p != nil && p.apiKey != "" }
+// Configured reports whether Recall is ready for end-to-end capture and callbacks.
+func (p *RecallProvider) Configured() bool {
+	return p != nil && p.apiKey != "" && p.webhookSecret != ""
+}
+
+// Supports reports whether Recall supports the meeting platform.
+func (p *RecallProvider) Supports(platform string) bool {
+	return platform == "google_meet" || platform == "zoom" || platform == "teams" || platform == "webex"
+}
 
 // StartCapture launches or schedules a Recall bot.
 func (p *RecallProvider) StartCapture(ctx context.Context, input StartCaptureInput) (*Capture, error) {
@@ -63,7 +70,7 @@ func (p *RecallProvider) StartCapture(ctx context.Context, input StartCaptureInp
 		"transcript": map[string]interface{}{
 			"provider": map[string]interface{}{
 				"recallai_streaming": map[string]interface{}{
-					"mode": "prioritize_accuracy",
+					"mode":          "prioritize_accuracy",
 					"language_code": "auto",
 				},
 			},
@@ -77,10 +84,10 @@ func (p *RecallProvider) StartCapture(ctx context.Context, input StartCaptureInp
 	}
 	body := map[string]interface{}{
 		"meeting_url": input.MeetingURL,
-		"bot_name": input.BotName,
+		"bot_name":    input.BotName,
 		"metadata": map[string]string{
 			"helpin_workspace_id": input.WorkspaceID,
-			"helpin_meeting_id": input.MeetingID,
+			"helpin_meeting_id":   input.MeetingID,
 		},
 		"recording_config": recordingConfig,
 	}
@@ -94,8 +101,8 @@ func (p *RecallProvider) StartCapture(ctx context.Context, input StartCaptureInp
 	status, providerStatus := normalizeRecallBot(&response)
 	return &Capture{
 		ProviderCaptureID: response.ID,
-		ProviderStatus: providerStatus,
-		Status: status,
+		ProviderStatus:    providerStatus,
+		Status:            status,
 	}, nil
 }
 
@@ -156,19 +163,19 @@ func (p *RecallProvider) GetTranscript(ctx context.Context, captureID string) (*
 			language = entry.LanguageCode
 		}
 		segments = append(segments, TranscriptSegment{
-			ID: fmt.Sprintf("recall-%d", index),
-			SpeakerID: strconv.Itoa(entry.Participant.ID),
-			SpeakerName: firstNonBlank(entry.Participant.Name, "Unknown speaker"),
-			Text: strings.TrimSpace(strings.Join(words, " ")),
+			ID:           fmt.Sprintf("recall-%d", index),
+			SpeakerID:    strconv.Itoa(entry.Participant.ID),
+			SpeakerName:  firstNonBlank(entry.Participant.Name, "Unknown speaker"),
+			Text:         strings.TrimSpace(strings.Join(words, " ")),
 			StartSeconds: entry.Words[0].StartTimestamp.Relative,
-			EndSeconds: entry.Words[len(entry.Words)-1].EndTimestamp.Relative,
-			Language: entry.LanguageCode,
+			EndSeconds:   entry.Words[len(entry.Words)-1].EndTimestamp.Relative,
+			Language:     entry.LanguageCode,
 		})
 	}
 	return &Transcript{
 		ProviderTranscriptID: transcriptArtifact.ID,
-		Language: language,
-		Segments: segments,
+		Language:             language,
+		Segments:             segments,
 	}, nil
 }
 
@@ -253,16 +260,16 @@ func (p *RecallProvider) NormalizeWebhook(headers http.Header, payload []byte) (
 	}
 	status := normalizeRecallStatus(providerStatus)
 	event := &ProviderEvent{
-		EventID: eventID,
-		EventType: envelope.Event,
-		ProviderCaptureID: envelope.Data.Bot.ID,
-		ProviderStatus: providerStatus,
-		Status: status,
-		ProviderRecordingID: envelope.Data.Recording.ID,
+		EventID:              eventID,
+		EventType:            envelope.Event,
+		ProviderCaptureID:    envelope.Data.Bot.ID,
+		ProviderStatus:       providerStatus,
+		Status:               status,
+		ProviderRecordingID:  envelope.Data.Recording.ID,
 		ProviderTranscriptID: envelope.Data.Transcript.ID,
-		FailureCode: envelope.Data.Data.SubCode,
-		FailureMessage: envelope.Data.Data.Message,
-		TranscriptReady: envelope.Event == "transcript.done",
+		FailureCode:          envelope.Data.Data.SubCode,
+		FailureMessage:       envelope.Data.Data.Message,
+		TranscriptReady:      envelope.Event == "transcript.done",
 	}
 	if parsed, err := time.Parse(time.RFC3339Nano, envelope.Data.Data.UpdatedAt); err == nil {
 		event.OccurredAt = &parsed
@@ -308,7 +315,7 @@ type recallArtifact struct {
 
 type recallWebhook struct {
 	Event string `json:"event"`
-	Data struct {
+	Data  struct {
 		Data struct {
 			Code      string `json:"code"`
 			SubCode   string `json:"sub_code"`
@@ -333,8 +340,8 @@ type recallTranscriptEntry struct {
 		Name string `json:"name"`
 	} `json:"participant"`
 	LanguageCode string `json:"language_code"`
-	Words []struct {
-		Text string `json:"text"`
+	Words        []struct {
+		Text           string `json:"text"`
 		StartTimestamp struct {
 			Relative float64 `json:"relative"`
 		} `json:"start_timestamp"`

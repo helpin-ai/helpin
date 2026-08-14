@@ -12,14 +12,14 @@ var ErrNotConfigured = errors.New("meeting capture provider is not configured")
 
 // StartCaptureInput is the provider-neutral input for launching a meeting bot.
 type StartCaptureInput struct {
-	WorkspaceID    string
-	MeetingID      string
-	MeetingURL     string
-	Platform       string
+	WorkspaceID     string
+	MeetingID       string
+	MeetingURL      string
+	Platform        string
 	NativeMeetingID string
-	BotName        string
-	JoinAt         *time.Time
-	RecordAudio    bool
+	BotName         string
+	JoinAt          *time.Time
+	RecordAudio     bool
 }
 
 // Capture is the normalized result of starting or retrieving a provider bot.
@@ -59,23 +59,23 @@ type Recording struct {
 	ProviderRecordingID string
 	DownloadURL         string
 	ContentType         string
+	Headers             map[string]string
 }
 
 // ProviderEvent is a verified and normalized provider webhook.
 type ProviderEvent struct {
-	EventID             string
-	EventType           string
-	ProviderCaptureID   string
-	ProviderStatus      string
-	Status              string
-	ProviderRecordingID string
+	EventID              string
+	EventType            string
+	ProviderCaptureID    string
+	ProviderStatus       string
+	Status               string
+	ProviderRecordingID  string
 	ProviderTranscriptID string
-	FailureCode         string
-	FailureMessage      string
-	OccurredAt          *time.Time
-	TranscriptReady     bool
+	FailureCode          string
+	FailureMessage       string
+	OccurredAt           *time.Time
+	TranscriptReady      bool
 }
 
 // Headers is the webhook header subset used by provider verification.
 type Headers http.Header
-
