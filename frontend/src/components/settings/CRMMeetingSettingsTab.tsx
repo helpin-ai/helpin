@@ -11,10 +11,24 @@ import { useCRMMeetingSettings, useUpdateCRMMeetingSettings } from '@/hooks/quer
 import type { CRMMeetingSettingsResponse } from '@/lib/crmMeetingTypes';
 
 export function CRMMeetingSettingsTab({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }) {
-  const { data, isLoading } = useCRMMeetingSettings(workspaceId);
+  const { data, error, isFetching, isLoading, refetch } = useCRMMeetingSettings(workspaceId);
 
   if (isLoading) return <Skeleton className="h-80 w-full" />;
-  if (!data) return <p className="text-sm text-muted-foreground">Meeting settings are unavailable.</p>;
+  if (error || !data) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Unable to load meeting settings</CardTitle>
+          <CardDescription>The server could not return meeting settings. Try again now that the API is available.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
+            {isFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const formKey = `${data.settings.updated_at ?? 'defaults'}:${data.settings.enabled}`;
   return <CRMMeetingSettingsForm key={formKey} workspaceId={workspaceId} canManage={canManage} data={data} />;

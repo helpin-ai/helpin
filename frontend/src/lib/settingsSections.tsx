@@ -305,7 +305,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   {
     id: 'crm-meetings',
     label: 'Meeting Intelligence',
-    description: 'Choose a capture provider and configure meeting transcription defaults.',
+    description: 'Configure meeting transcription and recording defaults.',
     icon: Meetings,
     group: 'CRM',
   },
