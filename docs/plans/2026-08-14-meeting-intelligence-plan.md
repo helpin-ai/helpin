@@ -14,7 +14,7 @@ The first release intentionally keeps calendar auto-join out of the critical pat
 Meetings UI / API
        |
        v
-CRMMeetingService ---- workspace setting: default_provider=recall|vexa
+CRMMeetingService ---- env: CRM_MEETING_CAPTURE_PROVIDER=recall|vexa
        |
        +---- meetingcapture.RecallProvider ---- Recall REST + Svix webhooks
        |
@@ -174,10 +174,10 @@ To switch later:
 1. Deploy and validate the Vexa service and its STT/storage dependencies.
 2. Add the Vexa API and webhook secrets to both API and Temporal worker environments.
 3. Configure the Vexa callback and run one canary meeting through capture, transcript, recording, and deletion.
-4. Select Vexa under Meeting Intelligence settings.
+4. Set `CRM_MEETING_CAPTURE_PROVIDER=vexa` for the API deployment and restart it.
 5. Keep Recall credentials until every Recall-owned in-flight capture has completed and its provider artifacts have been copied/deleted.
 
-Rollback is the same settings change back to Recall. No data migration is needed.
+Rollback is the same environment change back to `recall`. No data migration is needed. Provider selection is deployment-owned and is not returned by the workspace settings API or shown in the customer UI.
 
 ## Verification checklist
 
@@ -195,7 +195,7 @@ Operational checks required with deployed credentials:
 - replay the same capture idempotency key under concurrent requests; verify one provider bot and one canonical meeting
 - replay the same webhook and capture idempotency key; verify no duplicate workflow, event, or task
 - exhaust AI allowance; verify transcript retention, `blocked_usage`, upgrade UI, and successful retry
-- change provider during a live Recall meeting; verify that meeting finishes on Recall and only the next attempt uses Vexa
+- change `CRM_MEETING_CAPTURE_PROVIDER` during a live Recall meeting and restart the API; verify that meeting finishes on Recall and only the next attempt uses Vexa
 
 ## Follow-on work
 

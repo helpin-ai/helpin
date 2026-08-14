@@ -108,6 +108,42 @@ func TestLoadAgentRuntimeConfig(t *testing.T) {
 	}
 }
 
+func TestLoadMeetingCaptureProvider(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("CRM_MEETING_CAPTURE_PROVIDER", " VEXA ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.CRMMeetingCaptureProvider != "vexa" {
+		t.Fatalf("unexpected meeting capture provider: %q", cfg.CRMMeetingCaptureProvider)
+	}
+}
+
+func TestLoadDefaultsMeetingCaptureProviderToRecall(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("CRM_MEETING_CAPTURE_PROVIDER", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.CRMMeetingCaptureProvider != "recall" {
+		t.Fatalf("unexpected default meeting capture provider: %q", cfg.CRMMeetingCaptureProvider)
+	}
+}
+
+func TestLoadRejectsInvalidMeetingCaptureProvider(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("CRM_MEETING_CAPTURE_PROVIDER", "unknown")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "CRM_MEETING_CAPTURE_PROVIDER must be recall or vexa") {
+		t.Fatalf("expected meeting provider config error, got %v", err)
+	}
+}
+
 func TestLoadRejectsInvalidCommandRouterOpenRouterProviderOptions(t *testing.T) {
 	setRequiredConfigEnv(t)
 	t.Setenv("COMMAND_ROUTER_OPENROUTER_PROVIDER_OPTIONS", `{not-json}`)

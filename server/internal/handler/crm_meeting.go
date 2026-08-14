@@ -187,12 +187,12 @@ func (h *CRMMeetingHandler) DismissActionItem(w http.ResponseWriter, r *http.Req
 
 // GetSettings handles GET /api/crm/meeting-settings.
 func (h *CRMMeetingHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
-	settings, readiness, err := h.meetingService.GetSettings(r.Context(), getWorkspaceID(r))
+	settings, err := h.meetingService.GetSettings(r.Context(), getWorkspaceID(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "unable to load meeting settings")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"settings": settings, "provider_readiness": readiness})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"settings": settings})
 }
 
 // UpdateSettings handles PUT /api/crm/meeting-settings.

@@ -75,7 +75,7 @@ export function MeetingsPage() {
         <div className="mx-4 mt-4 flex items-center justify-between gap-4 rounded-lg border bg-muted/20 p-4">
           <div>
             <p className="text-sm font-medium">Enable Meeting Intelligence</p>
-            <p className="mt-1 text-xs text-muted-foreground">Configure Recall to let the Helpin notetaker join calls. Vexa remains available behind the same provider switch.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Configure meeting capture to let the Helpin notetaker join calls.</p>
           </div>
           {canAdmin && <Button size="sm" variant="outline" onClick={() => navigate({ to: '/w/$slug/settings/crm-meetings', params: { slug: workspaceSlug } })}>Configure</Button>}
         </div>

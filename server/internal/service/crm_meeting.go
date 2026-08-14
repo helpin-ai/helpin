@@ -43,6 +43,7 @@ type CRMMeetingService struct {
 	associationRepo *repository.CRMAssociationRepository
 	taskService     *PMTaskService
 	providers       map[string]meetingCaptureProvider
+	captureProvider string
 	processing      meetingProcessingRunner
 	recordingStore  meetingRecordingStore
 	aiUsageMeter    *AIUsageMeter
@@ -66,7 +67,18 @@ func NewCRMMeetingService(
 		associationRepo: associationRepo,
 		taskService:     taskService,
 		providers:       providerMap,
+		captureProvider: model.CRMMeetingProviderRecall,
 	}
+}
+
+// SetCaptureProvider selects the deployment-owned provider used for new capture attempts.
+func (s *CRMMeetingService) SetCaptureProvider(name string) *CRMMeetingService {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		name = model.CRMMeetingProviderRecall
+	}
+	s.captureProvider = name
+	return s
 }
 
 // SetProcessingRunner injects the product-owned Temporal processing launcher.
@@ -194,7 +206,7 @@ func (s *CRMMeetingService) Create(
 		if !settings.Enabled {
 			return nil, fmt.Errorf("meeting intelligence is disabled for this workspace")
 		}
-		provider, providerErr := s.provider(settings.DefaultProvider, platform)
+		provider, providerErr := s.provider(s.captureProvider, platform)
 		if providerErr != nil {
 			return nil, providerErr
 		}
@@ -339,7 +351,7 @@ func (s *CRMMeetingService) startCaptureLocked(
 	if !settings.Enabled {
 		return nil, fmt.Errorf("meeting intelligence is disabled for this workspace")
 	}
-	provider, err := s.provider(settings.DefaultProvider, meeting.Platform)
+	provider, err := s.provider(s.captureProvider, meeting.Platform)
 	if err != nil {
 		return nil, err
 	}
@@ -481,17 +493,13 @@ func (s *CRMMeetingService) DeleteRecording(ctx context.Context, workspaceID, me
 	return s.repo.Update(ctx, meeting)
 }
 
-// GetSettings returns effective workspace meeting settings and provider readiness.
-func (s *CRMMeetingService) GetSettings(ctx context.Context, workspaceID string) (*model.CRMMeetingSettings, map[string]bool, error) {
+// GetSettings returns user-manageable workspace meeting settings.
+func (s *CRMMeetingService) GetSettings(ctx context.Context, workspaceID string) (*model.CRMMeetingSettings, error) {
 	settings, err := s.repo.GetSettings(ctx, workspaceID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	readiness := make(map[string]bool, len(s.providers))
-	for name, provider := range s.providers {
-		readiness[name] = provider.Configured()
-	}
-	return settings, readiness, nil
+	return settings, nil
 }
 
 // UpdateSettings validates and saves workspace meeting policy.
@@ -505,7 +513,8 @@ func (s *CRMMeetingService) UpdateSettings(
 		return nil, err
 	}
 	applyMeetingSettingsPatch(settings, req)
-	if _, err := s.provider(settings.DefaultProvider, model.CRMMeetingPlatformGoogleMeet); settings.Enabled && err != nil {
+	settings.DefaultProvider = s.captureProvider
+	if _, err := s.provider(s.captureProvider, model.CRMMeetingPlatformGoogleMeet); settings.Enabled && err != nil {
 		return nil, err
 	}
 	if !validMeetingVisibility(settings.DefaultVisibility) {
@@ -695,9 +704,6 @@ func trimStringPtr(value *string) *string {
 func applyMeetingSettingsPatch(settings *model.CRMMeetingSettings, req model.UpdateCRMMeetingSettingsRequest) {
 	if req.Enabled != nil {
 		settings.Enabled = *req.Enabled
-	}
-	if req.DefaultProvider != nil {
-		settings.DefaultProvider = strings.ToLower(strings.TrimSpace(*req.DefaultProvider))
 	}
 	if req.BotName != nil {
 		settings.BotName = strings.TrimSpace(*req.BotName)

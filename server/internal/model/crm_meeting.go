@@ -78,18 +78,18 @@ type CRMMeetingCapture struct {
 	ID                    string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID           string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_crm_meeting_capture_idempotency,priority:1"`
 	MeetingID             string     `json:"meeting_id" gorm:"type:uuid;not null;index"`
-	Provider              string     `json:"provider" gorm:"not null;index;uniqueIndex:idx_crm_meeting_capture_provider_id,priority:1"`
-	ProviderCaptureID     string     `json:"provider_capture_id" gorm:"not null;uniqueIndex:idx_crm_meeting_capture_provider_id,priority:2"`
-	ProviderStatus        string     `json:"provider_status" gorm:"not null"`
+	Provider              string     `json:"-" gorm:"not null;index;uniqueIndex:idx_crm_meeting_capture_provider_id,priority:1"`
+	ProviderCaptureID     string     `json:"-" gorm:"not null;uniqueIndex:idx_crm_meeting_capture_provider_id,priority:2"`
+	ProviderStatus        string     `json:"-" gorm:"not null"`
 	Status                string     `json:"status" gorm:"not null;index"`
 	RequestIdempotencyKey string     `json:"-" gorm:"not null;uniqueIndex:idx_crm_meeting_capture_idempotency,priority:2"`
-	ProviderRecordingID   *string    `json:"provider_recording_id,omitempty"`
-	ProviderTranscriptID  *string    `json:"provider_transcript_id,omitempty"`
+	ProviderRecordingID   *string    `json:"-"`
+	ProviderTranscriptID  *string    `json:"-"`
 	StartedAt             *time.Time `json:"started_at"`
 	EndedAt               *time.Time `json:"ended_at"`
 	FailureCode           *string    `json:"failure_code"`
 	FailureMessage        *string    `json:"failure_message"`
-	Metadata              JSONB      `json:"metadata" gorm:"type:jsonb;default:'{}'"`
+	Metadata              JSONB      `json:"-" gorm:"type:jsonb;default:'{}'"`
 	CreatedAt             time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt             time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -134,7 +134,7 @@ type CRMMeetingTranscript struct {
 	WorkspaceID    string                       `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	MeetingID      string                       `json:"meeting_id" gorm:"type:uuid;not null;uniqueIndex"`
 	CaptureID      string                       `json:"capture_id" gorm:"type:uuid;not null;index"`
-	SourceProvider string                       `json:"source_provider" gorm:"not null"`
+	SourceProvider string                       `json:"-" gorm:"not null"`
 	Language       *string                      `json:"language"`
 	PlainText      string                       `json:"plain_text" gorm:"type:text;not null"`
 	Segments       CRMMeetingTranscriptSegments `json:"segments" gorm:"type:jsonb;default:'[]'"`
@@ -189,7 +189,7 @@ func (CRMMeetingActionItem) TableName() string { return "crm_meeting_action_item
 type CRMMeetingSettings struct {
 	WorkspaceID             string    `json:"workspace_id" gorm:"type:uuid;primaryKey"`
 	Enabled                 bool      `json:"enabled" gorm:"not null;default:false"`
-	DefaultProvider         string    `json:"default_provider" gorm:"not null;default:'recall'"`
+	DefaultProvider         string    `json:"-" gorm:"not null;default:'recall'"`
 	BotName                 string    `json:"bot_name" gorm:"not null;default:'Helpin Notetaker'"`
 	AutoJoinMode            string    `json:"auto_join_mode" gorm:"not null;default:'manual'"`
 	RecordAudioByDefault    bool      `json:"record_audio_by_default" gorm:"not null;default:false"`
@@ -261,7 +261,6 @@ type CRMMeetingListFilters struct {
 // UpdateCRMMeetingSettingsRequest updates workspace meeting policy.
 type UpdateCRMMeetingSettingsRequest struct {
 	Enabled              *bool   `json:"enabled"`
-	DefaultProvider      *string `json:"default_provider"`
 	BotName              *string `json:"bot_name"`
 	RecordAudioByDefault *bool   `json:"record_audio_by_default"`
 }

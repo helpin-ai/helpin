@@ -86,7 +86,7 @@ export function CreateMeetingDialog({
         <div className="space-y-4 py-2">
           {!settingsEnabled && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
-              Meeting intelligence is disabled. An admin must enable and configure a provider before the notetaker can join.
+              Meeting intelligence is disabled. An admin must enable it before the notetaker can join.
             </div>
           )}
           <div className="space-y-2">

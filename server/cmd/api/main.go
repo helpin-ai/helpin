@@ -1317,7 +1317,8 @@ func main() {
 		pmTaskService,
 		recallMeetingProvider,
 		vexaMeetingProvider,
-	).SetProcessingRunner(service.NewTemporalMeetingProcessingRunner(temporalClient)).
+	).SetCaptureProvider(cfg.CRMMeetingCaptureProvider).
+		SetProcessingRunner(service.NewTemporalMeetingProcessingRunner(temporalClient)).
 		SetAIUsageMeter(aiUsageMeter)
 	if s3Client != nil {
 		crmMeetingService.SetRecordingStore(s3Client)

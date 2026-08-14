@@ -279,7 +279,6 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
           <Card>
             <CardHeader><CardTitle className="text-sm">Capture details</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-xs">
-              <div className="flex justify-between gap-3"><span className="text-muted-foreground">Provider</span><span className="font-medium">{data.capture ? titleCase(data.capture.provider) : 'Not started'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Visibility</span><span className="font-medium">{titleCase(meeting.visibility)}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Audio</span><span className="font-medium">{meeting.record_audio ? 'Recorded' : 'Transcript only'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Participants</span><span className="font-medium">{meeting.participants?.length ?? 0}</span></div>

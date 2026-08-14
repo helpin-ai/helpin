@@ -1,6 +1,5 @@
 import type { CRMAssociationEnriched, CRMPaginatedResponse } from './crmTypes';
 
-export type CRMMeetingProvider = 'recall' | 'vexa';
 export type CRMMeetingPlatform = 'google_meet' | 'zoom' | 'teams' | 'webex';
 export type CRMMeetingStatus = 'scheduled' | 'joining' | 'waiting' | 'recording' | 'finalizing' | 'processing' | 'ready' | 'failed' | 'cancelled';
 export type CRMMeetingSummaryStatus = 'pending' | 'processing' | 'ready' | 'blocked_usage' | 'failed' | 'not_requested';
@@ -39,12 +38,7 @@ export interface CRMMeetingCapture {
   id: string;
   workspace_id: string;
   meeting_id: string;
-  provider: CRMMeetingProvider;
-  provider_capture_id: string;
-  provider_status: string;
   status: CRMMeetingStatus;
-  provider_recording_id?: string;
-  provider_transcript_id?: string;
   started_at?: string;
   ended_at?: string;
   failure_code?: string;
@@ -69,7 +63,6 @@ export interface CRMMeetingTranscript {
   workspace_id: string;
   meeting_id: string;
   capture_id: string;
-  source_provider: CRMMeetingProvider;
   language?: string;
   plain_text: string;
   segments: CRMMeetingTranscriptSegment[];
@@ -160,7 +153,6 @@ export interface CRMMeetingFilters {
 export interface CRMMeetingSettings {
   workspace_id: string;
   enabled: boolean;
-  default_provider: CRMMeetingProvider;
   bot_name: string;
   auto_join_mode: 'manual' | 'external' | 'all';
   record_audio_by_default: boolean;
@@ -176,14 +168,12 @@ export interface CRMMeetingSettings {
 
 export type UpdateCRMMeetingSettingsRequest = Partial<Pick<CRMMeetingSettings,
   | 'enabled'
-  | 'default_provider'
   | 'bot_name'
   | 'record_audio_by_default'
 >>;
 
 export interface CRMMeetingSettingsResponse {
   settings: CRMMeetingSettings;
-  provider_readiness: Record<CRMMeetingProvider, boolean>;
 }
 
 export interface AcceptCRMMeetingActionItemRequest {

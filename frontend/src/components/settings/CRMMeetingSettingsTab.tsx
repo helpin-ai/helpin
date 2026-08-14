@@ -4,12 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useCRMMeetingSettings, useUpdateCRMMeetingSettings } from '@/hooks/queries/useCRMMeetings';
-import type { CRMMeetingProvider, CRMMeetingSettingsResponse } from '@/lib/crmMeetingTypes';
+import type { CRMMeetingSettingsResponse } from '@/lib/crmMeetingTypes';
 
 export function CRMMeetingSettingsTab({ workspaceId, canManage }: { workspaceId: string; canManage: boolean }) {
   const { data, isLoading } = useCRMMeetingSettings(workspaceId);
@@ -17,7 +16,7 @@ export function CRMMeetingSettingsTab({ workspaceId, canManage }: { workspaceId:
   if (isLoading) return <Skeleton className="h-80 w-full" />;
   if (!data) return <p className="text-sm text-muted-foreground">Meeting settings are unavailable.</p>;
 
-  const formKey = `${data.settings.updated_at ?? 'defaults'}:${data.settings.default_provider}:${data.settings.enabled}`;
+  const formKey = `${data.settings.updated_at ?? 'defaults'}:${data.settings.enabled}`;
   return <CRMMeetingSettingsForm key={formKey} workspaceId={workspaceId} canManage={canManage} data={data} />;
 }
 
@@ -32,7 +31,6 @@ function CRMMeetingSettingsForm({
 }) {
   const updateSettings = useUpdateCRMMeetingSettings(workspaceId);
   const [enabled, setEnabled] = useState(data.settings.enabled);
-  const [provider, setProvider] = useState<CRMMeetingProvider>(data.settings.default_provider);
   const [botName, setBotName] = useState(data.settings.bot_name);
   const [recordAudio, setRecordAudio] = useState(data.settings.record_audio_by_default);
 
@@ -40,7 +38,6 @@ function CRMMeetingSettingsForm({
     try {
       await updateSettings.mutateAsync({
         enabled,
-        default_provider: provider,
         bot_name: botName.trim(),
         record_audio_by_default: recordAudio,
       });
@@ -49,8 +46,6 @@ function CRMMeetingSettingsForm({
       toast.error(error instanceof Error ? error.message : 'Unable to save meeting settings');
     }
   };
-
-  const readiness = data.provider_readiness;
 
   return (
     <div className="space-y-4">
@@ -77,25 +72,10 @@ function CRMMeetingSettingsForm({
 
           <Separator />
 
-          <div className="grid gap-5 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Capture provider</Label>
-              <Select value={provider} onValueChange={(value) => setProvider(value as CRMMeetingProvider)} disabled={!canManage || !enabled}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="recall" disabled={!readiness.recall}>Recall.ai {readiness.recall ? '— ready' : '— not configured'}</SelectItem>
-                  <SelectItem value="vexa" disabled={!readiness.vexa}>Vexa {readiness.vexa ? '— ready' : '— not configured'}</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs leading-5 text-muted-foreground">
-                This changes only new capture attempts. Meetings already started continue with their original provider.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="meeting-bot-name">Notetaker name</Label>
-              <Input id="meeting-bot-name" value={botName} onChange={(event) => setBotName(event.target.value)} disabled={!canManage || !enabled} maxLength={100} />
-              <p className="text-xs text-muted-foreground">Displayed to participants when the bot joins.</p>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="meeting-bot-name">Notetaker name</Label>
+            <Input id="meeting-bot-name" value={botName} onChange={(event) => setBotName(event.target.value)} disabled={!canManage || !enabled} maxLength={100} />
+            <p className="text-xs text-muted-foreground">Displayed to participants when the bot joins.</p>
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">

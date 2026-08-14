@@ -378,10 +378,7 @@ func TestMeetingProviderSwitchAffectsOnlyNewCaptureAttempts(t *testing.T) {
 	if err := repo.Update(context.Background(), meeting); err != nil {
 		t.Fatal(err)
 	}
-	settings.DefaultProvider = model.CRMMeetingProviderVexa
-	if err := repo.UpsertSettings(context.Background(), settings); err != nil {
-		t.Fatal(err)
-	}
+	service.SetCaptureProvider(model.CRMMeetingProviderVexa)
 	second, err := service.StartCapture(context.Background(), meeting.WorkspaceID, meeting.ID, "attempt-2")
 	if err != nil || second.Provider != model.CRMMeetingProviderVexa {
 		t.Fatalf("second capture = %#v, err=%v", second, err)

@@ -140,13 +140,14 @@ type Config struct {
 	CRMLLMBaseURL  string
 	CRMLLMModel    string
 
-	// CRM meeting capture providers. Recall is the product default; Vexa can be hosted or self-hosted.
-	RecallBaseURL       string
-	RecallAPIKey        string
-	RecallWebhookSecret string
-	VexaBaseURL         string
-	VexaAPIKey          string
-	VexaWebhookSecret   string
+	// CRM meeting capture providers. Selection is deployment-owned and defaults to Recall.
+	CRMMeetingCaptureProvider string
+	RecallBaseURL             string
+	RecallAPIKey              string
+	RecallWebhookSecret       string
+	VexaBaseURL               string
+	VexaAPIKey                string
+	VexaWebhookSecret         string
 
 	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.6-luna)
 	QueryExpansionModel     string
@@ -260,6 +261,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	meetingCaptureProvider := strings.ToLower(strings.TrimSpace(firstNonEmpty(os.Getenv("CRM_MEETING_CAPTURE_PROVIDER"), "recall")))
+	if meetingCaptureProvider != "recall" && meetingCaptureProvider != "vexa" {
+		return nil, fmt.Errorf("CRM_MEETING_CAPTURE_PROVIDER must be recall or vexa")
+	}
 
 	return &Config{
 		DatabaseURL:                            dbURL,
@@ -359,6 +364,7 @@ func Load() (*Config, error) {
 		CRMLLMAPIKey:                           os.Getenv("CRM_LLM_API_KEY"),
 		CRMLLMBaseURL:                          os.Getenv("CRM_LLM_BASE_URL"),
 		CRMLLMModel:                            os.Getenv("CRM_LLM_MODEL"),
+		CRMMeetingCaptureProvider:              meetingCaptureProvider,
 		RecallBaseURL:                          strings.TrimRight(strings.TrimSpace(os.Getenv("RECALL_BASE_URL")), "/"),
 		RecallAPIKey:                           strings.TrimSpace(os.Getenv("RECALL_API_KEY")),
 		RecallWebhookSecret:                    strings.TrimSpace(os.Getenv("RECALL_WEBHOOK_SECRET")),
