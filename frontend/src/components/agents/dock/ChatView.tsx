@@ -43,6 +43,7 @@ interface ChatViewProps {
   onPresenceChange?: (state: AskAgentAvatarState | null) => void;
   onRunIdChange?: (runId: string | null) => void;
   requiredPageContext?: CommandBarPageContext | null;
+  showComposerShortcutHint?: boolean;
 }
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
@@ -76,6 +77,7 @@ export function ChatView({
   onPresenceChange,
   onRunIdChange,
   requiredPageContext,
+  showComposerShortcutHint,
 }: ChatViewProps) {
   const [detail, setDetail] = useState<DockChatDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
@@ -634,6 +636,7 @@ export function ChatView({
             textareaRef={textareaRef}
             onStop={canStop ? () => void handleStop() : undefined}
             stopping={stopping}
+            showShortcutHint={showComposerShortcutHint}
           />
         </div>
       )}

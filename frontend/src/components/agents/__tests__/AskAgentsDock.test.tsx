@@ -324,6 +324,8 @@ describe('AskAgentsDock', () => {
 
     await renderEmbeddedDock(supportContext);
     await waitForText('Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.');
+    await waitForText('Add context');
+    expect(document.body.textContent).not.toContain('Press / to open');
   });
 
   it('creates an associated chat when the support conversation has no history', async () => {
@@ -671,10 +673,10 @@ describe('AskAgentsDock', () => {
     });
     mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
     await renderDock();
-    await waitForText('Add reference');
+    await waitForText('Add context');
 
     const addReference = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent?.includes('Add reference'));
+      .find((button) => button.textContent?.includes('Add context'));
     await act(async () => {
       addReference?.click();
       await new Promise((resolve) => window.setTimeout(resolve, 220));
