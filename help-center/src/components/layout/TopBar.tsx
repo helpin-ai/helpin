@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { Search, Moon, Sun } from 'lucide-react'
 import {
@@ -91,6 +91,10 @@ function getRouteLoaderData(matches: Array<{ loaderData?: unknown }>) {
 }
 
 export function TopBar({ onSearchClick }: TopBarProps) {
+  const headerRef = useRef<HTMLElement>(null)
+  const leftContentRef = useRef<HTMLDivElement>(null)
+  const rightContentRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLButtonElement>(null)
   const {
     config,
     subdomain,
@@ -397,10 +401,55 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     spaces,
   ])
 
+  useEffect(() => {
+    const header = headerRef.current
+    const leftContent = leftContentRef.current
+    const rightContent = rightContentRef.current
+    const searchButton = searchRef.current
+    if (!header || !leftContent || !rightContent || !searchButton) return
+
+    const updateSearchWidth = () => {
+      const headerRect = header.getBoundingClientRect()
+      const leftRect = leftContent.getBoundingClientRect()
+      const rightRect = rightContent.getBoundingClientRect()
+      const center = headerRect.left + headerRect.width / 2
+      const clearance = 12
+      const availableOnLeft = center - leftRect.right - clearance
+      const availableOnRight = rightRect.left - center - clearance
+      const centeredWidth = Math.floor(
+        Math.min(520, availableOnLeft * 2, availableOnRight * 2),
+      )
+
+      // Keep the search action usable as an icon button when the header is very
+      // crowded. The label truncates naturally and grows back as room returns.
+      searchButton.style.width = `${Math.max(40, centeredWidth)}px`
+    }
+
+    updateSearchWidth()
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateSearchWidth)
+      return () => window.removeEventListener('resize', updateSearchWidth)
+    }
+
+    const observer = new ResizeObserver(updateSearchWidth)
+    observer.observe(header)
+    observer.observe(leftContent)
+    observer.observe(rightContent)
+
+    return () => observer.disconnect()
+  }, [])
+
   return (
-    <header className="sticky top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center border-b border-border bg-background/95 backdrop-blur-sm px-5 h-[var(--hc-header-height)]">
+    <header
+      ref={headerRef}
+      className="sticky top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center border-b border-border bg-background/95 backdrop-blur-sm px-5 h-[var(--hc-header-height)]"
+    >
       {/* Left: Brand + Space tabs */}
-      <div className="flex items-center min-w-0">
+      <div
+        ref={leftContentRef}
+        className="flex w-max min-w-0 items-center"
+      >
         <DocsLink
           to={buildCanonicalHomePath(multilingualEnabled, locale)}
           className="flex items-center gap-2.5 shrink-0"
@@ -445,7 +494,7 @@ export function TopBar({ onSearchClick }: TopBarProps) {
                     space.slug,
                   )}
                   className={cn(
-                    'px-3 py-1.5 text-[13.5px] rounded-md transition-colors',
+                    'whitespace-nowrap px-3 py-1.5 text-[13.5px] rounded-md transition-colors',
                     isActive
                       ? 'text-foreground font-semibold'
                       : 'text-muted-foreground font-medium hover:text-foreground',
@@ -469,11 +518,12 @@ export function TopBar({ onSearchClick }: TopBarProps) {
 
       {/* Center: Search */}
       <button
+        ref={searchRef}
         onClick={onSearchClick}
-        className="flex items-center gap-2 pl-3 pr-2 h-8 rounded-lg border border-border bg-muted/40 hover:bg-muted/70 transition-colors cursor-text w-[min(280px,calc(100vw-120px))] sm:w-[360px] lg:w-[440px] xl:w-[520px]"
+        className="flex min-w-0 items-center gap-2 pl-3 pr-2 h-8 rounded-lg border border-border bg-muted/40 hover:bg-muted/70 transition-[width,background-color] cursor-text w-[min(280px,calc(100vw-120px))] sm:w-[360px] lg:w-[440px] xl:w-[520px]"
       >
         <Search size={14} className="text-muted-foreground shrink-0" />
-        <span className="flex-1 text-left text-[13px] text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate text-left text-[13px] text-muted-foreground">
           {config.search_placeholder || 'Search...'}
         </span>
         <span className="hidden flex-none text-xs font-semibold text-muted-foreground sm:inline-flex">
@@ -482,7 +532,10 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       </button>
 
       {/* Right: Header links + Theme toggle */}
-      <div className="flex items-center justify-end gap-1">
+      <div
+        ref={rightContentRef}
+        className="flex w-max items-center justify-end justify-self-end gap-1"
+      >
         {sortedLinks.length > 0 && (
           <nav className="hidden md:flex items-center gap-1">
             {sortedLinks.map((link, i) =>
