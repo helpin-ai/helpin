@@ -743,6 +743,7 @@ type DocsSpaceDeleteImpact struct {
 	ArchivedDocumentCount  int    `json:"archived_document_count"`
 	PublishedDocumentCount int    `json:"published_document_count"`
 	PublicDocumentCount    int    `json:"public_document_count"`
+	APIReferenceCount      int    `json:"api_reference_count"`
 }
 
 // CreateDocsDocumentRequest is the payload for creating a document.

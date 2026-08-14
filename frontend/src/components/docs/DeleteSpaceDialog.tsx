@@ -62,14 +62,16 @@ function renderImpactDescription(
     collection_count: number
     document_count: number
     public_document_count: number
+    api_reference_count: number
   },
 ): ReactNode {
-  const { collection_count, document_count, public_document_count } = impact
+  const { collection_count, document_count, public_document_count, api_reference_count } = impact
   const hasCollections = collection_count > 0
   const hasDocs = document_count > 0
   const hasPublic = public_document_count > 0
+  const hasAPIReferences = api_reference_count > 0
 
-  if (!hasCollections && !hasDocs) {
+  if (!hasCollections && !hasDocs && !hasAPIReferences) {
     return (
       <>
         <strong>"{name}"</strong> will be permanently deleted.{' '}
@@ -103,6 +105,13 @@ function renderImpactDescription(
       </>,
     )
   }
+  if (hasAPIReferences) {
+    parts.push(
+      <strong>
+        {api_reference_count} API reference{api_reference_count === 1 ? '' : 's'}
+      </strong>,
+    )
+  }
 
   return (
     <>
@@ -115,6 +124,13 @@ function renderImpactDescription(
 function joinParts(nodes: ReactNode[]): ReactNode {
   if (nodes.length === 0) return null
   if (nodes.length === 1) return nodes[0]
+  if (nodes.length === 3) {
+    return (
+      <>
+        {nodes[0]}, {nodes[1]}, and {nodes[2]}
+      </>
+    )
+  }
   return (
     <>
       {nodes[0]} and {nodes[1]}

@@ -44,6 +44,9 @@ import type {
   DocsResolvedEmbed,
   DocsEntityRefRequest,
   ResolveDocsEntityRefsResponse,
+  DocsAPIReference,
+  CreateDocsAPIReferenceRequest,
+  UpdateDocsAPIReferenceRequest,
 } from '../docsTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -62,6 +65,22 @@ export const docsService = {
     api.del(`/docs/spaces/${spaceId}${qs(wsId)}`),
   restoreSpace: (wsId: string, spaceId: string) =>
     api.post<DocsSpace>(`/docs/spaces/${spaceId}/restore${qs(wsId)}`),
+
+  // API references
+  listAPIReferences: (wsId: string, spaceId: string) =>
+    api.get<DocsAPIReference[]>(`/docs/spaces/${spaceId}/api-references${qs(wsId)}`),
+  createAPIReference: (wsId: string, spaceId: string, payload: CreateDocsAPIReferenceRequest) =>
+    api.post<DocsAPIReference>(`/docs/spaces/${spaceId}/api-references${qs(wsId)}`, payload),
+  updateAPIReference: (wsId: string, referenceId: string, payload: UpdateDocsAPIReferenceRequest) =>
+    api.patch<DocsAPIReference>(`/docs/api-references/${referenceId}${qs(wsId)}`, payload),
+  syncAPIReference: (wsId: string, referenceId: string) =>
+    api.post<DocsAPIReference>(`/docs/api-references/${referenceId}/sync${qs(wsId)}`),
+  publishAPIReference: (wsId: string, referenceId: string) =>
+    api.post<DocsAPIReference>(`/docs/api-references/${referenceId}/publish${qs(wsId)}`),
+  unpublishAPIReference: (wsId: string, referenceId: string) =>
+    api.post<DocsAPIReference>(`/docs/api-references/${referenceId}/unpublish${qs(wsId)}`),
+  deleteAPIReference: (wsId: string, referenceId: string) =>
+    api.del(`/docs/api-references/${referenceId}${qs(wsId)}`),
 
   // ── Collections ─────────────────────────────────────────────────────────
   listAllCollections: (wsId: string) =>

@@ -4,6 +4,61 @@
 
 export type DocStatus = 'draft' | 'published' | 'archived';
 export type SpaceType = 'internal' | 'external_capable';
+
+export type DocsAPIReferenceSourceType = 'url' | 'upload';
+export type DocsAPIReferenceSyncStatus = 'ready' | 'failed';
+
+export interface DocsAPIReferenceRevision {
+  id: string;
+  api_reference_id: string;
+  workspace_id: string;
+  source_hash: string;
+  openapi_version: string;
+  api_version: string;
+  specification: Record<string, unknown>;
+  warnings: string[];
+  operation_count: number;
+  schema_count: number;
+  created_by: string;
+  created_at: string;
+}
+
+export interface DocsAPIReference {
+  id: string;
+  workspace_id: string;
+  space_id: string;
+  name: string;
+  slug: string;
+  source_type: DocsAPIReferenceSourceType;
+  source_url?: string;
+  sync_enabled: boolean;
+  sync_status: DocsAPIReferenceSyncStatus;
+  last_sync_error?: string;
+  last_synced_at?: string;
+  draft_revision_id?: string;
+  published_revision_id?: string;
+  published_at?: string;
+  position: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  draft_revision?: DocsAPIReferenceRevision;
+  published_revision?: DocsAPIReferenceRevision;
+}
+
+export interface CreateDocsAPIReferenceRequest {
+  name: string;
+  source_type: DocsAPIReferenceSourceType;
+  source_url?: string;
+  specification_text?: string;
+}
+
+export interface UpdateDocsAPIReferenceRequest {
+  name?: string;
+  slug?: string;
+  source_url?: string;
+  specification_text?: string;
+}
 export type SpaceVisibility = 'workspace_wide' | 'team_only';
 export type VersionType = 'manual' | 'auto' | 'publish' | 'revert' | 'proposal_apply';
 export type LinkContext = 'attached' | 'mentioned' | 'created_from' | 'linked_in_content';
@@ -797,6 +852,7 @@ export interface DocsSpaceDeleteImpact {
   archived_document_count: number;
   published_document_count: number;
   public_document_count: number;
+  api_reference_count: number;
 }
 
 export interface ReorderDocsChildItem {
