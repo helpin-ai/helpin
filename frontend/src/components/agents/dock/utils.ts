@@ -75,13 +75,14 @@ export function runUpdatedAt(run: AgentRun): number {
 export function planUpdatedAt(
   plan: CommandBarRunPlan,
   runsById: Record<string, AgentRun>,
-): number {
-  let latest = 0;
+): number | null {
+  const planTimestamp = Date.parse(plan.updatedAt || plan.createdAt || '');
+  let latest = Number.isFinite(planTimestamp) ? planTimestamp : 0;
   for (const id of Object.values(plan.runIdsByStep)) {
     const run = runsById[id];
     if (run) latest = Math.max(latest, runUpdatedAt(run));
   }
-  return latest || Date.now();
+  return latest || null;
 }
 
 /**

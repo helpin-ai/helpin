@@ -20,12 +20,14 @@ import { PipelineRail } from './PipelineRail';
 import { FanOutRail } from './FanOutRail';
 import { DeliveryPlanView, DeliveryProgressBar } from './DeliveryPlanView';
 import { PendingInteractionCard } from './PendingInteractionCard';
-import { DockTranscript, dockTranscriptHasContent } from './DockTranscript';
+import { DockTranscript } from './DockTranscript';
+import { dockTranscriptHasContent } from './dockTranscriptContent';
 import { useAgentRunStream } from './useAgentRunStream';
 import type { RunPlanArtifact } from '@/lib/pmTypes';
 import {
   classifyPlan,
   classifyRun,
+  describeStep,
   formatDuration,
   outputSummaryText,
   planKindLabel,
@@ -83,6 +85,17 @@ export type ExecutionStripProps = PlanStripProps | RunStripProps;
 function activityToDot(state: ActivityState, hasActive = false): DotKind {
   if (state === 'running' && hasActive) return 'active_step';
   return state;
+}
+
+function activityStatusLabel(state: ActivityState): string {
+  switch (state) {
+    case 'running': return 'Running';
+    case 'awaiting': return 'Waiting';
+    case 'attention': return 'Failed';
+    case 'cancelled': return 'Cancelled';
+    case 'completed': return 'Completed';
+    case 'queued': return 'Queued';
+  }
 }
 
 /** Tailwind classes for the compact-mode right-side status pill, by state. */
@@ -160,10 +173,17 @@ function PlanStrip({
   setOpen,
 }: PlanStripProps & InternalProps) {
   const state = classifyPlan(plan, runsById);
-  const label = planKindLabel(plan.planKind, plan.steps.length);
+  const isSingleStep = plan.steps.length === 1;
+  const singleStep = isSingleStep ? plan.steps[0] : null;
+  const agentName = singleStep ? displayAgentName(singleStep.agent_name) : '';
+  const label = agentName || planKindLabel(plan.planKind, plan.steps.length);
   const baseSummary = planSummaryText(plan, runsById);
-  const ts = planUpdatedAt(plan, runsById);
-  const duration = totalDurationMs(plan, runsById);
+  const taskSummary = singleStep ? describeStep(singleStep.instructions) || plan.prompt || baseSummary : '';
+  const summary = isSingleStep
+    ? [taskSummary, activityStatusLabel(state)].filter(Boolean).join(' · ')
+    : baseSummary;
+  const createdAt = Date.parse(plan.createdAt ?? '');
+  const ts = Number.isFinite(createdAt) ? createdAt : planUpdatedAt(plan, runsById);
   const dot: DotKind = activityToDot(state, state === 'running');
 
   // Live stream the currently-active sub-run, if any.
@@ -183,9 +203,10 @@ function PlanStrip({
   // Single-step plans (one-shot / known-agent) render the run's full output
   // inline, the same way standalone runs do. Stream the lone run while active,
   // and once after it finishes whenever the row is open.
-  const isSingleStep = plan.steps.length === 1;
   const singleRunId = isSingleStep ? Object.values(plan.runIdsByStep)[0] ?? null : null;
   const singleRun = singleRunId ? runsById[singleRunId] : null;
+  const singleError = singleRun?.error_message || plan.errorMessage || null;
+  const singleResult = singleRun ? outputSummaryText(singleRun) : '';
   const singleActive = singleRun ? ACTIVE_RUN_STATUSES.has(singleRun.status) : false;
   // While the lone run is active the header already streams it (activeRunId), so
   // reuse that state. Only open a second stream once it's terminal and the row
@@ -199,7 +220,7 @@ function PlanStrip({
     : null;
   const hasTranscript = dockTranscriptHasContent(transcriptState, singleActive);
   const liveSummary = liveStreamSummary(stream.currentPlan);
-  const summary = state === 'running' && liveSummary ? `${baseSummary} · ${liveSummary}` : baseSummary;
+  const expandedSummary = !isSingleStep && state === 'running' && liveSummary ? `${summary} · ${liveSummary}` : summary;
   const isFanOut = plan.planKind === 'fan_out';
   const isTaskPipeline = plan.planKind === 'task_pipeline_fan_out';
   const isDAG = plan.planKind === 'dag';
@@ -242,10 +263,16 @@ function PlanStrip({
             {label}
           </span>
           <span className="text-muted-foreground/60">·</span>
-          <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
-          <span className="shrink-0 text-[11px] text-muted-foreground">
-            {duration != null ? formatDuration(duration) : formatDistanceToNow(ts, { addSuffix: true })}
-          </span>
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{expandedSummary}</span>
+          {ts !== null ? (
+            <time
+              dateTime={new Date(ts).toISOString()}
+              title={new Date(ts).toLocaleString()}
+              className="shrink-0 text-[11px] text-muted-foreground"
+            >
+              {formatDistanceToNow(ts, { addSuffix: true })}
+            </time>
+          ) : null}
           <ArrowDown01Icon
             className={cn(
               'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
@@ -269,7 +296,7 @@ function PlanStrip({
 
       {open ? (
         <div className="space-y-2 pl-4">
-          {plan.prompt ? (
+          {!isSingleStep && plan.prompt ? (
             <p className="text-[11px] italic text-muted-foreground">"{plan.prompt}"</p>
           ) : null}
           {isDelivery ? (
@@ -283,8 +310,14 @@ function PlanStrip({
           ) : (
             <>
               {showRail ? renderRail() : null}
-              {isSingleStep && hasTranscript ? (
-                <DockTranscript stream={transcriptState} active={singleActive} showUserMessages={false} />
+              {isSingleStep ? (
+                hasTranscript ? (
+                  <DockTranscript stream={transcriptState} active={singleActive} showUserMessages={false} />
+                ) : singleError ? (
+                  <p className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">{singleError}</p>
+                ) : singleResult ? (
+                  <p className="text-xs text-foreground/80">{singleResult}</p>
+                ) : null
               ) : (
                 <div className="space-y-1.5">
                   {plan.steps.map((step, i) => {

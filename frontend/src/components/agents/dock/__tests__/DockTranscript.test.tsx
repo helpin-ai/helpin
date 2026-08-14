@@ -170,6 +170,57 @@ describe('DockTranscript', () => {
     expect(assistantMessages[1]?.textContent).not.toContain('Show less');
   });
 
+  it('places sub-agent runs before messages sent after their launch', () => {
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            assistantMessage('assistant-1', 'I will delegate this work.', 1),
+            userMessage('user-2', 'Did you finish it?', 5, 'user-1'),
+          ])}
+          active={false}
+          workspaceId="ws-1"
+          subAgentRuns={[
+            {
+              id: 'plan-1',
+              createdAt: '2026-08-06T00:00:03Z',
+              runCount: 1,
+              content: <div>Forge · Create the deal · Failed</div>,
+            },
+          ]}
+        />,
+      );
+    });
+
+    const text = container.textContent ?? '';
+    expect(text).toContain('Sub-agent runs');
+    expect(text.indexOf('I will delegate this work.')).toBeLessThan(text.indexOf('Sub-agent runs'));
+    expect(text.indexOf('Sub-agent runs')).toBeLessThan(text.indexOf('Did you finish it?'));
+  });
+
+  it('groups launches in the same timeline position under one counted heading', () => {
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            assistantMessage('assistant-1', 'Delegating now.', 1),
+            userMessage('user-2', 'What happened?', 5, 'user-1'),
+          ])}
+          active={false}
+          workspaceId="ws-1"
+          subAgentRuns={[
+            { id: 'plan-2', createdAt: '2026-08-06T00:00:03Z', runCount: 1, content: <div>Lens run</div> },
+            { id: 'plan-1', createdAt: '2026-08-06T00:00:02Z', runCount: 1, content: <div>Forge run</div> },
+          ]}
+        />,
+      );
+    });
+
+    expect(container.querySelectorAll('[data-agent-dock-sub-agent-runs]')).toHaveLength(1);
+    expect(container.textContent).toContain('Sub-agent runs · 2');
+    expect((container.textContent ?? '').indexOf('Forge run')).toBeLessThan((container.textContent ?? '').indexOf('Lens run'));
+  });
+
   it('uses the signed-in user\'s configured avatar for persisted messages', () => {
     act(() => {
       root.render(
