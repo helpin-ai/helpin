@@ -209,6 +209,65 @@ func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspa
 	return collection, articles, spaceSlug, nil
 }
 
+// GetPublicCollectionAlternatePaths returns canonical localized paths for the
+// published collection translations used to emit SSR hreflang links without
+// loading every locale's full space navigation.
+func (s *DocsHelpcenterService) GetPublicCollectionAlternatePaths(
+	ctx context.Context,
+	cfg *model.DocsHelpcenterConfig,
+	collectionID string,
+	publicID string,
+) (map[string]string, error) {
+	if cfg == nil || !docsHelpcenterMultilingualEnabled(cfg) {
+		return map[string]string{}, nil
+	}
+
+	key := hcCacheKey("hc", "collection", "alternate-paths", cfg.WorkspaceID, collectionID)
+	if s.hcCache != nil {
+		var cached map[string]string
+		if s.getHelpcenterCachedJSON(ctx, key, &cached) {
+			return cached, nil
+		}
+	}
+
+	translations, err := s.hcRepo.ListPublicCollectionTranslationsByCollection(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+
+	enabledLocales := make(map[string]struct{}, len(cfg.EnabledLocales))
+	for _, locale := range cfg.EnabledLocales {
+		normalized := strings.ToLower(strings.TrimSpace(locale))
+		if normalized != "" {
+			enabledLocales[normalized] = struct{}{}
+		}
+	}
+
+	paths := make(map[string]string, len(translations))
+	for _, translation := range translations {
+		locale := strings.ToLower(strings.TrimSpace(translation.Locale))
+		if _, enabled := enabledLocales[locale]; !enabled {
+			continue
+		}
+		slug := stringValue(translation.Slug)
+		if slug == "" {
+			continue
+		}
+		paths[locale] = buildDocsHelpcenterCollectionCanonicalPath(cfg, locale, slug, publicID)
+	}
+
+	if s.hcCache != nil {
+		s.setHelpcenterCachedJSON(
+			ctx,
+			key,
+			paths,
+			hcCollectionCacheTTL,
+			HelpcenterCacheTagWorkspace(cfg.WorkspaceID),
+		)
+	}
+	return paths, nil
+}
+
 // ResolvePublicPath resolves a legacy or imported URL path to a redirect target.
 func (s *DocsHelpcenterService) ResolvePublicPath(ctx context.Context, workspaceID, path string) (string, error) {
 	if s.hcCache == nil {

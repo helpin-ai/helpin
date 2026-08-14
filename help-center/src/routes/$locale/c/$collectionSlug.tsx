@@ -3,7 +3,7 @@ import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
 import { LoadingState } from '@/components/LoadingState'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { prefetchCollectionRouteData } from '@/lib/routeData'
-import { loadAlternateLinks } from '@/lib/alternateLinks'
+import { buildCollectionAlternateLinks } from '@/lib/alternateLinks'
 import { loadRootRouteData } from '@/lib/rootLoader'
 import { buildCollectionHead } from '@/lib/seo'
 
@@ -24,15 +24,7 @@ export const Route = createFileRoute('/$locale/c/$collectionSlug')({
       rootData,
       params.collectionSlug,
     )
-    const alternates = collection
-      ? await loadAlternateLinks(context.queryClient, rootData, {
-          kind: 'collection',
-          spaceId: rootData.spaces.find(
-            (space) => space.slug === (collection.space_slug || params.collectionSlug),
-          )?.id,
-          collectionId: collection.collection.id,
-        })
-      : []
+    const alternates = collection ? buildCollectionAlternateLinks(rootData, collection) : []
 
     return { rootData, collection, alternates }
   },

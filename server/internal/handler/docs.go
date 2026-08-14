@@ -1965,11 +1965,22 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
+		alternatePaths, err := h.helpcenterSvc.GetPublicCollectionAlternatePaths(
+			r.Context(),
+			cfg,
+			coll.ID,
+			coll.PublicID,
+		)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "help center unavailable")
+			return
+		}
 		setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
 		writeJSONWithETag(w, r, http.StatusOK, map[string]interface{}{
-			"collection": coll,
-			"articles":   articles,
-			"space_slug": coll.SpaceSlug,
+			"collection":      coll,
+			"articles":        articles,
+			"space_slug":      coll.SpaceSlug,
+			"alternate_paths": alternatePaths,
 		})
 		return
 	}
@@ -1984,11 +1995,22 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
+		alternatePaths, err := h.helpcenterSvc.GetPublicCollectionAlternatePaths(
+			r.Context(),
+			cfg,
+			coll.ID,
+			coll.PublicID,
+		)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "help center unavailable")
+			return
+		}
 		setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
 		writeJSONWithETag(w, r, http.StatusOK, map[string]interface{}{
-			"collection": coll,
-			"articles":   articles,
-			"space_slug": coll.SpaceSlug,
+			"collection":      coll,
+			"articles":        articles,
+			"space_slug":      coll.SpaceSlug,
+			"alternate_paths": alternatePaths,
 		})
 		return
 	}

@@ -2002,65 +2002,28 @@ func (s *DocsHelpcenterService) getPublicLocalizedCollectionUncached(ctx context
 		return nil, nil, err
 	}
 
-	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
-		return nil, nil, err
-	}
-
 	spaceTranslation, _, _, err := s.resolvePublicSpaceTranslationBySlug(ctx, cfg, workspaceID, requestedLocale, spaceSlug)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	collectionTranslation, _, _, err := s.resolvePublicCollectionTranslationBySlug(ctx, cfg, spaceTranslation.SpaceID, requestedLocale, collectionSlug)
+	collectionTranslation, resolvedLocale, _, err := s.resolvePublicCollectionTranslationBySlug(ctx, cfg, spaceTranslation.SpaceID, requestedLocale, collectionSlug)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	requestedArticles, err := s.hcRepo.ListPublicArticleTranslationsBySpace(ctx, spaceTranslation.SpaceID, requestedLocale)
+	fallbackLocale := ""
+	if cfg.FallbackToDefaultLocale && resolvedLocale != defaultLocale {
+		fallbackLocale = defaultLocale
+	}
+	articles, err := s.hcRepo.ListPublicCollectionNavigationArticles(
+		ctx,
+		collectionTranslation.CollectionID,
+		resolvedLocale,
+		fallbackLocale,
+	)
 	if err != nil {
 		return nil, nil, err
-	}
-	requestedArticleByID := make(map[string]model.DocsHelpcenterArticleTranslation, len(requestedArticles))
-	for _, translation := range requestedArticles {
-		requestedArticleByID[translation.DocumentID] = translation
-	}
-
-	fallbackArticleByID := map[string]model.DocsHelpcenterArticleTranslation{}
-	if cfg.FallbackToDefaultLocale && requestedLocale != defaultLocale {
-		fallbackArticles, err := s.hcRepo.ListPublicArticleTranslationsBySpace(ctx, spaceTranslation.SpaceID, defaultLocale)
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, translation := range fallbackArticles {
-			fallbackArticleByID[translation.DocumentID] = translation
-		}
-	}
-
-	status := model.DocStatusPublished
-	spaceID := spaceTranslation.SpaceID
-	collectionID := collectionTranslation.CollectionID
-	docs, err := s.docRepo.List(ctx, workspaceID, &spaceID, &collectionID, &status, nil, "", false)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	articles := make([]model.PublicNavArticle, 0, len(docs))
-	publicIDs := s.loadHelpcenterPublicIDs(ctx, docs)
-	for _, doc := range docs {
-		translation, ok := requestedArticleByID[doc.ID]
-		if !ok {
-			translation, ok = fallbackArticleByID[doc.ID]
-			if !ok {
-				continue
-			}
-		}
-		articles = append(articles, model.PublicNavArticle{
-			ID:          doc.ID,
-			Title:       translation.Title,
-			Slug:        stringValue(translation.Slug),
-			PublicID:    publicIDs[doc.ID],
-			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
-		})
 	}
 
 	collection, err := s.collectionRepo.GetByID(ctx, collectionTranslation.CollectionID)
@@ -2091,33 +2054,23 @@ func (s *DocsHelpcenterService) getPublicLocalizedCollectionByCanonicalPathUncac
 		return nil, nil, err
 	}
 
-	if err := s.ensureDefaultLocaleMirrors(ctx, workspaceID); err != nil {
-		return nil, nil, err
-	}
-
 	collectionTranslation, resolvedLocale, _, err := s.resolvePublicCollectionTranslationByCanonicalSlug(ctx, cfg, workspaceID, requestedLocale, collectionSlug)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	requestedArticles, err := s.hcRepo.ListPublicArticleTranslationsByCollection(ctx, collectionTranslation.CollectionID, resolvedLocale)
+	fallbackLocale := ""
+	if cfg.FallbackToDefaultLocale && resolvedLocale != defaultLocale {
+		fallbackLocale = defaultLocale
+	}
+	articles, err := s.hcRepo.ListPublicCollectionNavigationArticles(
+		ctx,
+		collectionTranslation.CollectionID,
+		resolvedLocale,
+		fallbackLocale,
+	)
 	if err != nil {
 		return nil, nil, err
-	}
-	requestedArticleByID := make(map[string]model.DocsHelpcenterArticleTranslation, len(requestedArticles))
-	for _, translation := range requestedArticles {
-		requestedArticleByID[translation.DocumentID] = translation
-	}
-
-	fallbackArticleByID := map[string]model.DocsHelpcenterArticleTranslation{}
-	if cfg.FallbackToDefaultLocale && resolvedLocale != defaultLocale {
-		fallbackArticles, err := s.hcRepo.ListPublicArticleTranslationsByCollection(ctx, collectionTranslation.CollectionID, defaultLocale)
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, translation := range fallbackArticles {
-			fallbackArticleByID[translation.DocumentID] = translation
-		}
 	}
 
 	collection, err := s.collectionRepo.GetByID(ctx, collectionTranslation.CollectionID)
@@ -2128,36 +2081,9 @@ func (s *DocsHelpcenterService) getPublicLocalizedCollectionByCanonicalPathUncac
 		return nil, nil, fmt.Errorf("collection not found")
 	}
 
-	status := model.DocStatusPublished
-	spaceID := collection.SpaceID
-	collectionID := collectionTranslation.CollectionID
-	docs, err := s.docRepo.List(ctx, workspaceID, &spaceID, &collectionID, &status, nil, "", false)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	space, err := s.spaceRepo.GetByID(ctx, collection.SpaceID)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	articles := make([]model.PublicNavArticle, 0, len(docs))
-	publicIDs := s.loadHelpcenterPublicIDs(ctx, docs)
-	for _, doc := range docs {
-		translation, ok := requestedArticleByID[doc.ID]
-		if !ok {
-			translation, ok = fallbackArticleByID[doc.ID]
-			if !ok {
-				continue
-			}
-		}
-		articles = append(articles, model.PublicNavArticle{
-			ID:          doc.ID,
-			Title:       translation.Title,
-			Slug:        stringValue(translation.Slug),
-			PublicID:    publicIDs[doc.ID],
-			PublishedAt: formatPublicPublishedAt(translation.PublishedAt),
-		})
 	}
 
 	var icon *string

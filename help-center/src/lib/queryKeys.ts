@@ -1,8 +1,8 @@
 export const queryKeys = {
   helpCenter: {
     config: (subdomain: string) => ['helpCenter', 'config', subdomain] as const,
-    bootstrap: (subdomain: string, pathname: string) =>
-      ['helpCenter', 'bootstrap', subdomain, pathname] as const,
+    bootstrap: (subdomain: string, localeScope: string) =>
+      ['helpCenter', 'bootstrap', subdomain, localeScope] as const,
     spaces: (subdomain: string, locale: string) =>
       ['helpCenter', 'spaces', subdomain, locale] as const,
   },

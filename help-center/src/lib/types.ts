@@ -181,6 +181,7 @@ export interface CollectionPage {
   collection: NavItem
   articles: NavArticle[]
   space_slug?: string
+  alternate_paths?: Record<string, string>
 }
 
 export interface PreviewArticleDetail {
