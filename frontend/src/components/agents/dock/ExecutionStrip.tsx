@@ -173,6 +173,8 @@ function PlanStrip({
   setOpen,
 }: PlanStripProps & InternalProps) {
   const state = classifyPlan(plan, runsById);
+  const runs = planRuns(plan, runsById);
+  const failedToStart = plan.status === 'failed' && runs.length === 0;
   const isSingleStep = plan.steps.length === 1;
   const singleStep = isSingleStep ? plan.steps[0] : null;
   const agentName = singleStep ? displayAgentName(singleStep.agent_name) : '';
@@ -180,7 +182,7 @@ function PlanStrip({
   const baseSummary = planSummaryText(plan, runsById);
   const taskSummary = singleStep ? describeStep(singleStep.instructions) || plan.prompt || baseSummary : '';
   const summary = isSingleStep
-    ? [taskSummary, activityStatusLabel(state)].filter(Boolean).join(' · ')
+    ? [taskSummary, failedToStart ? 'Failed to start' : activityStatusLabel(state)].filter(Boolean).join(' · ')
     : baseSummary;
   const createdAt = Date.parse(plan.createdAt ?? '');
   const ts = Number.isFinite(createdAt) ? createdAt : planUpdatedAt(plan, runsById);
@@ -242,7 +244,6 @@ function PlanStrip({
   const completed = plan.status === 'completed' || state === 'completed';
   const busy = busyPlanId === plan.id;
   const pendingInteraction = activeRunId ? stream.pendingInteraction : null;
-  const runs = planRuns(plan, runsById);
   const hasActiveRun = runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status));
   const canContinuePlan =
     plan.status === 'running' &&

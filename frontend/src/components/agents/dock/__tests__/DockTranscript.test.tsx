@@ -221,6 +221,32 @@ describe('DockTranscript', () => {
     expect((container.textContent ?? '').indexOf('Forge run')).toBeLessThan((container.textContent ?? '').indexOf('Lens run'));
   });
 
+  it('never places a settled attempt after its durable result position', () => {
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            assistantMessage('assistant-1', 'Launching Beacon.', 1),
+            assistantMessage('assistant-3', 'Beacon failed to start.', 3),
+          ])}
+          active={false}
+          workspaceId="ws-1"
+          subAgentRuns={[{
+            id: 'plan-1',
+            createdAt: '2026-08-06T00:00:09Z',
+            resultSequence: 2,
+            runCount: 1,
+            content: <div>Beacon · Create the deal · Failed to start</div>,
+          }]}
+        />,
+      );
+    });
+
+    const text = container.textContent ?? '';
+    expect(text.indexOf('Launching Beacon.')).toBeLessThan(text.indexOf('Sub-agent runs'));
+    expect(text.indexOf('Sub-agent runs')).toBeLessThan(text.indexOf('Beacon failed to start.'));
+  });
+
   it('uses the signed-in user\'s configured avatar for persisted messages', () => {
     act(() => {
       root.render(

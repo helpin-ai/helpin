@@ -10,7 +10,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useDockStore } from '@/stores/dockStore';
 import type { DockChat, DockChatDetail, DockRunSummary } from '@/lib/dockTypes';
-import type { CommandBarPageContext } from '@/lib/pmTypes';
+import type { CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 (globalThis as typeof globalThis & { ResizeObserver: typeof ResizeObserver }).ResizeObserver = class ResizeObserver {
@@ -798,6 +798,63 @@ describe('AskAgentsDock', () => {
     await waitForText('The earlier run completed successfully.');
 
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50);
+  });
+
+  it('loads an older failed sub-agent attempt from its visible result marker', async () => {
+    mocks.listMessages.mockResolvedValue({
+      data: {
+        messages: [
+          {
+            id: 'message-launch', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 63, role: 'assistant', content: 'I am launching Beacon.',
+            message_type: 'assistant_turn', sequence_no: 63,
+            created_at: '2026-08-14T08:23:20Z', delivery_status: 'sent',
+          },
+          {
+            id: 'message-result', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 64, role: 'user',
+            content: '<child_run_result>{"plan_id":"plan-old","status":"failed","error":"Model unavailable under current pricing","runs":[]}</child_run_result>',
+            message_type: 'message', sequence_no: 64,
+            created_at: '2026-08-14T08:23:31Z', delivery_status: 'sent',
+          },
+          {
+            id: 'message-after', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 65, role: 'assistant', content: 'Beacon could not start.',
+            message_type: 'assistant_turn', sequence_no: 65,
+            created_at: '2026-08-14T08:23:52Z', delivery_status: 'sent',
+          },
+        ],
+        next_before: 63,
+      },
+      error: null,
+    });
+    const failedPlan: CommandBarPlanSummary = {
+      id: 'plan-old',
+      status: 'failed',
+      plan_kind: 'one_shot_command',
+      prompt: 'Create a CRM deal',
+      page_context: { entity_type: 'crm_contact', entity_id: 'contact-1' },
+      steps: [{
+        agent_id: 'agent-beacon',
+        agent_name: 'Beacon',
+        target: { entity_type: 'crm_contact', entity_id: 'contact-1' },
+        instructions: 'Create the deal',
+      }],
+      run_ids_by_step: {},
+      current_step_index: 0,
+      run_count: 0,
+      created_at: '2026-08-14T08:23:21Z',
+      updated_at: '2026-08-14T08:23:31Z',
+      runs: [],
+    };
+    mocks.getPlan.mockResolvedValue({ data: { plan: failedPlan }, error: null });
+
+    await renderDock();
+    await waitForText('Failed to start');
+
+    expect(mocks.getPlan).toHaveBeenCalledWith('ws-1', 'plan-old');
+    expect(document.body.textContent).toContain('Beacon');
+    expect(document.body.textContent).not.toContain('<child_run_result>');
   });
 
   it('reconciles immediately when a message continues on the same run', async () => {
