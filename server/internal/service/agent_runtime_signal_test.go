@@ -383,11 +383,12 @@ func TestCancelRunForAgentRuntimeRunSignalsRuntimeBeforeLocalCancel(t *testing.T
 	seedAgentRuntimeSignalAgent(t, db, now)
 	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusRunning, model.AgentRunPauseReasonNone, "not_required", now)
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	projection := NewAgentRuntimeProjectionService(runRepo)
 	svc := &AgentService{
-		agentRepo: agentRepo,
-		runRepo:   runRepo,
-
-		agentRuntimeClient: runtimeClient,
+		agentRepo:              agentRepo,
+		runRepo:                runRepo,
+		agentRuntimeClient:     runtimeClient,
+		agentRuntimeProjection: projection,
 	}
 
 	updated, err := svc.CancelRun(context.Background(), "ws-1", run.ID, "user-1")
@@ -397,8 +398,8 @@ func TestCancelRunForAgentRuntimeRunSignalsRuntimeBeforeLocalCancel(t *testing.T
 	if len(runtimeClient.cancelCalls) != 1 || runtimeClient.cancelCalls[0] != "run_runtime_1" {
 		t.Fatalf("expected runtime cancel call, got %#v", runtimeClient.cancelCalls)
 	}
-	if updated.Status != model.AgentRunStatusRunning || updated.CompletedAt != nil {
-		t.Fatalf("expected projection-owned status to remain running until event projection, got status=%s completed_at=%v", updated.Status, updated.CompletedAt)
+	if updated.Status != model.AgentRunStatusCancelled || updated.CompletedAt == nil {
+		t.Fatalf("expected runtime cancellation acknowledgement to be projected immediately, got status=%s completed_at=%v", updated.Status, updated.CompletedAt)
 	}
 }
 
@@ -415,10 +416,12 @@ func TestCancelRunWithoutRuntimeMappingSignalsRuntimeByHostRunID(t *testing.T) {
 		t.Fatalf("remove runtime mapping: %v", err)
 	}
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	projection := NewAgentRuntimeProjectionService(runRepo)
 	svc := &AgentService{
-		agentRepo:          agentRepo,
-		runRepo:            runRepo,
-		agentRuntimeClient: runtimeClient,
+		agentRepo:              agentRepo,
+		runRepo:                runRepo,
+		agentRuntimeClient:     runtimeClient,
+		agentRuntimeProjection: projection,
 	}
 
 	updated, err := svc.CancelRun(context.Background(), "ws-1", run.ID, "user-1")
@@ -428,11 +431,8 @@ func TestCancelRunWithoutRuntimeMappingSignalsRuntimeByHostRunID(t *testing.T) {
 	if len(runtimeClient.cancelCalls) != 1 || runtimeClient.cancelCalls[0] != run.ID {
 		t.Fatalf("expected runtime cancel by host run id %q, got %#v", run.ID, runtimeClient.cancelCalls)
 	}
-	if updated.Status != model.AgentRunStatusRunning || updated.CompletedAt != nil {
-		t.Fatalf("expected projection-owned status to remain running until event projection, got status=%s completed_at=%v", updated.Status, updated.CompletedAt)
-	}
-	if updated.ExecutionStage == nil || *updated.ExecutionStage != "cancelling" {
-		t.Fatalf("expected cancelling execution stage, got %#v", updated.ExecutionStage)
+	if updated.Status != model.AgentRunStatusCancelled || updated.CompletedAt == nil {
+		t.Fatalf("expected host-ID cancellation acknowledgement to be projected immediately, got status=%s completed_at=%v", updated.Status, updated.CompletedAt)
 	}
 }
 

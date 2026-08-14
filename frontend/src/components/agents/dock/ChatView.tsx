@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useAuthStore } from '@/stores/authStore';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { parseDockPlanConfirm } from '@/lib/dockTypes';
 import type { DockChatDetail, DockEntityReference } from '@/lib/dockTypes';
-import type { AgentRun, AgentRunMessage, CodingSessionInteraction, CodingSessionStreamState, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
+import type { AgentRun, AgentRunMessage, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
 import { DockUserMessage } from './DockUserMessage';
@@ -21,6 +20,7 @@ import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence'
 import { deriveLiveStatusLabel, ScrollToLatestButton } from '@/components/agents/transcript';
 import { planSummaryToRunPlan } from './planSummary';
 import type { AgentRunStreamState } from './useAgentRunStream';
+import { mergeMessagePages, mergePersistedChatMessages } from './dockChatTimeline';
 import {
   isStructuredInteractionKind,
   resolveDockComposerState,
@@ -42,6 +42,7 @@ interface ChatViewProps {
   onPresenceChange?: (state: AskAgentAvatarState | null) => void;
   onRunIdChange?: (runId: string | null) => void;
   requiredPageContext?: CommandBarPageContext | null;
+  showComposerShortcutHint?: boolean;
 }
 
 const ACTIVE_RUN_STATUSES = new Set(['queued', 'running', 'paused']);
@@ -52,51 +53,6 @@ function newClientMessageID() {
     const value = Math.floor(Math.random() * 16);
     return (character === 'x' ? value : ((value & 0x3) | 0x8)).toString(16);
   });
-}
-
-function mergePersistedChatMessages(
-  stream: CodingSessionStreamState | null,
-  messages: AgentRunMessage[],
-): CodingSessionStreamState | null {
-  if (!stream && messages.length === 0) return null;
-  const persisted = messages
-    .filter((message) => message.role === 'user' || message.role === 'assistant')
-    .map((message) => ({
-      event_id: `msg:${message.id}`,
-      message_id: message.runtime_message_id || message.id,
-      role: message.role as 'user' | 'assistant',
-      content: message.content,
-      message_type: message.message_type,
-      timestamp: message.created_at,
-      sequence_no: message.dock_chat_sequence ?? message.sequence_no,
-      actor_user_id: message.actor_user_id,
-      turn_segments: message.role === 'assistant' ? message.turn_segments : undefined,
-    }));
-  const persistedIDs = new Set(persisted.map((message) => message.message_id));
-  const extras = (stream?.transcript_messages ?? []).filter(
-    (message) => !message.message_id || !persistedIDs.has(message.message_id),
-  );
-  const maxSequence = persisted.reduce((maximum, message) => Math.max(maximum, message.sequence_no), 0);
-  return {
-    transcript_messages: [
-      ...persisted,
-      ...extras.map((message, index) => ({ ...message, sequence_no: maxSequence + index + 1 })),
-    ],
-    live_assistant_message: stream?.live_assistant_message ?? null,
-    live_reasoning_message: stream?.live_reasoning_message ?? null,
-    live_turn_segments: stream?.live_turn_segments ?? [],
-    activity_events: stream?.activity_events ?? [],
-    current_plan: stream?.current_plan ?? null,
-    completed_tool_calls: stream?.completed_tool_calls ?? [],
-  };
-}
-
-function mergeMessagePages(current: AgentRunMessage[], incoming: AgentRunMessage[]) {
-  const messages = new Map(current.map((message) => [message.id, message]));
-  for (const message of incoming) messages.set(message.id, message);
-  return [...messages.values()].sort(
-    (left, right) => (left.dock_chat_sequence ?? left.sequence_no) - (right.dock_chat_sequence ?? right.sequence_no),
-  );
 }
 
 /**
@@ -120,6 +76,7 @@ export function ChatView({
   onPresenceChange,
   onRunIdChange,
   requiredPageContext,
+  showComposerShortcutHint,
 }: ChatViewProps) {
   const [detail, setDetail] = useState<DockChatDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
@@ -146,8 +103,6 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
-  const currentUserId = useAuthStore((state) => state.user?.id);
-
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
   const effectivePageContext = requiredPageContext ?? (contextCleared ? null : pageContext);
@@ -162,7 +117,6 @@ export function ChatView({
   }, [initialDraft, onDraftConsumed, setValue]);
 
   const run = detail?.run ?? null;
-  const isSharedTeammate = !!detail?.chat.user_id && !!currentUserId && detail.chat.user_id !== currentUserId;
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
   useEffect(() => {
     onRunIdChange?.(run?.id ?? null);
@@ -234,9 +188,28 @@ export function ChatView({
     };
   }, [refreshDetail, run?.id]);
 
-  // Child plans launched from this chat.
+  const mergedStream = useMemo(
+    () => mergePersistedChatMessages(streamState, persistedMessages),
+    [persistedMessages, streamState],
+  );
+  const transformed = useMemo(
+    () => (mergedStream ? transformDockStream(mergedStream, 'sequence') : null),
+    [mergedStream],
+  );
+  const visiblePlanIDsKey = useMemo(() => {
+    const ids = new Set(detail?.plan_ids ?? []);
+    for (const childResult of transformed?.childResults ?? []) {
+      if (childResult.result.plan_id) ids.add(childResult.result.plan_id);
+    }
+    return [...ids].join(',');
+  }, [detail?.plan_ids, transformed?.childResults]);
+
+  // Child plans launched from this chat. Result markers in every loaded
+  // message page extend the recent-plan list, so older attempts reappear as
+  // their surrounding history is paged in instead of disappearing at a
+  // separate plan limit.
   useEffect(() => {
-    const planIds = detail?.plan_ids ?? [];
+    const planIds = visiblePlanIDsKey ? visiblePlanIDsKey.split(',') : [];
     if (planIds.length === 0) {
       const timer = window.setTimeout(() => setPlans([]), 0);
       return () => window.clearTimeout(timer);
@@ -250,7 +223,7 @@ export function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [detail?.plan_ids, workspaceId]);
+  }, [visiblePlanIDsKey, workspaceId]);
 
   // Authoritative pending-interaction fallback: when the run is paused on a
   // human interaction but the event stream hasn't surfaced it (missed WS
@@ -284,14 +257,6 @@ export function ChatView({
     };
   }, [chatId, pausedOnInteraction, workspaceId]);
 
-  const mergedStream = useMemo(
-    () => mergePersistedChatMessages(streamState, persistedMessages),
-    [persistedMessages, streamState],
-  );
-  const transformed = useMemo(
-    () => (mergedStream ? transformDockStream(mergedStream, 'sequence') : null),
-    [mergedStream],
-  );
   const presenceState = deriveAskAgentAvatarState({
     run: run ?? streamController.session,
     stream: transformed?.stream ?? streamState,
@@ -419,19 +384,25 @@ export function ChatView({
     await sendContent(content, references);
   };
 
-  const canStop = !isSharedTeammate && runActive && (run?.status === 'queued' || run?.status === 'running');
+  const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
+  const cancellationPending = stopping || run?.execution_stage === 'cancelling';
   const handleStop = useCallback(async () => {
-    if (stopping) return;
+    if (cancellationPending) return;
     setStopping(true);
     try {
       const res = await dockChatService.cancelChatRun(workspaceId, chatId);
-      if (res.error) toast.error(res.error);
-      void refreshDetail();
-      void refetch();
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      if (res.data) {
+        setDetail((current) => current ? { ...current, run: res.data } : current);
+      }
+      await Promise.all([refreshDetail(), refetch()]);
     } finally {
       setStopping(false);
     }
-  }, [chatId, refetch, refreshDetail, stopping, workspaceId]);
+  }, [cancellationPending, chatId, refetch, refreshDetail, workspaceId]);
 
   const resolveInteraction = useCallback(
     async (interactionId: string, payload: { response_payload: Record<string, unknown>; followup_message?: string }) => {
@@ -471,19 +442,53 @@ export function ChatView({
     return map;
   }, [plans]);
 
-  const subAgentTimelineItems = useMemo(() => plans.map((plan) => ({
-    id: plan.id,
-    createdAt: plan.created_at,
-    runCount: Math.max(plan.steps.length, 1),
-    content: (
-      <ExecutionStrip
-        kind="plan"
-        workspaceId={workspaceId}
-        plan={planSummaryToRunPlan(plan)}
-        runsById={runsById}
-      />
-    ),
-  })), [plans, runsById, workspaceId]);
+  const subAgentTimelineItems = useMemo(() => {
+    const resultByPlanID = new Map(
+      (transformed?.childResults ?? []).map((entry) => [entry.result.plan_id, entry]),
+    );
+    const firstVisibleTimestamp = transformed?.stream.transcript_messages.reduce<number | null>((earliest, message) => {
+      const value = Date.parse(message.timestamp);
+      if (!Number.isFinite(value)) return earliest;
+      return earliest === null ? value : Math.min(earliest, value);
+    }, null) ?? null;
+
+    return plans.flatMap((plan) => {
+      const resultEntry = resultByPlanID.get(plan.id);
+      const resultSequence = resultEntry?.sequenceNo;
+      const createdTimestamp = Date.parse(plan.created_at);
+      const active = plan.status === 'running';
+      // A recent-plan response can reach farther back than the loaded message
+      // page. Do not strand an old plan at the top of the visible page; reveal
+      // it when its surrounding page/result marker is loaded.
+      if (
+        !active
+        && resultSequence === undefined
+        && firstVisibleTimestamp !== null
+        && Number.isFinite(createdTimestamp)
+        && createdTimestamp < firstVisibleTimestamp
+      ) {
+        return [];
+      }
+      const displayPlan = planSummaryToRunPlan(plan);
+      if (!displayPlan.errorMessage && resultEntry?.result.error) {
+        displayPlan.errorMessage = resultEntry.result.error;
+      }
+      return [{
+        id: plan.id,
+        createdAt: plan.created_at,
+        resultSequence,
+        runCount: Math.max(plan.run_count, plan.steps.length, 1),
+        content: (
+          <ExecutionStrip
+            kind="plan"
+            workspaceId={workspaceId}
+            plan={displayPlan}
+            runsById={runsById}
+          />
+        ),
+      }];
+    });
+  }, [plans, runsById, transformed, workspaceId]);
 
   const needsApproval = (
     (run?.status === 'paused' && run.pause_reason === 'human_approval')
@@ -632,7 +637,9 @@ export function ChatView({
             autoFocus
             textareaRef={textareaRef}
             onStop={canStop ? () => void handleStop() : undefined}
-            stopping={stopping}
+            stopping={cancellationPending}
+            placeholder={cancellationPending ? 'Stopping agent…' : undefined}
+            showShortcutHint={showComposerShortcutHint}
           />
         </div>
       )}

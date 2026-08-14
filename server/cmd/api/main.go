@@ -1374,6 +1374,7 @@ func main() {
 			SetCodingSessionSnapshotRepository(codingSessionStateSnapshotRepo).
 			SetWebSocketPublisher(agentRuntimeProjectionPublisher).
 			SetRunFinalizers(runFinalizers)
+		agentService.SetAgentRuntimeProjectionService(agentRuntimeProjectionService)
 	}
 	agentRuntimeProjectionCancel := context.CancelFunc(func() {})
 	var projectionCtx context.Context

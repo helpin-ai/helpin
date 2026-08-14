@@ -52,6 +52,20 @@ func TestManagedAskAgentExecutionPolicyPrefersNarrowRepositoryReads(t *testing.T
 	}
 }
 
+func TestAskAgentDoesNotRetryPricingConfigurationFailures(t *testing.T) {
+	prompt := askAgentSystemPrompt()
+	for _, required := range []string{
+		"model unavailable under current pricing",
+		"pricing configuration missing",
+		"non-retriable",
+		"do not retry it through another agent, target, or launch method",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("Ask Agent prompt missing non-retriable pricing guidance %q", required)
+		}
+	}
+}
+
 func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testing.T) {
 	prompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	if prompt == nil {

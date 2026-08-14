@@ -107,7 +107,7 @@ describe('ExecutionStrip actions', () => {
 
     expect(container.textContent).toContain('Writer');
     expect(container.textContent).toContain('Draft the customer reply');
-    expect(container.textContent).toContain('Failed');
+    expect(container.textContent).toContain('Failed to start');
     expect(container.textContent).not.toContain('AGENT');
     expect(container.querySelector('time')?.getAttribute('dateTime')).toBe('2026-05-01T00:00:00.000Z');
   });
@@ -132,6 +132,7 @@ describe('ExecutionStrip actions', () => {
     expect(container.textContent?.match(/Writer/g)).toHaveLength(1);
     expect(container.textContent?.match(/Draft the customer reply/g)).toHaveLength(1);
     expect(container.textContent).toContain('Model unavailable under current pricing');
+    expect(container.textContent).toContain('Failed to start');
   });
 
   it('renders running actions with Open primary and Cancel low emphasis', () => {

@@ -91,7 +91,7 @@ export const DockReferencePicker = forwardRef<DockReferencePickerHandle, DockRef
             className="inline-flex items-center gap-1 rounded-full border border-dashed border-border/70 px-2 py-0.5 text-[11px] text-muted-foreground transition hover:border-foreground/40 hover:text-foreground"
           >
             <PlusSignIcon className="h-3 w-3" />
-            Add reference
+            Add context
           </button>
         </PopoverTrigger>
         <PopoverContent

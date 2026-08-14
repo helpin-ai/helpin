@@ -219,7 +219,7 @@ func (h *DockChatHandler) ResolveChatRunInteraction(w http.ResponseWriter, r *ht
 
 // CancelChatRun handles POST /api/dock/chats/{chatID}/run/cancel.
 func (h *DockChatHandler) CancelChatRun(w http.ResponseWriter, r *http.Request) {
-	run, ok := h.resolveOwnedChatRun(w, r)
+	run, ok := h.resolveChatRun(w, r)
 	if !ok {
 		return
 	}

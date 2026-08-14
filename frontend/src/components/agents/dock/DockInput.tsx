@@ -105,6 +105,7 @@ export interface DockInputProps {
   onStop?: () => void;
   stopping?: boolean;
   placeholder?: string;
+  showShortcutHint?: boolean;
 }
 
 export function DockInput({
@@ -130,6 +131,7 @@ export function DockInput({
   onStop,
   stopping,
   placeholder: placeholderOverride,
+  showShortcutHint = true,
 }: DockInputProps) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
@@ -215,9 +217,11 @@ export function DockInput({
               </button>
             ) : null}
           </div>
-          <span className="shrink-0 text-[11px] text-muted-foreground">
-            Press <kbd className="rounded border bg-muted px-1 py-0 font-mono text-[10px]">/</kbd> to open
-          </span>
+          {showShortcutHint ? (
+            <span className="shrink-0 text-[11px] text-muted-foreground">
+              Press <kbd className="rounded border bg-muted px-1 py-0 font-mono text-[10px]">/</kbd> to open
+            </span>
+          ) : null}
         </div>
       ) : null}
       <div className="flex items-end gap-2 rounded-xl border border-border/70 bg-background/80 px-2.5 py-1.5 transition focus-within:border-foreground/30">
@@ -251,8 +255,8 @@ export function DockInput({
             type="button"
             onClick={onStop}
             disabled={stopping}
-            title="Stop agent"
-            aria-label="Stop agent"
+            title={stopping ? 'Stopping agent' : 'Stop agent'}
+            aria-label={stopping ? 'Stopping agent' : 'Stop agent'}
             className={cn(
               'mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
               stopping
