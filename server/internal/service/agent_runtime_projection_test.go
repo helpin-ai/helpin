@@ -1433,34 +1433,106 @@ func TestAgentRuntimeProjectionCheckpointsDockChatUsageOnUserMessagePause(t *tes
 		usageMeter: &AIUsageMeter{usage: usageService},
 		now:        time.Now,
 	}
-	event := AgentRuntimeEventEnvelope{
-		RunID: "runtime-chat", Type: agentruntime.EventRunPaused,
+	usageEvent := AgentRuntimeEventEnvelope{
+		RunID: "runtime-chat", Type: agentruntime.EventUsageCheckpoint,
 		Data: map[string]any{
-			"pause_reason": model.AgentRunPauseReasonUserMessage,
 			"usage": map[string]any{
 				"input_tokens": float64(100), "cached_input_tokens": float64(20),
-				"output_tokens": float64(10), "total_tokens": float64(110),
+				"output_tokens": float64(10), "reasoning_output_tokens": float64(3), "total_tokens": float64(110),
 			},
 			"usage_semantic": agentruntime.UsageSemanticCumulative,
 		},
 	}
-	if err := svc.ApplyEvent(context.Background(), event); err != nil {
+	if err := svc.ApplyEvent(context.Background(), usageEvent); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 0 {
+		t.Fatalf("running usage checkpoint calls = %d, want 0 until the turn pauses", store.checkpoints)
+	}
+	pauseEvent := AgentRuntimeEventEnvelope{
+		RunID: "runtime-chat", Type: agentruntime.EventRunPaused,
+		Data: map[string]any{"pause_reason": model.AgentRunPauseReasonUserMessage},
+	}
+	if err := svc.ApplyEvent(context.Background(), pauseEvent); err != nil {
 		t.Fatal(err)
 	}
 	if run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonUserMessage {
 		t.Fatalf("run pause = %s/%s", run.Status, run.PauseReason)
 	}
-	if store.checkpoints != 1 || store.checkpoint.Entry.InputTokensTotal != 100 {
+	if store.checkpoints != 1 || store.checkpoint.Entry.InputTokensTotal != 100 || store.checkpoint.Entry.ReasoningTokens != 3 {
 		t.Fatalf("checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
+	}
+	if store.resizeCalls != 1 || store.resizedID != "reservation" || store.resizedTo != 0 {
+		t.Fatalf("paused reservation resize = id %q target %d calls %d", store.resizedID, store.resizedTo, store.resizeCalls)
 	}
 	if got := agentRunUsageCheckpointFromSummary(run.OutputSummary); got.Turn != 1 || got.InputTokens != 100 {
 		t.Fatalf("checkpoint summary = %#v", got)
 	}
-	if err := svc.ApplyEvent(context.Background(), event); err != nil {
+	if err := svc.ApplyEvent(context.Background(), pauseEvent); err != nil {
 		t.Fatal(err)
 	}
 	if store.checkpoints != 1 {
 		t.Fatalf("redelivered pause checkpoint calls = %d, want 1", store.checkpoints)
+	}
+}
+
+func TestAgentRuntimeProjectionCheckpointsUsageArrivingAfterDockChatPause(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	usageService := newTestAIUsageService(t, store)
+	metering, err := usageService.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws-1", TaskNature: "support", FeatureKey: BillingFeatureAskChat,
+		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: "standard",
+		IdempotencyKey: "ws-1:agent_run:run-late-usage",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metering.ReservationID = "late-reservation"
+	metering.MaxBillableMicrousd = 25_000
+	metering.EnforcementMode = model.AIUsageEnforcementStrict
+	dockChatID := "chat-late"
+	run := &model.AgentRun{
+		ID: "run-late-usage", WorkspaceID: "ws-1", AgentID: "ask-agent",
+		DockChatID: &dockChatID, Status: model.AgentRunStatusRunning,
+		PauseReason: model.AgentRunPauseReasonNone, ExternalRuntime: stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("runtime-late-usage"), OutputSummary: json.RawMessage(`{}`),
+	}
+	if err := storeAgentRunMeteringContext(run, metering); err != nil {
+		t.Fatal(err)
+	}
+	repo := &fakeAgentRuntimeProjectionRunRepo{
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|runtime-late-usage": run},
+	}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: repo, usageMeter: &AIUsageMeter{usage: usageService}, now: time.Now,
+	}
+
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "runtime-late-usage", Type: agentruntime.EventRunPaused,
+		Data: map[string]any{"pause_reason": model.AgentRunPauseReasonUserMessage},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 0 || store.resizeCalls != 1 || store.resizedTo != 0 {
+		t.Fatalf("pause before telemetry = checkpoints %d resize target %d calls %d", store.checkpoints, store.resizedTo, store.resizeCalls)
+	}
+	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
+		RunID: "runtime-late-usage", Type: agentruntime.EventUsageCheckpoint,
+		Data: map[string]any{
+			"usage": map[string]any{
+				"input_tokens": float64(600), "cached_input_tokens": float64(400),
+				"output_tokens": float64(50), "total_tokens": float64(650),
+			},
+			"usage_semantic": agentruntime.UsageSemanticCumulative,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 1 || store.checkpoint.Entry.InputTokensTotal != 600 || store.checkpoint.Entry.OutputTokens != 50 {
+		t.Fatalf("late usage checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
+	}
+	if store.resizeCalls != 2 || store.resizedID != "late-reservation" || store.resizedTo != 0 {
+		t.Fatalf("late usage reservation suspension = id %q target %d calls %d", store.resizedID, store.resizedTo, store.resizeCalls)
 	}
 }
 
@@ -1686,6 +1758,58 @@ func TestAgentRuntimeProjectionReconcileMappedRunsAppliesFetchedRuntimeState(t *
 	}
 	if run.InputTokens != 12 || run.CachedInputTokens != 3 || run.OutputTokens != 8 || run.TokensUsed != 20 {
 		t.Fatalf("expected usage from runtime summary, got input=%d cached=%d output=%d total=%d", run.InputTokens, run.CachedInputTokens, run.OutputTokens, run.TokensUsed)
+	}
+}
+
+func TestAgentRuntimeProjectionReconcileRepairsPausedDockChatUsage(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	usageService := newTestAIUsageService(t, store)
+	metering, err := usageService.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws-1", TaskNature: "support", FeatureKey: BillingFeatureAskChat,
+		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: "standard",
+		IdempotencyKey: "ws-1:agent_run:run-recovered-chat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metering.ReservationID = "recovered-reservation"
+	metering.MaxBillableMicrousd = 25_000
+	metering.EnforcementMode = model.AIUsageEnforcementSoft
+	dockChatID := "recovered-chat"
+	run := &model.AgentRun{
+		ID: "run-recovered-chat", WorkspaceID: "ws-1", AgentID: "ask-agent",
+		DockChatID: &dockChatID, Status: model.AgentRunStatusPaused,
+		PauseReason: model.AgentRunPauseReasonUserMessage, ExternalRuntime: stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("runtime-recovered-chat"), OutputSummary: json.RawMessage(`{}`),
+		InputTokens: 2_910_695, CachedInputTokens: 2_301_952, OutputTokens: 21_196, TokensUsed: 2_931_891,
+	}
+	if err := storeAgentRunMeteringContext(run, metering); err != nil {
+		t.Fatal(err)
+	}
+	repo := &fakeAgentRuntimeProjectionRunRepo{
+		byID:       map[string]*model.AgentRun{run.ID: run},
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|runtime-recovered-chat": run},
+		active:     []model.AgentRun{*run},
+	}
+	runtimeClient := &fakeAgentRuntimeSignalClient{getRuns: map[string]*AgentRuntimeRun{
+		"runtime-recovered-chat": {
+			ID: "runtime-recovered-chat", HostRunID: run.ID, Status: model.AgentRunStatusPaused,
+			PauseReason: model.AgentRunPauseReasonUserMessage,
+		},
+	}}
+	svc := &AgentRuntimeProjectionService{
+		runRepo: repo, agentRuntimeClient: runtimeClient,
+		usageMeter: &AIUsageMeter{usage: usageService}, now: time.Now,
+	}
+
+	if err := svc.ReconcileMappedRuns(context.Background(), time.Minute, 10); err != nil {
+		t.Fatalf("ReconcileMappedRuns returned error: %v", err)
+	}
+	if store.checkpoints != 1 || store.checkpoint.Entry.InputTokensTotal != 2_910_695 || store.checkpoint.Entry.CacheReadTokens != 2_301_952 {
+		t.Fatalf("recovered usage checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
+	}
+	if store.resizeCalls != 1 || store.resizedID != "recovered-reservation" || store.resizedTo != 0 {
+		t.Fatalf("recovered reservation suspension = id %q target %d calls %d", store.resizedID, store.resizedTo, store.resizeCalls)
 	}
 }
 

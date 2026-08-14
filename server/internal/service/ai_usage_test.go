@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -197,6 +198,9 @@ type fakeAIUsageStore struct {
 	checkpoints  int
 	uncharged    model.AIUsageLedgerEntry
 	releasedID   string
+	resizeCalls  int
+	resizedID    string
+	resizedTo    int64
 }
 
 func (f *fakeAIUsageStore) Reserve(_ context.Context, input repository.AIUsageReservationRequest) (*model.AIUsageReservation, error) {
@@ -225,6 +229,13 @@ func (f *fakeAIUsageStore) Release(_ context.Context, id, _ string) error {
 	return nil
 }
 
+func (f *fakeAIUsageStore) ResizeReservation(_ context.Context, id string, target int64, _ time.Time) error {
+	f.resizeCalls++
+	f.resizedID = id
+	f.resizedTo = target
+	return nil
+}
+
 func (f *fakeAIUsageStore) RecordUncharged(_ context.Context, input model.AIUsageLedgerEntry) error {
 	f.uncharged = input
 	return nil
@@ -234,4 +245,23 @@ type fixedAIUsageEstimates struct{ p90 int64 }
 
 func (f fixedAIUsageEstimates) P90Microusd(context.Context, string, aiusage.Tier, aiusage.FundingMode) (int64, bool, error) {
 	return f.p90, f.p90 > 0, nil
+}
+
+func TestAIUsageServiceSuspendsAndRestoresInteractiveReservation(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	usageService := newTestAIUsageService(t, store)
+	metering := MeteringContext{ReservationID: "reservation", MaxBillableMicrousd: 42_000}
+
+	if err := usageService.SuspendReservation(context.Background(), metering); err != nil {
+		t.Fatal(err)
+	}
+	if store.resizeCalls != 1 || store.resizedID != "reservation" || store.resizedTo != 0 {
+		t.Fatalf("suspended reservation = id %q target %d calls %d", store.resizedID, store.resizedTo, store.resizeCalls)
+	}
+	if err := usageService.Heartbeat(context.Background(), metering); err != nil {
+		t.Fatal(err)
+	}
+	if store.resizeCalls != 2 || store.resizedTo != 42_000 {
+		t.Fatalf("restored reservation target = %d calls %d", store.resizedTo, store.resizeCalls)
+	}
 }
