@@ -36,7 +36,7 @@ export function resolveAgentLiveProgress({
 }: ResolveAgentLiveProgressInput): AgentLiveProgress | null {
   const startedAt = run?.started_at || run?.created_at || localStartedAt;
 
-  if (sending && (!run || run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled')) {
+  if (sending) {
     return { label: 'Starting…', startedAt, tone: 'working' };
   }
   if (!run) return null;
@@ -46,8 +46,9 @@ export function resolveAgentLiveProgress({
       case 'human_approval':
         return { label: 'Waiting for approval', startedAt, tone: 'waiting' };
       case 'human_input':
-      case 'awaiting_user_message':
         return { label: 'Waiting for your reply', startedAt, tone: 'waiting' };
+      case 'awaiting_user_message':
+        return null;
       case 'authentication':
         return { label: 'Waiting for sign-in', startedAt, tone: 'waiting' };
       default:

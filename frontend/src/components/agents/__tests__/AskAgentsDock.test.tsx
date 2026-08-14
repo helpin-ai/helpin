@@ -732,7 +732,7 @@ describe('AskAgentsDock', () => {
     const liveStatus = document.body.querySelector('[data-helpin-dock] [data-agent-live-status]');
     const scrollContainer = document.body.querySelector('[data-helpin-dock] [data-agent-dock-chat-scroll]');
     expect(liveStatus?.textContent).toContain('Working…');
-    expect(scrollContainer?.contains(liveStatus)).toBe(false);
+    expect(scrollContainer?.contains(liveStatus)).toBe(true);
 
     const stopButtons = document.body.querySelectorAll('[data-helpin-dock] [aria-label="Stop agent"]');
     expect(stopButtons).toHaveLength(1);
@@ -879,7 +879,7 @@ describe('AskAgentsDock', () => {
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50);
   });
 
-  it('shows only the latest assistant prose in each root Ask turn', async () => {
+  it('preserves earlier assistant prose in a collapsed expandable working group', async () => {
     mocks.listMessages.mockResolvedValue({
       data: {
         messages: [
@@ -907,7 +907,15 @@ describe('AskAgentsDock', () => {
     await renderDock();
     await waitForText('The issue is caused by stale pagination state.');
 
-    expect(document.body.textContent).not.toContain('I will inspect another file.');
+    const workingGroup = document.querySelector('[data-agent-working-group]');
+    expect(workingGroup).not.toBeNull();
+    expect(workingGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+    expect(workingGroup?.querySelector('[data-working-group-body]')).toBeNull();
+
+    await act(async () => {
+      (workingGroup?.querySelector('button') as HTMLButtonElement).click();
+    });
+    expect(workingGroup?.querySelector('[data-working-group-body]')?.textContent).toContain('I will inspect another file.');
   });
 
   it('renders earlier history as a compact outlined button with an icon', async () => {

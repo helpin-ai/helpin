@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TranscriptSegmentView } from '../segmentRenderers';
+import { TranscriptSegmentView, type RenderSegmentOptions } from '../segmentRenderers';
 import type { TranscriptSegment } from '../segments';
 
 const mocks = vi.hoisted(() => ({
@@ -31,9 +31,9 @@ afterEach(() => {
   container.remove();
 });
 
-function render(segment: TranscriptSegment, expandable: boolean) {
+function render(segment: TranscriptSegment, expandable: boolean, options: Partial<RenderSegmentOptions> = {}) {
   act(() => {
-    root.render(<TranscriptSegmentView segment={segment} options={{ expandable }} />);
+    root.render(<TranscriptSegmentView segment={segment} options={{ expandable, ...options }} />);
   });
 }
 
@@ -158,6 +158,57 @@ describe('TranscriptSegmentView — tool', () => {
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('div.hidden')).toBeNull();
   });
+
+  it('shows the full input, output, error, and timing inside a working group', () => {
+    const detailedSegment: TranscriptSegment = {
+      kind: 'tool',
+      id: 'tool-detailed',
+      toolCall: {
+        tool_call_id: 'tc-detailed',
+        tool_name: 'repository_search',
+        args_text: '{"query":"pagination","limit":20}',
+        status: 'failed',
+        duration_ms: 2340,
+        started_at: '2026-08-14T00:00:00Z',
+        completed_at: '2026-08-14T00:00:02Z',
+        result: {
+          content: '{"matches":["ChatView.tsx"]}',
+          output_summary: 'One matching file',
+          error: 'search index timed out',
+        },
+      },
+    };
+
+    render(detailedSegment, true, { showToolDetails: true });
+
+    expect(container.textContent).toContain('Input');
+    expect(container.textContent).toContain('"query": "pagination"');
+    expect(container.textContent).toContain('Output');
+    expect(container.textContent).toContain('One matching file');
+    expect(container.textContent).toContain('"matches": [');
+    expect(container.textContent).toContain('Error');
+    expect(container.textContent).toContain('search index timed out');
+    expect(container.textContent).toContain('2s');
+  });
+
+  it('shows malformed tool payloads as their original text', () => {
+    const malformedSegment: TranscriptSegment = {
+      kind: 'tool',
+      id: 'tool-malformed',
+      toolCall: {
+        tool_call_id: 'tc-malformed',
+        tool_name: 'run_command',
+        args_text: '{not json',
+        status: 'completed',
+        result: { content: 'plain output' },
+      },
+    };
+
+    render(malformedSegment, true, { showToolDetails: true });
+
+    expect(container.textContent).toContain('{not json');
+    expect(container.textContent).toContain('plain output');
+  });
 });
 
 describe('TranscriptSegmentView — reasoning', () => {
@@ -191,6 +242,19 @@ describe('TranscriptSegmentView — reasoning', () => {
     render(segment, true);
 
     expect(container.textContent).toContain('Thought for 12s');
+  });
+
+  it('shows the full reasoning immediately inside an expanded working group', () => {
+    const segment: TranscriptSegment = {
+      kind: 'reasoning',
+      id: 'reasoning-full',
+      reasoning: { message_id: 'r-full', content: 'Inspecting both the stream and persisted timeline.', status: 'completed' },
+    };
+
+    render(segment, true, { showReasoningDetails: true });
+
+    expect(container.textContent).toContain('Inspecting both the stream and persisted timeline.');
+    expect(container.querySelector('[aria-expanded]')).toBeNull();
   });
 });
 

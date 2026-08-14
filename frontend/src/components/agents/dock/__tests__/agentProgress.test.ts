@@ -49,6 +49,27 @@ describe('resolveAgentLiveProgress', () => {
     })?.label).toBe('Waiting for approval');
   });
 
+  it('only labels an explicit human-input pause as waiting for a reply', () => {
+    expect(resolveAgentLiveProgress({
+      run: run({ status: 'paused', pause_reason: 'human_input' }), stream: stream(), currentPlan: null, sending: false,
+    })?.label).toBe('Waiting for your reply');
+    expect(resolveAgentLiveProgress({
+      run: run({ status: 'paused', pause_reason: 'awaiting_user_message' }), stream: stream(), currentPlan: null, sending: false,
+    })).toBeNull();
+  });
+
+  it('shows starting immediately when a new message is sent against an old paused run', () => {
+    expect(resolveAgentLiveProgress({
+      run: run({ status: 'paused', pause_reason: 'awaiting_user_message' }),
+      stream: stream({ live_turn_segments: [{
+        segment_id: 'previous-answer', kind: 'assistant_message',
+        assistant_message: { message_id: 'previous-answer', content: 'Previous answer', status: 'completed', tool_calls: [] },
+      }] }),
+      currentPlan: null,
+      sending: true,
+    })?.label).toBe('Starting…');
+  });
+
   it('describes a streaming answer without hiding progress', () => {
     expect(resolveAgentLiveProgress({
       run: run(), currentPlan: null, sending: false,

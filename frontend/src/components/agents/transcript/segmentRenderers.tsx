@@ -35,6 +35,10 @@ export interface RenderSegmentOptions {
   fallbackUserLabel?: string;
   /** Dock-only aggregation metadata for adjacent calls to the same tool. */
   toolGroup?: TranscriptToolGroupPresentation;
+  /** Show the original tool input/result/error inline inside a working group. */
+  showToolDetails?: boolean;
+  /** Show reasoning inline because the surrounding working group is disclosed. */
+  showReasoningDetails?: boolean;
 }
 
 /** Renders a single normalized transcript segment as a flat one-line entry. */
@@ -55,9 +59,15 @@ export function TranscriptSegmentView({
         />
       );
     case 'tool':
-      return <ToolSegment toolCall={segment.toolCall} group={options.toolGroup} />;
+      return <ToolSegment toolCall={segment.toolCall} group={options.toolGroup} showDetails={options.showToolDetails} />;
     case 'reasoning':
-      return <ReasoningSegment reasoning={segment.reasoning} expandable={options.expandable} />;
+      return (
+        <ReasoningSegment
+          reasoning={segment.reasoning}
+          expandable={options.expandable}
+          showDetails={options.showReasoningDetails}
+        />
+      );
     case 'status':
       return <StatusSegment message={segment.message} />;
     case 'context':
@@ -123,9 +133,11 @@ function CopyMessageButton({ content }: { content: string }) {
 function ToolSegment({
   toolCall,
   group,
+  showDetails = false,
 }: {
   toolCall: CodingSessionLiveToolCall;
   group?: TranscriptToolGroupPresentation;
+  showDetails?: boolean;
 }) {
   const status = group?.status ?? toolCall.status;
   const failed = status === 'failed';
@@ -138,18 +150,66 @@ function ToolSegment({
     : presentation.primaryLabel;
 
   return (
-    <TranscriptRow
-      icon={icon}
-      iconClassName={className}
-      label={(
-        <>
-          <span>{friendlyLabel}</span>{' '}
-          <span className="text-foreground/45">({canonicalName})</span>
-        </>
-      )}
-      tone={failed ? 'failed' : 'muted'}
-      meta={formatToolDuration(grouped ? group.totalDurationMs : toolCall.duration_ms)}
-    />
+    <div>
+      <TranscriptRow
+        icon={icon}
+        iconClassName={className}
+        label={(
+          <>
+            <span>{friendlyLabel}</span>{' '}
+            <span className="text-foreground/45">({canonicalName})</span>
+          </>
+        )}
+        tone={failed ? 'failed' : 'muted'}
+        meta={formatToolDuration(grouped ? group.totalDurationMs : toolCall.duration_ms)}
+      />
+      {showDetails ? <ToolCallDetails toolCall={toolCall} /> : null}
+    </div>
+  );
+}
+
+function formatToolPayload(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return trimmed;
+  }
+}
+
+function ToolDetailBlock({ label, content, failed = false }: { label: string; content: string; failed?: boolean }) {
+  if (!content.trim()) return null;
+  return (
+    <div className="space-y-1">
+      <div className={cn('text-[10px] font-medium uppercase tracking-wide', failed ? 'text-destructive' : 'text-muted-foreground')}>
+        {label}
+      </div>
+      <pre className={cn(
+        'max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/70 bg-muted/30 px-2.5 py-2 font-mono text-[11px] leading-5 text-foreground/80',
+        failed && 'border-destructive/30 bg-destructive/5 text-destructive',
+      )}>
+        {formatToolPayload(content)}
+      </pre>
+    </div>
+  );
+}
+
+function ToolCallDetails({ toolCall }: { toolCall: CodingSessionLiveToolCall }) {
+  const result = toolCall.result;
+  return (
+    <div className="ml-5 mt-2 space-y-2" data-tool-call-details>
+      <ToolDetailBlock label="Input" content={toolCall.args_text} />
+      <ToolDetailBlock label="Output summary" content={result?.output_summary ?? ''} />
+      <ToolDetailBlock label="Output" content={result?.content ?? ''} />
+      <ToolDetailBlock label="Error" content={result?.error ?? ''} failed />
+      {toolCall.started_at || toolCall.completed_at ? (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+          {toolCall.started_at ? <span>Started {toolCall.started_at}</span> : null}
+          {toolCall.completed_at ? <span>Completed {toolCall.completed_at}</span> : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -158,9 +218,11 @@ function ToolSegment({
 function ReasoningSegment({
   reasoning,
   expandable,
+  showDetails = false,
 }: {
   reasoning: CodingSessionLiveReasoningMessage;
   expandable: boolean;
+  showDetails?: boolean;
 }) {
   const streaming = reasoning.status === 'streaming';
   const hasContent = reasoning.content.trim().length > 0;
@@ -184,6 +246,39 @@ function ReasoningSegment({
       ? `Thought for ${formatCodingSessionElapsed(thoughtDurationMs)}`
       : 'Thought';
 
+  const detail = (
+    <div className="text-xs text-muted-foreground">
+      {hasContent ? (
+        <div className={cn('whitespace-pre-wrap leading-6', streaming && 'italic')}>{reasoning.content}</div>
+      ) : (
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          Reasoning is being tracked separately from the assistant reply.
+        </div>
+      )}
+      {reasoning.encrypted_value ? (
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+          <LockKeyIcon className="h-3.5 w-3.5" />
+          Encrypted reasoning payload attached.
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (showDetails) {
+    return (
+      <div>
+        <TranscriptRow
+          icon={<LockKeyIcon className="h-3 w-3" />}
+          iconClassName="text-muted-foreground"
+          label={label}
+          tone="muted"
+          meta={streaming ? 'Live' : undefined}
+        />
+        <div className="ml-5 mt-1.5">{detail}</div>
+      </div>
+    );
+  }
+
   return (
     <TranscriptRow
       icon={<LockKeyIcon className="h-3 w-3" />}
@@ -198,21 +293,7 @@ function ReasoningSegment({
         setOpen(next);
       }}
     >
-      <div className="text-xs text-muted-foreground">
-        {hasContent ? (
-          <div className={cn('whitespace-pre-wrap leading-6', streaming && 'italic')}>{reasoning.content}</div>
-        ) : (
-          <div className="rounded-lg border border-border bg-card px-3 py-2">
-            Reasoning is being tracked separately from the assistant reply.
-          </div>
-        )}
-        {reasoning.encrypted_value ? (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
-            <LockKeyIcon className="h-3.5 w-3.5" />
-            Encrypted reasoning payload attached.
-          </div>
-        ) : null}
-      </div>
+      {detail}
     </TranscriptRow>
   );
 }

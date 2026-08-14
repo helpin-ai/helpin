@@ -10,7 +10,10 @@ import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
 import type { CodingSessionActor } from '@/lib/pmTypes';
 import { groupAdjacentDockTools } from './dockTranscriptGrouping';
+import { buildDockWorkingTimeline } from './dockWorkingGroups';
+import { DockWorkingGroup } from './DockWorkingGroup';
 const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'review_decision'] as const);
+const DOCK_WORKING_SEGMENT_KINDS = new Set([...DOCK_CHAT_SEGMENT_KINDS, 'reasoning'] as const);
 
 export interface DockSubAgentTimelineItem {
   id: string;
@@ -143,7 +146,7 @@ export function DockTranscript({
   fallbackActor?: CodingSessionActor | null;
   /** Main chat shows user turns; embedded execution strips stay agent-only. */
   showUserMessages?: boolean;
-  /** Root Ask chat keeps only the latest assistant prose in each interval. */
+  /** Root Ask chat groups full progress into independently expandable work. */
   compactAssistantProgress?: boolean;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
@@ -166,12 +169,19 @@ export function DockTranscript({
   if (!stream) return null;
   const segments = collectSegments(stream, {
     includeLive: active,
-    include: showUserMessages ? DOCK_CHAT_SEGMENT_KINDS : DOCK_SEGMENT_KINDS,
-    compactAssistantProgress,
+    include: showUserMessages
+      ? (compactAssistantProgress ? DOCK_WORKING_SEGMENT_KINDS : DOCK_CHAT_SEGMENT_KINDS)
+      : DOCK_SEGMENT_KINDS,
+    compactAssistantProgress: false,
   });
   if (segments.length === 0 && subAgentRuns.length === 0) return null;
   const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;
-  const entries = groupAdjacentDockTools(segments);
+  const workingTimeline = compactAssistantProgress ? buildDockWorkingTimeline(segments, active) : null;
+  const entries = workingTimeline
+    ? workingTimeline.map((entry) => entry.kind === 'working_group'
+      ? { key: entry.key, segment: entry.segments[0], workingGroup: entry }
+      : { key: entry.key, segment: entry.segment })
+    : groupAdjacentDockTools(segments);
   const times = transcriptSegmentTimes(stream);
   const sequences = transcriptSegmentSequences(stream);
   const runsByBoundary = new Map<number, DockSubAgentTimelineItem[]>();
@@ -202,38 +212,69 @@ export function DockTranscript({
 
   return (
     <div className={cn('space-y-1.5', className)}>
-      {entries.map(({ key, segment, toolGroup }, index) => (
-        <Fragment key={key}>
-          {runsByBoundary.has(index) ? <SubAgentTimelineGroup items={runsByBoundary.get(index)!} /> : null}
-          <TranscriptSegmentView
-            segment={segment}
-            options={{
-              expandable: true,
-              toolGroup,
-              collapseLongAssistantContent: segment.kind !== 'assistant' || segment.id !== latestAssistantSegmentId,
-              fallbackUserLabel: 'You',
-              resolveActor: (message) => {
-                const attributedUserId = message.resolver_user_id ?? message.actor_user_id;
-                if (attributedUserId) {
-                  const actor = actorsById.get(attributedUserId);
-                  if (actor) return actor;
-                }
-                if (fallbackActor) return actorsById.get(fallbackActor.id) ?? fallbackActor;
-                return user ? {
-                    id: user.id,
-                    email: user.email,
-                    full_name: user.full_name,
-                    avatar_url: user.avatar_url,
-                    avatar_style: user.avatar_style,
-                    avatar_seed: user.avatar_seed,
-                    avatar_background_mode: user.avatar_background_mode,
-                    avatar_background_color: user.avatar_background_color,
-                  } : null;
-              },
-            }}
-          />
-        </Fragment>
-      ))}
+      {entries.map((entry, index) => {
+        const workingGroup = 'workingGroup' in entry ? entry.workingGroup : undefined;
+        const followsUserMessage = index > 0 && entries[index - 1].segment.kind === 'user';
+        return (
+          <Fragment key={entry.key}>
+            {runsByBoundary.has(index) ? <SubAgentTimelineGroup items={runsByBoundary.get(index)!} /> : null}
+            <div
+              className={cn(followsUserMessage && 'pt-2')}
+              data-after-user-message={followsUserMessage ? 'true' : undefined}
+            >
+              {workingGroup ? (
+                <DockWorkingGroup
+                  id={workingGroup.key}
+                  segments={workingGroup.segments}
+                  active={workingGroup.active}
+                >
+                  {workingGroup.segments.map((segment) => (
+                    <TranscriptSegmentView
+                      key={segment.id}
+                      segment={segment}
+                      options={{
+                        expandable: true,
+                        collapseLongAssistantContent: false,
+                        showToolDetails: true,
+                        showReasoningDetails: true,
+                        fallbackUserLabel: 'You',
+                      }}
+                    />
+                  ))}
+                </DockWorkingGroup>
+              ) : (
+                <TranscriptSegmentView
+                  segment={entry.segment}
+                  options={{
+                    expandable: true,
+                    toolGroup: 'toolGroup' in entry ? entry.toolGroup : undefined,
+                    collapseLongAssistantContent: entry.segment.kind !== 'assistant' || entry.segment.id !== latestAssistantSegmentId,
+                    fallbackUserLabel: 'You',
+                    resolveActor: (message) => {
+                      const attributedUserId = message.resolver_user_id ?? message.actor_user_id;
+                      if (attributedUserId) {
+                        const actor = actorsById.get(attributedUserId);
+                        if (actor) return actor;
+                      }
+                      if (fallbackActor) return actorsById.get(fallbackActor.id) ?? fallbackActor;
+                      return user ? {
+                          id: user.id,
+                          email: user.email,
+                          full_name: user.full_name,
+                          avatar_url: user.avatar_url,
+                          avatar_style: user.avatar_style,
+                          avatar_seed: user.avatar_seed,
+                          avatar_background_mode: user.avatar_background_mode,
+                          avatar_background_color: user.avatar_background_color,
+                        } : null;
+                    },
+                  }}
+                />
+              )}
+            </div>
+          </Fragment>
+        );
+      })}
       {runsByBoundary.has(entries.length) ? <SubAgentTimelineGroup items={runsByBoundary.get(entries.length)!} /> : null}
     </div>
   );
