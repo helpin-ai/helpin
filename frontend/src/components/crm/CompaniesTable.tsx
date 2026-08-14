@@ -363,7 +363,7 @@ export function CompaniesTable({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-2">
       {/* Group By control */}
       <div className="flex items-center gap-2 px-1">
         <span className="text-xs text-muted-foreground">Group by:</span>
