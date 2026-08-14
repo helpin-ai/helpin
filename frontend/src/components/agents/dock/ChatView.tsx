@@ -471,6 +471,20 @@ export function ChatView({
     return map;
   }, [plans]);
 
+  const subAgentTimelineItems = useMemo(() => plans.map((plan) => ({
+    id: plan.id,
+    createdAt: plan.created_at,
+    runCount: Math.max(plan.steps.length, 1),
+    content: (
+      <ExecutionStrip
+        kind="plan"
+        workspaceId={workspaceId}
+        plan={planSummaryToRunPlan(plan)}
+        runsById={runsById}
+      />
+    ),
+  })), [plans, runsById, workspaceId]);
+
   const needsApproval = (
     (run?.status === 'paused' && run.pause_reason === 'human_approval')
     || effectiveInteraction?.interaction_kind.includes('approval') === true
@@ -511,6 +525,7 @@ export function ChatView({
             active={runActive}
             workspaceId={workspaceId}
             fallbackActor={streamController.session?.triggered_by_user}
+            subAgentRuns={subAgentTimelineItems}
           />
         )}
         {currentPlan && (
@@ -547,23 +562,6 @@ export function ChatView({
         )}
         {liveStatusLabel && (
           <StreamingStatusText className="text-xs">{liveStatusLabel}</StreamingStatusText>
-        )}
-        {plans.length > 0 && (
-          <section className="divide-y divide-border/60 border-y border-border/70 py-2" data-agent-dock-sub-agent-runs>
-            <div className="px-1 pb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Sub-agent runs
-            </div>
-            {plans.map((plan) => (
-              <div key={plan.id} className="py-2 first:pt-0 last:pb-0">
-                <ExecutionStrip
-                  kind="plan"
-                  workspaceId={workspaceId}
-                  plan={planSummaryToRunPlan(plan)}
-                  runsById={runsById}
-                />
-              </div>
-            ))}
-          </section>
         )}
         {effectiveInteraction && dockConfirm && (
           <DockPlanConfirmCard

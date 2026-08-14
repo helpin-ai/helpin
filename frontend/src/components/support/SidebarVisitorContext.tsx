@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { STATUS_COLORS, STATUS_LABELS } from './constants';
 import { useConversation, useVisitorContext } from '@/hooks/queries/useSupport';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { isSystemCRMCustomProperty } from '@/lib/crmCustomProperties';
 import type { ConversationStatus } from '@/lib/pmTypes';
 
 interface SidebarVisitorContextProps {
@@ -222,9 +223,11 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
         )}
         {contact?.lead_status && <InfoRow label="Lead status" value={contact.lead_status.replaceAll('_', ' ')} />}
         {contact?.phone && <InfoRow label="Phone" value={contact.phone} />}
-        {contact?.custom_properties && Object.entries(contact.custom_properties).map(([key, value]) => (
-          <InfoRow key={key} label={key.replaceAll('_', ' ')} value={formatUnknownValue(value)} />
-        ))}
+        {contact?.custom_properties && Object.entries(contact.custom_properties)
+          .filter(([key]) => !isSystemCRMCustomProperty(key))
+          .map(([key, value]) => (
+            <InfoRow key={key} label={key.replaceAll('_', ' ')} value={formatUnknownValue(value)} />
+          ))}
 
         {hasMainInfo && (
           <>

@@ -9,6 +9,7 @@ import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
 import { useUpdateConversationCRMCompany, useVisitorContext } from '@/hooks/queries/useSupport';
 import { crmSearchService } from '@/lib/services/crmService';
+import { isSystemCRMCustomProperty } from '@/lib/crmCustomProperties';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMSearchResult } from '@/lib/crmTypes';
 
@@ -110,7 +111,10 @@ export function SidebarCompanyDetails({ workspaceId, conversationId }: SidebarCo
   const properties = company?.custom_properties ?? {};
   const currency = typeof properties.currency === 'string' ? properties.currency : 'USD';
   const extraEntries = useMemo(() => Object.entries(properties).filter(([key, value]) => (
-    !PRIORITY_KEYS.includes(key as typeof PRIORITY_KEYS[number]) && !HIDDEN_KEYS.has(key) && hasValue(value)
+    !PRIORITY_KEYS.includes(key as typeof PRIORITY_KEYS[number])
+      && !HIDDEN_KEYS.has(key)
+      && !isSystemCRMCustomProperty(key)
+      && hasValue(value)
   )), [properties]);
 
   const chooseCompany = (companyId: string | null) => {

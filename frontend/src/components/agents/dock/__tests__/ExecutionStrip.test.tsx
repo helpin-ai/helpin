@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ExecutionStrip } from '../ExecutionStrip';
 import type { AgentRun, CodingSessionInteraction } from '@/lib/pmTypes';
-import type { CommandBarRunPlan } from '@/stores/commandBarStore';
+import type { CommandBarRunPlan } from '../planSummary';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -93,6 +93,47 @@ function plan(overrides: Partial<CommandBarRunPlan> = {}): CommandBarRunPlan {
 }
 
 describe('ExecutionStrip actions', () => {
+  it('shows the agent, task, status, and stable plan time while collapsed', () => {
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="plan"
+          workspaceId="ws-1"
+          plan={plan({ status: 'failed', runIdsByStep: {} })}
+          runsById={{}}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Writer');
+    expect(container.textContent).toContain('Draft the customer reply');
+    expect(container.textContent).toContain('Failed');
+    expect(container.textContent).not.toContain('AGENT');
+    expect(container.querySelector('time')?.getAttribute('dateTime')).toBe('2026-05-01T00:00:00.000Z');
+  });
+
+  it('shows a useful failure when expanded without repeating the collapsed details', () => {
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="plan"
+          workspaceId="ws-1"
+          plan={plan({
+            status: 'failed',
+            runIdsByStep: {},
+            errorMessage: 'Model unavailable under current pricing',
+          })}
+          runsById={{}}
+          defaultOpen
+        />,
+      );
+    });
+
+    expect(container.textContent?.match(/Writer/g)).toHaveLength(1);
+    expect(container.textContent?.match(/Draft the customer reply/g)).toHaveLength(1);
+    expect(container.textContent).toContain('Model unavailable under current pricing');
+  });
+
   it('renders running actions with Open primary and Cancel low emphasis', () => {
     act(() => {
       root.render(

@@ -605,7 +605,7 @@ export function DeliveryPlanView({
           <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
           <span className="shrink-0 text-xs text-muted-foreground">
             {totalMs !== null ? `ran ${formatDuration(totalMs)} · ` : ''}
-            {formatDistanceToNow(ts, { addSuffix: true })}
+            {ts !== null ? formatDistanceToNow(ts, { addSuffix: true }) : null}
           </span>
           {headerActions}
         </div>
