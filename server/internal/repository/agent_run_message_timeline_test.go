@@ -19,7 +19,7 @@ func TestAgentRunMessageRepositoryDockChatTimelineSpansRunsAndPaginates(t *testi
 	if err := db.Exec(`CREATE TABLE dock_chats (
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
-		next_message_sequence INTEGER NOT NULL DEFAULT 0,
+		next_message_sequence INTEGER DEFAULT 0,
 		updated_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create dock chats: %v", err)
@@ -90,5 +90,26 @@ func TestAgentRunMessageRepositoryDockChatTimelineSpansRunsAndPaginates(t *testi
 	existing, err := repo.GetByClientMessageID(ctx, workspaceID, clientID)
 	if err != nil || existing == nil || existing.ID != messages[0].ID {
 		t.Fatalf("get by client id: message=%#v err=%v", existing, err)
+	}
+
+	if err := db.Exec(`UPDATE dock_chats SET next_message_sequence = NULL WHERE id = ?`, chatID).Error; err != nil {
+		t.Fatalf("clear dock chat sequence: %v", err)
+	}
+	recovered := &model.AgentRunMessage{
+		ID:             "00000000-0000-0000-0000-000000000104",
+		WorkspaceID:    workspaceID,
+		RunID:          "run-2",
+		DockChatID:     stringPtr(chatID),
+		DeliveryStatus: "sent",
+		Role:           "assistant",
+		Content:        "recovered reply",
+		MessageType:    "assistant_turn",
+		SequenceNo:     2,
+	}
+	if err := repo.Create(ctx, recovered); err != nil {
+		t.Fatalf("create message after null counter: %v", err)
+	}
+	if recovered.DockChatSequence == nil || *recovered.DockChatSequence != 4 {
+		t.Fatalf("recovered sequence = %v, want 4", recovered.DockChatSequence)
 	}
 }
