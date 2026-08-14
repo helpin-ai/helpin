@@ -143,13 +143,19 @@ func (r *CRMMeetingRepository) WithCaptureLaunchLock(
 	if r.db.Dialector.Name() != "postgres" {
 		return fn(r)
 	}
-	lockKey := strings.TrimSpace(workspaceID) + "\x00" + strings.TrimSpace(idempotencyKey)
+	lockKey := meetingCaptureLaunchLockKey(workspaceID, idempotencyKey)
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
 			return fmt.Errorf("lock meeting capture launch: %w", err)
 		}
 		return fn(NewCRMMeetingRepository(tx))
 	})
+}
+
+func meetingCaptureLaunchLockKey(workspaceID, idempotencyKey string) string {
+	workspaceID = strings.TrimSpace(workspaceID)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	return fmt.Sprintf("%d:%s:%s", len(workspaceID), workspaceID, idempotencyKey)
 }
 
 // GetCaptureByIdempotencyKey returns an earlier launch response, if any.
