@@ -1,6 +1,7 @@
 import { api } from '../api';
 import type {
   DockChat,
+  DockChatModule,
   DockChatDetail,
   DockChatListResponse,
   GenerateDockChatTitleRequest,
@@ -26,10 +27,11 @@ export const dockChatService = {
     if (cursor) query.set('cursor', cursor);
     return api.get<DockChatListResponse>(`/dock/chats?${query.toString()}`);
   },
-  createChat: (workspaceId: string, title = '', supportConversationId?: string) =>
+  createChat: (workspaceId: string, title = '', supportConversationId?: string, moduleId?: DockChatModule | null) =>
     api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, {
       title,
       ...(supportConversationId ? { support_conversation_id: supportConversationId } : {}),
+      ...(moduleId ? { module_id: moduleId, visibility: 'module' } : {}),
     }),
   getChat: (workspaceId: string, chatId: string) =>
     api.get<DockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}${qs(workspaceId)}`),

@@ -126,6 +126,7 @@ func createAgentRunActivityTables(t *testing.T, db *gorm.DB) {
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			run_id TEXT NOT NULL,
+			actor_user_id TEXT,
 			runtime_message_id TEXT,
 			role TEXT NOT NULL,
 			content TEXT NOT NULL,

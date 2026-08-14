@@ -10,6 +10,7 @@ type AgentRunMessage struct {
 	ID               string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index;index:idx_agent_run_messages_runtime_message_id,priority:1"`
 	RunID            string          `json:"run_id" gorm:"type:uuid;not null;index;index:idx_agent_run_messages_runtime_message_id,priority:2"`
+	ActorUserID      *string         `json:"actor_user_id,omitempty" gorm:"type:uuid;index"`
 	RuntimeMessageID string          `json:"runtime_message_id,omitempty" gorm:"index:idx_agent_run_messages_runtime_message_id,priority:3"`
 	Role             string          `json:"role" gorm:"not null"`
 	Content          string          `json:"content" gorm:"not null"`

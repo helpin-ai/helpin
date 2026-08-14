@@ -137,6 +137,7 @@ func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessa
 			"content_blocks":       json.RawMessage(message.ContentBlocks),
 			"turn_segments":        json.RawMessage(message.TurnSegments),
 			"tool_invocations":     json.RawMessage(message.ToolInvocations),
+			"actor_user_id":        message.ActorUserID,
 		},
 		RuntimeMetadata: map[string]any{
 			"source": "agent_run_message",

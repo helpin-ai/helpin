@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/stores/authStore';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
@@ -88,6 +89,7 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  const currentUserId = useAuthStore((state) => state.user?.id);
 
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
@@ -103,6 +105,7 @@ export function ChatView({
   }, [initialDraft, onDraftConsumed, setValue]);
 
   const run = detail?.run ?? null;
+  const isSharedTeammate = !!detail?.chat.user_id && !!currentUserId && detail.chat.user_id !== currentUserId;
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
   useEffect(() => {
     onRunIdChange?.(run?.id ?? null);
@@ -324,7 +327,7 @@ export function ChatView({
     await sendContent(content, references);
   };
 
-  const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
+  const canStop = !isSharedTeammate && runActive && (run?.status === 'queued' || run?.status === 'running');
   const handleStop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
@@ -398,7 +401,14 @@ export function ChatView({
               : 'Ask a question about your workspace, or describe work for an agent to do.'}
           </p>
         )}
-        {transformed && <DockTranscript stream={transformed.stream} active={runActive} />}
+        {transformed && (
+          <DockTranscript
+            stream={transformed.stream}
+            active={runActive}
+            workspaceId={workspaceId}
+            fallbackActor={streamController.session?.triggered_by_user}
+          />
+        )}
         {currentPlan && (
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}

@@ -12,12 +12,14 @@ import type {
   ResolveCodingSessionInteractionRequest,
 } from '@/lib/pmTypes'
 
-/** One user-owned dock conversation, backed by an agent-runtime chat-mode run. */
+/** One dock conversation with creator-owned settings and explicit visibility. */
 export interface DockChat {
   id: string
   workspace_id: string
   user_id: string
   title: string
+  visibility: DockChatVisibility
+  module_id?: DockChatModule | null
   support_conversation_id?: string | null
   active_run_id?: string | null
   active_run_status?: AgentRun['status'] | null
@@ -55,6 +57,28 @@ export interface GenerateDockChatTitleRequest {
 export interface UpdateDockChatRequest {
   title?: string
   archived?: boolean
+  visibility?: DockChatVisibility
+}
+
+export type DockChatVisibility = 'private' | 'module' | 'workspace'
+export type DockChatModule = 'support' | 'crm' | 'pm' | 'docs'
+
+export function dockChatModuleForContext(context?: CommandBarPageContext | null): DockChatModule | null {
+  switch (context?.entity_type) {
+    case 'support_conversation':
+      return 'support'
+    case 'crm_contact':
+    case 'crm_deal':
+      return 'crm'
+    case 'task':
+    case 'epic':
+    case 'repository':
+      return 'pm'
+    case 'document':
+      return 'docs'
+    default:
+      return null
+  }
 }
 
 export type DockRunAttentionKind = 'input' | 'approval' | 'authentication'

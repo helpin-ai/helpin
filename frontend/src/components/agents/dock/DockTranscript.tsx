@@ -7,8 +7,10 @@ import {
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
 import { useAuthStore } from '@/stores/authStore';
+import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import type { CodingSessionActor } from '@/lib/pmTypes';
 import { groupAdjacentDockTools } from './dockTranscriptGrouping';
-const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'user'] as const);
+const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'review_decision'] as const);
 
 /** True when the stream has at least one renderable assistant/tool segment. */
 export function dockTranscriptHasContent(
@@ -30,17 +32,36 @@ export function dockTranscriptHasContent(
 export function DockTranscript({
   stream,
   active,
+  workspaceId,
+  fallbackActor,
   showUserMessages = true,
   className,
 }: {
   stream: CodingSessionStreamState | null;
   /** True while the run is still executing — controls live-turn inclusion. */
   active: boolean;
+  /** Workspace used to resolve the author of each human message. */
+  workspaceId?: string;
+  /** Actor for older messages that predate per-message attribution. */
+  fallbackActor?: CodingSessionActor | null;
   /** Main chat shows user turns; embedded execution strips stay agent-only. */
   showUserMessages?: boolean;
   className?: string;
 }) {
   const user = useAuthStore((state) => state.user);
+  const { members } = useWorkspaceMembers(workspaceId);
+  const actorsById = new Map<string, CodingSessionActor>(
+    members.map((member) => [member.user_id, {
+      id: member.user_id,
+      email: member.email,
+      full_name: member.full_name,
+      avatar_url: member.avatar_url,
+      avatar_style: member.avatar_style,
+      avatar_seed: member.avatar_seed,
+      avatar_background_mode: member.avatar_background_mode,
+      avatar_background_color: member.avatar_background_color,
+    }]),
+  );
   if (!stream) return null;
   const segments = collectSegments(stream, {
     includeLive: active,
@@ -61,8 +82,14 @@ export function DockTranscript({
             toolGroup,
             collapseLongAssistantContent: segment.kind !== 'assistant' || segment.id !== latestAssistantSegmentId,
             fallbackUserLabel: 'You',
-            resolveActor: user
-              ? () => ({
+            resolveActor: (message) => {
+              const attributedUserId = message.resolver_user_id ?? message.actor_user_id;
+              if (attributedUserId) {
+                const actor = actorsById.get(attributedUserId);
+                if (actor) return actor;
+              }
+              if (fallbackActor) return actorsById.get(fallbackActor.id) ?? fallbackActor;
+              return user ? {
                   id: user.id,
                   email: user.email,
                   full_name: user.full_name,
@@ -71,8 +98,8 @@ export function DockTranscript({
                   avatar_seed: user.avatar_seed,
                   avatar_background_mode: user.avatar_background_mode,
                   avatar_background_color: user.avatar_background_color,
-                })
-              : undefined,
+                } : null;
+            },
           }}
         />
       ))}

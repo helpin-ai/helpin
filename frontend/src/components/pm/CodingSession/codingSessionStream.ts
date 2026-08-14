@@ -561,6 +561,7 @@ function transcriptMessageFromEvent(event: CodingSessionEvent): CodingSessionTra
       message_type: asString(payload.message_type),
       timestamp: event.timestamp,
       sequence_no: asNumber(payload.sequence_no) ?? event.sequence_no,
+      actor_user_id: asString(payload.actor_user_id),
       tool_calls: role === 'assistant'
         ? transcriptToolCallsFromPayload(payload, asString(payload.message_id) ?? event.id)
         : undefined,

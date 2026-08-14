@@ -44,35 +44,41 @@ func (r *DockChatRepository) GetByID(ctx context.Context, workspaceID, id string
 	return &chat, nil
 }
 
-// GetBySupportConversation returns the user's unarchived chat associated with
-// a support inbox conversation, or nil when that conversation has no history.
-func (r *DockChatRepository) GetBySupportConversation(ctx context.Context, workspaceID, userID, conversationID string) (*model.DockChat, error) {
+// ListBySupportConversation returns unarchived chats associated with a support
+// conversation, most recently active first. The service applies visibility
+// authorization before selecting a chat for the requester.
+func (r *DockChatRepository) ListBySupportConversation(ctx context.Context, workspaceID, conversationID string) ([]model.DockChat, error) {
 	if r == nil || r.db == nil {
 		return nil, gorm.ErrInvalidDB
 	}
-	var chat model.DockChat
+	var chats []model.DockChat
 	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND user_id = ? AND support_conversation_id = ? AND archived_at IS NULL", workspaceID, userID, conversationID).
-		First(&chat).Error
-	if err == gorm.ErrRecordNotFound {
-		return nil, nil
-	}
+		Where("workspace_id = ? AND support_conversation_id = ? AND archived_at IS NULL", workspaceID, conversationID).
+		Order("COALESCE(last_message_at, created_at) DESC").
+		Order("id DESC").
+		Find(&chats).Error
 	if err != nil {
 		return nil, err
 	}
-	return &chat, nil
+	return chats, nil
 }
 
-// ListByWorkspaceUser returns the user's unarchived chats, most recently active first.
-func (r *DockChatRepository) ListByWorkspaceUser(ctx context.Context, workspaceID, userID string, limit int, before *time.Time, beforeID string) ([]model.DockChat, error) {
+// ListVisible returns the requester's private chats plus chats shared with the
+// workspace or with a module the requester can access.
+func (r *DockChatRepository) ListVisible(ctx context.Context, workspaceID, userID string, modules []model.ModuleID, limit int, before *time.Time, beforeID string) ([]model.DockChat, error) {
 	if r == nil || r.db == nil {
 		return nil, gorm.ErrInvalidDB
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	query := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND user_id = ? AND archived_at IS NULL", workspaceID, userID)
+	query := r.db.WithContext(ctx).Where("workspace_id = ? AND archived_at IS NULL", workspaceID)
+	visibility := r.db.Where("user_id = ?", userID).
+		Or("visibility = ?", model.DockChatVisibilityWorkspace)
+	if len(modules) > 0 {
+		visibility = visibility.Or("visibility = ? AND module_id IN ?", model.DockChatVisibilityModule, modules)
+	}
+	query = query.Where(visibility)
 	if before != nil {
 		query = query.Where(
 			"((COALESCE(last_message_at, created_at) < ?) OR (COALESCE(last_message_at, created_at) = ? AND id < ?))",
