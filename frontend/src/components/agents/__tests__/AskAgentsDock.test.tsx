@@ -724,7 +724,14 @@ describe('AskAgentsDock', () => {
     await renderDock();
     await waitForText('Sprint questions');
 
-    const stopButton = document.body.querySelector('[data-helpin-dock] [aria-label="Stop agent"]');
+    const liveStatus = document.body.querySelector('[data-helpin-dock] [data-agent-live-status]');
+    const scrollContainer = document.body.querySelector('[data-helpin-dock] [data-agent-dock-chat-scroll]');
+    expect(liveStatus?.textContent).toContain('Working…');
+    expect(scrollContainer?.contains(liveStatus)).toBe(false);
+
+    const stopButtons = document.body.querySelectorAll('[data-helpin-dock] [aria-label="Stop agent"]');
+    expect(stopButtons).toHaveLength(1);
+    const stopButton = stopButtons[0];
     expect(stopButton).not.toBeNull();
     await act(async () => {
       (stopButton as HTMLButtonElement).click();

@@ -77,6 +77,7 @@ describe('TranscriptSegmentView — tool', () => {
     render(toolSegment, true);
 
     expect(container.textContent).toContain('Run go build ./...');
+    expect(container.textContent).toContain('(run_command)');
     expect(container.textContent).toContain('2s');
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('[aria-expanded]')).toBeNull();
@@ -113,6 +114,7 @@ describe('TranscriptSegmentView — tool', () => {
     render(segment, true);
 
     expect(container.textContent).toContain('Read src/service.go:12-18 · backend');
+    expect(container.textContent).toContain('(read_files)');
     expect(container.textContent).not.toContain('next_start_line');
   });
 

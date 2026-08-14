@@ -10,6 +10,7 @@ import type {
 } from '@/lib/pmTypes';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
+import { canonicalToolName } from '@/lib/toolNames';
 import { formatCodingSessionRelative } from '@/components/pm/CodingSession/codingSessionUtils';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -131,14 +132,21 @@ function ToolSegment({
   const { icon, className } = toolStatusChrome(status);
   const presentation = describeToolCall(toolCall);
   const grouped = !!group && group.count > 1;
+  const canonicalName = canonicalToolName(toolCall.tool_name).toLowerCase();
+  const friendlyLabel = grouped
+    ? `${presentation.secondaryLabel}${presentation.repositoryLabel ? ` · ${presentation.repositoryLabel}` : ''} × ${group.count}`
+    : presentation.primaryLabel;
 
   return (
     <TranscriptRow
       icon={icon}
       iconClassName={className}
-      label={grouped
-        ? `${presentation.secondaryLabel}${presentation.repositoryLabel ? ` · ${presentation.repositoryLabel}` : ''} x ${group.count}`
-        : presentation.primaryLabel}
+      label={(
+        <>
+          <span>{friendlyLabel}</span>{' '}
+          <span className="text-foreground/45">({canonicalName})</span>
+        </>
+      )}
       tone={failed ? 'failed' : 'muted'}
       meta={formatToolDuration(grouped ? group.totalDurationMs : toolCall.duration_ms)}
     />

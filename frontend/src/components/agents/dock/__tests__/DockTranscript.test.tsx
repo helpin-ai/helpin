@@ -294,7 +294,7 @@ describe('DockTranscript', () => {
       root.render(<DockTranscript stream={streamWithMessages([message])} active={false} workspaceId="ws-1" />);
     });
 
-    expect(container.textContent).toContain('Browser Act x 2');
+    expect(container.textContent).toContain('Browser Act × 2 (browser_act)');
     expect(container.textContent).toContain('2s');
     expect(container.textContent?.match(/Browser Act/g)).toHaveLength(3);
     expect(container.textContent).not.toContain('Browser Act x 3');
