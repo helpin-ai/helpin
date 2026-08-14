@@ -177,8 +177,20 @@ export function CollectionRouteView({
               />
             ) : (
               <>
+                {topLevelNodes.length > 0 && (
+                  <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                    {topLevelNodes.map((node) => (
+                      <CollectionCard
+                        key={node.item.id}
+                        node={node}
+                        locale={locale}
+                        multilingualEnabled={multilingualEnabled}
+                      />
+                    ))}
+                  </div>
+                )}
                 {apiReferences.length > 0 && (
-                  <div className="mt-8">
+                  <div className="mt-10">
                     <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
                       API Reference
                     </h2>
@@ -213,18 +225,6 @@ export function CollectionRouteView({
                         </DocsLink>
                       ))}
                     </div>
-                  </div>
-                )}
-                {topLevelNodes.length > 0 && (
-                  <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                    {topLevelNodes.map((node) => (
-                      <CollectionCard
-                        key={node.item.id}
-                        node={node}
-                        locale={locale}
-                        multilingualEnabled={multilingualEnabled}
-                      />
-                    ))}
                   </div>
                 )}
               </>

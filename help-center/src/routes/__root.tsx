@@ -159,7 +159,7 @@ function RootDocument({
   const clientContextScript = buildClientContextScript(clientContext)
 
   return (
-    <html lang={lang}>
+    <html lang={lang} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         {clientContextScript && (

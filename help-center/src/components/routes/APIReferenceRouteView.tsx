@@ -1,4 +1,4 @@
-import { ApiReferenceReact } from '@scalar/api-reference-react'
+import { OpenAPIReference } from '@/components/api-reference/OpenAPIReference'
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/LoadingState'
 import { useDocsContext } from '@/contexts/DocsContext'
@@ -18,7 +18,7 @@ export function APIReferenceRouteView({
   referenceSlug,
   multilingualEnabled,
 }: APIReferenceRouteViewProps) {
-  const { subdomain, config } = useDocsContext()
+  const { subdomain } = useDocsContext()
   const { data, isLoading, error } = useAPIReference(
     subdomain,
     locale,
@@ -39,33 +39,5 @@ export function APIReferenceRouteView({
     )
   }
 
-  const darkMode =
-    config.theme_mode === 'dark' ||
-    (config.theme_mode === 'system' &&
-      typeof document !== 'undefined' &&
-      document.documentElement.classList.contains('dark'))
-
-  return (
-    <main className="api-reference-page min-w-0">
-      <ApiReferenceReact
-        configuration={{
-          content: data.specification,
-          layout: 'modern',
-          theme: 'none',
-          showSidebar: true,
-          hideModels: false,
-          hideClientButton: false,
-          hideTestRequestButton: false,
-          documentDownloadType: 'both',
-          darkMode,
-          forceDarkModeState: darkMode ? 'dark' : 'light',
-          hideDarkModeToggle: true,
-          customCss: `
-            .scalar-app { --scalar-color-accent: ${config.brand_color}; }
-            .references-rendered { min-height: calc(100vh - var(--hc-header-height)); }
-          `,
-        }}
-      />
-    </main>
-  )
+  return <OpenAPIReference reference={data} />
 }
