@@ -1,5 +1,5 @@
 import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { format, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
 import {
@@ -148,7 +148,8 @@ function FilterChip({
 }
 
 export function ObjectivesPage() {
-  useTitle('Objectives');
+  const { pathname } = useLocation();
+  useTitle(pathname.endsWith('/team-goals') ? 'Team Goals' : 'Objectives');
 
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id ?? '';

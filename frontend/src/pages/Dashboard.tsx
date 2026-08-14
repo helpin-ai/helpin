@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useTitle } from '@/hooks/useTitle';
 
 export default function Dashboard() {
+  useTitle('Dashboard');
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
 
