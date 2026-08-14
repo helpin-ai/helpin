@@ -72,12 +72,14 @@ describe('borderless task surfaces', () => {
     expect(pickerSources.join('\n')).not.toContain('text-[12px]');
   });
 
-  it('keeps task list rows, inline pickers, and toolbar controls on the PM text-ui scale', () => {
+  it('keeps task list metadata on the PM text-ui scale and names on the shared table-name scale', () => {
     const taskListSource = readFileSync(resolve(__dirname, '../TaskListView.tsx'), 'utf8');
     const displayMenuSource = readFileSync(resolve(__dirname, '../ListDisplayMenu.tsx'), 'utf8');
+    const tableStylesSource = readFileSync(resolve(__dirname, '../../../lib/tableStyles.ts'), 'utf8');
 
     expect(taskListSource).toContain('font-mono text-ui text-muted-foreground');
-    expect(taskListSource).toContain('text-left text-sm hover:text-primary');
+    expect(taskListSource).toContain('text-left ${TABLE_NAME_TEXT} hover:text-primary');
+    expect(tableStylesSource).toContain("TABLE_NAME_TEXT = 'text-sm text-foreground/90'");
     expect(taskListSource).toContain('<Select size="ui"');
     expect(taskListSource).toContain('className="h-8 text-ui"');
     expect(taskListSource).toContain('triggerClassName="text-[11px]"');
