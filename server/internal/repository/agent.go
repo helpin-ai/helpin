@@ -802,10 +802,22 @@ func (r *AgentRunMessageRepository) Create(ctx context.Context, message *model.A
 	if message != nil && message.DockChatID != nil && strings.TrimSpace(*message.DockChatID) != "" && message.DockChatSequence == nil {
 		var sequence int64
 		if err := r.db.WithContext(ctx).Raw(`
-			UPDATE dock_chats
-			SET next_message_sequence = next_message_sequence + 1,
+			UPDATE dock_chats AS chat
+			SET next_message_sequence = CASE
+					WHEN COALESCE(chat.next_message_sequence, 0) >= COALESCE((
+						SELECT MAX(existing.dock_chat_sequence)
+						FROM agent_run_messages AS existing
+						WHERE existing.dock_chat_id = chat.id
+					), 0)
+					THEN COALESCE(chat.next_message_sequence, 0)
+					ELSE COALESCE((
+						SELECT MAX(existing.dock_chat_sequence)
+						FROM agent_run_messages AS existing
+						WHERE existing.dock_chat_id = chat.id
+					), 0)
+				END + 1,
 				updated_at = updated_at
-			WHERE workspace_id = ? AND id = ?
+			WHERE chat.workspace_id = ? AND chat.id = ?
 			RETURNING next_message_sequence
 		`, message.WorkspaceID, strings.TrimSpace(*message.DockChatID)).Scan(&sequence).Error; err != nil {
 			return fmt.Errorf("allocate dock chat message sequence: %w", err)
