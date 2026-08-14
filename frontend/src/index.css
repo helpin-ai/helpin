@@ -674,6 +674,30 @@
 .tiptap {
   outline: none;
 }
+
+/* Shared rich-text tone. Explicit semantic colors (links, code, mentions, etc.)
+   continue to override this inherited default. */
+.rich-text-soft,
+.pm-rich-text,
+.docs-editor-prose {
+  --rich-text-soft-foreground: color-mix(in oklab, var(--foreground) 90%, transparent);
+  --tw-prose-body: var(--rich-text-soft-foreground);
+  --tw-prose-headings: var(--rich-text-soft-foreground);
+  --tw-prose-lead: var(--rich-text-soft-foreground);
+  --tw-prose-bold: var(--rich-text-soft-foreground);
+  --tw-prose-quotes: var(--rich-text-soft-foreground);
+  color: var(--rich-text-soft-foreground);
+}
+
+/* Compact PM rich text: text-sm resolves to 13.125px at the app's 93.75%
+   root scale, while 1.25rem resolves to 18.75px. */
+.pm-rich-text {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.pm-rich-text :where(p, ol, ul, li, blockquote, dl) {
+  line-height: inherit;
+}
 /* Show placeholder only on the first empty paragraph of an empty editor. */
 .tiptap.is-editor-empty > p.is-empty:first-child::before,
 .ProseMirror.is-editor-empty > p.is-empty:first-child::before,
@@ -900,7 +924,7 @@
 
 /* Docs article rhythm: used by the docs editor and shared read-only documents. */
 .docs-editor-prose {
-  color: var(--foreground);
+  color: var(--rich-text-soft-foreground);
   font-size: 1rem;
   line-height: 1.7;
 }

@@ -21,6 +21,9 @@ export const TABLE_ROW =
 export const TABLE_CELL =
   'flex shrink-0 items-center self-stretch bg-inherit px-2.5';
 
+/** Primary entity name shown in table cells. */
+export const TABLE_NAME_TEXT = 'text-sm text-foreground/90';
+
 /** Group header row (for grouped/expandable tables) – pixel-pinned to GROUP_ROW_HEIGHT */
 export const TABLE_GROUP_ROW =
   'border-b border-border/60 flex h-[36px] cursor-pointer items-center bg-muted/60 text-sm font-semibold hover:bg-muted dark:bg-background/25 dark:hover:bg-background/40';

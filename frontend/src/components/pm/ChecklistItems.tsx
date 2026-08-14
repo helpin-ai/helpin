@@ -23,6 +23,7 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { MentionText } from '@/components/pm/MentionText';
+import { InlineCompletionProgress } from '@/components/pm/InlineCompletionProgress';
 import {
   getMentionSuggestions,
   type MentionSuggestionItem,
@@ -316,25 +317,11 @@ export function ChecklistItems({
           <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
             Checklist
           </span>
-          {items.length > 0 ? (
-            <>
-              <span className="shrink-0 text-xs font-normal text-muted-foreground" data-testid="checklist-count">
-                ({completedCount}/{items.length})
-              </span>
-              <div
-                className="mx-1 h-1.5 min-w-12 flex-1 overflow-hidden rounded-full bg-muted"
-                data-testid="checklist-progress"
-              >
-                <div
-                  className="h-full rounded-full bg-green-500 transition-all duration-300"
-                  style={{ width: `${(completedCount / items.length) * 100}%` }}
-                />
-              </div>
-              <span className="shrink-0 text-xs tabular-nums text-muted-foreground" data-testid="checklist-percentage">
-                {Math.round((completedCount / items.length) * 100)}%
-              </span>
-            </>
-          ) : null}
+          <InlineCompletionProgress
+            completed={completedCount}
+            total={items.length}
+            testIdPrefix="checklist"
+          />
         </div>
         <QuickTooltip label="Add item">
           <button

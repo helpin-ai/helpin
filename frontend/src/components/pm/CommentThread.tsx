@@ -335,6 +335,8 @@ interface CommentThreadProps {
   hideEmptyState?: boolean;
   /** Render only the entity-level composer while retaining the current comment collection. */
   hideThreadList?: boolean;
+  /** Divider-based top-level composer used by task Updates. */
+  composerVariant?: 'default' | 'update';
 }
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -365,7 +367,9 @@ export function CommentThread({
   composerPlacement = 'bottom',
   hideEmptyState = false,
   hideThreadList = false,
+  composerVariant = 'default',
 }: CommentThreadProps) {
+  const usesPmRichText = entityType === 'task' || entityType === 'epic';
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentBody, setEditingCommentBody] = useState('');
@@ -883,7 +887,10 @@ export function CommentThread({
 
   const renderEditForm = (indent: string) => (
     <div className={`mt-1.5 ${indent}`}>
-      <div className="relative rounded-lg border border-border/60">
+      <div className={cn(
+        'relative',
+        composerVariant === 'update' ? '' : 'rounded-lg border border-border/60',
+      )}>
         <QuickTooltip label="Cancel">
           <button
             type="button"
@@ -906,6 +913,8 @@ export function CommentThread({
           uploadedFiles={editPendingAttachments}
           onRemoveUploadedFile={(id) => void removeEditPendingAttachment(id)}
           initialContent={editingCommentBody}
+          variant={composerVariant === 'update' ? 'update' : undefined}
+          contentVariant={usesPmRichText ? 'pm' : 'default'}
           autoFocus
         />
       </div>
@@ -933,7 +942,7 @@ export function CommentThread({
     onSubmit: (body: string) => void | Promise<void>;
     loading: boolean;
     placeholder: string;
-    variant: 'primary' | 'reply';
+    variant: 'primary' | 'reply' | 'update';
     uploadedFiles: PendingFile[];
     onClose?: () => void | Promise<void>;
     showAnchor?: boolean;
@@ -1007,6 +1016,7 @@ export function CommentThread({
           loading={loading}
           placeholder={placeholder}
           variant={variant}
+          contentVariant={usesPmRichText ? 'pm' : 'default'}
           enableEmojiPicker
           teams={teams}
           members={members}
@@ -1078,11 +1088,15 @@ export function CommentThread({
                   )}
                   <span className="text-[11px] text-muted-foreground">{formatRelativeTimeAgo(entry.comment.created_at)}</span>
                 </div>
-                <div className="mt-0.5 text-[13px] leading-relaxed text-foreground/80">
+                <div className={cn(
+                  'mt-0.5',
+                  usesPmRichText ? 'text-foreground/90' : 'text-[13px] leading-relaxed text-foreground/80',
+                )}>
                   <CommentBody
                     body={entry.comment.body}
                     members={members}
                     teams={teams}
+                    variant={usesPmRichText ? 'pm' : 'default'}
                     className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
                   />
                 </div>
@@ -1199,7 +1213,7 @@ export function CommentThread({
 
   return (
     <div className="space-y-3">
-      {!hideTopLevelComposer && composerPlacement === 'top' && comments.length > 0 && !topComposerOpen && (
+      {!hideTopLevelComposer && composerPlacement === 'top' && comments.length > 0 && !topComposerOpen && composerVariant !== 'update' && (
         <button
           type="button"
           onClick={openTopComposer}
@@ -1219,19 +1233,19 @@ export function CommentThread({
           </span>
         </button>
       )}
-      {!hideTopLevelComposer && composerPlacement === 'top' && (comments.length === 0 || topComposerOpen) && (
+      {!hideTopLevelComposer && composerPlacement === 'top' && (comments.length === 0 || topComposerOpen || composerVariant === 'update') && (
         renderCommentComposer({
           editorKey: `top-${topComposerKey}`,
           autoFocus: topComposerKey > 0,
           onSubmit: addComment,
           loading: commentLoading,
           placeholder: 'Write an update…',
-          variant: 'primary',
+          variant: composerVariant === 'update' ? 'update' : 'primary',
           uploadedFiles: pendingAttachments,
-          onClose: comments.length > 0 ? closeTopComposer : undefined,
+          onClose: comments.length > 0 && composerVariant !== 'update' ? closeTopComposer : undefined,
           showAnchor: true,
-          showAvatar: comments.length > 0,
-          className: comments.length > 0 ? 'px-3' : undefined,
+          showAvatar: composerVariant === 'update' || comments.length > 0,
+          className: comments.length > 0 && composerVariant !== 'update' ? 'px-3' : undefined,
         })
       )}
       {/* Empty state */}
@@ -1316,7 +1330,7 @@ export function CommentThread({
                           onSubmit: (body) => addReply(entry.comment.id, body),
                           loading: replyLoading,
                           placeholder: 'Reply...',
-                          variant: 'reply',
+                          variant: composerVariant === 'update' ? 'update' : 'reply',
                           uploadedFiles: replyPendingAttachments.get(entry.comment.id) ?? [],
                           onClose: () => cancelReply(entry.comment.id),
                           className: 'pt-1',

@@ -23,7 +23,7 @@ func TestPMTaskServiceCreateRollsBackTaskAndRelationsWhenChecklistInsertFails(t 
 
 	_, err := env.svc.Create(context.Background(), model.CreateTaskRequest{
 		WorkspaceID: env.wsID, Name: "must roll back", WorkflowID: env.wfID,
-		WorkflowStateID: env.stTodo, OwnerMemberIDs: []string{"member-story-001"},
+		WorkflowStateID: env.stTodo, TeamID: &env.teamID, OwnerMemberIDs: []string{"member-story-001"},
 		ChecklistItems: []model.CreateChecklistItemRequest{{Text: "created first"}, {Text: "force rollback"}},
 	}, env.userID)
 	if err == nil {
@@ -52,7 +52,7 @@ func TestPMTaskServiceUpdateRollsBackCoreAndOwnersWhenLabelInsertFails(t *testin
 	ctx := context.Background()
 	task, err := env.svc.Create(ctx, model.CreateTaskRequest{
 		WorkspaceID: env.wsID, Name: "original", WorkflowID: env.wfID,
-		WorkflowStateID: env.stTodo, OwnerMemberIDs: []string{"member-story-001"},
+		WorkflowStateID: env.stTodo, TeamID: &env.teamID, OwnerMemberIDs: []string{"member-story-001"},
 	}, env.userID)
 	if err != nil {
 		t.Fatalf("create task: %v", err)

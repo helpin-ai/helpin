@@ -2008,7 +2008,7 @@ func epicEditableProperties(forUpdate bool) map[string]any {
 		properties["epic_state_id"] = optionalCreateIDSchema("epic workflow state ID")
 		properties["owner_id"] = optionalCreateIDSchema("workspace user ID")
 		properties["owner_member_id"] = optionalCreateIDSchema("workspace member ID")
-		properties["team_id"] = optionalCreateIDSchema("owning team ID")
+		properties["team_id"] = map[string]any{"type": "string", "minLength": 1, "description": "Owning team ID."}
 		properties["planned_start_date"] = optionalCreateDateSchema("planned start date")
 		properties["deadline"] = optionalCreateDateSchema("epic deadline")
 		properties["planning_repository_id"] = optionalCreateIDSchema("planning repository ID")
@@ -2022,7 +2022,7 @@ func createEpicSchema() map[string]any {
 	return map[string]any{
 		"type":                 "object",
 		"properties":           properties,
-		"required":             []string{"name"},
+		"required":             []string{"name", "team_id"},
 		"additionalProperties": false,
 	}
 }

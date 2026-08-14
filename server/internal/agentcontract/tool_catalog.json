@@ -508,13 +508,14 @@
             "type": "string"
           },
           "team_id": {
-            "description": "Optional owning team ID. Omit this field when it is not configured; do not send an empty string.",
+            "description": "Owning team ID.",
             "minLength": 1,
             "type": "string"
           }
         },
         "required": [
-          "name"
+          "name",
+          "team_id"
         ],
         "type": "object"
       },

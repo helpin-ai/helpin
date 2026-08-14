@@ -40,7 +40,7 @@ function runTriggerSource(run?: AgentRun) {
   return typeof source === 'string' ? source : '';
 }
 
-function normalizeRunAction(value: string) {
+export function normalizeRunAction(value: string) {
   const normalized = value.trim().toLowerCase().replace(/[ -]+/g, '_');
   const aliases: Record<string, string> = {
     approve: 'approved',
@@ -67,7 +67,7 @@ function conciseRunError(value?: string) {
   return truncateText(summary, 96);
 }
 
-function deliveryTargetLabel(value: string) {
+export function deliveryTargetLabel(value: string) {
   const normalized = value.trim().replace(/\.git$/i, '').replace(/\/$/, '');
   if (!normalized) return '';
 

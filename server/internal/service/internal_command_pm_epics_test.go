@@ -25,6 +25,7 @@ type pmEpicCommandTestEnv struct {
 	memberID      string
 	teamA         string
 	teamB         string
+	foreignTeam   string
 	stateID       string
 	labelA        string
 	labelB        string
@@ -47,6 +48,7 @@ func newPMEpicCommandTestEnv(t *testing.T) *pmEpicCommandTestEnv {
 		memberID:     "member-command-epic-member",
 		teamA:        "team-command-epic-a",
 		teamB:        "team-command-epic-b",
+		foreignTeam:  "team-command-epic-foreign-workspace",
 		stateID:      "state-command-epic",
 		labelA:       "label-command-epic-a",
 		labelB:       "label-command-epic-b",
@@ -58,6 +60,7 @@ func newPMEpicCommandTestEnv(t *testing.T) *pmEpicCommandTestEnv {
 	for _, team := range []struct{ id, name string }{{env.teamA, "Command A"}, {env.teamB, "Command B"}} {
 		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, team.id, workspaceID, team.name, now, now)
 	}
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, env.foreignTeam, env.foreignWSID, "Foreign Command Team", now, now)
 	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		"membership-command-epic", env.teamA, env.memberID, "member", now, now)
 	mustExec(t, db, `INSERT INTO pm_epic_workflow_states (id, workspace_id, name, state_type, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -160,6 +163,7 @@ func TestPMCommandListEpicsPagesBeforeBoundedBatchEnrichment(t *testing.T) {
 		if _, err := env.epicService.Create(env.adminContext, model.CreateEpicRequest{
 			WorkspaceID: env.workspaceID,
 			Name:        fmt.Sprintf("Paged Epic %d", i),
+			TeamID:      &env.teamA,
 			Position:    &position,
 		}, env.adminUserID); err != nil {
 			t.Fatalf("create epic %d: %v", i, err)
@@ -209,7 +213,7 @@ func TestPMCommandGetEpicDefaultsTargetAndRejectsCrossWorkspace(t *testing.T) {
 	if !strings.Contains(string(output), created.Epic.ID) {
 		t.Fatalf("output does not contain epic id: %s", output)
 	}
-	foreign, err := env.epicService.Create(context.Background(), model.CreateEpicRequest{WorkspaceID: env.foreignWSID, Name: "Foreign Epic"}, env.adminUserID)
+	foreign, err := env.epicService.Create(context.Background(), model.CreateEpicRequest{WorkspaceID: env.foreignWSID, Name: "Foreign Epic", TeamID: &env.foreignTeam}, env.adminUserID)
 	if err != nil {
 		t.Fatalf("create foreign epic: %v", err)
 	}
@@ -281,9 +285,17 @@ func TestPMCommandCreateEpicValidatesReferencesBeforeWriting(t *testing.T) {
 	if err == nil {
 		t.Fatal("member created epic in an inaccessible destination team")
 	}
-	_, err = env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.create_epic", json.RawMessage(`{"name":"Bad Date","planned_start_date":"08/04/2026"}`))
+	_, err = env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.create_epic", mustJSON(map[string]any{"name": "Bad Date", "team_id": env.teamA, "planned_start_date": "08/04/2026"}))
 	if err == nil || !strings.Contains(err.Error(), "YYYY-MM-DD") {
 		t.Fatalf("malformed date error = %v", err)
+	}
+	_, err = env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.create_epic", json.RawMessage(`{"name":"Missing Team"}`))
+	if err == nil || !strings.Contains(err.Error(), "team_id is required") {
+		t.Fatalf("missing team error = %v", err)
+	}
+	_, err = env.service.Execute(env.adminContext, env.meta("workspace", env.workspaceID, env.adminUserID), "pm.create_epic", json.RawMessage(`{"name":"Unknown Field","archived":true}`))
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("unknown field error = %v", err)
 	}
 }
 
@@ -435,6 +447,7 @@ func TestPMCommandUpdateEpicRejectsCrossWorkspaceIDWithoutMutation(t *testing.T)
 	foreign, err := env.epicService.Create(context.Background(), model.CreateEpicRequest{
 		WorkspaceID: env.foreignWSID,
 		Name:        "Foreign Update Target",
+		TeamID:      &env.foreignTeam,
 	}, env.adminUserID)
 	if err != nil {
 		t.Fatalf("create foreign epic: %v", err)

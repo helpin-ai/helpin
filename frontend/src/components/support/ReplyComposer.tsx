@@ -1129,7 +1129,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     extensions,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[160px] overflow-y-auto text-sm leading-relaxed',
+        class: 'rich-text-soft prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[160px] overflow-y-auto text-sm leading-relaxed',
       },
       handleKeyDown: (_view, event) => {
         const currentShortcut = shortcutStateRef.current;

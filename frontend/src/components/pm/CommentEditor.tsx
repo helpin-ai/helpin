@@ -9,6 +9,7 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { ImageLightbox } from '@/components/pm/ImageLightbox'
 import { EmojiPicker } from '@/components/support/EmojiPicker'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
+import { cn } from '@/lib/utils'
 import {
   getMemberMentionHandle,
   getMentionSuggestions,
@@ -29,8 +30,9 @@ interface CommentEditorProps {
   onCancel?: () => void
   autoFocus?: boolean
   enableEmojiPicker?: boolean
-  /** Visual variant — 'primary' for top-level composers, 'reply' for nested reply composers, 'legacy' (default) keeps the existing filled style. */
-  variant?: 'primary' | 'reply' | 'legacy'
+  /** Visual variant — 'update' is the divider-based task activity composer. */
+  variant?: 'primary' | 'reply' | 'legacy' | 'update'
+  contentVariant?: 'default' | 'pm'
 }
 
 function getFileExtension(filename: string): string {
@@ -84,6 +86,7 @@ export function CommentEditor({
   initialContent,
   onCancel,
   variant = 'legacy',
+  contentVariant = 'default',
   autoFocus = false,
   enableEmojiPicker = false,
 }: CommentEditorProps) {
@@ -174,7 +177,10 @@ export function CommentEditor({
     autofocus: autoFocus,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 text-[13px] bg-transparent',
+        class: cn(
+          'rich-text-soft prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 bg-transparent',
+          contentVariant === 'pm' ? 'pm-rich-text' : 'text-[13px]',
+        ),
       },
       handlePaste: (_view, event) => {
         if (!onImageSelectRef.current) return false
@@ -309,14 +315,16 @@ export function CommentEditor({
   const activePreviewFile = activePreviewIndex >= 0 ? previewFiles[activePreviewIndex] : null
 
   const wrapperClass =
-    variant === 'primary'
+    variant === 'update'
+      ? 'group/update-composer relative bg-transparent pt-2 pb-1.5 [&_.ProseMirror]:min-h-14 [&_.ProseMirror]:px-0 [&_.ProseMirror]:py-2'
+      : variant === 'primary'
       ? 'relative rounded-lg border border-border bg-muted/70 px-3 pt-2 pb-1.5 transition-[color,box-shadow,background-color] focus-within:bg-background focus-within:ring-1 focus-within:ring-ring/40'
       : variant === 'reply'
         ? 'relative rounded-md border border-border/60 bg-background px-2.5 pt-1.5 pb-1 transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
         : 'relative bg-muted/50 px-3 pt-2 pb-1.5 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
 
   return (
-    <div className={wrapperClass}>
+    <div data-variant={variant} className={wrapperClass}>
       {mentionState && mentionState.items.length > 0 ? (
         <div
           className="absolute bottom-full left-0 right-0 z-50 mb-1.5"
@@ -394,7 +402,10 @@ export function CommentEditor({
           })}
         </div>
       )}
-      <div className="flex items-center justify-between gap-2 px-1 pt-1.5 pb-0.5">
+      <div className={cn(
+        'flex items-center justify-between gap-2 px-1 pt-1.5 pb-0.5',
+        variant === 'update' && 'border-t border-border/40 px-0 pt-1.5 transition-colors group-focus-within/update-composer:border-foreground/70',
+      )}>
         <div className="flex items-center gap-0.5">
           {onImageSelect && (
             <QuickTooltip label="Add image">
@@ -445,7 +456,10 @@ export function CommentEditor({
               Cancel
             </button>
           )}
-          <kbd className="hidden items-center gap-1 font-mono text-[15px] leading-none text-muted-foreground sm:inline-flex">
+          <kbd className={cn(
+            'hidden items-center gap-1 leading-none text-muted-foreground sm:inline-flex',
+            variant === 'update' ? 'font-sans text-xs' : 'font-mono text-[15px]',
+          )}>
             <span>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</span>
             <span>{'↵'}</span>
           </kbd>
