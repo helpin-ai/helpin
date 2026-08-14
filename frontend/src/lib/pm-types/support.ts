@@ -978,6 +978,7 @@ export interface LinkTaskRequest {
 }
 
 export interface CreateTaskFromConversationRequest {
+  team_id: string;
   name?: string;
   description?: string;
   task_type?: 'feature' | 'bug' | 'chore';
@@ -985,7 +986,6 @@ export interface CreateTaskFromConversationRequest {
   workflow_state_id?: string;
   epic_id?: string;
   sprint_id?: string;
-  team_id?: string;
   owner_member_id?: string;
   requester_member_id?: string;
   estimate?: number;

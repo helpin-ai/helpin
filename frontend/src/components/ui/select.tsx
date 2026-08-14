@@ -7,8 +7,9 @@ import { cn } from "@/lib/utils"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Tick02Icon, ArrowUp01Icon, ArrowDown01Icon } from "@hugeicons/core-free-icons"
 import { ArrowUpDownIcon } from "@/lib/icons"
+import { pickerTriggerVariants, type PickerTriggerVariant } from "@/components/ui/picker-trigger"
 
-type SelectSize = "sm" | "default"
+type SelectSize = "sm" | "ui" | "default"
 const SelectSizeContext = React.createContext<SelectSize>("default")
 
 function Select({
@@ -30,7 +31,7 @@ function SelectGroup({
   return (
     <SelectPrimitive.Group
       data-slot="select-group"
-      className={cn(size === "sm" ? "scroll-my-0.5 p-0.5" : "scroll-my-1 p-1", className)}
+      className={cn(size === "default" ? "scroll-my-1 p-1" : "scroll-my-0.5 p-0.5", className)}
       {...props}
     />
   )
@@ -45,10 +46,12 @@ function SelectValue({
 function SelectTrigger({
   className,
   size,
+  variant = "default",
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
-  size?: "sm" | "default"
+  size?: SelectSize
+  variant?: PickerTriggerVariant
 }) {
   const ctxSize = React.useContext(SelectSizeContext)
   const resolvedSize = size ?? ctxSize
@@ -56,11 +59,15 @@ function SelectTrigger({
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={resolvedSize}
+      data-variant={variant}
       className={cn(
-        "flex w-fit items-center justify-between rounded-3xl border border-transparent bg-input/50 whitespace-nowrap transition-[color,box-shadow,background-color] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "flex w-fit items-center justify-between whitespace-nowrap aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        pickerTriggerVariants({ variant }),
         resolvedSize === "sm"
           ? "gap-1 px-2 py-1 text-xs data-[size=sm]:h-7 *:data-[slot=select-value]:gap-1 [&_svg:not([class*='size-'])]:size-3.5"
-          : "gap-1.5 px-3 py-2 text-sm data-[size=default]:h-9 *:data-[slot=select-value]:gap-1.5 [&_svg:not([class*='size-'])]:size-4",
+          : resolvedSize === "ui"
+            ? "h-8 gap-1.5 px-2 py-1 text-ui *:data-[slot=select-value]:gap-1.5 [&_svg:not([class*='size-'])]:size-3.5"
+            : "gap-1.5 px-3 py-2 text-sm data-[size=default]:h-9 *:data-[slot=select-value]:gap-1.5 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -130,15 +137,17 @@ function SelectItem({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item>) {
   const size = React.useContext(SelectSizeContext)
-  const isCompact = size === "sm"
+  const isCompact = size !== "default"
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
         "relative flex w-full cursor-pointer items-center rounded-md outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
-        isCompact
+        size === "sm"
           ? "gap-1.5 py-1 pr-6 pl-1.5 text-xs [&_svg:not([class*='size-'])]:size-3.5"
-          : "gap-2 py-1.5 pr-8 pl-2 text-sm [&_svg:not([class*='size-'])]:size-4",
+          : size === "ui"
+            ? "gap-1.5 py-1.5 pr-7 pl-2 text-ui [&_svg:not([class*='size-'])]:size-3.5"
+            : "gap-2 py-1.5 pr-8 pl-2 text-sm [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}

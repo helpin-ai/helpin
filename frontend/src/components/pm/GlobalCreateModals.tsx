@@ -6,7 +6,6 @@ import {
   Loading01Icon,
   UserIcon,
   UserGroupIcon,
-  Cancel01Icon,
   HashtagIcon,
   AttachmentIcon,
   Delete01Icon,
@@ -18,7 +17,6 @@ import {
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
@@ -28,6 +26,18 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
+import {
+  CreateEntityDialogContent,
+  CreateEntityMetadataGrid,
+  CreateEntityMetadataRow,
+  CreateEntityModalBody,
+  CreateEntityModalFooter,
+  CreateEntityModalFrame,
+  CreateEntityModalHeader,
+  CreateEntityModalMain,
+  CreateEntityModalSidebar,
+  CreateEntityTitleInput,
+} from '@/components/pm/CreateEntityModalLayout';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { CreateDocumentDialog } from '@/components/docs/CreateDocumentDialog';
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog';
@@ -68,7 +78,6 @@ import {
 } from '@/components/pm/sprintAutomationPrompt';
 import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui/entity-created-toast';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
-import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 import pdfIcon from '@/assets/attachment/pdf-icon.png';
@@ -299,7 +308,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
         description: description.trim() || undefined,
         attachment_ids: inlineAttachmentIds.length > 0 ? inlineAttachmentIds : undefined,
         epic_state_id: meta.stateId || undefined,
-        team_id: meta.teamId || undefined,
+        team_id: meta.teamId,
         owner_member_id: meta.ownerMemberId || undefined,
         planned_start_date: meta.startDate || undefined,
         deadline: meta.targetDate || undefined,
@@ -412,14 +421,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="max-w-6xl sm:max-w-6xl gap-0 overflow-hidden p-0" showCloseButton={false}>
-        <div className="flex h-[85vh] max-h-[960px] flex-col">
-          <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
-            <span className="text-lg font-semibold">Create epic</span>
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
-              <Cancel01Icon className="h-4 w-4" />
-            </Button>
-          </div>
+      <CreateEntityDialogContent>
+        <CreateEntityModalFrame>
+          <CreateEntityModalHeader title="Create epic" onClose={handleClose} />
 
           {error && (
             <div className="mx-4 mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -427,9 +431,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
-            <div className="min-h-0 overflow-y-auto px-6 py-3">
-              <Input
+          <CreateEntityModalBody>
+            <CreateEntityModalMain>
+              <CreateEntityTitleInput
                 autoFocus
                 aria-label="Epic title"
                 value={name}
@@ -441,28 +445,29 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     editor?.focus();
                   }
                 }}
-                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 placeholder="Epic title"
               />
-              <div className="mt-4">
+              <div>
                 <TiptapEditor
                   content={description}
                   onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
                   placeholder="Add a description (optional)..."
-                  className="border-transparent shadow-none [&_.tiptap]:min-h-[220px]"
+                  variant="divider"
+                  contentVariant="pm"
+                  className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:px-6 [&_.tiptap]:py-4"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-[18px] border-t border-border/60 px-6 py-2.5">
                   <button
                     type="button"
-                    className={getOptionalSectionActionClass(epicExternalLinks.length > 0 ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                    className={getOptionalSectionActionClass(epicExternalLinks.length > 0 ? 'locked' : showExternalLinks ? 'open' : 'available', 'borderless')}
                     disabled={epicExternalLinks.length > 0}
                     onClick={() => setShowExternalLinks((v) => !v)}
                   >
-                    <Link01Icon className="h-3 w-3" />
+                    <Link01Icon className="h-[15px] w-[15px]" />
                     External Links
                     {epicExternalLinks.length > 0 && (
                       <span className="text-[10px] opacity-70">({epicExternalLinks.length})</span>
@@ -470,11 +475,11 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   </button>
                   <button
                     type="button"
-                    className={getOptionalSectionActionClass(pendingFiles.length > 0 ? 'locked' : showAttachments ? 'open' : 'available')}
+                    className={getOptionalSectionActionClass(pendingFiles.length > 0 ? 'locked' : showAttachments ? 'open' : 'available', 'borderless')}
                     disabled={pendingFiles.length > 0}
                     onClick={() => setShowAttachments((value) => !value)}
                   >
-                    <AttachmentIcon className="h-3 w-3" />
+                    <AttachmentIcon className="h-[15px] w-[15px]" />
                     Attach Files
                     {pendingFiles.length > 0 && (
                       <span className="text-[10px] opacity-70">({pendingFiles.length})</span>
@@ -482,8 +487,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   </button>
                 </div>
                 {showExternalLinks && (
-                  <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
-                    <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+                  <div className="shrink-0 border-t border-border/60 bg-transparent">
+                    <div className="flex items-center justify-between border-b border-border/40 px-6 py-2.5">
                       <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                         <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                         External Links
@@ -492,7 +497,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                         )}
                       </div>
                     </div>
-                    <div className="px-4 py-2 space-y-1">
+                    <div className="space-y-1 px-6 py-3">
                       {epicExternalLinks.map((link, idx) => (
                         <div key={idx} className="group flex items-center gap-2">
                           <ExternalLinkIcon className="h-3 w-3 text-muted-foreground/40 shrink-0" />
@@ -529,8 +534,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   </div>
                 )}
                 {showAttachments && (
-                  <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
-                    <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
+                  <div className="shrink-0 border-t border-border/60 bg-transparent">
+                    <div className="flex items-center justify-between border-b border-border/40 px-6 py-2.5">
                       <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                         <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
                         Attachments
@@ -539,7 +544,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                         )}
                       </div>
                     </div>
-                    <div className="space-y-2 px-4 py-2">
+                    <div className="space-y-2 px-6 py-3">
                       {pendingFiles.length > 0 && (
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                           {pendingFiles.map((file, idx) => {
@@ -612,7 +617,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     </div>
                   </div>
                 )}
-                <div className="mt-3">
+                <div>
                   <AgentPickerCard
                     workspaceId={workspaceId}
                     runnableTarget="epic"
@@ -620,20 +625,17 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     value={assignedAgentId}
                     onChange={setAssignedAgentId}
                     hasRepoContext={!showPlanningRepository || Boolean(meta.planningRepositoryId)}
+                    variant="inline"
                   />
                 </div>
               </div>
-            </div>
+            </CreateEntityModalMain>
 
-            <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-4">
-              <p className="mb-4 text-xs text-muted-foreground">
-                Epics are collections of tasks that together represent a major initiative or feature.
-              </p>
-              <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Team *</span>
-                <Select value={meta.teamId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, teamId: v === '__none__' ? '' : v }))}>
-                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
+            <CreateEntityModalSidebar description="Epics are collections of tasks that together represent a major initiative or feature.">
+              <CreateEntityMetadataGrid>
+                <CreateEntityMetadataRow icon={UserGroupIcon} label="Team *">
+                <Select size="ui" value={meta.teamId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, teamId: v === '__none__' ? '' : v }))}>
+                  <SelectTrigger variant="ghost" className="w-full px-1.5">
                     <SelectValue placeholder="Select team" />
                   </SelectTrigger>
                   <SelectContent>
@@ -642,9 +644,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     ))}
                   </SelectContent>
                 </Select>
+                </CreateEntityMetadataRow>
 
-                <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Owner</span>
+                <CreateEntityMetadataRow icon={UserIcon} label="Owner">
                 <MemberPickerPopover
                   value={meta.ownerMemberId || '__none__'}
                   members={assignableMembers}
@@ -671,11 +673,11 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     );
                   }}
                 />
+                </CreateEntityMetadataRow>
 
-                <HashtagIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">State</span>
-                <Select value={meta.stateId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, stateId: v === '__none__' ? '' : v }))}>
-                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
+                <CreateEntityMetadataRow icon={HashtagIcon} label="State">
+                <Select size="ui" value={meta.stateId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, stateId: v === '__none__' ? '' : v }))}>
+                  <SelectTrigger variant="ghost" className="w-full px-1.5">
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent>
@@ -685,9 +687,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     ))}
                   </SelectContent>
                 </Select>
+                </CreateEntityMetadataRow>
 
-                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Start date</span>
+                <CreateEntityMetadataRow icon={Calendar03Icon} label="Start date">
                 <DatePicker
                   value={meta.startDate}
                   onChange={(v) => setMeta((m) => ({ ...m, startDate: v }))}
@@ -702,11 +704,11 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   }}
                   placeholder="None"
                   hideIcon
-                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                  className="h-8 border-0 bg-transparent px-1.5 text-ui shadow-none hover:bg-accent"
                 />
+                </CreateEntityMetadataRow>
 
-                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Target date</span>
+                <CreateEntityMetadataRow icon={Calendar03Icon} label="Target date">
                 <DatePicker
                   value={meta.startDate}
                   onChange={(v) => setMeta((m) => ({ ...m, startDate: v }))}
@@ -723,17 +725,15 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
-                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                  className="h-8 border-0 bg-transparent px-1.5 text-ui shadow-none hover:bg-accent"
                 />
+                </CreateEntityMetadataRow>
 
                 {showPlanningRepository ? (
                   <>
                     <Separator className="col-span-3 my-1" />
 
-                    <SourceCodeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                    <QuickTooltip label={CODE_REPO_TOOLTIP} side="left">
-                      <span className="text-xs text-muted-foreground self-center">Code repo</span>
-                    </QuickTooltip>
+                    <CreateEntityMetadataRow icon={SourceCodeIcon} label="Code repo" tooltip={CODE_REPO_TOOLTIP}>
                     <SidebarPopoverSelect
                       value={meta.planningRepositoryId || '__none__'}
                       options={[
@@ -747,21 +747,22 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                         </span>
                       )}
                     />
+                    </CreateEntityMetadataRow>
                   </>
                 ) : null}
-              </div>
-            </aside>
-          </div>
+              </CreateEntityMetadataGrid>
+            </CreateEntityModalSidebar>
+          </CreateEntityModalBody>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button size="sm" onClick={create} disabled={!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0}>
+          <CreateEntityModalFooter>
+            <Button onClick={create} disabled={!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : assignedAgentId ? 'Create & run agent' : 'Create Epic'}
             </Button>
-          </div>
-        </div>
-      </DialogContent>
+          </CreateEntityModalFooter>
+        </CreateEntityModalFrame>
+      </CreateEntityDialogContent>
       <UpgradeRequiredDialog
         open={upgradeDialogReason !== null}
         onOpenChange={(open) => {
@@ -1044,14 +1045,9 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="max-w-4xl sm:max-w-4xl gap-0 overflow-hidden p-0" showCloseButton={false}>
-        <div className="flex h-[80vh] flex-col">
-          <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
-            <span className="text-lg font-semibold">Create sprint</span>
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
-              <Cancel01Icon className="h-4 w-4" />
-            </Button>
-          </div>
+      <CreateEntityDialogContent>
+        <CreateEntityModalFrame>
+          <CreateEntityModalHeader title="Create sprint" onClose={handleClose} />
 
           {error && (
             <div className="mx-4 mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -1059,9 +1055,9 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
-            <div className="min-h-0 overflow-y-auto px-8 py-5">
-              <Input
+          <CreateEntityModalBody>
+            <CreateEntityModalMain>
+              <CreateEntityTitleInput
                 autoFocus
                 aria-label="Sprint title"
                 value={form.name}
@@ -1073,32 +1069,28 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                     editor?.focus();
                   }
                 }}
-                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 placeholder="Sprint title"
               />
-              <div className="mt-4">
+              <div>
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
                   placeholder="Add a description (optional)..."
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
-                  className="border-transparent shadow-none [&_.tiptap]:min-h-[180px]"
+                  variant="divider"
+                  className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:px-6 [&_.tiptap]:py-4"
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
               </div>
-            </div>
+            </CreateEntityModalMain>
 
-            <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
-              <p className="mb-4 text-xs text-muted-foreground">
-                Sprints are time-boxed periods for planning and tracking work.
-              </p>
-              <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Team *</span>
-                <Select value={form.teamId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, teamId: v === '__none__' ? '' : v }))}>
-                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
+            <CreateEntityModalSidebar description="Sprints are time-boxed periods for planning and tracking work.">
+              <CreateEntityMetadataGrid>
+                <CreateEntityMetadataRow icon={UserGroupIcon} label="Team *">
+                <Select size="ui" value={form.teamId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, teamId: v === '__none__' ? '' : v }))}>
+                  <SelectTrigger variant="ghost" className="w-full px-1.5">
                     <SelectValue placeholder="Select team" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1107,9 +1099,9 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                     ))}
                   </SelectContent>
                 </Select>
+                </CreateEntityMetadataRow>
 
-                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Start date</span>
+                <CreateEntityMetadataRow icon={Calendar03Icon} label="Start date">
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
@@ -1124,11 +1116,11 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   }}
                   placeholder="None"
                   hideIcon
-                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                  className="h-8 border-0 bg-transparent px-1.5 text-ui shadow-none hover:bg-accent"
                 />
+                </CreateEntityMetadataRow>
 
-                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">End date</span>
+                <CreateEntityMetadataRow icon={Calendar03Icon} label="End date">
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
@@ -1145,21 +1137,22 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
-                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                  className="h-8 border-0 bg-transparent px-1.5 text-ui shadow-none hover:bg-accent"
                 />
-              </div>
-            </aside>
-          </div>
+                </CreateEntityMetadataRow>
+              </CreateEntityMetadataGrid>
+            </CreateEntityModalSidebar>
+          </CreateEntityModalBody>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting || descriptionPendingUploads > 0}>
+          <CreateEntityModalFooter>
+            <Button onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Sprint'}
             </Button>
-          </div>
-        </div>
-      </DialogContent>
+          </CreateEntityModalFooter>
+        </CreateEntityModalFrame>
+      </CreateEntityDialogContent>
     </Dialog>
   );
 }
@@ -1194,7 +1187,7 @@ function MultiSelectPopover({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors hover:bg-accent cursor-pointer truncate"
+          className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-ui transition-colors hover:bg-accent cursor-pointer truncate"
         >
           {selectedNames.length > 0 ? selectedNames.join(', ') : <span className="text-muted-foreground">{placeholder}</span>}
         </button>
@@ -1205,7 +1198,7 @@ function MultiSelectPopover({
             <button
               key={item.id}
               type="button"
-              className={`flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs cursor-pointer transition-colors ${
+              className={`flex items-center gap-2 rounded-sm px-2 py-1.5 text-ui cursor-pointer transition-colors ${
                 selected.includes(item.id) ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               }`}
               onClick={() => toggle(item.id)}
@@ -1219,7 +1212,7 @@ function MultiSelectPopover({
             </button>
           ))}
           {items.length === 0 && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">No options</p>
+            <p className="px-2 py-1.5 text-ui text-muted-foreground">No options</p>
           )}
         </div>
       </PopoverContent>
@@ -1305,14 +1298,9 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="max-w-4xl sm:max-w-4xl gap-0 overflow-hidden p-0" showCloseButton={false}>
-        <div className="flex h-[80vh] flex-col">
-          <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
-            <span className="text-lg font-semibold">Create objective</span>
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
-              <Cancel01Icon className="h-4 w-4" />
-            </Button>
-          </div>
+      <CreateEntityDialogContent>
+        <CreateEntityModalFrame>
+          <CreateEntityModalHeader title="Create objective" onClose={handleClose} />
 
           {error && (
             <div className="mx-4 mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -1320,9 +1308,9 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
-            <div className="min-h-0 overflow-y-auto px-8 py-5">
-              <Input
+          <CreateEntityModalBody>
+            <CreateEntityModalMain>
+              <CreateEntityTitleInput
                 autoFocus
                 aria-label="Objective title"
                 value={form.name}
@@ -1334,17 +1322,17 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                     editor?.focus();
                   }
                 }}
-                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 placeholder="Objective title"
               />
-              <div className="mt-4">
+              <div>
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => setForm((f) => ({ ...f, description: html }))}
                   placeholder="Add a description (optional)..."
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
-                  className="border-transparent shadow-none"
+                  variant="divider"
+                  className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:px-6 [&_.tiptap]:py-4"
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
@@ -1386,17 +1374,13 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   </button>
                 </div>
               </div> */}
-            </div>
+            </CreateEntityModalMain>
 
-            <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
-              <p className="mb-4 text-xs text-muted-foreground">
-                Objectives define high-level goals. Tactical objectives track linked Epics; Strategic objectives combine Key Results and Epics.
-              </p>
-              <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
-                <HashtagIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">State</span>
-                <Select value={form.state} onValueChange={(v) => setForm((f) => ({ ...f, state: v as ObjectiveState }))}>
-                  <SelectTrigger className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent">
+            <CreateEntityModalSidebar description="Objectives define high-level goals. Tactical objectives track linked Epics; Strategic objectives combine Key Results and Epics.">
+              <CreateEntityMetadataGrid>
+                <CreateEntityMetadataRow icon={HashtagIcon} label="State">
+                <Select size="ui" value={form.state} onValueChange={(v) => setForm((f) => ({ ...f, state: v as ObjectiveState }))}>
+                  <SelectTrigger variant="ghost" className="w-full px-1.5">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1405,18 +1389,18 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                     ))}
                   </SelectContent>
                 </Select>
+                </CreateEntityMetadataRow>
 
-                <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Teams</span>
+                <CreateEntityMetadataRow icon={UserGroupIcon} label="Teams">
                 <MultiSelectPopover
                   items={teams.map((t) => ({ id: t.id, name: t.name }))}
                   selected={form.teamIds}
                   onChange={(ids) => setForm((f) => ({ ...f, teamIds: ids }))}
                   placeholder="Select teams"
                 />
+                </CreateEntityMetadataRow>
 
-                <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Owners</span>
+                <CreateEntityMetadataRow icon={UserIcon} label="Owners">
                 <MultiMemberPickerPopover
                   values={form.ownerMemberIds}
                   members={assignableMembers}
@@ -1454,9 +1438,9 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   }}
                   contentClassName="w-[260px]"
                 />
+                </CreateEntityMetadataRow>
 
-                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Start date</span>
+                <CreateEntityMetadataRow icon={Calendar03Icon} label="Start date">
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
@@ -1471,11 +1455,11 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   }}
                   placeholder="None"
                   hideIcon
-                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                  className="h-8 border-0 bg-transparent px-1.5 text-ui shadow-none hover:bg-accent"
                 />
+                </CreateEntityMetadataRow>
 
-                <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                <span className="text-xs text-muted-foreground self-center">Target date</span>
+                <CreateEntityMetadataRow icon={Calendar03Icon} label="Target date">
                 <DatePicker
                   value={form.startDate}
                   onChange={(v) => setForm((f) => ({ ...f, startDate: v }))}
@@ -1492,21 +1476,22 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
                   defaultActiveField="linked"
                   placeholder="None"
                   hideIcon
-                  className="h-8 border-0 bg-transparent px-1.5 shadow-none text-xs hover:bg-accent"
+                  className="h-8 border-0 bg-transparent px-1.5 text-ui shadow-none hover:bg-accent"
                 />
-              </div>
-            </aside>
-          </div>
+                </CreateEntityMetadataRow>
+              </CreateEntityMetadataGrid>
+            </CreateEntityModalSidebar>
+          </CreateEntityModalBody>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting || descriptionPendingUploads > 0}>
+          <CreateEntityModalFooter>
+            <Button onClick={create} disabled={!form.name.trim() || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Objective'}
             </Button>
-          </div>
-        </div>
-      </DialogContent>
+          </CreateEntityModalFooter>
+        </CreateEntityModalFrame>
+      </CreateEntityDialogContent>
     </Dialog>
   );
 }

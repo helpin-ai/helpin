@@ -450,6 +450,7 @@ func TestPMEpicServiceCreateSupportsWorkspaceMemberOwners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add pending epic owner: %v", err)
 	}
+	teamID := "team-epic-identity"
 
 	svc := NewPMEpicService(
 		epicRepo,
@@ -466,6 +467,7 @@ func TestPMEpicServiceCreateSupportsWorkspaceMemberOwners(t *testing.T) {
 	epic, err := svc.Create(ctx, model.CreateEpicRequest{
 		WorkspaceID:   "ws-1",
 		Name:          "Epic with pending owner",
+		TeamID:        &teamID,
 		OwnerMemberID: &pendingOwner.ID,
 	}, actor.ID)
 	if err != nil {

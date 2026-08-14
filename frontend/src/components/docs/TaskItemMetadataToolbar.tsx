@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { Calendar03Icon, LinkSquare01Icon, Loading01Icon, UserAdd01Icon } from '@/lib/icons'
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams'
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -38,8 +39,10 @@ export function TaskItemMetadataToolbar({ editor }: { editor: Editor }) {
   const navigate = useNavigate()
   const location = useLocation()
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
+  const { teams, loading: teamsLoading } = useAccessibleTeams(workspace?.id || '')
   const { members } = useAssignableWorkspaceMembers(workspace?.id)
   const [metadata, setMetadata] = useState<TaskMetadata | null>(() => currentTaskMetadata(editor))
+  const [teamId, setTeamId] = useState('')
   const [creating, setCreating] = useState(false)
 
   useEffect(() => {
@@ -51,6 +54,11 @@ export function TaskItemMetadataToolbar({ editor }: { editor: Editor }) {
       editor.off('transaction', update)
     }
   }, [editor])
+
+  useEffect(() => {
+    if (teams.some((team) => team.id === teamId)) return
+    setTeamId(teams[0]?.id || '')
+  }, [teamId, teams])
 
   if (!editor.isEditable || !metadata) return null
 
@@ -71,11 +79,16 @@ export function TaskItemMetadataToolbar({ editor }: { editor: Editor }) {
       openTaskRoute(navigate as never, location as never, workspace.slug, metadata.pmTaskId)
       return
     }
+    if (!teamId) {
+      toast.error('Select a team before creating the task')
+      return
+    }
     const name = metadata.text || 'Untitled task'
     setCreating(true)
     const { data, error } = await pmTaskService.create({
       workspace_id: workspace.id,
       name,
+      team_id: teamId,
       owner_member_ids: metadata.assigneeId ? [metadata.assigneeId] : undefined,
       deadline: metadata.dueDate || undefined,
     })
@@ -97,6 +110,24 @@ export function TaskItemMetadataToolbar({ editor }: { editor: Editor }) {
 
   return (
     <div className="mx-6 mt-2 flex flex-wrap items-center gap-2 rounded-md border border-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-sm">
+      {!metadata.pmTaskId && (
+        <label className="flex min-w-[140px] items-center gap-1.5">
+          <span className="text-muted-foreground">Team</span>
+          <select
+            value={teamId}
+            onChange={(event) => setTeamId(event.target.value)}
+            disabled={teamsLoading}
+            className="h-7 min-w-0 flex-1 bg-transparent outline-none"
+          >
+            <option value="">Select team</option>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="flex min-w-[160px] items-center gap-1.5">
         <UserAdd01Icon className="h-3.5 w-3.5 text-muted-foreground" />
         <select
@@ -131,7 +162,7 @@ export function TaskItemMetadataToolbar({ editor }: { editor: Editor }) {
       <button
         type="button"
         onClick={() => void createOrOpenTask()}
-        disabled={creating || !workspace?.id}
+        disabled={creating || !workspace?.id || (!metadata.pmTaskId && !teamId)}
         className="ml-auto inline-flex h-7 items-center gap-1.5 rounded border border-border bg-background px-2 font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
       >
         {creating ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <LinkSquare01Icon className="h-3.5 w-3.5" />}

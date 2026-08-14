@@ -41,7 +41,7 @@ interface MultiMemberPickerPopoverProps extends BaseMemberPickerProps {
 }
 
 const DEFAULT_TRIGGER_CLASSNAME =
-  'inline-flex max-w-full min-w-0 items-center overflow-hidden rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer';
+  'inline-flex max-w-full min-w-0 items-center overflow-hidden rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer';
 
 function TooltipWrappedTrigger({
   label,
@@ -89,9 +89,9 @@ function MemberList({
 }) {
   return (
     <Command>
-      <CommandInput placeholder="Search members..." className="h-8 text-xs" />
+      <CommandInput placeholder="Search members..." className="h-8 text-ui" />
       <CommandList>
-        <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+        <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">
           No members found
         </CommandEmpty>
         <CommandGroup>
@@ -100,7 +100,7 @@ function MemberList({
               value={noneLabel}
               onSelect={() => onToggle('__none__')}
               className={cn(
-                'flex min-w-0 items-center gap-2 text-xs',
+                'flex min-w-0 items-center gap-2 text-ui',
                 selectedValues.includes('__none__') && 'font-medium text-foreground',
               )}
             >
@@ -123,7 +123,7 @@ function MemberList({
                 value={optionValue}
                 onSelect={() => onToggle(memberId)}
                 className={cn(
-                  'flex min-w-0 items-center gap-2 text-xs',
+                  'flex min-w-0 items-center gap-2 text-ui',
                   isPartial && 'italic text-muted-foreground',
                 )}
               >
