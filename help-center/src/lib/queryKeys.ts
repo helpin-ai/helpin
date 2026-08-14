@@ -9,6 +9,15 @@ export const queryKeys = {
   spaces: {
     navigation: (subdomain: string, locale: string, spaceSlug: string) =>
       ['spaces', subdomain, locale, spaceSlug, 'navigation'] as const,
+    apiReferences: (subdomain: string, locale: string, spaceSlug: string) =>
+      ['spaces', subdomain, locale, spaceSlug, 'apiReferences'] as const,
+    apiReference: (
+      subdomain: string,
+      locale: string,
+      spaceSlug: string,
+      referenceSlug: string,
+    ) =>
+      ['spaces', subdomain, locale, spaceSlug, 'apiReferences', referenceSlug] as const,
   },
   collections: {
     bySlug: (subdomain: string, locale: string, collectionSlug: string) =>

@@ -2,13 +2,14 @@ import type { NavItem, Space } from '@/lib/types'
 import { buildArticleKey } from '@/lib/articleKey'
 import { buildCollectionKey } from '@/lib/collectionKey'
 
-export type LocaleRouteKind = 'home' | 'space' | 'collection' | 'article' | 'search'
+export type LocaleRouteKind = 'home' | 'space' | 'collection' | 'article' | 'api_reference' | 'search'
 
 export interface LocaleRouteState {
   kind: LocaleRouteKind
   spaceId?: string
   collectionId?: string
   articleId?: string
+  apiReferenceSlug?: string
   searchQuery?: string
 }
 
@@ -108,6 +109,16 @@ export function buildCanonicalSpacePath(
   return multilingualEnabled
     ? buildLocaleSpacePath(locale, spaceSlug)
     : `/${spaceSlug}`
+}
+
+export function buildCanonicalAPIReferencePath(
+  multilingualEnabled: boolean,
+  locale: string,
+  spaceSlug: string,
+  referenceSlug: string,
+) {
+  const path = `/${spaceSlug}/api/${referenceSlug}`
+  return multilingualEnabled ? `/${locale}${path}` : path
 }
 
 export function buildCanonicalArticlePath(
@@ -226,6 +237,26 @@ export function resolveLocaleSwitchPath({
           )
         : buildCanonicalHomePath(multilingualEnabled, defaultLocale)
     }
+    case 'api_reference': {
+      const targetSpace = findSpaceByID(targetSpaces, current.spaceId)
+      if (targetSpace && current.apiReferenceSlug) {
+        return buildCanonicalAPIReferencePath(
+          multilingualEnabled,
+          targetLocale,
+          targetSpace.slug,
+          current.apiReferenceSlug,
+        )
+      }
+      const fallbackSpace = findSpaceByID(fallbackSpaces, current.spaceId)
+      return fallbackSpace && current.apiReferenceSlug
+        ? buildCanonicalAPIReferencePath(
+            multilingualEnabled,
+            defaultLocale,
+            fallbackSpace.slug,
+            current.apiReferenceSlug,
+          )
+        : buildCanonicalHomePath(multilingualEnabled, defaultLocale)
+    }
     case 'collection': {
       const targetCollection = findCollectionByID(targetNavigation, current.collectionId)
       if (targetCollection) {
@@ -322,6 +353,17 @@ export function resolveExactLocalePath({
             multilingualEnabled,
             targetLocale,
             targetSpace.slug,
+          )
+        : null
+    }
+    case 'api_reference': {
+      const targetSpace = findSpaceByID(targetSpaces, current.spaceId)
+      return targetSpace && current.apiReferenceSlug
+        ? buildCanonicalAPIReferencePath(
+            multilingualEnabled,
+            targetLocale,
+            targetSpace.slug,
+            current.apiReferenceSlug,
           )
         : null
     }

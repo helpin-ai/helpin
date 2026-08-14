@@ -235,6 +235,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/bootstrap", h.Docs.PublicGetBootstrap)
 			r.Get("/spaces", h.Docs.PublicGetSpaces)
 			r.Get("/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
+			r.Get("/spaces/{spaceSlug}/api-references", h.Docs.PublicListAPIReferences)
+			r.Get("/spaces/{spaceSlug}/api-references/{referenceSlug}", h.Docs.PublicGetAPIReference)
 			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/spaces/{spaceSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/search", h.Docs.PublicSearchArticles)
@@ -313,6 +315,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/bootstrap", h.Docs.PublicGetBootstrap)
 			r.Get("/{locale}/spaces", h.Docs.PublicGetSpaces)
 			r.Get("/{locale}/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
+			r.Get("/{locale}/spaces/{spaceSlug}/api-references", h.Docs.PublicListAPIReferences)
+			r.Get("/{locale}/spaces/{spaceSlug}/api-references/{referenceSlug}", h.Docs.PublicGetAPIReference)
 			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}", h.Docs.PublicGetCollectionPage)
 			r.Get("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/{locale}/spaces/{spaceSlug}/collections/{collectionSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
@@ -328,6 +332,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 			r.Get("/spaces", h.Docs.PublicGetSpaces)
 			r.Get("/spaces/{spaceSlug}/navigation", h.Docs.PublicGetSpaceNavigation)
+			r.Get("/spaces/{spaceSlug}/api-references", h.Docs.PublicListAPIReferences)
+			r.Get("/spaces/{spaceSlug}/api-references/{referenceSlug}", h.Docs.PublicGetAPIReference)
 			r.Get("/spaces/{spaceSlug}/articles/{articleSlug}", h.Docs.PublicGetSpaceArticle)
 			r.Post("/spaces/{spaceSlug}/articles/{articleSlug}/feedback", h.Docs.PublicSubmitFeedback)
 			r.Get("/search", h.Docs.PublicSearchArticles)
@@ -1290,6 +1296,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}/delete-impact", h.Docs.GetSpaceDeleteImpact)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Delete("/spaces/{spaceId}", h.Docs.DeleteSpace)
 				r.With(requirePerm(authorization.PermDocsAdmin)).Post("/spaces/{spaceId}/restore", h.Docs.RestoreSpace)
+
+				// API references — external-space OpenAPI resources.
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces/{spaceId}/api-references", h.Docs.ListAPIReferences)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/spaces/{spaceId}/api-references", h.Docs.CreateAPIReference)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/api-references/{referenceId}", h.Docs.GetAPIReference)
+				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/api-references/{referenceId}", h.Docs.UpdateAPIReference)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/api-references/{referenceId}/sync", h.Docs.SyncAPIReference)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/api-references/{referenceId}/publish", h.Docs.PublishAPIReference)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/api-references/{referenceId}/unpublish", h.Docs.UnpublishAPIReference)
+				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/api-references/{referenceId}", h.Docs.DeleteAPIReference)
 
 				// Collections — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/collections", h.Docs.ListAllCollections)

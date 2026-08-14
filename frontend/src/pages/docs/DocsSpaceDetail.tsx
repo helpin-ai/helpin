@@ -32,6 +32,7 @@ import { CollectionCardGrid } from '@/pages/docs/spaceDetail/CollectionCardGrid'
 import { EmptyNodeState } from '@/pages/docs/spaceDetail/EmptyNodeState'
 import { UncategorizedSection } from '@/pages/docs/spaceDetail/UncategorizedSection'
 import { NodeSkeleton } from '@/pages/docs/spaceDetail/NodeSkeleton'
+import { APIReferenceSection } from '@/components/docs/APIReferenceSection'
 import {
   countDirectDocs,
   directChildrenOfView,
@@ -252,6 +253,10 @@ export function DocsSpaceDetail() {
         <NodeSkeleton />
       ) : (
         <>
+          {view.kind === 'space_root' && space.type === 'external_capable' && (
+            <APIReferenceSection wsId={wsId} spaceId={spaceId} canEdit={canEditDocs} />
+          )}
+
           <CollectionCardGrid
             title={view.kind === 'space_root' ? 'Collections' : 'Sub-collections'}
             nodes={childNodes}
