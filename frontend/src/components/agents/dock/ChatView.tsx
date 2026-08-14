@@ -14,10 +14,11 @@ import { ExecutionStrip } from './ExecutionStrip';
 import { PendingInteractionCard } from './PendingInteractionCard';
 import { ApprovalAttentionBanner } from './ApprovalAttentionBanner';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
-import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
 import type { AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
 import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
-import { deriveLiveStatusLabel, ScrollToLatestButton } from '@/components/agents/transcript';
+import { ScrollToLatestButton } from '@/components/agents/transcript';
+import { AgentLiveStatus } from './AgentLiveStatus';
+import { resolveAgentLiveProgress } from './agentProgress';
 import { planSummaryToRunPlan } from './planSummary';
 import type { AgentRunStreamState } from './useAgentRunStream';
 import { mergeMessagePages, mergePersistedChatMessages } from './dockChatTimeline';
@@ -88,6 +89,7 @@ export function ChatView({
     else setLocalValue(next);
   }, [onDraftChange]);
   const [sending, setSending] = useState(false);
+  const [launchStartedAt, setLaunchStartedAt] = useState<string | undefined>();
   const [stopping, setStopping] = useState(false);
   const [pendingEcho, setPendingEcho] = useState<{ id: string; content: string } | null>(null);
   const [persistedMessages, setPersistedMessages] = useState<AgentRunMessage[]>([]);
@@ -330,6 +332,7 @@ export function ChatView({
 	  const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
+      setLaunchStartedAt(new Date().toISOString());
       setSendError(null);
       setPendingEcho({ id: clientMessageId, content });
       autoFollowRef.current = true;
@@ -418,21 +421,25 @@ export function ChatView({
     [chatId, clearPendingInteraction, refetch, refreshDetail, workspaceId],
   );
 
-  // One-line live status under the transcript: prefer the running tool's
-  // label, hidden while assistant text is actively streaming (the text itself
-  // is the status then).
-  const liveStatusLabel = useMemo(() => {
-    if (sending) return 'Thinking…';
-    if (!runActive || run?.status === 'paused') return null;
-    const stream = transformed?.stream ?? null;
-    const lastLive = stream?.live_turn_segments[stream.live_turn_segments.length - 1];
-    const assistantStreaming =
-      lastLive?.kind === 'assistant_message'
-      && lastLive.assistant_message.status === 'streaming'
-      && lastLive.assistant_message.content.trim().length > 0;
-    if (assistantStreaming) return null;
-    return deriveLiveStatusLabel(stream, run?.status);
-  }, [run?.status, runActive, sending, transformed]);
+  const activeSubAgentName = useMemo(() => {
+    for (const plan of plans) {
+      for (const [stepIndex, runId] of Object.entries(plan.run_ids_by_step ?? {})) {
+        const childRun = plan.runs?.find((candidate) => candidate.id === runId);
+        if (!childRun || !ACTIVE_RUN_STATUSES.has(childRun.status)) continue;
+        return plan.steps[Number(stepIndex)]?.agent_name?.trim() || 'another agent';
+      }
+    }
+    return null;
+  }, [plans]);
+
+  const liveProgress = useMemo(() => resolveAgentLiveProgress({
+    run,
+    stream: transformed?.stream ?? null,
+    currentPlan,
+    activeSubAgentName,
+    sending,
+    localStartedAt: launchStartedAt,
+  }), [activeSubAgentName, currentPlan, launchStartedAt, run, sending, transformed]);
 
   const runsById = useMemo(() => {
     const map: Record<string, AgentRun> = {};
@@ -565,9 +572,6 @@ export function ChatView({
             </div>
           </div>
         )}
-        {liveStatusLabel && (
-          <StreamingStatusText className="text-xs">{liveStatusLabel}</StreamingStatusText>
-        )}
         {effectiveInteraction && dockConfirm && (
           <DockPlanConfirmCard
             payload={dockConfirm}
@@ -598,49 +602,54 @@ export function ChatView({
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}
-      {composer.visible && (
-        <div className="border-t border-border/60 p-2">
-          <DockInput
-            mode="conversation"
-            value={value}
-            onChange={setValue}
-            onSubmit={() => void submit()}
-            pageContext={effectivePageContext}
-            contextOptions={requiredPageContext ? [] : scopeOptions}
-            activeContextKey={activeScopeKey}
-            onContextKeyChange={(key) => {
-              setContextCleared(false);
-              setActiveScopeKey(key);
-            }}
-            onClearContext={requiredPageContext ? undefined : () => setContextCleared(true)}
-            workspaceId={workspaceId}
-            references={references}
-            onAddReference={(reference) => {
-              setReferences((current) => {
-                if (current.length >= 10) {
-                  toast.error('You can attach up to 10 references.');
-                  return current;
-                }
-                const exists = current.some(
-                  (item) => item.entity_type === reference.entity_type && item.entity_id === reference.entity_id,
-                );
-                return exists ? current : [...current, reference];
-              });
-            }}
-            onRemoveReference={(reference) => {
-              setReferences((current) => current.filter(
-                (item) => item.entity_type !== reference.entity_type || item.entity_id !== reference.entity_id,
-              ));
-            }}
-            busy={sending}
-            disabled={!composer.enabled}
-            autoFocus
-            textareaRef={textareaRef}
-            onStop={canStop ? () => void handleStop() : undefined}
-            stopping={cancellationPending}
-            placeholder={cancellationPending ? 'Stopping agent…' : undefined}
-            showShortcutHint={showComposerShortcutHint}
-          />
+      {(liveProgress || composer.visible) && (
+        <div className="border-t border-border/60">
+          {liveProgress ? <AgentLiveStatus progress={liveProgress} /> : null}
+          {composer.visible ? (
+            <div className="p-2 pt-0.5">
+              <DockInput
+                mode="conversation"
+                value={value}
+                onChange={setValue}
+                onSubmit={() => void submit()}
+                pageContext={effectivePageContext}
+                contextOptions={requiredPageContext ? [] : scopeOptions}
+                activeContextKey={activeScopeKey}
+                onContextKeyChange={(key) => {
+                  setContextCleared(false);
+                  setActiveScopeKey(key);
+                }}
+                onClearContext={requiredPageContext ? undefined : () => setContextCleared(true)}
+                workspaceId={workspaceId}
+                references={references}
+                onAddReference={(reference) => {
+                  setReferences((current) => {
+                    if (current.length >= 10) {
+                      toast.error('You can attach up to 10 references.');
+                      return current;
+                    }
+                    const exists = current.some(
+                      (item) => item.entity_type === reference.entity_type && item.entity_id === reference.entity_id,
+                    );
+                    return exists ? current : [...current, reference];
+                  });
+                }}
+                onRemoveReference={(reference) => {
+                  setReferences((current) => current.filter(
+                    (item) => item.entity_type !== reference.entity_type || item.entity_id !== reference.entity_id,
+                  ));
+                }}
+                busy={sending}
+                disabled={!composer.enabled}
+                autoFocus
+                textareaRef={textareaRef}
+                onStop={canStop ? () => void handleStop() : undefined}
+                stopping={cancellationPending}
+                placeholder={cancellationPending ? 'Stopping agent…' : undefined}
+                showShortcutHint={showComposerShortcutHint}
+              />
+            </div>
+          ) : null}
         </div>
       )}
     </div>
