@@ -146,6 +146,94 @@ function assistantTurn(id: string, content: string): CodingSessionLiveTurnSegmen
 }
 
 describe('DockTranscript', () => {
+  it('compacts progress prose while retaining tools and the latest response when enabled', () => {
+    const message = {
+      ...assistantMessage('assistant-tools', '', 2),
+      turn_segments: [
+        assistantTurn('assistant-progress-1', 'I will inspect the conversation.'),
+        toolTurn('tool-1', 'list_conversation_messages', 100),
+        assistantTurn('assistant-progress-2', 'Now I will inspect the repository.'),
+        toolTurn('tool-2', 'repository_search', 100),
+        assistantTurn('assistant-final', 'The pagination state is not advancing.'),
+      ],
+    };
+
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([userMessage('user-1', 'Investigate it.', 1), message])}
+          active={false}
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('I will inspect the conversation.');
+    expect(container.textContent).not.toContain('Now I will inspect the repository.');
+    expect(container.textContent).toContain('Conversation Messages');
+    expect(container.textContent).toContain('Repository Search');
+    expect(container.textContent).toContain('The pagination state is not advancing.');
+  });
+
+  it('keeps the same compacted result through the live-to-persisted handoff', () => {
+    const liveStream = streamWithMessages([userMessage('user-1', 'Investigate it.', 1)]);
+    liveStream.live_turn_segments = [
+      assistantTurn('assistant-progress', 'I will inspect the conversation.'),
+      toolTurn('tool-live', 'repository_search', 100),
+      assistantTurn('assistant-final', 'The final finding.'),
+    ];
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={liveStream}
+          active
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+    expect(container.textContent).not.toContain('I will inspect the conversation.');
+    expect(container.textContent).toContain('Repository Search');
+    expect(container.textContent).toContain('The final finding.');
+
+    const persistedMessage = {
+      ...assistantMessage('assistant-persisted', '', 2),
+      turn_segments: liveStream.live_turn_segments,
+    };
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([userMessage('user-1', 'Investigate it.', 1), persistedMessage])}
+          active={false}
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+    expect(container.textContent).not.toContain('I will inspect the conversation.');
+    expect(container.textContent).toContain('Repository Search');
+    expect(container.textContent).toContain('The final finding.');
+  });
+
+  it('shows every assistant message by default for full run views', () => {
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            assistantMessage('assistant-1', 'First progress update.', 1),
+            assistantMessage('assistant-2', 'Second progress update.', 2),
+          ])}
+          active={false}
+          workspaceId="ws-1"
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('First progress update.');
+    expect(container.textContent).toContain('Second progress update.');
+  });
+
   it('never collapses the latest assistant message', () => {
     const longOlderMessage = `Older response ${'old '.repeat(180)}`;
     const longLatestMessage = `Latest response ${'new '.repeat(180)}`;

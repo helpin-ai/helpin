@@ -130,6 +130,7 @@ export function DockTranscript({
   workspaceId,
   fallbackActor,
   showUserMessages = true,
+  compactAssistantProgress = false,
   subAgentRuns = [],
   className,
 }: {
@@ -142,6 +143,8 @@ export function DockTranscript({
   fallbackActor?: CodingSessionActor | null;
   /** Main chat shows user turns; embedded execution strips stay agent-only. */
   showUserMessages?: boolean;
+  /** Root Ask chat keeps only the latest assistant prose in each interval. */
+  compactAssistantProgress?: boolean;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
   className?: string;
@@ -164,6 +167,7 @@ export function DockTranscript({
   const segments = collectSegments(stream, {
     includeLive: active,
     include: showUserMessages ? DOCK_CHAT_SEGMENT_KINDS : DOCK_SEGMENT_KINDS,
+    compactAssistantProgress,
   });
   if (segments.length === 0 && subAgentRuns.length === 0) return null;
   const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;

@@ -4,18 +4,19 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ExecutionStrip } from '../ExecutionStrip';
-import type { AgentRun, CodingSessionInteraction } from '@/lib/pmTypes';
+import type { AgentRun, CodingSessionInteraction, CodingSessionStreamState } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '../planSummary';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const mocks = vi.hoisted(() => ({
   pendingInteraction: null as CodingSessionInteraction | null,
+  streamState: null as CodingSessionStreamState | null,
 }));
 
 vi.mock('../useAgentRunStream', () => ({
   useAgentRunStream: () => ({
-    streamState: null,
+    streamState: mocks.streamState,
     currentPlan: null,
     pendingInteraction: mocks.pendingInteraction,
     clearPendingInteraction: vi.fn(),
@@ -31,6 +32,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   mocks.pendingInteraction = null;
+  mocks.streamState = null;
 });
 
 afterEach(() => {
@@ -93,6 +95,42 @@ function plan(overrides: Partial<CommandBarRunPlan> = {}): CommandBarRunPlan {
 }
 
 describe('ExecutionStrip actions', () => {
+  it('keeps every child-run assistant segment visible', () => {
+    mocks.streamState = {
+      transcript_messages: [
+        {
+          event_id: 'assistant-1', role: 'assistant', content: 'First child progress update.',
+          timestamp: '2026-05-01T00:00:01Z', sequence_no: 1,
+        },
+        {
+          event_id: 'assistant-2', role: 'assistant', content: 'Second child progress update.',
+          timestamp: '2026-05-01T00:00:02Z', sequence_no: 2,
+        },
+      ],
+      live_assistant_message: null,
+      live_reasoning_message: null,
+      live_turn_segments: [],
+      activity_events: [],
+      current_plan: null,
+      completed_tool_calls: [],
+    };
+
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="run"
+          workspaceId="ws-1"
+          run={run({ status: 'completed' })}
+          defaultOpen
+          onAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('First child progress update.');
+    expect(container.textContent).toContain('Second child progress update.');
+  });
+
   it('shows the agent, task, status, and stable plan time while collapsed', () => {
     act(() => {
       root.render(

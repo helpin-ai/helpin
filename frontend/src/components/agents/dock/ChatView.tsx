@@ -545,6 +545,7 @@ export function ChatView({
             workspaceId={workspaceId}
             fallbackActor={streamController.session?.triggered_by_user}
             subAgentRuns={subAgentTimelineItems}
+            compactAssistantProgress
           />
         )}
         {currentPlan && (

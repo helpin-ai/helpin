@@ -879,6 +879,37 @@ describe('AskAgentsDock', () => {
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50);
   });
 
+  it('shows only the latest assistant prose in each root Ask turn', async () => {
+    mocks.listMessages.mockResolvedValue({
+      data: {
+        messages: [
+          {
+            id: 'message-user', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 1, role: 'user', content: 'Investigate the issue.', message_type: 'prompt',
+            sequence_no: 1, created_at: '2026-08-01T00:00:01Z', delivery_status: 'sent',
+          },
+          {
+            id: 'message-progress', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 2, role: 'assistant', content: 'I will inspect another file.', message_type: 'assistant_turn',
+            sequence_no: 2, created_at: '2026-08-01T00:00:02Z', delivery_status: 'sent',
+          },
+          {
+            id: 'message-final', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 3, role: 'assistant', content: 'The issue is caused by stale pagination state.', message_type: 'assistant_turn',
+            sequence_no: 3, created_at: '2026-08-01T00:00:03Z', delivery_status: 'sent',
+          },
+        ],
+        next_before: null,
+      },
+      error: null,
+    });
+
+    await renderDock();
+    await waitForText('The issue is caused by stale pagination state.');
+
+    expect(document.body.textContent).not.toContain('I will inspect another file.');
+  });
+
   it('renders earlier history as a compact outlined button with an icon', async () => {
     mocks.listMessages.mockResolvedValue({
       data: { messages: [], next_before: 51 },
