@@ -184,6 +184,8 @@ export interface CodingSessionTranscriptMessage {
   // the workspace user who resolved the interaction (so the UI can render
   // their avatar and name).
   resolver_user_id?: string;
+  /** Workspace user who authored this human message. */
+  actor_user_id?: string;
 }
 
 export interface CodingSessionLiveToolResult {

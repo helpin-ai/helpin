@@ -5127,7 +5127,7 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 	var message *model.AgentRunMessage
 	if shouldAddMessage {
 		var err error
-		message, err = s.createRunMessage(ctx, run, messageRole, messageType, replyText)
+		message, err = s.createRunMessage(ctx, run, messageRole, messageType, replyText, actorID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -6059,7 +6059,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	// that legacy setup working while making the launch prompt durable whenever
 	// the run-message repository is available (as it is in production).
 	if initialContext := initialAgentRunContext(run); initialContext != "" && s.runMessageRepo != nil {
-		if _, err := s.createRunMessage(ctx, run, "user", "prompt", initialContext); err != nil {
+		if _, err := s.createRunMessage(ctx, run, "user", "prompt", initialContext, derefString(run.TriggeredByUserID)); err != nil {
 			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 			s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, err)
 			return nil, err
@@ -6386,7 +6386,7 @@ func initialAgentRunContext(run *model.AgentRun) string {
 	return strings.TrimSpace(input.AdditionalContext)
 }
 
-func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string) (*model.AgentRunMessage, error) {
+func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content, actorUserID string) (*model.AgentRunMessage, error) {
 	if s.runMessageRepo == nil {
 		return nil, fmt.Errorf("run messages are not configured")
 	}
@@ -6397,6 +6397,7 @@ func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun
 	message := &model.AgentRunMessage{
 		WorkspaceID: run.WorkspaceID,
 		RunID:       run.ID,
+		ActorUserID: stringPtrIfNotEmpty(actorUserID),
 		Role:        role,
 		Content:     content,
 		MessageType: messageType,

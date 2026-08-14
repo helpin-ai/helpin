@@ -278,7 +278,7 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 	if content == "" {
 		return nil, fmt.Errorf("content is required")
 	}
-	chat, err := s.ownedChat(ctx, workspaceID, userID, chatID)
+	chat, err := s.accessibleChat(ctx, workspaceID, userID, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -348,11 +348,6 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 
 func (s *DockChatService) runUsesCurrentScopedTools(ctx context.Context, chat *model.DockChat, userID string, run *model.AgentRun) (bool, error) {
 	if chat == nil || run == nil {
-		return false, nil
-	}
-	// Never resume a backing run under a different actor's authority. This is
-	// defensive today and also protects future collaborative chat work.
-	if run.TriggeredByUserID == nil || strings.TrimSpace(*run.TriggeredByUserID) != strings.TrimSpace(userID) {
 		return false, nil
 	}
 	agent, err := s.agentService.ensureBuiltInAgent(ctx, chat.WorkspaceID, userID, model.AgentPresetAskAgent)

@@ -44,7 +44,7 @@ func (s *DockChatService) GenerateTitle(
 	chatID string,
 	req model.GenerateDockChatTitleRequest,
 ) (*model.DockChat, error) {
-	chat, err := s.ownedChat(ctx, workspaceID, userID, chatID)
+	chat, err := s.accessibleChat(ctx, workspaceID, userID, chatID)
 	if err != nil {
 		return nil, err
 	}

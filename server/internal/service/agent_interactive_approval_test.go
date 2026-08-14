@@ -2689,6 +2689,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			run_id TEXT NOT NULL,
+			actor_user_id TEXT,
 			runtime_message_id TEXT,
 			role TEXT NOT NULL,
 			content TEXT NOT NULL,

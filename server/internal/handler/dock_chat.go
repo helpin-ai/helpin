@@ -173,7 +173,7 @@ func (h *DockChatHandler) ListChatRunInteractions(w http.ResponseWriter, r *http
 // ResolveChatRunInteraction handles
 // POST /api/dock/chats/{chatID}/interactions/{interactionID}/resolve.
 func (h *DockChatHandler) ResolveChatRunInteraction(w http.ResponseWriter, r *http.Request) {
-	run, ok := h.resolveOwnedChatRun(w, r)
+	run, ok := h.resolveChatRun(w, r)
 	if !ok {
 		return
 	}

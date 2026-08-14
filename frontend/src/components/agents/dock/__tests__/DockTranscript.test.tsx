@@ -19,6 +19,32 @@ vi.mock('@/lib/teamMemberAvatar', () => ({
   resolveTeamMemberAvatarSrc: mocks.resolveTeamMemberAvatarSrc,
 }));
 
+vi.mock('@/hooks/useWorkspaceMembers', () => ({
+  useWorkspaceMembers: () => ({
+    members: [
+      {
+        id: 'membership-1',
+        user_id: 'user-1',
+        email: 'alice@example.com',
+        full_name: 'Alice Johnson',
+        avatar_style: 'personas',
+        avatar_seed: 'alice-seed',
+        avatar_background_mode: 'color',
+        avatar_background_color: '#fbbf24',
+      },
+      {
+        id: 'membership-2',
+        user_id: 'user-2',
+        email: 'bob@example.com',
+        full_name: 'Bob Smith',
+        avatar_style: 'initials',
+        avatar_seed: 'bob-seed',
+      },
+    ],
+    loading: false,
+  }),
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement;
@@ -62,7 +88,7 @@ function assistantMessage(id: string, content: string, sequenceNo: number): Codi
   };
 }
 
-function userMessage(id: string, content: string, sequenceNo: number): CodingSessionTranscriptMessage {
+function userMessage(id: string, content: string, sequenceNo: number, actorUserId?: string): CodingSessionTranscriptMessage {
   return {
     event_id: id,
     message_id: id,
@@ -71,6 +97,7 @@ function userMessage(id: string, content: string, sequenceNo: number): CodingSes
     content,
     timestamp: `2026-08-06T00:00:0${sequenceNo}Z`,
     sequence_no: sequenceNo,
+    actor_user_id: actorUserId,
   };
 }
 
@@ -131,6 +158,7 @@ describe('DockTranscript', () => {
             assistantMessage('assistant-2', longLatestMessage, 2),
           ])}
           active={false}
+          workspaceId="ws-1"
         />,
       );
     });
@@ -146,8 +174,9 @@ describe('DockTranscript', () => {
     act(() => {
       root.render(
         <DockTranscript
-          stream={streamWithMessages([userMessage('user-1', 'Show my avatar.', 1)])}
+          stream={streamWithMessages([userMessage('user-1', 'Show my avatar.', 1, 'user-1')])}
           active={false}
+          workspaceId="ws-1"
         />,
       );
     });
@@ -161,6 +190,40 @@ describe('DockTranscript', () => {
       avatarBackgroundColor: '#fbbf24',
       fallbackSeed: 'Alice Johnson',
     });
+  });
+
+  it('shows the teammate who authored each persisted message', () => {
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([userMessage('user-2', 'I will take it from here.', 1, 'user-2')])}
+          active={false}
+          workspaceId="ws-1"
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Bob Smith');
+  });
+
+  it('shows the teammate who approved an agent action', () => {
+    const approval = {
+      ...userMessage('approval-1', 'Approved the proposed changes.', 1),
+      message_type: 'approval_request_resolution',
+      resolver_user_id: 'user-2',
+    };
+
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([approval])}
+          active={false}
+          workspaceId="ws-1"
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Bob Smith approved');
   });
 
   it('groups adjacent successful calls, sums duration, and keeps failures separate', () => {
@@ -177,7 +240,7 @@ describe('DockTranscript', () => {
     };
 
     act(() => {
-      root.render(<DockTranscript stream={streamWithMessages([message])} active={false} />);
+      root.render(<DockTranscript stream={streamWithMessages([message])} active={false} workspaceId="ws-1" />);
     });
 
     expect(container.textContent).toContain('Browser Act x 2');

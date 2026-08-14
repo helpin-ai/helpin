@@ -853,18 +853,33 @@ describe('AskAgentsDock', () => {
     expect(document.body.textContent).toContain('Visible to everyone at Acme');
   });
 
-  it('shows a shared module chat as read-only to another teammate', async () => {
+  it('lets another teammate continue a shared module chat', async () => {
     const sharedChat: DockChat = { ...CHAT, visibility: 'module', module_id: 'support' };
     useAuthStore.setState({ user: { id: 'user-2', email: 'teammate@example.com' } as never });
     mocks.listChats.mockResolvedValue({ data: { chats: [sharedChat] }, error: null });
     mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: sharedChat }), error: null });
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail({ chat: sharedChat }), error: null });
 
     await renderDock();
     await waitForText('Visible to teammates in Support');
 
-    expect(document.body.textContent).toContain('Only its creator can continue it.');
+    expect(document.body.querySelector('textarea')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('Only its creator can continue it.');
     expect(document.body.querySelector('[aria-label*="Change who can see this chat"]')).toBeNull();
     expect(document.body.querySelector('[aria-label="Actions for Sprint questions"]')).toBeNull();
+
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'I will continue this conversation.');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await flush();
+
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      'ws-1',
+      'chat-1',
+      expect.objectContaining({ content: 'I will continue this conversation.' }),
+    );
   });
 
   it('shows attention in the collapsed dock trigger', async () => {
