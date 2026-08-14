@@ -439,9 +439,9 @@ export function ChatView({
     stream: transformed?.stream ?? null,
     currentPlan,
     activeSubAgentName,
-    sending,
+    sending: sending || !!pendingEcho,
     localStartedAt: launchStartedAt,
-  }), [activeSubAgentName, currentPlan, launchStartedAt, run, sending, transformed]);
+  }), [activeSubAgentName, currentPlan, launchStartedAt, pendingEcho, run, sending, transformed]);
 
   const runsById = useMemo(() => {
     const map: Record<string, AgentRun> = {};
@@ -552,6 +552,7 @@ export function ChatView({
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}
         {pendingEcho && <DockUserMessage content={pendingEcho.content} pending />}
+        {liveProgress ? <AgentLiveStatus progress={liveProgress} /> : null}
         {sendError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
             <p className="mb-1 line-clamp-2 text-foreground/80">{sendError.content}</p>
@@ -610,11 +611,9 @@ export function ChatView({
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}
-      {(liveProgress || composer.visible) && (
+      {composer.visible && (
         <div className="border-t border-border/60">
-          {liveProgress ? <AgentLiveStatus progress={liveProgress} /> : null}
-          {composer.visible ? (
-            <div className="p-2 pt-0.5">
+          <div className="p-2">
               <DockInput
                 mode="conversation"
                 value={value}
@@ -656,8 +655,7 @@ export function ChatView({
                 placeholder={cancellationPending ? 'Stopping agent…' : undefined}
                 showShortcutHint={showComposerShortcutHint}
               />
-            </div>
-          ) : null}
+          </div>
         </div>
       )}
     </div>

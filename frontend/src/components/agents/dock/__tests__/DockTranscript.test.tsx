@@ -146,12 +146,38 @@ function assistantTurn(id: string, content: string): CodingSessionLiveTurnSegmen
 }
 
 describe('DockTranscript', () => {
-  it('compacts progress prose while retaining tools and the latest response when enabled', () => {
+  it('adds a clear turn boundary before the first assistant reply after a user message', () => {
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            userMessage('user-1', 'Can you check this?', 1),
+            assistantMessage('assistant-1', 'Yes, I will take a look.', 2),
+          ])}
+          active={false}
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+
+    expect(container.querySelector('[data-after-user-message="true"]')?.textContent)
+      .toContain('Yes, I will take a look.');
+  });
+
+  it('collapses completed working groups without deleting their full recorded activity', () => {
     const message = {
       ...assistantMessage('assistant-tools', '', 2),
       turn_segments: [
         assistantTurn('assistant-progress-1', 'I will inspect the conversation.'),
-        toolTurn('tool-1', 'list_conversation_messages', 100),
+        {
+          ...toolTurn('tool-1', 'list_conversation_messages', 100),
+          tool_call: {
+            ...toolTurn('tool-1', 'list_conversation_messages', 100).tool_call,
+            args_text: '{"conversation_id":"conversation-1"}',
+            result: { content: '{"messages":12}' },
+          },
+        },
         assistantTurn('assistant-progress-2', 'Now I will inspect the repository.'),
         toolTurn('tool-2', 'repository_search', 100),
         assistantTurn('assistant-final', 'The pagination state is not advancing.'),
@@ -169,14 +195,20 @@ describe('DockTranscript', () => {
       );
     });
 
+    const groups = container.querySelectorAll('[data-agent-working-group]');
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+    expect(groups[1]?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
     expect(container.textContent).not.toContain('I will inspect the conversation.');
-    expect(container.textContent).not.toContain('Now I will inspect the repository.');
-    expect(container.textContent).toContain('Conversation Messages');
-    expect(container.textContent).toContain('Repository Search');
     expect(container.textContent).toContain('The pagination state is not advancing.');
+
+    act(() => (groups[0]?.querySelector('button') as HTMLButtonElement | null)?.click());
+    expect(container.textContent).toContain('I will inspect the conversation.');
+    expect(container.textContent).toContain('"conversation_id": "conversation-1"');
+    expect(container.textContent).toContain('"messages": 12');
   });
 
-  it('keeps the same compacted result through the live-to-persisted handoff', () => {
+  it('keeps the same working group identity through the live-to-persisted handoff', () => {
     const liveStream = streamWithMessages([userMessage('user-1', 'Investigate it.', 1)]);
     liveStream.live_turn_segments = [
       assistantTurn('assistant-progress', 'I will inspect the conversation.'),
@@ -193,9 +225,11 @@ describe('DockTranscript', () => {
         />,
       );
     });
-    expect(container.textContent).not.toContain('I will inspect the conversation.');
-    expect(container.textContent).toContain('Repository Search');
-    expect(container.textContent).toContain('The final finding.');
+    const liveGroup = container.querySelector('[data-working-group-id="work:assistant-progress"]');
+    expect(liveGroup).not.toBeNull();
+    expect(liveGroup?.getAttribute('data-working-group-id')).toBe('work:assistant-progress');
+    expect(liveGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.querySelectorAll('[data-agent-working-group]')[1]?.querySelector('button')?.getAttribute('aria-expanded')).toBe('true');
 
     const persistedMessage = {
       ...assistantMessage('assistant-persisted', '', 2),
@@ -211,9 +245,64 @@ describe('DockTranscript', () => {
         />,
       );
     });
-    expect(container.textContent).not.toContain('I will inspect the conversation.');
-    expect(container.textContent).toContain('Repository Search');
+    const persistedGroup = container.querySelector('[data-working-group-id="work:assistant-progress"]');
+    expect(persistedGroup?.getAttribute('data-working-group-id')).toBe('work:assistant-progress');
+    expect(persistedGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
     expect(container.textContent).toContain('The final finding.');
+  });
+
+  it('auto-collapses the previous live group when the next group starts', () => {
+    const firstStream = streamWithMessages([userMessage('user-1', 'Investigate it.', 1)]);
+    firstStream.live_turn_segments = [
+      assistantTurn('progress-1', 'Checking the conversation.'),
+      toolTurn('tool-1', 'list_conversation_messages', 100, 'running'),
+    ];
+    act(() => {
+      root.render(<DockTranscript stream={firstStream} active workspaceId="ws-1" compactAssistantProgress />);
+    });
+    expect(container.querySelector('[data-agent-working-group] button')?.getAttribute('aria-expanded')).toBe('true');
+
+    const nextStream = streamWithMessages([userMessage('user-1', 'Investigate it.', 1)]);
+    nextStream.live_turn_segments = [
+      assistantTurn('progress-1', 'Checking the conversation.'),
+      toolTurn('tool-1', 'list_conversation_messages', 100),
+      assistantTurn('progress-2', 'Checking the repository.'),
+      toolTurn('tool-2', 'repository_search', 100, 'running'),
+    ];
+    act(() => {
+      root.render(<DockTranscript stream={nextStream} active workspaceId="ws-1" compactAssistantProgress />);
+    });
+
+    const toggles = container.querySelectorAll('[data-agent-working-group] > button');
+    expect(toggles).toHaveLength(2);
+    expect(toggles[0]?.getAttribute('aria-expanded')).toBe('false');
+    expect(toggles[1]?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('allows multiple completed working groups to remain manually expanded', () => {
+    const message = {
+      ...assistantMessage('assistant-tools', '', 2),
+      turn_segments: [
+        assistantTurn('progress-1', 'Checking the conversation.'),
+        toolTurn('tool-1', 'list_conversation_messages', 100),
+        assistantTurn('progress-2', 'Checking the repository.'),
+        toolTurn('tool-2', 'repository_search', 100),
+        assistantTurn('final', 'Done.'),
+      ],
+    };
+    act(() => {
+      root.render(<DockTranscript stream={streamWithMessages([message])} active={false} workspaceId="ws-1" compactAssistantProgress />);
+    });
+
+    const toggles = container.querySelectorAll('[data-agent-working-group] > button');
+    act(() => {
+      (toggles[0] as HTMLButtonElement).click();
+      (toggles[1] as HTMLButtonElement).click();
+    });
+    expect(toggles[0]?.getAttribute('aria-expanded')).toBe('true');
+    expect(toggles[1]?.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain('Checking the conversation.');
+    expect(container.textContent).toContain('Checking the repository.');
   });
 
   it('shows every assistant message by default for full run views', () => {
