@@ -19,6 +19,9 @@ const mockState = vi.hoisted(() => ({
         plan: 'enterprise', subscription_status: 'active', support_tier: 'priority',
         seats_used: 12, seats_total: 25, renewal_date: '2027-01-15', mrr: 4200,
         currency: 'USD', priority_support: true, sdk_company_id: 'hidden',
+        agent_enrichment: {
+          headquarters: { value: 'New York', source_url: 'https://example.com/internal-source' },
+        },
       },
       updated_at: '2026-08-05T12:00:00Z',
     } as Record<string, any> | null,
@@ -58,6 +61,9 @@ describe('SidebarCompanyDetails', () => {
         plan: 'enterprise', subscription_status: 'active', support_tier: 'priority',
         seats_used: 12, seats_total: 25, renewal_date: '2027-01-15', mrr: 4200,
         currency: 'USD', priority_support: true, sdk_company_id: 'hidden',
+        agent_enrichment: {
+          headquarters: { value: 'New York', source_url: 'https://example.com/internal-source' },
+        },
       },
       updated_at: '2026-08-05T12:00:00Z',
     }
@@ -86,6 +92,8 @@ describe('SidebarCompanyDetails', () => {
     expect(container.textContent).toContain('$4,200')
     expect(container.textContent).toContain('Yes')
     expect(container.textContent).not.toContain('hidden')
+    expect(container.textContent).not.toContain('Agent Enrichment')
+    expect(container.textContent).not.toContain('internal-source')
 
     act(() => root.unmount())
   })

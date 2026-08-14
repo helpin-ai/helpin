@@ -33,7 +33,16 @@ const mockSupportData = vi.hoisted(() => ({
       lifecycle_stage: 'customer',
       lead_status: 'open',
       source: 'live_chat',
-      custom_properties: { seats_requested: 25 },
+      custom_properties: {
+        seats_requested: 25,
+        agent_enrichment: {
+          linkedin_url: {
+            value: 'https://linkedin.com/in/alex-buyer',
+            source_url: 'https://example.com/internal-source',
+            confidence: 0.95,
+          },
+        },
+      },
     },
     other_conversations: [],
     total_conversations: 1,
@@ -86,6 +95,10 @@ describe('SidebarVisitorContext', () => {
     expect(container.textContent).not.toContain('User details')
     expect(container.textContent).toContain('Contact Details')
     expect(container.textContent).toContain('VP Product')
+    expect(container.textContent).toContain('seats requested')
+    expect(container.textContent).toContain('25')
+    expect(container.textContent).not.toContain('agent enrichment')
+    expect(container.textContent).not.toContain('internal-source')
     expect(container.textContent).toContain('Current visit')
     expect(container.textContent).not.toContain('Main information')
     expect(container.textContent).not.toContain('Visitor device')
