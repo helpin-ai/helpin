@@ -255,8 +255,8 @@ export function DockInput({
             type="button"
             onClick={onStop}
             disabled={stopping}
-            title="Stop agent"
-            aria-label="Stop agent"
+            title={stopping ? 'Stopping agent' : 'Stop agent'}
+            aria-label={stopping ? 'Stopping agent' : 'Stop agent'}
             className={cn(
               'mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
               stopping

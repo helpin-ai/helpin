@@ -747,6 +747,7 @@ type AgentService struct {
 	entitlementSvc             *EntitlementService
 	aiUsageMeter               *AIUsageMeter
 	agentRuntimeClient         agentRuntimeSignalClient
+	agentRuntimeProjection     agentRuntimeEventProjector
 	agentRuntimeLaunchEnabled  bool
 	mcpRepo                    *repository.MCPRepository
 	externalMCPService         *ExternalMCPService
@@ -759,6 +760,10 @@ type agentRuntimeSignalClient interface {
 	ListInteractions(ctx context.Context, runtimeRunID string) ([]AgentRuntimeInteraction, error)
 	ResumeRun(ctx context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest) (*AgentRuntimeRun, error)
 	CancelRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error)
+}
+
+type agentRuntimeEventProjector interface {
+	ApplyEvent(context.Context, AgentRuntimeEventEnvelope) error
 }
 
 type agentRuntimeCodexAuthClient interface {
@@ -942,6 +947,14 @@ func (s *AgentService) SetAIUsageMeter(meter *AIUsageMeter) *AgentService {
 
 func (s *AgentService) SetAgentRuntimeClient(client agentRuntimeSignalClient) *AgentService {
 	s.agentRuntimeClient = client
+	return s
+}
+
+// SetAgentRuntimeProjectionService lets synchronous runtime commands project
+// authoritative lifecycle responses immediately instead of depending solely
+// on the asynchronous runtime event delivery path.
+func (s *AgentService) SetAgentRuntimeProjectionService(projection *AgentRuntimeProjectionService) *AgentService {
+	s.agentRuntimeProjection = projection
 	return s
 }
 
@@ -4854,10 +4867,29 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 		// through the host_run_id that was supplied when the run was started.
 		runtimeRunID = strings.TrimSpace(run.ID)
 	}
-	if _, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); err != nil {
+	runtimeRun, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID)
+	if err != nil {
 		return nil, fmt.Errorf("cancel agent runtime run: %w", err)
 	}
 	now := time.Now()
+	if event, ok := cancellationAcknowledgementEvent(runtimeRun, *run, now); ok && s.agentRuntimeProjection != nil {
+		if err := s.agentRuntimeProjection.ApplyEvent(ctx, event); err == nil {
+			if refreshed, err := s.runRepo.GetByID(ctx, workspaceID, run.ID); err == nil && refreshed != nil {
+				run = refreshed
+			}
+			_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
+			s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
+			s.publishRunEvent(run, actorID)
+			return run, nil
+		} else {
+			slog.ErrorContext(ctx, "failed to project synchronous agent runtime cancellation",
+				"error", err,
+				"workspace_id", workspaceID,
+				"run_id", run.ID,
+				"runtime_run_id", runtimeRunID,
+			)
+		}
+	}
 	if err := s.runRepo.UpdateStage(ctx, workspaceID, run.ID, "cancelling", &now); err != nil {
 		return nil, err
 	}

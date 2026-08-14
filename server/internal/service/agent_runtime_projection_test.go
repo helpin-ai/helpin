@@ -1689,6 +1689,44 @@ func TestAgentRuntimeProjectionReconcileMappedRunsAppliesFetchedRuntimeState(t *
 	}
 }
 
+func TestAgentRuntimeProjectionReconcileRetriesStaleCancellation(t *testing.T) {
+	now := time.Date(2026, 8, 14, 15, 10, 0, 0, time.UTC)
+	run := &model.AgentRun{
+		ID:                "helpin-run-cancelling",
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		Status:            model.AgentRunStatusRunning,
+		PauseReason:       model.AgentRunPauseReasonNone,
+		ExecutionStage:    stringPointer("cancelling"),
+		ExternalRuntime:   stringPointer(agentRuntimeName),
+		ExternalRuntimeID: stringPointer("run_runtime_cancelling"),
+	}
+	repo := &fakeAgentRuntimeProjectionRunRepo{
+		byID:       map[string]*model.AgentRun{run.ID: run},
+		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_cancelling": run},
+		active:     []model.AgentRun{*run},
+	}
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	svc := &AgentRuntimeProjectionService{
+		runRepo:            repo,
+		agentRuntimeClient: runtimeClient,
+		now:                func() time.Time { return now },
+	}
+
+	if err := svc.ReconcileMappedRuns(context.Background(), time.Minute, 10); err != nil {
+		t.Fatalf("ReconcileMappedRuns returned error: %v", err)
+	}
+	if len(runtimeClient.cancelCalls) != 1 || runtimeClient.cancelCalls[0] != "run_runtime_cancelling" {
+		t.Fatalf("expected stale cancellation to be retried, got %#v", runtimeClient.cancelCalls)
+	}
+	if len(runtimeClient.getCalls) != 0 {
+		t.Fatalf("expected cancellation reconciliation to skip the ordinary status fetch, got %#v", runtimeClient.getCalls)
+	}
+	if run.Status != model.AgentRunStatusCancelled || run.CompletedAt == nil {
+		t.Fatalf("expected stale cancelling run to become cancelled, got status=%s completed_at=%v", run.Status, run.CompletedAt)
+	}
+}
+
 func TestAgentRuntimeProjectionReconcileReplaysMissedV2EventsFromCursor(t *testing.T) {
 	now := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
 	run := &model.AgentRun{

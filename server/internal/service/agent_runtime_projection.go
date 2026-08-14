@@ -320,6 +320,31 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 		if runtimeRunID == "" {
 			continue
 		}
+		if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" {
+			runtimeRun, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID)
+			if err != nil {
+				slog.WarnContext(ctx, "agent runtime cancellation reconciliation failed",
+					"workspace_id", run.WorkspaceID,
+					"run_id", run.ID,
+					"runtime_run_id", runtimeRunID,
+					"error", err,
+				)
+				continue
+			}
+			event, ok := cancellationAcknowledgementEvent(runtimeRun, run, s.nowUTC())
+			if !ok {
+				continue
+			}
+			if err := s.ApplyEvent(ctx, event); err != nil {
+				slog.WarnContext(ctx, "agent runtime cancellation acknowledgement apply failed",
+					"workspace_id", run.WorkspaceID,
+					"run_id", run.ID,
+					"runtime_run_id", runtimeRunID,
+					"error", err,
+				)
+			}
+			continue
+		}
 		if s.eventProtocol == "v2" {
 			if err := s.replayV2Events(ctx, &run, runtimeRunID); err != nil {
 				slog.WarnContext(ctx, "agent runtime v2 event replay failed",
@@ -596,6 +621,27 @@ func reconciliationEventForRuntimeRun(runtimeRun *AgentRuntimeRun, localRun mode
 	return event, true
 }
 
+// cancellationAcknowledgementEvent treats a successful runtime cancellation
+// command as authoritative even when the runtime response still contains its
+// pre-cancellation status. The cancellation endpoint accepting the command is
+// the durable boundary; asynchronous events remain safe, idempotent replays.
+func cancellationAcknowledgementEvent(runtimeRun *AgentRuntimeRun, localRun model.AgentRun, fallback time.Time) (AgentRuntimeEventEnvelope, bool) {
+	acknowledged := AgentRuntimeRun{
+		ID:        strings.TrimSpace(derefString(localRun.ExternalRuntimeID)),
+		HostRunID: strings.TrimSpace(localRun.ID),
+		Status:    model.AgentRunStatusCancelled,
+	}
+	if runtimeRun != nil {
+		acknowledged = *runtimeRun
+		acknowledged.Status = model.AgentRunStatusCancelled
+	}
+	if acknowledged.CompletedAt == nil {
+		completedAt := fallback
+		acknowledged.CompletedAt = &completedAt
+	}
+	return reconciliationEventForRuntimeRun(&acknowledged, localRun, fallback)
+}
+
 func runtimeRunEventTime(runtimeRun *AgentRuntimeRun, fallback time.Time) time.Time {
 	if runtimeRun != nil {
 		if runtimeRun.CompletedAt != nil && !runtimeRun.CompletedAt.IsZero() {
@@ -704,6 +750,10 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	case agentruntime.EventRunCancelled:
 		if run.CompletedAt == nil {
 			run.CompletedAt = &now
+			changed = true
+		}
+		if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" {
+			run.ExecutionStage = nil
 			changed = true
 		}
 		changed = setRunStatus(run, model.AgentRunStatusCancelled, model.AgentRunPauseReasonNone) || changed

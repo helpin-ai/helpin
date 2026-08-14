@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useAuthStore } from '@/stores/authStore';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
@@ -104,8 +103,6 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
-  const currentUserId = useAuthStore((state) => state.user?.id);
-
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
   const effectivePageContext = requiredPageContext ?? (contextCleared ? null : pageContext);
@@ -120,7 +117,6 @@ export function ChatView({
   }, [initialDraft, onDraftConsumed, setValue]);
 
   const run = detail?.run ?? null;
-  const isSharedTeammate = !!detail?.chat.user_id && !!currentUserId && detail.chat.user_id !== currentUserId;
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
   useEffect(() => {
     onRunIdChange?.(run?.id ?? null);
@@ -388,19 +384,25 @@ export function ChatView({
     await sendContent(content, references);
   };
 
-  const canStop = !isSharedTeammate && runActive && (run?.status === 'queued' || run?.status === 'running');
+  const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
+  const cancellationPending = stopping || run?.execution_stage === 'cancelling';
   const handleStop = useCallback(async () => {
-    if (stopping) return;
+    if (cancellationPending) return;
     setStopping(true);
     try {
       const res = await dockChatService.cancelChatRun(workspaceId, chatId);
-      if (res.error) toast.error(res.error);
-      void refreshDetail();
-      void refetch();
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      if (res.data) {
+        setDetail((current) => current ? { ...current, run: res.data } : current);
+      }
+      await Promise.all([refreshDetail(), refetch()]);
     } finally {
       setStopping(false);
     }
-  }, [chatId, refetch, refreshDetail, stopping, workspaceId]);
+  }, [cancellationPending, chatId, refetch, refreshDetail, workspaceId]);
 
   const resolveInteraction = useCallback(
     async (interactionId: string, payload: { response_payload: Record<string, unknown>; followup_message?: string }) => {
@@ -635,7 +637,8 @@ export function ChatView({
             autoFocus
             textareaRef={textareaRef}
             onStop={canStop ? () => void handleStop() : undefined}
-            stopping={stopping}
+            stopping={cancellationPending}
+            placeholder={cancellationPending ? 'Stopping agent…' : undefined}
             showShortcutHint={showComposerShortcutHint}
           />
         </div>

@@ -159,7 +159,7 @@ export function DockRunView({
   };
 
   const stop = async () => {
-    if (stopping) return;
+    if (cancellationPending) return;
     setStopping(true);
     const result = await dockChatService.cancelRun(workspaceId, run.id);
     if (result.error) toast.error(result.error);
@@ -189,6 +189,7 @@ export function DockRunView({
     || run.status === 'cancelled'
     || (run.status === 'paused' && (run.pause_reason === 'human_input' || run.pause_reason === 'awaiting_user_message') && !interaction);
   const canStop = run.status === 'queued' || run.status === 'running';
+  const cancellationPending = stopping || run.execution_stage === 'cancelling';
   const liveLabel = run.status === 'running' ? deriveLiveStatusLabel(streamState, run.status) : null;
 
   return (
@@ -263,8 +264,8 @@ export function DockRunView({
             busy={sending}
             disabled={!composerEnabled}
             onStop={canStop ? () => void stop() : undefined}
-            stopping={stopping}
-            placeholder={composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : run.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
+            stopping={cancellationPending}
+            placeholder={cancellationPending ? 'Stopping agent…' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : run.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
           />
         </div>
       ) : null}

@@ -721,7 +721,10 @@ describe('AskAgentsDock', () => {
       data: { id: 'run-1', status: 'running', stream_state_snapshot: null },
       error: null,
     });
-    mocks.cancelChatRun.mockResolvedValue({ data: null, error: null });
+    mocks.cancelChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'cancelled', pause_reason: 'none' },
+      error: null,
+    });
 
     await renderDock();
     await waitForText('Sprint questions');
@@ -731,6 +734,73 @@ describe('AskAgentsDock', () => {
     await act(async () => {
       (stopButton as HTMLButtonElement).click();
     });
+    await flush();
+
+    expect(mocks.cancelChatRun).toHaveBeenCalledWith('ws-1', 'chat-1');
+  });
+
+  it('keeps a persisted cancellation visibly pending and prevents repeat stop requests', async () => {
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({
+        chat: { ...CHAT, active_run_id: 'run-1' },
+        run: {
+          id: 'run-1',
+          status: 'running',
+          pause_reason: 'none',
+          execution_stage: 'cancelling',
+        } as never,
+      }),
+      error: null,
+    });
+    mocks.getChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'running', stream_state_snapshot: null },
+      error: null,
+    });
+
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const stoppingButton = document.body.querySelector<HTMLButtonElement>(
+      '[data-helpin-dock] [aria-label="Stopping agent"]',
+    );
+    expect(stoppingButton).not.toBeNull();
+    expect(stoppingButton?.disabled).toBe(true);
+    expect(mocks.cancelChatRun).not.toHaveBeenCalled();
+  });
+
+  it('lets a teammate stop an active shared chat', async () => {
+    const sharedChat: DockChat = {
+      ...CHAT,
+      visibility: 'module',
+      module_id: 'support',
+      active_run_id: 'run-1',
+    };
+    useAuthStore.setState({ user: { id: 'user-2', email: 'teammate@example.com' } as never });
+    mocks.listChats.mockResolvedValue({ data: { chats: [sharedChat] }, error: null });
+    mocks.getChat.mockResolvedValue({
+      data: chatDetail({
+        chat: sharedChat,
+        run: { id: 'run-1', status: 'running', pause_reason: 'none' } as never,
+      }),
+      error: null,
+    });
+    mocks.getChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'running', stream_state_snapshot: null },
+      error: null,
+    });
+    mocks.cancelChatRun.mockResolvedValue({
+      data: { id: 'run-1', status: 'cancelled', pause_reason: 'none' },
+      error: null,
+    });
+
+    await renderDock();
+    await waitForText('Visible to teammates in Support');
+
+    const stopButton = document.body.querySelector<HTMLButtonElement>(
+      '[data-helpin-dock] [aria-label="Stop agent"]',
+    );
+    expect(stopButton).not.toBeNull();
+    await act(async () => stopButton?.click());
     await flush();
 
     expect(mocks.cancelChatRun).toHaveBeenCalledWith('ws-1', 'chat-1');
