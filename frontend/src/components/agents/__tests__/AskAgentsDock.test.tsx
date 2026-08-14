@@ -879,6 +879,55 @@ describe('AskAgentsDock', () => {
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50);
   });
 
+  it('does not jump back to the latest message after loading earlier history', async () => {
+    mocks.listMessages
+      .mockResolvedValueOnce({
+        data: {
+          messages: [{
+            id: 'message-recent', workspace_id: 'ws-1', run_id: 'run-1', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 51, role: 'assistant', content: 'Recent answer', message_type: 'assistant_turn',
+            sequence_no: 51, created_at: '2026-08-01T00:00:51Z', delivery_status: 'sent',
+          }],
+          next_before: 51,
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          messages: [{
+            id: 'message-earlier', workspace_id: 'ws-1', run_id: 'run-1', dock_chat_id: 'chat-1',
+            dock_chat_sequence: 1, role: 'user', content: 'Earlier question', message_type: 'prompt',
+            sequence_no: 1, created_at: '2026-08-01T00:00:01Z', delivery_status: 'sent',
+          }],
+          next_before: null,
+        },
+        error: null,
+      });
+
+    await renderDock();
+    await waitForText('Recent answer');
+
+    const scrollContainer = document.body.querySelector<HTMLElement>('[data-agent-dock-chat-scroll]');
+    expect(scrollContainer).not.toBeNull();
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1_000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    });
+    const loadEarlier = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Load earlier messages');
+    expect(loadEarlier).not.toBeUndefined();
+
+    await act(async () => {
+      loadEarlier?.click();
+      await Promise.resolve();
+    });
+    await waitForText('Earlier question');
+
+    expect(mocks.listMessages).toHaveBeenLastCalledWith('ws-1', 'chat-1', 51, 50);
+    expect(scrollContainer?.scrollTop).toBe(0);
+  });
+
   it('loads an older failed sub-agent attempt from its visible result marker', async () => {
     mocks.listMessages.mockResolvedValue({
       data: {

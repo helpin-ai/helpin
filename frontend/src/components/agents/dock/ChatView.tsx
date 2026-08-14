@@ -147,6 +147,11 @@ export function ChatView({
 
   const loadEarlierMessages = useCallback(async () => {
     if (!nextMessagesBefore || loadingEarlier) return;
+    // Loading history is an explicit request to stay at the older end of the
+    // transcript. Otherwise the transcript update can trigger auto-follow and
+    // immediately pull the viewport back to the latest message.
+    autoFollowRef.current = false;
+    setAtBottom(false);
     setLoadingEarlier(true);
     try {
       const res = await dockChatService.listMessages(workspaceId, chatId, nextMessagesBefore, 50);
