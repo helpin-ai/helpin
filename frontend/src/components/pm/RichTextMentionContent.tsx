@@ -12,6 +12,7 @@ interface RichTextMentionContentProps {
   members?: AssignableMember[]
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[]
   className?: string
+  variant?: 'default' | 'pm'
   /** When provided, checkboxes become interactive and changes are reported back */
   onHtmlChange?: (html: string) => void
 }
@@ -170,6 +171,7 @@ export function RichTextMentionContent({
   members = [],
   teams = [],
   className,
+  variant = 'default',
   onHtmlChange,
 }: RichTextMentionContentProps) {
   const htmlRef = useRef(html)
@@ -193,8 +195,21 @@ export function RichTextMentionContent({
   }, [html, members, teams, onHtmlChange, handleCheckToggle])
 
   if (!content) {
-    return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />
+    return (
+      <div
+        className={cn(variant === 'pm' && 'pm-rich-text prose prose-sm dark:prose-invert max-w-none', className)}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    )
   }
 
-  return <div className={`tiptap ${className ?? ''}`}>{content}</div>
+  return (
+    <div className={cn(
+      'tiptap',
+      variant === 'pm' && 'pm-rich-text prose prose-sm dark:prose-invert max-w-none',
+      className,
+    )}>
+      {content}
+    </div>
+  )
 }

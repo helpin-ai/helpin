@@ -195,11 +195,14 @@ func (s *InternalCommandService) executePMCreateEpic(ctx context.Context, meta m
 		return nil, err
 	}
 	var req pmEpicCreateCommandInput
-	if err := json.Unmarshal(input, &req); err != nil {
+	if err := decodeStrictInternalCommandInput(input, &req); err != nil {
 		return nil, fmt.Errorf("parse create epic input: %w", err)
 	}
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("name is required")
+	}
+	if req.TeamID == nil || strings.TrimSpace(*req.TeamID) == "" {
+		return nil, fmt.Errorf("team_id is required")
 	}
 	teamID, err := s.validatePMCommandOptionalEpicTeam(ctx, meta.WorkspaceID, req.TeamID, true)
 	if err != nil {

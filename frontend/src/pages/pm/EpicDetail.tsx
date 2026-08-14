@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useTitle } from '@/hooks/useTitle';
@@ -9,37 +9,29 @@ import {
   Calendar03Icon,
   ArrowRight01Icon,
   AttachmentIcon,
-  ChartColumnIcon,
   CheckListIcon,
   FavouriteIcon,
   Link01Icon,
   Loading01Icon,
-  Message01Icon,
   PencilEdit01Icon,
   PlusSignIcon,
   SourceCodeIcon,
   Target01Icon,
-  Upload01Icon,
   UserIcon,
   UserGroupIcon,
   ViewIcon,
   ArchiveRestoreIcon,
-  BotIcon,
   HashtagIcon,
   Layers01Icon,
-  LayoutTable01Icon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { pmTaskService } from '@/lib/services/pmTaskService';
-import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
-import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { Attachments } from '@/components/pm/Attachments';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
@@ -67,22 +59,18 @@ import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
-import { ActivityTimeline } from '@/components/pm/ActivityTimeline';
-import { CommentThread } from '@/components/pm/CommentThread';
 import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
+import { InlineCompletionProgress } from '@/components/pm/InlineCompletionProgress';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
 import {
-  EPIC_DELIVERY_PANEL_ID,
   EpicDeliveryPipelineButton,
   EpicDeliveryRunsPanel,
   EpicDeliveryStatusChip,
 } from '@/components/pm/EpicDeliveryRunsPanel';
-import { deliveryDotState } from '@/components/pm/epicDeliveryDag';
 import { useEpicDeliveryPlan } from '@/components/pm/useEpicDeliveryPlan';
-import { StatusDot } from '@/components/agents/dock/StatusDot';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
@@ -90,11 +78,14 @@ import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
-import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
-import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { LinkTasksToEpicDialog } from '@/components/pm/LinkTasksToEpicDialog';
 import { getLinkTasksDisabledReason } from '@/components/pm/epicTaskLinking';
+import { EpicUpdatesView } from '@/components/pm/epic-detail/EpicUpdatesView';
+import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
+import { TaskOwnerDistribution } from '@/components/pm/TaskOwnerDistribution';
+import { TiptapEditor } from '@/components/ui/tiptap-editor';
+import { cn } from '@/lib/utils';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -107,6 +98,10 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
 };
 const NO_HEALTH_DATES_TOOLTIP = 'No suggestion yet: set a start date and deadline.';
 const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and execution.';
+
+function hasDraggedFiles(event: DragEvent) {
+  return event.dataTransfer.types.includes('Files');
+}
 
 // ── Metadata Row ───────────────────────────────────────────────────
 
@@ -121,17 +116,17 @@ function MetadataRow({
   tooltip?: string;
   children: React.ReactNode;
 }) {
-  const labelNode = <span className="text-[12px] text-muted-foreground self-center">{label}</span>;
+  const labelNode = <span className="mt-0.5 text-[12px] text-muted-foreground">{label}</span>;
 
   return (
     <>
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       {tooltip ? (
         <QuickTooltip label={tooltip} side="left">
           {labelNode}
         </QuickTooltip>
       ) : labelNode}
-      <div className="min-w-0 self-center text-[12px]">{children}</div>
+      <div className="min-w-0 text-[12px]">{children}</div>
     </>
   );
 }
@@ -234,29 +229,102 @@ export function EpicDetailPage() {
   const [movingTasks, setMovingTasks] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [editingDescription, setEditingDescription] = useState(false);
-  const [showExternalLinks, setShowExternalLinks] = useState(false);
-  const [hasExternalLinkItems, setHasExternalLinkItems] = useState(false);
-  const [externalLinkCount, setExternalLinkCount] = useState(0);
+  const [descriptionDragging, setDescriptionDragging] = useState(false);
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
-  const [showAllActivity, setShowAllActivity] = useState(false);
   const [taskListGroupBy, setTaskListGroupBy] = useState<TaskListGroupByOption>('none');
-  const [panelDragging, setPanelDragging] = useState(false);
   const savedDescriptionRef = useRef('');
-  const openFilePickerRef = useRef<(() => void) | null>(null);
-  const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
-  const dragCounterRef = useRef(0);
+  const descriptionUploadRef = useRef<((files: FileList | File[], insertPos?: number) => Promise<void>) | null>(null);
+  const queuedDescriptionDropRef = useRef<File[] | null>(null);
+  const descriptionDragCounterRef = useRef(0);
+  const descriptionEditStartRef = useRef('');
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
 
   const delivery = useEpicDeliveryPlan(workspaceId ?? '', epicId);
-  const [tasksView, setTasksView] = useState<'list' | 'delivery'>('list');
-  // Delivery is an event, not a permanent projection — fall back to the task
-  // list whenever the epic has no delivery plan.
-  const effectiveTasksView = delivery.plan ? tasksView : 'list';
+  const routeSearch = routeApi.useSearch();
+  const activeView = routeSearch.epic_view === 'delivery' ? 'delivery' : 'overview';
+
+  const selectView = useCallback((view: 'overview' | 'delivery') => {
+    navigate({
+      to: '.',
+      search: (previous) => ({
+        ...previous,
+        epic_view: view === 'delivery' ? 'delivery' : undefined,
+      }),
+      replace: true,
+    });
+  }, [navigate]);
+
+  const beginDescriptionEditing = useCallback(() => {
+    if (!form) return;
+    descriptionEditStartRef.current = form.description;
+    setEditingDescription(true);
+  }, [form]);
+
+  const resetDescriptionDrag = useCallback(() => {
+    descriptionDragCounterRef.current = 0;
+    setDescriptionDragging(false);
+  }, []);
+
+  const handleDescriptionUploadReady = useCallback((upload: ((files: FileList | File[], insertPos?: number) => Promise<void>) | null) => {
+    descriptionUploadRef.current = canEdit ? upload : null;
+    if (!canEdit) {
+      queuedDescriptionDropRef.current = null;
+      return;
+    }
+
+    const queuedFiles = queuedDescriptionDropRef.current;
+    if (!upload || !queuedFiles?.length) return;
+    queuedDescriptionDropRef.current = null;
+    void upload(queuedFiles);
+  }, [canEdit]);
+
+  const handleDescriptionDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!canEdit || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    descriptionDragCounterRef.current++;
+    setDescriptionDragging(true);
+  }, [canEdit]);
+
+  const handleDescriptionDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!canEdit || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, [canEdit]);
+
+  const handleDescriptionDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!canEdit || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    descriptionDragCounterRef.current = Math.max(0, descriptionDragCounterRef.current - 1);
+    if (descriptionDragCounterRef.current === 0) {
+      setDescriptionDragging(false);
+    }
+  }, [canEdit]);
+
+  const handleDescriptionDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!canEdit || !hasDraggedFiles(event)) return;
+    const alreadyHandled = event.defaultPrevented;
+    event.preventDefault();
+    event.stopPropagation();
+    resetDescriptionDrag();
+    if (alreadyHandled) return;
+
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length === 0) return;
+    if (descriptionUploadRef.current) {
+      void descriptionUploadRef.current(files);
+      return;
+    }
+
+    queuedDescriptionDropRef.current = files;
+    beginDescriptionEditing();
+  }, [beginDescriptionEditing, canEdit, resetDescriptionDrag]);
 
   const { teams, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
@@ -343,7 +411,6 @@ export function EpicDetailPage() {
   useEffect(() => {
     setCommentsLoading(true);
     setActivityLoading(true);
-    setShowAllActivity(false);
     void reloadComments();
     void reloadActivity();
   }, [reloadComments, reloadActivity]);
@@ -372,26 +439,6 @@ export function EpicDetailPage() {
       window.removeEventListener('epic-updated', handleEpicUpdated);
     };
   }, [epicId, reloadComments, reloadActivity]);
-
-  // Auto-show external links if they exist
-  useEffect(() => {
-    if (!workspaceId || !epic?.epic?.id) return;
-    pmExternalLinkService.listByEntity(workspaceId, 'epic', epic.epic.id).then(({ data }) => {
-      const count = data?.length ?? 0;
-      setHasExternalLinkItems(count > 0);
-      setExternalLinkCount(count);
-      if (count > 0) setShowExternalLinks(true);
-    });
-  }, [workspaceId, epic?.epic?.id]);
-
-  const handleExternalLinkContentChange = useCallback((hasContent: boolean) => {
-    setHasExternalLinkItems(hasContent);
-    if (hasContent) setShowExternalLinks(true);
-  }, []);
-
-  const handleExternalLinkCountChange = useCallback((count: number) => {
-    setExternalLinkCount(count);
-  }, []);
 
   // Auto-save debounce
   useEffect(() => {
@@ -437,6 +484,15 @@ export function EpicDetailPage() {
   const updateField = <K extends keyof EpicFormState>(key: K, value: EpicFormState[K], patch: UpdateEpicRequest) => {
     setForm((current) => current ? { ...current, [key]: value } : current);
     queuePatch(patch);
+  };
+
+  const cancelDescriptionEditing = () => {
+    if (!form) return;
+    const initialDescription = descriptionEditStartRef.current;
+    if (form.description !== initialDescription) {
+      updateField('description', initialDescription, { description: initialDescription });
+    }
+    setEditingDescription(false);
   };
 
   const handleDescriptionAttachmentDelete = useCallback(
@@ -488,18 +544,7 @@ export function EpicDetailPage() {
   );
 
   // Derived data
-  const progressSummary = useMemo(() => {
-    const totalTasks = tasks.length;
-    const doneTasks = tasks.filter((task) => task.completed).length;
-    const progress = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
-    return {
-      progress,
-      doneTasks,
-      totalTasks,
-      remainingTasks: Math.max(totalTasks - doneTasks, 0),
-    };
-  }, [tasks]);
-  const { progress, doneTasks, totalTasks, remainingTasks } = progressSummary;
+  const doneTasks = useMemo(() => tasks.filter((task) => task.completed).length, [tasks]);
 
   const defaultEpicState = epicStates.find((s) => s.is_default) ?? epicStates[0];
   const currentEpicState = useMemo(
@@ -549,60 +594,6 @@ export function EpicDetailPage() {
     }
     return teams[0]?.id ?? '';
   }, [epic?.epic.team_id, form?.team_id, teams]);
-
-  // Resources: task owner workload summary.
-  const resources = useMemo(() => {
-    const personMap = new Map<string, { id: string; name: string; email: string; taskCount: number; percentage: number }>();
-    const totalTasks = tasks.length;
-    let unassignedTaskCount = 0;
-
-    for (const task of tasks) {
-      const ownerIds = task.owner_member_ids ?? [];
-      if (ownerIds.length === 0) {
-        unassignedTaskCount += 1;
-        continue;
-      }
-      for (const ownerKey of ownerIds) {
-        const assignable = findAssignableMember(assignableMembers, ownerKey);
-        if (assignable) {
-          const existing = personMap.get(assignable.id);
-          if (existing) {
-            existing.taskCount += 1;
-          } else {
-            personMap.set(assignable.id, {
-              id: assignable.id,
-              name: assignableMemberNames.get(assignable.id) ?? assignable.display_name,
-              email: assignable.email,
-              taskCount: 1,
-              percentage: 0,
-            });
-          }
-        }
-      }
-    }
-
-    const owners = Array.from(personMap.values())
-      .map((person) => ({
-        ...person,
-        percentage: totalTasks > 0 ? Math.round((person.taskCount / totalTasks) * 100) : 0,
-      }))
-      .sort((a, b) => b.taskCount - a.taskCount || (a.name || a.email).localeCompare(b.name || b.email));
-
-    if (unassignedTaskCount === 0) {
-      return owners;
-    }
-
-    return [
-      {
-        id: '__unassigned__',
-        name: 'Unassigned',
-        email: '',
-        taskCount: unassignedTaskCount,
-        percentage: totalTasks > 0 ? Math.round((unassignedTaskCount / totalTasks) * 100) : 0,
-      },
-      ...owners,
-    ];
-  }, [tasks, assignableMembers, assignableMemberNames]);
 
   const openTask = useCallback(
     ( task: Task) => {
@@ -742,92 +733,42 @@ export function EpicDetailPage() {
     });
   };
 
-  const renderTasksViewSwitcher = () => {
-    if (!delivery.plan) return null;
-    return (
-      <span className="mr-1 inline-flex h-7 items-center gap-0.5 rounded-md border border-border/70 bg-muted/30 p-0.5">
-        <QuickTooltip label="Task list">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-pressed={effectiveTasksView === 'list'}
-            className={`h-6 w-6 rounded-sm ${
-              effectiveTasksView === 'list'
-                ? 'bg-background text-foreground shadow-sm hover:bg-background'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setTasksView('list')}
-          >
-            <LayoutTable01Icon className="h-3.5 w-3.5" />
-          </Button>
-        </QuickTooltip>
-        <QuickTooltip label="Delivery">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-pressed={effectiveTasksView === 'delivery'}
-            className={`relative h-6 w-6 rounded-sm ${
-              effectiveTasksView === 'delivery'
-                ? 'bg-background text-foreground shadow-sm hover:bg-background'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => setTasksView('delivery')}
-          >
-            <BotIcon className="h-3.5 w-3.5" />
-            <StatusDot
-              state={deliveryDotState(delivery.plan, delivery.runsById)}
-              className="absolute -right-0.5 -top-0.5"
-            />
-          </Button>
-        </QuickTooltip>
-      </span>
-    );
-  };
-
   const renderTaskHeaderAddButton = () => (
     <div className="flex items-center gap-1.5">
-      {canEdit && workspaceId && tasks.length > 0 ? (
-        <EpicDeliveryPipelineButton
-          workspaceId={workspaceId}
-          epicId={epicId}
-          onStarted={delivery.reload}
-        />
-      ) : null}
-      {renderTasksViewSwitcher()}
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground"
         onClick={viewEpicTasksPage}
       >
-        <ViewIcon className="h-3.5 w-3.5" />
+        <ViewIcon />
         View on Tasks page
       </Button>
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground"
         onClick={() => setLinkTasksOpen(true)}
         disabled={linkTasksDisabledReason !== null}
         title={linkTasksDisabledReason ?? undefined}
       >
-        <Link01Icon className="h-3.5 w-3.5" />
+        <Link01Icon />
         Link tasks
       </Button>
       <Button
         variant="ghost"
         size="sm"
-        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground"
         onClick={() => void handleStartCreateTask()}
         disabled={!canCreateTask || openingCreateTask}
         title={createTaskDisabledReason ?? undefined}
       >
         {openingCreateTask ? (
-          <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+          <Loading01Icon className="animate-spin" />
         ) : (
-          <PlusSignIcon className="h-3.5 w-3.5" />
+          <PlusSignIcon />
         )}
         Create task
       </Button>
@@ -835,31 +776,35 @@ export function EpicDetailPage() {
   );
 
   const renderEmptyTaskActions = () => (
-    <div className="flex h-9 items-center border-t border-dashed border-border/60">
-      <button
+    <div className="mt-2 flex flex-wrap items-center gap-1">
+      <Button
         type="button"
-        className="flex h-full flex-1 items-center gap-2 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        variant="ghost"
+        size="sm"
+        className="text-muted-foreground hover:text-foreground"
         onClick={() => setLinkTasksOpen(true)}
         disabled={linkTasksDisabledReason !== null}
         title={linkTasksDisabledReason ?? undefined}
       >
-        <Link01Icon className="h-3.5 w-3.5" />
+        <Link01Icon />
         <span>Link existing tasks</span>
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
-        className="flex h-full flex-1 items-center gap-2 border-l border-dashed border-border/60 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        variant="ghost"
+        size="sm"
+        className="text-muted-foreground hover:text-foreground"
         onClick={() => void handleStartCreateTask()}
         disabled={!canCreateTask || openingCreateTask}
         title={createTaskDisabledReason ?? undefined}
       >
         {openingCreateTask ? (
-          <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+          <Loading01Icon className="animate-spin" />
         ) : (
-          <PlusSignIcon className="h-3.5 w-3.5" />
+          <PlusSignIcon />
         )}
         <span>Create task</span>
-      </button>
+      </Button>
     </div>
   );
 
@@ -891,7 +836,7 @@ export function EpicDetailPage() {
           <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
-        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
           <Layers01Icon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
           <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
             Epics
@@ -930,76 +875,89 @@ export function EpicDetailPage() {
       </div>
 
       {/* ── Two-column layout ───────────────────────────────────── */}
-      <div
-        className="relative grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]"
-        onDragEnter={(e) => {
-          e.preventDefault();
-          dragCounterRef.current++;
-          if (e.dataTransfer.types.includes('Files')) setPanelDragging(true);
-        }}
-        onDragOver={(e) => e.preventDefault()}
-        onDragLeave={() => {
-          dragCounterRef.current--;
-          if (dragCounterRef.current === 0) setPanelDragging(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          dragCounterRef.current = 0;
-          setPanelDragging(false);
-          if (e.dataTransfer.files.length > 0) {
-            uploadFilesRef.current?.(e.dataTransfer.files);
-          }
-        }}
-      >
-        {panelDragging && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
-              <Upload01Icon className="h-8 w-8 text-primary" />
-              <p className="text-sm font-medium text-foreground">Drop files to attach</p>
-              <p className="text-xs text-muted-foreground">Max 50MB per file</p>
-            </div>
-          </div>
-        )}
+      <div className="relative grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
         {/* ── Left column ────────────────────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 pb-24 pt-6">
+        <div className="flex min-h-0 min-w-0 flex-col lg:overflow-hidden">
+          <div role="tablist" aria-label="Epic detail views" className="flex items-center gap-6 border-b border-border/60 px-6 lg:px-10">
+            {(['overview', 'delivery'] as const).map((view) => (
+              <button
+                key={view}
+                type="button"
+                role="tab"
+                aria-selected={activeView === view}
+                className={cn(
+                  '-mb-px flex items-center gap-2 border-b-2 px-0.5 py-3 text-sm font-medium capitalize transition-colors',
+                  activeView === view
+                    ? 'border-foreground text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => selectView(view)}
+              >
+                {view}
+              </button>
+            ))}
+          </div>
+
+          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden px-6 pt-5 lg:overflow-y-auto lg:px-10">
+          {activeView === 'overview' ? (
+          <>
           {/* Title */}
           <input
             type="text"
             aria-label="Epic title"
             value={form.name}
             onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-            className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+            className="w-full border-b border-border/60 bg-transparent pb-2 text-2xl font-bold text-foreground transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/70 focus:outline-none"
             placeholder="Untitled"
           />
 
           {/* Description */}
-          <div className="mt-4">
+          <div
+            className={cn(
+              'group/desc relative mt-4 rounded-lg pb-3 transition-[box-shadow,background-color]',
+              descriptionDragging && 'bg-primary/5 ring-1 ring-primary/50',
+            )}
+            onDragEnter={handleDescriptionDragEnter}
+            onDragOver={handleDescriptionDragOver}
+            onDragLeave={handleDescriptionDragLeave}
+            onDrop={handleDescriptionDrop}
+          >
+            {descriptionDragging && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border border-dashed border-primary bg-background/80">
+                <div className="flex items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
+                  <AttachmentIcon className="h-3.5 w-3.5 text-primary" />
+                  Drop to insert here
+                </div>
+              </div>
+            )}
             {editingDescription ? (
-              <div>
+              <div className="group/description-editor">
                 <TiptapEditor
                   content={form.description}
                   onChange={(html) => updateField('description', html, { description: html })}
                   placeholder="Add a description..."
-                  className="border-transparent shadow-none"
+                  variant="divider"
+                  contentVariant="pm"
+                  className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:p-0"
                   uploadConfig={{ workspaceId: workspaceId!, entityType: 'editor_upload', entityId: workspaceId! }}
                   onUploadStateChange={setDescriptionPendingUploads}
+                  onUploadReady={handleDescriptionUploadReady}
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
-                <div className="mt-2 flex justify-end">
-                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
-                    Done
-                  </Button>
-                </div>
+                <DetailDescriptionEditorActions
+                  onCancel={cancelDescriptionEditing}
+                  onDone={() => setEditingDescription(false)}
+                />
               </div>
             ) : (
-                <div className="group/desc relative">
+                <div className="relative">
                   {form.description ? (
                     <RichTextMentionContent
                       html={form.description}
                       members={assignableMembers}
                       teams={mentionTeams}
-                      className="prose prose-sm dark:prose-invert max-w-none text-sm"
+                      variant="pm"
                     />
                   ) : (
                     <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
@@ -1007,8 +965,8 @@ export function EpicDetailPage() {
                 {canEdit && (
                   <button
                     type="button"
-                    className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                    onClick={() => setEditingDescription(true)}
+                    className="mt-3 inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                    onClick={beginDescriptionEditing}
                   >
                     <PencilEdit01Icon className="h-3 w-3" />
                     Edit description
@@ -1018,76 +976,23 @@ export function EpicDetailPage() {
             )}
           </div>
 
-          {/* Action bar */}
-          {canEdit && (
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className={getOptionalSectionActionClass(hasExternalLinkItems ? 'locked' : showExternalLinks ? 'open' : 'available')}
-                disabled={hasExternalLinkItems}
-                onClick={() => setShowExternalLinks((v) => !v)}
-              >
-                <Link01Icon className="h-3 w-3" />
-                External Links
-                {hasExternalLinkItems ? (
-                  <span className="text-[10px] opacity-70">{externalLinkCount}</span>
-                ) : null}
-              </button>
-              <button
-                type="button"
-                className={getOptionalSectionActionClass('available')}
-                onClick={() => openFilePickerRef.current?.()}
-              >
-                <AttachmentIcon className="h-3 w-3" />
-                Attach Files
-              </button>
-            </div>
-          )}
-
-          {showExternalLinks && (
-            <div className="mt-4">
-              <ExternalLinks
-                workspaceId={workspaceId!}
-                entityType="epic"
-                entityId={epic.epic.id}
-                onContentChange={handleExternalLinkContentChange}
-                onCountChange={handleExternalLinkCountChange}
-              />
-            </div>
-          )}
-
-          <div className="mt-6">
+          {/* Attachments: compact action when empty, full section once populated. */}
+          <div id="attachments-section">
             <Attachments
               workspaceId={workspaceId!}
               entityType="epic"
               entityId={epic.epic.id}
               memberNameMap={assignableMemberNames}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
-              onFilePickerReady={(fn) => { openFilePickerRef.current = fn; }}
-              onUploadReady={(fn) => { uploadFilesRef.current = fn; }}
+              editable={canEdit}
+              showAddAction
+              emptyPresentation="inline-action"
             />
           </div>
 
-          {/* Resources */}
+          {/* Task ownership distribution */}
           <div className="mt-6">
-            <TaskDetailSectionHeading title={`Task owners (${resources.length})`} icon={UserGroupIcon} />
-            {resources.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No task owners yet.</p>
-            ) : (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {resources.map((person) => (
-                  <div key={person.id} className="inline-flex w-fit max-w-full items-center gap-2 rounded-md border border-border/60 px-3 py-2 sm:max-w-[14rem]">
-                    <UserAvatar name={person.name || person.email} className="h-6 w-6 border-border/60" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-medium">{person.name || person.email}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {person.taskCount} {person.taskCount === 1 ? 'task' : 'tasks'} · {person.percentage}%
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <TaskOwnerDistribution tasks={tasks} members={assignableMembers} />
           </div>
 
           <Separator className="my-6" />
@@ -1097,23 +1002,22 @@ export function EpicDetailPage() {
             <TaskDetailSectionHeading
               title={`Tasks (${tasks.length})`}
               icon={CheckListIcon}
-              meta={<div className="ml-auto">{renderTaskHeaderAddButton()}</div>}
-            />
-            {effectiveTasksView === 'delivery' && delivery.plan && workspaceId ? (
-              <div className="mt-3">
-                <EpicDeliveryRunsPanel
-                  workspaceId={workspaceId}
-                  plan={delivery.plan}
-                  runsById={delivery.runsById}
-                  onReload={delivery.reload}
-                  canEdit={canEdit}
-                />
-              </div>
-            ) : tasks.length === 0 ? (
-              <div className="mt-3 overflow-hidden rounded-lg border border-border/60 bg-card">
-                <div className="px-3 py-3">
-                  <p className="text-sm text-muted-foreground">No tasks linked yet.</p>
+              meta={tasks.length > 0 ? (
+                <div className="flex min-w-0 flex-1 items-center">
+                  <InlineCompletionProgress
+                    completed={doneTasks}
+                    total={tasks.length}
+                    showCount={false}
+                    className="ml-1.5"
+                    testIdPrefix="epic-tasks"
+                  />
+                  <div className="ml-auto pl-6">{renderTaskHeaderAddButton()}</div>
                 </div>
+              ) : undefined}
+            />
+            {tasks.length === 0 ? (
+              <div className="mt-3">
+                <p className="text-sm italic text-muted-foreground">No tasks linked yet.</p>
                 {renderEmptyTaskActions()}
               </div>
             ) : workflow ? (
@@ -1146,117 +1050,95 @@ export function EpicDetailPage() {
 
           <Separator className="my-6" />
 
-          {/* AI Agents */}
+          <TaskDetailSectionHeading title="Updates" icon={Activity01Icon} className="mb-4" />
           {workspaceId ? (
-            <EpicPlannerPanel
+            <EpicUpdatesView
               workspaceId={workspaceId}
               epicId={epicId}
-              epicTeamId={form.team_id || null}
-              lastRunId={epic.epic.last_planning_run_id}
-              canEdit={canEdit}
-              onRunCompleted={handlePlannerRunCompleted}
+              comments={comments}
+              activity={activity}
+              commentsLoading={commentsLoading}
+              activityLoading={activityLoading}
+              currentUserId={currentUser?.id}
+              teams={mentionTeams}
+              members={assignableMembers}
+              onCommentsChange={setComments}
             />
           ) : null}
-
-          <div className={comments.length > 0 ? 'mt-10' : 'mt-8'}>
-            {commentsLoading ? (
-              <div className="space-y-3 rounded-lg border border-border/60 p-4">
-                {[1, 2].map((i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
-                    <div className="flex-1 space-y-2">
-                      <Skeleton className="h-3 w-32" />
-                      <Skeleton className="h-3 w-full" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <>
-                <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3" />
-                {workspaceId ? (
-                  <CommentThread
+          </>
+          ) : (
+          <div className="space-y-8">
+            <section>
+              <TaskDetailSectionHeading
+                title="Delivery pipeline"
+                icon={SourceCodeIcon}
+                meta={canEdit && workspaceId ? (
+                  <EpicDeliveryPipelineButton
                     workspaceId={workspaceId}
-                    entityType="epic"
-                    entityId={epicId}
-                    comments={comments}
-                    currentUserId={currentUser?.id}
-                    teams={mentionTeams}
-                    members={assignableMembers}
-                    onCommentsChange={setComments}
-                    hideEmptyState
+                    epicId={epicId}
+                    onStarted={delivery.reload}
+                    disabled={tasks.length === 0}
+                    disabledReason="Add at least one task before running delivery."
                   />
-                ) : null}
-              </>
-            )}
+                ) : undefined}
+              />
 
-            {activityLoading ? (
-              <div className="mt-6 space-y-3">
-                <Skeleton className="h-3 w-20" />
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <Skeleton className="h-4 w-4 shrink-0 rounded-full" />
-                    <Skeleton className="h-3 w-48" />
-                  </div>
-                ))}
-              </div>
+              {tasks.length === 0 ? (
+                <div className="mt-3 border-t border-border/60 py-8">
+                  <p className="text-sm font-medium text-foreground">Add tasks before running delivery</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    The delivery pipeline implements, reviews, and merges the open tasks linked to this epic.
+                  </p>
+                </div>
+              ) : delivery.plan && workspaceId ? (
+                <div className="mt-3">
+                  <EpicDeliveryRunsPanel
+                    workspaceId={workspaceId}
+                    plan={delivery.plan}
+                    runsById={delivery.runsById}
+                    onReload={delivery.reload}
+                    canEdit={canEdit}
+                  />
+                </div>
+              ) : (
+                <div className="mt-3 border-t border-border/60 py-8">
+                  <p className="text-sm font-medium text-foreground">No delivery runs yet</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Run the delivery pipeline to execute this epic's open tasks in dependency order.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            <Separator />
+
+            {workspaceId ? (
+              <EpicPlannerPanel
+                workspaceId={workspaceId}
+                epicId={epicId}
+                epicTeamId={form.team_id || null}
+                lastRunId={epic.epic.last_planning_run_id}
+                canEdit={canEdit}
+                onRunCompleted={handlePlannerRunCompleted}
+              />
             ) : null}
-            {!activityLoading && activity.length > 0 && (
-              <div className="mt-6">
-                <TaskDetailSectionHeading title="Activity" icon={Activity01Icon} />
-                <ActivityTimeline
-                  activity={activity}
-                  showAll={showAllActivity}
-                  onShowAll={() => setShowAllActivity(true)}
-                  entityLabel="epic"
-                />
-              </div>
-            )}
           </div>
-
+          )}
+          <div className="h-40 shrink-0" aria-hidden="true" />
+          </div>
         </div>
 
         {/* ── Right column — metadata sidebar ────────────────────── */}
-        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
-          <section className="rounded-lg border border-emerald-500/15 bg-emerald-500/[0.035] p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600">
-                  <ChartColumnIcon className="h-3.5 w-3.5" />
-                </span>
-                <div className="min-w-0">
-                  <h3 className="text-xs font-semibold text-foreground">Progress</h3>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {totalTasks > 0 ? `${doneTasks}/${totalTasks} tasks complete` : 'No tasks yet'}
-                  </p>
-                </div>
-              </div>
-              <span className="text-lg font-semibold tabular-nums leading-none text-foreground">{progress}%</span>
-            </div>
-            <Progress value={progress} className="mt-3 h-2 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
-            <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-              <span className="tabular-nums">{doneTasks} done</span>
-              <span className="tabular-nums">{remainingTasks} remaining</span>
-            </div>
-          </section>
-
+        <aside className="min-h-0 border-t border-border/60 px-5 py-5 pb-40 lg:overflow-y-auto lg:border-t-0 lg:border-l">
           {delivery.plan ? (
             <EpicDeliveryStatusChip
               plan={delivery.plan}
               runsById={delivery.runsById}
-              onClick={() => {
-                setTasksView('delivery');
-                // The panel mounts only after the view switches.
-                requestAnimationFrame(() => {
-                  document
-                    .getElementById(EPIC_DELIVERY_PANEL_ID)
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                });
-              }}
+              onClick={() => selectView('delivery')}
             />
           ) : null}
 
-          <div className="mt-5 grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
+          <div className="mt-5 grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* State */}
             <MetadataRow icon={HashtagIcon} label="State">
               <SidebarPopoverSelect
@@ -1477,9 +1359,45 @@ export function EpicDetailPage() {
           )}
 
           {workspaceId ? (
-            <>
-              <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} className="-mx-4 mt-4 border-t border-border/60" />
-            </>
+            <details id="epic-related-section" className="-mx-5 mt-4 border-t border-border/60 px-5 pt-4" open>
+              <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                Related
+              </summary>
+              <div className="mt-3 space-y-0">
+                <AssociationsPanel
+                  objectType="epic"
+                  objectId={epicId}
+                  workspaceId={workspaceId}
+                  section="docs"
+                />
+
+                <div className="my-2 h-px bg-border/60" />
+                <ExternalLinks
+                  workspaceId={workspaceId}
+                  entityType="epic"
+                  entityId={epicId}
+                  flat
+                />
+
+                <div className="my-2 h-px bg-border/60" />
+                <AssociationsPanel
+                  objectType="epic"
+                  objectId={epicId}
+                  workspaceId={workspaceId}
+                  excludeDocs
+                  section="support"
+                />
+
+                <div className="my-2 h-px bg-border/60" />
+                <AssociationsPanel
+                  objectType="epic"
+                  objectId={epicId}
+                  workspaceId={workspaceId}
+                  excludeDocs
+                  section="crm"
+                />
+              </div>
+            </details>
           ) : null}
         </aside>
       </div>

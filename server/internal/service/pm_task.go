@@ -293,6 +293,11 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	if err := s.applyTemplateDefaultsToCreateRequest(ctx, &req); err != nil {
 		return nil, err
 	}
+	if req.TeamID == nil || strings.TrimSpace(*req.TeamID) == "" {
+		return nil, fmt.Errorf("team_id is required")
+	}
+	teamID := strings.TrimSpace(*req.TeamID)
+	req.TeamID = &teamID
 	if err := requireTeamMembershipForCreate(ctx, req.TeamID); err != nil {
 		return nil, err
 	}

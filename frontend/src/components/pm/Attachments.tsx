@@ -6,6 +6,7 @@ import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
 import type { AttachmentResponse } from '@/lib/pmTypes';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { cn } from '@/lib/utils';
 
 // File type icons from Plane.so
 import pdfIcon from '@/assets/attachment/pdf-icon.png';
@@ -38,6 +39,8 @@ interface AttachmentsProps {
   editable?: boolean;
   showAddAction?: boolean;
   showEmptyState?: boolean;
+  /** Replace the empty section with a compact left-aligned action after nearby content. */
+  emptyPresentation?: 'section' | 'inline-action';
 }
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -104,6 +107,15 @@ function isVideoType(contentType: string, fileName: string): boolean {
   return ['mp4', 'mov', 'webm', 'mkv', 'wmv', 'avi', 'mpeg', 'mpg'].includes(getFileExtension(fileName));
 }
 
+function AttachFilesButton({ uploading, onClick }: { uploading: boolean; onClick: () => void }) {
+  return (
+    <Button type="button" variant="ghost" size="default" disabled={uploading} onClick={onClick}>
+      <AttachmentIcon />
+      Attach files
+    </Button>
+  );
+}
+
 export function Attachments({
   workspaceId,
   entityType,
@@ -115,8 +127,10 @@ export function Attachments({
   editable = true,
   showAddAction = false,
   showEmptyState = false,
+  emptyPresentation = 'section',
 }: AttachmentsProps) {
   const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
+  const [loadedEntityKey, setLoadedEntityKey] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +148,10 @@ export function Attachments({
   useEffect(() => {
     let cancelled = false;
     void pmAttachmentService.list(workspaceId, entityType, entityId).then(({ data }) => {
-      if (!cancelled) setAttachments(data ?? []);
+      if (!cancelled) {
+        setAttachments(data ?? []);
+        setLoadedEntityKey(`${entityType}:${entityId}`);
+      }
     });
     return () => {
       cancelled = true;
@@ -269,17 +286,27 @@ export function Attachments({
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
   const previewAttachments = attachments.filter(({ attachment }) => isImageType(attachment.content_type) || isVideoType(attachment.content_type, attachment.file_name));
 
-  const hasAttachments = attachments.length > 0;
+  const attachmentsLoaded = loadedEntityKey === `${entityType}:${entityId}`;
+  const hasAttachments = attachmentsLoaded && attachments.length > 0;
+  const showInlineEmptyAction = emptyPresentation === 'inline-action' && attachmentsLoaded && !hasAttachments;
+  const hideUntilLoaded = emptyPresentation === 'inline-action' && !attachmentsLoaded;
 
   return (
     <div
-      className="space-y-3"
+      className={cn(
+        'space-y-3',
+        emptyPresentation === 'inline-action' && (hasAttachments ? 'mt-6 border-t border-border/60 pt-6' : 'mt-3'),
+      )}
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {(hasAttachments || showAddAction || showEmptyState) && (
+      {showInlineEmptyAction ? (
+        editable ? (
+          <AttachFilesButton uploading={uploading} onClick={() => fileInputRef.current?.click()} />
+        ) : null
+      ) : !hideUntilLoaded && (hasAttachments || showAddAction || showEmptyState) ? (
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-1.5">
             <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -288,19 +315,10 @@ export function Attachments({
             </h3>
           </div>
           {showAddAction && editable ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <AttachmentIcon className="h-3 w-3" />
-              Attach files
-            </Button>
+            <AttachFilesButton uploading={uploading} onClick={() => fileInputRef.current?.click()} />
           ) : null}
         </div>
-      )}
+      ) : null}
 
       <input
         ref={fileInputRef}
@@ -340,12 +358,12 @@ export function Attachments({
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
-      {showEmptyState && !hasAttachments && !dragging && !uploading ? (
+      {emptyPresentation === 'section' && showEmptyState && !hasAttachments && !dragging && !uploading ? (
         <p className="text-sm text-muted-foreground">No attachments</p>
       ) : null}
 
       {/* Unified attachment grid — images + files as consistent cards */}
-      {attachments.length > 0 && (
+      {hasAttachments && (
         <div className={getAttachmentGridDensityClasses(attachments.length)}>
           {attachments.map((entry) => {
             const isImage = isImageType(entry.attachment.content_type);

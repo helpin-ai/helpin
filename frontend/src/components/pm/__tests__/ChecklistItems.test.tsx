@@ -259,14 +259,15 @@ describe('ChecklistItems', () => {
       makeChecklistItem({ id: 'item-2', completed: false, position: 1 }),
     ])
 
-    const progressFill = container?.querySelector<HTMLElement>('[style*="width: 50%"]')
+    const progressFill = container?.querySelector<HTMLElement>('[data-slot="progress-indicator"]')
     const heading = container?.querySelector<HTMLElement>('[data-testid="checklist-heading"]')
     const progress = container?.querySelector<HTMLElement>('[data-testid="checklist-progress"]')
     const count = container?.querySelector<HTMLElement>('[data-testid="checklist-count"]')
     const percentage = container?.querySelector<HTMLElement>('[data-testid="checklist-percentage"]')
 
     expect(progressFill).toBeTruthy()
-    expect(progress?.parentElement).toBe(heading)
+    expect(progressFill?.style.transform).toBe('translateX(-50%)')
+    expect(progress?.parentElement?.parentElement).toBe(heading)
     expect(count).toBeTruthy()
     expect(percentage).toBeTruthy()
     expect(count?.compareDocumentPosition(progress!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()

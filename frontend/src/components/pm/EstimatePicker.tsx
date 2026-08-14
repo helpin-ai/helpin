@@ -38,7 +38,7 @@ function EstimatePickerBase({
       <button
         type="button"
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer',
+          'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer',
           className,
         )}
         onClick={(event) => {
@@ -64,7 +64,7 @@ function EstimatePickerBase({
             <button
               type="button"
               className={cn(
-                'rounded-md px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                'rounded-md px-3 py-1.5 text-left text-ui transition-colors hover:bg-accent',
                 value === '' && 'bg-accent font-medium',
               )}
               onClick={() => {
@@ -79,7 +79,7 @@ function EstimatePickerBase({
                 key={opt.value}
                 type="button"
                 className={cn(
-                  'rounded-md px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                  'rounded-md px-3 py-1.5 text-left text-ui transition-colors hover:bg-accent',
                   numValue === opt.value && 'bg-accent font-medium',
                 )}
                 onClick={() => {
@@ -101,7 +101,7 @@ function EstimatePickerBase({
     <button
       type="button"
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer',
+        'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer',
         className,
       )}
       onClick={(event) => {

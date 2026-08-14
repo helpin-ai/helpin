@@ -2221,7 +2221,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 		}
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
@@ -2370,7 +2370,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_NormalizesGenericActionTi
 		t.Fatalf("create message: %v", err)
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
@@ -2480,7 +2480,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_DoesNotFallBackSilentlyWh
 		}
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
@@ -2584,7 +2584,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_UsesStructuredLLMOutput(t
 		t.Fatalf("create message: %v", err)
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
@@ -2673,7 +2673,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_FailsWhenContextIsTooWeak
 		t.Fatalf("create message: %v", err)
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err == nil {
 		t.Fatalf("expected error, got response %#v", resp)
 	}
@@ -2765,7 +2765,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_UsesInternalNotesAsFallba
 		}
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}

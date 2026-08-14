@@ -236,7 +236,7 @@ export const supportService = {
   createTaskFromConversation: (
     workspaceId: string,
     conversationId: string,
-    payload: CreateTaskFromConversationRequest = {},
+    payload: CreateTaskFromConversationRequest,
   ) => api.post<CreateTaskFromConversationResponse>(
     `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
     payload,

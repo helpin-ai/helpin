@@ -93,6 +93,7 @@ import {
   TABLE_HEADER_CELL_SORTABLE,
   TABLE_ROW,
   TABLE_CELL,
+  TABLE_NAME_TEXT,
   TABLE_GROUP_ROW,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
@@ -360,14 +361,14 @@ function LocalTaskFilterPill({
   onChange: (key: LocalTaskFilterKey, value: string) => void;
 }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
+    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-ui">
       <span className="font-medium text-muted-foreground">{definition.label}</span>
       <span className="text-muted-foreground/60">is</span>
       <Popover>
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="inline-flex max-w-[11rem] items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
+            className="inline-flex max-w-[11rem] items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-ui transition-colors hover:bg-accent"
           >
             <span className="truncate">{selectedLocalFilterLabel(definition, value)}</span>
           </button>
@@ -375,10 +376,10 @@ function LocalTaskFilterPill({
         <PopoverContent className={`${definition.searchableValues ? 'w-72' : 'w-52'} p-0`} align="start">
           <Command>
             {definition.searchableValues ? (
-              <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} />
+              <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} className="text-ui" />
             ) : null}
             <CommandList>
-              <CommandEmpty>No results.</CommandEmpty>
+              <CommandEmpty className="text-ui">No results.</CommandEmpty>
               <CommandGroup>
                 {definition.options.map((option) => {
                   const isSelected = option.value === value;
@@ -386,6 +387,7 @@ function LocalTaskFilterPill({
                     <CommandItem
                       key={option.value}
                       value={option.label}
+                      className="text-ui"
                       onSelect={() => onChange(definition.key, option.value)}
                     >
                       <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
@@ -452,7 +454,7 @@ function LocalTaskFilterControls({
       {canChooseFilter ? (
         <Popover open={open} onOpenChange={handleOpenChange}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground">
+            <Button variant="ghost" size="sm" className="min-w-[88px] justify-between gap-2 text-ui text-muted-foreground">
               <span className="inline-flex items-center gap-1">
                 <FilterHorizontalIcon className="h-3.5 w-3.5" />
                 Filters
@@ -482,13 +484,13 @@ function LocalTaskFilterControls({
                   >
                     <ArrowLeft02Icon className="h-3.5 w-3.5" />
                   </Button>
-                  <span className="truncate text-xs font-medium">{selectedDefinition.label}</span>
+                  <span className="truncate text-ui font-medium">{selectedDefinition.label}</span>
                 </div>
                 {selectedDefinition.searchableValues ? (
-                  <CommandInput placeholder={`Search ${selectedDefinition.label.toLowerCase()}...`} />
+                  <CommandInput placeholder={`Search ${selectedDefinition.label.toLowerCase()}...`} className="text-ui" />
                 ) : null}
                 <CommandList>
-                  <CommandEmpty>No results.</CommandEmpty>
+                  <CommandEmpty className="text-ui">No results.</CommandEmpty>
                   <CommandGroup>
                     {selectedDefinition.options.map((option) => {
                       const isSelected = values[selectedDefinition.key] === option.value;
@@ -496,6 +498,7 @@ function LocalTaskFilterControls({
                         <CommandItem
                           key={option.value}
                           value={option.label}
+                          className="text-ui"
                           onSelect={() => {
                             onChange(selectedDefinition.key, option.value);
                             setOpen(false);
@@ -514,14 +517,15 @@ function LocalTaskFilterControls({
               </Command>
             ) : (
               <Command>
-                <CommandInput placeholder="Filter by..." />
+                <CommandInput placeholder="Filter by..." className="text-ui" />
                 <CommandList>
-                  <CommandEmpty>No filters.</CommandEmpty>
+                  <CommandEmpty className="text-ui">No filters.</CommandEmpty>
                   <CommandGroup>
                     {availableDefinitions.map((definition) => (
                       <CommandItem
                         key={definition.key}
                         value={definition.label}
+                        className="text-ui"
                         onSelect={() => setSelectedKey(definition.key)}
                       >
                         {definition.label}
@@ -534,7 +538,7 @@ function LocalTaskFilterControls({
           </PopoverContent>
         </Popover>
       ) : (
-        <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground" disabled>
+        <Button variant="ghost" size="sm" className="min-w-[88px] justify-between gap-2 text-ui text-muted-foreground" disabled>
           <span className="inline-flex items-center gap-1">
             <FilterHorizontalIcon className="h-3.5 w-3.5" />
             Filters
@@ -558,7 +562,7 @@ function LocalTaskFilterControls({
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-[10px] text-muted-foreground"
+            className="h-7 px-2 text-ui text-muted-foreground"
             onClick={onClear}
           >
             Clear all
@@ -1345,7 +1349,7 @@ export function TaskListView({
         header: 'ID',
         size: 90,
         cell: (info) => (
-          <span className="font-mono text-xs text-muted-foreground">{info.getValue()}</span>
+          <span className="font-mono text-ui text-muted-foreground">{info.getValue()}</span>
         ),
       }),
       columnHelper.accessor('name', {
@@ -1355,7 +1359,7 @@ export function TaskListView({
         enableGrouping: false,
         cell: (info) => (
           <button
-            className="flex max-w-full cursor-pointer items-center gap-1.5 text-left text-sm hover:text-primary"
+            className={`flex max-w-full cursor-pointer items-center gap-1.5 text-left ${TABLE_NAME_TEXT} hover:text-primary`}
             onClick={(e) => {
               e.stopPropagation();
               handleOpenTask(info.row.original);
@@ -1614,7 +1618,7 @@ export function TaskListView({
           const val = info.getValue();
           if (!val) return null;
           return (
-            <span className="text-xs text-muted-foreground whitespace-nowrap">
+            <span className="text-ui text-muted-foreground whitespace-nowrap">
               {format(parseISO(val), 'MMM d')}
             </span>
           );
@@ -2070,7 +2074,7 @@ export function TaskListView({
                 value={taskSearchQuery}
                 onChange={(event) => setTaskSearchQuery(event.target.value)}
                 placeholder="Search"
-                className="h-8 pl-8 pr-8 text-sm"
+                className="h-8 pl-8 pr-8 text-ui"
               />
               {taskSearchQuery ? (
                 <button
@@ -2085,7 +2089,7 @@ export function TaskListView({
             </div>
           ) : null}
           {showTaskCount ? (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-ui text-muted-foreground">
               {displayTaskCount}{showLocalTaskControls && hasLocalTaskFilters ? ` of ${totalTaskCount}` : ''}{' '}
               {totalTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
             </span>
@@ -2100,8 +2104,8 @@ export function TaskListView({
           ) : null}
           <div className="ml-auto flex items-center gap-1.5">
             {toolbarActions}
-            <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
-              <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] gap-1 text-xs">
+            <Select size="ui" value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
+              <SelectTrigger className="w-auto min-w-[138px] max-w-[190px]">
                 <span className="shrink-0 text-muted-foreground">Group by</span>
                 <SelectValue />
               </SelectTrigger>
@@ -2270,7 +2274,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 
   return (
     <button
-      className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
+      className={`${TABLE_GROUP_ROW} w-full text-left text-ui`}
       onClick={row.getToggleExpandedHandler()}
     >
       <span className={TABLE_GROUP_ROW_INNER}>
@@ -2439,7 +2443,7 @@ function GroupLoadSentinel({
   }, [stateId, isLoading, onLoadMore]);
 
   return isLoading ? (
-    <div className="flex w-full items-center justify-center gap-2 py-1.5 text-xs text-muted-foreground">
+    <div className="flex w-full items-center justify-center gap-2 py-1.5 text-ui text-muted-foreground">
       <Loading01Icon className="h-3 w-3 animate-spin" />
       Loading...
     </div>
@@ -2462,7 +2466,7 @@ function InlinePriorityCell({
     return (
       <button
         type="button"
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         <TaskListPriorityIcon priority={p} className="h-4 w-4" />
@@ -2476,7 +2480,7 @@ function InlinePriorityCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           <TaskListPriorityIcon priority={p} className="h-4 w-4" />
@@ -2492,9 +2496,9 @@ function InlinePriorityCell({
           onKeyDown={(e) => e.stopPropagation()}
         >
           <Command>
-            <CommandInput placeholder="Search..." className="h-8 text-xs" />
+            <CommandInput placeholder="Search..." className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No match</CommandEmpty>
               <CommandGroup>
                 {ALL_PRIORITIES.map((pri) => {
                   const cfg = PRIORITY_CONFIG[pri];
@@ -2506,7 +2510,7 @@ function InlinePriorityCell({
                         if (pri !== p) onUpdate(task.id, { priority: pri });
                         setOpen(false);
                       }}
-                      className="flex items-center gap-2 text-xs"
+                      className="flex items-center gap-2 text-ui"
                     >
                       <TaskListPriorityIcon priority={pri} className="h-4 w-4" />
                       <span>{cfg.label}</span>
@@ -2541,7 +2545,7 @@ function InlineStateCell({
     return (
       <button
         type="button"
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         {current && (
@@ -2557,7 +2561,7 @@ function InlineStateCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {current && (
@@ -2575,9 +2579,9 @@ function InlineStateCell({
           onKeyDown={(e) => e.stopPropagation()}
         >
           <Command>
-            <CommandInput placeholder="Search..." className="h-8 text-xs" />
+            <CommandInput placeholder="Search..." className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No match</CommandEmpty>
               <CommandGroup>
                 {states.map((s) => (
                   <CommandItem
@@ -2588,7 +2592,7 @@ function InlineStateCell({
                         onUpdate(task.id, { workflow_state_id: s.id });
                       setOpen(false);
                     }}
-                    className="flex items-center gap-2 text-xs"
+                    className="flex items-center gap-2 text-ui"
                   >
                     <TaskListStateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
                     <span>{s.name}</span>
@@ -2659,7 +2663,7 @@ function InlineSeverityCell({
     return (
       <button
         type="button"
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         {s !== 'none' ? (
@@ -2679,7 +2683,7 @@ function InlineSeverityCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {s !== 'none' ? (
@@ -2701,9 +2705,9 @@ function InlineSeverityCell({
           onKeyDown={(e) => e.stopPropagation()}
         >
           <Command>
-            <CommandInput placeholder="Search..." className="h-8 text-xs" />
+            <CommandInput placeholder="Search..." className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No match</CommandEmpty>
               <CommandGroup>
                 {ALL_SEVERITIES.map((sev) => {
                   const cfg = SEVERITY_CONFIG[sev];
@@ -2715,7 +2719,7 @@ function InlineSeverityCell({
                         if (sev !== s) onUpdate(task.id, { severity: sev });
                         setOpen(false);
                       }}
-                      className="flex items-center gap-2 text-xs"
+                      className="flex items-center gap-2 text-ui"
                     >
                       <TaskListSeverityIcon severity={sev} className="h-4 w-4" />
                       <span>{cfg.label}</span>
@@ -2777,7 +2781,7 @@ function InlineTeamCell({
     return (
       <button
         type="button"
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         {teamName ? (
@@ -2794,7 +2798,7 @@ function InlineTeamCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {teamName ? (
@@ -2813,9 +2817,9 @@ function InlineTeamCell({
           onKeyDown={(e) => e.stopPropagation()}
         >
           <Command>
-            <CommandInput placeholder="Search teams..." className="h-8 text-xs" />
+            <CommandInput placeholder="Search teams..." className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No teams found</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No teams found</CommandEmpty>
               <CommandGroup>
                 {teams.map((t) => (
                   <CommandItem
@@ -2826,7 +2830,7 @@ function InlineTeamCell({
                       onUpdate(task.id, { team_id: newTeamId });
                       setOpen(false);
                     }}
-                    className="flex items-center gap-2 text-xs"
+                    className="flex items-center gap-2 text-ui"
                   >
                     <span className="truncate">{t.name}</span>
                     {task.team_id === t.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
@@ -2859,7 +2863,7 @@ function InlineEpicCell({
     return (
       <button
         type="button"
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         {epicName ? (
@@ -2876,7 +2880,7 @@ function InlineEpicCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {epicName ? (
@@ -2895,9 +2899,9 @@ function InlineEpicCell({
           onKeyDown={(e) => e.stopPropagation()}
         >
           <Command>
-            <CommandInput placeholder="Search epics..." className="h-8 text-xs" />
+            <CommandInput placeholder="Search epics..." className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No epics found</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No epics found</CommandEmpty>
               <CommandGroup>
                 {epics.map((e) => (
                   <CommandItem
@@ -2908,7 +2912,7 @@ function InlineEpicCell({
                       onUpdate(task.id, { epic_id: newEpicId });
                       setOpen(false);
                     }}
-                    className="flex items-center gap-2 text-xs"
+                    className="flex items-center gap-2 text-ui"
                   >
                     <span className="truncate">{e.epic.name}</span>
                     {task.epic_id === e.epic.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
@@ -2949,7 +2953,7 @@ function InlineSprintCell({
     return (
       <button
         type="button"
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         {sprintName ? (
@@ -2966,7 +2970,7 @@ function InlineSprintCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {sprintName ? (
@@ -2985,9 +2989,9 @@ function InlineSprintCell({
           onKeyDown={(e) => e.stopPropagation()}
         >
           <Command>
-            <CommandInput placeholder="Search sprints..." className="h-8 text-xs" />
+            <CommandInput placeholder="Search sprints..." className="h-8 text-ui" />
             <CommandList>
-              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No sprints found</CommandEmpty>
+              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No sprints found</CommandEmpty>
               <CommandGroup>
                 {visibleSprints.map((sp) => (
                   <CommandItem
@@ -2998,7 +3002,7 @@ function InlineSprintCell({
                       onUpdate(task.id, { sprint_id: newSprintId });
                       setOpen(false);
                     }}
-                    className="flex items-center gap-2 text-xs"
+                    className="flex items-center gap-2 text-ui"
                   >
                     <span className="truncate">{sp.sprint.name}</span>
                     {task.sprint_id === sp.sprint.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
@@ -3021,7 +3025,7 @@ function InlineAssociationListCell({
   emptyLabel: string;
 }) {
   if (!items || items.length === 0) {
-    return <span className="text-xs text-muted-foreground">{emptyLabel}</span>;
+    return <span className="text-ui text-muted-foreground">{emptyLabel}</span>;
   }
 
   const visible = items.slice(0, 2);
@@ -3030,7 +3034,7 @@ function InlineAssociationListCell({
   const fullLabel = items.map((item) => item.title).join(', ');
 
   return (
-    <span className="flex min-w-0 items-center gap-1 text-xs" title={fullLabel}>
+    <span className="flex min-w-0 items-center gap-1 text-ui" title={fullLabel}>
       <span className="truncate">{label}</span>
       {remaining > 0 ? (
         <span className="shrink-0 text-muted-foreground">+{remaining}</span>
@@ -3055,7 +3059,7 @@ function InlineDeadlineCell({
     return (
       <button
         type="button"
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         {selected ? (
@@ -3080,7 +3084,7 @@ function InlineDeadlineCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {selected ? (
@@ -3136,12 +3140,14 @@ function InlineLabelsCell({
 }) {
   const storyLabels = task.labels ?? [];
   return (
-    <div onClick={(e) => e.stopPropagation()}>
+    <div className="w-full min-w-0 overflow-hidden" onClick={(e) => e.stopPropagation()}>
       <LabelPicker
         workspaceId={workspaceId}
         teamId={task.team_id || undefined}
         labels={allLabels}
         selectedLabelIds={storyLabels.map((l) => l.id)}
+        triggerClassName="text-[11px]"
+        singleLine
         onLabelsChange={onLabelsChange}
         onChange={async (labelIds) => {
           const currentIds = storyLabels.map((l) => l.id);
@@ -3254,21 +3260,21 @@ function InlineActionsCell({
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={requestDuplicateTask} disabled={duplicating}>
+          <DropdownMenuItem className="text-ui" onClick={requestDuplicateTask} disabled={duplicating}>
             <Copy01Icon className="mr-2 h-3.5 w-3.5" />
             Duplicate Task
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onOpenTask(task)}>
+          <DropdownMenuItem className="text-ui" onClick={() => onOpenTask(task)}>
             <TaskListOpenTaskIcon className="mr-2 h-3.5 w-3.5" />
             Open Task
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={copyLink}>
+          <DropdownMenuItem className="text-ui" onClick={copyLink}>
             <TaskListLinkIcon className="mr-2 h-3.5 w-3.5" />
             Copy Link
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setArchiveOpen(true)}
-            className="text-destructive focus:text-destructive"
+            className="text-ui text-destructive focus:text-destructive"
           >
             <TaskListArchiveIcon className="mr-2 h-3.5 w-3.5" />
             Archive Task

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Tick01Icon, Loading01Icon, PlusSignIcon, Tag01Icon, Cancel01Icon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Command,
   CommandEmpty,
@@ -42,8 +43,9 @@ export function LabelBadge({ label, onRemove, className }: LabelBadgeProps) {
 
   return (
     <span
+      title={label.name}
       className={cn(
-        'inline-flex h-5 max-w-full min-w-0 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium text-foreground/80',
+        'inline-flex h-5 max-w-full min-w-0 items-center gap-1 overflow-hidden rounded-sm border-[0.5px] px-2 text-[11px] font-medium text-foreground/80',
         className,
       )}
       style={{
@@ -83,8 +85,11 @@ interface LabelPickerProps {
   /** Called when the labels list changes (e.g. a new label was created inline). */
   onLabelsChange?: (labels: Label[]) => void;
   className?: string;
+  triggerClassName?: string;
   /** Show only the trigger button, no badges — used for compact inline table cells */
   triggerOnly?: boolean;
+  /** Use a compact color summary with names available on hover. */
+  singleLine?: boolean;
   /** Label ids present on some but not all items in the selection (rendered italic + muted). */
   partialLabelIds?: string[];
 }
@@ -97,7 +102,9 @@ export function LabelPicker({
   labels,
   onLabelsChange,
   className,
+  triggerClassName,
   triggerOnly = false,
+  singleLine = false,
   partialLabelIds,
 }: LabelPickerProps) {
   const [open, setOpen] = useState(false);
@@ -148,19 +155,64 @@ export function LabelPicker({
     }
   };
 
+  const labelBadges = selectedLabels.map((label) => (
+    <LabelBadge key={label.id} label={label} onRemove={() => removeLabel(label.id)} />
+  ));
+  const visibleColorLabels = selectedLabels.slice(0, 10);
+  const hiddenColorCount = selectedLabels.length - visibleColorLabels.length;
+
   return (
-    <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
-      {!triggerOnly && selectedLabels.map((label) => (
-        <LabelBadge key={label.id} label={label} onRemove={() => removeLabel(label.id)} />
-      ))}
+    <div className={cn(
+      'flex min-w-0 items-center gap-1',
+      singleLine ? 'w-full flex-nowrap overflow-hidden' : 'flex-wrap',
+      className,
+    )}>
+      {!triggerOnly && singleLine && selectedLabels.length > 0 ? (
+        <div
+          data-slot="label-picker-viewport"
+          className="relative min-w-0 flex-1 overflow-hidden"
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="flex h-5 min-w-0 items-center gap-1 overflow-hidden px-0.5"
+                aria-label={selectedLabels.map((label) => label.name).join(', ')}
+              >
+                {visibleColorLabels.map((label) => (
+                  <span
+                    key={label.id}
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: label.color?.startsWith('#') ? label.color : label.color ? `#${label.color}` : 'var(--muted-foreground)' }}
+                  />
+                ))}
+                {hiddenColorCount > 0 ? (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">+{hiddenColorCount}</span>
+                ) : null}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="flex max-w-64 flex-col items-start gap-1 py-2">
+              {selectedLabels.map((label) => (
+                <span key={label.id} className="flex max-w-full items-center gap-1.5">
+                  <span
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: label.color?.startsWith('#') ? label.color : label.color ? `#${label.color}` : 'var(--muted-foreground)' }}
+                  />
+                  <span className="truncate">{label.name}</span>
+                </span>
+              ))}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      ) : !triggerOnly ? labelBadges : null}
 
       <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSearch(''); }}>
         <PopoverTrigger asChild>
           <button
             type="button"
             className={cn(
-              'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent cursor-pointer',
+              'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-ui text-muted-foreground transition-colors hover:bg-accent cursor-pointer',
               selectedLabels.length === 0 && 'text-muted-foreground',
+              triggerClassName,
             )}
             onClick={(e) => {
               e.stopPropagation();
@@ -182,7 +234,7 @@ export function LabelPicker({
             <Command shouldFilter={true}>
               <CommandInput
                 placeholder="Search labels..."
-                className="h-8 text-xs"
+                className="h-8 text-ui"
                 value={search}
                 onValueChange={setSearch}
               />
@@ -190,7 +242,7 @@ export function LabelPicker({
                 <CommandEmpty className="py-1.5 px-2">
                   <button
                     type="button"
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-ui text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
                     onClick={createAndSelect}
                     disabled={creating}
                   >
@@ -218,7 +270,7 @@ export function LabelPicker({
                         value={label.name}
                         onSelect={() => toggleLabel(label.id)}
                         className={cn(
-                          'flex items-center gap-2 text-xs',
+                          'flex items-center gap-2 text-ui',
                           isPartial && 'italic text-muted-foreground',
                         )}
                       >

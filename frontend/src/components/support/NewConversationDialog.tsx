@@ -260,7 +260,7 @@ function NewConversationMessageEditor({
     ],
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[96px] max-h-[220px] overflow-y-auto text-sm leading-relaxed',
+        class: 'rich-text-soft prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[96px] max-h-[220px] overflow-y-auto text-sm leading-relaxed',
       },
       handleKeyDown: (_view, event) => {
         const currentShortcut = shortcutStateRef.current;
