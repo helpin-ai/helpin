@@ -800,6 +800,10 @@ func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
 	}
 	content, err := h.contentSvc.Save(r.Context(), docID, req.Content, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrDocsInvalidContent) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

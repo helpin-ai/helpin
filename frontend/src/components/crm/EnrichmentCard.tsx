@@ -29,7 +29,7 @@ export function EnrichmentCard({ workspaceId, objectType, objectId }: Enrichment
         {results.length === 0 ? (
           <p className="text-sm text-muted-foreground">No enrichment data available.</p>
         ) : (
-          <EnrichmentHistoryList results={results} />
+          <EnrichmentHistoryList results={results} workspaceId={workspaceId} />
         )}
       </CardContent>
     </Card>

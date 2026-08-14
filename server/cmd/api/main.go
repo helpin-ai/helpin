@@ -1245,7 +1245,8 @@ func main() {
 		cfg.OpenAIEmbeddingModel,
 	)
 
-	crmContactService := service.NewCRMContactService(crmContactRepo)
+	crmContactService := service.NewCRMContactService(crmContactRepo).
+		SetIdentitySync(crmActivityRepo, wsPublisher)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
 	crmContactService.SetProductAnalyticsService(productAnalytics)
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)
@@ -1277,7 +1278,9 @@ func main() {
 	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
-	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo)
+	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo).
+		SetActivityRepository(crmActivityRepo).
+		SetWebsocketPublisher(wsPublisher)
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService)
 	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)

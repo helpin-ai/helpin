@@ -517,7 +517,6 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 
 	featureRows := map[string]UsageFeature{}
 	featureTiers := map[string]map[string]struct{}{}
-	var totalCharged int64
 	dayIndex := map[string]int{}
 	series := make([]UsageSeriesPoint, 0)
 	for _, row := range rows {
@@ -540,7 +539,6 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 		feature.OutputTokens += row.OutputTokens
 		feature.ReasoningTokens += row.ReasoningTokens
 		featureRows[key] = feature
-		totalCharged += row.ChargedMicrousd
 		idx, ok := dayIndex[row.Day]
 		if !ok {
 			idx = len(series)
@@ -570,9 +568,7 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 		if len(feature.ModelTiers) == 1 {
 			feature.ModelTier = feature.ModelTiers[0]
 		}
-		if totalCharged > 0 {
-			feature.Pct = float64(feature.ChargedMicrousd) / float64(totalCharged) * 100
-		}
+		feature.Pct = aiUsageAllowancePercentage(feature.ChargedMicrousd, summary.AIUsageAllowanceMicrousd)
 		features = append(features, feature)
 	}
 	sort.Slice(features, func(i, j int) bool {
@@ -590,6 +586,13 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 		AIUsageOverageMicrousd:   summary.AIUsageOverageMicrousd,
 		Series:                   series, Features: features,
 	}, nil
+}
+
+func aiUsageAllowancePercentage(chargedMicrousd, allowanceMicrousd int64) float64 {
+	if chargedMicrousd <= 0 || allowanceMicrousd <= 0 {
+		return 0
+	}
+	return float64(chargedMicrousd) / float64(allowanceMicrousd) * 100
 }
 
 func orderedModelTiers(values map[string]struct{}) []string {

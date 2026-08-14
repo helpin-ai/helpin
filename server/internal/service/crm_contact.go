@@ -6,20 +6,36 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
 // CRMContactService contains CRM contact business logic.
 type CRMContactService struct {
 	productAnalyticsEmitter
 	contactRepo    *repository.CRMContactRepository
+	activityRepo   *repository.CRMActivityRepository
 	entitlementSvc *EntitlementService
+	wsPublisher    websocket.EventPublisher
 }
 
 // NewCRMContactService creates a new CRMContactService.
 func NewCRMContactService(contactRepo *repository.CRMContactRepository) *CRMContactService {
 	return &CRMContactService{contactRepo: contactRepo}
+}
+
+// SetIdentitySync wires CRM audit activity, linked support identity refreshes,
+// and realtime invalidation. The CRM contact remains the authoritative record.
+func (s *CRMContactService) SetIdentitySync(
+	activityRepo *repository.CRMActivityRepository,
+	wsPublisher websocket.EventPublisher,
+) *CRMContactService {
+	s.activityRepo = activityRepo
+	s.wsPublisher = wsPublisher
+	return s
 }
 
 func (s *CRMContactService) SetEntitlementService(entitlementSvc *EntitlementService) *CRMContactService {
@@ -190,8 +206,22 @@ func (s *CRMContactService) Seed(ctx context.Context, req model.SeedCRMContactsR
 	return &model.SeedCRMContactsResponse{Created: len(contacts)}, nil
 }
 
-// Update updates a contact.
-func (s *CRMContactService) Update(ctx context.Context, id string, req model.UpdateCRMContactRequest) (*model.CRMContact, error) {
+// Update updates a contact without a human actor, such as from an internal automation.
+func (s *CRMContactService) Update(
+	ctx context.Context,
+	id string,
+	req model.UpdateCRMContactRequest,
+) (*model.CRMContact, error) {
+	return s.UpdateWithActor(ctx, id, req, "", "")
+}
+
+// UpdateWithActor updates a contact and records the human actor for audit activity.
+func (s *CRMContactService) UpdateWithActor(
+	ctx context.Context,
+	id string,
+	req model.UpdateCRMContactRequest,
+	actorUserID, actorMemberID string,
+) (*model.CRMContact, error) {
 	contact, err := s.contactRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -200,6 +230,7 @@ func (s *CRMContactService) Update(ctx context.Context, id string, req model.Upd
 		return nil, fmt.Errorf("contact not found")
 	}
 
+	oldEmail := normalizedOptionalString(contact.Email)
 	if req.FirstName != nil {
 		name := strings.TrimSpace(*req.FirstName)
 		if name == "" {
@@ -270,10 +301,90 @@ func (s *CRMContactService) Update(ctx context.Context, id string, req model.Upd
 		contact.CustomProperties = model.JSONB(req.CustomProperties)
 	}
 
-	if err := s.contactRepo.Update(ctx, contact); err != nil {
+	newEmail := normalizedOptionalString(contact.Email)
+
+	update := func(
+		contactRepo *repository.CRMContactRepository,
+		activityRepo *repository.CRMActivityRepository,
+	) error {
+		if err := contactRepo.Update(ctx, contact); err != nil {
+			return err
+		}
+		if activityRepo != nil && oldEmail != newEmail {
+			activity := emailChangedActivity(contact, oldEmail, newEmail, actorUserID, actorMemberID)
+			if err := activityRepo.Create(ctx, activity); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if s.activityRepo != nil {
+		err = s.contactRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return update(
+				s.contactRepo.WithTx(tx),
+				s.activityRepo.WithTx(tx),
+			)
+		})
+	} else {
+		err = update(s.contactRepo, nil)
+	}
+	if err != nil {
 		return nil, err
 	}
+
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "crm_contact",
+			EntityID:    contact.ID,
+			WorkspaceID: contact.WorkspaceID,
+			ActorID:     actorUserID,
+		})
+	}
 	return contact, nil
+}
+
+func normalizedOptionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func emailChangedActivity(
+	contact *model.CRMContact,
+	oldEmail, newEmail, actorUserID, actorMemberID string,
+) *model.CRMActivity {
+	subject := "Email changed"
+	body := fmt.Sprintf("%s → %s", displayActivityEmail(oldEmail), displayActivityEmail(newEmail))
+	var ownerMemberID *string
+	if strings.TrimSpace(actorMemberID) != "" {
+		ownerMemberID = &actorMemberID
+	}
+	return &model.CRMActivity{
+		WorkspaceID:   contact.WorkspaceID,
+		ActivityType:  model.CRMActivityNote,
+		ContactID:     &contact.ID,
+		OwnerMemberID: ownerMemberID,
+		Subject:       &subject,
+		Body:          &body,
+		OccurredAt:    time.Now().UTC(),
+		Metadata: model.JSONB{
+			"event_type":    "contact_email_changed",
+			"old_email":     oldEmail,
+			"new_email":     newEmail,
+			"actor_user_id": actorUserID,
+			"immutable":     true,
+		},
+	}
+}
+
+func displayActivityEmail(email string) string {
+	if strings.TrimSpace(email) == "" {
+		return "No email"
+	}
+	return email
 }
 
 // Delete removes a contact.

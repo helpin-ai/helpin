@@ -40,6 +40,31 @@ func TestValidateDocument(t *testing.T) {
 			wantErr: "not valid TipTap document JSON",
 		},
 		{
+			name:    "paragraph directly inside ordered list",
+			raw:     `{"type":"doc","content":[{"type":"orderedList","content":[{"type":"paragraph","content":[{"type":"text","text":"Step"}]}]}]}`,
+			wantErr: "children must be listItem",
+		},
+		{
+			name:    "list item starts with heading",
+			raw:     `{"type":"doc","content":[{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"heading","attrs":{"level":2}}]}]}]}`,
+			wantErr: "must start with a paragraph",
+		},
+		{
+			name:    "block image inside heading",
+			raw:     `{"type":"doc","content":[{"type":"heading","attrs":{"level":2},"content":[{"type":"resizableImage","attrs":{"src":"https://example.test/image.png"}}]}]}`,
+			wantErr: "cannot contain block node",
+		},
+		{
+			name:    "duplicate text marks",
+			raw:     `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Bold","marks":[{"type":"bold"},{"type":"bold"}]}]}]}`,
+			wantErr: "duplicate",
+		},
+		{
+			name:    "code combined with another mark",
+			raw:     `{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"Code","marks":[{"type":"code"},{"type":"bold"}]}]}]}`,
+			wantErr: "cannot be combined",
+		},
+		{
 			name:    "child node without a type",
 			raw:     `{"type":"doc","content":[{"content":[{"type":"text","text":"Hi"}]}]}`,
 			wantErr: "must include type",

@@ -5107,6 +5107,14 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 	if intent == model.AgentRunResumeIntentApprove && !shouldAddMessage {
 		runtimeContent = ""
 	}
+	if run.DockChatID != nil && run.PauseReason == model.AgentRunPauseReasonUserMessage &&
+		s.aiUsageMeter != nil && s.aiUsageMeter.usage != nil {
+		if metering, ok := agentRunMeteringContext(run); ok {
+			if err := s.aiUsageMeter.usage.Heartbeat(ctx, metering); err != nil {
+				return nil, nil, fmt.Errorf("reserve AI usage for next chat turn: %w", err)
+			}
+		}
+	}
 	if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
 		Intent:          runtimeIntent,
 		Content:         runtimeContent,

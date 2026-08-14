@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -131,7 +132,12 @@ func (h *CRMContactHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	contact, err := h.contactService.Update(r.Context(), id, req)
+	var actorUserID, actorMemberID string
+	if actor := authorization.GetActor(r.Context()); actor != nil {
+		actorUserID = actor.UserID
+		actorMemberID = actor.WorkspaceMemberID
+	}
+	contact, err := h.contactService.UpdateWithActor(r.Context(), id, req, actorUserID, actorMemberID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

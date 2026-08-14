@@ -15,16 +15,12 @@ import (
 )
 
 type fakeBillingGateway struct {
-	blocks           []BillingCreditBlockCharge
-	blockDeadlineSet bool
-	blockDeadline    time.Time
 	immediateChanges []BillingSubscriptionChangeInput
 	cancellations    []BillingSubscriptionCancelInput
 	immediateCancels []BillingSubscriptionCancelInput
 	resumes          []BillingSubscriptionCancelInput
 	checkoutSession  *BillingCheckoutSession
 	cancelErr        error
-	blockErr         error
 }
 
 func (g *fakeBillingGateway) CreateCheckoutSession(ctx context.Context, input BillingCheckoutInput) (string, error) {
@@ -54,17 +50,6 @@ func (g *fakeBillingGateway) PreviewSubscriptionPriceChange(ctx context.Context,
 			Proration:   true,
 		}},
 	}, nil
-}
-
-func (g *fakeBillingGateway) BillCreditBlock(ctx context.Context, input BillingCreditBlockCharge) error {
-	deadline, ok := ctx.Deadline()
-	g.blockDeadlineSet = ok
-	g.blockDeadline = deadline
-	if g.blockErr != nil {
-		return g.blockErr
-	}
-	g.blocks = append(g.blocks, input)
-	return nil
 }
 
 func (g *fakeBillingGateway) UpdateSubscriptionPrice(ctx context.Context, input BillingSubscriptionChangeInput) error {
@@ -725,7 +710,7 @@ func TestBillingServicePreflightCreditsRejectsWhenUsageExhausted(t *testing.T) {
 	}
 }
 
-func TestBillingServiceConsumeCreditsBillsOnDemandBlocks(t *testing.T) {
+func TestBillingServiceConsumeCreditsNeverBillsLegacyOnDemandBlocks(t *testing.T) {
 	db := newBillingTestDB(t)
 	repo := repository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
@@ -754,19 +739,15 @@ func TestBillingServiceConsumeCreditsBillsOnDemandBlocks(t *testing.T) {
 		Credits:        10,
 		IdempotencyKey: "reply-1",
 	})
-	if err != nil {
-		t.Fatalf("consume credits: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "extra AI usage billing is not configured") {
+		t.Fatalf("consume credits error = %v, want legacy billing disabled", err)
 	}
-
-	if summary.CreditsUsed != 5005 || len(gateway.blocks) != 1 {
-		t.Fatalf("credits used = %d, billed blocks = %d; want 5005/1", summary.CreditsUsed, len(gateway.blocks))
-	}
-	if gateway.blocks[0].WorkspaceID != "workspace-1" || gateway.blocks[0].Blocks != 1 {
-		t.Fatalf("unexpected block charge: %#v", gateway.blocks[0])
+	if summary != nil {
+		t.Fatalf("summary = %#v, want nil", summary)
 	}
 }
 
-func TestBillingServiceBoundsOnDemandStripeChargeContext(t *testing.T) {
+func TestBillingServiceDoesNotOpenLegacyStripeChargeContext(t *testing.T) {
 	db := newBillingTestDB(t)
 	repo := repository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
@@ -789,30 +770,21 @@ func TestBillingServiceBoundsOnDemandStripeChargeContext(t *testing.T) {
 		t.Fatalf("seed billing: %v", err)
 	}
 
-	started := time.Now()
 	if _, err := svc.ConsumeCredits(context.Background(), BillingCreditConsumption{
 		WorkspaceID:    "workspace-1",
 		FeatureKey:     BillingFeatureSupportAIReply,
 		Credits:        10,
 		IdempotencyKey: "reply-1",
-	}); err != nil {
-		t.Fatalf("consume credits: %v", err)
-	}
-
-	if !gateway.blockDeadlineSet {
-		t.Fatal("BillCreditBlock context has no deadline")
-	}
-	elapsed := gateway.blockDeadline.Sub(started)
-	if elapsed <= 0 || elapsed > billingStripeChargeTimeout+100*time.Millisecond {
-		t.Fatalf("BillCreditBlock deadline in %s, want within %s", elapsed, billingStripeChargeTimeout)
+	}); err == nil {
+		t.Fatal("consume credits should reject the removed fixed-block billing path")
 	}
 }
 
-func TestBillingServiceRetriesOnDemandBillingAfterFailedCharge(t *testing.T) {
+func TestBillingServiceLegacyOnDemandFailureRemainsAtomic(t *testing.T) {
 	db := newBillingTestDB(t)
 	repo := repository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
-	gateway := &fakeBillingGateway{blockErr: fmt.Errorf("stripe unavailable")}
+	gateway := &fakeBillingGateway{}
 	svc := NewBillingService(repo, gateway, func() time.Time { return now })
 
 	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
@@ -844,8 +816,8 @@ func TestBillingServiceRetriesOnDemandBillingAfterFailedCharge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload billing: %v", err)
 	}
-	if billing.CreditsUsed != 4995 || billing.OnDemandBlocksInvoiced != 0 || len(gateway.blocks) != 0 {
-		t.Fatalf("after failed charge used=%d blocks_invoiced=%d charges=%d, want 4995/0/0", billing.CreditsUsed, billing.OnDemandBlocksInvoiced, len(gateway.blocks))
+	if billing.CreditsUsed != 4995 || billing.OnDemandBlocksInvoiced != 0 {
+		t.Fatalf("after failed charge used=%d blocks_invoiced=%d, want 4995/0", billing.CreditsUsed, billing.OnDemandBlocksInvoiced)
 	}
 	var ledgerCount int64
 	if err := db.Table("billing_credit_ledger").Where("workspace_id = ?", "workspace-1").Count(&ledgerCount).Error; err != nil {
@@ -855,13 +827,15 @@ func TestBillingServiceRetriesOnDemandBillingAfterFailedCharge(t *testing.T) {
 		t.Fatalf("ledger rows after failed charge = %d, want 0", ledgerCount)
 	}
 
-	gateway.blockErr = nil
-	summary, err := svc.ConsumeCredits(context.Background(), input)
-	if err != nil {
-		t.Fatalf("retry consume: %v", err)
+	if _, err := svc.ConsumeCredits(context.Background(), input); err == nil {
+		t.Fatal("retry should remain disabled for legacy fixed-block billing")
 	}
-	if summary.CreditsUsed != 5005 || summary.OnDemandBlocksInvoiced != 1 || len(gateway.blocks) != 1 {
-		t.Fatalf("retry used=%d blocks_invoiced=%d charges=%d, want 5005/1/1", summary.CreditsUsed, summary.OnDemandBlocksInvoiced, len(gateway.blocks))
+	billing, err = repo.GetByWorkspaceID(context.Background(), "workspace-1")
+	if err != nil {
+		t.Fatalf("reload billing after retry: %v", err)
+	}
+	if billing.CreditsUsed != 4995 || billing.OnDemandBlocksInvoiced != 0 {
+		t.Fatalf("after retry used=%d blocks_invoiced=%d, want 4995/0", billing.CreditsUsed, billing.OnDemandBlocksInvoiced)
 	}
 }
 

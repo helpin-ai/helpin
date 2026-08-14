@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { ReactNode } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -122,5 +124,43 @@ describe('ArticleContent', () => {
     expect(screen.getByText('External').closest('a')?.getAttribute('href')).toBe(
       'https://example.com/articles/external',
     )
+  })
+
+  it('uses the shared block contract for published toggle sections', () => {
+    const { container } = renderWithDocsContext(
+      <ArticleContent
+        html={`
+          <details class="docs-toggle-section" data-toggle-section data-toggle-style="helpScoutCard">
+            <summary>
+              <span class="docs-toggle-icon">🔑</span>
+              <span class="docs-toggle-title">Authentication &amp; Setup</span>
+              <span class="docs-toggle-badge">3 topics</span>
+              <span class="docs-toggle-chevron" aria-hidden="true"></span>
+            </summary>
+            <div class="docs-toggle-content" data-toggle-content>
+              <p>How to Get Your ContentStudio API Key</p>
+            </div>
+          </details>
+        `}
+      />,
+    )
+
+    const toggle = container.querySelector('details.docs-toggle-section')
+    expect(toggle?.getAttribute('data-toggle-style')).toBe('helpScoutCard')
+    expect(toggle?.querySelector('.docs-toggle-icon')?.textContent).toBe('🔑')
+    expect(toggle?.querySelector('.docs-toggle-badge')?.textContent).toBe('3 topics')
+    expect(toggle?.querySelector('.docs-toggle-content')?.textContent).toContain(
+      'How to Get Your ContentStudio API Key',
+    )
+
+    const appCss = readFileSync(resolve(process.cwd(), 'src/app.css'), 'utf8')
+    expect(appCss).toContain('@import "../../packages/shared/src/docs-blocks.css";')
+
+    const sharedCss = readFileSync(
+      resolve(process.cwd(), '../packages/shared/src/docs-blocks.css'),
+      'utf8',
+    )
+    expect(sharedCss).toContain('.docs-toggle-section[data-toggle-style="helpScoutCard"]')
+    expect(sharedCss).toContain('.docs-toggle-chevron')
   })
 })

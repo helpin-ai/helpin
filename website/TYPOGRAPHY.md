@@ -44,7 +44,7 @@ Use `<strong className="text-foreground font-semibold">` for inline emphasis wit
 | `text-muted-foreground` | Body text, descriptions |
 | `text-muted-foreground/50` | Fine print, captions |
 | `text-pop` | Accent text, links, highlights |
-| `var(--color-pop)` | Accent color (emerald green) |
+| `var(--color-pop)` | Accent color (warm coral) |
 | `var(--color-pop-light)` | Accent background (8% opacity) |
 | `var(--color-background)` | Page background |
 | `var(--color-border)` | Borders, dividers |

@@ -118,6 +118,8 @@ export function useUpdateContact(wsId: string) {
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.contacts(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.crm.contact(wsId, id) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.contactActivities(wsId, id) })
+      qc.invalidateQueries({ queryKey: ['support', wsId] })
     },
   })
 }
@@ -596,6 +598,21 @@ export function useCreateEnrichment(wsId: string) {
   return useMutation({
     mutationFn: async (data: CreateCRMEnrichmentRequest) => unwrap(await crmEnrichmentService.create(data)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.enrichments(wsId) }) },
+  })
+}
+
+export function useApplyEnrichmentSuggestion(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ enrichmentId, field }: { enrichmentId: string; field: string }) =>
+      unwrap(await crmEnrichmentService.applySuggestion(wsId, enrichmentId, field)),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.enrichments(wsId) })
+      qc.invalidateQueries({ queryKey: ['crm', wsId] })
+      if (result.object_type === 'contact') {
+        qc.invalidateQueries({ queryKey: queryKeys.crm.contactActivities(wsId, result.object_id) })
+      }
+    },
   })
 }
 
