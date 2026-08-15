@@ -304,8 +304,8 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'crm-meetings',
-    label: 'Meeting Intelligence',
-    description: 'Configure meeting transcription and recording defaults.',
+    label: 'Meeting Notes',
+    description: 'Choose how Helpin joins calls, takes notes, and saves recordings.',
     icon: Meetings,
     group: 'CRM',
   },

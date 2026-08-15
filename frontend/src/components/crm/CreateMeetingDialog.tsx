@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
+import { detectMeetingPlatform } from '@/lib/meetingPresentation';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -32,6 +34,7 @@ export function CreateMeetingDialog({
   const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null);
   const idempotencyKey = useRef(crypto.randomUUID());
   const recordAudio = recordAudioOverride ?? settingsData?.settings.record_audio_by_default ?? false;
+  const detectedPlatform = detectMeetingPlatform(meetingUrl);
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       setTitle('');
@@ -86,7 +89,7 @@ export function CreateMeetingDialog({
         <div className="space-y-4 py-2">
           {!settingsEnabled && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
-              Meeting intelligence is disabled. An admin must enable it before the notetaker can join.
+              Meeting notes are turned off. An admin must enable them before the notetaker can join.
             </div>
           )}
           <div className="space-y-2">
@@ -96,6 +99,7 @@ export function CreateMeetingDialog({
           <div className="space-y-2">
             <Label htmlFor="meeting-url">Meeting URL</Label>
             <Input id="meeting-url" type="url" value={meetingUrl} onChange={(event) => setMeetingUrl(event.target.value)} placeholder="https://meet.google.com/abc-defg-hij" />
+            {detectedPlatform && <div className="flex items-center gap-2 text-xs text-muted-foreground"><MeetingPlatformLabel platform={detectedPlatform} compact /><span>link detected</span></div>}
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>

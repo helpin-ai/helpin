@@ -5,16 +5,21 @@ import { toast } from 'sonner';
 import {
   ArrowLeft02Icon,
   Copy01Icon,
+  LinkSquare01Icon,
   Loading01Icon,
   PlayCircleIcon,
   StopIcon,
 } from '@/lib/icons';
 import { AssociationsList } from '@/components/crm/AssociationsList';
+import { MeetingPlatformIcon } from '@/components/crm/MeetingPlatform';
+import { getMeetingPlatformLabel } from '@/lib/meetingPresentation';
+import { MeetingProcessingState } from '@/components/crm/MeetingProcessingState';
+import { MeetingStatusBadge } from '@/components/crm/MeetingStatusBadge';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -31,19 +36,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { crmMeetingService } from '@/lib/services/crmMeetingService';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { CRMMeetingActionItem, CRMMeetingStatus } from '@/lib/crmMeetingTypes';
-
-const statusClasses: Record<CRMMeetingStatus, string> = {
-  scheduled: 'bg-muted text-muted-foreground',
-  joining: 'bg-blue-500/10 text-blue-600',
-  waiting: 'bg-amber-500/10 text-amber-600',
-  recording: 'bg-red-500/10 text-red-600',
-  finalizing: 'bg-violet-500/10 text-violet-600',
-  processing: 'bg-violet-500/10 text-violet-600',
-  ready: 'bg-emerald-500/10 text-emerald-600',
-  failed: 'bg-destructive/10 text-destructive',
-  cancelled: 'bg-muted text-muted-foreground',
-};
+import type { CRMMeetingActionItem } from '@/lib/crmMeetingTypes';
 
 const titleCase = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
@@ -201,16 +194,18 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   const canRetry = ['failed', 'blocked_usage'].includes(meeting.summary_status);
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-4 py-3 backdrop-blur">
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-3">
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate({ to: '/w/$slug/crm/meetings', params: { slug } })}><ArrowLeft02Icon className="h-4 w-4" /></Button>
+          <MeetingPlatformIcon platform={meeting.platform} size="sm" />
           <div className="min-w-0">
-            <div className="flex items-center gap-2"><h1 className="truncate text-base font-semibold">{meeting.title}</h1><Badge variant="secondary" className={statusClasses[meeting.status]}>{titleCase(meeting.status)}</Badge></div>
-            <p className="mt-0.5 text-xs text-muted-foreground">{titleCase(meeting.platform)} · {format(new Date(occurredAt ?? meeting.created_at), 'MMM d, yyyy, p')}{duration ? ` · ${duration}` : ''}</p>
+            <div className="flex items-center gap-2"><h1 className="truncate text-base font-semibold">{meeting.title}</h1><MeetingStatusBadge status={meeting.status} /></div>
+            <p className="mt-0.5 text-xs text-muted-foreground">{getMeetingPlatformLabel(meeting.platform)} · {format(new Date(occurredAt ?? meeting.created_at), 'MMM d, yyyy, p')}{duration ? ` · ${duration}` : ''}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm"><a href={meeting.meeting_url} target="_blank" rel="noreferrer"><MeetingPlatformIcon platform={meeting.platform} size="sm" className="-ml-1 border-0 shadow-none" /> Open {getMeetingPlatformLabel(meeting.platform)} <LinkSquare01Icon className="h-3.5 w-3.5" /></a></Button>
           {meeting.recording_object_key && <Button variant="outline" size="sm" onClick={openRecording} disabled={recordingLoading}>{recordingLoading ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlayCircleIcon className="h-4 w-4" />} Recording</Button>}
           {canEditCRM && canStart && <Button size="sm" onClick={() => runCommand(() => startCapture.mutateAsync(), 'Helpin is joining the meeting')} disabled={startCapture.isPending}><PlayCircleIcon className="h-4 w-4" /> Start capture</Button>}
           {canEditCRM && canStop && <Button size="sm" variant="destructive" onClick={() => runCommand(() => stopCapture.mutateAsync(), 'Capture is finalizing')} disabled={stopCapture.isPending}><StopIcon className="h-4 w-4" /> Stop</Button>}
@@ -218,19 +213,20 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
         </div>
       </div>
 
-      <div className="mx-auto grid max-w-[1500px] gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="mx-auto grid min-h-0 w-full max-w-[1500px] flex-1 gap-5 overflow-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:p-6">
         <main className="min-w-0 space-y-5">
           {meeting.failure_message && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"><p className="font-medium">Meeting capture needs attention</p><p className="mt-1">{meeting.failure_message}</p></div>}
           {meeting.summary_status === 'blocked_usage' && <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300"><p className="font-medium">Transcript captured; AI processing is paused</p><p className="mt-1">Upgrade or add AI capacity, then retry processing. The transcript remains available.</p></div>}
 
           <Card>
-            <CardHeader className="flex-row items-start justify-between gap-3">
-              <div><CardTitle className="text-base">Meeting intelligence</CardTitle><CardDescription>Helpin-generated outcomes from the canonical transcript.</CardDescription></div>
-              {data.intelligence?.summary_markdown && <Button variant="ghost" size="sm" onClick={() => copyText(data.intelligence?.summary_markdown ?? '', 'Summary')}><Copy01Icon className="h-4 w-4" /> Copy</Button>}
+            <CardHeader>
+              <CardTitle className="text-base">Meeting notes</CardTitle>
+              <CardDescription>Helpin-generated outcomes from the canonical transcript.</CardDescription>
+              {data.intelligence?.summary_markdown && <CardAction><Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => copyText(data.intelligence?.summary_markdown ?? '', 'Summary')}><Copy01Icon className="h-3.5 w-3.5" /> Copy summary</Button></CardAction>}
             </CardHeader>
             <CardContent>
               {data.intelligence ? (
-                <div className="space-y-6">
+                <div className="space-y-6 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500">
                   <MarkdownContent content={data.intelligence.summary_markdown} className="text-sm leading-7" />
                   <div className="grid gap-6 md:grid-cols-2">
                     <IntelligenceList title="Key points" items={data.intelligence.key_points} />
@@ -248,7 +244,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                   )}
                 </div>
               ) : (
-                <div className="py-10 text-center text-sm text-muted-foreground">{meeting.summary_status === 'processing' ? 'Generating summary, decisions, risks, and next steps…' : 'Intelligence will appear when the transcript is processed.'}</div>
+                (['joining', 'waiting', 'recording', 'finalizing', 'processing'].includes(meeting.status) || meeting.summary_status === 'processing') ? <MeetingProcessingState status={meeting.status} summaryStatus={meeting.summary_status} /> : <div className="py-10 text-center text-sm text-muted-foreground">Meeting notes will appear when the transcript is processed.</div>
               )}
             </CardContent>
           </Card>
@@ -263,9 +259,10 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
           </Card>
 
           <Card>
-            <CardHeader className="flex-row items-start justify-between gap-3">
-              <div><CardTitle className="text-base">Transcript</CardTitle><CardDescription>{data.transcript?.language ? `Language: ${data.transcript.language}` : 'Speaker-attributed meeting transcript'}</CardDescription></div>
-              {transcriptText && <Button variant="ghost" size="sm" onClick={() => copyText(transcriptText, 'Transcript')}><Copy01Icon className="h-4 w-4" /> Copy</Button>}
+            <CardHeader>
+              <CardTitle className="text-base">Transcript</CardTitle>
+              <CardDescription>{data.transcript?.language ? 'Language: ' + data.transcript.language : 'Speaker-attributed meeting transcript'}</CardDescription>
+              {transcriptText && <CardAction><Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => copyText(transcriptText, 'Transcript')}><Copy01Icon className="h-3.5 w-3.5" /> Copy transcript</Button></CardAction>}
             </CardHeader>
             <CardContent>
               {data.transcript?.segments?.length ? (
@@ -282,7 +279,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Visibility</span><span className="font-medium">{titleCase(meeting.visibility)}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Audio</span><span className="font-medium">{meeting.record_audio ? 'Recorded' : 'Transcript only'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Participants</span><span className="font-medium">{meeting.participants?.length ?? 0}</span></div>
-              <a href={meeting.meeting_url} target="_blank" rel="noreferrer" className="block truncate pt-1 text-primary hover:underline">Open original meeting</a>
+              <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Platform</span><span className="inline-flex items-center gap-1.5 font-medium"><MeetingPlatformIcon platform={meeting.platform} size="sm" className="border-0 shadow-none" />{getMeetingPlatformLabel(meeting.platform)}</span></div>
             </CardContent>
           </Card>
           <Card>
