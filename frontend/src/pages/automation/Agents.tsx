@@ -9,7 +9,7 @@ import {
   BotIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  ArrowExpandIcon,
+  ExpandIcon,
   HelpCircleIcon,
   LayoutGridIcon,
   LayoutTable01Icon,
@@ -6092,7 +6092,7 @@ export function AgentsPage() {
                       className="h-7 gap-1.5 px-2 text-[11px]"
                       onClick={() => setSystemPromptEditorOpen(true)}
                     >
-                      <ArrowExpandIcon className="h-3.5 w-3.5" />
+                      <ExpandIcon className="h-3.5 w-3.5" />
                       Expand
                     </Button>
                   </div>
