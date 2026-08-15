@@ -6,7 +6,7 @@ Keep the Ask agent timeline in the exact order produced by the runtime, before a
 
 ## Timeline model
 
-- The runtime snapshot's `live_turn_segments` is the authoritative ordering source while actively streaming. After pause/completion, it is authoritative only when it contains both assistant and tool segments and fully covers the stable assistant-message IDs and tool-call IDs represented by the durable current conversational interval.
+- The runtime snapshot's `live_turn_segments` is the authoritative ordering source while actively streaming. After pause/completion, it is authoritative only when it contains retained runtime work and fully covers the stable assistant-message IDs and tool-call IDs represented by the durable current conversational interval. Assistant-only direct-answer handoffs are valid; a tool segment is not required when the interval contains no tools.
 - Durable chat messages remain authoritative for completed assistant and user content.
 - Reconciliation matches snapshot assistant segments to durable messages by runtime message ID and snapshot tool segments to durable tools by tool-call ID.
 - Snapshot chronology is used even when the run is paused or completed. Run activity controls only live styling and automatic open state.
@@ -31,7 +31,7 @@ Keep the Ask agent timeline in the exact order produced by the runtime, before a
 
 1. Load durable chat messages and the run snapshot.
 2. Retain snapshot assistant segments that match durable runtime message IDs, not only segments already embedded in durable `turn_segments`.
-3. Evaluate retained snapshot trust. Active streams use their current tail. Paused/completed streams use snapshot chronology only when the current durable interval's assistant and tool IDs are completely covered by an assistant/tool-interleaved snapshot; incomplete or unmatched snapshots fall back to durable order.
+3. Evaluate retained snapshot trust. Active streams use their current tail. Paused/completed streams use snapshot chronology only when the current durable interval's assistant and tool IDs are completely covered by the retained snapshot; incomplete or unmatched snapshots fall back to durable order. An assistant-only snapshot remains eligible while the durable answer is catching up.
 4. Collect runtime chronology independently from visual activity. The chronology flag controls reconciliation; a separate runtime-active flag controls streaming markers, caret/live styling, reasoning activity, and automatic expansion. Stale snapshot statuses cannot make a paused/completed transcript appear live.
 5. Reinsert durable message content and tool results at their snapshot positions.
 6. Build working groups from the resulting ordered segments.

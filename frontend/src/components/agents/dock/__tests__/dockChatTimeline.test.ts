@@ -5,7 +5,12 @@ import type {
   CodingSessionStreamState,
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
-import { mergeMessagePages, mergePersistedChatMessages } from '../dockChatTimeline';
+import {
+  hasAuthoritativeDockRuntimeTimeline,
+  mergeMessagePages,
+  mergePersistedChatMessages,
+  resolveVisiblePendingEcho,
+} from '../dockChatTimeline';
 
 function persisted(sequence: number, content: string, createdAt: string): AgentRunMessage {
   return {
@@ -106,6 +111,167 @@ describe('mergePersistedChatMessages', () => {
 
     expect(merged?.live_turn_segments.map((segment) => segment.segment_id)).toEqual(['active']);
   });
+
+  it('retains the snapshot assistant segments that match durable runtime message ids', () => {
+    const durableProgress = {
+      ...persisted(2, 'Inspecting the conversation.', '2026-08-15T08:23:04Z'),
+      runtime_message_id: 'runtime-progress',
+    };
+    const durableFinal = {
+      ...persisted(4, 'The final answer.', '2026-08-15T08:26:14Z'),
+      runtime_message_id: 'runtime-final',
+      turn_segments: [{
+        segment_id: 'tool-1',
+        kind: 'tool_call' as const,
+        tool_call: {
+          tool_call_id: 'tool-1', tool_name: 'search_documents', args_text: '{}', status: 'completed' as const,
+        },
+      }],
+    };
+    const liveSegments: CodingSessionLiveTurnSegment[] = [
+      {
+        segment_id: 'runtime-progress', kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'runtime-progress', content: durableProgress.content, status: 'completed', tool_calls: [],
+          started_at: '2026-08-15T08:23:02Z',
+        },
+      },
+      {
+        segment_id: 'tool-1', kind: 'tool_call',
+        tool_call: {
+          tool_call_id: 'tool-1', tool_name: 'search_documents', args_text: '{}', status: 'completed',
+          started_at: '2026-08-15T08:23:05Z',
+        },
+      },
+      {
+        segment_id: 'runtime-final', kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'runtime-final', content: durableFinal.content, status: 'completed', tool_calls: [],
+          started_at: '2026-08-15T08:26:00Z',
+        },
+      },
+    ];
+
+    const merged = mergePersistedChatMessages(stream([], liveSegments), [durableProgress, durableFinal]);
+
+    expect(merged?.live_turn_segments.map((segment) => segment.segment_id)).toEqual([
+      'runtime-progress',
+      'tool-1',
+      'runtime-final',
+    ]);
+  });
+});
+
+describe('hasAuthoritativeDockRuntimeTimeline', () => {
+  it('retains a timestamp-less assistant completion through the durable-user handoff', () => {
+    const merged = mergePersistedChatMessages(
+      stream([], [{
+        segment_id: 'final-live',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'final-live',
+          content: 'The completed answer.',
+          status: 'completed',
+          tool_calls: [],
+        },
+      }]),
+      [persisted(1, 'Question', '2026-08-15T08:25:00Z')],
+    );
+
+    expect(merged?.live_turn_segments.map((segment) => segment.segment_id)).toEqual(['final-live']);
+    expect(merged && hasAuthoritativeDockRuntimeTimeline(merged)).toBe(true);
+  });
+
+  it('keeps an assistant-only completion snapshot visible while its durable answer is still catching up', () => {
+    const handoff = stream(
+      [{ ...transcript(1, 'Question', '2026-08-15T08:25:00Z'), role: 'user' }],
+      [{
+        segment_id: 'final-live',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'final-live',
+          content: 'The completed answer.',
+          status: 'completed',
+          tool_calls: [],
+          started_at: '2026-08-15T08:25:01Z',
+        },
+      }],
+    );
+
+    expect(hasAuthoritativeDockRuntimeTimeline(handoff)).toBe(true);
+  });
+
+  it('accepts a retained assistant/tool timeline that covers the current durable interval', () => {
+    const current = stream([
+      transcript(1, 'Question', '2026-08-15T08:22:54Z'),
+      { ...transcript(2, 'Progress', '2026-08-15T08:23:04Z'), role: 'assistant', message_id: 'progress' },
+      {
+        ...transcript(4, 'Final', '2026-08-15T08:26:14Z'), role: 'assistant', message_id: 'final',
+        turn_segments: [{
+          segment_id: 'tool-1', kind: 'tool_call',
+          tool_call: { tool_call_id: 'tool-1', tool_name: 'search_documents', args_text: '{}', status: 'completed' },
+        }],
+      },
+    ], [
+      {
+        segment_id: 'progress', kind: 'assistant_message',
+        assistant_message: { message_id: 'progress', content: 'Progress', status: 'completed', tool_calls: [] },
+      },
+      {
+        segment_id: 'tool-1', kind: 'tool_call',
+        tool_call: { tool_call_id: 'tool-1', tool_name: 'search_documents', args_text: '{}', status: 'completed' },
+      },
+      {
+        segment_id: 'final', kind: 'assistant_message',
+        assistant_message: { message_id: 'final', content: 'Final', status: 'completed', tool_calls: [] },
+      },
+    ]);
+
+    expect(hasAuthoritativeDockRuntimeTimeline(current)).toBe(true);
+  });
+
+  it('rejects incomplete or unmatched retained timelines', () => {
+    const durable = stream([
+      transcript(1, 'Question', '2026-08-15T08:22:54Z'),
+      { ...transcript(2, 'Progress', '2026-08-15T08:23:04Z'), role: 'assistant', message_id: 'progress' },
+      {
+        ...transcript(4, 'Final', '2026-08-15T08:26:14Z'), role: 'assistant', message_id: 'final',
+        turn_segments: [{
+          segment_id: 'tool-1', kind: 'tool_call',
+          tool_call: { tool_call_id: 'tool-1', tool_name: 'search_documents', args_text: '{}', status: 'completed' },
+        }],
+      },
+    ]);
+    const incomplete = {
+      ...durable,
+      live_turn_segments: [
+        {
+          segment_id: 'tool-1', kind: 'tool_call' as const,
+          tool_call: { tool_call_id: 'tool-1', tool_name: 'search_documents', args_text: '{}', status: 'completed' as const },
+        },
+        {
+          segment_id: 'final', kind: 'assistant_message' as const,
+          assistant_message: { message_id: 'final', content: 'Final', status: 'completed' as const, tool_calls: [] },
+        },
+      ],
+    };
+    const unmatched = {
+      ...durable,
+      live_turn_segments: [
+        {
+          segment_id: 'other-tool', kind: 'tool_call' as const,
+          tool_call: { tool_call_id: 'other-tool', tool_name: 'search_documents', args_text: '{}', status: 'completed' as const },
+        },
+        {
+          segment_id: 'other-final', kind: 'assistant_message' as const,
+          assistant_message: { message_id: 'other-final', content: 'Other', status: 'completed' as const, tool_calls: [] },
+        },
+      ],
+    };
+
+    expect(hasAuthoritativeDockRuntimeTimeline(incomplete)).toBe(false);
+    expect(hasAuthoritativeDockRuntimeTimeline(unmatched)).toBe(false);
+  });
 });
 
 describe('mergeMessagePages', () => {
@@ -121,5 +287,26 @@ describe('mergeMessagePages', () => {
       [1, 'first'],
       [51, 'later refreshed'],
     ]);
+  });
+});
+
+describe('resolveVisiblePendingEcho', () => {
+  const pending = { id: 'client-new', content: 'A new question' };
+
+  it.each([
+    { label: 'a first message', existing: [] },
+    {
+      label: 'an ongoing conversation',
+      existing: [{ ...persisted(1, 'An earlier question', '2026-08-15T09:59:00Z'), client_message_id: 'client-old' }],
+    },
+  ])('hides the optimistic echo as soon as $label has an accepted durable row', ({ existing }) => {
+    const accepted = {
+      ...persisted(3, pending.content, '2026-08-15T10:00:00Z'),
+      id: 'accepted',
+      client_message_id: pending.id,
+    };
+
+    expect(resolveVisiblePendingEcho(pending, existing)).toEqual(pending);
+    expect(resolveVisiblePendingEcho(pending, [...existing, accepted])).toBeNull();
   });
 });

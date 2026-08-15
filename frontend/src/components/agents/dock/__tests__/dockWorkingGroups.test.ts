@@ -95,7 +95,7 @@ describe('buildDockWorkingTimeline', () => {
     expect(timeline[1]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'answer' } });
   });
 
-  it('attaches separately projected streaming reasoning to the newest active group', () => {
+  it('keeps separately projected reasoning flat and outside every tool group', () => {
     const reasoning: TranscriptSegment = {
       kind: 'reasoning',
       id: 'live-reasoning:reasoning-1',
@@ -109,9 +109,13 @@ describe('buildDockWorkingTimeline', () => {
       tool('tool-2', 'running'),
     ], true);
 
+    expect(timeline[0]).toMatchObject({
+      kind: 'segment',
+      segment: { kind: 'reasoning', id: 'live-reasoning:reasoning-1' },
+    });
     const groups = timeline.filter((entry) => entry.kind === 'working_group');
-    expect(groups[0]?.segments.map((segment) => segment.id)).not.toContain('live-reasoning:reasoning-1');
-    expect(groups[1]?.segments.map((segment) => segment.id)).toContain('live-reasoning:reasoning-1');
+    expect(groups).toHaveLength(2);
+    expect(groups.every((group) => group.segments.every((segment) => segment.kind === 'tool'))).toBe(true);
   });
 
   it('leaves a final streaming assistant message flat and completes the preceding tool group', () => {
@@ -127,7 +131,7 @@ describe('buildDockWorkingTimeline', () => {
     expect(timeline[3]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'live:final' } });
   });
 
-  it('keeps consequential actions separate from surrounding exploration calls', () => {
+  it('keeps every contiguous tool sequence in one chronological phase', () => {
     const timeline = buildDockWorkingTimeline([
       tool('search-1'),
       tool('read-1', 'completed', 'read_files'),
@@ -136,9 +140,12 @@ describe('buildDockWorkingTimeline', () => {
     ], false);
 
     const groups = timeline.filter((entry) => entry.kind === 'working_group');
-    expect(groups).toHaveLength(3);
-    expect(groups[0]?.segments.map((segment) => segment.id)).toEqual(['search-1', 'read-1']);
-    expect(groups[1]?.segments.map((segment) => segment.id)).toEqual(['create-1']);
-    expect(groups[2]?.segments.map((segment) => segment.id)).toEqual(['search-2']);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.segments.map((segment) => segment.id)).toEqual([
+      'search-1',
+      'read-1',
+      'create-1',
+      'search-2',
+    ]);
   });
 });

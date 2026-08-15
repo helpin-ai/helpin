@@ -165,6 +165,96 @@ describe('DockTranscript', () => {
       .toContain('Yes, I will take a look.');
   });
 
+  it('marks only structurally final assistant responses as high contrast across intervals', () => {
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            userMessage('user-1', 'First question', 1),
+            assistantMessage('progress-1', 'First progress update.', 2),
+            assistantMessage('final-1', 'First final response.', 3),
+            userMessage('user-2', 'Follow-up question', 4),
+            assistantMessage('progress-2', 'Current progress update.', 5),
+          ])}
+          active
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+
+    const rows = Array.from(container.querySelectorAll<HTMLElement>('[data-assistant-presentation]'));
+    const presentation = (text: string) => rows.find((row) => row.textContent?.includes(text))?.dataset.assistantPresentation;
+    expect(presentation('First progress update.')).toBe('progress');
+    expect(presentation('First final response.')).toBe('final');
+    expect(presentation('Current progress update.')).toBe('progress');
+  });
+
+  it('never content-collapses the final response of an earlier assistant turn', () => {
+    const longFinal = `Final response ${'with complete detail '.repeat(40)}`;
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            userMessage('user-1', 'First question', 1),
+            assistantMessage('final-1', longFinal, 2),
+            userMessage('user-2', 'Follow-up question', 3),
+            assistantMessage('final-2', 'Second final response.', 4),
+          ])}
+          active={false}
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+
+    const firstFinal = container.querySelector('[data-assistant-presentation="final"]');
+    expect(firstFinal?.textContent).toContain(longFinal.trim());
+    expect(firstFinal?.textContent).not.toContain('Show more');
+  });
+
+  it('separates a final response from preceding work in the same interval only', () => {
+    const worked = {
+      ...assistantMessage('worked-turn', '', 2),
+      turn_segments: [
+        assistantTurn('progress', 'Inspecting the source.'),
+        toolTurn('tool-1', 'repository_search', 100),
+        assistantTurn('final', 'The issue is identified.'),
+      ],
+    };
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([userMessage('user-1', 'Investigate.', 1), worked])}
+          active={false}
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+
+    const finalWithWork = container.querySelector('[data-assistant-presentation="final"]');
+    expect(finalWithWork?.textContent).toContain('The issue is identified.');
+    expect(finalWithWork?.getAttribute('data-final-response-separator')).toBe('true');
+
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            userMessage('user-2', 'Answer directly.', 1),
+            assistantMessage('direct-answer', 'Here is the direct answer.', 2),
+          ])}
+          active={false}
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+    const direct = container.querySelector('[data-assistant-presentation="final"]');
+    expect(direct?.textContent).toContain('Here is the direct answer.');
+    expect(direct?.hasAttribute('data-final-response-separator')).toBe(false);
+  });
+
   it('keeps assistant narration flat while collapsing complete tool phases', () => {
     const message = {
       ...assistantMessage('assistant-tools', '', 2),
@@ -208,9 +298,107 @@ describe('DockTranscript', () => {
     expect(container.querySelector('[data-working-group-active="true"]')).toBeNull();
 
     act(() => (groups[0]?.querySelector('button') as HTMLButtonElement | null)?.click());
-    act(() => (groups[0]?.querySelector('button[aria-expanded="false"]') as HTMLButtonElement | null)?.click());
-    expect(container.textContent).toContain('"conversation_id": "conversation-1"');
-    expect(container.textContent).toContain('"messages": 12');
+    expect(groups[0]?.querySelectorAll('button')).toHaveLength(1);
+    expect(container.textContent).not.toContain('conversation-1');
+    expect(container.textContent).not.toContain('"messages":12');
+    expect(groups[0]?.querySelector('[data-working-group-label]')?.nextElementSibling)
+      .toBe(groups[0]?.querySelector('[data-working-group-chevron]'));
+  });
+
+  it('uses retained runtime chronology after completion instead of the final durable tool aggregate', () => {
+    const completedStream = streamWithMessages([
+      userMessage('user-1', 'Investigate it.', 1),
+      assistantMessage('progress-1', 'First I will inspect the conversation.', 2),
+      assistantMessage('progress-2', 'Now I will inspect the documentation.', 3),
+      {
+        ...assistantMessage('durable-final', '', 4),
+        message_id: 'final-answer',
+        turn_segments: [
+          toolTurn('tool-conversation', 'list_conversation_messages', 100),
+          toolTurn('tool-docs', 'search_documents', 100),
+          assistantTurn('final-answer', 'Here is the final diagnosis.'),
+        ],
+      },
+    ]);
+    completedStream.live_turn_segments = [
+      assistantTurn('progress-1', 'First I will inspect the conversation.'),
+      toolTurn('tool-conversation', 'list_conversation_messages', 100),
+      assistantTurn('progress-2', 'Now I will inspect the documentation.'),
+      toolTurn('tool-docs', 'search_documents', 100),
+      assistantTurn('final-answer', 'Here is the final diagnosis.'),
+    ];
+
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={completedStream}
+          active={false}
+          useRuntimeTimeline
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+
+    const text = container.textContent ?? '';
+    expect(container.querySelectorAll('[data-agent-working-group]')).toHaveLength(2);
+    expect(text.indexOf('First I will inspect the conversation.')).toBeLessThan(text.indexOf('list_conversation_messages'));
+    expect(text.indexOf('list_conversation_messages')).toBeLessThan(text.indexOf('Now I will inspect the documentation.'));
+    expect(text.indexOf('Now I will inspect the documentation.')).toBeLessThan(text.indexOf('search_documents'));
+    expect(text.indexOf('search_documents')).toBeLessThan(text.indexOf('Here is the final diagnosis.'));
+    expect(container.querySelector('[data-working-group-active="true"]')).toBeNull();
+  });
+
+  it('keeps the retained final response through running-to-paused handoff without stale live styling', () => {
+    const handoffStream = streamWithMessages([
+      userMessage('user-1', 'Investigate it.', 1),
+      assistantMessage('progress-1', 'I am checking the source.', 2),
+    ]);
+    handoffStream.live_turn_segments = [
+      assistantTurn('progress-1', 'I am checking the source.'),
+      toolTurn('tool-1', 'repository_search', 100, 'running'),
+      {
+        segment_id: 'final-live',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'final-live',
+          content: 'The final answer is ready.',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      },
+    ];
+
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={handoffStream}
+          active
+          useRuntimeTimeline
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+    expect(container.textContent).toContain('The final answer is ready.');
+    expect(container.querySelector('[data-agent-working-group]')).not.toBeNull();
+
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={handoffStream}
+          active={false}
+          useRuntimeTimeline
+          workspaceId="ws-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('I am checking the source.');
+    expect(container.textContent).toContain('The final answer is ready.');
+    expect(container.querySelector('[data-working-group-active="true"]')).toBeNull();
+    expect(container.textContent).not.toContain('Live');
   });
 
   it('keeps the same working group identity through the live-to-persisted handoff', () => {
@@ -314,7 +502,7 @@ describe('DockTranscript', () => {
     expect(toggles[1]?.getAttribute('aria-expanded')).toBe('true');
     expect(container.textContent).toContain('Checking the conversation.');
     expect(container.textContent).toContain('Checking the repository.');
-    expect(container.querySelectorAll('[data-tool-call-details]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-tool-call-details]')).toHaveLength(0);
   });
 
   it('shows every assistant message by default for full run views', () => {
@@ -492,7 +680,7 @@ describe('DockTranscript', () => {
     expect(container.textContent).toContain('Bob Smith approved');
   });
 
-  it('groups adjacent successful calls, sums duration, and keeps failures separate', () => {
+  it('groups adjacent successful calls without timing and keeps failures separate', () => {
     const message = {
       ...assistantMessage('assistant-tools', '', 1),
       turn_segments: [
@@ -509,10 +697,10 @@ describe('DockTranscript', () => {
       root.render(<DockTranscript stream={streamWithMessages([message])} active={false} workspaceId="ws-1" />);
     });
 
-    expect(container.textContent).toContain('browser_act ×2 · Browser Act');
-    expect(container.textContent).toContain('2s');
-    expect(container.textContent?.match(/Browser Act/g)).toHaveLength(3);
+    expect(container.textContent).toContain('browser_act ×2 · Browser act');
+    expect(container.textContent).not.toContain('2s');
+    expect(container.textContent?.match(/Browser act/g)).toHaveLength(3);
     expect(container.textContent).not.toContain('browser_act ×3');
-    expect(container.textContent).toContain('Browser Open');
+    expect(container.textContent).toContain('Browser open');
   });
 });

@@ -1,5 +1,4 @@
 import type { TranscriptSegment } from '@/components/agents/transcript';
-import { canonicalToolName } from '@/lib/toolNames';
 
 export interface DockWorkingGroupEntry {
   kind: 'working_group';
@@ -40,12 +39,6 @@ function activityEntries(
   }];
 }
 
-function isConsequentialTool(segment: TranscriptSegment): boolean {
-  if (segment.kind !== 'tool') return false;
-  const name = canonicalToolName(segment.toolCall.tool_name).toLowerCase();
-  return /^(apply|approve|assign|cancel|checkout|commit|create|delete|edit|generate|kill|merge|move|publish|reject|remove|reply|resolve|send|update|upload|write)(_|$)/.test(name);
-}
-
 /**
  * Converts the root Ask transcript into normal conversation rows plus complete,
  * sequential working groups. No source segment is discarded or summarized.
@@ -54,22 +47,6 @@ export function buildDockWorkingTimeline(
   segments: TranscriptSegment[],
   active: boolean,
 ): DockWorkingTimelineEntry[] {
-  // Live reasoning is projected separately before the cumulative turn. Move
-  // it to the newest execution phase, but never behind a streaming assistant
-  // reply: assistant prose is always a hard group boundary.
-  const streamingReasoning = active
-    ? segments.filter((segment) => segment.kind === 'reasoning' && segment.reasoning.status === 'streaming')
-    : [];
-  const withoutStreamingReasoning = streamingReasoning.length > 0
-    ? segments.filter((segment) => !(segment.kind === 'reasoning' && segment.reasoning.status === 'streaming'))
-    : segments;
-  const lastSegment = withoutStreamingReasoning.at(-1);
-  const orderedSegments = streamingReasoning.length === 0
-    ? withoutStreamingReasoning
-    : lastSegment?.kind === 'assistant' && lastSegment.streaming
-      ? [...withoutStreamingReasoning.slice(0, -1), ...streamingReasoning, lastSegment]
-      : [...withoutStreamingReasoning, ...streamingReasoning];
-
   const entries: DockWorkingTimelineEntry[] = [];
   let activity: TranscriptSegment[] = [];
   const flush = (isTrailing: boolean) => {
@@ -77,15 +54,9 @@ export function buildDockWorkingTimeline(
     activity = [];
   };
 
-  for (let index = 0; index < orderedSegments.length; index += 1) {
-    const segment = orderedSegments[index];
-    if (isConsequentialTool(segment)) {
-      flush(false);
-      activity.push(segment);
-      flush(active && index === orderedSegments.length - 1);
-      continue;
-    }
-    if (segment.kind === 'tool' || segment.kind === 'reasoning') {
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (segment.kind === 'tool') {
       activity.push(segment);
       continue;
     }

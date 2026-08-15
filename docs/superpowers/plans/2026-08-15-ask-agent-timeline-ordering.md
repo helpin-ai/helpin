@@ -36,7 +36,7 @@ In `mergePersistedChatMessages`, allow `segmentIdentityKeys(segment)` to match `
 
 - [ ] **Step 4: Define trustworthy retained chronology**
 
-Add a focused helper that returns true for paused/completed chronology only when `live_turn_segments` contains both assistant and tool segments and fully covers stable assistant-message IDs and tool-call IDs from the durable current conversational interval. Add incomplete and wholly unmatched snapshot cases that return false and preserve durable order. Active streams remain eligible without durable coverage because projection can legitimately lag.
+Add a focused helper that returns true for paused/completed chronology only when `live_turn_segments` contains retained runtime work and fully covers stable assistant-message IDs and tool-call IDs from the durable current conversational interval. Include an assistant-only completion handoff, because a direct answer may have no tools. Add incomplete and wholly unmatched snapshot cases that return false and preserve durable order. Active streams remain eligible without durable coverage because projection can legitimately lag.
 
 - [ ] **Step 5: Separate timeline reconciliation from visual activity**
 

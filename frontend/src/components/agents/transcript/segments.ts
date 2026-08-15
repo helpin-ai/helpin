@@ -34,6 +34,8 @@ export type TranscriptStreamInput = Pick<
 export interface CollectSegmentsOptions {
   /** Include in-flight live turn segments + live reasoning (run still active). */
   includeLive: boolean;
+  /** Whether the included runtime timeline is actively streaming. Defaults to includeLive. */
+  runtimeActive?: boolean;
   /** Which kinds to emit. Omit for all kinds. */
   include?: ReadonlySet<TranscriptSegmentKind>;
   /**
@@ -128,6 +130,18 @@ function compactAssistantProgress(segments: TranscriptSegment[]): TranscriptSegm
   return segments.filter((_, index) => keep[index]);
 }
 
+function settleInactiveRuntimeTools(
+  segments: TranscriptSegment[],
+  runtimeActive: boolean,
+): TranscriptSegment[] {
+  if (runtimeActive) return segments;
+  return segments.map((segment) => (
+    segment.kind === 'tool' && segment.toolCall.status === 'running'
+      ? { ...segment, toolCall: { ...segment.toolCall, status: 'completed' } }
+      : segment
+  ));
+}
+
 function maybeCompactAssistantProgress(
   segments: TranscriptSegment[],
   enabled: boolean | undefined,
@@ -147,6 +161,7 @@ export function collectSegments(
   stream: TranscriptStreamInput,
   opts: CollectSegmentsOptions,
 ): TranscriptSegment[] {
+  const runtimeActive = opts.runtimeActive ?? opts.includeLive;
   const include = opts.include ?? ALL_SEGMENT_KINDS;
   const out: TranscriptSegment[] = [];
   const persistedAssistantSegments: Array<{
@@ -202,7 +217,7 @@ export function collectSegments(
   }
   const matchedFallbackSemanticCounts = new Map<string, number>();
 
-  if (opts.includeLive) {
+  if (opts.includeLive && runtimeActive) {
     for (let index = stream.live_turn_segments.length - 1; index >= 0; index -= 1) {
       const segment = stream.live_turn_segments[index];
       if (segment.kind === 'assistant_message') {
@@ -325,7 +340,7 @@ export function collectSegments(
     let lastConversationBoundaryIndex = -1;
     for (let index = out.length - 1; index >= 0; index -= 1) {
       const kind = out[index].kind;
-      if (kind === 'user' || (opts.compactAssistantProgress && kind === 'review_decision')) {
+      if (kind === 'user' || kind === 'review_decision') {
         lastConversationBoundaryIndex = index;
         break;
       }
@@ -335,7 +350,9 @@ export function collectSegments(
       liveOut.push({
         kind: 'reasoning',
         id: `live-reasoning:${stream.live_reasoning_message.message_id}`,
-        reasoning: stream.live_reasoning_message,
+        reasoning: runtimeActive || stream.live_reasoning_message.status !== 'streaming'
+          ? stream.live_reasoning_message
+          : { ...stream.live_reasoning_message, status: 'completed' },
       });
     }
     for (const segment of stream.live_turn_segments) {
@@ -387,10 +404,10 @@ export function collectSegments(
     // A cumulative live snapshot is the best ordering source while a run is
     // active. Remove persisted rows represented by that timeline, then insert
     // their authoritative content at the corresponding live positions.
-    return maybeCompactAssistantProgress([
+    return maybeCompactAssistantProgress(settleInactiveRuntimeTools([
       ...out.filter((_, index) => !matchedPersistedIndexes.has(index)),
       ...liveOut,
-    ], opts.compactAssistantProgress);
+    ], runtimeActive), opts.compactAssistantProgress);
   }
 
   return maybeCompactAssistantProgress(out, opts.compactAssistantProgress);
