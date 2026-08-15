@@ -73,20 +73,20 @@ const applyPatchSegment: TranscriptSegment = {
 };
 
 describe('TranscriptSegmentView — tool', () => {
-  it('renders a successful tool as a static one-liner with its duration', () => {
+  it('renders a successful tool as a static payload-independent one-liner without timing', () => {
     render(toolSegment, true);
 
-    expect(container.textContent?.indexOf('run_command')).toBeLessThan(container.textContent?.indexOf('Run go build ./...') ?? 0);
-    expect(container.textContent).toContain('Run go build ./...');
     expect(container.textContent).toContain('run_command');
-    expect(container.textContent).toContain('2s');
+    expect(container.textContent).toContain('Run command');
+    expect(container.textContent).not.toContain('go build');
+    expect(container.textContent).not.toContain('2s');
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('[aria-expanded]')).toBeNull();
     expect(container.textContent).not.toContain('▸');
     expect(container.textContent).not.toContain('▾');
   });
 
-  it('renders the exact returned range for a completed read_files call', () => {
+  it('does not derive a completed tool label from its arguments or output', () => {
     const segment: TranscriptSegment = {
       kind: 'tool',
       id: 'tool-read-files',
@@ -114,8 +114,10 @@ describe('TranscriptSegmentView — tool', () => {
 
     render(segment, true);
 
-    expect(container.textContent).toContain('Read src/service.go:12-18 · backend');
+    expect(container.textContent).toContain('Read files');
     expect(container.textContent).toContain('read_files');
+    expect(container.textContent).not.toContain('src/service.go');
+    expect(container.textContent).not.toContain('backend');
     expect(container.textContent).not.toContain('next_start_line');
   });
 
@@ -136,10 +138,14 @@ describe('TranscriptSegmentView — tool', () => {
     expect(container.querySelector('div.hidden')).toBeNull();
   });
 
-  it('keeps failed tool output out of the transcript row', () => {
+  it('keeps a failed tool collapsed and reveals only its error when clicked', () => {
     render(failedToolSegment, true);
 
-    expect(container.querySelector('button')).toBeNull();
+    const toggle = container.querySelector('button[aria-expanded="false"]');
+    expect(toggle).not.toBeNull();
+    expect(container.textContent).not.toContain('build failed: undefined symbol');
+    act(() => (toggle as HTMLButtonElement).click());
+    expect(container.textContent).toContain('Error details unavailable.');
     expect(container.textContent).not.toContain('build failed: undefined symbol');
   });
 
@@ -151,16 +157,16 @@ describe('TranscriptSegmentView — tool', () => {
     expect(container.textContent).not.toContain('*** Begin Patch');
   });
 
-  it('still shows duration when the surrounding transcript is non-expandable', () => {
+  it('removes timing when the surrounding transcript is non-expandable', () => {
     render(toolSegment, false);
 
-    expect(container.textContent).toContain('Run go build ./...');
-    expect(container.textContent).toContain('2s');
+    expect(container.textContent).toContain('Run command');
+    expect(container.textContent).not.toContain('2s');
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('div.hidden')).toBeNull();
   });
 
-  it('reveals full input, output, error, and timing for one selected tool call', () => {
+  it('reveals only the error for one selected failed tool call', () => {
     const detailedSegment: TranscriptSegment = {
       kind: 'tool',
       id: 'tool-detailed',
@@ -188,17 +194,16 @@ describe('TranscriptSegmentView — tool', () => {
     expect(toggle).not.toBeNull();
     act(() => (toggle as HTMLButtonElement).click());
 
-    expect(container.textContent).toContain('Input');
-    expect(container.textContent).toContain('"query": "pagination"');
-    expect(container.textContent).toContain('Output');
-    expect(container.textContent).toContain('One matching file');
-    expect(container.textContent).toContain('"matches": [');
     expect(container.textContent).toContain('Error');
     expect(container.textContent).toContain('search index timed out');
-    expect(container.textContent).toContain('2s');
+    expect(container.textContent).not.toContain('pagination');
+    expect(container.textContent).not.toContain('One matching file');
+    expect(container.textContent).not.toContain('ChatView.tsx');
+    expect(container.textContent).not.toContain('2026-08-14');
+    expect(container.textContent).not.toContain('2s');
   });
 
-  it('shows malformed tool payloads as their original text', () => {
+  it('never mounts malformed successful tool payloads', () => {
     const malformedSegment: TranscriptSegment = {
       kind: 'tool',
       id: 'tool-malformed',
@@ -213,10 +218,22 @@ describe('TranscriptSegmentView — tool', () => {
 
     render(malformedSegment, true, { showToolDetails: true });
 
-    act(() => (container.querySelector('button[aria-expanded="false"]') as HTMLButtonElement).click());
+    expect(container.querySelector('button')).toBeNull();
+    expect(container.textContent).not.toContain('{not json');
+    expect(container.textContent).not.toContain('plain output');
+  });
 
-    expect(container.textContent).toContain('{not json');
-    expect(container.textContent).toContain('plain output');
+  it('places the failed-tool disclosure chevron immediately after its label', () => {
+    const segment: TranscriptSegment = {
+      ...failedToolSegment,
+      toolCall: { ...failedToolSegment.toolCall, result: { error: 'command failed' } },
+    };
+    render(segment, true, { showToolDetails: true });
+
+    const label = container.querySelector('[data-transcript-row-label]');
+    const chevron = container.querySelector('[data-transcript-row-chevron]');
+    expect(label).not.toBeNull();
+    expect(label?.nextElementSibling).toBe(chevron);
   });
 });
 
@@ -232,6 +249,8 @@ describe('TranscriptSegmentView — reasoning', () => {
     expect(container.textContent).toContain('Thought');
     const toggle = container.querySelector('button');
     expect(toggle).not.toBeNull();
+    expect(container.querySelector('[data-transcript-row-label]')?.nextElementSibling)
+      .toBe(container.querySelector('[data-transcript-row-chevron]'));
     act(() => toggle?.click());
     expect(container.textContent).toContain('Considering the edge cases.');
   });
@@ -264,6 +283,18 @@ describe('TranscriptSegmentView — reasoning', () => {
 
     expect(container.textContent).toContain('Inspecting both the stream and persisted timeline.');
     expect(container.querySelector('[aria-expanded]')).toBeNull();
+  });
+});
+
+describe('TranscriptSegmentView — assistant hierarchy', () => {
+  it('renders progress prose muted and final prose with normal foreground contrast', () => {
+    const segment: TranscriptSegment = { kind: 'assistant', id: 'assistant-1', content: 'Checking the data.' };
+    render(segment, true, { assistantPresentation: 'progress' });
+    expect(container.querySelector('.group\\/assistant')?.firstElementChild?.className).toContain('text-muted-foreground');
+
+    render(segment, true, { assistantPresentation: 'final' });
+    expect(container.querySelector('.group\\/assistant')?.firstElementChild?.className).toContain('text-foreground');
+    expect(container.querySelector('.group\\/assistant')?.firstElementChild?.className).not.toContain('text-muted-foreground');
   });
 });
 

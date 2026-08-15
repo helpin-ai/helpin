@@ -624,6 +624,67 @@ describe('AskAgentsDock', () => {
     );
   });
 
+  it.each([
+    { label: 'the first message', existingMessages: [] },
+    {
+      label: 'an ongoing conversation',
+      existingMessages: [{
+        id: 'message-existing', workspace_id: 'ws-1', run_id: 'run-old', dock_chat_id: 'chat-1',
+        dock_chat_sequence: 1, client_message_id: 'existing-client-id',
+        role: 'user', content: 'Earlier question', message_type: 'prompt', sequence_no: 1,
+        created_at: '2026-08-01T00:00:01Z', delivery_status: 'sent',
+      }],
+    },
+  ])('never renders the accepted server row beside the optimistic echo for $label', async ({ existingMessages }) => {
+    mocks.listMessages.mockResolvedValue({
+      data: { messages: existingMessages, next_before: null },
+      error: null,
+    });
+    let acceptMessage: (() => void) | undefined;
+    mocks.sendMessage.mockImplementation((_workspaceId, _chatId, payload) => new Promise((resolve) => {
+      acceptMessage = () => resolve({
+        data: chatDetail({
+          accepted_message: {
+            id: 'message-accepted', workspace_id: 'ws-1', run_id: 'run-1', dock_chat_id: 'chat-1',
+            dock_chat_sequence: existingMessages.length + 1, client_message_id: payload.client_message_id,
+            role: 'user', content: 'Unique optimistic handoff message', message_type: 'prompt',
+            sequence_no: existingMessages.length + 1, created_at: '2026-08-15T10:00:00Z', delivery_status: 'sent',
+          },
+        }),
+        error: null,
+      });
+    }));
+
+    await renderDock();
+    await waitForText('Sprint questions');
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'Unique optimistic handoff message');
+    });
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+    await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'Message was not submitted');
+    await waitForText('Unique optimistic handoff message');
+    expect(document.body.textContent).toContain('Sending…');
+
+    const observedCounts = [1];
+    const observer = new MutationObserver(() => {
+      observedCounts.push((document.body.textContent?.match(/Unique optimistic handoff message/g) ?? []).length);
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    await act(async () => acceptMessage?.());
+    await waitForCondition(
+      () => !document.body.textContent?.includes('Sending…'),
+      'Accepted message remained optimistic',
+    );
+    observer.disconnect();
+
+    expect(Math.max(...observedCounts)).toBe(1);
+    expect((document.body.textContent?.match(/Unique optimistic handoff message/g) ?? [])).toHaveLength(1);
+  });
+
   it('generates a semantic title after the first message without blocking send', async () => {
     const untitled = { ...CHAT, title: '' };
     const titled = { ...CHAT, title: 'Prioritize open tasks', active_run_id: 'run-1' };

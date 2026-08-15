@@ -9,13 +9,12 @@ import type {
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
-import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { canonicalToolName } from '@/lib/toolNames';
 import { formatCodingSessionRelative } from '@/components/pm/CodingSession/codingSessionUtils';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { TranscriptRow } from './TranscriptRow';
-import { formatToolDuration, toolStatusChrome } from './toolRowChrome';
+import { toolStatusChrome } from './toolRowChrome';
 import type { TranscriptSegment } from './segments';
 
 export interface TranscriptToolGroupPresentation {
@@ -39,6 +38,8 @@ export interface RenderSegmentOptions {
   showToolDetails?: boolean;
   /** Show reasoning inline because the surrounding working group is disclosed. */
   showReasoningDetails?: boolean;
+  /** Structural assistant role within its conversational interval. */
+  assistantPresentation?: 'progress' | 'final';
 }
 
 /** Renders a single normalized transcript segment as a flat one-line entry. */
@@ -56,10 +57,17 @@ export function TranscriptSegmentView({
           content={segment.content}
           streaming={segment.streaming}
           expandable={options.collapseLongAssistantContent ?? options.expandable}
+          presentation={options.assistantPresentation ?? 'final'}
         />
       );
     case 'tool':
-      return <ToolSegment toolCall={segment.toolCall} group={options.toolGroup} showDetails={options.showToolDetails} />;
+      return (
+        <ToolSegment
+          toolCall={segment.toolCall}
+          group={options.toolGroup}
+          showDetails={options.showToolDetails ?? options.expandable}
+        />
+      );
     case 'reasoning':
       return (
         <ReasoningSegment
@@ -91,17 +99,26 @@ function AssistantSegment({
   content,
   streaming,
   expandable,
+  presentation,
 }: {
   content: string;
   streaming?: boolean;
   expandable: boolean;
+  presentation: 'progress' | 'final';
 }) {
   return (
     <div className="group/assistant relative">
       {expandable ? (
-        <CollapsibleMarkdown content={content} streaming={streaming} />
+        <CollapsibleMarkdown content={content} streaming={streaming} presentation={presentation} />
       ) : (
-        <MarkdownContent content={content} streaming={streaming} className="text-[13px] leading-6 text-foreground/90" />
+        <MarkdownContent
+          content={content}
+          streaming={streaming}
+          className={cn(
+            'text-[13px] leading-6',
+            presentation === 'progress' ? 'text-muted-foreground' : 'text-foreground',
+          )}
+        />
       )}
       {!streaming && <CopyMessageButton content={content} />}
     </div>
@@ -142,20 +159,14 @@ function ToolSegment({
   const status = group?.status ?? toolCall.status;
   const failed = status === 'failed';
   const { icon, className } = toolStatusChrome(status);
-  const presentation = describeToolCall(toolCall);
   const grouped = !!group && group.count > 1;
   const canonicalName = canonicalToolName(toolCall.tool_name).toLowerCase();
-  const friendlyLabel = grouped
-    ? `${presentation.secondaryLabel}${presentation.repositoryLabel ? ` · ${presentation.repositoryLabel}` : ''}`
-    : presentation.primaryLabel;
-  const hasDetails = !!(
-    toolCall.args_text.trim()
-    || toolCall.result?.output_summary?.trim()
-    || toolCall.result?.content?.trim()
-    || toolCall.result?.error?.trim()
-    || toolCall.started_at
-    || toolCall.completed_at
-  );
+  const humanizedName = canonicalName
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .join(' ');
+  const friendlyLabel = humanizedName.charAt(0).toUpperCase() + humanizedName.slice(1);
+  const canShowError = showDetails && failed;
 
   return (
     <TranscriptRow
@@ -170,57 +181,22 @@ function ToolSegment({
         </>
       )}
       tone={failed ? 'failed' : 'muted'}
-      meta={formatToolDuration(grouped ? group.totalDurationMs : toolCall.duration_ms)}
-      expandable={showDetails && hasDetails}
-      defaultOpen={status === 'running'}
+      expandable={canShowError}
+      defaultOpen={false}
       lazyMount
     >
-      {showDetails && hasDetails ? <ToolCallDetails toolCall={toolCall} /> : null}
+      {canShowError ? <ToolCallError error={toolCall.result?.error} /> : null}
     </TranscriptRow>
   );
 }
 
-function formatToolPayload(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  try {
-    return JSON.stringify(JSON.parse(trimmed), null, 2);
-  } catch {
-    return trimmed;
-  }
-}
-
-function ToolDetailBlock({ label, content, failed = false }: { label: string; content: string; failed?: boolean }) {
-  if (!content.trim()) return null;
+function ToolCallError({ error }: { error?: string }) {
   return (
-    <div className="space-y-1">
-      <div className={cn('text-[10px] font-medium uppercase tracking-wide', failed ? 'text-destructive' : 'text-muted-foreground')}>
-        {label}
-      </div>
-      <pre className={cn(
-        'max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/70 bg-muted/30 px-2.5 py-2 font-mono text-[11px] leading-5 text-foreground/80',
-        failed && 'border-destructive/30 bg-destructive/5 text-destructive',
-      )}>
-        {formatToolPayload(content)}
+    <div className="space-y-1" data-tool-call-details>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-destructive">Error</div>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 font-mono text-[11px] leading-5 text-destructive">
+        {error?.trim() || 'Error details unavailable.'}
       </pre>
-    </div>
-  );
-}
-
-function ToolCallDetails({ toolCall }: { toolCall: CodingSessionLiveToolCall }) {
-  const result = toolCall.result;
-  return (
-    <div className="ml-5 mt-2 space-y-2" data-tool-call-details>
-      <ToolDetailBlock label="Input" content={toolCall.args_text} />
-      <ToolDetailBlock label="Output summary" content={result?.output_summary ?? ''} />
-      <ToolDetailBlock label="Output" content={result?.content ?? ''} />
-      <ToolDetailBlock label="Error" content={result?.error ?? ''} failed />
-      {toolCall.started_at || toolCall.completed_at ? (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-          {toolCall.started_at ? <span>Started {toolCall.started_at}</span> : null}
-          {toolCall.completed_at ? <span>Completed {toolCall.completed_at}</span> : null}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -432,18 +408,30 @@ function ReviewDecisionSegment({
 
 const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;
 
-function CollapsibleMarkdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
+function CollapsibleMarkdown({
+  content,
+  streaming = false,
+  presentation = 'final',
+}: {
+  content: string;
+  streaming?: boolean;
+  presentation?: 'progress' | 'final';
+}) {
   const [expanded, setExpanded] = useState(false);
   const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
+  const contentClassName = cn(
+    'text-[13px] leading-6',
+    presentation === 'progress' ? 'text-muted-foreground' : 'text-foreground',
+  );
 
   if (!isLong) {
-    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />;
+    return <MarkdownContent content={content} className={contentClassName} streaming={streaming} />;
   }
 
   return (
     <div>
       <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
-        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />
+        <MarkdownContent content={content} className={contentClassName} streaming={streaming} />
         {!expanded && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
         )}

@@ -130,6 +130,7 @@ function SubAgentTimelineGroup({ items }: { items: DockSubAgentTimelineItem[] })
 export function DockTranscript({
   stream,
   active,
+  useRuntimeTimeline = active,
   workspaceId,
   fallbackActor,
   showUserMessages = true,
@@ -140,6 +141,8 @@ export function DockTranscript({
   stream: CodingSessionStreamState | null;
   /** True while the run is still executing — controls live-turn inclusion. */
   active: boolean;
+  /** Reconcile retained runtime ordering independently from live styling. */
+  useRuntimeTimeline?: boolean;
   /** Workspace used to resolve the author of each human message. */
   workspaceId?: string;
   /** Actor for older messages that predate per-message attribution. */
@@ -168,7 +171,8 @@ export function DockTranscript({
   );
   if (!stream) return null;
   const segments = collectSegments(stream, {
-    includeLive: active,
+    includeLive: useRuntimeTimeline,
+    runtimeActive: active,
     include: showUserMessages
       ? (compactAssistantProgress ? DOCK_WORKING_SEGMENT_KINDS : DOCK_CHAT_SEGMENT_KINDS)
       : DOCK_SEGMENT_KINDS,
@@ -182,6 +186,38 @@ export function DockTranscript({
       ? { key: entry.key, segment: entry.segments[0], workingGroup: entry }
       : { key: entry.key, segment: entry.segment })
     : groupAdjacentDockTools(segments);
+  const assistantPresentations = new Map<number, { presentation: 'progress' | 'final'; separator: boolean }>();
+  let intervalStart = 0;
+  let intervalAssistantIndexes: number[] = [];
+  const finalizeInterval = (end: number, allowFinal: boolean) => {
+    for (const index of intervalAssistantIndexes) {
+      assistantPresentations.set(index, { presentation: 'progress', separator: false });
+    }
+    if (!allowFinal) return;
+    const finalIndex = [...intervalAssistantIndexes].reverse().find((index) => {
+      const segment = entries[index]?.segment;
+      return segment?.kind === 'assistant' && !segment.streaming;
+    });
+    if (finalIndex === undefined) return;
+    const separator = entries.slice(intervalStart, finalIndex).some((candidate) => (
+      'workingGroup' in candidate
+      || candidate.segment.kind === 'reasoning'
+      || candidate.segment.kind === 'assistant'
+    ));
+    assistantPresentations.set(finalIndex, { presentation: 'final', separator });
+    intervalStart = end;
+  };
+  for (let index = 0; index < entries.length; index += 1) {
+    const segment = entries[index].segment;
+    if (segment.kind === 'user' || segment.kind === 'review_decision') {
+      finalizeInterval(index, true);
+      intervalStart = index + 1;
+      intervalAssistantIndexes = [];
+      continue;
+    }
+    if (segment.kind === 'assistant') intervalAssistantIndexes.push(index);
+  }
+  finalizeInterval(entries.length, !active);
   const times = transcriptSegmentTimes(stream);
   const sequences = transcriptSegmentSequences(stream);
   const runsByBoundary = new Map<number, DockSubAgentTimelineItem[]>();
@@ -215,12 +251,18 @@ export function DockTranscript({
       {entries.map((entry, index) => {
         const workingGroup = 'workingGroup' in entry ? entry.workingGroup : undefined;
         const followsUserMessage = index > 0 && entries[index - 1].segment.kind === 'user';
+        const assistantPresentation = assistantPresentations.get(index);
         return (
           <Fragment key={entry.key}>
             {runsByBoundary.has(index) ? <SubAgentTimelineGroup items={runsByBoundary.get(index)!} /> : null}
             <div
-              className={cn(followsUserMessage && 'pt-2')}
+              className={cn(
+                followsUserMessage && 'pt-2',
+                assistantPresentation?.separator && 'mt-3 border-t border-border/60 pt-4',
+              )}
               data-after-user-message={followsUserMessage ? 'true' : undefined}
+              data-assistant-presentation={assistantPresentation?.presentation}
+              data-final-response-separator={assistantPresentation?.separator ? 'true' : undefined}
             >
               {workingGroup ? (
                 <DockWorkingGroup
@@ -248,7 +290,9 @@ export function DockTranscript({
                   options={{
                     expandable: true,
                     toolGroup: 'toolGroup' in entry ? entry.toolGroup : undefined,
-                    collapseLongAssistantContent: entry.segment.kind !== 'assistant' || entry.segment.id !== latestAssistantSegmentId,
+                    collapseLongAssistantContent: assistantPresentation?.presentation !== 'final'
+                      && (entry.segment.kind !== 'assistant' || entry.segment.id !== latestAssistantSegmentId),
+                    assistantPresentation: assistantPresentation?.presentation,
                     fallbackUserLabel: 'You',
                     resolveActor: (message) => {
                       const attributedUserId = message.resolver_user_id ?? message.actor_user_id;

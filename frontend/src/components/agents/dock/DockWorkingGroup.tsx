@@ -69,12 +69,13 @@ export function DockWorkingGroup({
         )}>
           {active ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <Tick01Icon className="h-3.5 w-3.5" />}
         </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground/80" title={presentation.title}>
+        <span data-working-group-label className="min-w-0 truncate font-mono text-[11px] font-medium text-foreground/80" title={presentation.title}>
           {presentation.label}
         </span>
+        <span data-working-group-chevron aria-hidden className="shrink-0 text-[10px] text-muted-foreground">{open ? '▾' : '▸'}</span>
+        <span className="min-w-0 flex-1" />
         <span className="shrink-0 text-[10px] text-muted-foreground">{presentation.meta}</span>
         {active ? <span className="shrink-0 text-[10px] text-orange-600 dark:text-orange-400">Live</span> : null}
-        <span aria-hidden className="shrink-0 text-[10px] text-muted-foreground">{open ? '▾' : '▸'}</span>
       </button>
       {open ? (
         <div className="space-y-2 border-t border-border/60 px-2.5 py-2.5" data-working-group-body>

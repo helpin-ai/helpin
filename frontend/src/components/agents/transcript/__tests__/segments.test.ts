@@ -373,6 +373,24 @@ describe('collectSegments', () => {
     expect(live[1]).toMatchObject({ kind: 'assistant', content: 'Live answer', streaming: true });
   });
 
+  it('retains runtime chronology without stale live styling after completion', () => {
+    const input = stream({
+      live_reasoning_message: { message_id: 'r1', content: 'thinking', status: 'streaming' },
+      live_turn_segments: [
+        toolSegment('live-tool', toolCall({ status: 'running' })),
+        assistantSegment('live-a', 'Completed answer', 'streaming'),
+      ],
+    });
+
+    const retained = collectSegments(input, { includeLive: true, runtimeActive: false });
+
+    expect(retained).toMatchObject([
+      { kind: 'reasoning', reasoning: { status: 'completed' } },
+      { kind: 'tool', toolCall: { status: 'completed' } },
+      { kind: 'assistant', content: 'Completed answer', streaming: false },
+    ]);
+  });
+
   it('marks only the latest active assistant segment as streaming', () => {
     const input = stream({
       live_turn_segments: [

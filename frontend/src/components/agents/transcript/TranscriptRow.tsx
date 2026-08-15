@@ -50,19 +50,21 @@ export function TranscriptRow({
     <div className="flex items-center gap-1.5 text-[11px]">
       <span className={cn('flex h-3.5 w-3.5 shrink-0 items-center justify-center', iconClassName)}>{icon}</span>
       <span
+        data-transcript-row-label
         className={cn(
-          'min-w-0 flex-1 truncate',
+          'min-w-0 truncate',
           tone === 'failed' ? 'text-destructive' : tone === 'muted' ? 'text-muted-foreground' : 'text-foreground',
         )}
       >
         {label}
       </span>
-      {meta ? <span className="shrink-0 text-[10px] text-muted-foreground">{meta}</span> : null}
       {canExpand ? (
-        <span aria-hidden className="shrink-0 text-[10px] text-muted-foreground">
+        <span data-transcript-row-chevron aria-hidden className="shrink-0 text-[10px] text-muted-foreground">
           {open ? '▾' : '▸'}
         </span>
       ) : null}
+      <span className="min-w-0 flex-1" />
+      {meta ? <span className="shrink-0 text-[10px] text-muted-foreground">{meta}</span> : null}
     </div>
   );
 

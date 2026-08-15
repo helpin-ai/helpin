@@ -23,7 +23,12 @@ import { AgentLiveStatus } from './AgentLiveStatus';
 import { resolveAgentLiveProgress } from './agentProgress';
 import { planSummaryToRunPlan } from './planSummary';
 import type { AgentRunStreamState } from './useAgentRunStream';
-import { mergeMessagePages, mergePersistedChatMessages } from './dockChatTimeline';
+import {
+  hasAuthoritativeDockRuntimeTimeline,
+  mergeMessagePages,
+  mergePersistedChatMessages,
+  resolveVisiblePendingEcho,
+} from './dockChatTimeline';
 import {
   isDockTranscriptStreaming,
   isStructuredInteractionKind,
@@ -201,6 +206,10 @@ export function ChatView({
     () => (mergedStream ? transformDockStream(mergedStream, 'sequence') : null),
     [mergedStream],
   );
+  const visiblePendingEcho = useMemo(
+    () => resolveVisiblePendingEcho(pendingEcho, persistedMessages),
+    [pendingEcho, persistedMessages],
+  );
   const visiblePlanIDsKey = useMemo(() => {
     const ids = new Set(detail?.plan_ids ?? []);
     for (const childResult of transformed?.childResults ?? []) {
@@ -318,7 +327,7 @@ export function ChatView({
   useEffect(() => {
     const node = scrollRef.current;
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
-  }, [transformed, currentPlan, pendingEcho, pendingInteraction, sendError]);
+  }, [transformed, currentPlan, visiblePendingEcho, pendingInteraction, sendError]);
 
   const effectiveInteraction = pendingInteraction ?? fallbackInteraction;
   const dockConfirm = effectiveInteraction ? parseDockPlanConfirm(effectiveInteraction.request_payload) : null;
@@ -440,9 +449,9 @@ export function ChatView({
     stream: transformed?.stream ?? null,
     currentPlan,
     activeSubAgentName,
-    sending: sending || !!pendingEcho,
+    sending: sending || !!visiblePendingEcho,
     localStartedAt: launchStartedAt,
-  }), [activeSubAgentName, currentPlan, launchStartedAt, pendingEcho, run, sending, transformed]);
+  }), [activeSubAgentName, currentPlan, launchStartedAt, run, sending, transformed, visiblePendingEcho]);
 
   const runsById = useMemo(() => {
     const map: Record<string, AgentRun> = {};
@@ -532,7 +541,7 @@ export function ChatView({
         {detailLoading && !detail && (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading chat…</p>
         )}
-        {!detailLoading && !run && !pendingEcho && (
+        {!detailLoading && !run && !visiblePendingEcho && (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {requiredPageContext?.entity_type === 'support_conversation'
               ? 'Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.'
@@ -543,6 +552,7 @@ export function ChatView({
           <DockTranscript
             stream={transformed.stream}
             active={isDockTranscriptStreaming(run)}
+            useRuntimeTimeline={isDockTranscriptStreaming(run) || hasAuthoritativeDockRuntimeTimeline(transformed.stream)}
             workspaceId={workspaceId}
             fallbackActor={streamController.session?.triggered_by_user}
             subAgentRuns={subAgentTimelineItems}
@@ -552,7 +562,7 @@ export function ChatView({
         {currentPlan && (
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}
-        {pendingEcho && <DockUserMessage content={pendingEcho.content} pending />}
+        {visiblePendingEcho && <DockUserMessage content={visiblePendingEcho.content} pending />}
         {liveProgress ? <AgentLiveStatus progress={liveProgress} /> : null}
         {sendError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
