@@ -7,6 +7,7 @@ const (
 	CRMObjectContact             = "contact"
 	CRMObjectCompany             = "company"
 	CRMObjectDeal                = "deal"
+	CRMObjectMeeting             = "meeting"
 	CRMObjectEpic                = "epic"
 	CRMObjectTask                = "task"
 	CRMObjectSupportConversation = "support_conversation"

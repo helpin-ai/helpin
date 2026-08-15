@@ -44,6 +44,7 @@ const WORKSPACE_ROUTE_TITLES: Record<string, string> = {
   'crm/companies': 'Companies',
   'crm/contacts': 'Contacts',
   'crm/deals': 'Deals',
+  'crm/meetings': 'Meetings',
   'crm/insights': 'CRM Insights',
   'crm/review': 'CRM Review',
 }

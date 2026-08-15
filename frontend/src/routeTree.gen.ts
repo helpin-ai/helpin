@@ -63,6 +63,7 @@ import { Route as AuthenticatedWSlugSettingsGeneralRouteImport } from './routes/
 import { Route as AuthenticatedWSlugSettingsExternalMcpRouteImport } from './routes/_authenticated/w/$slug/settings/external-mcp'
 import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes/_authenticated/w/$slug/settings/delivery'
 import { Route as AuthenticatedWSlugSettingsCrmPipelinesRouteImport } from './routes/_authenticated/w/$slug/settings/crm-pipelines'
+import { Route as AuthenticatedWSlugSettingsCrmMeetingsRouteImport } from './routes/_authenticated/w/$slug/settings/crm-meetings'
 import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes/_authenticated/w/$slug/settings/crm-email'
 import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './routes/_authenticated/w/$slug/settings/crm-autonomy'
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
@@ -99,6 +100,7 @@ import { Route as AuthenticatedWSlugPmTasksIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
+import { Route as AuthenticatedWSlugCrmMeetingsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/meetings/index'
 import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/deals/index'
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
 import { Route as AuthenticatedWSlugCrmCompaniesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/companies/index'
@@ -110,6 +112,7 @@ import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_a
 import { Route as AuthenticatedWSlugPmCodingSessionsSessionIdRouteImport } from './routes/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
 import { Route as AuthenticatedWSlugDocsSpacesSpaceIdRouteImport } from './routes/_authenticated/w/$slug/docs/spaces/$spaceId'
 import { Route as AuthenticatedWSlugDocsDocumentsDocIdRouteImport } from './routes/_authenticated/w/$slug/docs/documents/$docId'
+import { Route as AuthenticatedWSlugCrmMeetingsMeetingIdRouteImport } from './routes/_authenticated/w/$slug/crm/meetings/$meetingId'
 import { Route as AuthenticatedWSlugCrmDealsDealIdRouteImport } from './routes/_authenticated/w/$slug/crm/deals/$dealId'
 import { Route as AuthenticatedWSlugCrmContactsContactIdRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/$contactId'
 import { Route as AuthenticatedWSlugCrmCompaniesCompanyIdRouteImport } from './routes/_authenticated/w/$slug/crm/companies/$companyId'
@@ -419,6 +422,12 @@ const AuthenticatedWSlugSettingsCrmPipelinesRoute =
     path: '/settings/crm-pipelines',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsCrmMeetingsRoute =
+  AuthenticatedWSlugSettingsCrmMeetingsRouteImport.update({
+    id: '/settings/crm-meetings',
+    path: '/settings/crm-meetings',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsCrmEmailRoute =
   AuthenticatedWSlugSettingsCrmEmailRouteImport.update({
     id: '/settings/crm-email',
@@ -635,6 +644,12 @@ const AuthenticatedWSlugPmEpicsIndexRoute =
     path: '/pm/epics/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugCrmMeetingsIndexRoute =
+  AuthenticatedWSlugCrmMeetingsIndexRouteImport.update({
+    id: '/meetings/',
+    path: '/meetings/',
+    getParentRoute: () => AuthenticatedWSlugCrmRoute,
+  } as any)
 const AuthenticatedWSlugCrmDealsIndexRoute =
   AuthenticatedWSlugCrmDealsIndexRouteImport.update({
     id: '/deals/',
@@ -700,6 +715,12 @@ const AuthenticatedWSlugDocsDocumentsDocIdRoute =
     id: '/documents/$docId',
     path: '/documents/$docId',
     getParentRoute: () => AuthenticatedWSlugDocsRoute,
+  } as any)
+const AuthenticatedWSlugCrmMeetingsMeetingIdRoute =
+  AuthenticatedWSlugCrmMeetingsMeetingIdRouteImport.update({
+    id: '/meetings/$meetingId',
+    path: '/meetings/$meetingId',
+    getParentRoute: () => AuthenticatedWSlugCrmRoute,
   } as any)
 const AuthenticatedWSlugCrmDealsDealIdRoute =
   AuthenticatedWSlugCrmDealsDealIdRouteImport.update({
@@ -783,6 +804,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
   '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
@@ -816,6 +838,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  '/w/$slug/crm/meetings/$meetingId': typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -827,6 +850,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -883,6 +907,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
   '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
@@ -916,6 +941,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  '/w/$slug/crm/meetings/$meetingId': typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -927,6 +953,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/companies': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/meetings': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -991,6 +1018,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
   '/_authenticated/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/_authenticated/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  '/_authenticated/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/_authenticated/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/_authenticated/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
   '/_authenticated/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
@@ -1024,6 +1052,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/_authenticated/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/_authenticated/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  '/_authenticated/w/$slug/crm/meetings/$meetingId': typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
   '/_authenticated/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/_authenticated/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/_authenticated/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -1035,6 +1064,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/_authenticated/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/_authenticated/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -1099,6 +1129,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
+    | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
     | '/w/$slug/settings/external-mcp'
@@ -1132,6 +1163,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
+    | '/w/$slug/crm/meetings/$meetingId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/coding-sessions/$sessionId'
@@ -1143,6 +1175,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/'
     | '/w/$slug/crm/contacts/'
     | '/w/$slug/crm/deals/'
+    | '/w/$slug/crm/meetings/'
     | '/w/$slug/pm/epics/'
     | '/w/$slug/pm/objectives/'
     | '/w/$slug/pm/sprints/'
@@ -1199,6 +1232,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/chat-general'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
+    | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
     | '/w/$slug/settings/external-mcp'
@@ -1232,6 +1266,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
+    | '/w/$slug/crm/meetings/$meetingId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/coding-sessions/$sessionId'
@@ -1243,6 +1278,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies'
     | '/w/$slug/crm/contacts'
     | '/w/$slug/crm/deals'
+    | '/w/$slug/crm/meetings'
     | '/w/$slug/pm/epics'
     | '/w/$slug/pm/objectives'
     | '/w/$slug/pm/sprints'
@@ -1306,6 +1342,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/chat-general'
     | '/_authenticated/w/$slug/settings/crm-autonomy'
     | '/_authenticated/w/$slug/settings/crm-email'
+    | '/_authenticated/w/$slug/settings/crm-meetings'
     | '/_authenticated/w/$slug/settings/crm-pipelines'
     | '/_authenticated/w/$slug/settings/delivery'
     | '/_authenticated/w/$slug/settings/external-mcp'
@@ -1339,6 +1376,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/companies/$companyId'
     | '/_authenticated/w/$slug/crm/contacts/$contactId'
     | '/_authenticated/w/$slug/crm/deals/$dealId'
+    | '/_authenticated/w/$slug/crm/meetings/$meetingId'
     | '/_authenticated/w/$slug/docs/documents/$docId'
     | '/_authenticated/w/$slug/docs/spaces/$spaceId'
     | '/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
@@ -1350,6 +1388,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/companies/'
     | '/_authenticated/w/$slug/crm/contacts/'
     | '/_authenticated/w/$slug/crm/deals/'
+    | '/_authenticated/w/$slug/crm/meetings/'
     | '/_authenticated/w/$slug/pm/epics/'
     | '/_authenticated/w/$slug/pm/objectives/'
     | '/_authenticated/w/$slug/pm/sprints/'
@@ -1749,6 +1788,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/crm-meetings': {
+      id: '/_authenticated/w/$slug/settings/crm-meetings'
+      path: '/settings/crm-meetings'
+      fullPath: '/w/$slug/settings/crm-meetings'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsCrmMeetingsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/crm-email': {
       id: '/_authenticated/w/$slug/settings/crm-email'
       path: '/settings/crm-email'
@@ -2001,6 +2047,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/crm/meetings/': {
+      id: '/_authenticated/w/$slug/crm/meetings/'
+      path: '/meetings'
+      fullPath: '/w/$slug/crm/meetings/'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmMeetingsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugCrmRoute
+    }
     '/_authenticated/w/$slug/crm/deals/': {
       id: '/_authenticated/w/$slug/crm/deals/'
       path: '/deals'
@@ -2077,6 +2130,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/docs/documents/$docId'
       preLoaderRoute: typeof AuthenticatedWSlugDocsDocumentsDocIdRouteImport
       parentRoute: typeof AuthenticatedWSlugDocsRoute
+    }
+    '/_authenticated/w/$slug/crm/meetings/$meetingId': {
+      id: '/_authenticated/w/$slug/crm/meetings/$meetingId'
+      path: '/meetings/$meetingId'
+      fullPath: '/w/$slug/crm/meetings/$meetingId'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmMeetingsMeetingIdRouteImport
+      parentRoute: typeof AuthenticatedWSlugCrmRoute
     }
     '/_authenticated/w/$slug/crm/deals/$dealId': {
       id: '/_authenticated/w/$slug/crm/deals/$dealId'
@@ -2173,9 +2233,11 @@ interface AuthenticatedWSlugCrmRouteChildren {
   AuthenticatedWSlugCrmCompaniesCompanyIdRoute: typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   AuthenticatedWSlugCrmContactsContactIdRoute: typeof AuthenticatedWSlugCrmContactsContactIdRoute
   AuthenticatedWSlugCrmDealsDealIdRoute: typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  AuthenticatedWSlugCrmMeetingsMeetingIdRoute: typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
   AuthenticatedWSlugCrmCompaniesIndexRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   AuthenticatedWSlugCrmContactsIndexRoute: typeof AuthenticatedWSlugCrmContactsIndexRoute
   AuthenticatedWSlugCrmDealsIndexRoute: typeof AuthenticatedWSlugCrmDealsIndexRoute
+  AuthenticatedWSlugCrmMeetingsIndexRoute: typeof AuthenticatedWSlugCrmMeetingsIndexRoute
 }
 
 const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
@@ -2187,11 +2249,15 @@ const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
   AuthenticatedWSlugCrmContactsContactIdRoute:
     AuthenticatedWSlugCrmContactsContactIdRoute,
   AuthenticatedWSlugCrmDealsDealIdRoute: AuthenticatedWSlugCrmDealsDealIdRoute,
+  AuthenticatedWSlugCrmMeetingsMeetingIdRoute:
+    AuthenticatedWSlugCrmMeetingsMeetingIdRoute,
   AuthenticatedWSlugCrmCompaniesIndexRoute:
     AuthenticatedWSlugCrmCompaniesIndexRoute,
   AuthenticatedWSlugCrmContactsIndexRoute:
     AuthenticatedWSlugCrmContactsIndexRoute,
   AuthenticatedWSlugCrmDealsIndexRoute: AuthenticatedWSlugCrmDealsIndexRoute,
+  AuthenticatedWSlugCrmMeetingsIndexRoute:
+    AuthenticatedWSlugCrmMeetingsIndexRoute,
 }
 
 const AuthenticatedWSlugCrmRouteWithChildren =
@@ -2277,6 +2343,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
   AuthenticatedWSlugSettingsCrmAutonomyRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   AuthenticatedWSlugSettingsCrmEmailRoute: typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  AuthenticatedWSlugSettingsCrmMeetingsRoute: typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   AuthenticatedWSlugSettingsCrmPipelinesRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   AuthenticatedWSlugSettingsDeliveryRoute: typeof AuthenticatedWSlugSettingsDeliveryRoute
   AuthenticatedWSlugSettingsExternalMcpRoute: typeof AuthenticatedWSlugSettingsExternalMcpRoute
@@ -2348,6 +2415,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsCrmAutonomyRoute,
   AuthenticatedWSlugSettingsCrmEmailRoute:
     AuthenticatedWSlugSettingsCrmEmailRoute,
+  AuthenticatedWSlugSettingsCrmMeetingsRoute:
+    AuthenticatedWSlugSettingsCrmMeetingsRoute,
   AuthenticatedWSlugSettingsCrmPipelinesRoute:
     AuthenticatedWSlugSettingsCrmPipelinesRoute,
   AuthenticatedWSlugSettingsDeliveryRoute:

@@ -73,6 +73,7 @@ type Handlers struct {
 	CRMAssociation      *handler.CRMAssociationHandler
 	Associations        *handler.AssociationsHandler
 	CRMActivity         *handler.CRMActivityHandler
+	CRMMeeting          *handler.CRMMeetingHandler
 	CRMImport           *handler.CRMImportHandler
 	CRMEmail            *handler.CRMEmailHandler
 	CRMCalendar         *handler.CRMCalendarHandler
@@ -119,7 +120,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	apiCORS := cors.Handler(cors.Options{
 		AllowedOrigins:   corsOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Workspace-ID"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Workspace-ID", "Idempotency-Key"},
 		ExposedHeaders:   []string{"Link", "Deprecation", "Sunset"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -297,6 +298,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 		if h.Billing != nil {
 			r.Post("/webhooks/stripe", h.Billing.StripeWebhook)
+		}
+		if h.CRMMeeting != nil {
+			r.Post("/webhooks/meeting-capture/{provider}", h.CRMMeeting.Webhook)
 		}
 
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
@@ -1498,6 +1502,22 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/activities/{id}", h.CRMActivity.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/activities/{id}", h.CRMActivity.Update)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/activities/{id}", h.CRMActivity.Delete)
+
+				// Meetings — crm.read / crm.edit / crm.admin settings
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings", h.CRMMeeting.List)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings", h.CRMMeeting.Create)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/{id}", h.CRMMeeting.Get)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/meetings/{id}", h.CRMMeeting.Update)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/meetings/{id}", h.CRMMeeting.Delete)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings/{id}/capture", h.CRMMeeting.StartCapture)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings/{id}/capture/stop", h.CRMMeeting.StopCapture)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings/{id}/process", h.CRMMeeting.RetryProcessing)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/{id}/recording", h.CRMMeeting.GetRecording)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/meetings/{id}/recording", h.CRMMeeting.DeleteRecording)
+				r.With(requirePerm(authorization.PermCRMEdit), requirePerm(authorization.PermPMEdit)).Post("/meetings/{id}/action-items/{itemID}/accept", h.CRMMeeting.AcceptActionItem)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings/{id}/action-items/{itemID}/dismiss", h.CRMMeeting.DismissActionItem)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/meeting-settings", h.CRMMeeting.GetSettings)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Put("/meeting-settings", h.CRMMeeting.UpdateSettings)
 
 				// Imports — crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/imports", h.CRMImport.List)
