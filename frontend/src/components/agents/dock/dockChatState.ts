@@ -18,6 +18,11 @@ export interface DockComposerState {
   placeholder: string;
 }
 
+/** Only runs that are actively producing events should expose a live transcript tail. */
+export function isDockTranscriptStreaming(run: DockRunLike | null): boolean {
+  return run?.status === 'queued' || run?.status === 'running';
+}
+
 /** Interaction kinds answered through structured cards, not the composer. */
 const STRUCTURED_INTERACTION_KINDS = new Set([
   'approval_request',

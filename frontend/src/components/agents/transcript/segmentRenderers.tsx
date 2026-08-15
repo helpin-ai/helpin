@@ -146,25 +146,37 @@ function ToolSegment({
   const grouped = !!group && group.count > 1;
   const canonicalName = canonicalToolName(toolCall.tool_name).toLowerCase();
   const friendlyLabel = grouped
-    ? `${presentation.secondaryLabel}${presentation.repositoryLabel ? ` · ${presentation.repositoryLabel}` : ''} × ${group.count}`
+    ? `${presentation.secondaryLabel}${presentation.repositoryLabel ? ` · ${presentation.repositoryLabel}` : ''}`
     : presentation.primaryLabel;
+  const hasDetails = !!(
+    toolCall.args_text.trim()
+    || toolCall.result?.output_summary?.trim()
+    || toolCall.result?.content?.trim()
+    || toolCall.result?.error?.trim()
+    || toolCall.started_at
+    || toolCall.completed_at
+  );
 
   return (
-    <div>
-      <TranscriptRow
-        icon={icon}
-        iconClassName={className}
-        label={(
-          <>
-            <span>{friendlyLabel}</span>{' '}
-            <span className="text-foreground/45">({canonicalName})</span>
-          </>
-        )}
-        tone={failed ? 'failed' : 'muted'}
-        meta={formatToolDuration(grouped ? group.totalDurationMs : toolCall.duration_ms)}
-      />
-      {showDetails ? <ToolCallDetails toolCall={toolCall} /> : null}
-    </div>
+    <TranscriptRow
+      icon={icon}
+      iconClassName={className}
+      label={(
+        <>
+          <span className="font-mono text-foreground/80">
+            {canonicalName}{grouped ? ` ×${group.count}` : ''}
+          </span>
+          <span className="text-foreground/50"> · {friendlyLabel}</span>
+        </>
+      )}
+      tone={failed ? 'failed' : 'muted'}
+      meta={formatToolDuration(grouped ? group.totalDurationMs : toolCall.duration_ms)}
+      expandable={showDetails && hasDetails}
+      defaultOpen={status === 'running'}
+      lazyMount
+    >
+      {showDetails && hasDetails ? <ToolCallDetails toolCall={toolCall} /> : null}
+    </TranscriptRow>
   );
 }
 

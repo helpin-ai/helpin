@@ -15,6 +15,8 @@ export interface TranscriptRowProps {
   /** Controlled disclosure state; omit to let the row manage its own. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Avoid mounting expensive disclosure bodies until they are opened. */
+  lazyMount?: boolean;
   children?: ReactNode;
 }
 
@@ -33,6 +35,7 @@ export function TranscriptRow({
   defaultOpen = false,
   open: controlledOpen,
   onOpenChange,
+  lazyMount = false,
   children,
 }: TranscriptRowProps) {
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
@@ -77,9 +80,9 @@ export function TranscriptRow({
       >
         {header}
       </button>
-      {/* Kept mounted (hidden via CSS) so the body stays measurable and present
-          in the DOM even while collapsed. */}
-      <div className={cn('mt-1.5 space-y-1.5 pl-5', !open && 'hidden')}>{children}</div>
+      {!lazyMount || open ? (
+        <div className={cn('mt-1.5 space-y-1.5 pl-5', !open && 'hidden')}>{children}</div>
+      ) : null}
     </div>
   );
 }

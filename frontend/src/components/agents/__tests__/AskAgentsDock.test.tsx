@@ -879,7 +879,7 @@ describe('AskAgentsDock', () => {
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50);
   });
 
-  it('preserves earlier assistant prose in a collapsed expandable working group', async () => {
+  it('keeps earlier assistant progress and the final reply outside working groups', async () => {
     mocks.listMessages.mockResolvedValue({
       data: {
         messages: [
@@ -905,17 +905,13 @@ describe('AskAgentsDock', () => {
     });
 
     await renderDock();
+    await waitForText('I will inspect another file.');
     await waitForText('The issue is caused by stale pagination state.');
 
     const workingGroup = document.querySelector('[data-agent-working-group]');
-    expect(workingGroup).not.toBeNull();
-    expect(workingGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
-    expect(workingGroup?.querySelector('[data-working-group-body]')).toBeNull();
-
-    await act(async () => {
-      (workingGroup?.querySelector('button') as HTMLButtonElement).click();
-    });
-    expect(workingGroup?.querySelector('[data-working-group-body]')?.textContent).toContain('I will inspect another file.');
+    expect(workingGroup).toBeNull();
+    expect(document.body.textContent).toContain('I will inspect another file.');
+    expect(document.body.textContent).toContain('The issue is caused by stale pagination state.');
   });
 
   it('renders earlier history as a compact outlined button with an icon', async () => {

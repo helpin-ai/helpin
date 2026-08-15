@@ -1,20 +1,30 @@
 import { useState, type ReactNode } from 'react';
 import { Loading01Icon, Tick01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
-import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
+import { canonicalToolName } from '@/lib/toolNames';
 import type { TranscriptSegment } from '@/components/agents/transcript';
 
-function groupLabel(segments: TranscriptSegment[]): string {
-  for (let index = segments.length - 1; index >= 0; index -= 1) {
-    const segment = segments[index];
-    if (segment.kind === 'tool') return describeToolCall(segment.toolCall).primaryLabel;
-    if (segment.kind === 'assistant') {
-      const firstLine = segment.content.split('\n').find((line) => line.trim())?.trim();
-      if (firstLine) return firstLine.length > 90 ? `${firstLine.slice(0, 87)}…` : firstLine;
-    }
-    if (segment.kind === 'reasoning') return segment.reasoning.status === 'streaming' ? 'Thinking…' : 'Thought';
+function groupPresentation(segments: TranscriptSegment[]): {
+  label: string;
+  title: string;
+  meta: string;
+} {
+  const counts = new Map<string, number>();
+  let callCount = 0;
+  for (const segment of segments) {
+    if (segment.kind !== 'tool') continue;
+    callCount += 1;
+    const name = canonicalToolName(segment.toolCall.tool_name).toLowerCase();
+    counts.set(name, (counts.get(name) ?? 0) + 1);
   }
-  return 'Working';
+  const inventory = [...counts.entries()].map(([name, count]) => `${name}${count > 1 ? ` ×${count}` : ''}`);
+  const visible = inventory.slice(0, 3);
+  if (inventory.length > visible.length) visible.push(`+${inventory.length - visible.length} tools`);
+  return {
+    label: visible.join(' · ') || 'Tool activity',
+    title: inventory.join(' · ') || 'Tool activity',
+    meta: `${callCount} ${callCount === 1 ? 'call' : 'calls'}`,
+  };
 }
 
 export function DockWorkingGroup({
@@ -28,6 +38,7 @@ export function DockWorkingGroup({
   active: boolean;
   children: ReactNode;
 }) {
+  const presentation = groupPresentation(segments);
   const [open, setOpen] = useState(active);
   const [manuallyToggled, setManuallyToggled] = useState(false);
   const [previousActive, setPreviousActive] = useState(active);
@@ -58,9 +69,10 @@ export function DockWorkingGroup({
         )}>
           {active ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <Tick01Icon className="h-3.5 w-3.5" />}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground/80" title={groupLabel(segments)}>
-          {groupLabel(segments)}
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-foreground/80" title={presentation.title}>
+          {presentation.label}
         </span>
+        <span className="shrink-0 text-[10px] text-muted-foreground">{presentation.meta}</span>
         {active ? <span className="shrink-0 text-[10px] text-orange-600 dark:text-orange-400">Live</span> : null}
         <span aria-hidden className="shrink-0 text-[10px] text-muted-foreground">{open ? '▾' : '▸'}</span>
       </button>

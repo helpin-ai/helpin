@@ -6,13 +6,17 @@ function assistant(id: string, content: string, options: { messageId?: string; s
   return { kind: 'assistant', id, messageId: options.messageId, content, streaming: options.streaming };
 }
 
-function tool(id: string, status: 'running' | 'completed' | 'failed' = 'completed'): TranscriptSegment {
+function tool(
+  id: string,
+  status: 'running' | 'completed' | 'failed' = 'completed',
+  toolName = 'repository_search',
+): TranscriptSegment {
   return {
     kind: 'tool',
     id,
     toolCall: {
       tool_call_id: id.replace(/^live:/, ''),
-      tool_name: 'repository_search',
+      tool_name: toolName,
       args_text: '{"query":"pagination"}',
       status,
     },
@@ -28,7 +32,7 @@ function user(id: string, content: string): TranscriptSegment {
 }
 
 describe('buildDockWorkingTimeline', () => {
-  it('preserves sequential progress and tools as completed groups while leaving the final answer flat', () => {
+  it('keeps every assistant message flat and groups only the tool phases between them', () => {
     const timeline = buildDockWorkingTimeline([
       user('user-1', 'Investigate it.'),
       assistant('progress-1', 'I will inspect the conversation.', { messageId: 'message-1' }),
@@ -38,26 +42,35 @@ describe('buildDockWorkingTimeline', () => {
       assistant('final', 'The pagination state is not advancing.', { messageId: 'message-3' }),
     ], false);
 
-    expect(timeline.map((entry) => entry.kind)).toEqual(['segment', 'working_group', 'working_group', 'segment']);
-    expect(timeline[1]).toMatchObject({ kind: 'working_group', key: 'work:message-1', active: false });
-    expect(timeline[2]).toMatchObject({ kind: 'working_group', key: 'work:message-2', active: false });
-    expect(timeline[1]?.kind === 'working_group' && timeline[1].segments.map((segment) => segment.id)).toEqual(['progress-1', 'tool-1']);
-    expect(timeline[2]?.kind === 'working_group' && timeline[2].segments.map((segment) => segment.id)).toEqual(['progress-2', 'tool-2']);
-    expect(timeline[3]?.kind === 'segment' && timeline[3].segment).toMatchObject({ kind: 'assistant', id: 'final' });
+    expect(timeline.map((entry) => entry.kind)).toEqual([
+      'segment',
+      'segment',
+      'working_group',
+      'segment',
+      'working_group',
+      'segment',
+    ]);
+    expect(timeline[1]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'progress-1' } });
+    expect(timeline[2]).toMatchObject({ kind: 'working_group', key: 'work:tool-1', active: false });
+    expect(timeline[2]?.kind === 'working_group' && timeline[2].segments.map((segment) => segment.id)).toEqual(['tool-1']);
+    expect(timeline[3]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'progress-2' } });
+    expect(timeline[4]).toMatchObject({ kind: 'working_group', key: 'work:tool-2', active: false });
+    expect(timeline[5]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'final' } });
   });
 
-  it('keeps the newest in-flight group active and includes an assistant that is still streaming', () => {
+  it('keeps the newest trailing tool group active without grouping a streaming assistant', () => {
     const timeline = buildDockWorkingTimeline([
       user('user-1', 'Investigate it.'),
       assistant('live:progress', 'Checking the repository now.', { messageId: 'message-live', streaming: true }),
       tool('live:tool-live', 'running'),
     ], true);
 
-    expect(timeline).toHaveLength(2);
-    expect(timeline[1]).toMatchObject({ kind: 'working_group', key: 'work:message-live', active: true });
+    expect(timeline).toHaveLength(3);
+    expect(timeline[1]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'live:progress' } });
+    expect(timeline[2]).toMatchObject({ kind: 'working_group', key: 'work:tool-live', active: true });
   });
 
-  it('uses the assistant message ID as a stable key across live and persisted snapshots', () => {
+  it('uses the tool call ID as a stable key across live and persisted snapshots', () => {
     const live = buildDockWorkingTimeline([
       assistant('live:segment-1', 'Checking.', { messageId: 'assistant-message-1', streaming: true }),
       tool('live:tool-1', 'running'),
@@ -68,8 +81,8 @@ describe('buildDockWorkingTimeline', () => {
       assistant('final', 'Done.', { messageId: 'assistant-message-2' }),
     ], false);
 
-    expect(live[0]).toMatchObject({ kind: 'working_group', key: 'work:assistant-message-1' });
-    expect(persisted[0]).toMatchObject({ kind: 'working_group', key: 'work:assistant-message-1' });
+    expect(live[1]).toMatchObject({ kind: 'working_group', key: 'work:tool-1' });
+    expect(persisted[1]).toMatchObject({ kind: 'working_group', key: 'work:tool-1' });
   });
 
   it('keeps a completed assistant-only response outside a working group', () => {
@@ -99,5 +112,33 @@ describe('buildDockWorkingTimeline', () => {
     const groups = timeline.filter((entry) => entry.kind === 'working_group');
     expect(groups[0]?.segments.map((segment) => segment.id)).not.toContain('live-reasoning:reasoning-1');
     expect(groups[1]?.segments.map((segment) => segment.id)).toContain('live-reasoning:reasoning-1');
+  });
+
+  it('leaves a final streaming assistant message flat and completes the preceding tool group', () => {
+    const timeline = buildDockWorkingTimeline([
+      user('user-1', 'Investigate it.'),
+      assistant('progress-1', 'Checking the repository.', { messageId: 'progress-message' }),
+      tool('tool-1'),
+      assistant('live:final', 'Here is what I found.', { messageId: 'final-message', streaming: true }),
+    ], true);
+
+    expect(timeline).toHaveLength(4);
+    expect(timeline[2]).toMatchObject({ kind: 'working_group', key: 'work:tool-1', active: false });
+    expect(timeline[3]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'live:final' } });
+  });
+
+  it('keeps consequential actions separate from surrounding exploration calls', () => {
+    const timeline = buildDockWorkingTimeline([
+      tool('search-1'),
+      tool('read-1', 'completed', 'read_files'),
+      tool('create-1', 'completed', 'create_document'),
+      tool('search-2'),
+    ], false);
+
+    const groups = timeline.filter((entry) => entry.kind === 'working_group');
+    expect(groups).toHaveLength(3);
+    expect(groups[0]?.segments.map((segment) => segment.id)).toEqual(['search-1', 'read-1']);
+    expect(groups[1]?.segments.map((segment) => segment.id)).toEqual(['create-1']);
+    expect(groups[2]?.segments.map((segment) => segment.id)).toEqual(['search-2']);
   });
 });
