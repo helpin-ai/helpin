@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { ArrowDown01Icon, Cancel01Icon, CheckmarkCircle02Icon, GlobeIcon, LinkSquare01Icon, LockIcon, Maximize01Icon, Minimize01Icon, MoreVerticalIcon, UserGroupIcon } from '@/lib/icons';
+import { ArrowDown01Icon, Cancel01Icon, CheckmarkCircle02Icon, CollapseIcon, ExpandIcon, GlobeIcon, LinkSquare01Icon, LockIcon, MoreVerticalIcon, UserGroupIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AskAgentAvatar, type AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
 import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
@@ -832,21 +832,7 @@ function DockPaneHeader({
           {presentation.label}
         </span>
       ) : null}
-      {allowMaximize ? <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={onToggleMaximized}
-            aria-label={maximized ? 'Restore agent dock' : 'Maximize agent dock'}
-            className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]"
-          >
-            {maximized
-              ? <Minimize01Icon className="h-3.5 w-3.5" />
-              : <Maximize01Icon className="h-3.5 w-3.5" />}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="z-[70]">{maximized ? 'Restore' : 'Maximize'}</TooltipContent>
-      </Tooltip> : null}
+      <div data-dock-actions className="flex items-center gap-0.5">
       {fullPath ? (
         <a href={fullPath} aria-label="Open full agent session" title="Open full session" className="grid h-8 w-8 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
           <LinkSquare01Icon className="h-3.5 w-3.5" />
@@ -865,6 +851,21 @@ function DockPaneHeader({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
+      {allowMaximize ? <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onToggleMaximized}
+            aria-label={maximized ? 'Restore agent dock' : 'Maximize agent dock'}
+            className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]"
+          >
+            {maximized
+              ? <CollapseIcon className="h-3.5 w-3.5" />
+              : <ExpandIcon className="h-3.5 w-3.5" />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="z-[70]">{maximized ? 'Restore' : 'Maximize'}</TooltipContent>
+      </Tooltip> : null}
       <Tooltip>
         <TooltipTrigger asChild>
           <button type="button" onClick={onClose} aria-label={closeLabel} className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
@@ -873,6 +874,7 @@ function DockPaneHeader({
         </TooltipTrigger>
         <TooltipContent side="top" className="z-[70]">{closeLabel}</TooltipContent>
       </Tooltip>
+      </div>
     </header>
   );
 }

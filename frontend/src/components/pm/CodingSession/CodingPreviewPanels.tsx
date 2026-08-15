@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { Cancel01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowExpandIcon, File01Icon, SparklesIcon } from '@/lib/icons';
+import { ExpandIcon, File01Icon, SparklesIcon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -352,7 +352,7 @@ function ExpandPreviewButton({ onClick }: { onClick: () => void }) {
       className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
       onClick={onClick}
     >
-      <ArrowExpandIcon className="h-3 w-3" />
+      <ExpandIcon className="h-3 w-3" />
       Expand preview
     </button>
   );
@@ -375,7 +375,7 @@ function ExpandPreviewIconButton({
       aria-label={label}
       title={label}
     >
-      <ArrowExpandIcon className="h-3.5 w-3.5" />
+      <ExpandIcon className="h-3.5 w-3.5" />
     </Button>
   );
 }
