@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import { TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, Maximize01Icon, Download04Icon, Copy01Icon, Link01Icon, Delete01Icon, Cancel01Icon, Tick01Icon, CursorTextIcon, MagicWand01Icon, PenTool02Icon } from '@/lib/icons';
+import { TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ExpandIcon, Download04Icon, Copy01Icon, Link01Icon, Delete01Icon, Cancel01Icon, Tick01Icon, CursorTextIcon, MagicWand01Icon, PenTool02Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { LoadingImage } from '@/components/ui/loading-image';
 import { DocsImageEditDialog } from "@/components/docs/DocsImageEditDialog";
@@ -335,7 +335,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
         {/* Floating toolbar — top-right */}
         {editable && (
           <div
-            className={`absolute top-2 right-2 flex items-center rounded-lg border border-border bg-popover/95 shadow-md backdrop-blur-sm transition-opacity duration-100 ${
+            className={`absolute top-2 right-2 flex items-center gap-0.5 rounded-lg border border-border bg-popover/95 shadow-md backdrop-blur-sm transition-opacity duration-100 ${
               isResizing
                 ? 'pointer-events-none opacity-0'
                 : 'pointer-events-none opacity-0 group-hover/img:pointer-events-auto group-hover/img:opacity-100'
@@ -412,7 +412,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
-                <Maximize01Icon className="h-4 w-4" />
+                <ExpandIcon className="h-4 w-4" />
               </button>
             </QuickTooltip>
             <QuickTooltip label="Download">

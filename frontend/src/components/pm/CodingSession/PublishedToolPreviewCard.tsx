@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowExpandIcon, File01Icon } from '@/lib/icons';
+import { ExpandIcon, File01Icon } from '@/lib/icons';
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { parseToolInvocationPublishedPreview, type PublishedPreview } from '@/components/pm/runPreviews';
@@ -128,7 +128,7 @@ export function PublishedToolPreviewCard({
         ) : null}
 
         <div className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
-          <ArrowExpandIcon className="h-3 w-3" />
+          <ExpandIcon className="h-3 w-3" />
           View full document
         </div>
       </button>

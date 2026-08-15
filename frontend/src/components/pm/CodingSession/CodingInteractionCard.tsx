@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { ArrowDown02Icon, ArrowExpandIcon, ArrowUp02Icon, CheckmarkCircle02Icon, File01Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
+import { ArrowDown02Icon, ArrowUp02Icon, CheckmarkCircle02Icon, ExpandIcon, File01Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -459,7 +459,7 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
         className="-mr-1 h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
         onClick={() => onViewPreview!(availablePreviewPanelKey!)}
       >
-        <ArrowExpandIcon className="h-3.5 w-3.5" />
+        <ExpandIcon className="h-3.5 w-3.5" />
         Open full preview
       </Button>
     ) : null;
