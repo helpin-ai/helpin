@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveDockComposerState, transformDockStream } from '../dockChatState';
+import { isDockTranscriptStreaming, resolveDockComposerState, transformDockStream } from '../dockChatState';
 import { parseDockChildResult, parseDockPlanConfirm, stripDockPageContext } from '@/lib/dockTypes';
 import { collectSegments, DOCK_SEGMENT_KINDS } from '@/components/agents/transcript';
 import type { CodingSessionStreamState } from '@/lib/pmTypes';
@@ -42,6 +42,17 @@ describe('resolveDockComposerState', () => {
   it('enables continuation after the run ended', () => {
     const state = resolveDockComposerState({ status: 'completed', pause_reason: 'none' }, false, false);
     expect(state.enabled).toBe(true);
+  });
+});
+
+describe('isDockTranscriptStreaming', () => {
+  it('treats queued and running runs as streaming', () => {
+    expect(isDockTranscriptStreaming({ status: 'queued', pause_reason: '' })).toBe(true);
+    expect(isDockTranscriptStreaming({ status: 'running', pause_reason: '' })).toBe(true);
+  });
+
+  it('treats an awaiting-user pause as idle', () => {
+    expect(isDockTranscriptStreaming({ status: 'paused', pause_reason: 'awaiting_user_message' })).toBe(false);
   });
 });
 

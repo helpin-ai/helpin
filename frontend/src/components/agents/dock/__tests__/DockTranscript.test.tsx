@@ -165,7 +165,7 @@ describe('DockTranscript', () => {
       .toContain('Yes, I will take a look.');
   });
 
-  it('collapses completed working groups without deleting their full recorded activity', () => {
+  it('keeps assistant narration flat while collapsing complete tool phases', () => {
     const message = {
       ...assistantMessage('assistant-tools', '', 2),
       turn_segments: [
@@ -199,11 +199,16 @@ describe('DockTranscript', () => {
     expect(groups).toHaveLength(2);
     expect(groups[0]?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
     expect(groups[1]?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
-    expect(container.textContent).not.toContain('I will inspect the conversation.');
+    expect(container.textContent).toContain('I will inspect the conversation.');
+    expect(container.textContent).toContain('Now I will inspect the repository.');
     expect(container.textContent).toContain('The pagination state is not advancing.');
+    expect(groups[0]?.textContent).toContain('list_conversation_messages');
+    expect(groups[0]?.textContent).not.toContain('I will inspect the conversation.');
+    expect(groups[1]?.textContent).not.toContain('The pagination state is not advancing.');
+    expect(container.querySelector('[data-working-group-active="true"]')).toBeNull();
 
     act(() => (groups[0]?.querySelector('button') as HTMLButtonElement | null)?.click());
-    expect(container.textContent).toContain('I will inspect the conversation.');
+    act(() => (groups[0]?.querySelector('button[aria-expanded="false"]') as HTMLButtonElement | null)?.click());
     expect(container.textContent).toContain('"conversation_id": "conversation-1"');
     expect(container.textContent).toContain('"messages": 12');
   });
@@ -212,8 +217,7 @@ describe('DockTranscript', () => {
     const liveStream = streamWithMessages([userMessage('user-1', 'Investigate it.', 1)]);
     liveStream.live_turn_segments = [
       assistantTurn('assistant-progress', 'I will inspect the conversation.'),
-      toolTurn('tool-live', 'repository_search', 100),
-      assistantTurn('assistant-final', 'The final finding.'),
+      toolTurn('tool-live', 'repository_search', 100, 'running'),
     ];
     act(() => {
       root.render(
@@ -225,15 +229,18 @@ describe('DockTranscript', () => {
         />,
       );
     });
-    const liveGroup = container.querySelector('[data-working-group-id="work:assistant-progress"]');
+    const liveGroup = container.querySelector('[data-working-group-id="work:tool-live"]');
     expect(liveGroup).not.toBeNull();
-    expect(liveGroup?.getAttribute('data-working-group-id')).toBe('work:assistant-progress');
-    expect(liveGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
-    expect(container.querySelectorAll('[data-agent-working-group]')[1]?.querySelector('button')?.getAttribute('aria-expanded')).toBe('true');
+    expect(liveGroup?.getAttribute('data-working-group-id')).toBe('work:tool-live');
+    expect(liveGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('true');
 
     const persistedMessage = {
       ...assistantMessage('assistant-persisted', '', 2),
-      turn_segments: liveStream.live_turn_segments,
+      turn_segments: [
+        assistantTurn('assistant-progress', 'I will inspect the conversation.'),
+        toolTurn('tool-live', 'repository_search', 100),
+        assistantTurn('assistant-final', 'The final finding.'),
+      ],
     };
     act(() => {
       root.render(
@@ -245,8 +252,8 @@ describe('DockTranscript', () => {
         />,
       );
     });
-    const persistedGroup = container.querySelector('[data-working-group-id="work:assistant-progress"]');
-    expect(persistedGroup?.getAttribute('data-working-group-id')).toBe('work:assistant-progress');
+    const persistedGroup = container.querySelector('[data-working-group-id="work:tool-live"]');
+    expect(persistedGroup?.getAttribute('data-working-group-id')).toBe('work:tool-live');
     expect(persistedGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
     expect(container.textContent).toContain('The final finding.');
   });
@@ -299,10 +306,15 @@ describe('DockTranscript', () => {
       (toggles[0] as HTMLButtonElement).click();
       (toggles[1] as HTMLButtonElement).click();
     });
+    const toolToggles = container.querySelectorAll('[data-agent-working-group] button[aria-expanded="false"]');
+    act(() => {
+      toolToggles.forEach((toggle) => (toggle as HTMLButtonElement).click());
+    });
     expect(toggles[0]?.getAttribute('aria-expanded')).toBe('true');
     expect(toggles[1]?.getAttribute('aria-expanded')).toBe('true');
     expect(container.textContent).toContain('Checking the conversation.');
     expect(container.textContent).toContain('Checking the repository.');
+    expect(container.querySelectorAll('[data-tool-call-details]')).toHaveLength(2);
   });
 
   it('shows every assistant message by default for full run views', () => {
@@ -497,10 +509,10 @@ describe('DockTranscript', () => {
       root.render(<DockTranscript stream={streamWithMessages([message])} active={false} workspaceId="ws-1" />);
     });
 
-    expect(container.textContent).toContain('Browser Act × 2 (browser_act)');
+    expect(container.textContent).toContain('browser_act ×2 · Browser Act');
     expect(container.textContent).toContain('2s');
     expect(container.textContent?.match(/Browser Act/g)).toHaveLength(3);
-    expect(container.textContent).not.toContain('Browser Act x 3');
+    expect(container.textContent).not.toContain('browser_act ×3');
     expect(container.textContent).toContain('Browser Open');
   });
 });

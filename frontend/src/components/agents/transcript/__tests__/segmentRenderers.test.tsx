@@ -76,8 +76,9 @@ describe('TranscriptSegmentView — tool', () => {
   it('renders a successful tool as a static one-liner with its duration', () => {
     render(toolSegment, true);
 
+    expect(container.textContent?.indexOf('run_command')).toBeLessThan(container.textContent?.indexOf('Run go build ./...') ?? 0);
     expect(container.textContent).toContain('Run go build ./...');
-    expect(container.textContent).toContain('(run_command)');
+    expect(container.textContent).toContain('run_command');
     expect(container.textContent).toContain('2s');
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('[aria-expanded]')).toBeNull();
@@ -114,7 +115,7 @@ describe('TranscriptSegmentView — tool', () => {
     render(segment, true);
 
     expect(container.textContent).toContain('Read src/service.go:12-18 · backend');
-    expect(container.textContent).toContain('(read_files)');
+    expect(container.textContent).toContain('read_files');
     expect(container.textContent).not.toContain('next_start_line');
   });
 
@@ -159,7 +160,7 @@ describe('TranscriptSegmentView — tool', () => {
     expect(container.querySelector('div.hidden')).toBeNull();
   });
 
-  it('shows the full input, output, error, and timing inside a working group', () => {
+  it('reveals full input, output, error, and timing for one selected tool call', () => {
     const detailedSegment: TranscriptSegment = {
       kind: 'tool',
       id: 'tool-detailed',
@@ -180,6 +181,12 @@ describe('TranscriptSegmentView — tool', () => {
     };
 
     render(detailedSegment, true, { showToolDetails: true });
+
+    expect(container.textContent).toContain('repository_search');
+    expect(container.querySelector('[data-tool-call-details]')).toBeNull();
+    const toggle = container.querySelector('button[aria-expanded="false"]');
+    expect(toggle).not.toBeNull();
+    act(() => (toggle as HTMLButtonElement).click());
 
     expect(container.textContent).toContain('Input');
     expect(container.textContent).toContain('"query": "pagination"');
@@ -205,6 +212,8 @@ describe('TranscriptSegmentView — tool', () => {
     };
 
     render(malformedSegment, true, { showToolDetails: true });
+
+    act(() => (container.querySelector('button[aria-expanded="false"]') as HTMLButtonElement).click());
 
     expect(container.textContent).toContain('{not json');
     expect(container.textContent).toContain('plain output');

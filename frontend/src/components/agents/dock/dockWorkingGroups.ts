@@ -1,4 +1,5 @@
 import type { TranscriptSegment } from '@/components/agents/transcript';
+import { canonicalToolName } from '@/lib/toolNames';
 
 export interface DockWorkingGroupEntry {
   kind: 'working_group';
@@ -16,8 +17,6 @@ export interface DockWorkingSegmentEntry {
 export type DockWorkingTimelineEntry = DockWorkingGroupEntry | DockWorkingSegmentEntry;
 
 function workingGroupKey(segments: TranscriptSegment[]): string {
-  const assistant = segments.find((segment) => segment.kind === 'assistant');
-  if (assistant?.kind === 'assistant') return `work:${assistant.messageId || assistant.id.replace(/^live:/, '')}`;
   const tool = segments.find((segment) => segment.kind === 'tool');
   if (tool?.kind === 'tool') return `work:${tool.toolCall.tool_call_id || tool.id.replace(/^live:/, '')}`;
   const reasoning = segments.find((segment) => segment.kind === 'reasoning');
@@ -25,65 +24,26 @@ function workingGroupKey(segments: TranscriptSegment[]): string {
   return `work:${segments[0]?.id.replace(/^live:/, '') || 'activity'}`;
 }
 
-function groupedActivity(segments: TranscriptSegment[], active: boolean): DockWorkingTimelineEntry[] {
+function activityEntries(
+  segments: TranscriptSegment[],
+  active: boolean,
+): DockWorkingTimelineEntry[] {
   if (segments.length === 0) return [];
-  // The stream projects the one current reasoning message separately and the
-  // collector places it before the cumulative turn timeline. It belongs to
-  // the newest live activity, so reattach it at the tail before grouping.
-  const streamingReasoning = active
-    ? segments.filter((segment) => segment.kind === 'reasoning' && segment.reasoning.status === 'streaming')
-    : [];
-  const orderedSegments = streamingReasoning.length > 0
-    ? [
-        ...segments.filter((segment) => !(segment.kind === 'reasoning' && segment.reasoning.status === 'streaming')),
-        ...streamingReasoning,
-      ]
-    : segments;
-  let finalAssistantIndex = -1;
-  if (!active) {
-    const lastAssistantIndex = orderedSegments.findLastIndex((segment) => segment.kind === 'assistant');
-    const hasWorkAfter = orderedSegments.slice(lastAssistantIndex + 1).some((segment) => (
-      segment.kind === 'tool' || segment.kind === 'reasoning'
-    ));
-    if (lastAssistantIndex >= 0 && !hasWorkAfter) finalAssistantIndex = lastAssistantIndex;
+  if (!segments.some((segment) => segment.kind === 'tool')) {
+    return segments.map((segment) => ({ kind: 'segment', key: segment.id, segment }));
   }
-
-  const groups: TranscriptSegment[][] = [];
-  let current: TranscriptSegment[] = [];
-  const flush = () => {
-    if (current.length > 0) groups.push(current);
-    current = [];
-  };
-
-  for (let index = 0; index < orderedSegments.length; index += 1) {
-    if (index === finalAssistantIndex) continue;
-    const segment = orderedSegments[index];
-    if (segment.kind === 'assistant') {
-      const reasoningOnly = current.length > 0 && current.every((entry) => entry.kind === 'reasoning');
-      if (current.length > 0 && !reasoningOnly) flush();
-    }
-    current.push(segment);
-  }
-  flush();
-
-  const entries: DockWorkingTimelineEntry[] = groups.map((group, index) => ({
+  return [{
     kind: 'working_group',
-    key: workingGroupKey(group),
-    segments: group,
-    active: active && index === groups.length - 1,
-  }));
-  if (finalAssistantIndex >= 0) {
-    const segment = orderedSegments[finalAssistantIndex];
-    entries.push({ kind: 'segment', key: segment.id, segment });
-  }
-  return entries;
+    key: workingGroupKey(segments),
+    segments,
+    active,
+  }];
 }
 
-function isConversationBoundary(segment: TranscriptSegment): boolean {
-  return segment.kind === 'user'
-    || segment.kind === 'review_decision'
-    || segment.kind === 'status'
-    || segment.kind === 'context';
+function isConsequentialTool(segment: TranscriptSegment): boolean {
+  if (segment.kind !== 'tool') return false;
+  const name = canonicalToolName(segment.toolCall.tool_name).toLowerCase();
+  return /^(apply|approve|assign|cancel|checkout|commit|create|delete|edit|generate|kill|merge|move|publish|reject|remove|reply|resolve|send|update|upload|write)(_|$)/.test(name);
 }
 
 /**
@@ -94,15 +54,38 @@ export function buildDockWorkingTimeline(
   segments: TranscriptSegment[],
   active: boolean,
 ): DockWorkingTimelineEntry[] {
+  // Live reasoning is projected separately before the cumulative turn. Move
+  // it to the newest execution phase, but never behind a streaming assistant
+  // reply: assistant prose is always a hard group boundary.
+  const streamingReasoning = active
+    ? segments.filter((segment) => segment.kind === 'reasoning' && segment.reasoning.status === 'streaming')
+    : [];
+  const withoutStreamingReasoning = streamingReasoning.length > 0
+    ? segments.filter((segment) => !(segment.kind === 'reasoning' && segment.reasoning.status === 'streaming'))
+    : segments;
+  const lastSegment = withoutStreamingReasoning.at(-1);
+  const orderedSegments = streamingReasoning.length === 0
+    ? withoutStreamingReasoning
+    : lastSegment?.kind === 'assistant' && lastSegment.streaming
+      ? [...withoutStreamingReasoning.slice(0, -1), ...streamingReasoning, lastSegment]
+      : [...withoutStreamingReasoning, ...streamingReasoning];
+
   const entries: DockWorkingTimelineEntry[] = [];
   let activity: TranscriptSegment[] = [];
   const flush = (isTrailing: boolean) => {
-    entries.push(...groupedActivity(activity, active && isTrailing));
+    entries.push(...activityEntries(activity, active && isTrailing));
     activity = [];
   };
 
-  for (const segment of segments) {
-    if (!isConversationBoundary(segment)) {
+  for (let index = 0; index < orderedSegments.length; index += 1) {
+    const segment = orderedSegments[index];
+    if (isConsequentialTool(segment)) {
+      flush(false);
+      activity.push(segment);
+      flush(active && index === orderedSegments.length - 1);
+      continue;
+    }
+    if (segment.kind === 'tool' || segment.kind === 'reasoning') {
       activity.push(segment);
       continue;
     }

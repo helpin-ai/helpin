@@ -25,6 +25,7 @@ import { planSummaryToRunPlan } from './planSummary';
 import type { AgentRunStreamState } from './useAgentRunStream';
 import { mergeMessagePages, mergePersistedChatMessages } from './dockChatTimeline';
 import {
+  isDockTranscriptStreaming,
   isStructuredInteractionKind,
   resolveDockComposerState,
   transformDockStream,
@@ -541,7 +542,7 @@ export function ChatView({
         {transformed && (
           <DockTranscript
             stream={transformed.stream}
-            active={runActive}
+            active={isDockTranscriptStreaming(run)}
             workspaceId={workspaceId}
             fallbackActor={streamController.session?.triggered_by_user}
             subAgentRuns={subAgentTimelineItems}
