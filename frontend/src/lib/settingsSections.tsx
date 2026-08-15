@@ -20,6 +20,7 @@ import {
   LinkForwardIcon,
   FolderKanbanIcon,
   Mail01Icon,
+  Calendar03Icon,
   SlidersHorizontalIcon,
   BubbleChatIcon,
   Route01Icon,
@@ -59,6 +60,7 @@ const HelpCenter = hi(HelpCircleIcon);
 const Redirects = hi(LinkForwardIcon);
 const Pipelines = hi(FolderKanbanIcon);
 const EmailAccounts = hi(Mail01Icon);
+const Meetings = hi(Calendar03Icon);
 const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
@@ -87,6 +89,7 @@ export type SettingsSection =
   | 'redirects'
   | 'crm-pipelines'
   | 'crm-email'
+  | 'crm-meetings'
   | 'crm-autonomy'
   | 'support-ai-assistant'
   | 'chat-general'
@@ -297,6 +300,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     label: 'Email Sync',
     description: 'Connect Gmail to sync conversations and detect buyer signals.',
     icon: EmailAccounts,
+    group: 'CRM',
+  },
+  {
+    id: 'crm-meetings',
+    label: 'Meeting Notes',
+    description: 'Choose how Helpin joins calls, takes notes, and saves recordings.',
+    icon: Meetings,
     group: 'CRM',
   },
   {
