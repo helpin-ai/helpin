@@ -81,9 +81,14 @@ func (f *flakyMeetingProcessingRunner) StartMeetingProcessing(context.Context, s
 	return nil
 }
 
-type fakeMeetingLLM struct{}
+type fakeMeetingLLM struct {
+	request *llm.ChatRequest
+}
 
-func (fakeMeetingLLM) ChatCompletion(context.Context, llm.ChatRequest) (*llm.ChatResponse, error) {
+func (f fakeMeetingLLM) ChatCompletion(_ context.Context, request llm.ChatRequest) (*llm.ChatResponse, error) {
+	if f.request != nil {
+		*f.request = request
+	}
 	return &llm.ChatResponse{Content: `{
 		"summary_markdown":"## Summary\nThe team agreed to ship.",
 		"key_points":["Release is ready"],
@@ -409,9 +414,13 @@ func TestMeetingProcessingPersistsCanonicalArtifactsAndDeletesProviderCopy(t *te
 	if err := repo.CreateCapture(context.Background(), capture); err != nil {
 		t.Fatal(err)
 	}
-	processor := NewCRMMeetingProcessingService(repo, nil, fakeMeetingLLM{}, nil, nil, provider)
+	var intelligenceRequest llm.ChatRequest
+	processor := NewCRMMeetingProcessingService(repo, nil, fakeMeetingLLM{request: &intelligenceRequest}, nil, nil, provider)
 	if err := processor.Process(context.Background(), meeting.WorkspaceID, meeting.ID); err != nil {
 		t.Fatalf("process meeting: %v", err)
+	}
+	if intelligenceRequest.Provider != meetingIntelligenceLLMProvider || intelligenceRequest.Model != meetingIntelligenceLLMModel {
+		t.Fatalf("meeting intelligence route = %s/%s, want %s/%s", intelligenceRequest.Provider, intelligenceRequest.Model, meetingIntelligenceLLMProvider, meetingIntelligenceLLMModel)
 	}
 	detailMeeting, err := repo.GetByID(context.Background(), meeting.WorkspaceID, meeting.ID)
 	if err != nil || detailMeeting.Status != model.CRMMeetingStatusReady || detailMeeting.SummaryStatus != model.CRMMeetingSummaryReady {

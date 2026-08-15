@@ -583,12 +583,12 @@ func main() {
 	var meetingProcessor *service.CRMMeetingProcessingService
 	if s3Client != nil {
 		meetingProcessor = service.NewCRMMeetingProcessingService(
-			crmMeetingRepo, crmAssociationRepo, llmProvider, s3Client,
+			crmMeetingRepo, crmAssociationRepo, supportLLMProvider, s3Client,
 			&http.Client{Timeout: 30 * time.Minute}, recallMeetingProvider, vexaMeetingProvider,
 		)
 	} else {
 		meetingProcessor = service.NewCRMMeetingProcessingService(
-			crmMeetingRepo, crmAssociationRepo, llmProvider, nil,
+			crmMeetingRepo, crmAssociationRepo, supportLLMProvider, nil,
 			&http.Client{Timeout: 30 * time.Minute}, recallMeetingProvider, vexaMeetingProvider,
 		)
 	}

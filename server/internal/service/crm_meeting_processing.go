@@ -18,7 +18,11 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-const meetingIntelligenceGenerationVersion = "v1"
+const (
+	meetingIntelligenceGenerationVersion = "v1"
+	meetingIntelligenceLLMProvider       = "openrouter"
+	meetingIntelligenceLLMModel          = "deepseek/deepseek-v4-flash-0731"
+)
 
 type meetingArtifactStore interface {
 	PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error
@@ -289,6 +293,8 @@ func (s *CRMMeetingProcessingService) generateIntelligence(
 	response, err := s.llmProvider.ChatCompletion(meteredCtx, llm.ChatRequest{
 		SystemPrompt: meetingIntelligenceSystemPrompt,
 		Messages:     []llm.Message{{Role: "user", Content: "Meeting title: " + meeting.Title + "\n\nTranscript:\n" + content}},
+		Provider:     meetingIntelligenceLLMProvider,
+		Model:        meetingIntelligenceLLMModel,
 		Temperature:  0.1,
 		MaxTokens:    6000,
 		JSONMode:     true,
