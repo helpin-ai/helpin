@@ -54,4 +54,23 @@ describe('AgentLiveStatus', () => {
     expect(container.querySelector('.agent-streaming-text')).not.toBeNull();
     expect(container.querySelector('svg')).toBeNull();
   });
+
+  it('pauses the work timer while waiting for approval', () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    act(() => {
+      root.render(
+        <AgentLiveStatus
+          progress={{
+            label: 'Waiting for approval',
+            tone: 'waiting',
+            startedAt: new Date(Date.now() - 9_000).toISOString(),
+          }}
+        />,
+      );
+    });
+
+    expect(container.textContent).toBe('Waiting for approval');
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+    setIntervalSpy.mockRestore();
+  });
 });

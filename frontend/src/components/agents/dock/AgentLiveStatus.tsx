@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Tick01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import type { AgentLiveProgress } from './agentProgress';
@@ -6,17 +6,40 @@ import { formatAgentElapsed } from './agentProgress';
 
 export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
   const [now, setNow] = useState(() => Date.now());
+  const [pausedMs, setPausedMs] = useState(0);
+  const pauseStartedAtRef = useRef<number | null>(null);
+  const timerStartedAtRef = useRef(progress.startedAt);
 
   useEffect(() => {
-    if (!progress.startedAt || progress.completed) {
-      if (progress.completed) setNow(Date.now());
+    const currentNow = Date.now();
+    if (timerStartedAtRef.current !== progress.startedAt) {
+      timerStartedAtRef.current = progress.startedAt;
+      pauseStartedAtRef.current = null;
+      setPausedMs(0);
+    }
+
+    if (!progress.completed && progress.tone === 'waiting') {
+      pauseStartedAtRef.current ??= currentNow;
       return;
     }
+
+    if (pauseStartedAtRef.current !== null) {
+      setPausedMs((current) => current + currentNow - pauseStartedAtRef.current!);
+      pauseStartedAtRef.current = null;
+    }
+
+    if (!progress.startedAt || progress.completed || progress.tone !== 'working') {
+      if (progress.completed) setNow(currentNow);
+      return;
+    }
+
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, [progress.completed, progress.startedAt]);
+  }, [progress.completed, progress.startedAt, progress.tone]);
 
-  const elapsed = formatAgentElapsed(progress.startedAt, now);
+  const elapsed = progress.tone === 'waiting' && !progress.completed
+    ? null
+    : formatAgentElapsed(progress.startedAt, now, pausedMs);
   const label = elapsed
     ? `${progress.completed ? 'Worked' : progress.label.replace(/…$/, '')} for ${elapsed}`
     : progress.label;
