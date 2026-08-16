@@ -131,8 +131,11 @@ func TestCRMEmailService_SendEmailEnqueuesBuyerSignalDetection(t *testing.T) {
 		signalIngestion: crmsignal.NewIngestionService(emailRepo, starter),
 		summaryRefresh:  summary,
 	}
+	if _, err := svc.SendEmail(ctx, "ws-1", "acct-1", "member-other", false, []string{"buyer@example.com"}, nil, "Follow-up", "<p>Checking in.</p>"); err == nil {
+		t.Fatal("expected non-owner send to be rejected")
+	}
 
-	message, err := svc.SendEmail(ctx, "acct-1", []string{"buyer@example.com"}, nil, "Follow-up", "<p>Checking in about pricing.</p>")
+	message, err := svc.SendEmail(ctx, "ws-1", "acct-1", "member-1", false, []string{"buyer@example.com"}, nil, "Follow-up", "<p>Checking in about pricing.</p>")
 	if err != nil {
 		t.Fatalf("SendEmail: %v", err)
 	}

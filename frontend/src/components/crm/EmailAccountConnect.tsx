@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert01Icon,
   Clock02Icon,
@@ -7,6 +7,7 @@ import {
   PlusSignIcon,
   Shield02Icon,
   Delete01Icon,
+  RotateLeft01Icon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
 
@@ -21,7 +22,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useDisconnectEmailAccount, useEmailAccounts, usePurgeEmailAccount } from '@/hooks/queries/useCRM';
+import {
+  useDisconnectEmailAccount,
+  useEmailAccountDiagnostics,
+  useEmailAccounts,
+  usePurgeEmailAccount,
+  useSyncEmailAccount,
+} from '@/hooks/queries/useCRM';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import type { CRMEmailAccount } from '@/lib/crmTypes';
 import { crmEmailService } from '@/lib/services/crmService';
@@ -47,16 +54,39 @@ const statusLabels: Record<string, string> = {
   error: 'Needs attention',
 };
 
+function getGoogleConnectionError(error: string | null): string {
+  if (error?.toLowerCase().includes('oauth not configured')) {
+    return 'Google connection is not configured for this Helpin server yet.';
+  }
+  return error || 'Failed to connect Google';
+}
+
 export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: EmailAccountConnectProps) {
   const filters = showAll ? undefined : { member_id: memberId };
   const { data: accounts = [] } = useEmailAccounts(workspaceId, filters);
+  const visibleAccounts = accounts.filter(
+    (account) => account.status !== 'pending_oauth' || account.email_address !== 'pending@oauth.local',
+  );
   const disconnectAccount = useDisconnectEmailAccount(workspaceId);
   const purgeAccount = usePurgeEmailAccount(workspaceId);
+  const syncAccount = useSyncEmailAccount(workspaceId);
   const access = useWorkspaceAccess(workspaceId);
   const { isAdmin } = usePermissions(access.data);
 
   const [selectedAccount, setSelectedAccount] = useState<CRMEmailAccount | null>(null);
   const [connecting, setConnecting] = useState<'gmail' | 'microsoft' | null>(null);
+  const diagnostics = useEmailAccountDiagnostics(workspaceId, selectedAccount?.id ?? '', !!selectedAccount);
+
+  useEffect(() => {
+    const currentURL = new URL(window.location.href);
+    const oauthStatus = currentURL.searchParams.get('oauth');
+    if (!oauthStatus) return;
+    if (oauthStatus === 'success') toast.success('Google account connected. Your first import has started.');
+    if (oauthStatus === 'cancelled') toast.info('Google connection was cancelled.');
+    if (oauthStatus === 'error') toast.error('Google account could not be connected. Please try again.');
+    currentURL.searchParams.delete('oauth');
+    window.history.replaceState({}, '', `${currentURL.pathname}${currentURL.search}${currentURL.hash}`);
+  }, []);
 
   const handleConnect = async (provider: 'gmail' | 'microsoft') => {
     if (provider === 'microsoft') {
@@ -68,7 +98,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
     try {
       const { data, error } = await crmEmailService.initiateOAuth(workspaceId, provider);
       if (error || !data) {
-        toast.error(error || 'Failed to initiate OAuth');
+        toast.error(getGoogleConnectionError(error));
         return;
       }
       window.location.href = data.redirect_url;
@@ -101,26 +131,37 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
     }
   };
 
-  const isWorking = disconnectAccount.isPending || purgeAccount.isPending;
+  const handleSync = async (mode: 'incremental' | 'historical') => {
+    if (!selectedAccount) return;
+    try {
+      await syncAccount.mutateAsync({ id: selectedAccount.id, mode });
+      toast.success(mode === 'historical' ? 'History reimport queued' : 'Mailbox sync queued');
+      await diagnostics.refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to start mailbox sync');
+    }
+  };
+
+  const isWorking = disconnectAccount.isPending || purgeAccount.isPending || syncAccount.isPending;
 
   return (
-    <Card className="border-dashed border-border/70 bg-gradient-to-br from-background via-background to-muted/20 shadow-none">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-base">Email Accounts</CardTitle>
-        <CardDescription>Connect Gmail mailboxes, preserve history on disconnect, and reconnect without losing your sync checkpoint.</CardDescription>
+    <Card className="rounded-xl border border-border bg-card shadow-none">
+      <CardHeader>
+        <CardTitle className="text-base">Google accounts</CardTitle>
+        <CardDescription>Connect Google to sync Gmail conversations and Google Calendar events.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {accounts.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-5 py-8 text-center">
-            <Mail01Icon className="mx-auto h-8 w-8 text-muted-foreground/45" />
-            <p className="mt-3 text-sm font-medium">No mailboxes connected</p>
+        {visibleAccounts.length === 0 && (
+          <div className="rounded-lg border bg-muted/20 px-5 py-7 text-center">
+            <Mail01Icon className="mx-auto h-7 w-7 text-muted-foreground" />
+            <p className="mt-3 text-sm font-medium">No Google account connected</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Connect Gmail to sync conversations, keep timeline history in CRM, and resume cleanly after reconnect.
+              Connect once to bring email conversations and upcoming calendar meetings into CRM.
             </p>
           </div>
         )}
 
-        {accounts.map((account) => {
+        {visibleAccounts.map((account) => {
           const disconnectedAt = account.disconnected_at
             ? new Date(account.disconnected_at).toLocaleDateString()
             : null;
@@ -128,12 +169,12 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
           return (
             <div
               key={account.id}
-              className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-[0_1px_0_0_rgba(255,255,255,0.4)_inset]"
+              className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                       <Mail01Icon className="h-4 w-4" />
                     </div>
                     <div className="min-w-0">
@@ -171,7 +212,9 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                 <p>
                   {account.status === 'disconnected'
                     ? `Sync is paused${disconnectedAt ? ` since ${disconnectedAt}` : ''}. Reconnect Gmail to resume from the preserved checkpoint.`
-                    : 'Disconnect keeps synced emails in CRM. Only admins can permanently purge mailbox history.'}
+                    : account.status === 'error'
+                      ? 'The last sync failed. Open Manage to see the error and retry safely.'
+                      : 'Disconnect keeps synced emails in CRM. Only admins can permanently purge mailbox history.'}
                 </p>
                 <p className="whitespace-nowrap text-right">
                   {account.last_synced_at
@@ -183,14 +226,14 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
           );
         })}
 
-        <div className="flex flex-wrap gap-2 pt-1">
-          <Button variant="outline" size="sm" onClick={() => handleConnect('gmail')} disabled={!!connecting}>
+        <div className={cn('flex flex-wrap gap-2 pt-1', visibleAccounts.length === 0 && 'justify-center')}>
+          <Button size="sm" onClick={() => handleConnect('gmail')} disabled={!!connecting}>
             {connecting === 'gmail' ? (
               <Loading01Icon className="mr-1.5 h-3 w-3 animate-spin" />
             ) : (
               <PlusSignIcon className="mr-1.5 h-3 w-3" />
             )}
-            Connect Gmail
+            Connect Google
           </Button>
           <Button variant="outline" size="sm" onClick={() => handleConnect('microsoft')} disabled={!!connecting}>
             <PlusSignIcon className="mr-1.5 h-3 w-3" />
@@ -220,8 +263,48 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                 </DialogHeader>
 
                 <div className="space-y-4 px-6 py-5">
+                  {diagnostics.isLoading ? (
+                    <div className="flex items-center gap-2 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                      <Loading01Icon className="h-4 w-4 animate-spin" /> Loading mailbox health…
+                    </div>
+                  ) : diagnostics.data ? (
+                    <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/15 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold">Sync health</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {diagnostics.data.sync.phase || 'Waiting'} · {diagnostics.data.counts.messages.toLocaleString()} emails · {diagnostics.data.counts.calendar_events.toLocaleString()} calendar events
+                          </p>
+                        </div>
+                        <Badge variant="outline" className={cn('text-xs capitalize', statusStyles[selectedAccount.status] ?? statusStyles.error)}>
+                          {diagnostics.data.sync.status || statusLabels[selectedAccount.status]}
+                        </Badge>
+                      </div>
+                      {diagnostics.data.sync.last_error && (
+                        <div className="flex items-start gap-2 rounded-xl border border-rose-500/20 bg-rose-500/[0.05] px-3 py-2 text-sm text-rose-700 dark:text-rose-200">
+                          <Alert01Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                          <div>
+                            <p className="font-medium">Last sync failed</p>
+                            <p className="mt-0.5 text-xs opacity-90">{diagnostics.data.sync.last_error.message}</p>
+                          </div>
+                        </div>
+                      )}
+                      {selectedAccount.is_active && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="outline" size="sm" onClick={() => handleSync('incremental')} disabled={isWorking}>
+                            {syncAccount.isPending ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RotateLeft01Icon className="mr-1.5 h-3.5 w-3.5" />}
+                            Sync now
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleSync('historical')} disabled={isWorking}>
+                            Reimport configured history
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
                   <div className="grid gap-3">
-                    <button
+                    {selectedAccount.is_active && <button
                       type="button"
                       onClick={handleDisconnect}
                       disabled={isWorking}
@@ -236,7 +319,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                           Stops sync, clears OAuth tokens, preserves emails already stored in CRM, and lets the next reconnect resume from checkpoint.
                         </p>
                       </div>
-                    </button>
+                    </button>}
 
                     {isAdmin && selectedAccount.has_synced_data && (
                       <button

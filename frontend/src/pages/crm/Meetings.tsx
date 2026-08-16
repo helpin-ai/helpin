@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 import { Camera01Icon, PlusSignIcon, Search01Icon, Settings02Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,10 +10,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CreateMeetingDialog } from '@/components/crm/CreateMeetingDialog';
 import { MeetingPlatformIcon, MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
 import { MeetingStatusBadge } from '@/components/crm/MeetingStatusBadge';
-import { useCRMMeetings, useCRMMeetingSettings } from '@/hooks/queries/useCRMMeetings';
+import { UpcomingCalendarMeetings } from '@/components/crm/UpcomingCalendarMeetings';
+import { useCRMMeetings, useCRMMeetingSettings, useUpcomingCalendarMeetings } from '@/hooks/queries/useCRMMeetings';
+import { useEmailAccounts } from '@/hooks/queries/useCRM';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useAuthStore } from '@/stores/authStore';
+import { crmEmailService } from '@/lib/services/crmService';
 import type { CRMMeeting } from '@/lib/crmMeetingTypes';
 
 function MeetingRow({ meeting, onOpen }: { meeting: CRMMeeting; onOpen: () => void }) {
@@ -39,6 +44,7 @@ function MeetingRow({ meeting, onOpen }: { meeting: CRMMeeting; onOpen: () => vo
 export function MeetingsPage() {
   useTitle('Meetings');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const user = useAuthStore((state) => state.user);
   const workspaceId = workspace?.id ?? '';
   const workspaceSlug = workspace?.slug ?? '';
   const navigate = useNavigate();
@@ -48,9 +54,37 @@ export function MeetingsPage() {
   const canEdit = permissions.has('crm.edit');
   const canAdmin = permissions.has('crm.admin');
   const [showCreate, setShowCreate] = useState(false);
+  const [connectingCalendar, setConnectingCalendar] = useState(false);
   const filters = useMemo(() => ({ search: search.trim() || undefined, per_page: 50 }), [search]);
   const { data, isLoading } = useCRMMeetings(workspaceId, filters);
-  const { data: settingsData } = useCRMMeetingSettings(workspaceId);
+  const { data: upcomingData, isLoading: upcomingLoading } = useUpcomingCalendarMeetings(workspaceId);
+  const { data: settingsData, isLoading: settingsLoading } = useCRMMeetingSettings(workspaceId);
+  const { data: emailAccounts = [], isLoading: accountsLoading } = useEmailAccounts(workspaceId, user?.id ? { member_id: user.id } : undefined);
+  const normalizedSearch = search.trim().toLowerCase();
+  const upcomingCandidates = (upcomingData?.data ?? []).filter((candidate) => !normalizedSearch || candidate.event.title.toLowerCase().includes(normalizedSearch));
+  const historyMeetings = (data?.data ?? []).filter((meeting) => {
+    if (!meeting.calendar_event_id || meeting.status !== 'scheduled' || !meeting.scheduled_start_at) return true;
+    return new Date(meeting.scheduled_start_at).getTime() <= Date.now();
+  });
+  const hasUpcoming = upcomingCandidates.length > 0;
+  const calendarConnected = emailAccounts.some((account) => account.member_id === user?.id && account.provider === 'gmail' && account.status === 'connected' && account.is_active);
+  const meetingNotesEnabled = settingsData?.settings.enabled ?? true;
+
+  const connectGoogleCalendar = async () => {
+    setConnectingCalendar(true);
+    try {
+      const { data: oauth, error } = await crmEmailService.initiateOAuth(workspaceId, 'gmail');
+      if (error || !oauth) {
+        toast.error(error || 'Unable to connect Google Calendar');
+        return;
+      }
+      window.location.href = oauth.redirect_url;
+    } catch {
+      toast.error('Unable to connect Google Calendar');
+    } finally {
+      setConnectingCalendar(false);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -72,7 +106,7 @@ export function MeetingsPage() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        {settingsData?.settings.enabled === false && !isLoading && (
+        {settingsData?.settings.enabled === false && hasUpcoming && !isLoading && (
           <div className="mb-3 flex items-center justify-between gap-4 rounded-lg border bg-muted/20 p-3">
             <div>
               <p className="text-sm font-medium">Enable meeting notes</p>
@@ -82,27 +116,45 @@ export function MeetingsPage() {
           </div>
         )}
 
+        <UpcomingCalendarMeetings
+          workspaceId={workspaceId}
+          workspaceSlug={workspaceSlug}
+          candidates={upcomingCandidates}
+          canEdit={canEdit}
+          canManageSettings={canAdmin}
+          loading={upcomingLoading}
+          calendarConnected={calendarConnected}
+          calendarLoading={accountsLoading || settingsLoading}
+          connectingCalendar={connectingCalendar}
+          meetingNotesEnabled={meetingNotesEnabled}
+          searching={Boolean(normalizedSearch)}
+          onConnectCalendar={() => void connectGoogleCalendar()}
+          onConfigureSettings={() => navigate({ to: '/w/$slug/settings/crm-meetings', params: { slug: workspaceSlug } })}
+          onAddMeeting={() => setShowCreate(true)}
+        />
+
+        {historyMeetings.length > 0 && <h2 className="mb-2 text-sm font-semibold">Meeting history</h2>}
         {isLoading ? (
           <div className="space-y-2">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-16 w-full" />)}</div>
-        ) : data?.data.length ? (
-          <div className="overflow-hidden rounded-lg border bg-card">
+        ) : historyMeetings.length ? (
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-none">
             <div className="hidden grid-cols-[minmax(0,1fr)_180px_160px_120px] gap-3 border-b bg-muted/20 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:grid">
               <span>Meeting</span><span>Platform</span><span>Date</span><span className="text-right">Status</span>
             </div>
-            {data.data.map((meeting) => (
+            {historyMeetings.map((meeting) => (
               <MeetingRow key={meeting.id} meeting={meeting} onOpen={() => navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: workspaceSlug, meetingId: meeting.id } })} />
             ))}
           </div>
-        ) : (
+        ) : normalizedSearch && !hasUpcoming && !upcomingLoading ? (
           <div className="flex min-h-96 items-center justify-center p-6 text-center">
             <div className="max-w-md">
               <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg border bg-muted/30"><Camera01Icon className="h-5 w-5 text-muted-foreground" /></div>
               <h2 className="mt-4 text-base font-semibold">{search ? 'No matching meetings' : 'Your meeting notes live here'}</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{search ? 'Try a different title.' : 'Add a meeting link to capture a transcript, summary, decisions, risks, and action items.'}</p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{search ? 'Try a different title.' : 'Connect Gmail or add a meeting link to capture notes, decisions, and action items.'}</p>
               {!search && canEdit && <Button className="mt-4" size="sm" onClick={() => setShowCreate(true)}><PlusSignIcon className="h-4 w-4" /> Add meeting</Button>}
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
       {canEdit && <CreateMeetingDialog open={showCreate} onOpenChange={setShowCreate} workspaceId={workspaceId} workspaceSlug={workspaceSlug} />}

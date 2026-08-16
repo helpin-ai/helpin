@@ -390,6 +390,61 @@ export interface CRMEmailAccount {
   updated_at: string;
 }
 
+export interface CRMEmailSyncError {
+  operation: string;
+  code: string;
+  message: string;
+}
+
+export interface CRMEmailSyncCycleStats {
+  mode: string;
+  started_at?: string;
+  completed_at?: string;
+  messages_seen: number;
+  messages_stored: number;
+  duplicates_skipped: number;
+  filtered_skipped: number;
+  internal_skipped: number;
+  contacts_created: number;
+  associations_written: number;
+  threads_touched: number;
+  recovery_triggered: boolean;
+}
+
+export interface CRMEmailAccountDiagnostics {
+  account_id: string;
+  workspace_id: string;
+  member_id: string;
+  provider: string;
+  email_address: string;
+  account_status: CRMEmailAccountStatus;
+  is_active: boolean;
+  disconnected_at?: string;
+  last_synced_at?: string;
+  last_history_id?: string;
+  has_synced_data: boolean;
+  sync: {
+    status: string;
+    phase: string;
+    last_attempt_at?: string;
+    last_success_at?: string;
+    last_failure_at?: string;
+    consecutive_failures: number;
+    last_history_id?: string;
+    last_error?: CRMEmailSyncError;
+    last_cycle?: CRMEmailSyncCycleStats;
+  };
+  counts: {
+    threads: number;
+    messages: number;
+    calendar_events: number;
+  };
+  association_health: {
+    messages_missing_associations: number;
+    threads_with_empty_contact_ids: number;
+  };
+}
+
 export interface CreateCRMEmailAccountRequest {
   workspace_id: string;
   member_id: string;
@@ -449,6 +504,14 @@ export interface CreateCRMEmailMessageRequest {
   deal_id?: string;
 }
 
+export interface CRMCalendarAttendee {
+  email: string;
+  name?: string;
+  response_status?: string;
+  organizer?: boolean;
+  self?: boolean;
+}
+
 export interface CRMCalendarEvent {
   id: string;
   workspace_id: string;
@@ -459,8 +522,13 @@ export interface CRMCalendarEvent {
   start_time: string;
   end_time: string;
   location?: string;
-  attendees: Record<string, unknown>;
-  contact_ids: Record<string, unknown>;
+  meeting_url?: string;
+  organizer_email?: string;
+  status: string;
+  visibility: string;
+  all_day: boolean;
+  attendees: CRMCalendarAttendee[];
+  contact_ids: string[];
   deal_id?: string;
   created_at: string;
   updated_at: string;
@@ -474,8 +542,9 @@ export interface CreateCRMCalendarEventRequest {
   start_time: string;
   end_time: string;
   location?: string;
-  attendees?: Record<string, unknown>;
-  contact_ids?: Record<string, unknown>;
+  meeting_url?: string;
+  attendees?: CRMCalendarAttendee[];
+  contact_ids?: string[];
   deal_id?: string;
 }
 
@@ -485,8 +554,9 @@ export interface UpdateCRMCalendarEventRequest {
   start_time?: string;
   end_time?: string;
   location?: string;
-  attendees?: Record<string, unknown>;
-  contact_ids?: Record<string, unknown>;
+  meeting_url?: string;
+  attendees?: CRMCalendarAttendee[];
+  contact_ids?: string[];
   deal_id?: string;
 }
 
