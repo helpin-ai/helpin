@@ -520,6 +520,9 @@ export function ChatView({
       (childRun) => childRun.status === 'paused' && childRun.pause_reason === 'human_approval',
     )
   );
+  const runtimeStream = transformed?.stream ?? streamState;
+  const showRuntimeTimeline = isDockTranscriptStreaming(run)
+    || (run?.status !== 'cancelled' && runtimeStream !== null && hasAuthoritativeDockRuntimeTimeline(runtimeStream));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -556,7 +559,7 @@ export function ChatView({
           <DockTranscript
             stream={transformed.stream}
             active={isDockTranscriptStreaming(run)}
-            useRuntimeTimeline={isDockTranscriptStreaming(run) || hasAuthoritativeDockRuntimeTimeline(transformed.stream)}
+            useRuntimeTimeline={showRuntimeTimeline}
             workspaceId={workspaceId}
             fallbackActor={streamController.session?.triggered_by_user}
             subAgentRuns={subAgentTimelineItems}
@@ -567,7 +570,6 @@ export function ChatView({
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}
         {visiblePendingEcho && <DockUserMessage content={visiblePendingEcho.content} pending />}
-        {liveProgress ? <AgentLiveStatus progress={liveProgress} /> : null}
         {sendError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
             <p className="mb-1 line-clamp-2 text-foreground/80">{sendError.content}</p>
@@ -623,6 +625,14 @@ export function ChatView({
       </div>
       {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
       </div>
+      {liveProgress ? (
+        <div
+          className="shrink-0 border-t border-border/40 bg-background px-4 py-1.5"
+          data-agent-live-status-region
+        >
+          <AgentLiveStatus progress={liveProgress} />
+        </div>
+      ) : null}
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}

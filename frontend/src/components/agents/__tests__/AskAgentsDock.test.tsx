@@ -792,8 +792,9 @@ describe('AskAgentsDock', () => {
 
     const liveStatus = document.body.querySelector('[data-helpin-dock] [data-agent-live-status]');
     const scrollContainer = document.body.querySelector('[data-helpin-dock] [data-agent-dock-chat-scroll]');
-    expect(liveStatus?.textContent).toContain('Working…');
-    expect(scrollContainer?.contains(liveStatus)).toBe(true);
+    expect(liveStatus?.textContent).toContain('Starting…');
+    expect(scrollContainer?.contains(liveStatus)).toBe(false);
+    expect(document.body.querySelector('[data-agent-live-status-region]')?.contains(liveStatus)).toBe(true);
 
     const stopButtons = document.body.querySelectorAll('[data-helpin-dock] [aria-label="Stop agent"]');
     expect(stopButtons).toHaveLength(1);
