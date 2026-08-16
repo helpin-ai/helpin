@@ -25,6 +25,7 @@ import { AgentLiveStatus } from './AgentLiveStatus';
 import { resolveAgentLiveProgress } from './agentProgress';
 import { parseFollowUpSuggestions } from './followUpSuggestions';
 import { starterSuggestionsForContext } from './starterSuggestions';
+import { focusComposerAtEnd } from './composerFocus';
 import { planSummaryToRunPlan } from './planSummary';
 import type { AgentRunStreamState } from './useAgentRunStream';
 import {
@@ -100,6 +101,10 @@ export function ChatView({
     if (onDraftChange) onDraftChange(next);
     else setLocalValue(next);
   }, [onDraftChange]);
+  const insertSuggestion = useCallback((next: string) => {
+    setValue(next);
+    window.requestAnimationFrame(() => focusComposerAtEnd(textareaRef.current, next));
+  }, [setValue, textareaRef]);
   const [sending, setSending] = useState(false);
   const [launchStartedAt, setLaunchStartedAt] = useState<string | undefined>();
   const [stopping, setStopping] = useState(false);
@@ -669,8 +674,7 @@ export function ChatView({
                 type="button"
                 className="flex w-full items-center gap-2 rounded-md px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
                 onClick={() => {
-                  setValue(suggestion);
-                  window.requestAnimationFrame(() => textareaRef.current?.focus());
+                  insertSuggestion(suggestion);
                 }}
               >
                 <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -760,8 +764,7 @@ export function ChatView({
                     type="button"
                     className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/70 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     onClick={() => {
-                      setValue(suggestion.prompt);
-                      window.requestAnimationFrame(() => textareaRef.current?.focus());
+                      insertSuggestion(suggestion.prompt);
                     }}
                   >
                     <ArrowRight01Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
