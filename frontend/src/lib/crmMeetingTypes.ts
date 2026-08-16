@@ -1,4 +1,4 @@
-import type { CRMAssociationEnriched, CRMPaginatedResponse } from './crmTypes';
+import type { CRMAssociationEnriched, CRMCalendarEvent, CRMPaginatedResponse } from './crmTypes';
 
 export type CRMMeetingPlatform = 'google_meet' | 'zoom' | 'teams' | 'webex';
 export type CRMMeetingStatus = 'scheduled' | 'joining' | 'waiting' | 'recording' | 'finalizing' | 'processing' | 'ready' | 'failed' | 'cancelled';
@@ -174,6 +174,24 @@ export type UpdateCRMMeetingSettingsRequest = Partial<Pick<CRMMeetingSettings,
 
 export interface CRMMeetingSettingsResponse {
   settings: CRMMeetingSettings;
+}
+
+export interface CRMCalendarMeetingCandidate {
+  event: CRMCalendarEvent;
+  meeting?: CRMMeeting;
+  eligible: boolean;
+  ineligibility_reason?: string;
+}
+
+export interface UpdateCRMCalendarMeetingCaptureRequest {
+  enabled: boolean;
+  deal_id?: string;
+  record_audio?: boolean;
+}
+
+export interface CRMCalendarMeetingCandidateListResponse {
+  data: CRMCalendarMeetingCandidate[];
+  total: number;
 }
 
 export interface AcceptCRMMeetingActionItemRequest {

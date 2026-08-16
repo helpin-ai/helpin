@@ -8,6 +8,7 @@ import type {
   CRMMeetingFilters,
   UpdateCRMMeetingRequest,
   UpdateCRMMeetingSettingsRequest,
+  UpdateCRMCalendarMeetingCaptureRequest,
 } from '@/lib/crmMeetingTypes';
 
 export const crmMeetingKeys = {
@@ -15,6 +16,7 @@ export const crmMeetingKeys = {
   list: (workspaceId: string, filters?: CRMMeetingFilters) => ['crm', workspaceId, 'meetings', filters ?? {}] as const,
   detail: (workspaceId: string, meetingId: string) => ['crm', workspaceId, 'meetings', meetingId] as const,
   settings: (workspaceId: string) => ['crm', workspaceId, 'meeting-settings'] as const,
+  upcomingCalendar: (workspaceId: string) => ['crm', workspaceId, 'meetings', 'calendar-upcoming'] as const,
 };
 
 export function useCRMMeetings(workspaceId: string, filters?: CRMMeetingFilters) {
@@ -24,6 +26,27 @@ export function useCRMMeetings(workspaceId: string, filters?: CRMMeetingFilters)
     enabled: Boolean(workspaceId),
     refetchInterval: (query) => query.state.data?.data.some((meeting) =>
       ['joining', 'waiting', 'recording', 'finalizing', 'processing'].includes(meeting.status)) ? 10_000 : false,
+  });
+}
+
+export function useUpcomingCalendarMeetings(workspaceId: string) {
+  return useQuery({
+    queryKey: crmMeetingKeys.upcomingCalendar(workspaceId),
+    queryFn: async () => unwrap(await crmMeetingService.listUpcomingCalendar(workspaceId)),
+    enabled: Boolean(workspaceId),
+    staleTime: 60_000,
+  });
+}
+
+export function useUpdateCalendarMeetingCapture(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ calendarEventId, payload }: { calendarEventId: string; payload: UpdateCRMCalendarMeetingCaptureRequest }) =>
+      unwrap(await crmMeetingService.updateCalendarCapture(workspaceId, calendarEventId, payload)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: crmMeetingKeys.all(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: crmMeetingKeys.upcomingCalendar(workspaceId) });
+    },
   });
 }
 

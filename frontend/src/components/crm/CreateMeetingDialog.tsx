@@ -112,7 +112,7 @@ export function CreateMeetingDialog({
             <div className="space-y-2">
               <Label htmlFor="meeting-start">Scheduled start</Label>
               <Input id="meeting-start" type="datetime-local" value={scheduledStart} onChange={(event) => setScheduledStart(event.target.value)} />
-              <p className="text-xs text-muted-foreground">Scheduled meetings stay in Helpin until someone starts the capture. Calendar auto-join is a later phase.</p>
+              <p className="text-xs text-muted-foreground">Meetings added from your connected calendar can join automatically.</p>
             </div>
           )}
           <div className="flex items-center justify-between rounded-lg border p-3">

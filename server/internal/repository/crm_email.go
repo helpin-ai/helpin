@@ -44,6 +44,22 @@ func (r *CRMEmailRepository) GetAccountByID(ctx context.Context, id string) (*mo
 	return &account, nil
 }
 
+// GetAccountByIDForWorkspace returns an email account only when it belongs to
+// the requested workspace. HTTP-facing code should use this method so an
+// entity UUID can never bypass workspace authorization.
+func (r *CRMEmailRepository) GetAccountByIDForWorkspace(ctx context.Context, workspaceID, id string) (*model.CRMEmailAccount, error) {
+	var account model.CRMEmailAccount
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		First(&account).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get workspace email account: %w", err)
+	}
+	return &account, nil
+}
+
 // ListAccounts returns email accounts in a workspace with optional filters.
 func (r *CRMEmailRepository) ListAccounts(ctx context.Context, workspaceID string, filters model.CRMEmailAccountListFilters) ([]model.CRMEmailAccount, error) {
 	query := r.db.WithContext(ctx).Model(&model.CRMEmailAccount{}).Where("workspace_id = ?", workspaceID)
@@ -107,6 +123,17 @@ func (r *CRMEmailRepository) GetAccountByOAuthState(ctx context.Context, state s
 		return nil, fmt.Errorf("get email account by oauth state: %w", err)
 	}
 	return &account, nil
+}
+
+// DeletePendingOAuthAccounts removes abandoned OAuth attempts for one member.
+// Starting a new flow intentionally invalidates any older flow for that member.
+func (r *CRMEmailRepository) DeletePendingOAuthAccounts(ctx context.Context, workspaceID, memberID string) error {
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND member_id = ? AND status = ?", workspaceID, memberID, model.CRMEmailAccountStatusPendingOAuth).
+		Delete(&model.CRMEmailAccount{}).Error; err != nil {
+		return fmt.Errorf("delete pending oauth accounts: %w", err)
+	}
+	return nil
 }
 
 // UpdateSyncState updates the sync state for an email account.
@@ -242,6 +269,31 @@ func (r *CRMEmailRepository) GetThreadByID(ctx context.Context, id string) (*mod
 		return nil, fmt.Errorf("get email thread: %w", err)
 	}
 	return &thread, nil
+}
+
+// CRMEntityBelongsToWorkspace verifies an optional CRM entity reference before
+// it is accepted on an email record. The table name is selected by trusted
+// server code; user input is never interpolated into the query.
+func (r *CRMEmailRepository) CRMEntityBelongsToWorkspace(ctx context.Context, entityType, workspaceID, id string) (bool, error) {
+	if id == "" {
+		return true, nil
+	}
+	var table string
+	switch entityType {
+	case "contact":
+		table = "crm_contacts"
+	case "deal":
+		table = "crm_deals"
+	default:
+		return false, fmt.Errorf("unsupported crm entity type %q", entityType)
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).Table(table).
+		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("verify %s workspace: %w", entityType, err)
+	}
+	return count > 0, nil
 }
 
 // IncrementThreadMessageCount increments the message count and updates last_message_at.

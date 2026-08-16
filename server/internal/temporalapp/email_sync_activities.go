@@ -30,13 +30,15 @@ type gmailHistorySyncClient interface {
 
 // EmailSyncActivities contains activities for email synchronization.
 type EmailSyncActivities struct {
-	gmailClient      gmailHistorySyncClient
-	emailRepo        *repository.CRMEmailRepository
-	calendarRepo     *repository.CRMCalendarRepository
-	syncSettingsRepo *repository.CRMEmailSyncSettingsRepository
-	resolver         *crmemail.Resolver
-	signalIngestion  *crmsignal.IngestionService
-	summaryRefresh   interface {
+	gmailClient             gmailHistorySyncClient
+	emailRepo               *repository.CRMEmailRepository
+	calendarRepo            *repository.CRMCalendarRepository
+	meetingRepo             *repository.CRMMeetingRepository
+	meetingCaptureScheduler calendarMeetingCaptureScheduler
+	syncSettingsRepo        *repository.CRMEmailSyncSettingsRepository
+	resolver                *crmemail.Resolver
+	signalIngestion         *crmsignal.IngestionService
+	summaryRefresh          interface {
 		RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
 		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
 	}
@@ -68,6 +70,16 @@ func NewEmailSyncActivities(
 
 // BackfillEmailsActivity fetches last 90 days of emails.
 func (a *EmailSyncActivities) BackfillEmailsActivity(ctx context.Context, accountID string) (*EmailSyncResult, error) {
+	return a.backfillEmails(ctx, accountID, false)
+}
+
+// HistoricalBackfillEmailsActivity reimports the configured history window
+// without moving a healthy incremental history checkpoint backwards.
+func (a *EmailSyncActivities) HistoricalBackfillEmailsActivity(ctx context.Context, accountID string) (*EmailSyncResult, error) {
+	return a.backfillEmails(ctx, accountID, true)
+}
+
+func (a *EmailSyncActivities) backfillEmails(ctx context.Context, accountID string, force bool) (*EmailSyncResult, error) {
 	account, err := a.emailRepo.GetAccountByID(ctx, accountID)
 	if err != nil || account == nil {
 		return nil, temporal.NewNonRetryableApplicationError(
@@ -84,7 +96,11 @@ func (a *EmailSyncActivities) BackfillEmailsActivity(ctx context.Context, accoun
 	}
 
 	startedAt := time.Now().UTC()
-	cycle := newSyncCycleAccumulator("backfill", startedAt)
+	cycleMode := "backfill"
+	if force {
+		cycleMode = "historical"
+	}
+	cycle := newSyncCycleAccumulator(cycleMode, startedAt)
 	if err := a.markSyncCycleStart(ctx, account, crmemail.SyncPhaseBackfill, strings.TrimSpace(stringValue(account.LastHistoryID)), startedAt); err != nil {
 		slog.WarnContext(ctx, "failed to persist crm email backfill start", "error", err, "workspace_id", account.WorkspaceID, "account_id", account.ID, "provider", account.Provider)
 	}
@@ -103,7 +119,11 @@ func (a *EmailSyncActivities) BackfillEmailsActivity(ctx context.Context, accoun
 		settings = &defaults
 	}
 
-	if account.LastHistoryID != nil && strings.TrimSpace(*account.LastHistoryID) != "" {
+	if calendarErr := a.syncCalendarEvents(ctx, account, accessToken, settings); calendarErr != nil {
+		slog.WarnContext(ctx, "crm calendar backfill sync failed", "error", calendarErr, "workspace_id", account.WorkspaceID, "account_id", account.ID)
+	}
+
+	if !force && account.LastHistoryID != nil && strings.TrimSpace(*account.LastHistoryID) != "" {
 		if err := a.persistAccountCheckpoint(ctx, account, nil, strings.TrimSpace(*account.LastHistoryID), cycle.stats()); err != nil {
 			a.recordSyncFailure(ctx, account, "persist_checkpoint", cycle.stats(), err)
 			return nil, fmt.Errorf("persist existing account checkpoint: %w", err)
@@ -112,7 +132,7 @@ func (a *EmailSyncActivities) BackfillEmailsActivity(ctx context.Context, accoun
 	}
 
 	startTime := historicalSyncStart(settings)
-	if account.LastSyncedAt != nil && account.LastSyncedAt.After(startTime) {
+	if !force && account.LastSyncedAt != nil && account.LastSyncedAt.After(startTime) {
 		startTime = *account.LastSyncedAt
 	}
 
@@ -127,15 +147,22 @@ func (a *EmailSyncActivities) BackfillEmailsActivity(ctx context.Context, accoun
 		a.recordSyncFailure(ctx, account, "get_mailbox_profile", cycle.stats(), err)
 		return nil, fmt.Errorf("get mailbox profile: %w", err)
 	}
-	if err := a.persistAccountCheckpoint(ctx, account, profile, profile.HistoryID, cycle.stats()); err != nil {
+	checkpoint := strings.TrimSpace(stringValue(account.LastHistoryID))
+	if checkpoint == "" {
+		checkpoint = syncStateString(account.SyncState, "initial_history_id")
+	}
+	if checkpoint == "" {
+		checkpoint = strings.TrimSpace(profile.HistoryID)
+	}
+	if err := a.persistAccountCheckpoint(ctx, account, profile, checkpoint, cycle.stats()); err != nil {
 		a.recordSyncFailure(ctx, account, "persist_checkpoint", cycle.stats(), err)
 		return nil, fmt.Errorf("update account checkpoint after backfill: %w", err)
 	}
 
 	stats := cycle.stats()
-	slog.InfoContext(ctx, "crm email backfill sync complete", "workspace_id", account.WorkspaceID, "account_id", accountID, "provider", account.Provider, "mode", stats.Mode, "phase", crmemail.SyncPhaseBackfill, "history_id", strings.TrimSpace(profile.HistoryID), "messages_seen", stats.MessagesSeen, "messages_stored", stats.MessagesStored, "duplicates_skipped", stats.DuplicatesSkipped, "filtered_skipped", stats.FilteredSkipped, "internal_skipped", stats.InternalSkipped, "contacts_created", stats.ContactsCreated, "associations_written", stats.AssociationsWritten)
+	slog.InfoContext(ctx, "crm email backfill sync complete", "workspace_id", account.WorkspaceID, "account_id", accountID, "provider", account.Provider, "mode", stats.Mode, "phase", crmemail.SyncPhaseBackfill, "history_id", checkpoint, "messages_seen", stats.MessagesSeen, "messages_stored", stats.MessagesStored, "duplicates_skipped", stats.DuplicatesSkipped, "filtered_skipped", stats.FilteredSkipped, "internal_skipped", stats.InternalSkipped, "contacts_created", stats.ContactsCreated, "associations_written", stats.AssociationsWritten)
 
-	return &EmailSyncResult{MessagesProcessed: processed, NewHistoryID: strings.TrimSpace(profile.HistoryID)}, nil
+	return &EmailSyncResult{MessagesProcessed: processed, NewHistoryID: checkpoint}, nil
 }
 
 // IncrementalSyncActivity fetches new emails since last sync.
@@ -173,6 +200,10 @@ func (a *EmailSyncActivities) IncrementalSyncActivity(ctx context.Context, accou
 	if err != nil {
 		a.recordSyncFailure(ctx, account, "get_valid_token", cycle.stats(), err)
 		return nil, fmt.Errorf("get valid token: %w", err)
+	}
+
+	if calendarErr := a.syncCalendarEvents(ctx, account, accessToken, settings); calendarErr != nil {
+		slog.WarnContext(ctx, "crm calendar incremental sync failed", "error", calendarErr, "workspace_id", account.WorkspaceID, "account_id", account.ID)
 	}
 
 	lastHistoryID := strings.TrimSpace(stringValue(account.LastHistoryID))
@@ -338,7 +369,17 @@ func (a *EmailSyncActivities) persistAccountCheckpoint(ctx context.Context, acco
 		account.LastHistoryID = stringPtr(historyID)
 	}
 	account.SyncState = crmemail.CompleteSyncCycle(account.SyncState, stringValue(account.LastHistoryID), now, cycle)
+	delete(account.SyncState, "initial_history_id")
+	delete(account.SyncState, "requested_mode")
 	return a.emailRepo.UpdateAccount(ctx, account)
+}
+
+func syncStateString(state model.JSONB, key string) string {
+	if state == nil {
+		return ""
+	}
+	value, _ := state[key].(string)
+	return strings.TrimSpace(value)
 }
 
 func historicalSyncStart(settings *model.CRMEmailSyncSettings) time.Time {
@@ -388,13 +429,17 @@ func recordHeartbeat(ctx context.Context, details string) {
 
 func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.CRMEmailAccount, msg *sync.GmailMessage, settings *model.CRMEmailSyncSettings) (storeMessageResult, error) {
 	// Check if already stored.
-	existing, _ := a.emailRepo.GetMessageByExternalID(ctx, account.ID, msg.ID)
+	existing, err := a.emailRepo.GetMessageByExternalID(ctx, account.ID, msg.ID)
+	if err != nil {
+		return storeMessageResult{}, err
+	}
 	if existing != nil {
 		return storeMessageResult{Duplicate: true}, nil
 	}
 
-	// Apply email filtering — check sender address against filter patterns.
-	if settings != nil && model.ShouldFilterEmail(settings, msg.From) {
+	// Apply filtering to every external participant. This keeps outbound
+	// allowlists useful instead of accidentally checking only the mailbox itself.
+	if model.ShouldFilterEmailParticipants(settings, account.EmailAddress, msg.From, msg.To, msg.CC) {
 		return storeMessageResult{Filtered: true}, nil
 	}
 
@@ -412,7 +457,10 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 	// Find or create thread.
 	var threadID *string
 	if msg.ThreadID != "" {
-		thread, _ := a.emailRepo.GetThreadByExternalID(ctx, account.ID, msg.ThreadID)
+		thread, err := a.emailRepo.GetThreadByExternalID(ctx, account.ID, msg.ThreadID)
+		if err != nil {
+			return storeMessageResult{}, err
+		}
 		if thread == nil {
 			thread = &model.CRMEmailThread{
 				WorkspaceID:      account.WorkspaceID,
@@ -423,14 +471,14 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 				MessageCount:     0,
 			}
 			if err := a.emailRepo.CreateThread(ctx, thread); err != nil {
-				return storeMessageResult{}, fmt.Errorf("create thread: %w", err)
+				reloaded, lookupErr := a.emailRepo.GetThreadByExternalID(ctx, account.ID, msg.ThreadID)
+				if lookupErr != nil || reloaded == nil {
+					return storeMessageResult{}, fmt.Errorf("create thread: %w", err)
+				}
+				thread = reloaded
 			}
 		}
 		threadID = &thread.ID
-		// Update thread stats.
-		if err := a.emailRepo.IncrementThreadMessageCount(ctx, thread.ID, msg.Date); err != nil {
-			slog.ErrorContext(ctx, "failed to increment thread count", "error", err, "thread_id", thread.ID)
-		}
 	}
 
 	resolution, err := a.resolver.Resolve(ctx, crmemail.ResolveInput{
@@ -485,7 +533,15 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 	}
 
 	if err := a.emailRepo.CreateMessage(ctx, message); err != nil {
+		if duplicate, lookupErr := a.emailRepo.GetMessageByExternalID(ctx, account.ID, msg.ID); lookupErr == nil && duplicate != nil {
+			return storeMessageResult{Duplicate: true}, nil
+		}
 		return storeMessageResult{}, err
+	}
+	if threadID != nil {
+		if err := a.emailRepo.IncrementThreadMessageCount(ctx, *threadID, msg.Date); err != nil {
+			slog.ErrorContext(ctx, "failed to increment thread count", "error", err, "thread_id", *threadID)
+		}
 	}
 
 	associations := cloneAssociationsForMessage(message.ID, resolution.Associations)
@@ -660,7 +716,8 @@ func (a *EmailSyncActivities) markSyncCycleStart(ctx context.Context, account *m
 
 func (a *EmailSyncActivities) recordSyncFailure(ctx context.Context, account *model.CRMEmailAccount, operation string, cycle model.CRMEmailSyncCycleStats, syncErr error) {
 	account.SyncState = crmemail.FailSyncCycle(account.SyncState, stringValue(account.LastHistoryID), time.Now().UTC(), operation, "sync_error", syncErr.Error(), &cycle)
-	if err := a.emailRepo.UpdateSyncState(ctx, account.ID, account.SyncState); err != nil {
+	account.Status = model.CRMEmailAccountStatusError
+	if err := a.emailRepo.UpdateAccount(ctx, account); err != nil {
 		slog.ErrorContext(ctx, "failed to persist crm email sync failure diagnostics", "error", err, "workspace_id", account.WorkspaceID, "account_id", account.ID, "provider", account.Provider)
 	}
 	slog.ErrorContext(ctx, "crm email sync failed", "workspace_id", account.WorkspaceID, "account_id", account.ID, "provider", account.Provider, "mode", cycle.Mode, "phase", crmemail.SyncPhaseError, "history_id", stringValue(account.LastHistoryID), "messages_seen", cycle.MessagesSeen, "messages_stored", cycle.MessagesStored, "duplicates_skipped", cycle.DuplicatesSkipped, "filtered_skipped", cycle.FilteredSkipped, "internal_skipped", cycle.InternalSkipped, "contacts_created", cycle.ContactsCreated, "associations_written", cycle.AssociationsWritten, "error", syncErr.Error())

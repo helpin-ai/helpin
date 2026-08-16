@@ -1,68 +1,37 @@
-import { useEffect, useMemo, useState } from 'react';
-import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
-import { useAuthStore } from '@/stores/authStore';
-import { useEmailSyncSettings, useUpdateEmailSyncSettings } from '@/hooks/queries/useCRM';
-import { crmEmailSyncSettingsService } from '@/lib/services/crmService';
-import { unwrap } from '@/lib/queryUtils';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Cancel01Icon, PlusSignIcon, RotateLeft01Icon, Mail01Icon, Clock01Icon, FilterIcon, Building03Icon, UserGroupIcon, SecurityCheckIcon, FloppyDiskIcon, Tick01Icon } from '@/lib/icons';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import type { CRMFilterMode, CRMRecordCreationMode, CRMInternalExclusion } from '@/lib/crmTypes';
+import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { useEmailSyncSettings, useUpdateEmailSyncSettings } from '@/hooks/queries/useCRM';
+import { Cancel01Icon, FloppyDiskIcon, PlusSignIcon, RotateLeft01Icon, Tick01Icon } from '@/lib/icons';
+import { unwrap } from '@/lib/queryUtils';
+import { crmEmailSyncSettingsService } from '@/lib/services/crmService';
+import type {
+  CRMEmailSyncSettings,
+  CRMFilterMode,
+  CRMInternalExclusion,
+  CRMRecordCreationMode,
+} from '@/lib/crmTypes';
+import { useAuthStore } from '@/stores/authStore';
+import { LINEAR_CARD_CLASS } from './settingsConstants';
 
-/* ────────────────────────────────────────────────────────
- * Section header with number + title + description
- * ──────────────────────────────────────────────────────── */
-function SectionHeader({
-  number,
-  icon: Icon,
-  title,
-  description,
-}: {
-  number: string;
-  icon: React.ElementType;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex items-start gap-4 pb-4">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/[0.06] text-primary">
-        <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
-      </div>
-      <div className="min-w-0">
-        <div className="flex items-center gap-2.5">
-          <span className="font-mono text-[11px] font-medium tracking-widest text-muted-foreground/60 uppercase">
-            {number}
-          </span>
-          <div className="h-px w-4 bg-border" />
-          <h3 className="text-[15px] font-semibold tracking-tight">{title}</h3>
-        </div>
-        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
-      </div>
-    </div>
-  );
-}
-
-/* ────────────────────────────────────────────────────────
- * Removable tag / chip for patterns and prefixes
- * ──────────────────────────────────────────────────────── */
 function RemovableTag({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <Badge
-      variant="secondary"
-      className="group/tag gap-1 pr-1 font-mono text-[11px] font-normal tracking-wide transition-all duration-150 hover:bg-destructive/10 hover:text-destructive"
-    >
+    <Badge variant="secondary" className="group/tag gap-1 pr-1 font-mono text-[11px] font-normal">
       {label}
       <button
         type="button"
+        aria-label={`Remove ${label}`}
         onClick={onRemove}
-        className="ml-0.5 rounded-full p-0.5 opacity-40 transition-opacity group-hover/tag:opacity-100"
+        className="ml-0.5 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
       >
         <Cancel01Icon className="h-3 w-3" />
       </button>
@@ -70,82 +39,112 @@ function RemovableTag({ label, onRemove }: { label: string; onRemove: () => void
   );
 }
 
-/* ────────────────────────────────────────────────────────
- * Main component
- * ──────────────────────────────────────────────────────── */
+function SettingRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center">
+      <div>
+        <Label className="text-sm font-medium">{label}</Label>
+        {description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>}
+      </div>
+      <div className="sm:justify-self-end">{children}</div>
+    </div>
+  );
+}
+
 export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
-  const user = useAuthStore((s) => s.user);
   const { data: settings, isLoading, isError } = useEmailSyncSettings(workspaceId);
+
+  if (isLoading && !isError) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-56 w-full rounded-xl" />
+        <Skeleton className="h-72 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    );
+  }
+
+  return (
+    <CRMEmailSettingsContent
+      workspaceId={workspaceId}
+      settings={settings}
+      isError={isError}
+    />
+  );
+}
+
+function CRMEmailSettingsContent({
+  workspaceId,
+  settings,
+  isError,
+}: {
+  workspaceId: string;
+  settings?: CRMEmailSyncSettings;
+  isError: boolean;
+}) {
+  const user = useAuthStore((state) => state.user);
   const updateSettings = useUpdateEmailSyncSettings(workspaceId);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [defaultsLoaded, setDefaultsLoaded] = useState(false);
+  const [defaultsLoaded, setDefaultsLoaded] = useState(Boolean(settings));
 
-  const [historicalSyncDays, setHistoricalSyncDays] = useState(90);
-  const [filterMode, setFilterMode] = useState<CRMFilterMode>('blocklist');
-  const [filterPatterns, setFilterPatterns] = useState<string[]>([]);
-  const [internalExclusion, setInternalExclusion] = useState<CRMInternalExclusion>('none');
-  const [includePrivateMeetings, setIncludePrivateMeetings] = useState(false);
-  const [includeSoloMeetings, setIncludeSoloMeetings] = useState(false);
-  const [recordCreationMode, setRecordCreationMode] = useState<CRMRecordCreationMode>('selective');
-  const [blockedRecordPrefixes, setBlockedRecordPrefixes] = useState<string[]>([]);
-
+  const [historicalSyncDays, setHistoricalSyncDays] = useState(settings?.historical_sync_days ?? 90);
+  const [filterMode, setFilterMode] = useState<CRMFilterMode>(settings?.filter_mode ?? 'blocklist');
+  const [filterPatterns, setFilterPatterns] = useState<string[]>(settings?.filter_patterns ?? []);
+  const [internalExclusion, setInternalExclusion] = useState<CRMInternalExclusion>(settings?.internal_exclusion ?? 'none');
+  const [includePrivateMeetings, setIncludePrivateMeetings] = useState(settings?.include_private_meetings ?? false);
+  const [includeSoloMeetings, setIncludeSoloMeetings] = useState(settings?.include_solo_meetings ?? false);
+  const [recordCreationMode, setRecordCreationMode] = useState<CRMRecordCreationMode>(settings?.record_creation_mode ?? 'selective');
+  const [blockedRecordPrefixes, setBlockedRecordPrefixes] = useState<string[]>(settings?.blocked_record_prefixes ?? []);
   const [newPattern, setNewPattern] = useState('');
   const [newPrefix, setNewPrefix] = useState('');
 
   useEffect(() => {
-    if (settings) {
-      setHistoricalSyncDays(settings.historical_sync_days);
-      setFilterMode(settings.filter_mode);
-      setFilterPatterns(settings.filter_patterns ?? []);
-      setInternalExclusion(settings.internal_exclusion);
-      setIncludePrivateMeetings(settings.include_private_meetings);
-      setIncludeSoloMeetings(settings.include_solo_meetings);
-      setRecordCreationMode(settings.record_creation_mode);
-      setBlockedRecordPrefixes(settings.blocked_record_prefixes ?? []);
-      setDefaultsLoaded(true);
-    }
-  }, [settings]);
-
-  /* If the settings query fails (e.g. table not migrated yet), prefill with defaults */
-  useEffect(() => {
-    if (isError && !defaultsLoaded) {
-      crmEmailSyncSettingsService.getDefaultPrefixes().then((res) => {
-        if (res.data) {
-          setBlockedRecordPrefixes(res.data);
+    if (!isError || defaultsLoaded) return;
+    crmEmailSyncSettingsService.getDefaultPrefixes()
+      .then((response) => {
+        if (response.data) {
+          setBlockedRecordPrefixes(response.data);
           setDefaultsLoaded(true);
         }
-      }).catch(() => {});
-    }
-  }, [isError, defaultsLoaded]);
+      })
+      .catch(() => {});
+  }, [defaultsLoaded, isError]);
 
-  /* Dirty detection */
   const isDirty = useMemo(() => {
-    if (!settings) return false;
+    if (!settings) return isError && defaultsLoaded;
     return (
-      historicalSyncDays !== settings.historical_sync_days ||
-      filterMode !== settings.filter_mode ||
-      JSON.stringify(filterPatterns) !== JSON.stringify(settings.filter_patterns ?? []) ||
-      internalExclusion !== settings.internal_exclusion ||
-      includePrivateMeetings !== settings.include_private_meetings ||
-      includeSoloMeetings !== settings.include_solo_meetings ||
-      recordCreationMode !== settings.record_creation_mode ||
-      JSON.stringify(blockedRecordPrefixes) !== JSON.stringify(settings.blocked_record_prefixes ?? [])
+      historicalSyncDays !== settings.historical_sync_days
+      || filterMode !== settings.filter_mode
+      || JSON.stringify(filterPatterns) !== JSON.stringify(settings.filter_patterns ?? [])
+      || internalExclusion !== settings.internal_exclusion
+      || includePrivateMeetings !== settings.include_private_meetings
+      || includeSoloMeetings !== settings.include_solo_meetings
+      || recordCreationMode !== settings.record_creation_mode
+      || JSON.stringify(blockedRecordPrefixes) !== JSON.stringify(settings.blocked_record_prefixes ?? [])
     );
   }, [
-    settings,
-    historicalSyncDays,
+    blockedRecordPrefixes,
+    defaultsLoaded,
     filterMode,
     filterPatterns,
-    internalExclusion,
+    historicalSyncDays,
     includePrivateMeetings,
     includeSoloMeetings,
+    internalExclusion,
+    isError,
     recordCreationMode,
-    blockedRecordPrefixes,
+    settings,
   ]);
 
   const handleSave = async () => {
-    setSaving(true);
     try {
       await updateSettings.mutateAsync({
         historical_sync_days: historicalSyncDays,
@@ -159,354 +158,220 @@ export function CRMEmailSettingsTab({ workspaceId }: { workspaceId: string }) {
       });
       setSaved(true);
       toast.success('Email sync settings saved');
-      setTimeout(() => setSaved(false), 2000);
-    } catch {
-      toast.error('Failed to save settings');
-    } finally {
-      setSaving(false);
+      window.setTimeout(() => setSaved(false), 2000);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save settings');
     }
   };
 
   const addPattern = () => {
-    const trimmed = newPattern.trim().toLowerCase();
-    if (trimmed && !filterPatterns.includes(trimmed)) {
-      setFilterPatterns([...filterPatterns, trimmed]);
-      setNewPattern('');
-    }
-  };
-
-  const removePattern = (pattern: string) => {
-    setFilterPatterns(filterPatterns.filter((p) => p !== pattern));
+    const pattern = newPattern.trim().toLowerCase();
+    if (!pattern || filterPatterns.includes(pattern)) return;
+    setFilterPatterns([...filterPatterns, pattern]);
+    setNewPattern('');
   };
 
   const addPrefix = () => {
-    const trimmed = newPrefix.trim().toLowerCase();
-    if (trimmed && !blockedRecordPrefixes.includes(trimmed)) {
-      setBlockedRecordPrefixes([...blockedRecordPrefixes, trimmed]);
-      setNewPrefix('');
-    }
-  };
-
-  const removePrefix = (prefix: string) => {
-    setBlockedRecordPrefixes(blockedRecordPrefixes.filter((p) => p !== prefix));
+    const prefix = newPrefix.trim().toLowerCase();
+    if (!prefix || blockedRecordPrefixes.includes(prefix)) return;
+    setBlockedRecordPrefixes([...blockedRecordPrefixes, prefix]);
+    setNewPrefix('');
   };
 
   const resetPrefixesToDefault = async () => {
     try {
-      const defaults = unwrap(await crmEmailSyncSettingsService.getDefaultPrefixes());
-      setBlockedRecordPrefixes(defaults);
-      toast.success('Reset to default prefixes');
+      setBlockedRecordPrefixes(unwrap(await crmEmailSyncSettingsService.getDefaultPrefixes()));
+      toast.success('Default prefixes restored');
     } catch {
       toast.error('Failed to load default prefixes');
     }
   };
 
-  if (isLoading && !isError) {
-    return (
-      <div className="space-y-4">
-        {[1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-32 w-full rounded-xl" />
-        ))}
-      </div>
-    );
-  }
-
   return (
-    <div className="relative space-y-5 pb-20">
-      {/* ── 01 Connected Accounts ────────────────────────── */}
-      <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-border/60">
-        <CardContent className="p-6">
-          <SectionHeader
-            number="01"
-            icon={Mail01Icon}
-            title="Connected Accounts"
-            description="Connect email accounts to sync conversations and detect buyer signals."
-          />
-          <div className="ml-[52px]">
-            <EmailAccountConnect workspaceId={workspaceId} memberId={user?.id ?? ''} showAll />
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-4 pb-6">
+      {isError && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-muted-foreground">
+          Saved sync preferences could not be loaded. Review the defaults below and save to initialize them.
+        </div>
+      )}
 
-      {/* ── 02 Historical Sync ───────────────────────────── */}
-      <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-border/60">
-        <CardContent className="p-6">
-          <SectionHeader
-            number="02"
-            icon={Clock01Icon}
-            title="Historical Sync Period"
-            description="How many days of email history to backfill on a first connect or when Gmail forces a recovery sync."
-          />
-          <div className="ml-[52px] flex items-center gap-4">
-            <Select
-              value={String(historicalSyncDays)}
-              onValueChange={(v) => setHistoricalSyncDays(Number(v))}
-            >
-              <SelectTrigger className="w-36 font-mono text-sm">
-                <SelectValue />
-              </SelectTrigger>
+      <EmailAccountConnect workspaceId={workspaceId} memberId={user?.id ?? ''} showAll />
+
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">Sync preferences</CardTitle>
+          <CardDescription>Choose how much history Helpin imports and which conversations are included.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <SettingRow label="Email history" description="Used for the first import and recovery syncs.">
+            <Select value={String(historicalSyncDays)} onValueChange={(value) => setHistoricalSyncDays(Number(value))}>
+              <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {[30, 60, 90, 180, 365].map((d) => (
-                  <SelectItem key={d} value={String(d)} className="font-mono text-sm">
-                    {d} days
-                  </SelectItem>
-                ))}
+                {[30, 60, 90, 180, 365].map((days) => <SelectItem key={days} value={String(days)}>{days} days</SelectItem>)}
               </SelectContent>
             </Select>
-            <span className="text-xs italic text-muted-foreground/70">
-              Changes apply to first-time mailbox backfills and history-cursor recovery windows
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+          </SettingRow>
 
-      {/* ── 03 Email & Meeting Filtering ─────────────────── */}
-      <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-border/60">
-        <CardContent className="p-6">
-          <SectionHeader
-            number="03"
-            icon={FilterIcon}
-            title="Email & Meeting Filtering"
-            description="Control which emails are synced using pattern-based filtering."
-          />
-          <div className="ml-[52px] space-y-5">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Filter Mode</Label>
-              <div className="flex items-center gap-3">
-                <Select value={filterMode} onValueChange={(v) => setFilterMode(v as CRMFilterMode)}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="blocklist">Blocklist</SelectItem>
-                    <SelectItem value="allowlist">Allowlist</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {filterMode === 'blocklist'
-                    ? 'Matching patterns will be excluded from sync.'
-                    : 'Only matching patterns will be synced.'}
-                </p>
-              </div>
-            </div>
+          <Separator />
 
-            <div className="space-y-2.5">
-              <Label className="text-sm font-medium">Patterns</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="e.g. support@example.com, *@example.org"
-                  value={newPattern}
-                  onChange={(e) => setNewPattern(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addPattern();
-                    }
-                  }}
-                  className="flex-1 font-mono text-sm placeholder:font-sans"
-                />
-                <Button variant="outline" size="icon" onClick={addPattern} disabled={!newPattern.trim()}>
-                  <PlusSignIcon className="h-4 w-4" />
-                </Button>
-              </div>
-              {filterPatterns.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 rounded-lg border border-dashed border-border/80 bg-muted/30 p-3">
-                  {filterPatterns.map((pattern) => (
-                    <RemovableTag key={pattern} label={pattern} onRemove={() => removePattern(pattern)} />
-                  ))}
-                </div>
-              )}
-              {filterPatterns.length === 0 && (
-                <p className="py-2 text-center text-xs italic text-muted-foreground/50">
-                  No patterns configured — all emails will be synced
-                </p>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── 04 Internal Communication & Meetings ─────────── */}
-      <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-border/60">
-        <CardContent className="p-6">
-          <SectionHeader
-            number="04"
-            icon={Building03Icon}
-            title="Internal Communication & Meetings"
-            description="Configure how internal emails and meetings are handled."
-          />
-          <div className="ml-[52px] space-y-5">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Internal Exclusion</Label>
-              <Select
-                value={internalExclusion}
-                onValueChange={(v) => setInternalExclusion(v as CRMInternalExclusion)}
-              >
-                <SelectTrigger className="w-72">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="exclude">Exclude internal emails and meetings</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                When enabled, emails where all participants share the same domain as the connected account are excluded.
-              </p>
-            </div>
-
-            <div className="h-px bg-border/60" />
-
-            <div className="flex items-center justify-between py-0.5">
-              <div>
-                <Label className="text-sm font-medium">Include private meetings</Label>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Enable ingestion of meetings marked as private
-                </p>
-              </div>
-              <Switch checked={includePrivateMeetings} onCheckedChange={setIncludePrivateMeetings} />
-            </div>
-
-            <div className="flex items-center justify-between py-0.5">
-              <div>
-                <Label className="text-sm font-medium">Include solo meetings</Label>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Enable ingestion of meetings with no additional participants
-                </p>
-              </div>
-              <Switch checked={includeSoloMeetings} onCheckedChange={setIncludeSoloMeetings} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── 05 Record Creation ───────────────────────────── */}
-      <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-border/60">
-        <CardContent className="p-6">
-          <SectionHeader
-            number="05"
-            icon={UserGroupIcon}
-            title="Record Creation"
-            description="Control when new contact records are created from synced emails and calendar meetings."
-          />
-          <div className="ml-[52px] space-y-4">
-            <Select
-              value={recordCreationMode}
-              onValueChange={(v) => setRecordCreationMode(v as CRMRecordCreationMode)}
-            >
-              <SelectTrigger className="w-44">
-                <SelectValue />
-              </SelectTrigger>
+          <SettingRow
+            label="Email filter"
+            description={filterMode === 'blocklist' ? 'Exclude addresses that match your patterns.' : 'Only sync addresses that match your patterns.'}
+          >
+            <Select value={filterMode} onValueChange={(value) => setFilterMode(value as CRMFilterMode)}>
+              <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="disabled">Disabled</SelectItem>
-                <SelectItem value="selective">Selective</SelectItem>
-                <SelectItem value="always">Always</SelectItem>
+                <SelectItem value="blocklist">Blocklist</SelectItem>
+                <SelectItem value="allowlist">Allowlist</SelectItem>
               </SelectContent>
             </Select>
-            <div className="space-y-1 rounded-lg bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
-              <div className="flex items-baseline gap-2">
-                <span className="inline-block w-16 shrink-0 font-mono font-medium text-foreground/70">
-                  disabled
-                </span>
-                <span>Never auto-create contacts from synced emails</span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="inline-block w-16 shrink-0 font-mono font-medium text-foreground/70">
-                  selective
-                </span>
-                <span>Create for outbound emails and all meeting participants</span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="inline-block w-16 shrink-0 font-mono font-medium text-foreground/70">
-                  always
-                </span>
-                <span>Create for any email or meeting participant</span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          </SettingRow>
 
-      {/* ── 06 Blocked Record Creation Prefixes ──────────── */}
-      <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-border/60">
-        <CardContent className="p-6">
-          <SectionHeader
-            number="06"
-            icon={SecurityCheckIcon}
-            title="Blocked Record Creation Prefixes"
-            description="Email prefixes (the part before @) blocked from creating records. Typically automated or system emails."
-          />
-          <div className="ml-[52px] space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="email-filter-pattern">Address or domain patterns</Label>
             <div className="flex gap-2">
               <Input
-                placeholder="e.g. noreply, support, billing"
-                value={newPrefix}
-                onChange={(e) => setNewPrefix(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addPrefix();
+                id="email-filter-pattern"
+                value={newPattern}
+                onChange={(event) => setNewPattern(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addPattern();
                   }
                 }}
-                className="flex-1 font-mono text-sm placeholder:font-sans"
+                placeholder="support@example.com or *@example.org"
+                className="font-mono text-sm placeholder:font-sans"
               />
-              <Button variant="outline" size="icon" onClick={addPrefix} disabled={!newPrefix.trim()}>
+              <Button type="button" variant="outline" size="icon" aria-label="Add email pattern" onClick={addPattern} disabled={!newPattern.trim()}>
                 <PlusSignIcon className="h-4 w-4" />
               </Button>
             </div>
-
-            {blockedRecordPrefixes.length > 0 && (
-              <div className="max-h-52 overflow-y-auto rounded-lg border border-dashed border-border/80 bg-muted/30 p-3">
-                <div className="flex flex-wrap gap-1">
-                  {blockedRecordPrefixes.map((prefix) => (
-                    <RemovableTag key={prefix} label={prefix} onRemove={() => removePrefix(prefix)} />
-                  ))}
-                </div>
+            {filterPatterns.length ? (
+              <div className="flex flex-wrap gap-1.5 rounded-lg border bg-muted/20 p-3">
+                {filterPatterns.map((pattern) => (
+                  <RemovableTag key={pattern} label={pattern} onRemove={() => setFilterPatterns(filterPatterns.filter((item) => item !== pattern))} />
+                ))}
               </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">No patterns added.</p>
             )}
-
-            <div className="flex items-center justify-between pt-1">
-              <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                {blockedRecordPrefixes.length} prefix{blockedRecordPrefixes.length !== 1 ? 'es' : ''} blocked
-              </p>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetPrefixesToDefault}
-                className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-              >
-                <RotateLeft01Icon className="h-3.5 w-3.5" />
-                Reset to defaults
-              </Button>
-            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* ── Floating Save Bar ────────────────────────────── */}
-      <div
-        className={`fixed inset-x-0 bottom-0 z-50 flex items-center justify-end border-t bg-background/80 px-6 py-3 backdrop-blur-md transition-all duration-300 ${
-          isDirty ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-full opacity-0'
-        }`}
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">You have unsaved changes</span>
-          <Button onClick={handleSave} disabled={saving || saved} className="min-w-[120px] gap-2">
-            {saved ? (
-              <>
-                <Tick01Icon className="h-4 w-4" />
-                Saved
-              </>
-            ) : saving ? (
-              'Saving...'
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">Calendar events</CardTitle>
+          <CardDescription>Control which Google Calendar events Helpin can use in CRM.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <SettingRow label="Internal activity" description="Optionally ignore email and meetings where everyone uses your company domain.">
+            <Select value={internalExclusion} onValueChange={(value) => setInternalExclusion(value as CRMInternalExclusion)}>
+              <SelectTrigger className="w-full sm:w-64"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Include internal activity</SelectItem>
+                <SelectItem value="exclude">Exclude internal activity</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <Separator />
+
+          <SettingRow label="Private meetings" description="Include events marked private in calendar sync.">
+            <Switch id="include-private-meetings" checked={includePrivateMeetings} onCheckedChange={setIncludePrivateMeetings} />
+          </SettingRow>
+
+          <Separator />
+
+          <SettingRow label="Solo meetings" description="Include events without any other participants.">
+            <Switch id="include-solo-meetings" checked={includeSoloMeetings} onCheckedChange={setIncludeSoloMeetings} />
+          </SettingRow>
+        </CardContent>
+      </Card>
+
+      <Card className={LINEAR_CARD_CLASS}>
+        <CardHeader>
+          <CardTitle className="text-base">Contact creation</CardTitle>
+          <CardDescription>Decide when synced conversations create new CRM contacts.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <SettingRow
+            label="Create contacts"
+            description={
+              recordCreationMode === 'disabled'
+                ? 'Never create contacts automatically.'
+                : recordCreationMode === 'selective'
+                  ? 'Create contacts for outbound email and meeting participants.'
+                  : 'Create contacts for every email and meeting participant.'
+            }
+          >
+            <Select value={recordCreationMode} onValueChange={(value) => setRecordCreationMode(value as CRMRecordCreationMode)}>
+              <SelectTrigger className="w-full sm:w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="disabled">Never</SelectItem>
+                <SelectItem value="selective">Selectively</SelectItem>
+                <SelectItem value="always">Always</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <Label htmlFor="blocked-email-prefix">Blocked email prefixes</Label>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">Prevent automated addresses such as noreply@ from creating contacts.</p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void resetPrefixesToDefault()} className="h-7 text-xs text-muted-foreground">
+                <RotateLeft01Icon className="mr-1.5 h-3.5 w-3.5" />Reset defaults
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                id="blocked-email-prefix"
+                value={newPrefix}
+                onChange={(event) => setNewPrefix(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addPrefix();
+                  }
+                }}
+                placeholder="noreply, support, billing"
+                className="font-mono text-sm placeholder:font-sans"
+              />
+              <Button type="button" variant="outline" size="icon" aria-label="Add blocked prefix" onClick={addPrefix} disabled={!newPrefix.trim()}>
+                <PlusSignIcon className="h-4 w-4" />
+              </Button>
+            </div>
+            {blockedRecordPrefixes.length ? (
+              <div className="max-h-44 overflow-y-auto rounded-lg border bg-muted/20 p-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {blockedRecordPrefixes.map((prefix) => (
+                    <RemovableTag key={prefix} label={prefix} onRemove={() => setBlockedRecordPrefixes(blockedRecordPrefixes.filter((item) => item !== prefix))} />
+                  ))}
+                </div>
+              </div>
             ) : (
-              <>
-                <FloppyDiskIcon className="h-4 w-4" />
-                Save Settings
-              </>
+              <p className="text-xs text-muted-foreground">No prefixes blocked.</p>
             )}
-          </Button>
-        </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex items-center justify-end gap-3">
+        {isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+        <Button onClick={() => void handleSave()} disabled={updateSettings.isPending || saved || !isDirty}>
+          {saved ? (
+            <><Tick01Icon className="mr-1.5 h-4 w-4" />Saved</>
+          ) : updateSettings.isPending ? (
+            'Saving…'
+          ) : (
+            <><FloppyDiskIcon className="mr-1.5 h-4 w-4" />Save changes</>
+          )}
+        </Button>
       </div>
     </div>
   );

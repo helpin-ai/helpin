@@ -192,8 +192,14 @@ func (f *fakeMailboxClient) SendMessage(ctx context.Context, accessToken, from s
 }
 
 type fakeEmailSyncWorkflowRunner struct {
-	started  []string
-	canceled []string
+	started   []string
+	canceled  []string
+	requested []string
+}
+
+func (f *fakeEmailSyncWorkflowRunner) RequestAccountSync(ctx context.Context, accountID, mode string) error {
+	f.requested = append(f.requested, accountID+":"+mode)
+	return nil
 }
 
 func (f *fakeEmailSyncWorkflowRunner) StartAccountSync(ctx context.Context, accountID string) error {
@@ -254,7 +260,7 @@ func TestCRMEmailService_DeleteAccountDisconnectsAndPreservesData(t *testing.T) 
 		syncRunner:    runner,
 	}
 
-	if err := svc.DeleteAccount(ctx, "acct-1", "member-1", false); err != nil {
+	if err := svc.DeleteAccount(ctx, "ws-1", "acct-1", "member-1", false); err != nil {
 		t.Fatalf("DeleteAccount: %v", err)
 	}
 
@@ -296,6 +302,37 @@ func TestCRMEmailService_DeleteAccountDisconnectsAndPreservesData(t *testing.T) 
 	}
 }
 
+func TestCRMEmailService_SyncAccountIsWorkspaceScopedAndOwnerAuthorized(t *testing.T) {
+	db := setupCRMEmailLifecycleTestDB(t)
+	emailRepo := repository.NewCRMEmailRepository(db)
+	runner := &fakeEmailSyncWorkflowRunner{}
+	ctx := context.Background()
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO workspaces (id, name, slug, owner_id, timezone) VALUES (?, ?, ?, ?, ?)`, "ws-1", "Workspace", "workspace", "owner-1", "UTC")
+	account := &model.CRMEmailAccount{
+		ID: "acct-1", WorkspaceID: "ws-1", MemberID: "member-1", Provider: model.CRMEmailProviderGmail,
+		EmailAddress: "owner@example.com", IsActive: true, Status: model.CRMEmailAccountStatusConnected,
+		SyncState: crmemail.MarkConnectedIdle(nil, "hist-1"), LastHistoryID: testStringPtr("hist-1"),
+	}
+	if err := emailRepo.CreateAccount(ctx, account); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	svc := &CRMEmailService{emailRepo: emailRepo, syncRunner: runner}
+
+	if _, err := svc.SyncAccount(ctx, "ws-other", account.ID, account.MemberID, model.CRMEmailSyncModeIncremental, false); err == nil {
+		t.Fatal("expected cross-workspace sync request to be rejected")
+	}
+	if _, err := svc.SyncAccount(ctx, account.WorkspaceID, account.ID, "member-other", model.CRMEmailSyncModeIncremental, false); err == nil {
+		t.Fatal("expected non-owner sync request to be rejected")
+	}
+	result, err := svc.SyncAccount(ctx, account.WorkspaceID, account.ID, account.MemberID, model.CRMEmailSyncModeHistorical, false)
+	if err != nil {
+		t.Fatalf("SyncAccount: %v", err)
+	}
+	if result.SyncState["phase"] != "queued" || len(runner.requested) != 1 || runner.requested[0] != "acct-1:historical" {
+		t.Fatalf("result/requests = %+v/%v, want queued historical sync", result.SyncState, runner.requested)
+	}
+}
+
 func TestCRMEmailService_PurgeAccountDataRequiresAdmin(t *testing.T) {
 	db := setupCRMEmailLifecycleTestDB(t)
 	emailRepo := repository.NewCRMEmailRepository(db)
@@ -330,10 +367,10 @@ func TestCRMEmailService_PurgeAccountDataRequiresAdmin(t *testing.T) {
 		syncRunner:    runner,
 	}
 
-	if err := svc.PurgeAccountData(ctx, "acct-1", false); err == nil {
+	if err := svc.PurgeAccountData(ctx, "ws-1", "acct-1", false); err == nil {
 		t.Fatal("expected purge to require admin")
 	}
-	if err := svc.PurgeAccountData(ctx, "acct-1", true); err != nil {
+	if err := svc.PurgeAccountData(ctx, "ws-1", "acct-1", true); err != nil {
 		t.Fatalf("PurgeAccountData: %v", err)
 	}
 
@@ -542,7 +579,7 @@ func TestCRMEmailService_GetAccountDiagnostics(t *testing.T) {
 		resolver:      crmemail.NewResolver(contactRepo),
 	}
 
-	diagnostics, err := svc.GetAccountDiagnostics(ctx, "acct-1", true)
+	diagnostics, err := svc.GetAccountDiagnostics(ctx, "ws-1", "acct-1", "member-1", true)
 	if err != nil {
 		t.Fatalf("GetAccountDiagnostics: %v", err)
 	}
@@ -602,7 +639,7 @@ func TestCRMEmailService_RebuildAccountAssociations(t *testing.T) {
 		resolver:      crmemail.NewResolver(contactRepo),
 	}
 
-	result, err := svc.RebuildAccountAssociations(ctx, "acct-1", true)
+	result, err := svc.RebuildAccountAssociations(ctx, "ws-1", "acct-1", true)
 	if err != nil {
 		t.Fatalf("RebuildAccountAssociations: %v", err)
 	}

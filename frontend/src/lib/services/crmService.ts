@@ -26,6 +26,7 @@ import type {
   CreateCRMImportRequest,
   ProcessCRMImportRequest,
   CRMEmailAccount,
+  CRMEmailAccountDiagnostics,
   CreateCRMEmailAccountRequest,
   CRMEmailThread,
   CRMEmailMessage,
@@ -183,6 +184,10 @@ export const crmEmailService = {
     api.del(`/crm/email/accounts/${id}${qs(workspaceId)}`),
   purgeAccountData: (workspaceId: string, id: string) =>
     api.del(`/crm/email/accounts/${id}/data${qs(workspaceId)}`),
+  getAccountDiagnostics: (workspaceId: string, id: string) =>
+    api.get<CRMEmailAccountDiagnostics>(`/crm/email/accounts/${id}/diagnostics${qs(workspaceId)}`),
+  syncAccount: (workspaceId: string, id: string, mode: 'incremental' | 'historical') =>
+    api.post<CRMEmailAccount>(`/crm/email/accounts/${id}/sync${qs(workspaceId)}`, { mode }),
   initiateOAuth: (workspaceId: string, provider: 'gmail' | 'microsoft' = 'gmail') =>
     api.get<{ redirect_url: string }>(`/crm/email/oauth/initiate${qs(workspaceId)}&provider=${provider}`),
   sendEmail: (workspaceId: string, payload: { account_id: string; to: string[]; cc?: string[]; subject: string; body_html: string }) =>
@@ -194,9 +199,9 @@ export const crmEmailService = {
   createMessage: (payload: CreateCRMEmailMessageRequest) =>
     api.post<CRMEmailMessage>(`/crm/email/messages${qs(payload.workspace_id)}`, payload),
   listByContact: (workspaceId: string, contactId: string, page?: number) =>
-    api.get<CRMPaginatedResponse<CRMEmailMessage[]>>(`/crm/contacts/${contactId}/emails${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+    api.get<CRMPaginatedResponse<CRMEmailMessage[]>>(`/crm/contacts/${contactId}/emails${qs(workspaceId)}&per_page=50${page ? `&page=${page}` : ''}`),
   listByDeal: (workspaceId: string, dealId: string, page?: number) =>
-    api.get<CRMPaginatedResponse<CRMEmailMessage[]>>(`/crm/deals/${dealId}/emails${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+    api.get<CRMPaginatedResponse<CRMEmailMessage[]>>(`/crm/deals/${dealId}/emails${qs(workspaceId)}&per_page=50${page ? `&page=${page}` : ''}`),
 };
 
 export const crmCalendarService = {
