@@ -4,11 +4,13 @@ import {
   ArrowUp01Icon,
   BookOpen01Icon,
   Briefcase01Icon,
+  CheckListIcon,
   File01Icon,
   FolderKanbanIcon,
+  GitBranchIcon,
   Loading01Icon,
+  Message01Icon,
   PlusSignIcon,
-  RecordIcon,
   Search01Icon,
   StopIcon,
   Tick01Icon,
@@ -33,7 +35,9 @@ const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
   document: 'Doc',
   crm_contact: 'Contact',
   crm_deal: 'Deal',
-  support_conversation: 'Conversation',
+  // Keep the dock chip compact; the conversation itself is already obvious
+  // from the support surface and its title.
+  support_conversation: 'Support',
   workspace: 'Workspace',
   repository: 'Repository',
 };
@@ -41,7 +45,7 @@ const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
 function ContextIcon({ type, className = 'h-3 w-3 shrink-0' }: { type: CommandBarPageContext['entity_type']; className?: string }) {
   switch (type) {
     case 'task':
-      return <RecordIcon className={className} />;
+      return <CheckListIcon className={className} />;
     case 'epic':
       return <BookOpen01Icon className={className} />;
     case 'document':
@@ -50,6 +54,10 @@ function ContextIcon({ type, className = 'h-3 w-3 shrink-0' }: { type: CommandBa
       return <UserIcon className={className} />;
     case 'crm_deal':
       return <Briefcase01Icon className={className} />;
+    case 'support_conversation':
+      return <Message01Icon className={className} />;
+    case 'repository':
+      return <GitBranchIcon className={className} />;
     default:
       return <FolderKanbanIcon className={className} />;
   }
