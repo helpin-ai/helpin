@@ -77,12 +77,6 @@ function blockScopeTitle(context: CommandBarPageContext) {
   return excerpt ? `${base}\n\nBlock excerpt: ${excerpt}` : base;
 }
 
-function contextScopeLabel(context: CommandBarPageContext) {
-  if (isBlockScopedDocument(context)) return 'Block';
-  if (isAllTasksContext(context)) return 'All tasks';
-  return TYPE_LABEL[context.entity_type] ?? context.entity_type;
-}
-
 function contextTitle(context: CommandBarPageContext) {
   if (isBlockScopedDocument(context)) return blockScopeTitle(context);
   if (isAllTasksContext(context)) return 'Agent context is all tasks in this workspace.';
@@ -191,10 +185,9 @@ export function DockInput({
                 key={`${reference.entity_type}:${reference.entity_id}`}
                 className="inline-flex max-w-[260px] items-center gap-1 rounded-full border border-border/70 bg-muted/30 px-2 py-0.5 text-[11px]"
                 title={reference.display_title}
+                aria-label={`${TYPE_LABEL[reference.entity_type]}: ${reference.display_title}`}
               >
-                <span className="text-[10px] font-medium uppercase text-muted-foreground">
-                  {TYPE_LABEL[reference.entity_type]}
-                </span>
+                <ContextIcon type={reference.entity_type} />
                 <span className="truncate font-medium">{reference.display_title}</span>
                 <button
                   type="button"
@@ -319,7 +312,6 @@ function ContextChip({
   const blockScoped = isBlockScopedDocument(context);
   const allTasks = isAllTasksContext(context);
   const title = contextTitle(context);
-  const label = contextScopeLabel(context);
   const hasOptions = options.length > 1 && !!onChange;
   const canClear = context.entity_type === 'document' && !!onClear;
   const chipClassName = cn(
@@ -330,9 +322,6 @@ function ContextChip({
   const body = (
     <>
       <ContextIcon type={context.entity_type} />
-      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
       <span className="truncate font-medium">{context.display_title || context.entity_id}</span>
       {blockScoped ? (
         <span className="ml-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300">
