@@ -1119,6 +1119,7 @@ export interface CreateAttachmentRequest {
   file_name: string;
   file_size: number;
   content_type: string;
+  private?: boolean;
 }
 
 export interface CreateCommentRequest {

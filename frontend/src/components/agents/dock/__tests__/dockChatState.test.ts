@@ -86,6 +86,24 @@ describe('transformDockStream', () => {
     expect(result.childResults[0].result.plan_id).toBe('p1');
   });
 
+  it('keeps Ask media as attachment metadata, not prompt text', () => {
+    const stream = emptyStream();
+    stream.transcript_messages = [{
+      event_id: 'media-user-turn',
+      role: 'user',
+      content: 'What is shown here?\n\n<attachments>[{"id":"media-1","file_name":"screen.png","file_type":"image/png","file_size":123}]</attachments>',
+      timestamp: 't',
+      sequence_no: 1,
+    }];
+
+    const result = transformDockStream(stream);
+
+    expect(result.stream.transcript_messages[0]).toMatchObject({
+      content: 'What is shown here?',
+      attachments: [{ id: 'media-1', file_name: 'screen.png', file_type: 'image/png' }],
+    });
+  });
+
   it('hides successor-run carry-forward blocks while preserving the latest user turn', () => {
     const stream = emptyStream();
     stream.transcript_messages = [

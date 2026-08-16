@@ -5,6 +5,7 @@ export interface EditorUploadConfig {
   workspaceId: string;
   entityType: 'task' | 'epic' | 'objective' | 'sprint' | 'editor_upload';
   entityId: string;
+  private?: boolean;
 }
 
 export interface EditorImageUploadResult {
@@ -31,6 +32,7 @@ export async function uploadEditorFile(
       file_name: file.name || 'attachment',
       file_size: file.size,
       content_type: file.type || 'application/octet-stream',
+      private: config.private,
     },
   );
 
@@ -38,12 +40,12 @@ export async function uploadEditorFile(
     throw new Error(initError ?? 'Failed to initiate upload');
   }
 
-  // 2. Upload directly to S3 with public-read ACL
+  // 2. Upload directly to S3. Private uploads deliberately omit the ACL.
   const { ok, error: s3Error } = await uploadToS3(
     initData.url,
     file,
     undefined,
-    { 'x-amz-acl': 'public-read' },
+    initData.public_url ? { 'x-amz-acl': 'public-read' } : undefined,
   );
   if (!ok) {
     throw new Error(s3Error ?? 'Failed to upload to S3');

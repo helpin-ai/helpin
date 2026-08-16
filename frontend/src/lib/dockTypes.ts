@@ -47,6 +47,7 @@ export interface SendDockChatMessageRequest {
   content: string
   page_context?: CommandBarPageContext
   references?: DockEntityReference[]
+  attachment_ids?: string[]
 }
 
 export interface DockChatMessageListResponse {
@@ -55,6 +56,23 @@ export interface DockChatMessageListResponse {
 }
 
 export type DockEntityReference = CommandBarPageContext
+
+export interface DockChatMediaAttachment {
+  id?: string
+  local_id: string
+  file_name: string
+  file_type: string
+  file_size: number
+  preview_url?: string
+  status: 'uploading' | 'ready' | 'failed'
+}
+
+export interface DockChatPersistedMediaAttachment {
+  id: string
+  file_name: string
+  file_type: string
+  file_size: number
+}
 
 export interface GenerateDockChatTitleRequest {
   content: string
@@ -171,6 +189,10 @@ export const DOCK_PAGE_CONTEXT_OPEN = '<page_context>'
 export const DOCK_PAGE_CONTEXT_CLOSE = '</page_context>'
 export const DOCK_REFERENCES_OPEN = '<references>'
 export const DOCK_REFERENCES_CLOSE = '</references>'
+export const DOCK_ATTACHMENTS_OPEN = '<attachments>'
+export const DOCK_ATTACHMENTS_CLOSE = '</attachments>'
+export const DOCK_ATTACHMENT_ANALYSIS_OPEN = '<attachment_analysis>'
+export const DOCK_ATTACHMENT_ANALYSIS_CLOSE = '</attachment_analysis>'
 export const DOCK_CHILD_RESULT_OPEN = '<child_run_result>'
 export const DOCK_CHILD_RESULT_CLOSE = '</child_run_result>'
 export const DOCK_PREVIOUS_CONVERSATION_OPEN = '<previous_conversation>'
@@ -204,6 +226,8 @@ export function stripDockPageContext(content: string): string {
   for (const [open, close] of [
     [DOCK_PAGE_CONTEXT_OPEN, DOCK_PAGE_CONTEXT_CLOSE],
     [DOCK_REFERENCES_OPEN, DOCK_REFERENCES_CLOSE],
+    [DOCK_ATTACHMENTS_OPEN, DOCK_ATTACHMENTS_CLOSE],
+    [DOCK_ATTACHMENT_ANALYSIS_OPEN, DOCK_ATTACHMENT_ANALYSIS_CLOSE],
   ] as const) {
     const start = visible.lastIndexOf(open)
     if (start < 0) continue
@@ -212,6 +236,26 @@ export function stripDockPageContext(content: string): string {
     visible = visible.slice(0, start) + visible.slice(end + close.length)
   }
   return visible.trim()
+}
+
+export function parseDockMediaAttachments(content: string): DockChatPersistedMediaAttachment[] {
+  const start = content.lastIndexOf(DOCK_ATTACHMENTS_OPEN)
+  if (start < 0) return []
+  const end = content.indexOf(DOCK_ATTACHMENTS_CLOSE, start)
+  if (end < 0) return []
+  try {
+    const parsed = JSON.parse(content.slice(start + DOCK_ATTACHMENTS_OPEN.length, end))
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is DockChatPersistedMediaAttachment => (
+      !!item
+      && typeof item.id === 'string'
+      && typeof item.file_name === 'string'
+      && typeof item.file_type === 'string'
+      && typeof item.file_size === 'number'
+    ))
+  } catch {
+    return []
+  }
 }
 
 /** Removes backend-owned context envelopes prepended to successor-run turns. */

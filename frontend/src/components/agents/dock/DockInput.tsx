@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
+  AttachmentIcon,
   BookOpen01Icon,
   Briefcase01Icon,
   CheckListIcon,
@@ -19,6 +20,7 @@ import {
 } from '@/lib/icons';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
 import type { DockEntityReference } from '@/lib/dockTypes';
+import type { DockChatMediaAttachment } from '@/lib/dockTypes';
 import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -99,6 +101,9 @@ export interface DockInputProps {
   references?: DockEntityReference[];
   onAddReference?: (reference: DockEntityReference) => void;
   onRemoveReference?: (reference: DockEntityReference) => void;
+  mediaAttachments?: DockChatMediaAttachment[];
+  onAddMedia?: (files: File[]) => void;
+  onRemoveMedia?: (attachment: DockChatMediaAttachment) => void;
   busy?: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
@@ -126,6 +131,9 @@ export function DockInput({
   references = [],
   onAddReference,
   onRemoveReference,
+  mediaAttachments = [],
+  onAddMedia,
+  onRemoveMedia,
   busy,
   disabled,
   autoFocus,
@@ -138,6 +146,7 @@ export function DockInput({
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
   const referencePickerRef = useRef<DockReferencePickerHandle | null>(null);
+  const mediaInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -225,9 +234,47 @@ export function DockInput({
           ) : null}
         </div>
       ) : null}
+      {mediaAttachments.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {mediaAttachments.map((attachment) => (
+            <span key={attachment.local_id} className="inline-flex max-w-[220px] items-center gap-1 rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-[11px]">
+              {attachment.preview_url && attachment.file_type.startsWith('image/') ? (
+                <img src={attachment.preview_url} alt="" className="h-5 w-5 rounded object-cover" />
+              ) : (
+                <AttachmentIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <span className="truncate font-medium">{attachment.file_name}</span>
+              {attachment.status === 'uploading' ? <Loading01Icon className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" /> : null}
+              {attachment.status === 'failed' ? <span className="text-destructive">Failed</span> : null}
+              <button type="button" aria-label={`Remove ${attachment.file_name}`} onClick={() => onRemoveMedia?.(attachment)} className="-mr-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground">
+                <Cancel01Icon className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
       <div className="flex items-end gap-2 rounded-xl border border-border/70 bg-background/80 px-2.5 py-1.5 transition focus-within:border-foreground/30">
         {mode === 'list' ? (
           <Search01Icon className="mb-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        ) : null}
+        {mode === 'conversation' && onAddMedia ? (
+          <>
+            <input
+              ref={mediaInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm,video/mpeg"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                const files = Array.from(event.currentTarget.files ?? []);
+                event.currentTarget.value = '';
+                if (files.length > 0) onAddMedia(files);
+              }}
+            />
+            <button type="button" title="Attach image or video" aria-label="Attach image or video" onClick={() => mediaInputRef.current?.click()} disabled={disabled || busy} className="mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
+              <AttachmentIcon className="h-3.5 w-3.5" />
+            </button>
+          </>
         ) : null}
         <textarea
           ref={ref}

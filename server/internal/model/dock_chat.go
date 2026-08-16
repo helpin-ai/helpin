@@ -61,6 +61,7 @@ type SendDockChatMessageRequest struct {
 	Content         string                 `json:"content"`
 	PageContext     map[string]interface{} `json:"page_context,omitempty"`
 	References      []DockEntityReference  `json:"references,omitempty"`
+	AttachmentIDs   []string               `json:"attachment_ids,omitempty"`
 }
 
 // DockEntityReference identifies supplemental workspace context attached to a dock turn.

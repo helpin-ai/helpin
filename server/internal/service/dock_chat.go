@@ -28,16 +28,18 @@ var ErrDockChatInvalidCursor = errors.New("invalid dock chat cursor")
 var ErrDockChatInvalidVisibility = errors.New("invalid dock chat visibility")
 
 const (
-	dockChatTriggerType        = "dock_chat"
-	dockChatTitleMaxRunes      = 60
-	dockChatCarryForwardTurns  = 20
-	dockChatCarryForwardChars  = 500
-	dockChatCarryForwardTotal  = 6000
-	dockChatPageContextOpenTag = "<page_context>"
-	dockChatReferencesOpenTag  = "<references>"
-	dockChatReferencesMax      = 10
-	dockChatListDefaultLimit   = 30
-	dockChatListMaxLimit       = 50
+	dockChatTriggerType               = "dock_chat"
+	dockChatTitleMaxRunes             = 60
+	dockChatCarryForwardTurns         = 20
+	dockChatCarryForwardChars         = 500
+	dockChatCarryForwardTotal         = 6000
+	dockChatPageContextOpenTag        = "<page_context>"
+	dockChatReferencesOpenTag         = "<references>"
+	dockChatAttachmentsOpenTag        = "<attachments>"
+	dockChatAttachmentAnalysisOpenTag = "<attachment_analysis>"
+	dockChatReferencesMax             = 10
+	dockChatListDefaultLimit          = 30
+	dockChatListMaxLimit              = 50
 )
 
 type dockChatCursor struct {
@@ -48,14 +50,25 @@ type dockChatCursor struct {
 // DockChatService owns private and shared dock conversations whose turns are
 // executed by an agent-runtime chat-mode run of the ask_agent preset.
 type DockChatService struct {
-	chatRepo       *repository.DockChatRepository
-	runRepo        *repository.AgentRunRepository
-	runMessageRepo *repository.AgentRunMessageRepository
-	planRepo       *repository.CommandBarPlanRepository
-	agentService   *AgentService
-	commandService *InternalCommandService
-	authz          *authorization.AuthzService
-	titleLLM       dockChatTitleLLM
+	chatRepo            *repository.DockChatRepository
+	runRepo             *repository.AgentRunRepository
+	runMessageRepo      *repository.AgentRunMessageRepository
+	planRepo            *repository.CommandBarPlanRepository
+	agentService        *AgentService
+	commandService      *InternalCommandService
+	authz               *authorization.AuthzService
+	titleLLM            dockChatTitleLLM
+	pmAttachmentRepo    *repository.PMAttachmentRepository
+	pmAttachmentService *PMAttachmentService
+	mediaLLM            dockChatMediaLLM
+}
+
+// SetPMAttachmentRepository enables first-class Ask media attachments.
+func (s *DockChatService) SetPMAttachmentRepository(repo *repository.PMAttachmentRepository) *DockChatService {
+	if s != nil {
+		s.pmAttachmentRepo = repo
+	}
+	return s
 }
 
 // NewDockChatService creates a DockChatService.
@@ -316,7 +329,15 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 	if err != nil {
 		return nil, err
 	}
-	composed := composeDockChatTurn(content, req.PageContext, references)
+	attachments, err := s.resolveDockChatMediaAttachments(ctx, workspaceID, userID, req.AttachmentIDs)
+	if err != nil {
+		return nil, err
+	}
+	analysis, err := s.analyzeDockChatMedia(ctx, workspaceID, userID, content, attachments)
+	if err != nil {
+		return nil, err
+	}
+	composed := composeDockChatTurn(content, req.PageContext, references, attachments, analysis)
 
 	var currentRun *model.AgentRun
 	if chat.ActiveRunID != nil {
@@ -791,7 +812,14 @@ func (s *DockChatService) buildCarryForward(ctx context.Context, previousRun *mo
 	return b.String()
 }
 
-func composeDockChatTurn(content string, pageContext map[string]interface{}, references []model.DockEntityReference) string {
+type dockChatMediaAttachment struct {
+	ID       string `json:"id"`
+	FileName string `json:"file_name"`
+	FileType string `json:"file_type"`
+	FileSize int64  `json:"file_size"`
+}
+
+func composeDockChatTurn(content string, pageContext map[string]interface{}, references []model.DockEntityReference, attachments []dockChatMediaAttachment, analysis string) string {
 	blocks := []string{content}
 	if len(pageContext) > 0 {
 		if encoded, err := json.Marshal(pageContext); err == nil {
@@ -803,7 +831,63 @@ func composeDockChatTurn(content string, pageContext map[string]interface{}, ref
 			blocks = append(blocks, dockChatReferencesOpenTag+string(encoded)+"</references>")
 		}
 	}
+	if len(attachments) > 0 {
+		if encoded, err := json.Marshal(attachments); err == nil {
+			blocks = append(blocks, dockChatAttachmentsOpenTag+string(encoded)+"</attachments>")
+		}
+	}
+	if analysis = strings.TrimSpace(analysis); analysis != "" {
+		blocks = append(blocks, dockChatAttachmentAnalysisOpenTag+analysis+"</attachment_analysis>")
+	}
 	return strings.Join(blocks, "\n\n")
+}
+
+func (s *DockChatService) resolveDockChatMediaAttachments(ctx context.Context, workspaceID, userID string, ids []string) ([]dockChatMediaAttachment, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if len(ids) > 3 {
+		return nil, fmt.Errorf("at most 3 media attachments are allowed")
+	}
+	if s.pmAttachmentRepo == nil {
+		return nil, fmt.Errorf("Ask media attachments are not configured")
+	}
+	result := make([]dockChatMediaAttachment, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		attachment, err := s.pmAttachmentRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if attachment == nil || attachment.WorkspaceID != workspaceID || attachment.UploadedByID != userID || !attachment.IsUploaded || attachment.EntityType != entityTypeEditorUpload {
+			return nil, fmt.Errorf("Ask media attachment is unavailable")
+		}
+		if !isDockChatMediaType(attachment.ContentType) {
+			return nil, fmt.Errorf("Ask supports images and short videos only")
+		}
+		if attachment.FileSize > 20*1024*1024 {
+			return nil, fmt.Errorf("Ask media attachments must be 20 MB or smaller")
+		}
+		result = append(result, dockChatMediaAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.ContentType, FileSize: attachment.FileSize})
+	}
+	return result, nil
+}
+
+func isDockChatMediaType(contentType string) bool {
+	switch strings.ToLower(strings.TrimSpace(contentType)) {
+	case "image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/quicktime", "video/webm", "video/mpeg":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeDockChatReferences(references []model.DockEntityReference) ([]model.DockEntityReference, error) {

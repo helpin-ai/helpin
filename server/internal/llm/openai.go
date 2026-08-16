@@ -232,6 +232,15 @@ func buildOpenAIMessage(message Message) map[string]any {
 				"type":      "image_url",
 				"image_url": image,
 			})
+		case "video_url":
+			url := strings.TrimSpace(part.Text)
+			if url == "" {
+				continue
+			}
+			parts = append(parts, map[string]any{
+				"type":      "video_url",
+				"video_url": map[string]any{"url": url},
+			})
 		default:
 			text := strings.TrimSpace(part.Text)
 			if text == "" {

@@ -1602,7 +1602,9 @@ func main() {
 	agentRuntimeHostService.SetAuthorizationService(authzService)
 	dockChatRepo := repository.NewDockChatRepository(db)
 	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, commandBarPlanRepo, agentService, commandService, authzService).
-		SetTitleLLM(supportLLMProvider)
+		SetTitleLLM(supportLLMProvider).
+		SetPMAttachmentRepository(pmAttachmentRepo).
+		SetMediaAnalyzer(pmAttachmentService, supportLLMProvider)
 	if runFinalizers != nil {
 		// Immediate delivery of settled child-plan results into dock chats;
 		// the sweep below retries chats that were mid-turn at that moment.

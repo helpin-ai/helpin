@@ -76,7 +76,8 @@ func (s *PMAttachmentService) Create(ctx context.Context, req model.CreateAttach
 		return nil, err
 	}
 
-	uploadURL, err := s.s3Client.GeneratePresignedPutURL(attachment.StorageKey, attachment.ContentType, attachment.FileSize, s.s3Client.HasPublicURL())
+	publicRead := s.s3Client.HasPublicURL() && !req.Private
+	uploadURL, err := s.s3Client.GeneratePresignedPutURL(attachment.StorageKey, attachment.ContentType, attachment.FileSize, publicRead)
 	if err != nil {
 		return nil, fmt.Errorf("generate upload URL: %w", err)
 	}
@@ -85,7 +86,7 @@ func (s *PMAttachmentService) Create(ctx context.Context, req model.CreateAttach
 		Attachment: *attachment,
 		URL:        uploadURL,
 	}
-	if s.s3Client.HasPublicURL() {
+	if publicRead {
 		resp.PublicURL = s.s3Client.PublicURL(attachment.StorageKey)
 	}
 	return resp, nil
@@ -298,6 +299,26 @@ func (s *PMAttachmentService) ContentURL(ctx context.Context, id string) (string
 		return "", fmt.Errorf("generate content URL: %w", err)
 	}
 	return downloadURL, nil
+}
+
+// ReadForAskMedia returns an explicitly attached Ask media file only after
+// verifying workspace ownership and its temporary editor-upload origin.
+func (s *PMAttachmentService) ReadForAskMedia(ctx context.Context, workspaceID, userID, id string) (*model.PMAttachment, []byte, error) {
+	if s == nil || s.attachmentRepo == nil || s.s3Client == nil {
+		return nil, nil, fmt.Errorf("file storage is not configured")
+	}
+	attachment, err := s.attachmentRepo.GetByID(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return nil, nil, err
+	}
+	if attachment == nil || attachment.WorkspaceID != workspaceID || attachment.UploadedByID != userID || attachment.EntityType != entityTypeEditorUpload || !attachment.IsUploaded {
+		return nil, nil, fmt.Errorf("Ask media attachment is unavailable")
+	}
+	body, err := s.s3Client.GetObject(ctx, attachment.StorageKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read Ask media attachment: %w", err)
+	}
+	return attachment, body, nil
 }
 
 // ContentBytes streams an attachment's bytes through the API instead of redirecting to the

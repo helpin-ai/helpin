@@ -363,13 +363,13 @@ func TestDockChatGenerateTitlePreservesManualTitle(t *testing.T) {
 
 func TestComposeDockChatTurn(t *testing.T) {
 	t.Run("without page context returns content unchanged", func(t *testing.T) {
-		if got := composeDockChatTurn("hello", nil, nil); got != "hello" {
+		if got := composeDockChatTurn("hello", nil, nil, nil, ""); got != "hello" {
 			t.Errorf("composeDockChatTurn() = %q, want %q", got, "hello")
 		}
 	})
 
 	t.Run("with page context appends block", func(t *testing.T) {
-		got := composeDockChatTurn("hello", map[string]interface{}{"entity_type": "task", "entity_id": "t1"}, nil)
+		got := composeDockChatTurn("hello", map[string]interface{}{"entity_type": "task", "entity_id": "t1"}, nil, nil, "")
 		if !strings.HasPrefix(got, "hello\n\n<page_context>") || !strings.HasSuffix(got, "</page_context>") {
 			t.Errorf("composeDockChatTurn() = %q, want page context block", got)
 		}
@@ -382,9 +382,21 @@ func TestComposeDockChatTurn(t *testing.T) {
 		got := composeDockChatTurn("compare these", nil, []model.DockEntityReference{
 			{EntityType: "task", EntityID: "task-1", DisplayTitle: "HEL-42 · Checkout"},
 			{EntityType: "document", EntityID: "doc-1", DisplayTitle: "Launch requirements"},
-		})
+		}, nil, "")
 		if !strings.Contains(got, `<references>[{"entity_type":"task"`) || !strings.HasSuffix(got, "</references>") {
 			t.Errorf("composeDockChatTurn() = %q, want references block", got)
+		}
+	})
+
+	t.Run("with media includes metadata and analysis", func(t *testing.T) {
+		got := composeDockChatTurn("inspect this", nil, nil, []dockChatMediaAttachment{{
+			ID: "attachment-1", FileName: "error.png", FileType: "image/png", FileSize: 2048,
+		}}, "The screenshot shows a 500 error.")
+		if !strings.Contains(got, `<attachments>[{"id":"attachment-1","file_name":"error.png","file_type":"image/png","file_size":2048}]</attachments>`) {
+			t.Fatalf("composeDockChatTurn() missing attachment metadata: %q", got)
+		}
+		if !strings.Contains(got, "<attachment_analysis>The screenshot shows a 500 error.</attachment_analysis>") {
+			t.Fatalf("composeDockChatTurn() missing attachment analysis: %q", got)
 		}
 	})
 }

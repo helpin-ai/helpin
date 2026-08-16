@@ -180,6 +180,7 @@ export interface CodingSessionTranscriptMessage {
   sequence_no: number;
   tool_calls?: CodingSessionLiveToolCall[];
   turn_segments?: CodingSessionLiveTurnSegment[];
+  attachments?: Array<{ id: string; file_name: string; file_type: string; file_size: number }>;
   // For review_checkpoint_resolution / approval_request_resolution messages,
   // the workspace user who resolved the interaction (so the UI can render
   // their avatar and name).

@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { dockChatService } from '@/lib/services/dockChatService';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { uploadEditorFile } from '@/hooks/useEditorImageUpload';
 import { parseDockPlanConfirm } from '@/lib/dockTypes';
-import type { DockChatDetail, DockEntityReference } from '@/lib/dockTypes';
+import type { DockChatDetail, DockChatMediaAttachment, DockEntityReference } from '@/lib/dockTypes';
 import type { AgentRun, AgentRunMessage, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
@@ -105,6 +107,9 @@ export function ChatView({
   const [nextMessagesBefore, setNextMessagesBefore] = useState<number | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [references, setReferences] = useState<DockEntityReference[]>([]);
+  const [mediaAttachments, setMediaAttachments] = useState<DockChatMediaAttachment[]>([]);
+  const [analyzingMedia, setAnalyzingMedia] = useState(false);
+  const [analyzingMediaLabel, setAnalyzingMediaLabel] = useState('');
   const [sendError, setSendError] = useState<{
     message: string;
     content: string;
@@ -345,6 +350,9 @@ export function ChatView({
 	  const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
+	  const attachmentIDs = mediaAttachments.filter((attachment) => attachment.status === 'ready' && attachment.id).map((attachment) => attachment.id!);
+	  setAnalyzingMedia(attachmentIDs.length > 0);
+	  setAnalyzingMediaLabel(attachmentIDs.length === 1 ? `Analyzing ${mediaAttachments.find((attachment) => attachment.id === attachmentIDs[0])?.file_name ?? 'attachment'}…` : `Analyzing ${attachmentIDs.length} attachments…`);
       setLaunchStartedAt(new Date().toISOString());
       setSendError(null);
       setPendingEcho({ id: clientMessageId, content });
@@ -356,6 +364,7 @@ export function ChatView({
           content,
           page_context: effectivePageContext ?? undefined,
           references: messageReferences.length > 0 ? messageReferences : undefined,
+          attachment_ids: attachmentIDs.length > 0 ? attachmentIDs : undefined,
         });
         if (res.error || !res.data) {
           setPendingEcho(null);
@@ -370,6 +379,12 @@ export function ChatView({
 		  setPersistedMessages((current) => mergeMessagePages(current, [res.data!.accepted_message!]));
 		}
         setReferences([]);
+		setMediaAttachments((current) => {
+		  current.forEach((attachment) => {
+			if (attachment.preview_url) URL.revokeObjectURL(attachment.preview_url);
+		  });
+		  return [];
+		});
         setDetail(res.data);
         onChatChanged?.();
         if (needsTitle) {
@@ -391,10 +406,12 @@ export function ChatView({
         // Successor run: useAgentRunStream will reset and fetch with the returned
         // run id instead of invoking this render's predecessor refetch closure.
       } finally {
+		setAnalyzingMedia(false);
+		setAnalyzingMediaLabel('');
         setSending(false);
       }
     },
-    [chatId, detail?.chat.title, effectivePageContext, onChatChanged, references, refetch, refreshMessages, run?.id, sending, workspaceId],
+    [chatId, detail?.chat.title, effectivePageContext, mediaAttachments, onChatChanged, references, refetch, refreshMessages, run?.id, sending, workspaceId],
   );
 
   const submit = async () => {
@@ -403,6 +420,58 @@ export function ChatView({
     setValue('');
     await sendContent(content, references);
   };
+
+  const addMediaAttachments = useCallback(async (files: File[]) => {
+    const accepted = files.filter((file) => (
+      ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm', 'video/mpeg'].includes(file.type)
+      && file.size > 0
+      && file.size <= 20 * 1024 * 1024
+    ));
+    if (accepted.length !== files.length) {
+      toast.error('Ask supports PNG, JPG, GIF, WebP, MP4, MOV, WebM, and MPEG files up to 20 MB.');
+    }
+    const available = Math.max(0, 3 - mediaAttachments.length);
+    if (accepted.length > available) {
+      toast.error('You can attach up to 3 media files to an Ask message.');
+    }
+    for (const file of accepted.slice(0, available)) {
+      const localId = newClientMessageID();
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+      setMediaAttachments((current) => [...current, {
+        local_id: localId,
+        file_name: file.name || 'attachment',
+        file_type: file.type,
+        file_size: file.size,
+        preview_url: previewUrl,
+        status: 'uploading',
+      }]);
+      try {
+        const uploaded = await uploadEditorFile(file, {
+          workspaceId,
+          entityType: 'editor_upload',
+          entityId: workspaceId,
+          private: true,
+        });
+        setMediaAttachments((current) => current.map((attachment) => attachment.local_id === localId ? {
+          ...attachment,
+          id: uploaded.attachmentId,
+          status: 'ready',
+        } : attachment));
+      } catch (error) {
+        setMediaAttachments((current) => current.map((attachment) => attachment.local_id === localId ? {
+          ...attachment,
+          status: 'failed',
+        } : attachment));
+        toast.error(error instanceof Error ? error.message : 'Failed to upload media');
+      }
+    }
+  }, [mediaAttachments.length, workspaceId]);
+
+  const removeMediaAttachment = useCallback((attachment: DockChatMediaAttachment) => {
+    setMediaAttachments((current) => current.filter((candidate) => candidate.local_id !== attachment.local_id));
+    if (attachment.preview_url) URL.revokeObjectURL(attachment.preview_url);
+    if (attachment.id) void pmAttachmentService.remove(workspaceId, attachment.id, { pendingOnly: true });
+  }, [workspaceId]);
 
   const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
   const cancellationPending = stopping || run?.execution_stage === 'cancelling';
@@ -457,6 +526,13 @@ export function ChatView({
     sending: sending || !!visiblePendingEcho,
     localStartedAt: launchStartedAt,
   }), [activeSubAgentName, currentPlan, launchStartedAt, run, sending, transformed, visiblePendingEcho]);
+
+  const displayedLiveProgress = analyzingMedia ? {
+    label: analyzingMediaLabel || 'Analyzing attachment…',
+    tone: 'working' as const,
+    startedAt: launchStartedAt ?? new Date().toISOString(),
+    completed: false,
+  } : liveProgress;
 
   const followUpSuggestions = useMemo(() => {
     if (run?.status !== 'completed' || sending || visiblePendingEcho) return [];
@@ -649,12 +725,12 @@ export function ChatView({
             }}
           />
         )}
-        {liveProgress ? (
+        {displayedLiveProgress ? (
           <div
             className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2"
             data-agent-live-status-region
           >
-            <AgentLiveStatus progress={liveProgress} />
+            <AgentLiveStatus progress={displayedLiveProgress} />
           </div>
         ) : null}
       </div>
@@ -698,6 +774,9 @@ export function ChatView({
                     (item) => item.entity_type !== reference.entity_type || item.entity_id !== reference.entity_id,
                   ));
                 }}
+                mediaAttachments={mediaAttachments}
+                onAddMedia={(files) => void addMediaAttachments(files)}
+                onRemoveMedia={removeMediaAttachment}
                 busy={sending}
                 disabled={!composer.enabled}
                 autoFocus

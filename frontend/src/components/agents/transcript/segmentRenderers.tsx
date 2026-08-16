@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy01Icon, File01Icon, Loading01Icon, LockKeyIcon, Tick01Icon } from '@/lib/icons';
+import { AttachmentIcon, Copy01Icon, File01Icon, Loading01Icon, LockKeyIcon, Tick01Icon } from '@/lib/icons';
 
 import { cn } from '@/lib/utils';
 import type {
@@ -13,6 +13,7 @@ import { canonicalToolName } from '@/lib/toolNames';
 import { formatCodingSessionRelative } from '@/components/pm/CodingSession/codingSessionUtils';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { TranscriptRow } from './TranscriptRow';
 import { toolStatusChrome } from './toolRowChrome';
 import type { TranscriptSegment } from './segments';
@@ -365,6 +366,27 @@ function UserSegment({
         />
       </div>
       {message.content.trim() ? <UserMessageBubble content={message.content} /> : null}
+      {message.attachments?.length ? (
+        <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+          {message.attachments.map((attachment) => (
+            <a
+              key={attachment.id}
+              href={pmAttachmentService.contentUrl(attachment.id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-[220px] items-center gap-1 rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-[11px] hover:bg-muted/50"
+              title={attachment.file_name}
+            >
+              {attachment.file_type.startsWith('image/') ? (
+                <img src={pmAttachmentService.contentUrl(attachment.id)} alt="" className="h-5 w-5 rounded object-cover" />
+              ) : (
+                <AttachmentIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <span className="truncate font-medium">{attachment.file_name}</span>
+            </a>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

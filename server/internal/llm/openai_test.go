@@ -136,6 +136,7 @@ func TestBuildOpenAIMessageUsesContentParts(t *testing.T) {
 		ContentParts: []ContentPart{
 			{Type: "text", Text: "Inspect this screenshot"},
 			{Type: "image_url", ImageURL: &ImageURLPart{URL: "https://assets.example.com/example.png", Detail: "auto"}},
+			{Type: "video_url", Text: "data:video/mp4;base64,AAAA"},
 		},
 	})
 
@@ -143,14 +144,21 @@ func TestBuildOpenAIMessageUsesContentParts(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected content parts array, got %#v", message["content"])
 	}
-	if len(content) != 2 {
-		t.Fatalf("expected 2 content parts, got %#v", content)
+	if len(content) != 3 {
+		t.Fatalf("expected 3 content parts, got %#v", content)
 	}
 	if content[0]["type"] != "text" {
 		t.Fatalf("expected first part text, got %#v", content[0])
 	}
 	if content[1]["type"] != "image_url" {
 		t.Fatalf("expected second part image_url, got %#v", content[1])
+	}
+	if content[2]["type"] != "video_url" {
+		t.Fatalf("expected third part video_url, got %#v", content[2])
+	}
+	video, ok := content[2]["video_url"].(map[string]any)
+	if !ok || video["url"] != "data:video/mp4;base64,AAAA" {
+		t.Fatalf("expected video URL payload, got %#v", content[2])
 	}
 }
 

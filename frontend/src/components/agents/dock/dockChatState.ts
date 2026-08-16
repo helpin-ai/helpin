@@ -1,5 +1,6 @@
 import {
   parseDockChildResult,
+  parseDockMediaAttachments,
   stripDockLeadingContext,
   stripDockPageContext,
   type DockChildRunResult,
@@ -109,11 +110,12 @@ export function transformDockStream(stream: CodingSessionStreamState, order: 'ti
       childResults.push({ sequenceNo: message.sequence_no, result: childResult });
       continue;
     }
+    const attachments = parseDockMediaAttachments(message.content);
     const stripped = stripDockPageContext(stripDockLeadingContext(message.content));
     if (stripped === message.content) {
       messages.push(message);
     } else {
-      messages.push({ ...message, content: stripped });
+      messages.push({ ...message, content: stripped, ...(attachments.length > 0 ? { attachments } : {}) });
     }
   }
   // Message sequence numbers are assigned in projection-arrival order, which
