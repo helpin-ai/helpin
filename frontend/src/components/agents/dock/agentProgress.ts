@@ -118,7 +118,7 @@ export function resolveAgentLiveProgress({
     && !currentPlan
     && (stream?.activity_events?.length ?? 0) === 0
   ) {
-    return { label: 'Starting…', startedAt, tone: 'working' };
+    return { label: 'Working…', startedAt, tone: 'working' };
   }
   return { label: 'Working…', startedAt, tone: 'working' };
 }

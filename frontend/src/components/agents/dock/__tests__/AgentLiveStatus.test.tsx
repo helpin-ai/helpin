@@ -61,6 +61,18 @@ describe('AgentLiveStatus', () => {
     expect(container.querySelector('[data-agent-work-loader]')).not.toBeNull();
   });
 
+  it('does not start or display an elapsed timer while the agent is starting', () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval');
+    act(() => {
+      root.render(
+        <AgentLiveStatus progress={{ label: 'Starting…', tone: 'working', startedAt: new Date(Date.now() - 9_000).toISOString() }} />,
+      );
+    });
+    expect(container.textContent).toContain('Starting…');
+    expect(container.textContent).not.toContain('for 9s');
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+  });
+
   it('pauses the work timer while waiting for approval', () => {
     const setIntervalSpy = vi.spyOn(window, 'setInterval');
     act(() => {

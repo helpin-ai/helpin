@@ -43,10 +43,10 @@ describe('resolveAgentLiveProgress', () => {
     })?.label).toBe('Working with Research Agent…');
   });
 
-  it('keeps the initial state distinct before the first runtime activity arrives', () => {
+  it('moves to working as soon as the runtime is running, before its first activity arrives', () => {
     expect(resolveAgentLiveProgress({
       run: run(), stream: stream(), currentPlan: null, sending: false,
-    })?.label).toBe('Starting…');
+    })?.label).toBe('Working…');
   });
 
   it('shows collaboration waits without adding transcript messages', () => {

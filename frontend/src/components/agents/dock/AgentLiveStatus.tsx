@@ -10,6 +10,7 @@ export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
   const [pausedMs, setPausedMs] = useState(0);
   const pauseStartedAtRef = useRef<number | null>(null);
   const timerStartedAtRef = useRef(progress.startedAt);
+  const isStarting = progress.label === 'Starting…' || progress.label === 'Waiting to start…';
 
   useEffect(() => {
     const currentNow = Date.now();
@@ -29,16 +30,16 @@ export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
       pauseStartedAtRef.current = null;
     }
 
-    if (!progress.startedAt || progress.completed || progress.tone !== 'working') {
+    if (!progress.startedAt || progress.completed || progress.tone !== 'working' || isStarting) {
       if (progress.completed) setNow(currentNow);
       return;
     }
 
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, [progress.completed, progress.startedAt, progress.tone]);
+  }, [isStarting, progress.completed, progress.startedAt, progress.tone]);
 
-  const elapsed = progress.tone === 'waiting' && !progress.completed
+  const elapsed = (progress.tone === 'waiting' && !progress.completed) || isStarting
     ? null
     : formatAgentElapsed(progress.startedAt, now, pausedMs);
   const label = elapsed
