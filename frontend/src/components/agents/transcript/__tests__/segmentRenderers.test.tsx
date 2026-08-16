@@ -303,7 +303,7 @@ describe('TranscriptSegmentView — assistant hierarchy', () => {
     const copy = container.querySelector<HTMLButtonElement>('[aria-label="Copy message"]');
     expect(copy).not.toBeNull();
     expect(copy?.className).not.toContain('absolute');
-    expect(copy?.parentElement?.className).toContain('justify-end');
+    expect(copy?.parentElement?.className).toContain('justify-start');
 
     render(segment, true, { assistantPresentation: 'progress' });
     expect(container.querySelector('[aria-label="Copy message"]')).toBeNull();
