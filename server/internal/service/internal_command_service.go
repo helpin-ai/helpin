@@ -1753,7 +1753,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, err
 			}
 
-			docContent := normalizeInternalCommandDocumentContent(req.Content)
+			docContent := normalizeInternalCommandDocumentContent(req.Content, req.Title)
 			if !documentContentIsEffectivelyEmpty(docContent) {
 				if s.docsContentRepo == nil {
 					return nil, fmt.Errorf("docs content repository is not available")
@@ -2517,7 +2517,7 @@ func documentContentIsEffectivelyEmpty(raw json.RawMessage) bool {
 	}
 }
 
-func normalizeInternalCommandDocumentContent(raw json.RawMessage) json.RawMessage {
+func normalizeInternalCommandDocumentContent(raw json.RawMessage, title string) json.RawMessage {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" {
 		return nil
@@ -2529,10 +2529,60 @@ func normalizeInternalCommandDocumentContent(raw json.RawMessage) json.RawMessag
 			if strings.TrimSpace(markdown) == "" {
 				return nil
 			}
-			return tiptap.MarkdownToJSON(markdown)
+			content = tiptap.MarkdownToJSON(markdown)
 		}
 	}
-	return content
+	return removeDuplicateDocumentTitle(content, title)
+}
+
+func removeDuplicateDocumentTitle(raw json.RawMessage, title string) json.RawMessage {
+	if strings.TrimSpace(title) == "" {
+		return raw
+	}
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return raw
+	}
+	content, ok := document["content"].([]any)
+	if !ok || len(content) == 0 {
+		return raw
+	}
+	first, ok := content[0].(map[string]any)
+	if !ok || first["type"] != "heading" {
+		return raw
+	}
+	if attrs, ok := first["attrs"].(map[string]any); ok {
+		if level, ok := attrs["level"].(float64); ok && level != 1 {
+			return raw
+		}
+	}
+	if normalizeDocumentTitleText(documentNodeText(first)) != normalizeDocumentTitleText(title) {
+		return raw
+	}
+	document["content"] = content[1:]
+	updated, err := json.Marshal(document)
+	if err != nil {
+		return raw
+	}
+	return updated
+}
+
+func documentNodeText(node map[string]any) string {
+	if text, ok := node["text"].(string); ok {
+		return text
+	}
+	children, _ := node["content"].([]any)
+	var b strings.Builder
+	for _, child := range children {
+		if childNode, ok := child.(map[string]any); ok {
+			b.WriteString(documentNodeText(childNode))
+		}
+	}
+	return b.String()
+}
+
+func normalizeDocumentTitleText(value string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
 }
 
 func documentNodeHasText(node map[string]any) bool {

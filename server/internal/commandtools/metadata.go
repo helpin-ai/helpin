@@ -820,7 +820,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.create_document",
 		Alias:       "create_document",
 		Category:    "Docs",
-		Description: "Create a new document in Helpin Docs. Accepts optional markdown content that will be auto-converted to rich text. If space_id is omitted it defaults to the workspace's only space; when several spaces exist, call list_spaces and ask the user which to use.",
+		Description: "Create a new document in Helpin Docs. The title is stored separately in the title field, so do not repeat it as a leading H1 in content. Accepts optional markdown content that will be auto-converted to rich text. If space_id is omitted it defaults to the workspace's only space; when several spaces exist, call list_spaces and ask the user which to use.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -838,7 +838,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Optional initial document content as a markdown string. Will be auto-converted to rich text.",
+					"description": "Optional initial document body as markdown, excluding the document title and any leading H1 that repeats it. Will be auto-converted to rich text.",
 				},
 				"icon": map[string]any{
 					"type":        "string",
