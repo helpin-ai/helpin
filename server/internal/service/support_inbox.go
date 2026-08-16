@@ -2054,10 +2054,6 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		msg.Metadata = string(metaJSON)
 	}
 	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, msg)
-	}
-
 	// Before persisting a teammate's first public reply, emit a widget-visible
 	// "{name} joined the conversation" system message so the customer sees a
 	// centered pill immediately ahead of the reply — Intercom's pattern.
@@ -2082,6 +2078,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
+	s.enrichSupportMessageLinksAsync(msg, derefString(senderUserID))
 
 	// Emit mention notifications after message creation.
 	if len(mentionedUserIDs) > 0 {
@@ -2216,6 +2213,32 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		})
 	}
 	return msg, nil
+}
+
+// enrichSupportMessageLinksAsync enriches a persisted message without making
+// the reply request wait on arbitrary external websites. A later update event
+// lets inbox clients refresh the message and render the preview when ready.
+func (s *SupportInboxService) enrichSupportMessageLinksAsync(msg *model.SupportMessage, actorID string) {
+	if s.linkPreviewService == nil || s.messageRepo == nil || msg == nil {
+		return
+	}
+	message := *msg
+	go func() {
+		previewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		before := message.Metadata
+		s.linkPreviewService.EnrichMessage(previewCtx, &message)
+		if message.Metadata == before {
+			return
+		}
+		if err := s.messageRepo.UpdateMetadata(previewCtx, message.ID, message.Metadata); err != nil {
+			slog.WarnContext(previewCtx, "persist support link preview metadata failed", "message_id", message.ID, "error", err)
+			return
+		}
+		if s.wsPublisher != nil {
+			s.wsPublisher.Publish(websocket.SupportMessageUpdatedEvent(message.WorkspaceID, &message, actorID))
+		}
+	}()
 }
 
 // LinkConversationStory links a conversation to a task.

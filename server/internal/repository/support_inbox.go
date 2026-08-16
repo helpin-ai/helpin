@@ -114,6 +114,18 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 	return messages, nil
 }
 
+// UpdateMetadata updates only the persisted metadata for a support message.
+// Link previews are enriched after message creation so a slow external page
+// cannot delay the reply acknowledgement.
+func (r *SupportMessageRepository) UpdateMetadata(ctx context.Context, id, metadata string) error {
+	if err := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
+		Where("id = ?", id).
+		Update("metadata", metadata).Error; err != nil {
+		return fmt.Errorf("update message metadata: %w", err)
+	}
+	return nil
+}
+
 // ListEmailFallbackReconciliationCandidates returns recent outbound replies
 // that still need offline email fallback processing. The service layer performs
 // the final per-workspace delay, duplicate-log, and presence checks before

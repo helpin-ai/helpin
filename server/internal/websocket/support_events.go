@@ -18,12 +18,22 @@ const (
 // Internal notes intentionally omit hydrated payload data so widget clients do
 // not receive them.
 func SupportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID string) Event {
+	return supportMessageEvent(workspaceID, msg, actorID, "created")
+}
+
+// SupportMessageUpdatedEvent signals that metadata (for example, a link
+// preview) was enriched after the message was initially created.
+func SupportMessageUpdatedEvent(workspaceID string, msg *model.SupportMessage, actorID string) Event {
+	return supportMessageEvent(workspaceID, msg, actorID, "updated")
+}
+
+func supportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID, action string) Event {
 	if msg == nil {
 		return Event{}
 	}
 
 	event := Event{
-		Action:      "created",
+		Action:      action,
 		Entity:      "support_conversation_message",
 		EntityID:    msg.ID,
 		WorkspaceID: workspaceID,
