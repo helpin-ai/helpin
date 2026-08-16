@@ -91,11 +91,12 @@ export function resolveAgentLiveProgress({
   ) {
     // Once a follow-up user message has been accepted, the stream can still
     // contain the previous turn's completed assistant segment for one render.
-    // Do not expose that stale segment as "Finishing…" for the new turn.
+    // Keep the new turn's starting state, but never show a post-answer
+    // "Finishing…" line after the final response is already visible.
     if (latestTranscriptMessage?.role === 'user') {
       return { label: 'Starting…', startedAt, tone: 'working' };
     }
-    return { label: 'Finishing…', startedAt, tone: 'working' };
+    return null;
   }
 
   const step = activePlanStep(currentPlan);

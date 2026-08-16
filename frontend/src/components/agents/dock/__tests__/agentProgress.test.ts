@@ -97,14 +97,14 @@ describe('resolveAgentLiveProgress', () => {
     })?.label).toBe('Preparing a response…');
   });
 
-  it('shows finishing when the answer exists before the run becomes terminal', () => {
+  it('suppresses finishing after the final answer is already visible', () => {
     expect(resolveAgentLiveProgress({
       run: run(), currentPlan: null, sending: false,
       stream: stream({ live_turn_segments: [{
         segment_id: 'answer-1', kind: 'assistant_message',
         assistant_message: { message_id: 'answer-1', content: 'Here is the plan', status: 'completed', tool_calls: [] },
       }] }),
-    })?.label).toBe('Finishing…');
+    })).toBeNull();
   });
 
   it('does not reuse the previous answer finishing state after a follow-up user message', () => {
