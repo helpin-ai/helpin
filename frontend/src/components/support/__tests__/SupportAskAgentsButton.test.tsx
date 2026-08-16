@@ -27,9 +27,22 @@ describe('SupportAskAgentsButton', () => {
     act(() => {
       root.render(<TooltipProvider><SupportAskAgentsButton open={false} onOpen={onOpen} /></TooltipProvider>);
     });
-    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Ask agents about this conversation"]');
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Ask Agent about this conversation"]');
     expect(button?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.textContent).toContain('Ask Agent');
     act(() => button?.click());
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('shows the waiting and available states for an associated chat', () => {
+    act(() => {
+      root.render(<TooltipProvider><SupportAskAgentsButton open onOpen={vi.fn()} chatExists runStatus="paused" /></TooltipProvider>);
+    });
+    expect(container.querySelector('.agent-paused-dot-pulse')).not.toBeNull();
+
+    act(() => {
+      root.render(<TooltipProvider><SupportAskAgentsButton open onOpen={vi.fn()} chatExists runStatus="completed" /></TooltipProvider>);
+    });
+    expect(container.querySelector('.bg-emerald-500')).not.toBeNull();
   });
 });

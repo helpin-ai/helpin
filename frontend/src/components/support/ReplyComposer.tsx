@@ -53,6 +53,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useDockStore } from '@/stores/dockStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -801,6 +802,7 @@ function ShortcutFormPanel({
 
 export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, onUpgradeRequired }: ReplyComposerProps) {
   const { replyMode, setReplyMode, setDraft, clearDraft, detailSidebarMode, setDetailSidebarMode } = useSupportInboxStore();
+  const askChat = useDockStore((state) => state.chats.find((chat) => chat.support_conversation_id === conversationId) ?? null);
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
@@ -1992,6 +1994,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
         <SupportAskAgentsButton
           open={detailSidebarMode === 'agents'}
           onOpen={() => setDetailSidebarMode('agents')}
+          chatExists={!!askChat}
+          runStatus={askChat?.active_run_status ?? null}
         />
       </div>
 
