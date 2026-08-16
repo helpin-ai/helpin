@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -891,12 +892,25 @@ func (s *DockChatService) resolveDockChatSourceMediaAttachments(ctx context.Cont
 			if err != nil {
 				return nil, err
 			}
+			seenExternalURLs := map[string]struct{}{}
 			for _, message := range messages {
 				for _, attachment := range message.Attachments {
 					if !isDockChatMediaType(attachment.FileType) || isDecorativeDockChatAsset(attachment.FileName, attachment.FileSize) || strings.TrimSpace(attachment.URL) == "" {
 						continue
 					}
 					result = append(result, dockChatMediaAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType, FileSize: attachment.FileSize, Source: "support_conversation", URL: attachment.URL})
+				}
+				for _, externalURL := range dockChatHostedImageURLs(message) {
+					if _, ok := seenExternalURLs[externalURL]; ok {
+						continue
+					}
+					seenExternalURLs[externalURL] = struct{}{}
+					contentType, dataURL, err := fetchDockChatExternalImage(ctx, externalURL)
+					if err != nil {
+						continue
+					}
+					digest := sha256.Sum256([]byte(externalURL))
+					result = append(result, dockChatMediaAttachment{ID: fmt.Sprintf("external-%x", digest[:8]), FileName: "Hosted image", FileType: contentType, Source: "hosted_link", URL: dataURL})
 				}
 			}
 			continue
@@ -924,6 +938,36 @@ func (s *DockChatService) resolveDockChatSourceMediaAttachments(ctx context.Cont
 		}
 	}
 	return result, nil
+}
+
+func dockChatHostedImageURLs(message model.SupportMessage) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0)
+	add := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if !isDockChatExternalMediaURL(raw) {
+			return
+		}
+		if _, ok := seen[raw]; ok {
+			return
+		}
+		seen[raw] = struct{}{}
+		result = append(result, raw)
+	}
+	for _, raw := range supportPreviewURLPattern.FindAllString(message.Content, -1) {
+		add(trimSupportPreviewURL(raw))
+	}
+	var metadata struct {
+		LinkPreviews []model.SupportLinkPreview `json:"link_previews"`
+	}
+	if json.Unmarshal([]byte(message.Metadata), &metadata) == nil {
+		for _, preview := range metadata.LinkPreviews {
+			if preview.ImageURL != nil {
+				add(*preview.ImageURL)
+			}
+		}
+	}
+	return result
 }
 
 func isDecorativeDockChatAsset(fileName string, size int64) bool {
