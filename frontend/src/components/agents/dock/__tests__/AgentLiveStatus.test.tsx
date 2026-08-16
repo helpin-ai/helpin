@@ -4,6 +4,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentLiveStatus } from '../AgentLiveStatus';
 
+vi.mock('lottie-web', () => ({
+  default: {
+    loadAnimation: () => ({ destroy: vi.fn(), goToAndStop: vi.fn() }),
+  },
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AgentLiveStatus', () => {
@@ -45,14 +51,14 @@ describe('AgentLiveStatus', () => {
     clearIntervalSpy.mockRestore();
   });
 
-  it('shimmers the active task label instead of rendering a loader icon', () => {
+  it('renders the selected loader animation beside the shimmering task label', () => {
     act(() => {
       root.render(
         <AgentLiveStatus progress={{ label: 'Searching…', tone: 'working', startedAt: new Date().toISOString() }} />,
       );
     });
     expect(container.querySelector('.agent-streaming-text')).not.toBeNull();
-    expect(container.querySelector('svg')).toBeNull();
+    expect(container.querySelector('[data-agent-work-loader]')).not.toBeNull();
   });
 
   it('pauses the work timer while waiting for approval', () => {
@@ -70,6 +76,7 @@ describe('AgentLiveStatus', () => {
     });
 
     expect(container.textContent).toBe('Waiting for approval');
+    expect(container.querySelector('.agent-paused-dot-pulse')).not.toBeNull();
     expect(setIntervalSpy).not.toHaveBeenCalled();
     setIntervalSpy.mockRestore();
   });

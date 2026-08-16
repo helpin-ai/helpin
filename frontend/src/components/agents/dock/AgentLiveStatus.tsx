@@ -5,6 +5,7 @@ import type { AgentLiveProgress } from './agentProgress';
 import { formatAgentElapsed } from './agentProgress';
 
 export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
+  const loaderRef = useRef<HTMLSpanElement | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [pausedMs, setPausedMs] = useState(0);
   const pauseStartedAtRef = useRef<number | null>(null);
@@ -43,6 +44,37 @@ export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
   const label = elapsed
     ? `${progress.completed ? 'Worked' : progress.label.replace(/…$/, '')} for ${elapsed}`
     : progress.label;
+
+  useEffect(() => {
+    const container = loaderRef.current;
+    const active = progress.tone === 'working' && !progress.completed;
+    if (!container || !active) return;
+    // The runtime animation is browser-only; avoid loading lottie in DOM-only
+    // test environments where canvas is intentionally unavailable.
+    if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) return;
+
+    let cancelled = false;
+    let animation: { destroy: () => void } | null = null;
+    void import('lottie-web').then(({ default: lottie }) => {
+      if (cancelled || !loaderRef.current) return;
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      const instance = lottie.loadAnimation({
+        container: loaderRef.current,
+        renderer: 'svg',
+        loop: !reducedMotion,
+        autoplay: !reducedMotion,
+        path: '/assets/agents/ask-loader.json',
+        rendererSettings: { progressiveLoad: true },
+      });
+      animation = instance;
+      if (reducedMotion) instance.goToAndStop(0, true);
+    });
+    return () => {
+      cancelled = true;
+      animation?.destroy();
+    };
+  }, [progress.completed, progress.tone]);
+
   return (
     <div
       className="flex min-w-0 items-center gap-1.5 py-0.5 text-[11px] text-muted-foreground"
@@ -50,11 +82,13 @@ export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
       aria-live="polite"
       data-agent-live-status
     >
-      {progress.completed ? (
+      {progress.tone === 'working' && !progress.completed ? (
+        <span ref={loaderRef} className="h-4 w-4 shrink-0" aria-hidden="true" data-agent-work-loader />
+      ) : progress.completed ? (
         <Tick01Icon className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
       ) : progress.tone === 'waiting' ? (
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden>
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          <span className="agent-paused-dot-pulse h-1.5 w-1.5 rounded-full bg-amber-500" />
         </span>
       ) : null}
       <span className={cn(
