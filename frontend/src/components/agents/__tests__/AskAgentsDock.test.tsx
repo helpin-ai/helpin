@@ -324,8 +324,8 @@ describe('AskAgentsDock', () => {
 
     await renderEmbeddedDock(supportContext);
     await waitForText('Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.');
-    await waitForText('Draft a reply to the customer');
-    await waitForText('Investigate the issue and likely cause');
+    await waitForText('Draft a reply');
+    await waitForText('Investigate the issue');
     await waitForText('Add context');
     expect(document.body.textContent).not.toContain('Press / to open');
   });

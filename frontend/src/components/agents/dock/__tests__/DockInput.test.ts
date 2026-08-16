@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldUseExpandedComposerLayout } from '../DockInput';
+import { composerPlaceholderForContext, shouldUseExpandedComposerLayout } from '../DockInput';
 
 describe('shouldUseExpandedComposerLayout', () => {
   it('moves wrapped text above the composer actions', () => {
@@ -27,5 +27,15 @@ describe('shouldUseExpandedComposerLayout', () => {
       singleLineHeight: 28,
       currentlyExpanded: true,
     })).toBe(false);
+  });
+});
+
+describe('composerPlaceholderForContext', () => {
+  it('describes both asking and delegating in a general chat', () => {
+    expect(composerPlaceholderForContext()).toBe('Ask a question or delegate work to agents…');
+  });
+
+  it('uses the attached conversation as the support prompt', () => {
+    expect(composerPlaceholderForContext('support_conversation')).toBe('Ask about this conversation…');
   });
 });

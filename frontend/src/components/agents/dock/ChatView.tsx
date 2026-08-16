@@ -679,24 +679,6 @@ export function ChatView({
             ))}
           </div>
         )}
-        {starterSuggestions.length > 0 && composer.visible && composer.enabled && (
-          <div className="mt-2" data-agent-starter-suggestions>
-            {starterSuggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                onClick={() => {
-                  setValue(suggestion);
-                  window.requestAnimationFrame(() => textareaRef.current?.focus());
-                }}
-              >
-                <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 truncate">{suggestion}</span>
-              </button>
-            ))}
-          </div>
-        )}
         {currentPlan && (
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}
@@ -769,6 +751,26 @@ export function ChatView({
       ) : null}
       {composer.visible && (
         <div className="border-t border-border/60">
+          {starterSuggestions.length > 0 && composer.enabled && (
+            <div className="px-3.5 pt-2" data-agent-starter-suggestions>
+              <div className="flex flex-wrap gap-1.5">
+                {starterSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.label}
+                    type="button"
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border/70 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    onClick={() => {
+                      setValue(suggestion.prompt);
+                      window.requestAnimationFrame(() => textareaRef.current?.focus());
+                    }}
+                  >
+                    <ArrowRight01Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{suggestion.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="p-2">
               <DockInput
                 mode="conversation"

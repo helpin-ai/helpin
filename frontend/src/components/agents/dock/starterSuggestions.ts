@@ -2,49 +2,54 @@ import type { CommandBarPageContext } from '@/lib/pmTypes';
 
 type ContextType = CommandBarPageContext['entity_type'];
 
-const STARTER_SUGGESTIONS: Record<ContextType, string[]> = {
+export interface StarterSuggestion {
+  label: string;
+  prompt: string;
+}
+
+const STARTER_SUGGESTIONS: Record<ContextType, StarterSuggestion[]> = {
   support_conversation: [
-    'Draft a reply to the customer',
-    'Investigate the issue and likely cause',
-    'Summarize the conversation and recommend next steps',
+    { label: 'Draft a reply', prompt: 'Review this support conversation and draft a helpful, accurate reply to the customer. Flag anything that needs clarification before sending.' },
+    { label: 'Investigate the issue', prompt: 'Investigate the customer issue using this conversation. Identify the likely cause, supporting evidence, and the best next step.' },
+    { label: 'Summarize next steps', prompt: 'Summarize this conversation, including key facts, unresolved questions, and the recommended next steps.' },
   ],
   task: [
-    'Review this task and suggest next steps',
-    'Break this work into an implementation plan',
-    'Identify blockers and risks',
+    { label: 'Review next steps', prompt: 'Review this task, its current context, and related work. Recommend the clearest next steps, owners, and any blockers.' },
+    { label: 'Plan the work', prompt: 'Break this task into a practical implementation plan with ordered steps, dependencies, and any important risks.' },
+    { label: 'Find blockers', prompt: 'Analyze this task for missing information, dependencies, risks, and blockers that need to be resolved before work can proceed.' },
   ],
   epic: [
-    'Summarize progress and next priorities',
-    'Review open work and identify blockers',
-    'Create a delivery plan',
+    { label: 'Review priorities', prompt: 'Review this epic, its work items, and current progress. Recommend the highest-priority next work and explain why.' },
+    { label: 'Find blockers', prompt: 'Identify delivery risks, blocked work, missing dependencies, and decisions that could affect this epic.' },
+    { label: 'Create delivery plan', prompt: 'Create a practical delivery plan for this epic, including milestones, dependencies, sequencing, and risks.' },
   ],
   document: [
-    'Summarize this document',
-    'Improve this document for clarity',
-    'Find gaps and recommend updates',
+    { label: 'Summarize document', prompt: 'Summarize this document clearly, including its purpose, key decisions, important details, and open questions.' },
+    { label: 'Improve clarity', prompt: 'Review this document for clarity, structure, and completeness. Recommend specific improvements without changing its intended meaning.' },
+    { label: 'Find gaps', prompt: 'Identify missing information, ambiguities, outdated sections, and recommended updates in this document.' },
   ],
   crm_contact: [
-    'Summarize this customer context',
-    'Suggest the best next outreach',
-    'Identify risks and opportunities',
+    { label: 'Summarize customer', prompt: 'Summarize this customer context, including recent activity, important details, opportunities, and risks.' },
+    { label: 'Plan outreach', prompt: 'Recommend the best next outreach to this contact, including the goal, timing, message angle, and supporting context.' },
+    { label: 'Find risks', prompt: 'Identify relationship risks, opportunities, missing information, and recommended next actions for this contact.' },
   ],
   crm_deal: [
-    'Summarize this deal and recommend next steps',
-    'Prepare a follow-up message',
-    'Identify risks and opportunities',
+    { label: 'Review next steps', prompt: 'Review this deal and recommend the most valuable next steps to move it forward, including owners, timing, and risks.' },
+    { label: 'Draft follow-up', prompt: 'Draft a concise, tailored follow-up message for this deal using its current context, open questions, and next objective.' },
+    { label: 'Assess risks', prompt: 'Assess this deal for risks, objections, missing stakeholders, missing information, and opportunities to improve the chance of success.' },
   ],
   repository: [
-    'Explain how this repository is structured',
-    'Investigate a bug or improvement',
-    'Identify the next change to make',
+    { label: 'Explain the codebase', prompt: 'Explain how this repository is structured, the role of its key areas, and where a developer should start for the current work.' },
+    { label: 'Investigate an issue', prompt: 'Investigate a likely bug or improvement in this repository. Gather evidence first, identify the probable cause, and recommend a focused next step.' },
+    { label: 'Identify next change', prompt: 'Review the repository context and identify the highest-value next change, including its likely scope, dependencies, and risks.' },
   ],
   workspace: [
-    'Help me prioritize the next work',
-    'Find relevant work or documentation',
-    'Investigate an issue',
+    { label: 'Prioritize work', prompt: 'Review the available workspace context and recommend the highest-priority work to focus on next, explaining the trade-offs.' },
+    { label: 'Find relevant work', prompt: 'Find relevant work, documents, and context for the topic I need help with, then summarize the most useful results.' },
+    { label: 'Investigate an issue', prompt: 'Investigate an issue in the workspace by gathering relevant context, identifying likely causes, and recommending the best next step.' },
   ],
 };
 
-export function starterSuggestionsForContext(contextType?: ContextType): string[] {
+export function starterSuggestionsForContext(contextType?: ContextType): StarterSuggestion[] {
   return STARTER_SUGGESTIONS[contextType ?? 'workspace'];
 }

@@ -133,6 +133,12 @@ export function shouldUseExpandedComposerLayout({
   return currentlyExpanded || scrollHeight > singleLineHeight + 1;
 }
 
+export function composerPlaceholderForContext(contextType?: CommandBarPageContext['entity_type']) {
+  return contextType === 'support_conversation'
+    ? 'Ask about this conversation…'
+    : 'Ask a question or delegate work to agents…';
+}
+
 export function DockInput({
   mode,
   value,
@@ -192,7 +198,7 @@ export function DockInput({
   const placeholder = placeholderOverride ?? (
     mode === 'list'
       ? 'Search runs or ask something new…'
-      : 'Tell Atlas, Forge, Lens, or any agent what to do'
+      : composerPlaceholderForContext(pageContext?.entity_type)
   );
 
   // Hide the workspace-level chip — it just restates the current workspace
@@ -218,7 +224,7 @@ export function DockInput({
           if (files.length > 0) onAddMedia(files);
         }}
       />
-      <button type="button" title="Attach image or video" aria-label="Attach image or video" onClick={() => mediaInputRef.current?.click()} disabled={disabled || busy} className="mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
+      <button type="button" title="Attach image or video" aria-label="Attach image or video" onClick={() => mediaInputRef.current?.click()} disabled={disabled || busy} className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
         <AttachmentIcon className="h-3.5 w-3.5" />
       </button>
     </>
@@ -302,7 +308,10 @@ export function DockInput({
           ))}
         </div>
       ) : null}
-      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-border/70 bg-background/80 px-2.5 py-1.5 transition focus-within:border-foreground/30">
+      <div className={cn(
+        'flex flex-wrap gap-2 rounded-xl border border-border/70 bg-background/80 px-2.5 py-1.5 transition focus-within:border-foreground/30',
+        expandedComposer ? 'items-end' : 'items-center',
+      )}>
         {mode === 'list' ? (
           <Search01Icon className="mb-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         ) : null}
@@ -341,7 +350,7 @@ export function DockInput({
             title={stopping ? 'Stopping agent' : 'Stop agent'}
             aria-label={stopping ? 'Stopping agent' : 'Stop agent'}
             className={cn(
-              'mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
+              'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
               stopping
                 ? 'cursor-not-allowed bg-muted text-muted-foreground'
                 : 'bg-foreground text-background hover:bg-foreground/85',
@@ -360,7 +369,7 @@ export function DockInput({
             disabled={sendDisabled}
             title="Send"
             className={cn(
-              'mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
+              'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
               sendDisabled
                 ? 'cursor-not-allowed bg-muted text-muted-foreground'
                 : 'bg-orange-500 text-white hover:bg-orange-500/90',
