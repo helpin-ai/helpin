@@ -560,10 +560,6 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		MessageType:       "reply",
 		ViaChannel:        strPtr("widget"),
 	}
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, msg)
-	}
-
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		if createdConversationID != "" {
 			session.ConversationID = nil
@@ -595,6 +591,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
+	s.enrichSupportMessageLinksAsync(msg, "widget:"+session.ID)
 
 	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner); err == nil {
 		if conv != nil && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
