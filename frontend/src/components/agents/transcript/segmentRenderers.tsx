@@ -428,25 +428,32 @@ function CollapsibleMarkdown({
     presentation === 'progress' ? 'text-muted-foreground' : 'text-foreground',
   );
 
-  if (!isLong) {
+  if (!isLong && !streaming) {
     return <MarkdownContent content={content} className={contentClassName} streaming={streaming} />;
   }
 
   return (
     <div>
-      <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
+      <div className={cn(
+        'relative',
+        streaming
+          ? 'max-h-[12rem] overflow-y-auto overscroll-contain'
+          : !expanded && 'max-h-[10rem] overflow-hidden',
+      )}>
         <MarkdownContent content={content} className={contentClassName} streaming={streaming} />
-        {!expanded && (
+        {!expanded && !streaming && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
         )}
       </div>
-      <button
-        type="button"
-        className="mt-1 text-[11px] font-medium text-primary hover:underline"
-        onClick={() => setExpanded((prev) => !prev)}
-      >
-        {expanded ? 'Show less' : 'Show more'}
-      </button>
+      {!streaming && (
+        <button
+          type="button"
+          className="mt-1 text-[11px] font-medium text-primary hover:underline"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
     </div>
   );
 }
