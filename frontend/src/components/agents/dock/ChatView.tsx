@@ -649,17 +649,17 @@ export function ChatView({
             }}
           />
         )}
+        {liveProgress ? (
+          <div
+            className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2"
+            data-agent-live-status-region
+          >
+            <AgentLiveStatus progress={liveProgress} />
+          </div>
+        ) : null}
       </div>
       {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
       </div>
-      {liveProgress ? (
-        <div
-          className="shrink-0 border-t border-border/40 bg-background px-4 py-1.5"
-          data-agent-live-status-region
-        >
-          <AgentLiveStatus progress={liveProgress} />
-        </div>
-      ) : null}
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}

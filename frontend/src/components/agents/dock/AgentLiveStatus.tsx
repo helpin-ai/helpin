@@ -47,13 +47,13 @@ export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
 
   return (
     <div
-      className="flex min-w-0 items-center gap-1.5 py-0.5 text-[11px] text-muted-foreground"
+      className="flex min-w-0 items-center gap-2 py-0.5 text-[11px] text-muted-foreground"
       role="status"
       aria-live="polite"
       data-agent-live-status
     >
       {progress.tone === 'working' && !progress.completed ? (
-        <AskAgentWorkAnimation />
+        <AskAgentWorkAnimation className="h-5 w-5" />
       ) : progress.completed ? (
         <Tick01Icon className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
       ) : progress.tone === 'waiting' ? (

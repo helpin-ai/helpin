@@ -35,7 +35,7 @@ export function SupportAskAgentsButton({
               : 'text-muted-foreground hover:bg-primary/10 hover:text-primary',
           )}
         >
-          {working ? <AskAgentWorkAnimation className="h-3.5 w-3.5" /> : <AiMagicIcon className="h-3.5 w-3.5" />}
+          {working ? <AskAgentWorkAnimation className="h-[18px] w-[18px]" /> : <AiMagicIcon className="h-3.5 w-3.5" />}
           <span>Ask Agent</span>
           {!working && waiting && <span className="agent-paused-dot-pulse h-1.5 w-1.5 rounded-full bg-amber-500" aria-label="Waiting for input" />}
           {!working && !waiting && chatExists && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-label="Ask Agent chat available" />}

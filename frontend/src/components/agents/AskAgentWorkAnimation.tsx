@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export function AskAgentWorkAnimation({ className = 'h-4 w-4' }: { className?: string }) {
+export function AskAgentWorkAnimation({ className = 'h-5 w-5' }: { className?: string }) {
   const containerRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {

@@ -7,24 +7,28 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* One quiet pre-token status replaces spinner bubbles and animated dot groups. */
+/* A visible left-to-right sweep makes the currently active task feel alive. */
 @keyframes agent-streaming-text-sweep {
-  from { background-position: 150% 50%; }
-  to { background-position: -150% 50%; }
+  from { background-position: 180% 50%; }
+  to { background-position: -180% 50%; }
 }
 .agent-streaming-text {
   color: transparent;
   background-image: linear-gradient(
     90deg,
-    var(--muted-foreground) 25%,
-    var(--foreground) 50%,
-    var(--muted-foreground) 75%
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 34%,
+    var(--primary) 48%,
+    var(--foreground) 52%,
+    var(--primary) 56%,
+    var(--muted-foreground) 70%,
+    var(--muted-foreground) 100%
   );
-  background-position: 150% 50%;
-  background-size: 250% 100%;
+  background-position: 180% 50%;
+  background-size: 220% 100%;
   background-clip: text;
   -webkit-background-clip: text;
-  animation: agent-streaming-text-sweep 1.8s linear infinite;
+  animation: agent-streaming-text-sweep 1.15s linear infinite;
 }
 @keyframes agent-paused-dot-pulse {
   0%, 100% { opacity: 0.55; transform: scale(0.9); }
