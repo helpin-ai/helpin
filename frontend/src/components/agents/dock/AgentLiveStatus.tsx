@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Loading01Icon, Tick01Icon } from '@/lib/icons';
+import { Tick01Icon } from '@/lib/icons';
+import { cn } from '@/lib/utils';
 import type { AgentLiveProgress } from './agentProgress';
 import { formatAgentElapsed } from './agentProgress';
 
@@ -32,10 +33,11 @@ export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden>
           <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
         </span>
-      ) : (
-        <Loading01Icon className="h-3.5 w-3.5 shrink-0 animate-spin text-orange-500" aria-hidden="true" />
-      )}
-      <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
+      ) : null}
+      <span className={cn(
+        'min-w-0 flex-1 truncate',
+        !progress.completed && progress.tone === 'working' && 'agent-streaming-text',
+      )} title={label}>{label}</span>
     </div>
   );
 }

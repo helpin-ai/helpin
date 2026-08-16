@@ -43,6 +43,12 @@ describe('resolveAgentLiveProgress', () => {
     })?.label).toBe('Working with Research Agent…');
   });
 
+  it('keeps the initial state distinct before the first runtime activity arrives', () => {
+    expect(resolveAgentLiveProgress({
+      run: run(), stream: stream(), currentPlan: null, sending: false,
+    })?.label).toBe('Starting…');
+  });
+
   it('shows collaboration waits without adding transcript messages', () => {
     expect(resolveAgentLiveProgress({
       run: run({ status: 'paused', pause_reason: 'human_approval' }), stream: stream(), currentPlan: null, sending: false,

@@ -44,4 +44,14 @@ describe('AgentLiveStatus', () => {
     setIntervalSpy.mockRestore();
     clearIntervalSpy.mockRestore();
   });
+
+  it('shimmers the active task label instead of rendering a loader icon', () => {
+    act(() => {
+      root.render(
+        <AgentLiveStatus progress={{ label: 'Searching…', tone: 'working', startedAt: new Date().toISOString() }} />,
+      );
+    });
+    expect(container.querySelector('.agent-streaming-text')).not.toBeNull();
+    expect(container.querySelector('svg')).toBeNull();
+  });
 });
