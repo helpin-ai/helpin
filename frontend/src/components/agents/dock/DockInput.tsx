@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
@@ -115,6 +115,24 @@ export interface DockInputProps {
   showShortcutHint?: boolean;
 }
 
+export function shouldUseExpandedComposerLayout({
+  value,
+  scrollHeight,
+  singleLineHeight,
+  currentlyExpanded,
+}: {
+  value: string;
+  scrollHeight: number;
+  singleLineHeight: number;
+  currentlyExpanded: boolean;
+}) {
+  if (!value.trim()) return false;
+  // Once text wraps, keep the text row above the actions until the user
+  // clears the composer. This avoids a flicker at widths where freeing the
+  // action controls makes that same text fit back onto a single line.
+  return currentlyExpanded || scrollHeight > singleLineHeight + 1;
+}
+
 export function DockInput({
   mode,
   value,
@@ -145,6 +163,7 @@ export function DockInput({
 }: DockInputProps) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
+  const [expandedComposer, setExpandedComposer] = useState(false);
   const referencePickerRef = useRef<DockReferencePickerHandle | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -152,6 +171,17 @@ export function DockInput({
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
+    const style = window.getComputedStyle(el);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 20;
+    const singleLineHeight = lineHeight
+      + (Number.parseFloat(style.paddingTop) || 0)
+      + (Number.parseFloat(style.paddingBottom) || 0);
+    setExpandedComposer((current) => shouldUseExpandedComposerLayout({
+      value,
+      scrollHeight: el.scrollHeight,
+      singleLineHeight,
+      currentlyExpanded: current,
+    }));
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [value, ref]);
 
@@ -174,6 +204,25 @@ export function DockInput({
 
   const canAddReferences = !!workspaceId && !!onAddReference;
   const showContextRow = mode === 'conversation' && (showChip || !!onAddContext || canAddReferences || references.length > 0);
+  const attachmentButton = mode === 'conversation' && onAddMedia ? (
+    <>
+      <input
+        ref={mediaInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm,video/mpeg"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = '';
+          if (files.length > 0) onAddMedia(files);
+        }}
+      />
+      <button type="button" title="Attach image or video" aria-label="Attach image or video" onClick={() => mediaInputRef.current?.click()} disabled={disabled || busy} className="mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
+        <AttachmentIcon className="h-3.5 w-3.5" />
+      </button>
+    </>
+  ) : null;
 
   return (
     <div className="flex flex-col gap-2 px-3.5 pb-2.5 pt-2">
@@ -253,29 +302,11 @@ export function DockInput({
           ))}
         </div>
       ) : null}
-      <div className="flex items-end gap-2 rounded-xl border border-border/70 bg-background/80 px-2.5 py-1.5 transition focus-within:border-foreground/30">
+      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-border/70 bg-background/80 px-2.5 py-1.5 transition focus-within:border-foreground/30">
         {mode === 'list' ? (
           <Search01Icon className="mb-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         ) : null}
-        {mode === 'conversation' && onAddMedia ? (
-          <>
-            <input
-              ref={mediaInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm,video/mpeg"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                const files = Array.from(event.currentTarget.files ?? []);
-                event.currentTarget.value = '';
-                if (files.length > 0) onAddMedia(files);
-              }}
-            />
-            <button type="button" title="Attach image or video" aria-label="Attach image or video" onClick={() => mediaInputRef.current?.click()} disabled={disabled || busy} className="mb-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
-              <AttachmentIcon className="h-3.5 w-3.5" />
-            </button>
-          </>
-        ) : null}
+        {!expandedComposer ? attachmentButton : null}
         <textarea
           ref={ref}
           value={value}
@@ -296,8 +327,12 @@ export function DockInput({
           rows={1}
           placeholder={placeholder}
           disabled={disabled}
-          className="block w-full flex-1 resize-none bg-transparent py-1 text-sm leading-5 placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"
+          className={cn(
+            'block min-w-0 flex-1 resize-none bg-transparent py-1 text-sm leading-5 placeholder:text-muted-foreground focus:outline-none disabled:opacity-60',
+            expandedComposer && 'order-first w-full basis-full flex-none',
+          )}
         />
+        {expandedComposer ? attachmentButton : null}
         {onStop ? (
           <button
             type="button"
