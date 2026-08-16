@@ -107,7 +107,7 @@ function AssistantSegment({
   presentation: 'progress' | 'final';
 }) {
   return (
-    <div className="group/assistant relative">
+    <div className="group/assistant">
       {expandable ? (
         <CollapsibleMarkdown content={content} streaming={streaming} presentation={presentation} />
       ) : (
@@ -120,7 +120,11 @@ function AssistantSegment({
           )}
         />
       )}
-      {!streaming && <CopyMessageButton content={content} />}
+      {!streaming && presentation === 'final' ? (
+        <div className="mt-1 flex justify-end">
+          <CopyMessageButton content={content} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -138,7 +142,7 @@ function CopyMessageButton({ content }: { content: string }) {
           window.setTimeout(() => setCopied(false), 1500);
         });
       }}
-      className="absolute -right-1 -top-1 rounded-md border border-border/70 bg-background/95 p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/assistant:opacity-100"
+      className="rounded-md border border-border/70 bg-background/95 p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/assistant:opacity-100"
     >
       {copied ? <Tick01Icon className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy01Icon className="h-3 w-3" />}
     </button>

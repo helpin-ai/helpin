@@ -296,6 +296,18 @@ describe('TranscriptSegmentView — assistant hierarchy', () => {
     expect(container.querySelector('.group\\/assistant')?.firstElementChild?.className).toContain('text-foreground');
     expect(container.querySelector('.group\\/assistant')?.firstElementChild?.className).not.toContain('text-muted-foreground');
   });
+
+  it('shows copy only for the final assistant reply and places it below the message', () => {
+    const segment: TranscriptSegment = { kind: 'assistant', id: 'assistant-1', content: 'Final answer.' };
+    render(segment, true, { assistantPresentation: 'final' });
+    const copy = container.querySelector<HTMLButtonElement>('[aria-label="Copy message"]');
+    expect(copy).not.toBeNull();
+    expect(copy?.className).not.toContain('absolute');
+    expect(copy?.parentElement?.className).toContain('justify-end');
+
+    render(segment, true, { assistantPresentation: 'progress' });
+    expect(container.querySelector('[aria-label="Copy message"]')).toBeNull();
+  });
 });
 
 describe('TranscriptSegmentView — user', () => {

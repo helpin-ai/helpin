@@ -10,7 +10,7 @@ export interface AgentLiveProgress {
 
 interface ResolveAgentLiveProgressInput {
   run: Pick<AgentRun, 'status' | 'pause_reason' | 'started_at' | 'created_at'> | null;
-  stream: Pick<CodingSessionStreamState, 'live_turn_segments' | 'live_reasoning_message'> | null;
+  stream: Pick<CodingSessionStreamState, 'transcript_messages' | 'live_turn_segments' | 'live_reasoning_message'> | null;
   currentPlan: RunPlanArtifact | null;
   activeSubAgentName?: string | null;
   sending: boolean;
@@ -75,11 +75,18 @@ export function resolveAgentLiveProgress({
   }
 
   const lastSegment = segments[segments.length - 1];
+  const latestTranscriptMessage = stream?.transcript_messages.at(-1);
   if (
     lastSegment?.kind === 'assistant_message'
     && lastSegment.assistant_message.status === 'completed'
     && lastSegment.assistant_message.content.trim()
   ) {
+    // Once a follow-up user message has been accepted, the stream can still
+    // contain the previous turn's completed assistant segment for one render.
+    // Do not expose that stale segment as "Finishing…" for the new turn.
+    if (latestTranscriptMessage?.role === 'user') {
+      return { label: 'Starting…', startedAt, tone: 'working' };
+    }
     return { label: 'Finishing…', startedAt, tone: 'working' };
   }
 
