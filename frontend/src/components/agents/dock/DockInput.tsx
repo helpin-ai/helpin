@@ -139,6 +139,16 @@ export function composerPlaceholderForContext(contextType?: CommandBarPageContex
     : 'Ask a question or delegate work to agents…';
 }
 
+export function usesSeparateComposerActionRow(mode: DockInputProps['mode'], expanded: boolean) {
+  return mode === 'conversation' && expanded;
+}
+
+export function sendControlClassName(disabled: boolean) {
+  return disabled
+    ? 'cursor-not-allowed bg-muted text-muted-foreground'
+    : 'bg-foreground text-background hover:bg-foreground/85';
+}
+
 export function DockInput({
   mode,
   value,
@@ -210,6 +220,7 @@ export function DockInput({
 
   const canAddReferences = !!workspaceId && !!onAddReference;
   const showContextRow = mode === 'conversation' && (showChip || !!onAddContext || canAddReferences || references.length > 0);
+  const separateActionRow = usesSeparateComposerActionRow(mode, expandedComposer);
   const attachmentButton = mode === 'conversation' && onAddMedia ? (
     <>
       <input
@@ -229,6 +240,44 @@ export function DockInput({
       </button>
     </>
   ) : null;
+  const submitControl = onStop ? (
+    <button
+      type="button"
+      onClick={onStop}
+      disabled={stopping}
+      title={stopping ? 'Stopping agent' : 'Stop agent'}
+      aria-label={stopping ? 'Stopping agent' : 'Stop agent'}
+      className={cn(
+        'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
+        stopping
+          ? 'cursor-not-allowed bg-muted text-muted-foreground'
+          : 'bg-foreground text-background hover:bg-foreground/85',
+      )}
+    >
+      {stopping ? (
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <StopIcon className="h-3.5 w-3.5" />
+      )}
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={onSubmit}
+      disabled={sendDisabled}
+      title="Send"
+      className={cn(
+        'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
+        sendControlClassName(sendDisabled),
+      )}
+    >
+      {busy ? (
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <ArrowUp01Icon className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
 
   return (
     <div className="flex flex-col gap-2 px-3.5 pb-2.5 pt-2">
@@ -309,13 +358,13 @@ export function DockInput({
         </div>
       ) : null}
       <div className={cn(
-        'flex flex-wrap gap-2 rounded-xl border border-border/70 bg-background/80 px-2.5 py-1.5 transition focus-within:border-foreground/30',
-        expandedComposer ? 'items-end' : 'items-center',
+        'flex rounded-xl border border-border/70 bg-background/80 px-2.5 py-1.5 transition focus-within:border-foreground/30',
+        separateActionRow ? 'flex-col gap-0' : 'flex-wrap items-center gap-2',
       )}>
         {mode === 'list' ? (
           <Search01Icon className="mb-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         ) : null}
-        {!expandedComposer ? attachmentButton : null}
+        {!separateActionRow ? attachmentButton : null}
         <textarea
           ref={ref}
           value={value}
@@ -338,50 +387,15 @@ export function DockInput({
           disabled={disabled}
           className={cn(
             'block min-w-0 flex-1 resize-none bg-transparent py-1 text-sm leading-5 placeholder:text-muted-foreground focus:outline-none disabled:opacity-60',
-            expandedComposer && 'order-first w-full basis-full flex-none',
+            separateActionRow && 'w-full flex-none',
           )}
         />
-        {expandedComposer ? attachmentButton : null}
-        {onStop ? (
-          <button
-            type="button"
-            onClick={onStop}
-            disabled={stopping}
-            title={stopping ? 'Stopping agent' : 'Stop agent'}
-            aria-label={stopping ? 'Stopping agent' : 'Stop agent'}
-            className={cn(
-              'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
-              stopping
-                ? 'cursor-not-allowed bg-muted text-muted-foreground'
-                : 'bg-foreground text-background hover:bg-foreground/85',
-            )}
-          >
-            {stopping ? (
-              <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <StopIcon className="h-3.5 w-3.5" />
-            )}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={sendDisabled}
-            title="Send"
-            className={cn(
-              'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
-              sendDisabled
-                ? 'cursor-not-allowed bg-muted text-muted-foreground'
-                : 'bg-orange-500 text-white hover:bg-orange-500/90',
-            )}
-          >
-            {busy ? (
-              <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <ArrowUp01Icon className="h-3.5 w-3.5" />
-            )}
-          </button>
-        )}
+        {separateActionRow ? (
+          <div className="flex w-full items-center justify-between pt-0.5">
+            {attachmentButton}
+            {submitControl}
+          </div>
+        ) : submitControl}
       </div>
     </div>
   );

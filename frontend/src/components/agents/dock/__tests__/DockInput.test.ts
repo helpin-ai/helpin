@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composerPlaceholderForContext, shouldUseExpandedComposerLayout } from '../DockInput';
+import { composerPlaceholderForContext, sendControlClassName, shouldUseExpandedComposerLayout, usesSeparateComposerActionRow } from '../DockInput';
 
 describe('shouldUseExpandedComposerLayout', () => {
   it('moves wrapped text above the composer actions', () => {
@@ -37,5 +37,20 @@ describe('composerPlaceholderForContext', () => {
 
   it('uses the attached conversation as the support prompt', () => {
     expect(composerPlaceholderForContext('support_conversation')).toBe('Ask about this conversation…');
+  });
+});
+
+describe('usesSeparateComposerActionRow', () => {
+  it('separates attachment and send controls only for multiline chat input', () => {
+    expect(usesSeparateComposerActionRow('conversation', true)).toBe(true);
+    expect(usesSeparateComposerActionRow('conversation', false)).toBe(false);
+    expect(usesSeparateComposerActionRow('list', true)).toBe(false);
+  });
+});
+
+describe('sendControlClassName', () => {
+  it('uses the shared black primary treatment when send is enabled', () => {
+    expect(sendControlClassName(false)).toContain('bg-foreground');
+    expect(sendControlClassName(false)).not.toContain('bg-orange-500');
   });
 });
