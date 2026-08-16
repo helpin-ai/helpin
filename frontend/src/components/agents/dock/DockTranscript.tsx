@@ -279,6 +279,7 @@ export function DockTranscript({
                         collapseLongAssistantContent: false,
                         showToolDetails: true,
                         showReasoningDetails: true,
+                        assistantPresentation: segment.kind === 'assistant' ? 'progress' : undefined,
                         fallbackUserLabel: 'You',
                       }}
                     />

@@ -89,6 +89,22 @@ describe('resolveAgentLiveProgress', () => {
       }] }),
     })?.label).toBe('Finishing…');
   });
+
+  it('does not reuse the previous answer finishing state after a follow-up user message', () => {
+    expect(resolveAgentLiveProgress({
+      run: run(), currentPlan: null, sending: false,
+      stream: stream({
+        transcript_messages: [{
+          event_id: 'user-2', message_id: 'user-2', role: 'user', content: 'Follow up',
+          message_type: 'message', timestamp: '2026-08-14T10:01:00Z', sequence_no: 2,
+        }],
+        live_turn_segments: [{
+          segment_id: 'previous-answer', kind: 'assistant_message',
+          assistant_message: { message_id: 'previous-answer', content: 'Previous answer', status: 'completed', tool_calls: [] },
+        }],
+      }),
+    })?.label).toBe('Starting…');
+  });
 });
 
 describe('formatAgentElapsed', () => {

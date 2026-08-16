@@ -75,7 +75,6 @@ export function DockWorkingGroup({
         <span data-working-group-chevron aria-hidden className="shrink-0 text-[10px] text-muted-foreground">{open ? '▾' : '▸'}</span>
         <span className="min-w-0 flex-1" />
         <span className="shrink-0 text-[10px] text-muted-foreground">{presentation.meta}</span>
-        {active ? <span className="shrink-0 text-[10px] text-orange-600 dark:text-orange-400">Live</span> : null}
       </button>
       {open ? (
         <div className="space-y-2 border-t border-border/60 px-2.5 py-2.5" data-working-group-body>

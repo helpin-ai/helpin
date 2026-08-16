@@ -382,6 +382,7 @@ describe('DockTranscript', () => {
     });
     expect(container.textContent).toContain('The final answer is ready.');
     expect(container.querySelector('[data-agent-working-group]')).not.toBeNull();
+    expect(container.textContent).not.toContain('Live');
 
     act(() => {
       root.render(
