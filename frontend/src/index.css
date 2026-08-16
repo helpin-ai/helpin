@@ -28,7 +28,7 @@
   background-size: 220% 100%;
   background-clip: text;
   -webkit-background-clip: text;
-  animation: agent-streaming-text-sweep 1.15s linear infinite;
+  animation: agent-streaming-text-sweep 2.2s linear infinite;
 }
 @keyframes agent-paused-dot-pulse {
   0%, 100% { opacity: 0.55; transform: scale(0.9); }
