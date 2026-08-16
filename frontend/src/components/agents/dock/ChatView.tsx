@@ -361,11 +361,11 @@ export function ChatView({
           setSendError({ message: res.error ?? 'Failed to send message', content, references: messageReferences, clientMessageId });
           return;
         }
-		// The successful response is the durable acknowledgement. Clear the
-		// optimistic row before updating the stream so a follow-up message cannot
-		// briefly render both copies while the WS/persisted projections converge.
-		setPendingEcho(null);
 		if (res.data.accepted_message) {
+		  // The accepted row is the durable acknowledgement. Clear the
+		  // optimistic row before updating the stream so a follow-up message
+		  // cannot briefly render both copies while projections converge.
+		  setPendingEcho(null);
 		  setPersistedMessages((current) => mergeMessagePages(current, [res.data!.accepted_message!]));
 		}
         setReferences([]);

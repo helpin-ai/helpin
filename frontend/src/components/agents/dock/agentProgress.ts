@@ -6,6 +6,7 @@ export interface AgentLiveProgress {
   label: string;
   startedAt?: string;
   tone: 'working' | 'waiting';
+  completed?: boolean;
 }
 
 interface ResolveAgentLiveProgressInput {
@@ -54,6 +55,10 @@ export function resolveAgentLiveProgress({
       default:
         return null;
     }
+  }
+
+  if (run.status === 'completed') {
+    return { label: 'Worked', startedAt, tone: 'waiting', completed: true };
   }
 
   if (run.status === 'queued') return { label: 'Waiting to start…', startedAt, tone: 'working' };
