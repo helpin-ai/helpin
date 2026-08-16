@@ -76,6 +76,17 @@ describe('resolveAgentLiveProgress', () => {
     })?.label).toBe('Starting…');
   });
 
+  it('starts a follow-up timer from the newly submitted message', () => {
+    const result = resolveAgentLiveProgress({
+      run: run({ started_at: '2026-08-14T10:00:00Z' }),
+      stream: stream(),
+      currentPlan: null,
+      sending: true,
+      localStartedAt: '2026-08-14T10:05:00Z',
+    });
+    expect(result?.startedAt).toBe('2026-08-14T10:05:00Z');
+  });
+
   it('describes a streaming answer without hiding progress', () => {
     expect(resolveAgentLiveProgress({
       run: run(), currentPlan: null, sending: false,
@@ -122,6 +133,7 @@ describe('resolveAgentLiveProgress', () => {
 describe('formatAgentElapsed', () => {
   it('formats seconds, minutes, and hours as elapsed duration', () => {
     expect(formatAgentElapsed('2026-08-14T10:00:00Z', Date.parse('2026-08-14T10:00:08Z'))).toBe('8s');
+    expect(formatAgentElapsed('2026-08-14T10:00:00Z', Date.parse('2026-08-14T10:00:08Z'), 3_000)).toBe('5s');
     expect(formatAgentElapsed('2026-08-14T10:00:00Z', Date.parse('2026-08-14T10:01:04Z'))).toBe('1m 04s');
     expect(formatAgentElapsed('2026-08-14T10:00:00Z', Date.parse('2026-08-14T11:06:02Z'))).toBe('1h 06m');
   });

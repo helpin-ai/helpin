@@ -1,25 +1,80 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Tick01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import type { AgentLiveProgress } from './agentProgress';
 import { formatAgentElapsed } from './agentProgress';
 
 export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
+  const loaderRef = useRef<HTMLSpanElement | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [pausedMs, setPausedMs] = useState(0);
+  const pauseStartedAtRef = useRef<number | null>(null);
+  const timerStartedAtRef = useRef(progress.startedAt);
 
   useEffect(() => {
-    if (!progress.startedAt || progress.completed) {
-      if (progress.completed) setNow(Date.now());
+    const currentNow = Date.now();
+    if (timerStartedAtRef.current !== progress.startedAt) {
+      timerStartedAtRef.current = progress.startedAt;
+      pauseStartedAtRef.current = null;
+      setPausedMs(0);
+    }
+
+    if (!progress.completed && progress.tone === 'waiting') {
+      pauseStartedAtRef.current ??= currentNow;
       return;
     }
+
+    if (pauseStartedAtRef.current !== null) {
+      setPausedMs((current) => current + currentNow - pauseStartedAtRef.current!);
+      pauseStartedAtRef.current = null;
+    }
+
+    if (!progress.startedAt || progress.completed || progress.tone !== 'working') {
+      if (progress.completed) setNow(currentNow);
+      return;
+    }
+
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, [progress.completed, progress.startedAt]);
+  }, [progress.completed, progress.startedAt, progress.tone]);
 
-  const elapsed = formatAgentElapsed(progress.startedAt, now);
+  const elapsed = progress.tone === 'waiting' && !progress.completed
+    ? null
+    : formatAgentElapsed(progress.startedAt, now, pausedMs);
   const label = elapsed
     ? `${progress.completed ? 'Worked' : progress.label.replace(/…$/, '')} for ${elapsed}`
     : progress.label;
+
+  useEffect(() => {
+    const container = loaderRef.current;
+    const active = progress.tone === 'working' && !progress.completed;
+    if (!container || !active) return;
+    // The runtime animation is browser-only; avoid loading lottie in DOM-only
+    // test environments where canvas is intentionally unavailable.
+    if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) return;
+
+    let cancelled = false;
+    let animation: { destroy: () => void } | null = null;
+    void import('lottie-web').then(({ default: lottie }) => {
+      if (cancelled || !loaderRef.current) return;
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      const instance = lottie.loadAnimation({
+        container: loaderRef.current,
+        renderer: 'svg',
+        loop: !reducedMotion,
+        autoplay: !reducedMotion,
+        path: '/assets/agents/ask-loader.json',
+        rendererSettings: { progressiveLoad: true },
+      });
+      animation = instance;
+      if (reducedMotion) instance.goToAndStop(0, true);
+    });
+    return () => {
+      cancelled = true;
+      animation?.destroy();
+    };
+  }, [progress.completed, progress.tone]);
+
   return (
     <div
       className="flex min-w-0 items-center gap-1.5 py-0.5 text-[11px] text-muted-foreground"
@@ -27,11 +82,13 @@ export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
       aria-live="polite"
       data-agent-live-status
     >
-      {progress.completed ? (
+      {progress.tone === 'working' && !progress.completed ? (
+        <span ref={loaderRef} className="h-4 w-4 shrink-0" aria-hidden="true" data-agent-work-loader />
+      ) : progress.completed ? (
         <Tick01Icon className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
       ) : progress.tone === 'waiting' ? (
         <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden>
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          <span className="agent-paused-dot-pulse h-1.5 w-1.5 rounded-full bg-amber-500" />
         </span>
       ) : null}
       <span className={cn(

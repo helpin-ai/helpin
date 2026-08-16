@@ -35,7 +35,10 @@ export function resolveAgentLiveProgress({
   sending,
   localStartedAt,
 }: ResolveAgentLiveProgressInput): AgentLiveProgress | null {
-  const startedAt = run?.started_at || run?.created_at || localStartedAt;
+  // A follow-up message can reuse the same backing run. Prefer the local
+  // submission timestamp so each user turn gets an independent timer instead
+  // of inheriting the run's original start time.
+  const startedAt = localStartedAt || run?.started_at || run?.created_at;
 
   if (sending) {
     return { label: 'Starting…', startedAt, tone: 'working' };
@@ -119,11 +122,11 @@ export function resolveAgentLiveProgress({
   return { label: 'Working…', startedAt, tone: 'working' };
 }
 
-export function formatAgentElapsed(startedAt: string | undefined, now = Date.now()): string | null {
+export function formatAgentElapsed(startedAt: string | undefined, now = Date.now(), pausedMs = 0): string | null {
   if (!startedAt) return null;
   const started = Date.parse(startedAt);
   if (!Number.isFinite(started)) return null;
-  const totalSeconds = Math.max(0, Math.floor((now - started) / 1_000));
+  const totalSeconds = Math.max(0, Math.floor((now - started - pausedMs) / 1_000));
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const hours = Math.floor(totalSeconds / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
