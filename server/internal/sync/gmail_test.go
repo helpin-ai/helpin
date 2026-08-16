@@ -2,10 +2,66 @@ package sync
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
+
+func TestGmailSyncClient_SendMessageRejectsHeaderInjection(t *testing.T) {
+	client := &GmailSyncClient{}
+	if _, err := client.SendMessage(context.Background(), "token", "owner@example.com", []string{"buyer@example.com\r\nBcc: attacker@example.com"}, nil, "Hello", "<p>Hi</p>"); err == nil {
+		t.Fatal("expected recipient header injection to be rejected")
+	}
+	if _, err := client.SendMessage(context.Background(), "token", "owner@example.com", []string{"buyer@example.com"}, nil, "Hello\r\nBcc: attacker@example.com", "<p>Hi</p>"); err == nil {
+		t.Fatal("expected subject header injection to be rejected")
+	}
+}
+
+func TestGmailSyncClient_SendMessageBuildsSafeMIMEPayload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		var payload map[string]string
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		raw, err := base64.URLEncoding.DecodeString(payload["raw"])
+		if err != nil {
+			t.Fatalf("decode raw message: %v", err)
+		}
+		message := string(raw)
+		if message == "" || !containsAll(message, "From: <owner@example.com>", "To: <buyer@example.com>", "Subject: Hello") {
+			t.Fatalf("unexpected MIME message: %q", message)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"sent-1","threadId":"thread-1"}`))
+	}))
+	defer server.Close()
+
+	client := &GmailSyncClient{httpClient: server.Client(), apiBaseURL: server.URL}
+	result, err := client.SendMessage(context.Background(), "token", "owner@example.com", []string{"buyer@example.com"}, nil, "Hello", "<p>Hi</p>")
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if result.ID != "sent-1" || result.ThreadID != "thread-1" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func containsAll(value string, parts ...string) bool {
+	for _, part := range parts {
+		if !strings.Contains(value, part) {
+			return false
+		}
+	}
+	return true
+}
 
 func TestParseAddressListWithNames_DropsInvalidEntriesInFallback(t *testing.T) {
 	addrs, names := parseAddressListWithNames(`Alice Example <alice@example.com>, invalid-entry, Bob Example <bob@example.com>`)

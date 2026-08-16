@@ -43,7 +43,7 @@ func (c *GmailOAuthClient) GenerateAuthURL(state string) string {
 		"client_id":     {c.clientID},
 		"redirect_uri":  {c.redirectURL},
 		"response_type": {"code"},
-		"scope":         {"https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar.readonly"},
+		"scope":         {"https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.readonly"},
 		"access_type":   {"offline"},
 		"prompt":        {"consent"},
 		"state":         {state},

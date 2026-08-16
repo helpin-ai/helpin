@@ -292,7 +292,7 @@ func main() {
 		SetConversationRepositories(conversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
-	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
+	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService).SetMeetingRepository(crmMeetingRepo).SetMeetingCaptureScheduler(service.NewTemporalMeetingCaptureScheduler(temporalClient))
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	runRepo.SetTriggerExecutionRepository(triggerExecutionRepo)
@@ -593,7 +593,11 @@ func main() {
 		)
 	}
 	meetingProcessor.SetCRMOutputs(signalDetectionService, crmActivityService, crmSuggestionService)
-	meetingActivities := temporalapp.NewCRMMeetingActivities(meetingProcessor)
+	meetingCaptureService := service.NewCRMMeetingService(
+		crmMeetingRepo, nil, nil, recallMeetingProvider, vexaMeetingProvider,
+	).SetCaptureProvider(cfg.CRMMeetingCaptureProvider).
+		SetAIUsageMeter(service.NewTokenPricedAIUsageMeter(aiUsageService))
+	meetingActivities := temporalapp.NewCRMMeetingActivities(meetingProcessor).SetCaptureLauncher(meetingCaptureService)
 
 	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
@@ -662,6 +666,9 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		w.RegisterActivityWithOptions(emailActivities.BackfillEmailsActivity, activity.RegisterOptions{
 			Name: "EmailSyncActivities.BackfillEmailsActivity",
 		})
+		w.RegisterActivityWithOptions(emailActivities.HistoricalBackfillEmailsActivity, activity.RegisterOptions{
+			Name: "EmailSyncActivities.HistoricalBackfillEmailsActivity",
+		})
 		w.RegisterActivityWithOptions(emailActivities.IncrementalSyncActivity, activity.RegisterOptions{
 			Name: "EmailSyncActivities.IncrementalSyncActivity",
 		})
@@ -690,11 +697,15 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 	}
 
-	// Register provider-neutral CRM meeting processing.
+	// Register provider-neutral CRM meeting capture and processing.
+	w.RegisterWorkflow(temporalapp.CRMMeetingCaptureScheduleWorkflow)
 	w.RegisterWorkflow(temporalapp.CRMMeetingProcessingWorkflow)
 	if meetingActivities != nil {
 		w.RegisterActivityWithOptions(meetingActivities.ProcessMeetingActivity, activity.RegisterOptions{
 			Name: "CRMMeetingActivities.ProcessMeetingActivity",
+		})
+		w.RegisterActivityWithOptions(meetingActivities.StartScheduledCaptureActivity, activity.RegisterOptions{
+			Name: temporalapp.CRMMeetingStartScheduledActivityName,
 		})
 	}
 

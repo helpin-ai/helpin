@@ -25,6 +25,12 @@ const (
 	CRMEmailAccountStatusError        = "error"
 )
 
+// CRM email sync command modes.
+const (
+	CRMEmailSyncModeIncremental = "incremental"
+	CRMEmailSyncModeHistorical  = "historical"
+)
+
 // CRM email participant roles.
 const (
 	CRMEmailParticipantRoleFrom   = "from"

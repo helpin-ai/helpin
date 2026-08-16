@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -21,15 +22,15 @@ func NewCRMCalendarService(calendarRepo *repository.CRMCalendarRepository) *CRMC
 
 // List returns calendar events with filters and pagination.
 func (s *CRMCalendarService) List(ctx context.Context, workspaceID string, filters model.CRMCalendarEventListFilters, pagination model.PMPagination) ([]model.CRMCalendarEvent, int64, error) {
-	if workspaceID == "" {
+	if strings.TrimSpace(workspaceID) == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
 	return s.calendarRepo.List(ctx, workspaceID, filters, pagination)
 }
 
-// GetByID returns a calendar event by ID.
-func (s *CRMCalendarService) GetByID(ctx context.Context, id string) (*model.CRMCalendarEvent, error) {
-	event, err := s.calendarRepo.GetByID(ctx, id)
+// GetByID returns a workspace-scoped calendar event by ID.
+func (s *CRMCalendarService) GetByID(ctx context.Context, workspaceID, id string) (*model.CRMCalendarEvent, error) {
+	event, err := s.calendarRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -41,21 +42,27 @@ func (s *CRMCalendarService) GetByID(ctx context.Context, id string) (*model.CRM
 
 // Create creates a new calendar event.
 func (s *CRMCalendarService) Create(ctx context.Context, req model.CreateCRMCalendarEventRequest) (*model.CRMCalendarEvent, error) {
-	if req.WorkspaceID == "" || strings.TrimSpace(req.Title) == "" {
-		return nil, fmt.Errorf("workspace_id and title are required")
+	if strings.TrimSpace(req.WorkspaceID) == "" || strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.EmailAccountID) == "" {
+		return nil, fmt.Errorf("workspace_id, email_account_id, and title are required")
+	}
+	if err := validateCalendarEventWindow(req.StartTime, req.EndTime); err != nil {
+		return nil, err
 	}
 
 	event := &model.CRMCalendarEvent{
 		WorkspaceID:    req.WorkspaceID,
 		EmailAccountID: req.EmailAccountID,
 		Title:          strings.TrimSpace(req.Title),
-		Description:    req.Description,
-		StartTime:      req.StartTime,
-		EndTime:        req.EndTime,
-		Location:       req.Location,
-		Attendees:      model.JSONB(req.Attendees),
-		ContactIDs:     model.JSONB(req.ContactIDs),
-		DealID:         req.DealID,
+		Description:    trimStringPtr(req.Description),
+		StartTime:      req.StartTime.UTC(),
+		EndTime:        req.EndTime.UTC(),
+		Location:       trimStringPtr(req.Location),
+		MeetingURL:     trimStringPtr(req.MeetingURL),
+		Status:         model.CRMCalendarEventStatusConfirmed,
+		Visibility:     "default",
+		Attendees:      req.Attendees,
+		ContactIDs:     req.ContactIDs,
+		DealID:         trimStringPtr(req.DealID),
 	}
 
 	if err := s.calendarRepo.Create(ctx, event); err != nil {
@@ -64,9 +71,9 @@ func (s *CRMCalendarService) Create(ctx context.Context, req model.CreateCRMCale
 	return event, nil
 }
 
-// Update updates a calendar event.
-func (s *CRMCalendarService) Update(ctx context.Context, id string, req model.UpdateCRMCalendarEventRequest) (*model.CRMCalendarEvent, error) {
-	event, err := s.calendarRepo.GetByID(ctx, id)
+// Update updates a workspace-scoped calendar event.
+func (s *CRMCalendarService) Update(ctx context.Context, workspaceID, id string, req model.UpdateCRMCalendarEventRequest) (*model.CRMCalendarEvent, error) {
+	event, err := s.calendarRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -82,25 +89,31 @@ func (s *CRMCalendarService) Update(ctx context.Context, id string, req model.Up
 		event.Title = title
 	}
 	if req.Description != nil {
-		event.Description = req.Description
+		event.Description = trimStringPtr(req.Description)
 	}
 	if req.StartTime != nil {
-		event.StartTime = *req.StartTime
+		event.StartTime = req.StartTime.UTC()
 	}
 	if req.EndTime != nil {
-		event.EndTime = *req.EndTime
+		event.EndTime = req.EndTime.UTC()
+	}
+	if err := validateCalendarEventWindow(event.StartTime, event.EndTime); err != nil {
+		return nil, err
 	}
 	if req.Location != nil {
-		event.Location = req.Location
+		event.Location = trimStringPtr(req.Location)
+	}
+	if req.MeetingURL != nil {
+		event.MeetingURL = trimStringPtr(req.MeetingURL)
 	}
 	if req.Attendees != nil {
-		event.Attendees = model.JSONB(req.Attendees)
+		event.Attendees = req.Attendees
 	}
 	if req.ContactIDs != nil {
-		event.ContactIDs = model.JSONB(req.ContactIDs)
+		event.ContactIDs = req.ContactIDs
 	}
 	if req.DealID != nil {
-		event.DealID = req.DealID
+		event.DealID = trimStringPtr(req.DealID)
 	}
 
 	if err := s.calendarRepo.Update(ctx, event); err != nil {
@@ -109,14 +122,24 @@ func (s *CRMCalendarService) Update(ctx context.Context, id string, req model.Up
 	return event, nil
 }
 
-// Delete removes a calendar event.
-func (s *CRMCalendarService) Delete(ctx context.Context, id string) error {
-	event, err := s.calendarRepo.GetByID(ctx, id)
+// Delete removes a workspace-scoped calendar event.
+func (s *CRMCalendarService) Delete(ctx context.Context, workspaceID, id string) error {
+	event, err := s.calendarRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return err
 	}
 	if event == nil {
 		return fmt.Errorf("calendar event not found")
 	}
-	return s.calendarRepo.Delete(ctx, id)
+	return s.calendarRepo.Delete(ctx, workspaceID, id)
+}
+
+func validateCalendarEventWindow(start, end time.Time) error {
+	if start.IsZero() || end.IsZero() {
+		return fmt.Errorf("start_time and end_time are required")
+	}
+	if !end.After(start) {
+		return fmt.Errorf("end_time must be after start_time")
+	}
+	return nil
 }

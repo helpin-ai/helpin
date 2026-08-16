@@ -10,8 +10,11 @@ import type {
   CRMMeetingListResponse,
   CRMMeetingSettings,
   CRMMeetingSettingsResponse,
+  CRMCalendarMeetingCandidate,
+  CRMCalendarMeetingCandidateListResponse,
   UpdateCRMMeetingRequest,
   UpdateCRMMeetingSettingsRequest,
+  UpdateCRMCalendarMeetingCaptureRequest,
 } from '../crmMeetingTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -44,6 +47,10 @@ async function idempotentPost<T>(path: string, body?: unknown, idempotencyKey: s
 export const crmMeetingService = {
   list: (workspaceId: string, filters?: CRMMeetingFilters) =>
     api.get<CRMMeetingListResponse>(`/crm/meetings${qs(workspaceId)}${filtersQuery(filters)}`),
+  listUpcomingCalendar: (workspaceId: string) =>
+    api.get<CRMCalendarMeetingCandidateListResponse>(`/crm/meetings/calendar-upcoming${qs(workspaceId)}`),
+  updateCalendarCapture: (workspaceId: string, calendarEventId: string, payload: UpdateCRMCalendarMeetingCaptureRequest) =>
+    api.put<CRMCalendarMeetingCandidate>(`/crm/meetings/calendar/${calendarEventId}/capture${qs(workspaceId)}`, payload),
   get: (workspaceId: string, meetingId: string) =>
     api.get<CRMMeetingDetail>(`/crm/meetings/${meetingId}${qs(workspaceId)}`),
   create: (payload: CreateCRMMeetingRequest, idempotencyKey?: string) => payload.start_now

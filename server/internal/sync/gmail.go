@@ -57,7 +57,7 @@ type GmailProfile struct {
 // GmailHistoryResult contains message IDs changed since a history cursor and
 // the latest mailbox cursor returned by Gmail.
 type GmailHistoryResult struct {
-	MessageIDs     []string
+	MessageIDs      []string
 	LatestHistoryID string
 }
 
@@ -73,11 +73,12 @@ func (e *GmailAPIError) Error() string {
 
 // GmailSyncClient wraps the Gmail REST API for email sync operations.
 type GmailSyncClient struct {
-	oauthClient   *oauth.GmailOAuthClient
-	emailRepo     *repository.CRMEmailRepository
-	encryptionKey []byte
-	httpClient    *http.Client
-	apiBaseURL    string
+	oauthClient        *oauth.GmailOAuthClient
+	emailRepo          *repository.CRMEmailRepository
+	encryptionKey      []byte
+	httpClient         *http.Client
+	apiBaseURL         string
+	calendarAPIBaseURL string
 }
 
 // NewGmailSyncClient creates a new GmailSyncClient.
@@ -86,11 +87,12 @@ func NewGmailSyncClient(oauthClient *oauth.GmailOAuthClient, emailRepo *reposito
 		return nil
 	}
 	return &GmailSyncClient{
-		oauthClient:   oauthClient,
-		emailRepo:     emailRepo,
-		encryptionKey: encryptionKey,
-		httpClient:    &http.Client{Timeout: 60 * time.Second},
-		apiBaseURL:    gmailAPIBase,
+		oauthClient:        oauthClient,
+		emailRepo:          emailRepo,
+		encryptionKey:      encryptionKey,
+		httpClient:         &http.Client{Timeout: 60 * time.Second},
+		apiBaseURL:         gmailAPIBase,
+		calendarAPIBaseURL: googleCalendarAPIBase,
 	}
 }
 
@@ -222,14 +224,30 @@ func (c *GmailSyncClient) GetMessageDetail(ctx context.Context, accessToken, mes
 
 // SendMessage sends an email via Gmail API and returns the created message and thread IDs.
 func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string) (*GmailSendResult, error) {
+	fromHeader, err := safeMailHeaderAddress(from)
+	if err != nil {
+		return nil, fmt.Errorf("invalid from address: %w", err)
+	}
+	toHeaders, err := safeMailHeaderAddresses(to)
+	if err != nil || len(toHeaders) == 0 {
+		return nil, fmt.Errorf("at least one valid recipient is required")
+	}
+	ccHeaders, err := safeMailHeaderAddresses(cc)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cc recipient: %w", err)
+	}
+	if strings.ContainsAny(subject, "\r\n") {
+		return nil, fmt.Errorf("subject contains invalid line breaks")
+	}
+
 	// Build RFC 2822 MIME message.
 	var b strings.Builder
-	b.WriteString("From: " + from + "\r\n")
-	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
-	if len(cc) > 0 {
-		b.WriteString("Cc: " + strings.Join(cc, ", ") + "\r\n")
+	b.WriteString("From: " + fromHeader + "\r\n")
+	b.WriteString("To: " + strings.Join(toHeaders, ", ") + "\r\n")
+	if len(ccHeaders) > 0 {
+		b.WriteString("Cc: " + strings.Join(ccHeaders, ", ") + "\r\n")
 	}
-	b.WriteString("Subject: " + subject + "\r\n")
+	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
 	b.WriteString("\r\n")
@@ -239,9 +257,12 @@ func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from str
 	encoded := base64.URLEncoding.EncodeToString([]byte(b.String()))
 
 	sendURL := fmt.Sprintf("%s/messages/send", c.userBaseURL())
-	payload := fmt.Sprintf(`{"raw":"%s"}`, encoded)
+	payload, err := json.Marshal(map[string]string{"raw": encoded})
+	if err != nil {
+		return nil, fmt.Errorf("encode send request: %w", err)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", sendURL, strings.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, "POST", sendURL, strings.NewReader(string(payload)))
 	if err != nil {
 		return nil, fmt.Errorf("create send request: %w", err)
 	}
@@ -275,6 +296,32 @@ func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from str
 		ID:       sendResp.ID,
 		ThreadID: sendResp.ThreadID,
 	}, nil
+}
+
+func safeMailHeaderAddresses(addresses []string) ([]string, error) {
+	result := make([]string, 0, len(addresses))
+	for _, address := range addresses {
+		if strings.TrimSpace(address) == "" {
+			continue
+		}
+		header, err := safeMailHeaderAddress(address)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, header)
+	}
+	return result, nil
+}
+
+func safeMailHeaderAddress(value string) (string, error) {
+	if strings.ContainsAny(value, "\r\n") {
+		return "", fmt.Errorf("address contains invalid line breaks")
+	}
+	address, err := mail.ParseAddress(strings.TrimSpace(value))
+	if err != nil || address.Address == "" {
+		return "", fmt.Errorf("invalid email address")
+	}
+	return address.String(), nil
 }
 
 // ListHistory returns unique message IDs changed since the provided Gmail

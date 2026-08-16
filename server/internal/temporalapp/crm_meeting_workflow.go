@@ -37,7 +37,8 @@ type meetingProcessor interface {
 
 // CRMMeetingActivities bridges Temporal to the product-owned processor.
 type CRMMeetingActivities struct {
-	processor meetingProcessor
+	processor       meetingProcessor
+	captureLauncher scheduledMeetingCaptureLauncher
 }
 
 // NewCRMMeetingActivities creates meeting processing activities.

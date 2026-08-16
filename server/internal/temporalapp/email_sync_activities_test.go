@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -446,6 +448,97 @@ func TestEmailSyncActivities_IncrementalSyncUsesHistoryCursor(t *testing.T) {
 	}
 	if messageCount != 1 {
 		t.Fatalf("message count = %d, want 1", messageCount)
+	}
+}
+
+func TestEmailSyncActivities_FirstBackfillUsesConnectionTimeHistoryCheckpoint(t *testing.T) {
+	db := setupEmailSyncActivitiesTestDB(t)
+	emailRepo := repository.NewCRMEmailRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	account := &model.CRMEmailAccount{
+		ID: "acct-first", WorkspaceID: "ws-1", MemberID: "member-1", Provider: "gmail",
+		EmailAddress: "owner@example.com", IsActive: true, Status: model.CRMEmailAccountStatusConnected,
+		SyncState: model.JSONB{"initial_history_id": "hist-at-connect"},
+	}
+	if err := emailRepo.CreateAccount(context.Background(), account); err != nil {
+		t.Fatalf("seed account: %v", err)
+	}
+
+	activities := &EmailSyncActivities{
+		gmailClient: &fakeHistorySyncClient{
+			listMessagesFn: func(ctx context.Context, accessToken, query string, maxResults int, pageToken string) ([]sync.GmailMessage, string, error) {
+				return []sync.GmailMessage{{
+					ID: "first-message", ThreadID: "first-thread", Subject: "First import",
+					From: "buyer@example.com", To: []string{"owner@example.com"}, Date: time.Now(),
+				}}, "", nil
+			},
+			getMailboxProfileFn: func(ctx context.Context, accessToken string) (*sync.GmailProfile, error) {
+				return &sync.GmailProfile{EmailAddress: "owner@example.com", HistoryID: "hist-after-import"}, nil
+			},
+		},
+		emailRepo: emailRepo,
+		resolver:  crmemail.NewResolver(contactRepo),
+	}
+
+	result, err := activities.BackfillEmailsActivity(context.Background(), account.ID)
+	if err != nil {
+		t.Fatalf("BackfillEmailsActivity: %v", err)
+	}
+	if result.MessagesProcessed != 1 || result.NewHistoryID != "hist-at-connect" {
+		t.Fatalf("result = %+v, want one message and connection-time checkpoint", result)
+	}
+	stored, err := emailRepo.GetAccountByID(context.Background(), account.ID)
+	if err != nil {
+		t.Fatalf("reload account: %v", err)
+	}
+	if stored.LastHistoryID == nil || *stored.LastHistoryID != "hist-at-connect" {
+		t.Fatalf("last_history_id = %v, want hist-at-connect", stored.LastHistoryID)
+	}
+	if _, exists := stored.SyncState["initial_history_id"]; exists {
+		t.Fatal("initial_history_id should be cleared after the first import")
+	}
+}
+
+func TestEmailSyncActivities_HistoricalBackfillUsesConfiguredWindow(t *testing.T) {
+	db := setupEmailSyncActivitiesTestDB(t)
+	emailRepo := repository.NewCRMEmailRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	lastSyncedAt := time.Now().Add(-time.Minute)
+	account := &model.CRMEmailAccount{
+		ID: "acct-history", WorkspaceID: "ws-1", MemberID: "member-1", Provider: "gmail",
+		EmailAddress: "owner@example.com", IsActive: true, Status: model.CRMEmailAccountStatusConnected,
+		LastHistoryID: stringPtr("healthy-cursor"), LastSyncedAt: &lastSyncedAt,
+	}
+	if err := emailRepo.CreateAccount(context.Background(), account); err != nil {
+		t.Fatalf("seed account: %v", err)
+	}
+	queryUsed := ""
+	activities := &EmailSyncActivities{
+		gmailClient: &fakeHistorySyncClient{
+			listMessagesFn: func(ctx context.Context, accessToken, query string, maxResults int, pageToken string) ([]sync.GmailMessage, string, error) {
+				queryUsed = query
+				return nil, "", nil
+			},
+		},
+		emailRepo: emailRepo,
+		resolver:  crmemail.NewResolver(contactRepo),
+	}
+
+	result, err := activities.HistoricalBackfillEmailsActivity(context.Background(), account.ID)
+	if err != nil {
+		t.Fatalf("HistoricalBackfillEmailsActivity: %v", err)
+	}
+	queryTimestamp, parseErr := strconv.ParseInt(strings.TrimPrefix(queryUsed, "after:"), 10, 64)
+	if parseErr != nil {
+		t.Fatalf("query = %q, want after:<unix timestamp>", queryUsed)
+	}
+	expectedStart := time.Now().AddDate(0, 0, -90)
+	actualStart := time.Unix(queryTimestamp, 0)
+	if delta := actualStart.Sub(expectedStart); delta < -5*time.Second || delta > 5*time.Second {
+		t.Fatalf("query start = %s, want configured 90-day window around %s", actualStart, expectedStart)
+	}
+	if result.NewHistoryID != "healthy-cursor" {
+		t.Fatalf("history cursor = %q, want healthy-cursor", result.NewHistoryID)
 	}
 }
 

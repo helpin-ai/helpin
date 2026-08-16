@@ -587,7 +587,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/change-plan", h.Billing.ChangePlan)
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/resume-subscription", h.Billing.ResumeSubscription)
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/portal", h.Billing.Portal)
-				r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Put("/billing/extra-usage", h.Billing.SetOnDemand)
+					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Put("/billing/extra-usage", h.Billing.SetOnDemand)
 					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/test-scenario", h.Billing.ApplyTestScenario)
 					// Usage is read-only and visible to any settings reader (matches the
 					// billing summary). Payment-method changes remain billing-owner-only.
@@ -1506,6 +1506,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Meetings — crm.read / crm.edit / crm.admin settings
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings", h.CRMMeeting.List)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings", h.CRMMeeting.Create)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/calendar-upcoming", h.CRMMeeting.ListUpcomingCalendar)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/meetings/calendar/{eventID}/capture", h.CRMMeeting.UpdateCalendarCapture)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/{id}", h.CRMMeeting.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/meetings/{id}", h.CRMMeeting.Update)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/meetings/{id}", h.CRMMeeting.Delete)
@@ -1533,7 +1535,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts", h.CRMEmail.CreateAccount)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}", h.CRMEmail.GetAccount)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/email/accounts/{id}", h.CRMEmail.DeleteAccount)
-				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/email/accounts/{id}/diagnostics", h.CRMEmail.GetAccountDiagnostics)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}/diagnostics", h.CRMEmail.GetAccountDiagnostics)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts/{id}/sync", h.CRMEmail.SyncAccount)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/email/accounts/{id}/maintenance/rebuild-associations", h.CRMEmail.RebuildAssociations)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Delete("/email/accounts/{id}/data", h.CRMEmail.PurgeAccountData)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts/{id}/oauth-callback", h.CRMEmail.OAuthCallback)

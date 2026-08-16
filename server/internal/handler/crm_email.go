@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 
@@ -54,10 +56,17 @@ func (h *CRMEmailHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 
 // GetAccount handles GET /api/crm/email/accounts/{id}.
 func (h *CRMEmailHandler) GetAccount(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
-	account, err := h.emailService.GetAccount(r.Context(), id)
+	account, err := h.emailService.GetAccount(r.Context(), workspaceID, id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	actor := authorization.GetActor(r.Context())
+	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
+	if !isAdmin && account.MemberID != middleware.GetUserID(r.Context()) {
+		writeError(w, http.StatusForbidden, "not authorized to view this email account")
 		return
 	}
 	writeJSON(w, http.StatusOK, account)
@@ -70,9 +79,8 @@ func (h *CRMEmailHandler) CreateAccount(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.WorkspaceID == "" {
-		req.WorkspaceID = getWorkspaceID(r)
-	}
+	req.WorkspaceID = getWorkspaceID(r)
+	req.MemberID = middleware.GetUserID(r.Context())
 	account, err := h.emailService.CreateAccount(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -83,12 +91,13 @@ func (h *CRMEmailHandler) CreateAccount(w http.ResponseWriter, r *http.Request) 
 
 // DeleteAccount handles DELETE /api/crm/email/accounts/{id}.
 func (h *CRMEmailHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())
 	actor := authorization.GetActor(r.Context())
 	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermSettingsManage)
 
-	if err := h.emailService.DeleteAccount(r.Context(), id, userID, isAdmin); err != nil {
+	if err := h.emailService.DeleteAccount(r.Context(), workspaceID, id, userID, isAdmin); err != nil {
 		if err.Error() == "not authorized to disconnect this email account" {
 			writeError(w, http.StatusForbidden, err.Error())
 			return
@@ -101,11 +110,12 @@ func (h *CRMEmailHandler) DeleteAccount(w http.ResponseWriter, r *http.Request) 
 
 // PurgeAccountData handles DELETE /api/crm/email/accounts/{id}/data.
 func (h *CRMEmailHandler) PurgeAccountData(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 	actor := authorization.GetActor(r.Context())
 	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
 
-	if err := h.emailService.PurgeAccountData(r.Context(), id, isAdmin); err != nil {
+	if err := h.emailService.PurgeAccountData(r.Context(), workspaceID, id, isAdmin); err != nil {
 		if err.Error() == "not authorized to purge email account data" {
 			writeError(w, http.StatusForbidden, err.Error())
 			return
@@ -118,11 +128,13 @@ func (h *CRMEmailHandler) PurgeAccountData(w http.ResponseWriter, r *http.Reques
 
 // GetAccountDiagnostics handles GET /api/crm/email/accounts/{id}/diagnostics.
 func (h *CRMEmailHandler) GetAccountDiagnostics(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
 	actor := authorization.GetActor(r.Context())
 	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
 
-	diagnostics, err := h.emailService.GetAccountDiagnostics(r.Context(), id, isAdmin)
+	diagnostics, err := h.emailService.GetAccountDiagnostics(r.Context(), workspaceID, id, userID, isAdmin)
 	if err != nil {
 		switch err.Error() {
 		case "not authorized to view email account diagnostics":
@@ -139,11 +151,12 @@ func (h *CRMEmailHandler) GetAccountDiagnostics(w http.ResponseWriter, r *http.R
 
 // RebuildAssociations handles POST /api/crm/email/accounts/{id}/maintenance/rebuild-associations.
 func (h *CRMEmailHandler) RebuildAssociations(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 	actor := authorization.GetActor(r.Context())
 	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
 
-	result, err := h.emailService.RebuildAccountAssociations(r.Context(), id, isAdmin)
+	result, err := h.emailService.RebuildAccountAssociations(r.Context(), workspaceID, id, isAdmin)
 	if err != nil {
 		switch err.Error() {
 		case "not authorized to rebuild email associations":
@@ -160,9 +173,10 @@ func (h *CRMEmailHandler) RebuildAssociations(w http.ResponseWriter, r *http.Req
 
 // OAuthCallback handles POST /api/crm/email/accounts/{id}/oauth-callback (stub).
 func (h *CRMEmailHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 	code := r.URL.Query().Get("code")
-	if err := h.emailService.OAuthCallback(r.Context(), id, code); err != nil {
+	if err := h.emailService.OAuthCallback(r.Context(), workspaceID, id, code); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -201,6 +215,18 @@ func (h *CRMEmailHandler) InitiateOAuth(w http.ResponseWriter, r *http.Request) 
 func (h *CRMEmailHandler) OAuthCallbackRedirect(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	code := r.URL.Query().Get("code")
+	oauthError := r.URL.Query().Get("error")
+
+	if oauthError != "" {
+		slug, err := h.emailService.CancelOAuth(r.Context(), state)
+		if err != nil {
+			slog.WarnContext(r.Context(), "cancel Gmail OAuth callback", "error", err, "oauth_error", oauthError)
+			writeError(w, http.StatusBadRequest, "Google connection was cancelled")
+			return
+		}
+		h.redirectToEmailSettings(w, r, slug, "cancelled")
+		return
+	}
 
 	if state == "" || code == "" {
 		writeError(w, http.StatusBadRequest, "state and code are required")
@@ -209,17 +235,55 @@ func (h *CRMEmailHandler) OAuthCallbackRedirect(w http.ResponseWriter, r *http.R
 
 	slug, err := h.emailService.CompleteOAuth(r.Context(), state, code)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		slog.ErrorContext(r.Context(), "complete Gmail OAuth callback", "error", err)
+		if cancelSlug, cancelErr := h.emailService.CancelOAuth(r.Context(), state); cancelErr == nil {
+			h.redirectToEmailSettings(w, r, cancelSlug, "error")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "Google connection could not be completed")
 		return
 	}
 
-	// Redirect browser back to the CRM email settings page.
-	redirectURL := h.appBaseURL + "/w/" + slug + "/crm?oauth=success"
+	h.redirectToEmailSettings(w, r, slug, "success")
+}
+
+func (h *CRMEmailHandler) redirectToEmailSettings(w http.ResponseWriter, r *http.Request, slug, status string) {
+	redirectURL := h.appBaseURL + "/w/" + url.PathEscape(slug) + "/settings/crm-email?oauth=" + url.QueryEscape(status)
 	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+// SyncAccount handles POST /api/crm/email/accounts/{id}/sync.
+func (h *CRMEmailHandler) SyncAccount(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+	actor := authorization.GetActor(r.Context())
+	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
+	var req struct {
+		Mode string `json:"mode"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	account, err := h.emailService.SyncAccount(r.Context(), workspaceID, id, userID, req.Mode, isAdmin)
+	if err != nil {
+		switch err.Error() {
+		case "email account not found":
+			writeError(w, http.StatusNotFound, err.Error())
+		case "not authorized to sync this email account":
+			writeError(w, http.StatusForbidden, err.Error())
+		default:
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusAccepted, account)
 }
 
 // SendEmail handles POST /api/crm/email/send.
 func (h *CRMEmailHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
 	var req struct {
 		AccountID string   `json:"account_id"`
 		To        []string `json:"to"`
@@ -236,8 +300,14 @@ func (h *CRMEmailHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	message, err := h.emailService.SendEmail(r.Context(), req.AccountID, req.To, req.CC, req.Subject, req.BodyHTML)
+	actor := authorization.GetActor(r.Context())
+	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
+	message, err := h.emailService.SendEmail(r.Context(), workspaceID, req.AccountID, middleware.GetUserID(r.Context()), isAdmin, req.To, req.CC, req.Subject, req.BodyHTML)
 	if err != nil {
+		if err.Error() == "not authorized to send from this email account" {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -313,9 +383,7 @@ func (h *CRMEmailHandler) CreateMessage(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.WorkspaceID == "" {
-		req.WorkspaceID = getWorkspaceID(r)
-	}
+	req.WorkspaceID = getWorkspaceID(r)
 	message, err := h.emailService.CreateMessage(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

@@ -731,7 +731,10 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const manualMeetings = (activitiesData?.data ?? []).filter(
     (a) => a.activity_type === 'meeting',
   );
-  const meetingCount = syncedMeetingCount + manualMeetings.length;
+  const capturedMeetingCount = (associations ?? []).filter((association) =>
+    association.from_object_type === 'meeting' || association.to_object_type === 'meeting',
+  ).length;
+  const meetingCount = syncedMeetingCount + manualMeetings.length + capturedMeetingCount;
   const notesAndCalls = (activitiesData?.data ?? []).filter(
     (a) => a.activity_type === 'note' || a.activity_type === 'call',
   );
@@ -760,6 +763,10 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   );
   const dealAssociations = useMemo(
     () => linkedAssociations.filter((a) => a.linkedType === 'deal'),
+    [linkedAssociations],
+  );
+  const capturedMeetingAssociations = useMemo(
+    () => linkedAssociations.filter((a) => a.linkedType === 'meeting'),
     [linkedAssociations],
   );
   const taskAssociations = useMemo(
@@ -1346,6 +1353,32 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
             {/* ──────── MEETINGS TAB ──────── */}
             <TabsContent value="meetings" className="mt-0 h-full overflow-y-auto px-8 py-6">
+              {capturedMeetingAssociations.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Helpin meeting notes</h3>
+                  <div className="space-y-2">
+                    {capturedMeetingAssociations.map((meeting) => (
+                      <button
+                        key={meeting.id}
+                        type="button"
+                        className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/30"
+                        onClick={() => navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: meeting.linkedId } })}
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                          <Calendar01Icon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{meeting.linked_object_name || 'Meeting notes'}</p>
+                          <p className="mt-0.5 text-xs capitalize text-muted-foreground">
+                            {(meeting.linked_object_status || 'scheduled').replace(/_/g, ' ')}
+                          </p>
+                        </div>
+                        <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Manual meetings */}
               {manualMeetings.length > 0 && (
                 <div className="mb-6">

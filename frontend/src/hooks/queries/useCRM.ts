@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   crmContactService,
   crmCompanyService,
@@ -526,6 +526,27 @@ export function usePurgeEmailAccount(wsId: string) {
   })
 }
 
+export function useEmailAccountDiagnostics(wsId: string, accountId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.emailAccounts(wsId), accountId, 'diagnostics'],
+    queryFn: async () => unwrap(await crmEmailService.getAccountDiagnostics(wsId, accountId)),
+    enabled: enabled && !!wsId && !!accountId,
+    refetchInterval: (query) => {
+      const phase = query.state.data?.sync.phase
+      return phase && !['idle', 'error', 'disconnected'].includes(phase) ? 2_500 : false
+    },
+  })
+}
+
+export function useSyncEmailAccount(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, mode }: { id: string; mode: 'incremental' | 'historical' }) =>
+      unwrap(await crmEmailService.syncAccount(wsId, id, mode)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.emailAccounts(wsId) }) },
+  })
+}
+
 export function useContactEmails(wsId: string, contactId: string) {
   return useQuery({
     queryKey: queryKeys.crm.contactEmails(wsId, contactId),
@@ -538,6 +559,26 @@ export function useDealEmails(wsId: string, dealId: string) {
   return useQuery({
     queryKey: queryKeys.crm.dealEmails(wsId, dealId),
     queryFn: async () => unwrap(await crmEmailService.listByDeal(wsId, dealId)),
+    enabled: !!wsId && !!dealId,
+  })
+}
+
+export function useInfiniteContactEmails(wsId: string, contactId: string) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.crm.contactEmails(wsId, contactId), 'infinite'],
+    queryFn: async ({ pageParam }) => unwrap(await crmEmailService.listByContact(wsId, contactId, pageParam)),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.page * 50 < lastPage.total ? lastPage.page + 1 : undefined,
+    enabled: !!wsId && !!contactId,
+  })
+}
+
+export function useInfiniteDealEmails(wsId: string, dealId: string) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.crm.dealEmails(wsId, dealId), 'infinite'],
+    queryFn: async ({ pageParam }) => unwrap(await crmEmailService.listByDeal(wsId, dealId, pageParam)),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.page * 50 < lastPage.total ? lastPage.page + 1 : undefined,
     enabled: !!wsId && !!dealId,
   })
 }
