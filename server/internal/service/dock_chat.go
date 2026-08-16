@@ -36,6 +36,7 @@ const (
 	dockChatPageContextOpenTag        = "<page_context>"
 	dockChatReferencesOpenTag         = "<references>"
 	dockChatAttachmentsOpenTag        = "<attachments>"
+	dockChatSourceAttachmentsOpenTag  = "<source_attachments>"
 	dockChatAttachmentAnalysisOpenTag = "<attachment_analysis>"
 	dockChatReferencesMax             = 10
 	dockChatListDefaultLimit          = 30
@@ -60,6 +61,7 @@ type DockChatService struct {
 	titleLLM            dockChatTitleLLM
 	pmAttachmentRepo    *repository.PMAttachmentRepository
 	pmAttachmentService *PMAttachmentService
+	supportInboxService *SupportInboxService
 	mediaLLM            dockChatMediaLLM
 }
 
@@ -67,6 +69,15 @@ type DockChatService struct {
 func (s *DockChatService) SetPMAttachmentRepository(repo *repository.PMAttachmentRepository) *DockChatService {
 	if s != nil {
 		s.pmAttachmentRepo = repo
+	}
+	return s
+}
+
+// SetMediaSourceService lets Ask discover media already attached to a support
+// conversation selected as page context.
+func (s *DockChatService) SetMediaSourceService(support *SupportInboxService) *DockChatService {
+	if s != nil {
+		s.supportInboxService = support
 	}
 	return s
 }
@@ -333,11 +344,15 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 	if err != nil {
 		return nil, err
 	}
-	analysis, err := s.analyzeDockChatMedia(ctx, workspaceID, userID, content, attachments)
+	sourceAttachments, err := s.resolveDockChatSourceMediaAttachments(ctx, workspaceID, req.PageContext, references)
 	if err != nil {
 		return nil, err
 	}
-	composed := composeDockChatTurn(content, req.PageContext, references, attachments, analysis)
+	analysis, err := s.analyzeDockChatMedia(ctx, workspaceID, userID, content, append(append([]dockChatMediaAttachment{}, attachments...), sourceAttachments...))
+	if err != nil {
+		return nil, err
+	}
+	composed := composeDockChatTurn(content, req.PageContext, references, attachments, sourceAttachments, analysis)
 
 	var currentRun *model.AgentRun
 	if chat.ActiveRunID != nil {
@@ -817,9 +832,11 @@ type dockChatMediaAttachment struct {
 	FileName string `json:"file_name"`
 	FileType string `json:"file_type"`
 	FileSize int64  `json:"file_size"`
+	Source   string `json:"source,omitempty"`
+	URL      string `json:"-"`
 }
 
-func composeDockChatTurn(content string, pageContext map[string]interface{}, references []model.DockEntityReference, attachments []dockChatMediaAttachment, analysis string) string {
+func composeDockChatTurn(content string, pageContext map[string]interface{}, references []model.DockEntityReference, attachments, sourceAttachments []dockChatMediaAttachment, analysis string) string {
 	blocks := []string{content}
 	if len(pageContext) > 0 {
 		if encoded, err := json.Marshal(pageContext); err == nil {
@@ -836,18 +853,95 @@ func composeDockChatTurn(content string, pageContext map[string]interface{}, ref
 			blocks = append(blocks, dockChatAttachmentsOpenTag+string(encoded)+"</attachments>")
 		}
 	}
+	if len(sourceAttachments) > 0 {
+		if encoded, err := json.Marshal(sourceAttachments); err == nil {
+			blocks = append(blocks, dockChatSourceAttachmentsOpenTag+string(encoded)+"</source_attachments>")
+		}
+	}
 	if analysis = strings.TrimSpace(analysis); analysis != "" {
 		blocks = append(blocks, dockChatAttachmentAnalysisOpenTag+analysis+"</attachment_analysis>")
 	}
 	return strings.Join(blocks, "\n\n")
 }
 
+func (s *DockChatService) resolveDockChatSourceMediaAttachments(ctx context.Context, workspaceID string, pageContext map[string]interface{}, references []model.DockEntityReference) ([]dockChatMediaAttachment, error) {
+	type source struct{ EntityType, EntityID string }
+	sources := make([]source, 0, len(references)+1)
+	if pageContext != nil {
+		entityType, _ := pageContext["entity_type"].(string)
+		entityID, _ := pageContext["entity_id"].(string)
+		if strings.TrimSpace(entityType) != "" && strings.TrimSpace(entityID) != "" {
+			sources = append(sources, source{entityType, entityID})
+		}
+	}
+	for _, ref := range references {
+		sources = append(sources, source{ref.EntityType, ref.EntityID})
+	}
+
+	seen := map[string]struct{}{}
+	result := make([]dockChatMediaAttachment, 0)
+	for _, item := range sources {
+		key := item.EntityType + ":" + item.EntityID
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if item.EntityType == "support_conversation" && s.supportInboxService != nil {
+			messages, err := s.supportInboxService.ListConversationMessages(ctx, workspaceID, item.EntityID, false)
+			if err != nil {
+				return nil, err
+			}
+			for _, message := range messages {
+				for _, attachment := range message.Attachments {
+					if !isDockChatMediaType(attachment.FileType) || isDecorativeDockChatAsset(attachment.FileName, attachment.FileSize) || strings.TrimSpace(attachment.URL) == "" {
+						continue
+					}
+					result = append(result, dockChatMediaAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.FileType, FileSize: attachment.FileSize, Source: "support_conversation", URL: attachment.URL})
+				}
+			}
+			continue
+		}
+		if s.pmAttachmentRepo == nil || s.pmAttachmentService == nil {
+			continue
+		}
+		entityType := item.EntityType
+		if entityType == "document" {
+			entityType = entityTypeEditorUpload
+		}
+		attachments, err := s.pmAttachmentRepo.List(ctx, entityType, item.EntityID)
+		if err != nil {
+			return nil, err
+		}
+		for _, attachment := range attachments {
+			if attachment.WorkspaceID != workspaceID || !isDockChatMediaType(attachment.ContentType) || isDecorativeDockChatAsset(attachment.FileName, attachment.FileSize) {
+				continue
+			}
+			url, err := s.pmAttachmentService.ContentURL(ctx, attachment.ID)
+			if err != nil {
+				continue
+			}
+			result = append(result, dockChatMediaAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.ContentType, FileSize: attachment.FileSize, Source: item.EntityType, URL: url})
+		}
+	}
+	return result, nil
+}
+
+func isDecorativeDockChatAsset(fileName string, size int64) bool {
+	if size > 15*1024 {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(fileName))
+	for _, marker := range []string{"logo", "signature", "spacer", "tracking", "pixel", "icon"} {
+		if strings.Contains(name, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *DockChatService) resolveDockChatMediaAttachments(ctx context.Context, workspaceID, userID string, ids []string) ([]dockChatMediaAttachment, error) {
 	if len(ids) == 0 {
 		return nil, nil
-	}
-	if len(ids) > 3 {
-		return nil, fmt.Errorf("at most 3 media attachments are allowed")
 	}
 	if s.pmAttachmentRepo == nil {
 		return nil, fmt.Errorf("Ask media attachments are not configured")

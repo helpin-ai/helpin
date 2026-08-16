@@ -347,12 +347,19 @@ export function ChatView({
   const sendContent = useCallback(
     async (content: string, messageReferences: DockEntityReference[] = references, retryClientMessageID?: string) => {
       if (!content || sending) return;
-	  const clientMessageId = retryClientMessageID ?? newClientMessageID();
+      const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
-	  const attachmentIDs = mediaAttachments.filter((attachment) => attachment.status === 'ready' && attachment.id).map((attachment) => attachment.id!);
-	  setAnalyzingMedia(attachmentIDs.length > 0);
-	  setAnalyzingMediaLabel(attachmentIDs.length === 1 ? `Analyzing ${mediaAttachments.find((attachment) => attachment.id === attachmentIDs[0])?.file_name ?? 'attachment'}…` : `Analyzing ${attachmentIDs.length} attachments…`);
+      const attachmentIDs = mediaAttachments.filter((attachment) => attachment.status === 'ready' && attachment.id).map((attachment) => attachment.id!);
+      const hasSourceContext = !!effectivePageContext || messageReferences.length > 0;
+      setAnalyzingMedia(attachmentIDs.length > 0 || hasSourceContext);
+      setAnalyzingMediaLabel(
+        attachmentIDs.length === 1
+          ? `Analyzing ${mediaAttachments.find((attachment) => attachment.id === attachmentIDs[0])?.file_name ?? 'attachment'}…`
+          : attachmentIDs.length > 1
+            ? `Analyzing ${attachmentIDs.length} attachments…`
+            : 'Checking context attachments…',
+      );
       setLaunchStartedAt(new Date().toISOString());
       setSendError(null);
       setPendingEcho({ id: clientMessageId, content });
@@ -430,11 +437,7 @@ export function ChatView({
     if (accepted.length !== files.length) {
       toast.error('Ask supports PNG, JPG, GIF, WebP, MP4, MOV, WebM, and MPEG files up to 20 MB.');
     }
-    const available = Math.max(0, 3 - mediaAttachments.length);
-    if (accepted.length > available) {
-      toast.error('You can attach up to 3 media files to an Ask message.');
-    }
-    for (const file of accepted.slice(0, available)) {
+    for (const file of accepted) {
       const localId = newClientMessageID();
       const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
       setMediaAttachments((current) => [...current, {

@@ -191,6 +191,8 @@ export const DOCK_REFERENCES_OPEN = '<references>'
 export const DOCK_REFERENCES_CLOSE = '</references>'
 export const DOCK_ATTACHMENTS_OPEN = '<attachments>'
 export const DOCK_ATTACHMENTS_CLOSE = '</attachments>'
+export const DOCK_SOURCE_ATTACHMENTS_OPEN = '<source_attachments>'
+export const DOCK_SOURCE_ATTACHMENTS_CLOSE = '</source_attachments>'
 export const DOCK_ATTACHMENT_ANALYSIS_OPEN = '<attachment_analysis>'
 export const DOCK_ATTACHMENT_ANALYSIS_CLOSE = '</attachment_analysis>'
 export const DOCK_CHILD_RESULT_OPEN = '<child_run_result>'
@@ -227,6 +229,7 @@ export function stripDockPageContext(content: string): string {
     [DOCK_PAGE_CONTEXT_OPEN, DOCK_PAGE_CONTEXT_CLOSE],
     [DOCK_REFERENCES_OPEN, DOCK_REFERENCES_CLOSE],
     [DOCK_ATTACHMENTS_OPEN, DOCK_ATTACHMENTS_CLOSE],
+    [DOCK_SOURCE_ATTACHMENTS_OPEN, DOCK_SOURCE_ATTACHMENTS_CLOSE],
     [DOCK_ATTACHMENT_ANALYSIS_OPEN, DOCK_ATTACHMENT_ANALYSIS_CLOSE],
   ] as const) {
     const start = visible.lastIndexOf(open)

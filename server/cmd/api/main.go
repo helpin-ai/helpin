@@ -1604,6 +1604,7 @@ func main() {
 	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, commandBarPlanRepo, agentService, commandService, authzService).
 		SetTitleLLM(supportLLMProvider).
 		SetPMAttachmentRepository(pmAttachmentRepo).
+		SetMediaSourceService(supportInboxService).
 		SetMediaAnalyzer(pmAttachmentService, supportLLMProvider)
 	if runFinalizers != nil {
 		// Immediate delivery of settled child-plan results into dock chats;
