@@ -18,7 +18,7 @@ export function AskAgentWorkAnimation({ className = 'h-5 w-5' }: { className?: s
         renderer: 'svg',
         loop: !reducedMotion,
         autoplay: !reducedMotion,
-        path: '/assets/agents/ask-loader.json',
+        path: '/assets/agents/loader.json',
         rendererSettings: { progressiveLoad: true },
       });
       animation = instance;
