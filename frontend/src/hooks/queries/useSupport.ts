@@ -865,6 +865,16 @@ export function useConversationMessages(workspaceId: string, conversationId: str
   });
 }
 
+export function useSendConversationTranscript(workspaceId: string) {
+  return useMutation({
+    mutationFn: ({ conversationId, email, updateCustomerEmail }: { conversationId: string; email?: string; updateCustomerEmail?: boolean }) =>
+      supportService.sendConversationTranscript(workspaceId, conversationId, {
+        email,
+        update_customer_email: updateCustomerEmail,
+      }).then(unwrap),
+  });
+}
+
 export function useMessageEmailDetail(workspaceId: string, messageId: string | null, enabled = true) {
   return useQuery({
     queryKey: queryKeys.support.messageEmail(workspaceId, messageId ?? ''),

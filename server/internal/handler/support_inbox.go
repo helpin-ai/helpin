@@ -171,6 +171,30 @@ func (h *SupportInboxHandler) GetConversation(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, conversation)
 }
 
+// SendConversationTranscript handles POST /api/support/inbox/conversations/{id}/transcript.
+func (h *SupportInboxHandler) SendConversationTranscript(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	var req model.SendSupportConversationTranscriptRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.supportService.SendSupportConversationTranscript(r.Context(), workspaceID, conversationID, req.Email, req.UpdateCustomerEmail)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "invalid email") {
+			status = http.StatusBadRequest
+		}
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *SupportInboxHandler) GetRoutingUsageStatus(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {

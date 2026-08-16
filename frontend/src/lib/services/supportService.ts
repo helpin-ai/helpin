@@ -59,6 +59,7 @@ import type {
   SupportTag,
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
+  SendSupportConversationTranscriptResponse,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -216,6 +217,8 @@ export const supportService = {
     api.post<CreateConversationWithMessageResponse>(`/support/inbox/conversations/create-and-send${qs(workspaceId)}`, payload),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
     api.get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
+  sendConversationTranscript: (workspaceId: string, conversationId: string, payload: { email?: string; update_customer_email?: boolean }) =>
+    api.post<SendSupportConversationTranscriptResponse>(`/support/inbox/conversations/${conversationId}/transcript${qs(workspaceId)}`, payload),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
     api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
   deleteConversationMessage: (workspaceId: string, conversationId: string, messageId: string, undo = false) => {

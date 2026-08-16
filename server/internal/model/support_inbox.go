@@ -956,6 +956,17 @@ type WidgetTranscriptResponse struct {
 	Message string `json:"message"`
 }
 
+type SendSupportConversationTranscriptRequest struct {
+	Email               string `json:"email"`
+	UpdateCustomerEmail bool   `json:"update_customer_email"`
+}
+
+type SendSupportConversationTranscriptResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Email   string `json:"email"`
+}
+
 // ── WS Message Types ─────────────────────────────────────────────────
 
 // WidgetWSMessage is the envelope for all widget WS messages.

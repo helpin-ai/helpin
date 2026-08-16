@@ -417,25 +417,7 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 		}
 	}
 
-	messages, err := s.ListConversationMessages(ctx, session.WorkspaceID, conversationID, false)
-	if err != nil {
-		return nil, err
-	}
-
-	workspaceName := "Support"
-	if s.workspaceRepo != nil {
-		if workspace, err := s.workspaceRepo.GetByID(ctx, session.WorkspaceID); err == nil && workspace != nil && strings.TrimSpace(workspace.Name) != "" {
-			workspaceName = strings.TrimSpace(workspace.Name)
-		}
-	}
-
-	htmlBody, textBody := renderSupportTranscriptBodies(workspaceName, conversation, messages)
-	subject := fmt.Sprintf("Your conversation transcript with %s", workspaceName)
-
-	if s.emailFallbackService == nil || s.emailFallbackService.emailClient == nil {
-		return nil, fmt.Errorf("email is not configured")
-	}
-	if err := s.emailFallbackService.emailClient.SendEmail(recipientEmail, subject, htmlBody, textBody); err != nil {
+	if err := s.sendConversationTranscript(ctx, session.WorkspaceID, conversation, recipientEmail, strings.TrimSpace(derefString(conversation.CustomerEmail)) == "" && strings.TrimSpace(email) != ""); err != nil {
 		return nil, err
 	}
 
@@ -453,6 +435,60 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 		Success: true,
 		Message: fmt.Sprintf("Transcript sent to %s", recipientEmail),
 	}, nil
+}
+
+// SendSupportConversationTranscript sends a transcript from the authenticated support inbox.
+func (s *SupportInboxService) SendSupportConversationTranscript(ctx context.Context, workspaceID, conversationID, email string, updateCustomerEmail bool) (*model.SendSupportConversationTranscriptResponse, error) {
+	if strings.TrimSpace(conversationID) == "" {
+		return nil, fmt.Errorf("conversation_id is required")
+	}
+	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+	if err != nil {
+		return nil, err
+	}
+	if conversation == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+	recipientEmail := strings.TrimSpace(email)
+	if recipientEmail == "" {
+		recipientEmail = strings.TrimSpace(derefString(conversation.CustomerEmail))
+	}
+	if recipientEmail == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+	if _, err := mail.ParseAddress(recipientEmail); err != nil {
+		return nil, fmt.Errorf("invalid email address")
+	}
+	if err := s.sendConversationTranscript(ctx, workspaceID, conversation, recipientEmail, updateCustomerEmail); err != nil {
+		return nil, err
+	}
+	return &model.SendSupportConversationTranscriptResponse{Success: true, Email: recipientEmail, Message: fmt.Sprintf("Transcript sent to %s", recipientEmail)}, nil
+}
+
+func (s *SupportInboxService) sendConversationTranscript(ctx context.Context, workspaceID string, conversation *model.SupportConversation, recipientEmail string, updateCustomerEmail bool) error {
+	messages, err := s.ListConversationMessages(ctx, workspaceID, conversation.ID, false)
+	if err != nil {
+		return err
+	}
+	workspaceName := "Support"
+	if s.workspaceRepo != nil {
+		if workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID); err == nil && workspace != nil && strings.TrimSpace(workspace.Name) != "" {
+			workspaceName = strings.TrimSpace(workspace.Name)
+		}
+	}
+	if s.emailFallbackService == nil || s.emailFallbackService.emailClient == nil {
+		return fmt.Errorf("email is not configured")
+	}
+	htmlBody, textBody := renderSupportTranscriptBodies(workspaceName, conversation, messages)
+	if err := s.emailFallbackService.emailClient.SendEmail(recipientEmail, fmt.Sprintf("Your conversation transcript with %s", workspaceName), htmlBody, textBody); err != nil {
+		return err
+	}
+	if updateCustomerEmail && strings.TrimSpace(derefString(conversation.CustomerEmail)) != strings.TrimSpace(recipientEmail) {
+		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversation.ID, map[string]any{"customer_email": recipientEmail}); err != nil {
+			slog.WarnContext(ctx, "persist transcript recipient email failed", "error", err, "conversation_id", conversation.ID)
+		}
+	}
+	return nil
 }
 
 // WidgetCreateMessage creates a message from an external widget user.

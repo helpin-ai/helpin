@@ -88,6 +88,12 @@ export interface SupportConversation {
   updated_at: string;
 }
 
+export interface SendSupportConversationTranscriptResponse {
+  success: boolean;
+  message: string;
+  email: string;
+}
+
 export interface UnreadStats {
   inbox: number;
   mine: number;
