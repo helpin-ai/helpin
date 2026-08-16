@@ -11,7 +11,7 @@ export interface AgentLiveProgress {
 
 interface ResolveAgentLiveProgressInput {
   run: Pick<AgentRun, 'status' | 'pause_reason' | 'started_at' | 'created_at'> | null;
-  stream: Pick<CodingSessionStreamState, 'transcript_messages' | 'live_turn_segments' | 'live_reasoning_message'> | null;
+  stream: Pick<CodingSessionStreamState, 'transcript_messages' | 'live_turn_segments' | 'live_reasoning_message' | 'activity_events'> | null;
   currentPlan: RunPlanArtifact | null;
   activeSubAgentName?: string | null;
   sending: boolean;
@@ -107,6 +107,14 @@ export function resolveAgentLiveProgress({
   }
   if (stream?.live_reasoning_message?.status === 'streaming') {
     return { label: 'Thinking…', startedAt, tone: 'working' };
+  }
+  if (
+    segments.length === 0
+    && !stream?.live_reasoning_message
+    && !currentPlan
+    && (stream?.activity_events?.length ?? 0) === 0
+  ) {
+    return { label: 'Starting…', startedAt, tone: 'working' };
   }
   return { label: 'Working…', startedAt, tone: 'working' };
 }
