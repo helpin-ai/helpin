@@ -105,6 +105,12 @@ describe('resolveAgentLiveProgress', () => {
       }),
     })?.label).toBe('Starting…');
   });
+
+  it('keeps a completed run status available for the worked-duration label', () => {
+    expect(resolveAgentLiveProgress({
+      run: run({ status: 'completed' }), stream: stream(), currentPlan: null, sending: false,
+    })).toMatchObject({ label: 'Worked', completed: true });
+  });
 });
 
 describe('formatAgentElapsed', () => {
