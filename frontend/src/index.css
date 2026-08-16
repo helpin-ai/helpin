@@ -26,9 +26,19 @@
   -webkit-background-clip: text;
   animation: agent-streaming-text-sweep 1.8s linear infinite;
 }
+@keyframes agent-paused-dot-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.agent-paused-dot-pulse {
+  animation: agent-paused-dot-pulse 1.6s ease-in-out infinite;
+}
 @media (prefers-reduced-motion: reduce) {
-  .agent-streaming-text {
+  .agent-streaming-text,
+  .agent-paused-dot-pulse {
     animation: none;
+  }
+  .agent-streaming-text {
     background: none;
     color: var(--muted-foreground);
   }
