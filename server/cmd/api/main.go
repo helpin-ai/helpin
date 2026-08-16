@@ -1319,7 +1319,9 @@ func main() {
 		vexaMeetingProvider,
 	).SetCaptureProvider(cfg.CRMMeetingCaptureProvider).
 		SetProcessingRunner(service.NewTemporalMeetingProcessingRunner(temporalClient)).
-		SetAIUsageMeter(aiUsageMeter)
+		SetAIUsageMeter(aiUsageMeter).
+		SetCaptureScheduler(service.NewTemporalMeetingCaptureScheduler(temporalClient)).
+		SetCalendarIntegration(crmCalendarRepo, crmEmailRepo)
 	if s3Client != nil {
 		crmMeetingService.SetRecordingStore(s3Client)
 	}
