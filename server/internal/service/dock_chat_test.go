@@ -294,6 +294,40 @@ func TestDockChatGenerateTitleUsesSemanticCompletion(t *testing.T) {
 	}
 }
 
+func TestDockChatTitleFromPageContextUsesSourceIdentity(t *testing.T) {
+	tests := []struct {
+		name string
+		ctx  map[string]interface{}
+		want string
+	}{
+		{
+			name: "support",
+			ctx: map[string]interface{}{
+				"entity_type":   "support_conversation",
+				"entity_id":     "91cee9ac-959b-4066-b613-5b9847095a97",
+				"display_title": "Refund request",
+			},
+			want: "Support · 91cee9ac · Refund request",
+		},
+		{
+			name: "fallback support title omits generic conversation label",
+			ctx: map[string]interface{}{
+				"entity_type":   "support_conversation",
+				"entity_id":     "conv-42",
+				"display_title": "Conversation conv-42",
+			},
+			want: "Support · conv-42",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dockChatTitleFromPageContext(tt.ctx); got != tt.want {
+				t.Fatalf("dockChatTitleFromPageContext() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDockChatGenerateTitlePreservesManualTitle(t *testing.T) {
 	dbName := fmt.Sprintf("file:dock_chat_manual_title_%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})

@@ -57,7 +57,12 @@ func (s *DockChatService) GenerateTitle(
 	}
 
 	title := dockChatTitleFromContent(content)
-	if s.titleLLM != nil {
+	// A chat launched from a module already has a stable, meaningful subject.
+	// Prefer that source identity over an intent summary so the roster remains
+	// easy to scan and can be matched back to the originating record.
+	if contextTitle := dockChatTitleFromPageContext(req.PageContext); contextTitle != "" {
+		title = contextTitle
+	} else if s.titleLLM != nil {
 		generated, generateErr := s.generateSemanticTitle(ctx, workspaceID, chatID, content, req.PageContext)
 		if generateErr != nil {
 			slog.WarnContext(ctx, "dock chat title generation fell back to first turn", "error", generateErr, "chat_id", chatID, "workspace_id", workspaceID)
@@ -80,6 +85,60 @@ func (s *DockChatService) GenerateTitle(
 		return nil, err
 	}
 	return &chats[0], nil
+}
+
+func dockChatTitleFromPageContext(pageContext map[string]interface{}) string {
+	if len(pageContext) == 0 {
+		return ""
+	}
+	typeName, _ := pageContext["entity_type"].(string)
+	entityID, _ := pageContext["entity_id"].(string)
+	displayTitle, _ := pageContext["display_title"].(string)
+	if strings.TrimSpace(typeName) == "" || strings.TrimSpace(entityID) == "" {
+		return ""
+	}
+	module := dockContextModuleLabel(typeName)
+	id := compactDockContextID(entityID)
+	name := strings.TrimSpace(displayTitle)
+	if typeName == "support_conversation" {
+		name = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(name, "Conversation "), "conversation "))
+	}
+	parts := make([]string, 0, 3)
+	if module != "" {
+		parts = append(parts, module)
+	}
+	if id != "" {
+		parts = append(parts, id)
+	}
+	if name != "" {
+		if !strings.EqualFold(name, entityID) && !strings.EqualFold(name, id) {
+			parts = append(parts, name)
+		}
+	}
+	return normalizeDockChatTitle(strings.Join(parts, " · "))
+}
+
+func dockContextModuleLabel(entityType string) string {
+	switch entityType {
+	case "support_conversation":
+		return "Support"
+	case "document":
+		return "Docs"
+	case "crm_contact", "crm_deal":
+		return "CRM"
+	case "task", "epic", "repository":
+		return "Tasks"
+	default:
+		return ""
+	}
+}
+
+func compactDockContextID(raw string) string {
+	id := strings.TrimSpace(raw)
+	if len(id) > 20 {
+		return id[:8]
+	}
+	return id
 }
 
 func (s *DockChatService) generateSemanticTitle(
