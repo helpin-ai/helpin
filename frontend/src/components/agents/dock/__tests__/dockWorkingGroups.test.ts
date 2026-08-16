@@ -45,16 +45,15 @@ describe('buildDockWorkingTimeline', () => {
     expect(timeline.map((entry) => entry.kind)).toEqual([
       'segment',
       'segment',
-      'working_group',
       'segment',
-      'working_group',
+      'segment',
+      'segment',
       'segment',
     ]);
     expect(timeline[1]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'progress-1' } });
-    expect(timeline[2]).toMatchObject({ kind: 'working_group', key: 'work:tool-1', active: false });
-    expect(timeline[2]?.kind === 'working_group' && timeline[2].segments.map((segment) => segment.id)).toEqual(['tool-1']);
+    expect(timeline[2]).toMatchObject({ kind: 'segment', key: 'tool-1', segment: { kind: 'tool' } });
     expect(timeline[3]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'progress-2' } });
-    expect(timeline[4]).toMatchObject({ kind: 'working_group', key: 'work:tool-2', active: false });
+    expect(timeline[4]).toMatchObject({ kind: 'segment', key: 'tool-2', segment: { kind: 'tool' } });
     expect(timeline[5]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'final' } });
   });
 
@@ -67,7 +66,7 @@ describe('buildDockWorkingTimeline', () => {
 
     expect(timeline).toHaveLength(3);
     expect(timeline[1]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'live:progress' } });
-    expect(timeline[2]).toMatchObject({ kind: 'working_group', key: 'work:tool-live', active: true });
+    expect(timeline[2]).toMatchObject({ kind: 'segment', key: 'live:tool-live', segment: { kind: 'tool' } });
   });
 
   it('uses the tool call ID as a stable key across live and persisted snapshots', () => {
@@ -81,8 +80,8 @@ describe('buildDockWorkingTimeline', () => {
       assistant('final', 'Done.', { messageId: 'assistant-message-2' }),
     ], false);
 
-    expect(live[1]).toMatchObject({ kind: 'working_group', key: 'work:tool-1' });
-    expect(persisted[1]).toMatchObject({ kind: 'working_group', key: 'work:tool-1' });
+    expect(live[1]).toMatchObject({ kind: 'segment', key: 'live:tool-1', segment: { kind: 'tool' } });
+    expect(persisted[1]).toMatchObject({ kind: 'segment', key: 'tool-1', segment: { kind: 'tool' } });
   });
 
   it('keeps a completed assistant-only response outside a working group', () => {
@@ -113,9 +112,8 @@ describe('buildDockWorkingTimeline', () => {
       kind: 'segment',
       segment: { kind: 'reasoning', id: 'live-reasoning:reasoning-1' },
     });
-    const groups = timeline.filter((entry) => entry.kind === 'working_group');
-    expect(groups).toHaveLength(2);
-    expect(groups.every((group) => group.segments.every((segment) => segment.kind === 'tool'))).toBe(true);
+    const tools = timeline.filter((entry) => entry.kind === 'segment' && entry.segment.kind === 'tool');
+    expect(tools).toHaveLength(2);
   });
 
   it('leaves a final streaming assistant message flat and completes the preceding tool group', () => {
@@ -127,7 +125,7 @@ describe('buildDockWorkingTimeline', () => {
     ], true);
 
     expect(timeline).toHaveLength(4);
-    expect(timeline[2]).toMatchObject({ kind: 'working_group', key: 'work:tool-1', active: false });
+    expect(timeline[2]).toMatchObject({ kind: 'segment', key: 'tool-1', segment: { kind: 'tool' } });
     expect(timeline[3]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'live:final' } });
   });
 

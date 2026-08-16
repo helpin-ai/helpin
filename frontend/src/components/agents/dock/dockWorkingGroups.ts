@@ -28,7 +28,8 @@ function activityEntries(
   active: boolean,
 ): DockWorkingTimelineEntry[] {
   if (segments.length === 0) return [];
-  if (!segments.some((segment) => segment.kind === 'tool')) {
+  const toolCount = segments.filter((segment) => segment.kind === 'tool').length;
+  if (toolCount < 2) {
     return segments.map((segment) => ({ kind: 'segment', key: segment.id, segment }));
   }
   return [{

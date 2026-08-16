@@ -268,8 +268,10 @@ describe('DockTranscript', () => {
             result: { content: '{"messages":12}' },
           },
         },
+        toolTurn('tool-1b', 'repository_search', 100),
         assistantTurn('assistant-progress-2', 'Now I will inspect the repository.'),
         toolTurn('tool-2', 'repository_search', 100),
+        toolTurn('tool-2b', 'read_files', 100),
         assistantTurn('assistant-final', 'The pagination state is not advancing.'),
       ],
     };
@@ -322,9 +324,11 @@ describe('DockTranscript', () => {
     ]);
     completedStream.live_turn_segments = [
       assistantTurn('progress-1', 'First I will inspect the conversation.'),
-      toolTurn('tool-conversation', 'list_conversation_messages', 100),
-      assistantTurn('progress-2', 'Now I will inspect the documentation.'),
-      toolTurn('tool-docs', 'search_documents', 100),
+          toolTurn('tool-conversation', 'list_conversation_messages', 100),
+          toolTurn('tool-conversation-extra', 'read_files', 100),
+          assistantTurn('progress-2', 'Now I will inspect the documentation.'),
+          toolTurn('tool-docs', 'search_documents', 100),
+          toolTurn('tool-docs-extra', 'read_files', 100),
       assistantTurn('final-answer', 'Here is the final diagnosis.'),
     ];
 
@@ -357,6 +361,7 @@ describe('DockTranscript', () => {
     handoffStream.live_turn_segments = [
       assistantTurn('progress-1', 'I am checking the source.'),
       toolTurn('tool-1', 'repository_search', 100, 'running'),
+      toolTurn('tool-1b', 'read_files', 100, 'running'),
       {
         segment_id: 'final-live',
         kind: 'assistant_message',
@@ -407,6 +412,7 @@ describe('DockTranscript', () => {
     liveStream.live_turn_segments = [
       assistantTurn('assistant-progress', 'I will inspect the conversation.'),
       toolTurn('tool-live', 'repository_search', 100, 'running'),
+      toolTurn('tool-live-extra', 'read_files', 100, 'running'),
     ];
     act(() => {
       root.render(
@@ -428,6 +434,7 @@ describe('DockTranscript', () => {
       turn_segments: [
         assistantTurn('assistant-progress', 'I will inspect the conversation.'),
         toolTurn('tool-live', 'repository_search', 100),
+        toolTurn('tool-live-extra', 'read_files', 100),
         assistantTurn('assistant-final', 'The final finding.'),
       ],
     };
@@ -452,6 +459,7 @@ describe('DockTranscript', () => {
     firstStream.live_turn_segments = [
       assistantTurn('progress-1', 'Checking the conversation.'),
       toolTurn('tool-1', 'list_conversation_messages', 100, 'running'),
+      toolTurn('tool-1b', 'read_files', 100, 'running'),
     ];
     act(() => {
       root.render(<DockTranscript stream={firstStream} active workspaceId="ws-1" compactAssistantProgress />);
@@ -462,8 +470,10 @@ describe('DockTranscript', () => {
     nextStream.live_turn_segments = [
       assistantTurn('progress-1', 'Checking the conversation.'),
       toolTurn('tool-1', 'list_conversation_messages', 100),
+      toolTurn('tool-1b', 'read_files', 100),
       assistantTurn('progress-2', 'Checking the repository.'),
       toolTurn('tool-2', 'repository_search', 100, 'running'),
+      toolTurn('tool-2b', 'read_files', 100, 'running'),
     ];
     act(() => {
       root.render(<DockTranscript stream={nextStream} active workspaceId="ws-1" compactAssistantProgress />);
@@ -481,8 +491,10 @@ describe('DockTranscript', () => {
       turn_segments: [
         assistantTurn('progress-1', 'Checking the conversation.'),
         toolTurn('tool-1', 'list_conversation_messages', 100),
+        toolTurn('tool-1b', 'read_files', 100),
         assistantTurn('progress-2', 'Checking the repository.'),
         toolTurn('tool-2', 'repository_search', 100),
+        toolTurn('tool-2b', 'read_files', 100),
         assistantTurn('final', 'Done.'),
       ],
     };
