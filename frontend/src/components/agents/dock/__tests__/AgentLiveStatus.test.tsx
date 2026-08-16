@@ -58,7 +58,9 @@ describe('AgentLiveStatus', () => {
       );
     });
     expect(container.querySelector('.agent-streaming-text')).not.toBeNull();
-    expect(container.querySelector('[data-agent-work-loader]')).not.toBeNull();
+    const loader = container.querySelector('[data-agent-work-loader]');
+    expect(loader?.classList.contains('h-7')).toBe(true);
+    expect(loader?.classList.contains('w-7')).toBe(true);
   });
 
   it('does not start or display an elapsed timer while the agent is starting', () => {

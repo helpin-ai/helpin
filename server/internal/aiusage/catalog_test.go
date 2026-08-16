@@ -42,6 +42,26 @@ func TestCatalogResolveCanonicalizesRecognizedAlias(t *testing.T) {
 	}
 }
 
+func TestCatalogResolvesAskMediaReaderRoute(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+
+	resolved, err := catalog.Resolve(
+		"openrouter",
+		"google/gemini-3.7-flash",
+		"google/gemini-3.7-flash",
+		"standard",
+	)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Tier != TierMedium {
+		t.Errorf("Resolve() tier = %q, want %q", resolved.Tier, TierMedium)
+	}
+}
+
 func TestCatalogResolveRejectsUnapprovedRoute(t *testing.T) {
 	catalog, err := LoadCatalog()
 	if err != nil {
@@ -66,8 +86,8 @@ func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
 	}
 
 	pricing := catalog.PublicSnapshot()
-	if pricing.PricingVersion != "2026-08-13" {
-		t.Errorf("pricing version = %q, want 2026-08-13", pricing.PricingVersion)
+	if pricing.PricingVersion != "2026-08-16" {
+		t.Errorf("pricing version = %q, want 2026-08-16", pricing.PricingVersion)
 	}
 
 	wantAllowances := map[string]int64{

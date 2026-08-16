@@ -54,7 +54,7 @@ export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
       data-agent-live-status
     >
       {progress.tone === 'working' && !progress.completed ? (
-        <AskAgentWorkAnimation className="h-5 w-5" />
+        <AskAgentWorkAnimation className="h-7 w-7" />
       ) : progress.completed ? (
         <Tick01Icon className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
       ) : progress.tone === 'waiting' ? (
