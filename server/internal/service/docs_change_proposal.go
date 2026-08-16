@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -118,6 +119,12 @@ func (s *DocsChangeProposalService) Create(ctx context.Context, workspaceID stri
 	created, err := s.proposalRepo.Create(ctx, proposal)
 	if err != nil {
 		return nil, err
+	}
+	// A pending AI proposal is a meaningful document activity. Keep the parent
+	// document in the Recent docs ordering even though its published content
+	// has not changed yet.
+	if err := s.docRepo.UpdateFields(ctx, documentID, map[string]interface{}{"updated_at": time.Now().UTC()}); err != nil {
+		slog.WarnContext(ctx, "refresh document recency after change proposal", "error", err, "document_id", documentID)
 	}
 	s.publishProposalEvent("created", created, createdBy)
 	return created, nil

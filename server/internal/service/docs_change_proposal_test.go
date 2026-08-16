@@ -281,6 +281,13 @@ func TestDocsChangeProposalServiceCreateCapturesBaseMarkdown(t *testing.T) {
 	if !strings.Contains(created.BaseMarkdown, "## Refunds") || !strings.Contains(created.BaseMarkdown, "Refunds take 5 days.") {
 		t.Fatalf("BaseMarkdown = %q, want current content rendered as markdown", created.BaseMarkdown)
 	}
+	var updated model.DocsDocument
+	if err := db.WithContext(ctx).Where("id = ?", "doc-1").First(&updated).Error; err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if !updated.UpdatedAt.After(now) {
+		t.Fatalf("document updated_at = %s, want it refreshed after proposal creation at %s", updated.UpdatedAt, now)
+	}
 }
 
 func TestDocsChangeProposalServiceApplyRecordsProposalApplyVersionSnapshot(t *testing.T) {
