@@ -324,6 +324,8 @@ describe('AskAgentsDock', () => {
 
     await renderEmbeddedDock(supportContext);
     await waitForText('Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.');
+    await waitForText('Draft a reply to the customer');
+    await waitForText('Investigate the issue and likely cause');
     await waitForText('Add context');
     expect(document.body.textContent).not.toContain('Press / to open');
   });
@@ -792,7 +794,7 @@ describe('AskAgentsDock', () => {
 
     const liveStatus = document.body.querySelector('[data-helpin-dock] [data-agent-live-status]');
     const scrollContainer = document.body.querySelector('[data-helpin-dock] [data-agent-dock-chat-scroll]');
-    expect(liveStatus?.textContent).toContain('Starting…');
+    expect(liveStatus?.textContent).toContain('Working…');
     expect(scrollContainer?.contains(liveStatus)).toBe(true);
     expect(document.body.querySelector('[data-agent-live-status-region]')?.contains(liveStatus)).toBe(true);
 

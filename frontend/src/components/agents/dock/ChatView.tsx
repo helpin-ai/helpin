@@ -24,6 +24,7 @@ import { ScrollToLatestButton } from '@/components/agents/transcript';
 import { AgentLiveStatus } from './AgentLiveStatus';
 import { resolveAgentLiveProgress } from './agentProgress';
 import { parseFollowUpSuggestions } from './followUpSuggestions';
+import { starterSuggestionsForContext } from './starterSuggestions';
 import { planSummaryToRunPlan } from './planSummary';
 import type { AgentRunStreamState } from './useAgentRunStream';
 import {
@@ -545,6 +546,12 @@ export function ChatView({
     return finalMessage ? parseFollowUpSuggestions(finalMessage.content) : [];
   }, [run?.status, sending, transformed, visiblePendingEcho]);
 
+  const hasTranscriptMessages = (transformed?.stream.transcript_messages ?? persistedMessages)
+    .some((message) => message.content.trim());
+  const starterSuggestions = !hasTranscriptMessages && !value.trim() && !sending && !visiblePendingEcho
+    ? starterSuggestionsForContext(effectivePageContext?.entity_type)
+    : [];
+
   const runsById = useMemo(() => {
     const map: Record<string, AgentRun> = {};
     for (const plan of plans) {
@@ -657,6 +664,24 @@ export function ChatView({
         {followUpSuggestions.length > 0 && (
           <div className="mt-2 border-t border-border/40 pt-1" data-agent-follow-up-suggestions>
             {followUpSuggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-1 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                onClick={() => {
+                  setValue(suggestion);
+                  window.requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+              >
+                <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 truncate">{suggestion}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {starterSuggestions.length > 0 && composer.visible && composer.enabled && (
+          <div className="mt-2" data-agent-starter-suggestions>
+            {starterSuggestions.map((suggestion) => (
               <button
                 key={suggestion}
                 type="button"
