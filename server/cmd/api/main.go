@@ -339,6 +339,7 @@ func main() {
 			&model.CRMEmailMessage{},
 			&model.CRMEmailMessageContact{},
 			&model.CRMCalendarEvent{},
+			&model.CRMCalendarSeriesPreference{},
 			// CRM Phase 4: Intelligence
 			&model.CRMEnrichmentResult{},
 			&model.CRMBuyerSignal{},

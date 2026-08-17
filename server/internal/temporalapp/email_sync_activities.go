@@ -35,6 +35,7 @@ type EmailSyncActivities struct {
 	calendarRepo            *repository.CRMCalendarRepository
 	meetingRepo             *repository.CRMMeetingRepository
 	meetingCaptureScheduler calendarMeetingCaptureScheduler
+	meetingPolicyReconciler calendarMeetingPolicyReconciler
 	syncSettingsRepo        *repository.CRMEmailSyncSettingsRepository
 	resolver                *crmemail.Resolver
 	signalIngestion         *crmsignal.IngestionService

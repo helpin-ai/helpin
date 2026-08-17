@@ -169,6 +169,7 @@ export interface CRMMeetingSettings {
 export type UpdateCRMMeetingSettingsRequest = Partial<Pick<CRMMeetingSettings,
   | 'enabled'
   | 'bot_name'
+  | 'auto_join_mode'
   | 'record_audio_by_default'
 >>;
 
@@ -181,12 +182,21 @@ export interface CRMCalendarMeetingCandidate {
   meeting?: CRMMeeting;
   eligible: boolean;
   ineligibility_reason?: string;
+  effective_auto_join: boolean;
+  auto_join_source: 'workspace' | 'series' | 'occurrence';
+  series_auto_join?: boolean;
 }
 
 export interface UpdateCRMCalendarMeetingCaptureRequest {
   enabled: boolean;
   deal_id?: string;
   record_audio?: boolean;
+}
+
+export interface UpdateCRMCalendarSeriesCaptureRequest {
+  email_account_id: string;
+  series_external_id: string;
+  enabled: boolean;
 }
 
 export interface CRMCalendarMeetingCandidateListResponse {

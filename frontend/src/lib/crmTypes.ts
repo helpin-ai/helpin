@@ -517,6 +517,8 @@ export interface CRMCalendarEvent {
   workspace_id: string;
   email_account_id: string;
   external_event_id?: string;
+  recurring_series_id?: string;
+  auto_join_override?: boolean;
   title: string;
   description?: string;
   start_time: string;

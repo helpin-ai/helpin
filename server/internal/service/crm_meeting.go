@@ -632,6 +632,9 @@ func applyMeetingSettingsPatch(settings *model.CRMMeetingSettings, req model.Upd
 	if req.BotName != nil {
 		settings.BotName = strings.TrimSpace(*req.BotName)
 	}
+	if req.AutoJoinMode != nil {
+		settings.AutoJoinMode = strings.ToLower(strings.TrimSpace(*req.AutoJoinMode))
+	}
 	if req.RecordAudioByDefault != nil {
 		settings.RecordAudioByDefault = *req.RecordAudioByDefault
 	}

@@ -262,6 +262,7 @@ type CRMMeetingListFilters struct {
 type UpdateCRMMeetingSettingsRequest struct {
 	Enabled              *bool   `json:"enabled"`
 	BotName              *string `json:"bot_name"`
+	AutoJoinMode         *string `json:"auto_join_mode"`
 	RecordAudioByDefault *bool   `json:"record_audio_by_default"`
 }
 

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -47,18 +48,21 @@ function CRMMeetingSettingsForm({
   const updateSettings = useUpdateCRMMeetingSettings(workspaceId);
   const [enabled, setEnabled] = useState(data.settings.enabled);
   const [botName, setBotName] = useState(data.settings.bot_name);
+  const [autoJoinMode, setAutoJoinMode] = useState(data.settings.auto_join_mode);
   const [recordAudio, setRecordAudio] = useState(data.settings.record_audio_by_default);
   const isDirty = useMemo(() => (
     enabled !== data.settings.enabled
     || botName.trim() !== data.settings.bot_name
+    || autoJoinMode !== data.settings.auto_join_mode
     || recordAudio !== data.settings.record_audio_by_default
-  ), [botName, data.settings, enabled, recordAudio]);
+  ), [autoJoinMode, botName, data.settings, enabled, recordAudio]);
 
   const save = async () => {
     try {
       await updateSettings.mutateAsync({
         enabled,
         bot_name: botName.trim(),
+        auto_join_mode: autoJoinMode,
         record_audio_by_default: recordAudio,
       });
       toast.success('Meeting notes settings saved');
@@ -91,6 +95,29 @@ function CRMMeetingSettingsForm({
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center">
             <Label htmlFor="meeting-bot-name" className="text-sm font-medium">Notetaker name</Label>
             <Input id="meeting-bot-name" value={botName} onChange={(event) => setBotName(event.target.value)} disabled={!canManage || !enabled} maxLength={100} placeholder="Helpin Notetaker" />
+          </div>
+
+          <Separator />
+
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center">
+            <div>
+              <Label htmlFor="meeting-auto-join" className="text-sm font-medium">Automatically join</Label>
+              <p className="mt-1 text-xs text-muted-foreground">Recurring-series and individual choices override this default.</p>
+            </div>
+            <Select
+              value={autoJoinMode}
+              onValueChange={(value) => setAutoJoinMode(value as typeof autoJoinMode)}
+              disabled={!canManage || !enabled}
+            >
+              <SelectTrigger id="meeting-auto-join">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manual">Only meetings I choose</SelectItem>
+                <SelectItem value="external">Meetings with external attendees</SelectItem>
+                <SelectItem value="all">All eligible meetings</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <Separator />

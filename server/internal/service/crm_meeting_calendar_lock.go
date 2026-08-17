@@ -24,6 +24,24 @@ func (s *CRMMeetingService) UpdateCalendarMeetingCapture(
 		lockedService.repo = lockedRepo
 		var innerErr error
 		candidate, innerErr = lockedService.updateCalendarMeetingCaptureLocked(ctx, workspaceID, calendarEventID, actorID, req)
+		if innerErr != nil {
+			return innerErr
+		}
+		event, eventErr := lockedService.calendarRepo.GetByID(ctx, workspaceID, calendarEventID)
+		if eventErr != nil {
+			return eventErr
+		}
+		if event == nil {
+			return fmt.Errorf("calendar event not found")
+		}
+		enabled := req.Enabled
+		event.AutoJoinOverride = &enabled
+		if eventErr := lockedService.calendarRepo.Update(ctx, event); eventErr != nil {
+			return eventErr
+		}
+		candidate.Event = *event
+		candidate.EffectiveAutoJoin = req.Enabled && candidate.Eligible
+		candidate.AutoJoinSource = "occurrence"
 		return innerErr
 	})
 	return candidate, err
