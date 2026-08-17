@@ -19,7 +19,7 @@ func (f *scriptedSupportRewriteLLM) ChatCompletion(_ context.Context, req llm.Ch
 	return &f.response, nil
 }
 
-func TestRewriteSupportDraftUsesHaikuAndReturnsContent(t *testing.T) {
+func TestRewriteSupportDraftUsesSmallTierModelAndReturnsContent(t *testing.T) {
 	fakeLLM := &scriptedSupportRewriteLLM{
 		response: llm.ChatResponse{
 			Content: `{"content":"Thanks for reaching out. We have updated your billing details and everything is set now."}`,
