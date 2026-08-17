@@ -223,7 +223,7 @@ export function DockInput({
   // for entity-scoped contexts (task / epic / doc / contact / deal) where the
   // chip tells the user "your input runs against this thing."
   const showChip = !!pageContext && (pageContext.entity_type !== 'workspace' || !!pageContext.metadata?.context_scope);
-  const sendDisabled = !value.trim() || busy || disabled;
+  const sendDisabled = !value.trim() || !!busy || !!disabled;
 
   const canAddReferences = !!workspaceId && !!onAddReference;
   const showContextRow = mode === 'conversation' && (showChip || !!onAddContext || canAddReferences || references.length > 0);
