@@ -499,6 +499,14 @@ export function useEmailAccounts(wsId: string, filters?: { member_id?: string })
     queryKey: [...queryKeys.crm.emailAccounts(wsId), filters ?? {}],
     queryFn: async () => unwrap(await crmEmailService.listAccounts(wsId, filters)),
     enabled: !!wsId,
+    refetchInterval: (query) => {
+      const accounts = query.state.data
+      const hasActiveSync = accounts?.some((account) => {
+        const phase = account.sync_state?.phase
+        return typeof phase === 'string' && ['backfill', 'incremental', 'recovery'].includes(phase)
+      })
+      return hasActiveSync ? 2_500 : false
+    },
   })
 }
 
