@@ -1274,7 +1274,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		ReplyTimeCustomMinutes:          nil,
 		SpecialNoticeText:               nil,
 		EmailFallbackEnabled:            true,
-		EmailFallbackDelaySecs:          30,
+		EmailFallbackDelaySecs:          10,
 		EmailFallbackFromName:           "",
 		EmailFallbackMaxDeliveryAgeSecs: 600,
 		ForwardedEmailDetectionEnabled:  true,

@@ -1725,7 +1725,7 @@ function Dashboard() {
                       <Input
                         id="email-fallback-delay"
                         type="number"
-                        min={30}
+                        min={10}
                         max={600}
                         value={emailFallbackDelaySecs}
                         onChange={(e) => setEmailFallbackDelaySecs(Number(e.target.value) || DEFAULT_EMAIL_FALLBACK_DELAY_SECS)}

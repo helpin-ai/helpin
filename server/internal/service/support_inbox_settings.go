@@ -400,8 +400,8 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	if settings.AIAutoResolveTimeout < 0 {
 		return fmt.Errorf("ai_auto_resolve_timeout must be >= 0")
 	}
-	if settings.EmailFallbackDelaySecs < 30 || settings.EmailFallbackDelaySecs > 600 {
-		return fmt.Errorf("email_fallback_delay_secs must be between 30 and 600")
+	if settings.EmailFallbackDelaySecs < 10 || settings.EmailFallbackDelaySecs > 600 {
+		return fmt.Errorf("email_fallback_delay_secs must be between 10 and 600")
 	}
 	if settings.EmailFallbackMaxDeliveryAgeSecs < 120 || settings.EmailFallbackMaxDeliveryAgeSecs > 1800 {
 		return fmt.Errorf("email_fallback_max_delivery_age_secs must be between 120 and 1800")

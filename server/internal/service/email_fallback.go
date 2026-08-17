@@ -2813,7 +2813,7 @@ func (s *EmailFallbackService) postpone(ctx context.Context, conversationID stri
 }
 
 func normalizedEmailFallbackDelaySecs(delaySecs int) int {
-	if delaySecs < 30 || delaySecs > 600 {
+	if delaySecs < 10 || delaySecs > 600 {
 		return model.DefaultSupportInboxSettings().EmailFallbackDelaySecs
 	}
 	return delaySecs

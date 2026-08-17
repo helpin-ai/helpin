@@ -43,7 +43,7 @@ export const COMMON_TIMEZONES = [
 
 export const NO_AGENT_VALUE = '__none__';
 export const DEFAULT_ONLINE_REPLY_TEXT = 'We typically reply in a few minutes';
-export const DEFAULT_EMAIL_FALLBACK_DELAY_SECS = 30;
+export const DEFAULT_EMAIL_FALLBACK_DELAY_SECS = 10;
 export const DEFAULT_BUSINESS_HOURS_DAY: BusinessHoursDay = { start: '09:00', end: '17:00', enabled: false };
 
 type BrandingBillingState = {

@@ -57,10 +57,10 @@ func TestDefaultSupportInboxSettingsUsesFiveAIFollowupsBeforeHandoff(t *testing.
 	}
 }
 
-func TestDefaultSupportInboxSettingsUsesThirtySecondEmailFallbackUndoWindow(t *testing.T) {
+func TestDefaultSupportInboxSettingsUsesTenSecondEmailFallbackUndoWindow(t *testing.T) {
 	settings := DefaultSupportInboxSettings()
 
-	if settings.EmailFallbackDelaySecs != 30 {
-		t.Fatalf("expected default email fallback delay to be 30 seconds, got %d", settings.EmailFallbackDelaySecs)
+	if settings.EmailFallbackDelaySecs != 10 {
+		t.Fatalf("expected default email fallback delay to be 10 seconds, got %d", settings.EmailFallbackDelaySecs)
 	}
 }

@@ -132,7 +132,7 @@ export function buildOptimisticSupportMessage({
     content: payload.content.trim() || ' ',
     message_type: 'reply',
     is_internal: Boolean(payload.is_internal),
-    via_channel: 'widget',
+    via_channel: payload.channels?.includes('email') ? 'email' : 'widget',
     created_at: now,
     updated_at: now,
   };

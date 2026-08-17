@@ -564,13 +564,14 @@ export function MessageThread({
   }, [messages]);
 
   // Derive delivered/read status from conversation's contact_last_seen_at cursor
-  const receiptStatus = useMemo<'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
+  const receiptStatus = useMemo<'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
     if (!receiptMessageId || !conversation) return null;
     const msg = messages.find((m) => m.id === receiptMessageId);
     if (!msg) return null;
     if (msg.email_read_at) return 'read_email';
     if (msg.email_delivery_status === 'opened') return 'read_email';
     if (msg.email_delivery_status === 'delivered') return 'delivered_email';
+    if (msg.id.startsWith('optimistic-') && msg.via_channel === 'email') return 'sending_email';
     const seen = conversation.contact_last_seen_at;
     if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
     if (msg.email_notified_at) return 'sent_email';

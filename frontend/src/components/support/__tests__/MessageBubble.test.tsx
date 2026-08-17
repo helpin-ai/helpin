@@ -19,7 +19,7 @@ function findButtonByText(container: HTMLElement, text: string) {
 
 function renderBubble(
   message: SupportMessage,
-  receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null,
+  receiptStatus?: 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null,
   extraProps: Partial<ComponentProps<typeof MessageBubble>> = {},
 ) {
   const container = document.createElement('div')
@@ -595,6 +595,11 @@ Can I export my data?`,
     expect(sent.container.textContent?.match(/Sent via email/g)).toHaveLength(1)
     expect(findButtonByText(sent.container, 'Sent via email')).toBeTruthy()
     sent.cleanup()
+
+    const sending = renderBubble({ ...message, id: 'msg-email-status-sending', email_notified_at: undefined }, 'sending_email')
+    expect(sending.container.textContent).toContain('Sending email')
+    expect(sending.container.textContent).not.toContain('Delivered')
+    sending.cleanup()
 
     const delivered = renderBubble({ ...message, id: 'msg-email-status-delivered', email_delivery_status: 'delivered' }, 'delivered_email')
     expect(delivered.container.textContent).toContain('Delivered via email')

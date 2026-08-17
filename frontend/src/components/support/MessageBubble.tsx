@@ -311,7 +311,7 @@ interface MessageBubbleProps {
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
   source?: TicketSource;
-  receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null;
+  receiptStatus?: 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null;
   fallbackAvatarUrl?: string;
   customerDisplayName?: string;
   customerEmail?: string | null;
@@ -738,9 +738,11 @@ export const MessageBubble = memo(function MessageBubble({
       ? 'Received by email'
       : `Received by email from ${inboundFromEmail}`
     : 'Received via email';
-  const hasEmailReceiptStatus = receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email';
+  const hasEmailReceiptStatus = receiptStatus === 'sending_email' || receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email';
   const showStandaloneEmailBadge = hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
-  const emailReceiptCanOpenDetails = hasEmailBadge && hasEmailReceiptStatus && !isCustomer;
+  const emailReceiptCanOpenDetails = hasEmailBadge
+    && (receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email')
+    && !isCustomer;
   const hasStatusBelow = !!receiptStatus || !!aiMeta || hasEmailBadge;
   const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
@@ -969,6 +971,11 @@ export const MessageBubble = memo(function MessageBubble({
                         <TickDouble01Icon className="h-3.5 w-3.5" />
                         Delivered via email
                       </>
+                    ) : receiptStatus === 'sending_email' ? (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5" />
+                        Sending email
+                      </>
                     ) : receiptStatus === 'sent_email' ? (
                       <>
                         <TickDouble01Icon className="h-3.5 w-3.5" />
@@ -1046,6 +1053,11 @@ export const MessageBubble = memo(function MessageBubble({
                 <>
                   <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-[11px] text-muted-foreground">Delivered via email</span>
+                </>
+              ) : receiptStatus === 'sending_email' ? (
+                <>
+                  <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">Sending email</span>
                 </>
               ) : receiptStatus === 'sent_email' ? (
                 <>

@@ -8,11 +8,11 @@ import {
 } from '../useSupport'
 
 describe('support optimistic messages', () => {
-  it('builds an immediate outbound bubble without email queue state', () => {
+  it('marks an immediate email reply as email-channel while delivery is pending', () => {
     const message = buildOptimisticSupportMessage({
       workspaceId: 'ws-1',
       conversationId: 'conv-1',
-      payload: { content: 'We will check this.', is_internal: false },
+      payload: { content: 'We will check this.', is_internal: false, channels: ['email'] },
       user: {
         id: 'user-1',
         full_name: 'Waqar Azeem',
@@ -34,7 +34,7 @@ describe('support optimistic messages', () => {
       content: 'We will check this.',
       is_internal: false,
       message_type: 'reply',
-      via_channel: 'widget',
+      via_channel: 'email',
       created_at: '2026-06-04T08:30:00.000Z',
       updated_at: '2026-06-04T08:30:00.000Z',
     }))
