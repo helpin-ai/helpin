@@ -108,7 +108,7 @@ export function ChatView({
   const [sending, setSending] = useState(false);
   const [launchStartedAt, setLaunchStartedAt] = useState<string | undefined>();
   const [stopping, setStopping] = useState(false);
-  const [pendingEcho, setPendingEcho] = useState<{ id: string; content: string } | null>(null);
+  const [pendingEcho, setPendingEcho] = useState<{ id: string; content: string; timestamp: string } | null>(null);
   const [persistedMessages, setPersistedMessages] = useState<AgentRunMessage[]>([]);
   const [nextMessagesBefore, setNextMessagesBefore] = useState<number | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
@@ -369,9 +369,10 @@ export function ChatView({
             ? `Analyzing ${attachmentIDs.length} attachments…`
             : 'Checking context attachments…',
       );
-      setLaunchStartedAt(new Date().toISOString());
+      const sentAt = new Date().toISOString();
+      setLaunchStartedAt(sentAt);
       setSendError(null);
-      setPendingEcho({ id: clientMessageId, content });
+      setPendingEcho({ id: clientMessageId, content, timestamp: sentAt });
       autoFollowRef.current = true;
       setAtBottom(true);
       try {
@@ -689,7 +690,7 @@ export function ChatView({
         {currentPlan && (
           <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
         )}
-        {visiblePendingEcho && <DockUserMessage content={visiblePendingEcho.content} pending />}
+        {visiblePendingEcho && <DockUserMessage content={visiblePendingEcho.content} timestamp={visiblePendingEcho.timestamp} pending />}
         {sendError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
             <p className="mb-1 line-clamp-2 text-foreground/80">{sendError.content}</p>

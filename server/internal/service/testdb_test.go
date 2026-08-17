@@ -933,6 +933,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			active BOOLEAN NOT NULL DEFAULT 1,
 			last_inbound_at DATETIME,
 			confirmation_received_at DATETIME,
+			confirmation_conversation_id TEXT,
 			verification_sent_at DATETIME,
 			forwarding_verified_at DATETIME,
 			forwarding_verification_token TEXT,

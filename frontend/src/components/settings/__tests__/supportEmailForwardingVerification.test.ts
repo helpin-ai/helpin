@@ -11,17 +11,27 @@ describe('support email forwarding verification', () => {
     expect(routingSource).toContain("label: 'Verified'");
   });
 
-  it('shows setup evidence and an action to send the forwarding test', () => {
+  it('guides forwarding through confirmation, provider enablement, and automatic delivery testing', () => {
     const forwardingSource = readFileSync(resolve(__dirname, '../SupportEmailForwardingTab.tsx'), 'utf8');
     const serviceSource = readFileSync(resolve(__dirname, '../../../lib/services/supportService.ts'), 'utf8');
     const hooksSource = readFileSync(resolve(__dirname, '../../../hooks/queries/useSupport.ts'), 'utf8');
 
-    expect(forwardingSource).toContain('Complete forwarding setup');
-    expect(forwardingSource).toContain('Helpin forwarding address ready');
-    expect(forwardingSource).toContain('Confirmation email received');
-    expect(forwardingSource).toContain('Confirm and enable forwarding in your provider');
-    expect(forwardingSource).toContain('Send test');
+    expect(forwardingSource).toContain('Add the Helpin address');
+    expect(forwardingSource).toContain('Approve the confirmation');
+    expect(forwardingSource).toContain('Enable forwarding in your provider');
+    expect(forwardingSource).toContain('I&apos;ve enabled forwarding');
+    expect(forwardingSource).toContain('Open confirmation email');
+    expect(forwardingSource).toContain('target="_blank"');
     expect(serviceSource).toContain('/send-test');
     expect(hooksSource).toContain('10 * 60 * 1000');
+  });
+
+  it('lets users create a team inbox from forwarding setup', () => {
+    const forwardingSource = readFileSync(resolve(__dirname, '../SupportEmailForwardingTab.tsx'), 'utf8');
+
+    expect(forwardingSource).toContain('Team inboxes (');
+    expect(forwardingSource).toContain('Create team inbox');
+    expect(forwardingSource).toContain("create_inbox: true");
+    expect(forwardingSource).toContain('Enable forwarding');
   });
 });

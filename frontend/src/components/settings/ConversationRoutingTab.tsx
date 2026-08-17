@@ -826,9 +826,11 @@ function InboxNameWithDescription({ mailbox }: { mailbox: SupportMailbox }) {
 export function ConversationRoutingTab({
   workspaceId,
   section = 'all',
+  createInbox = false,
 }: {
   workspaceId: string;
   section?: 'all' | 'inboxes' | 'routing';
+  createInbox?: boolean;
 }) {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -920,6 +922,7 @@ export function ConversationRoutingTab({
   const [draft, setDraft] = useState<RoutingSettingsDraft>(DEFAULT_ROUTING_SETTINGS);
   const [editingMailbox, setEditingMailbox] = useState<SupportMailbox | null>(null);
   const [mailboxDialogOpen, setMailboxDialogOpen] = useState(false);
+  const [createInboxHandled, setCreateInboxHandled] = useState(false);
 
   const openCreateMailbox = () => {
     setEditingMailbox(null);
@@ -929,6 +932,16 @@ export function ConversationRoutingTab({
     setEditingMailbox(mailbox);
     setMailboxDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!createInbox) {
+      setCreateInboxHandled(false);
+      return;
+    }
+    if (createInboxHandled) return;
+    openCreateMailbox();
+    setCreateInboxHandled(true);
+  }, [createInbox, createInboxHandled, openCreateMailbox]);
 
   // Accordion state
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(DEFAULT_EXPANDED_ROUTING_SECTIONS));

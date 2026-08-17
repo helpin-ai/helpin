@@ -577,6 +577,7 @@ type SupportEmailRoute struct {
 	Active                      bool       `json:"active" gorm:"not null;default:true"`
 	LastInboundAt               *time.Time `json:"last_inbound_at,omitempty"`
 	ConfirmationReceivedAt      *time.Time `json:"confirmation_received_at,omitempty"`
+	ConfirmationConversationID  *string    `json:"confirmation_conversation_id,omitempty" gorm:"type:uuid;index"`
 	VerificationSentAt          *time.Time `json:"verification_sent_at,omitempty"`
 	ForwardingVerifiedAt        *time.Time `json:"forwarding_verified_at,omitempty"`
 	ForwardingVerificationToken string     `json:"-"`

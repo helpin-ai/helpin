@@ -4,17 +4,19 @@ import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport';
 
 type InboxesRoutingSearch = {
   tab: InboxesRoutingTab;
+  create_inbox: boolean;
 };
 
 export const Route = createFileRoute('/_authenticated/w/$slug/settings/inboxes-routing')({
   component: InboxesRoutingRoute,
   validateSearch: (search: Record<string, unknown>): InboxesRoutingSearch => ({
     tab: normalizeInboxesRoutingTab(search.tab),
+    create_inbox: search.create_inbox === true || search.create_inbox === 'true',
   }),
 });
 
 function InboxesRoutingRoute() {
-  const { tab } = Route.useSearch();
+  const { tab, create_inbox: createInbox } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
 
   const handleTabChange = (value: string) => {
@@ -27,7 +29,7 @@ function InboxesRoutingRoute() {
 
   return (
     <SettingsRouteViewport>
-      <InboxesRoutingSettingsPage tab={tab} onTabChange={handleTabChange} />
+      <InboxesRoutingSettingsPage tab={tab} createInbox={createInbox} onTabChange={handleTabChange} />
     </SettingsRouteViewport>
   );
 }

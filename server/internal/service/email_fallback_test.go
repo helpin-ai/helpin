@@ -3562,12 +3562,19 @@ func TestEmailFallbackKeepsProviderConfirmationPendingAndVisible(t *testing.T) {
 	if updated.ConfirmationReceivedAt == nil || updated.ForwardingVerifiedAt != nil {
 		t.Fatalf("expected confirmation received but forwarding pending, got %#v", updated)
 	}
+	if updated.ConfirmationConversationID == nil || strings.TrimSpace(*updated.ConfirmationConversationID) == "" {
+		t.Fatalf("expected confirmation conversation to be retained, got %#v", updated)
+	}
 	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
 	if err != nil {
 		t.Fatalf("list conversations: %v", err)
 	}
 	if total != 1 {
 		t.Fatalf("provider confirmation should remain visible as a conversation, got total=%d", total)
+	}
+	conversation, err := env.service.findConversationByID(ctx, *updated.ConfirmationConversationID)
+	if err != nil || conversation == nil {
+		t.Fatalf("find retained confirmation conversation = %#v, %v", conversation, err)
 	}
 }
 

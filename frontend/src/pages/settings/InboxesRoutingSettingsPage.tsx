@@ -20,9 +20,11 @@ export function normalizeInboxesRoutingTab(value: unknown): InboxesRoutingTab {
 
 export function InboxesRoutingSettingsPage({
   tab,
+  createInbox = false,
   onTabChange,
 }: {
   tab: InboxesRoutingTab;
+  createInbox?: boolean;
   onTabChange: (tab: string) => void;
 }) {
   return (
@@ -37,7 +39,7 @@ export function InboxesRoutingSettingsPage({
             ))}
           </TabsList>
           <TabsContent value="inboxes" className="mt-4">
-            <ConversationRoutingTab workspaceId={workspaceId} section="inboxes" />
+            <ConversationRoutingTab workspaceId={workspaceId} section="inboxes" createInbox={createInbox} />
           </TabsContent>
           <TabsContent value="routing" className="mt-4">
             <ConversationRoutingTab workspaceId={workspaceId} section="routing" />

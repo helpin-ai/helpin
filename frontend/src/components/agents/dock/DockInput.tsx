@@ -133,6 +133,19 @@ export function shouldUseExpandedComposerLayout({
   return currentlyExpanded || scrollHeight > singleLineHeight + 1;
 }
 
+export function composerTextareaHeight({
+  value,
+  scrollHeight,
+  singleLineHeight,
+}: {
+  value: string;
+  scrollHeight: number;
+  singleLineHeight: number;
+}) {
+  if (!value.trim()) return singleLineHeight;
+  return Math.min(scrollHeight, 160);
+}
+
 export function composerPlaceholderForContext(contextType?: CommandBarPageContext['entity_type']) {
   return contextType === 'support_conversation'
     ? 'Ask about this conversation…'
@@ -144,6 +157,10 @@ export function canClearDockContext(
   hasClearAction: boolean,
 ) {
   return hasClearAction;
+}
+
+export function contextChipMaxWidth(canAddContext: boolean) {
+  return canAddContext ? 'calc(100% - 116px)' : undefined;
 }
 
 export function usesSeparateComposerActionRow(mode: DockInputProps['mode'], expanded: boolean) {
@@ -205,7 +222,11 @@ export function DockInput({
       singleLineHeight,
       currentlyExpanded: current,
     }));
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    el.style.height = `${composerTextareaHeight({
+      value,
+      scrollHeight: el.scrollHeight,
+      singleLineHeight,
+    })}px`;
   }, [value, ref]);
 
   useEffect(() => {
@@ -226,6 +247,7 @@ export function DockInput({
   const sendDisabled = !value.trim() || !!busy || !!disabled;
 
   const canAddReferences = !!workspaceId && !!onAddReference;
+  const canAddContext = !!onAddContext || canAddReferences;
   const showContextRow = mode === 'conversation' && (showChip || !!onAddContext || canAddReferences || references.length > 0);
   const separateActionRow = usesSeparateComposerActionRow(mode, expandedComposer);
   const attachmentButton = mode === 'conversation' && onAddMedia ? (
@@ -290,7 +312,7 @@ export function DockInput({
     <div className="flex flex-col gap-2 px-3.5 pb-2.5 pt-2">
       {showContextRow ? (
         <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             {showChip ? (
               <ContextChip
                 context={pageContext!}
@@ -298,6 +320,7 @@ export function DockInput({
                 activeKey={activeContextKey}
                 onChange={onContextKeyChange}
                 onClear={onClearContext}
+                reserveSpaceForAddContext={canAddContext}
               />
             ) : null}
             {references.map((reference) => (
@@ -414,12 +437,14 @@ function ContextChip({
   activeKey,
   onChange,
   onClear,
+  reserveSpaceForAddContext = false,
 }: {
   context: CommandBarPageContext;
   options: PageContextScopeOption[];
   activeKey?: string | null;
   onChange?: (key: string) => void;
   onClear?: () => void;
+  reserveSpaceForAddContext?: boolean;
 }) {
   const blockScoped = isBlockScopedDocument(context);
   const allTasks = isAllTasksContext(context);
@@ -465,6 +490,7 @@ function ContextChip({
       <span
         title={title}
         className={chipClassName}
+        style={{ maxWidth: contextChipMaxWidth(reserveSpaceForAddContext) }}
       >
         {body}
         {clearButton}
@@ -478,6 +504,7 @@ function ContextChip({
         type="button"
         title={title}
         className={chipClassName}
+        style={{ maxWidth: contextChipMaxWidth(reserveSpaceForAddContext) }}
       >
         {body}
       </DropdownMenuTrigger>

@@ -3092,6 +3092,7 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 	if route == nil {
 		return nil
 	}
+	isConfirmation := isProviderForwardingConfirmation(payload)
 	consumed, err := s.inspectInboundRouteVerification(ctx, route, payload)
 	if err != nil {
 		return err
@@ -3111,6 +3112,11 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 		}
 	}
 	if conversation != nil {
+		if isConfirmation {
+			if err := s.storeRouteConfirmationConversation(ctx, route, conversation.ID); err != nil {
+				return err
+			}
+		}
 		return s.processInboundConversationReply(ctx, conversation, route, payload, rawPayload)
 	}
 
@@ -3496,7 +3502,15 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		return txErr
 	}
 	if s.supportInboxService.emailRouteRepo != nil {
-		_ = s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, now)
+		route.LastInboundAt = &now
+		if err := s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, now); err != nil {
+			return err
+		}
+		if isProviderForwardingConfirmation(payload) {
+			if err := s.storeRouteConfirmationConversation(ctx, route, conversation.ID); err != nil {
+				return err
+			}
+		}
 	}
 
 	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conversation, content, customerName)
@@ -3523,6 +3537,17 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 				s.logger.ErrorContext(context.Background(), "support triage failed for inbound email conversation", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", err)
 			}
 		}(conversation.WorkspaceID, conversation.ID, message.ID)
+	}
+	return nil
+}
+
+func (s *EmailFallbackService) storeRouteConfirmationConversation(ctx context.Context, route *model.SupportEmailRoute, conversationID string) error {
+	if s == nil || route == nil || s.supportInboxService == nil || s.supportInboxService.emailRouteRepo == nil || strings.TrimSpace(conversationID) == "" {
+		return nil
+	}
+	route.ConfirmationConversationID = strPtr(conversationID)
+	if err := s.supportInboxService.emailRouteRepo.Update(ctx, route); err != nil {
+		return fmt.Errorf("store forwarding confirmation conversation: %w", err)
 	}
 	return nil
 }

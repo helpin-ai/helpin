@@ -548,7 +548,7 @@ function DomainDetail({
               <p className="mt-2 text-sm text-muted-foreground">
                 {verified
                   ? 'This domain can send authenticated Helpin replies.'
-                  : 'Set up the DNS records below to verify this domain before using its sender addresses.'}
+                  : 'Add both DNS records below at your domain host, then return here and recheck DNS before using sender addresses.'}
               </p>
             </div>
             {senderDomain && (
@@ -567,7 +567,9 @@ function DomainDetail({
               <div>
                 <h3 className="text-base font-medium">Domain verification</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {verified ? 'DKIM and Return-Path records are verified.' : 'Add these DNS records to verify the domain for outbound email.'}
+                  {verified
+                    ? 'DKIM and Return-Path records are verified. You can now create and assign sender addresses.'
+                    : '1. Add both records at your domain host. 2. Wait for DNS to update. 3. Click Recheck DNS above.'}
                 </p>
               </div>
               {verified && (

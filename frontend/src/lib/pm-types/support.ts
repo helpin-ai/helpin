@@ -217,6 +217,7 @@ export interface SupportEmailRoute {
   active: boolean;
   last_inbound_at?: string | null;
   confirmation_received_at?: string | null;
+  confirmation_conversation_id?: string | null;
   verification_sent_at?: string | null;
   forwarding_verified_at?: string | null;
   forwarding_last_error?: string | null;

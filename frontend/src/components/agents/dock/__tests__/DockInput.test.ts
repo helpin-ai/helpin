@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canClearDockContext, composerPlaceholderForContext, sendControlClassName, shouldUseExpandedComposerLayout, usesSeparateComposerActionRow } from '../DockInput';
+import { canClearDockContext, composerPlaceholderForContext, composerTextareaHeight, contextChipMaxWidth, sendControlClassName, shouldUseExpandedComposerLayout, usesSeparateComposerActionRow } from '../DockInput';
 
 describe('shouldUseExpandedComposerLayout', () => {
   it('moves wrapped text above the composer actions', () => {
@@ -30,6 +30,16 @@ describe('shouldUseExpandedComposerLayout', () => {
   });
 });
 
+describe('composerTextareaHeight', () => {
+  it('keeps an empty composer to one line even when its placeholder measures taller', () => {
+    expect(composerTextareaHeight({ value: '', scrollHeight: 64, singleLineHeight: 28 })).toBe(28);
+  });
+
+  it('uses the measured height after the user enters multiline text', () => {
+    expect(composerTextareaHeight({ value: 'A message that wraps', scrollHeight: 64, singleLineHeight: 28 })).toBe(64);
+  });
+});
+
 describe('composerPlaceholderForContext', () => {
   it('describes both asking and delegating in a general chat', () => {
     expect(composerPlaceholderForContext()).toBe('Ask a question or delegate work to agents…');
@@ -47,6 +57,16 @@ describe('canClearDockContext', () => {
 
   it('does not show a remove control when no clear action was provided', () => {
     expect(canClearDockContext('support_conversation', false)).toBe(false);
+  });
+});
+
+describe('contextChipMaxWidth', () => {
+  it('reserves room for Add context beside the active context', () => {
+    expect(contextChipMaxWidth(true)).toBe('calc(100% - 116px)');
+  });
+
+  it('uses the normal chip width when no additional context can be added', () => {
+    expect(contextChipMaxWidth(false)).toBeUndefined();
   });
 });
 
