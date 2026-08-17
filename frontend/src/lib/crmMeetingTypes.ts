@@ -29,9 +29,16 @@ export interface CRMMeeting {
   failure_code?: string;
   failure_message?: string;
   recording_object_key?: string;
+  recording_content_type?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CRMMeetingRecording {
+  url: string;
+  content_type: string;
+  media_type: 'video' | 'audio' | 'file';
 }
 
 export interface CRMMeetingCapture {

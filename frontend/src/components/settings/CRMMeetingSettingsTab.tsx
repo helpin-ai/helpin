@@ -123,8 +123,11 @@ function CRMMeetingSettingsForm({
           <Separator />
 
           <div className="flex items-center justify-between gap-6">
-            <Label htmlFor="record-meeting-audio" className="text-sm font-medium">Save audio recordings</Label>
-            <Switch id="record-meeting-audio" checked={recordAudio} onCheckedChange={setRecordAudio} disabled={!canManage || !enabled} />
+            <div>
+              <Label htmlFor="save-meeting-recording" className="text-sm font-medium">Save meeting recordings</Label>
+              <p className="mt-1 text-xs text-muted-foreground">Keep video and audio for playback after the meeting.</p>
+            </div>
+            <Switch id="save-meeting-recording" checked={recordAudio} onCheckedChange={setRecordAudio} disabled={!canManage || !enabled} />
           </div>
         </CardContent>
       </Card>

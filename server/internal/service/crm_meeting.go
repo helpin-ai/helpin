@@ -461,22 +461,51 @@ func (s *CRMMeetingService) RetryProcessing(ctx context.Context, workspaceID, me
 	return s.processing.StartMeetingProcessing(ctx, workspaceID, meetingID)
 }
 
-// GetRecordingURL returns a short-lived URL for Helpin's canonical recording.
-func (s *CRMMeetingService) GetRecordingURL(ctx context.Context, workspaceID, meetingID string) (string, error) {
+// GetRecording returns short-lived playback metadata for canonical media.
+func (s *CRMMeetingService) GetRecording(ctx context.Context, workspaceID, meetingID string) (*model.CRMMeetingRecording, error) {
 	meeting, err := s.repo.GetByID(ctx, workspaceID, meetingID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if meeting == nil || meeting.RecordingObjectKey == nil || strings.TrimSpace(*meeting.RecordingObjectKey) == "" {
-		return "", fmt.Errorf("recording not found")
+		return nil, fmt.Errorf("recording not found")
 	}
 	if s.recordingStore == nil {
-		return "", fmt.Errorf("recording storage is unavailable")
+		return nil, fmt.Errorf("recording storage is unavailable")
 	}
-	return s.recordingStore.GeneratePresignedInlineGetURL(*meeting.RecordingObjectKey)
+	url, err := s.recordingStore.GeneratePresignedInlineGetURL(*meeting.RecordingObjectKey)
+	if err != nil {
+		return nil, err
+	}
+	contentType := meetingRecordingContentType(meeting)
+	mediaType := "file"
+	if strings.HasPrefix(contentType, "video/") {
+		mediaType = "video"
+	} else if strings.HasPrefix(contentType, "audio/") {
+		mediaType = "audio"
+	}
+	return &model.CRMMeetingRecording{URL: url, ContentType: contentType, MediaType: mediaType}, nil
 }
 
-// DeleteRecording removes only the canonical audio recording and keeps transcript intelligence.
+func meetingRecordingContentType(meeting *model.CRMMeeting) string {
+	if meeting != nil && meeting.RecordingContentType != nil && strings.TrimSpace(*meeting.RecordingContentType) != "" {
+		return strings.ToLower(strings.TrimSpace(*meeting.RecordingContentType))
+	}
+	key := ""
+	if meeting != nil && meeting.RecordingObjectKey != nil {
+		key = strings.ToLower(strings.TrimSpace(*meeting.RecordingObjectKey))
+	}
+	switch {
+	case strings.HasSuffix(key, ".mp4"):
+		return "video/mp4"
+	case strings.HasSuffix(key, ".webm"):
+		return "audio/webm"
+	default:
+		return "audio/mpeg"
+	}
+}
+
+// DeleteRecording removes only the canonical recording and keeps transcript intelligence.
 func (s *CRMMeetingService) DeleteRecording(ctx context.Context, workspaceID, meetingID string) error {
 	meeting, err := s.repo.GetByID(ctx, workspaceID, meetingID)
 	if err != nil {
@@ -495,6 +524,7 @@ func (s *CRMMeetingService) DeleteRecording(ctx context.Context, workspaceID, me
 		return err
 	}
 	meeting.RecordingObjectKey = nil
+	meeting.RecordingContentType = nil
 	return s.repo.Update(ctx, meeting)
 }
 
