@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -50,6 +51,9 @@ func (r *CRMCalendarRepository) UpsertSyncedEvent(ctx context.Context, event *mo
 		case err == nil:
 			event.ID = existing.ID
 			event.CreatedAt = existing.CreatedAt
+			if event.AutoJoinOverride == nil {
+				event.AutoJoinOverride = existing.AutoJoinOverride
+			}
 			if event.DealID == nil {
 				event.DealID = existing.DealID
 			}
@@ -94,6 +98,78 @@ func (r *CRMCalendarRepository) GetByExternalID(ctx context.Context, accountID, 
 		return nil, fmt.Errorf("get calendar event by external id: %w", err)
 	}
 	return &event, nil
+}
+
+// ListSeriesPreferences returns recurring-series policies for a workspace.
+func (r *CRMCalendarRepository) ListSeriesPreferences(ctx context.Context, workspaceID string) ([]model.CRMCalendarSeriesPreference, error) {
+	var preferences []model.CRMCalendarSeriesPreference
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Find(&preferences).Error; err != nil {
+		return nil, fmt.Errorf("list calendar series preferences: %w", err)
+	}
+	return preferences, nil
+}
+
+// GetSeriesPreference returns one recurring-series policy.
+func (r *CRMCalendarRepository) GetSeriesPreference(
+	ctx context.Context,
+	workspaceID, emailAccountID, seriesExternalID string,
+) (*model.CRMCalendarSeriesPreference, error) {
+	var preference model.CRMCalendarSeriesPreference
+	err := r.db.WithContext(ctx).
+		Where(
+			"workspace_id = ? AND email_account_id = ? AND series_external_id = ?",
+			workspaceID,
+			emailAccountID,
+			seriesExternalID,
+		).
+		First(&preference).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get calendar series preference: %w", err)
+	}
+	return &preference, nil
+}
+
+// UpsertSeriesPreference saves one recurring-series policy idempotently.
+func (r *CRMCalendarRepository) UpsertSeriesPreference(ctx context.Context, preference *model.CRMCalendarSeriesPreference) error {
+	if preference == nil {
+		return fmt.Errorf("calendar series preference is required")
+	}
+	query := r.db.WithContext(ctx).
+		Where(
+			"workspace_id = ? AND email_account_id = ? AND series_external_id = ?",
+			preference.WorkspaceID,
+			preference.EmailAccountID,
+			preference.SeriesExternalID,
+		).
+		Assign(map[string]interface{}{
+			"auto_join":  preference.AutoJoin,
+			"created_by": preference.CreatedBy,
+		})
+	if err := query.FirstOrCreate(preference).Error; err != nil {
+		return fmt.Errorf("upsert calendar series preference: %w", err)
+	}
+	return nil
+}
+
+// ListRecurringSeriesEvents returns future occurrences in one provider series.
+func (r *CRMCalendarRepository) ListRecurringSeriesEvents(
+	ctx context.Context,
+	workspaceID, emailAccountID, seriesExternalID string,
+	startAfter time.Time,
+) ([]model.CRMCalendarEvent, error) {
+	var events []model.CRMCalendarEvent
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND email_account_id = ? AND recurring_series_id = ? AND start_time >= ? AND status = ?", workspaceID, emailAccountID, seriesExternalID, startAfter, model.CRMCalendarEventStatusConfirmed).
+		Order("start_time ASC").
+		Find(&events).Error; err != nil {
+		return nil, fmt.Errorf("list recurring calendar events: %w", err)
+	}
+	return events, nil
 }
 
 // List returns calendar events with optional filters and pagination.

@@ -25,18 +25,19 @@ type GoogleCalendarAttendee struct {
 
 // GoogleCalendarEvent is the provider-neutral subset needed by CRM meeting capture.
 type GoogleCalendarEvent struct {
-	ID             string
-	Title          string
-	Description    string
-	StartTime      time.Time
-	EndTime        time.Time
-	Location       string
-	MeetingURL     string
-	OrganizerEmail string
-	Status         string
-	Visibility     string
-	AllDay         bool
-	Attendees      []GoogleCalendarAttendee
+	ID                string
+	RecurringSeriesID string
+	Title             string
+	Description       string
+	StartTime         time.Time
+	EndTime           time.Time
+	Location          string
+	MeetingURL        string
+	OrganizerEmail    string
+	Status            string
+	Visibility        string
+	AllDay            bool
+	Attendees         []GoogleCalendarAttendee
 }
 
 // ListCalendarEvents returns the primary calendar window, including cancelled
@@ -96,14 +97,15 @@ type googleCalendarEventsResponse struct {
 }
 
 type googleCalendarRawEvent struct {
-	ID          string `json:"id"`
-	Status      string `json:"status"`
-	Summary     string `json:"summary"`
-	Description string `json:"description"`
-	Location    string `json:"location"`
-	Visibility  string `json:"visibility"`
-	HangoutLink string `json:"hangoutLink"`
-	Organizer   struct {
+	ID               string `json:"id"`
+	RecurringEventID string `json:"recurringEventId"`
+	Status           string `json:"status"`
+	Summary          string `json:"summary"`
+	Description      string `json:"description"`
+	Location         string `json:"location"`
+	Visibility       string `json:"visibility"`
+	HangoutLink      string `json:"hangoutLink"`
+	Organizer        struct {
 		Email string `json:"email"`
 	} `json:"organizer"`
 	Start     googleCalendarDateTime `json:"start"`
@@ -161,18 +163,19 @@ func normalizeGoogleCalendarEvent(raw googleCalendarRawEvent) (GoogleCalendarEve
 		})
 	}
 	return GoogleCalendarEvent{
-		ID:             strings.TrimSpace(raw.ID),
-		Title:          title,
-		Description:    strings.TrimSpace(raw.Description),
-		StartTime:      start,
-		EndTime:        end,
-		Location:       strings.TrimSpace(raw.Location),
-		MeetingURL:     calendarMeetingURL(raw),
-		OrganizerEmail: strings.ToLower(strings.TrimSpace(raw.Organizer.Email)),
-		Status:         status,
-		Visibility:     strings.TrimSpace(raw.Visibility),
-		AllDay:         startAllDay || endAllDay,
-		Attendees:      attendees,
+		ID:                strings.TrimSpace(raw.ID),
+		RecurringSeriesID: strings.TrimSpace(raw.RecurringEventID),
+		Title:             title,
+		Description:       strings.TrimSpace(raw.Description),
+		StartTime:         start,
+		EndTime:           end,
+		Location:          strings.TrimSpace(raw.Location),
+		MeetingURL:        calendarMeetingURL(raw),
+		OrganizerEmail:    strings.ToLower(strings.TrimSpace(raw.Organizer.Email)),
+		Status:            status,
+		Visibility:        strings.TrimSpace(raw.Visibility),
+		AllDay:            startAllDay || endAllDay,
+		Attendees:         attendees,
 	}, strings.TrimSpace(raw.ID) != ""
 }
 

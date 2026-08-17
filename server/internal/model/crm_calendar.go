@@ -124,28 +124,45 @@ func normalizeCRMStringList(values []string) CRMStringList {
 
 // CRMCalendarEvent represents a synced or manually-created calendar event.
 type CRMCalendarEvent struct {
-	ID              string               `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string               `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	EmailAccountID  string               `json:"email_account_id" gorm:"type:uuid;not null;index"`
-	ExternalEventID *string              `json:"external_event_id" gorm:"index"`
-	Title           string               `json:"title" gorm:"not null"`
-	Description     *string              `json:"description"`
-	StartTime       time.Time            `json:"start_time" gorm:"not null;index"`
-	EndTime         time.Time            `json:"end_time" gorm:"not null"`
-	Location        *string              `json:"location"`
-	MeetingURL      *string              `json:"meeting_url"`
-	OrganizerEmail  *string              `json:"organizer_email"`
-	Status          string               `json:"status" gorm:"not null;default:'confirmed';index"`
-	Visibility      string               `json:"visibility" gorm:"not null;default:'default'"`
-	AllDay          bool                 `json:"all_day" gorm:"not null;default:false"`
-	Attendees       CRMCalendarAttendees `json:"attendees" gorm:"type:jsonb;default:'[]'"`
-	ContactIDs      CRMStringList        `json:"contact_ids" gorm:"type:jsonb;default:'[]'"`
-	DealID          *string              `json:"deal_id" gorm:"type:uuid;index"`
-	CreatedAt       time.Time            `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt       time.Time            `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                string               `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string               `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	EmailAccountID    string               `json:"email_account_id" gorm:"type:uuid;not null;index"`
+	ExternalEventID   *string              `json:"external_event_id" gorm:"index"`
+	RecurringSeriesID *string              `json:"recurring_series_id" gorm:"index"`
+	AutoJoinOverride  *bool                `json:"auto_join_override"`
+	Title             string               `json:"title" gorm:"not null"`
+	Description       *string              `json:"description"`
+	StartTime         time.Time            `json:"start_time" gorm:"not null;index"`
+	EndTime           time.Time            `json:"end_time" gorm:"not null"`
+	Location          *string              `json:"location"`
+	MeetingURL        *string              `json:"meeting_url"`
+	OrganizerEmail    *string              `json:"organizer_email"`
+	Status            string               `json:"status" gorm:"not null;default:'confirmed';index"`
+	Visibility        string               `json:"visibility" gorm:"not null;default:'default'"`
+	AllDay            bool                 `json:"all_day" gorm:"not null;default:false"`
+	Attendees         CRMCalendarAttendees `json:"attendees" gorm:"type:jsonb;default:'[]'"`
+	ContactIDs        CRMStringList        `json:"contact_ids" gorm:"type:jsonb;default:'[]'"`
+	DealID            *string              `json:"deal_id" gorm:"type:uuid;index"`
+	CreatedAt         time.Time            `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time            `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (CRMCalendarEvent) TableName() string { return "crm_calendar_events" }
+
+// CRMCalendarSeriesPreference stores capture policy for future occurrences in
+// one provider-owned recurring calendar series.
+type CRMCalendarSeriesPreference struct {
+	ID               string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_calendar_series_preference,priority:1"`
+	EmailAccountID   string    `json:"email_account_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_calendar_series_preference,priority:2"`
+	SeriesExternalID string    `json:"series_external_id" gorm:"not null;uniqueIndex:idx_calendar_series_preference,priority:3"`
+	AutoJoin         bool      `json:"auto_join" gorm:"not null;default:false"`
+	CreatedBy        *string   `json:"created_by" gorm:"type:uuid"`
+	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (CRMCalendarSeriesPreference) TableName() string { return "crm_calendar_series_preferences" }
 
 // CreateCRMCalendarEventRequest is the payload for creating a calendar event.
 type CreateCRMCalendarEventRequest struct {
@@ -192,6 +209,17 @@ type CRMCalendarMeetingCandidate struct {
 	Meeting             *CRMMeeting      `json:"meeting,omitempty"`
 	Eligible            bool             `json:"eligible"`
 	IneligibilityReason *string          `json:"ineligibility_reason,omitempty"`
+	EffectiveAutoJoin   bool             `json:"effective_auto_join"`
+	AutoJoinSource      string           `json:"auto_join_source"`
+	SeriesAutoJoin      *bool            `json:"series_auto_join,omitempty"`
+}
+
+// UpdateCRMCalendarSeriesCaptureRequest applies capture to every future
+// occurrence in a recurring series.
+type UpdateCRMCalendarSeriesCaptureRequest struct {
+	EmailAccountID   string `json:"email_account_id"`
+	SeriesExternalID string `json:"series_external_id"`
+	Enabled          bool   `json:"enabled"`
 }
 
 // UpdateCRMCalendarMeetingCaptureRequest enables or disables scheduled capture.

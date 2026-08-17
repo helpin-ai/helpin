@@ -10,6 +10,19 @@ type calendarMeetingCaptureScheduler interface {
 	CancelMeetingCapture(ctx context.Context, meetingID string) error
 }
 
+type calendarMeetingPolicyReconciler interface {
+	ReconcileCalendarMeetingPolicy(ctx context.Context, workspaceID, calendarEventID, actorID string) error
+}
+
+// SetMeetingPolicyReconciler materializes occurrence, series, and workspace
+// auto-join policy when new calendar occurrences enter the sync horizon.
+func (a *EmailSyncActivities) SetMeetingPolicyReconciler(reconciler calendarMeetingPolicyReconciler) *EmailSyncActivities {
+	if a != nil {
+		a.meetingPolicyReconciler = reconciler
+	}
+	return a
+}
+
 // SetMeetingCaptureScheduler keeps durable automatic joins aligned with synced
 // Google Calendar changes.
 func (a *EmailSyncActivities) SetMeetingCaptureScheduler(scheduler calendarMeetingCaptureScheduler) *EmailSyncActivities {

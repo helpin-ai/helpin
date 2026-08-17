@@ -23,6 +23,29 @@ func (h *CRMMeetingHandler) ListUpcomingCalendar(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": candidates, "total": len(candidates)})
 }
 
+// UpdateCalendarSeriesCapture handles PUT /api/crm/meetings/calendar-series/capture.
+func (h *CRMMeetingHandler) UpdateCalendarSeriesCapture(w http.ResponseWriter, r *http.Request) {
+	var req model.UpdateCRMCalendarSeriesCaptureRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	candidates, err := h.meetingService.UpdateCalendarSeriesCapture(
+		r.Context(),
+		getWorkspaceID(r),
+		middleware.GetUserID(r.Context()),
+		req,
+	)
+	if err != nil {
+		writeBillingAwareError(w, meetingErrorStatus(err), err)
+		return
+	}
+	if candidates == nil {
+		candidates = []model.CRMCalendarMeetingCandidate{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": candidates, "total": len(candidates)})
+}
+
 // UpdateCalendarCapture handles PUT /api/crm/meetings/calendar/{eventID}/capture.
 func (h *CRMMeetingHandler) UpdateCalendarCapture(w http.ResponseWriter, r *http.Request) {
 	var req model.UpdateCRMCalendarMeetingCaptureRequest

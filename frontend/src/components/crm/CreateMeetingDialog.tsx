@@ -117,8 +117,8 @@ export function CreateMeetingDialog({
           )}
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
-              <Label>Record audio</Label>
-              <p className="mt-1 text-xs text-muted-foreground">Meetings are workspace-visible in this release.</p>
+              <Label>Save meeting recording</Label>
+              <p className="mt-1 text-xs text-muted-foreground">Keep video and audio for private playback in Helpin.</p>
             </div>
             <Switch checked={recordAudio} onCheckedChange={setRecordAudioOverride} />
           </div>

@@ -8,6 +8,7 @@ import type {
   CRMMeetingDetail,
   CRMMeetingFilters,
   CRMMeetingListResponse,
+  CRMMeetingRecording,
   CRMMeetingSettings,
   CRMMeetingSettingsResponse,
   CRMCalendarMeetingCandidate,
@@ -15,6 +16,7 @@ import type {
   UpdateCRMMeetingRequest,
   UpdateCRMMeetingSettingsRequest,
   UpdateCRMCalendarMeetingCaptureRequest,
+  UpdateCRMCalendarSeriesCaptureRequest,
 } from '../crmMeetingTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -51,6 +53,8 @@ export const crmMeetingService = {
     api.get<CRMCalendarMeetingCandidateListResponse>(`/crm/meetings/calendar-upcoming${qs(workspaceId)}`),
   updateCalendarCapture: (workspaceId: string, calendarEventId: string, payload: UpdateCRMCalendarMeetingCaptureRequest) =>
     api.put<CRMCalendarMeetingCandidate>(`/crm/meetings/calendar/${calendarEventId}/capture${qs(workspaceId)}`, payload),
+  updateCalendarSeriesCapture: (workspaceId: string, payload: UpdateCRMCalendarSeriesCaptureRequest) =>
+    api.put<CRMCalendarMeetingCandidateListResponse>(`/crm/meetings/calendar-series/capture${qs(workspaceId)}`, payload),
   get: (workspaceId: string, meetingId: string) =>
     api.get<CRMMeetingDetail>(`/crm/meetings/${meetingId}${qs(workspaceId)}`),
   create: (payload: CreateCRMMeetingRequest, idempotencyKey?: string) => payload.start_now
@@ -67,7 +71,7 @@ export const crmMeetingService = {
   retryProcessing: (workspaceId: string, meetingId: string) =>
     api.post(`/crm/meetings/${meetingId}/process${qs(workspaceId)}`, {}),
   getRecording: (workspaceId: string, meetingId: string) =>
-    api.get<{ url: string }>(`/crm/meetings/${meetingId}/recording${qs(workspaceId)}`),
+    api.get<CRMMeetingRecording>(`/crm/meetings/${meetingId}/recording${qs(workspaceId)}`),
   deleteRecording: (workspaceId: string, meetingId: string) =>
     api.del(`/crm/meetings/${meetingId}/recording${qs(workspaceId)}`),
   acceptAction: (workspaceId: string, meetingId: string, itemId: string, payload: AcceptCRMMeetingActionItemRequest) =>

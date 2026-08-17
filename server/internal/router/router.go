@@ -1508,6 +1508,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings", h.CRMMeeting.List)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/meetings", h.CRMMeeting.Create)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/calendar-upcoming", h.CRMMeeting.ListUpcomingCalendar)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/meetings/calendar-series/capture", h.CRMMeeting.UpdateCalendarSeriesCapture)
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/meetings/calendar/{eventID}/capture", h.CRMMeeting.UpdateCalendarCapture)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/{id}", h.CRMMeeting.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/meetings/{id}", h.CRMMeeting.Update)

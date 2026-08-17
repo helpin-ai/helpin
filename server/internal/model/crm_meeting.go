@@ -44,31 +44,32 @@ const (
 
 // CRMMeeting is Helpin's provider-neutral meeting record.
 type CRMMeeting struct {
-	ID                 string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID        string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	CalendarEventID    *string    `json:"calendar_event_id" gorm:"type:uuid;index"`
-	ActivityID         *string    `json:"activity_id" gorm:"type:uuid;uniqueIndex"`
-	OwnerMemberID      *string    `json:"owner_member_id" gorm:"type:uuid;index"`
-	Title              string     `json:"title" gorm:"not null"`
-	MeetingURL         string     `json:"meeting_url" gorm:"not null"`
-	Platform           string     `json:"platform" gorm:"not null;index"`
-	NativeMeetingID    string     `json:"native_meeting_id" gorm:"not null"`
-	Status             string     `json:"status" gorm:"not null;default:'scheduled';index"`
-	SummaryStatus      string     `json:"summary_status" gorm:"not null;default:'pending';index"`
-	Visibility         string     `json:"visibility" gorm:"not null;default:'workspace'"`
-	RecordAudio        bool       `json:"record_audio" gorm:"not null;default:false"`
-	ScheduledStartAt   *time.Time `json:"scheduled_start_at" gorm:"index"`
-	ScheduledEndAt     *time.Time `json:"scheduled_end_at"`
-	ActualStartAt      *time.Time `json:"actual_start_at"`
-	ActualEndAt        *time.Time `json:"actual_end_at"`
-	DurationSeconds    int        `json:"duration_seconds" gorm:"not null;default:0"`
-	Participants       JSONBlob   `json:"participants" gorm:"type:jsonb;default:'[]'"`
-	FailureCode        *string    `json:"failure_code"`
-	FailureMessage     *string    `json:"failure_message"`
-	RecordingObjectKey *string    `json:"recording_object_key"`
-	CreatedBy          *string    `json:"created_by" gorm:"type:uuid;index"`
-	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt          time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                   string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID          string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	CalendarEventID      *string    `json:"calendar_event_id" gorm:"type:uuid;index"`
+	ActivityID           *string    `json:"activity_id" gorm:"type:uuid;uniqueIndex"`
+	OwnerMemberID        *string    `json:"owner_member_id" gorm:"type:uuid;index"`
+	Title                string     `json:"title" gorm:"not null"`
+	MeetingURL           string     `json:"meeting_url" gorm:"not null"`
+	Platform             string     `json:"platform" gorm:"not null;index"`
+	NativeMeetingID      string     `json:"native_meeting_id" gorm:"not null"`
+	Status               string     `json:"status" gorm:"not null;default:'scheduled';index"`
+	SummaryStatus        string     `json:"summary_status" gorm:"not null;default:'pending';index"`
+	Visibility           string     `json:"visibility" gorm:"not null;default:'workspace'"`
+	RecordAudio          bool       `json:"record_audio" gorm:"not null;default:false"`
+	ScheduledStartAt     *time.Time `json:"scheduled_start_at" gorm:"index"`
+	ScheduledEndAt       *time.Time `json:"scheduled_end_at"`
+	ActualStartAt        *time.Time `json:"actual_start_at"`
+	ActualEndAt          *time.Time `json:"actual_end_at"`
+	DurationSeconds      int        `json:"duration_seconds" gorm:"not null;default:0"`
+	Participants         JSONBlob   `json:"participants" gorm:"type:jsonb;default:'[]'"`
+	FailureCode          *string    `json:"failure_code"`
+	FailureMessage       *string    `json:"failure_message"`
+	RecordingObjectKey   *string    `json:"recording_object_key"`
+	RecordingContentType *string    `json:"recording_content_type"`
+	CreatedBy            *string    `json:"created_by" gorm:"type:uuid;index"`
+	CreatedAt            time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt            time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (CRMMeeting) TableName() string { return "crm_meetings" }
@@ -262,6 +263,7 @@ type CRMMeetingListFilters struct {
 type UpdateCRMMeetingSettingsRequest struct {
 	Enabled              *bool   `json:"enabled"`
 	BotName              *string `json:"bot_name"`
+	AutoJoinMode         *string `json:"auto_join_mode"`
 	RecordAudioByDefault *bool   `json:"record_audio_by_default"`
 }
 
@@ -283,10 +285,18 @@ type CRMMeetingDetail struct {
 	Associations []CRMAssociationEnriched `json:"associations"`
 }
 
+// CRMMeetingRecording is a short-lived playback contract for canonical media.
+type CRMMeetingRecording struct {
+	URL         string `json:"url"`
+	ContentType string `json:"content_type"`
+	MediaType   string `json:"media_type"`
+}
+
 func scanJSONArray(value interface{}, target interface{}) error {
 	if value == nil {
 		return json.Unmarshal([]byte("[]"), target)
 	}
+
 	var payload []byte
 	switch typed := value.(type) {
 	case []byte:

@@ -60,13 +60,24 @@ func (s *CRMMeetingService) ListUpcomingCalendarMeetings(
 	if err != nil {
 		return nil, err
 	}
+	preferences, err := s.calendarRepo.ListSeriesPreferences(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	preferencesBySeries := make(map[string]*model.CRMCalendarSeriesPreference, len(preferences))
+	for index := range preferences {
+		preference := &preferences[index]
+		preferencesBySeries[calendarSeriesPreferenceKey(preference.EmailAccountID, preference.SeriesExternalID)] = preference
+	}
 	candidates := make([]model.CRMCalendarMeetingCandidate, 0, len(events))
 	for _, event := range events {
-		candidate := calendarMeetingCandidate(event, settings.Enabled)
-		if meeting, exists := meetings[event.ID]; exists {
-			meetingCopy := meeting
-			candidate.Meeting = &meetingCopy
+		var meeting *model.CRMMeeting
+		if meetingValue, exists := meetings[event.ID]; exists {
+			meetingCopy := meetingValue
+			meeting = &meetingCopy
 		}
+		preference := preferencesBySeries[calendarSeriesPreferenceKey(event.EmailAccountID, calendarStringValue(event.RecurringSeriesID))]
+		candidate := calendarMeetingCandidate(event, settings, preference, meeting)
 		candidates = append(candidates, candidate)
 	}
 	return candidates, nil
@@ -92,6 +103,17 @@ func (s *CRMMeetingService) updateCalendarMeetingCaptureLocked(
 	if err != nil {
 		return nil, err
 	}
+	settings, err := s.repo.GetSettings(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	var preference *model.CRMCalendarSeriesPreference
+	if event.RecurringSeriesID != nil {
+		preference, err = s.calendarRepo.GetSeriesPreference(ctx, workspaceID, event.EmailAccountID, *event.RecurringSeriesID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if !req.Enabled {
 		if existing != nil {
 			if s.captureScheduler == nil {
@@ -107,18 +129,14 @@ func (s *CRMMeetingService) updateCalendarMeetingCaptureLocked(
 				return nil, err
 			}
 		}
-		candidate := calendarMeetingCandidate(*event, true)
+		candidate := calendarMeetingCandidate(*event, settings, preference, nil)
 		return &candidate, nil
 	}
 
 	if s.captureScheduler == nil {
 		return nil, fmt.Errorf("automatic meeting joining is unavailable")
 	}
-	settings, err := s.repo.GetSettings(ctx, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	candidate := calendarMeetingCandidate(*event, settings.Enabled)
+	candidate := calendarMeetingCandidate(*event, settings, preference, existing)
 	if !candidate.Eligible {
 		return nil, fmt.Errorf("%s", calendarStringValue(candidate.IneligibilityReason))
 	}
@@ -190,11 +208,21 @@ func (s *CRMMeetingService) updateCalendarMeetingCaptureLocked(
 	return &candidate, nil
 }
 
-func calendarMeetingCandidate(event model.CRMCalendarEvent, settingsEnabled bool) model.CRMCalendarMeetingCandidate {
-	candidate := model.CRMCalendarMeetingCandidate{Event: event, Eligible: true}
+func calendarMeetingCandidate(
+	event model.CRMCalendarEvent,
+	settings *model.CRMMeetingSettings,
+	preference *model.CRMCalendarSeriesPreference,
+	meeting *model.CRMMeeting,
+) model.CRMCalendarMeetingCandidate {
+	candidate := model.CRMCalendarMeetingCandidate{
+		Event:          event,
+		Meeting:        meeting,
+		Eligible:       true,
+		AutoJoinSource: "workspace",
+	}
 	reason := ""
 	switch {
-	case !settingsEnabled:
+	case settings == nil || !settings.Enabled:
 		reason = "Meeting notes are turned off"
 	case event.Status == model.CRMCalendarEventStatusCancelled:
 		reason = "This event was cancelled"
@@ -211,7 +239,31 @@ func calendarMeetingCandidate(event model.CRMCalendarEvent, settingsEnabled bool
 		candidate.Eligible = false
 		candidate.IneligibilityReason = &reason
 	}
+
+	if preference != nil {
+		seriesAutoJoin := preference.AutoJoin
+		candidate.SeriesAutoJoin = &seriesAutoJoin
+	}
+	switch {
+	case event.AutoJoinOverride != nil:
+		candidate.EffectiveAutoJoin = *event.AutoJoinOverride
+		candidate.AutoJoinSource = "occurrence"
+	case preference != nil:
+		candidate.EffectiveAutoJoin = preference.AutoJoin
+		candidate.AutoJoinSource = "series"
+	case settings != nil && settings.AutoJoinMode == "all":
+		candidate.EffectiveAutoJoin = true
+	case settings != nil && settings.AutoJoinMode == "external":
+		candidate.EffectiveAutoJoin = len(event.ContactIDs) > 0
+	}
+	if !candidate.Eligible {
+		candidate.EffectiveAutoJoin = false
+	}
 	return candidate
+}
+
+func calendarSeriesPreferenceKey(emailAccountID, seriesExternalID string) string {
+	return strings.TrimSpace(emailAccountID) + ":" + strings.TrimSpace(seriesExternalID)
 }
 
 func (s *CRMMeetingService) calendarOwnerMemberID(ctx context.Context, event *model.CRMCalendarEvent) (*string, error) {

@@ -18,6 +18,8 @@ func setupCalendarMeetingTestDB(t *testing.T) (*CRMMeetingService, *repository.C
 			workspace_id TEXT NOT NULL,
 			email_account_id TEXT NOT NULL,
 			external_event_id TEXT,
+			recurring_series_id TEXT,
+			auto_join_override BOOLEAN,
 			title TEXT NOT NULL,
 			description TEXT,
 			start_time DATETIME NOT NULL,
@@ -43,6 +45,16 @@ func setupCalendarMeetingTestDB(t *testing.T) (*CRMMeetingService, *repository.C
 			to_object_id TEXT NOT NULL,
 			association_label TEXT,
 			created_at DATETIME
+		)`,
+		`CREATE TABLE crm_calendar_series_preferences (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			email_account_id TEXT NOT NULL,
+			series_external_id TEXT NOT NULL,
+			auto_join BOOLEAN NOT NULL DEFAULT 0,
+			created_by TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
 		)`,
 	}
 	for _, statement := range statements {
@@ -136,10 +148,102 @@ func TestCalendarMeetingCaptureCreatesAssociationsAndCanBeDisabled(t *testing.T)
 	}
 }
 
+func TestCalendarMeetingSeriesCaptureSchedulesEveryFutureOccurrence(t *testing.T) {
+	service, meetingRepo := setupCalendarMeetingTestDB(t)
+	ctx := context.Background()
+	workspaceID := "workspace-series"
+	if err := meetingRepo.UpsertSettings(ctx, &model.CRMMeetingSettings{
+		WorkspaceID:             workspaceID,
+		Enabled:                 true,
+		BotName:                 "Helpin Notetaker",
+		AutoJoinMode:            "manual",
+		DefaultProvider:         model.CRMMeetingProviderRecall,
+		DefaultVisibility:       model.CRMMeetingVisibilityWorkspace,
+		AudioRetentionDays:      30,
+		TranscriptRetentionDays: 365,
+	}); err != nil {
+		t.Fatalf("create settings: %v", err)
+	}
+
+	seriesID := "google-series-1"
+	meetingURL := "https://meet.google.com/abc-defg-hij"
+	start := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	eventIDs := []string{"series-event-1", "series-event-2"}
+	for index, eventID := range eventIDs {
+		eventStart := start.Add(time.Duration(index) * 7 * 24 * time.Hour)
+		override := false
+		event := &model.CRMCalendarEvent{
+			ID:                eventID,
+			WorkspaceID:       workspaceID,
+			EmailAccountID:    "email-account-series",
+			RecurringSeriesID: &seriesID,
+			AutoJoinOverride:  &override,
+			Title:             "Weekly customer sync",
+			StartTime:         eventStart,
+			EndTime:           eventStart.Add(30 * time.Minute),
+			MeetingURL:        &meetingURL,
+			Status:            model.CRMCalendarEventStatusConfirmed,
+			Visibility:        "default",
+			Attendees:         model.CRMCalendarAttendees{},
+			ContactIDs:        model.CRMStringList{},
+		}
+		if err := service.calendarRepo.Create(ctx, event); err != nil {
+			t.Fatalf("create series event: %v", err)
+		}
+	}
+
+	candidates, err := service.UpdateCalendarSeriesCapture(ctx, workspaceID, "member-1", model.UpdateCRMCalendarSeriesCaptureRequest{
+		EmailAccountID:   "email-account-series",
+		SeriesExternalID: seriesID,
+		Enabled:          true,
+	})
+	if err != nil {
+		t.Fatalf("enable recurring series: %v", err)
+	}
+	if len(candidates) != 2 {
+		t.Fatalf("candidates = %d, want 2", len(candidates))
+	}
+	meetings, err := meetingRepo.ListByCalendarEventIDs(ctx, workspaceID, eventIDs)
+	if err != nil {
+		t.Fatalf("list series meetings: %v", err)
+	}
+	if len(meetings) != 2 {
+		t.Fatalf("scheduled meetings = %d, want 2", len(meetings))
+	}
+	for _, candidate := range candidates {
+		if !candidate.EffectiveAutoJoin || candidate.AutoJoinSource != "series" || candidate.Event.AutoJoinOverride != nil {
+			t.Fatalf("unexpected series candidate: %#v", candidate)
+		}
+	}
+}
+
 func TestCalendarMeetingCandidateRequiresSupportedMeetingLink(t *testing.T) {
 	event := model.CRMCalendarEvent{Status: model.CRMCalendarEventStatusConfirmed}
-	candidate := calendarMeetingCandidate(event, true)
+	settings := &model.CRMMeetingSettings{Enabled: true, AutoJoinMode: "manual"}
+	candidate := calendarMeetingCandidate(event, settings, nil, nil)
 	if candidate.Eligible || candidate.IneligibilityReason == nil || *candidate.IneligibilityReason != "No supported meeting link" {
 		t.Fatalf("expected missing-link ineligibility, got %#v", candidate)
+	}
+}
+
+func TestCalendarMeetingCandidatePolicyPriority(t *testing.T) {
+	meetingURL := "https://meet.google.com/abc-defg-hij"
+	event := model.CRMCalendarEvent{
+		Status:     model.CRMCalendarEventStatusConfirmed,
+		MeetingURL: &meetingURL,
+	}
+	settings := &model.CRMMeetingSettings{Enabled: true, AutoJoinMode: "all"}
+	preference := &model.CRMCalendarSeriesPreference{AutoJoin: false}
+
+	candidate := calendarMeetingCandidate(event, settings, preference, nil)
+	if candidate.EffectiveAutoJoin || candidate.AutoJoinSource != "series" {
+		t.Fatalf("series preference was not applied: %#v", candidate)
+	}
+
+	override := true
+	event.AutoJoinOverride = &override
+	candidate = calendarMeetingCandidate(event, settings, preference, nil)
+	if !candidate.EffectiveAutoJoin || candidate.AutoJoinSource != "occurrence" {
+		t.Fatalf("occurrence override did not win: %#v", candidate)
 	}
 }
