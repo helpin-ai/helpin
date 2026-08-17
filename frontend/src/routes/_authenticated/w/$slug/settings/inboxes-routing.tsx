@@ -22,7 +22,7 @@ function InboxesRoutingRoute() {
   const handleTabChange = (value: string) => {
     void navigate({
       to: Route.fullPath,
-      search: { tab: normalizeInboxesRoutingTab(value) },
+      search: { tab: normalizeInboxesRoutingTab(value), create_inbox: false },
       replace: true,
     });
   };
