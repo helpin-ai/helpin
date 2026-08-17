@@ -16,24 +16,35 @@ import (
 
 // MeteringRequest identifies and bounds one priced model execution.
 type MeteringRequest struct {
-	WorkspaceID, TaskNature, FeatureKey, Provider, Model, Route, ServiceTier string
-	FundingMode                                                              aiusage.FundingMode
-	InputTokensEstimate, MaximumOutputTokens                                 int64
-	AllowedPaidTools                                                         []string
-	ExecutionID, IdempotencyKey                                              string
-	Promotional                                                              bool
+	WorkspaceID, TaskNature, FeatureKey, OperationKey, Provider, Model, Route, ServiceTier string
+	FundingMode                                                                            aiusage.FundingMode
+	InputTokensEstimate, MaximumOutputTokens                                               int64
+	AllowedPaidTools                                                                       []string
+	ExecutionID, IdempotencyKey                                                            string
+	Promotional                                                                            bool
 }
 
 // MeteringContext is the immutable pricing identity carried through execution.
 type MeteringContext struct {
-	Route                               aiusage.ResolvedRoute
-	ReservationID, PricingVersion       string
-	MaxBillableMicrousd                 int64
-	Promotional                         bool
-	WorkspaceID, TaskNature, FeatureKey string
-	FundingMode                         aiusage.FundingMode
-	IdempotencyKey, EnforcementMode     string
+	Route                                             aiusage.ResolvedRoute
+	ReservationID, PricingVersion                     string
+	MaxBillableMicrousd                               int64
+	Promotional                                       bool
+	WorkspaceID, TaskNature, FeatureKey, OperationKey string
+	FundingMode                                       aiusage.FundingMode
+	IdempotencyKey, EnforcementMode                   string
 }
+
+const (
+	// AIUsageOperationMediaEnrichment identifies bounded multimodal analysis
+	// that runs before an agent's primary model starts. It is deliberately
+	// separate from the agent task nature so a support agent remains a small
+	// primary-model task while its eligible media can use the approved reader.
+	AIUsageOperationMediaEnrichment = "media_enrichment"
+	mediaEnrichmentProvider         = "openrouter"
+	mediaEnrichmentCanonicalModel   = "gemini-3.7-flash"
+	mediaEnrichmentRoute            = "google/gemini-3.7-flash"
+)
 
 // PreflightRequest contains one execution's metering request.
 type PreflightRequest struct{ Metering MeteringRequest }
@@ -99,8 +110,8 @@ func (s *AIUsageService) ResolveMeteringContext(input MeteringRequest) (Metering
 			return MeteringContext{}, fmt.Errorf("%w: %v", model.ErrModelUnavailableUnderPricing, err)
 		}
 	}
-	if required, enforced := requiredBuiltInTier(input.TaskNature); enforced && resolved.Tier != required {
-		return MeteringContext{}, fmt.Errorf("%w: %s tasks require %s", model.ErrModelUnavailableUnderPricing, input.TaskNature, required)
+	if err := validateAIUsageOperation(input.OperationKey, input.TaskNature, resolved); err != nil {
+		return MeteringContext{}, err
 	}
 	funding := input.FundingMode
 	if funding == "" {
@@ -108,7 +119,7 @@ func (s *AIUsageService) ResolveMeteringContext(input MeteringRequest) (Metering
 	}
 	return MeteringContext{
 		Route: resolved, PricingVersion: s.catalog.PricingVersion, Promotional: input.Promotional,
-		WorkspaceID: input.WorkspaceID, TaskNature: input.TaskNature, FeatureKey: input.FeatureKey,
+		WorkspaceID: input.WorkspaceID, TaskNature: input.TaskNature, FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
 		FundingMode: funding, IdempotencyKey: input.IdempotencyKey,
 	}, nil
 }
@@ -370,5 +381,22 @@ func requiredBuiltInTier(taskNature string) (aiusage.Tier, bool) {
 		return "", false
 	default:
 		return aiusage.TierSmall, true
+	}
+}
+
+func validateAIUsageOperation(operationKey, taskNature string, resolved aiusage.ResolvedRoute) error {
+	switch strings.ToLower(strings.TrimSpace(operationKey)) {
+	case "":
+		if required, enforced := requiredBuiltInTier(taskNature); enforced && resolved.Tier != required {
+			return fmt.Errorf("%w: %s tasks require %s", model.ErrModelUnavailableUnderPricing, taskNature, required)
+		}
+		return nil
+	case AIUsageOperationMediaEnrichment:
+		if resolved.Provider != mediaEnrichmentProvider || resolved.CanonicalModel != mediaEnrichmentCanonicalModel || resolved.Route != mediaEnrichmentRoute || resolved.Tier != aiusage.TierMedium {
+			return fmt.Errorf("%w: %s requires the approved multimodal reader", model.ErrModelUnavailableUnderPricing, operationKey)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: unknown AI operation %q", model.ErrPricingConfigurationMissing, operationKey)
 	}
 }

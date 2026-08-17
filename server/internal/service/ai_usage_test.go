@@ -49,6 +49,37 @@ func TestAIUsageServiceRejectsUnsupportedOrWrongTierModel(t *testing.T) {
 	}
 }
 
+func TestAIUsageServiceAllowsConfiguredMediaEnrichmentRouteForSupportWork(t *testing.T) {
+	service := newTestAIUsageService(t, &fakeAIUsageStore{})
+
+	resolved, err := service.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws", TaskNature: "support", FeatureKey: BillingFeatureAskChat,
+		OperationKey: AIUsageOperationMediaEnrichment,
+		Provider:     "openrouter", Model: "google/gemini-3.7-flash", Route: "google/gemini-3.7-flash",
+		FundingMode: aiusage.FundingHelpinHosted,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Route.Tier != aiusage.TierMedium {
+		t.Fatalf("tier = %q, want %q", resolved.Route.Tier, aiusage.TierMedium)
+	}
+}
+
+func TestAIUsageServiceRejectsMediaEnrichmentOperationForOtherModels(t *testing.T) {
+	service := newTestAIUsageService(t, &fakeAIUsageStore{})
+
+	_, err := service.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws", TaskNature: "support", FeatureKey: BillingFeatureAskChat,
+		OperationKey: AIUsageOperationMediaEnrichment,
+		Provider:     "openai", Model: "gpt-5.6-terra", Route: "gpt-5.6-terra",
+		FundingMode: aiusage.FundingHelpinHosted,
+	})
+	if !errors.Is(err, model.ErrModelUnavailableUnderPricing) {
+		t.Fatalf("ResolveMeteringContext() error = %v, want model unavailable", err)
+	}
+}
+
 func TestAIUsageServicePreflightUsesGreaterP90AndDeterministicBound(t *testing.T) {
 	store := &fakeAIUsageStore{}
 	service := newTestAIUsageService(t, store)

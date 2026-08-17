@@ -10,7 +10,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 )
 
-const askMediaReaderModel = "google/gemini-3.7-flash"
+const askMediaReaderModel = mediaEnrichmentRoute
 
 type dockChatMediaLLM interface {
 	ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error)
@@ -74,6 +74,7 @@ func (s *DockChatService) analyzeDockChatMedia(ctx context.Context, workspaceID,
 	callCtx = WithAIUsageMetering(callCtx, AIUsageMeteringContext{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureAskChat,
+		OperationKey:   AIUsageOperationMediaEnrichment,
 		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureAskChat, "media", strings.Join(attachmentIDs, ",")),
 		Metadata: map[string]interface{}{
 			"source":           "dock_chat_media",

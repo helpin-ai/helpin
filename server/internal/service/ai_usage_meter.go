@@ -122,6 +122,7 @@ var ErrAIUsageMeteringRequired = errors.New("AI usage metering context is requir
 type AIUsageMeteringContext struct {
 	WorkspaceID    string
 	FeatureKey     string
+	OperationKey   string
 	IdempotencyKey string
 	Metadata       map[string]interface{}
 }
@@ -272,7 +273,7 @@ func (p *MeteredLLMProvider) chatCompletionTokenPriced(ctx context.Context, req 
 		maximumOutput = 4096
 	}
 	preflight, err := p.meter.usage.Preflight(ctx, PreflightRequest{Metering: MeteringRequest{
-		WorkspaceID: input.WorkspaceID, TaskNature: taskNatureForFeature(input.FeatureKey), FeatureKey: input.FeatureKey,
+		WorkspaceID: input.WorkspaceID, TaskNature: taskNatureForFeature(input.FeatureKey), FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
 		Provider: identity.Provider, Model: identity.Model, Route: identity.Route, ServiceTier: identity.ServiceTier,
 		FundingMode: aiusage.FundingHelpinHosted, InputTokensEstimate: estimateChatInputTokens(req),
 		MaximumOutputTokens: maximumOutput, ExecutionID: metadataString(input.Metadata, "execution_id"),
