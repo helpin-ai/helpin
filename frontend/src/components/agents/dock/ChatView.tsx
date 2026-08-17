@@ -127,7 +127,10 @@ export function ChatView({
   const [atBottom, setAtBottom] = useState(true);
   const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
   const [contextCleared, setContextCleared] = useState(false);
-  const effectivePageContext = requiredPageContext ?? (contextCleared ? null : pageContext);
+  // A context supplied by the source surface starts attached, but it must not
+  // trap the chat there. Clearing it affects only subsequent turns in this
+  // dock chat; it never changes the underlying support conversation.
+  const effectivePageContext = contextCleared ? null : (requiredPageContext ?? pageContext);
 
   useEffect(() => {
     if (!initialDraft) return;
@@ -787,7 +790,7 @@ export function ChatView({
                   setContextCleared(false);
                   setActiveScopeKey(key);
                 }}
-                onClearContext={requiredPageContext ? undefined : () => setContextCleared(true)}
+                onClearContext={() => setContextCleared(true)}
                 workspaceId={workspaceId}
                 references={references}
                 onAddReference={(reference) => {

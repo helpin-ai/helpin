@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { composerPlaceholderForContext, sendControlClassName, shouldUseExpandedComposerLayout, usesSeparateComposerActionRow } from '../DockInput';
+import { canClearDockContext, composerPlaceholderForContext, sendControlClassName, shouldUseExpandedComposerLayout, usesSeparateComposerActionRow } from '../DockInput';
 
 describe('shouldUseExpandedComposerLayout', () => {
   it('moves wrapped text above the composer actions', () => {
@@ -37,6 +37,16 @@ describe('composerPlaceholderForContext', () => {
 
   it('uses the attached conversation as the support prompt', () => {
     expect(composerPlaceholderForContext('support_conversation')).toBe('Ask about this conversation…');
+  });
+});
+
+describe('canClearDockContext', () => {
+  it('allows a supplied support conversation context to be removed', () => {
+    expect(canClearDockContext('support_conversation', true)).toBe(true);
+  });
+
+  it('does not show a remove control when no clear action was provided', () => {
+    expect(canClearDockContext('support_conversation', false)).toBe(false);
   });
 });
 

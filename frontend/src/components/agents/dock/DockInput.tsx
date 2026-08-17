@@ -139,6 +139,13 @@ export function composerPlaceholderForContext(contextType?: CommandBarPageContex
     : 'Ask a question or delegate work to agents…';
 }
 
+export function canClearDockContext(
+  _contextType: CommandBarPageContext['entity_type'],
+  hasClearAction: boolean,
+) {
+  return hasClearAction;
+}
+
 export function usesSeparateComposerActionRow(mode: DockInputProps['mode'], expanded: boolean) {
   return mode === 'conversation' && expanded;
 }
@@ -418,7 +425,7 @@ function ContextChip({
   const allTasks = isAllTasksContext(context);
   const title = contextTitle(context);
   const hasOptions = options.length > 1 && !!onChange;
-  const canClear = context.entity_type === 'document' && !!onClear;
+  const canClear = canClearDockContext(context.entity_type, !!onClear);
   const chipClassName = cn(
     'inline-flex max-w-[300px] items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] text-foreground transition',
     blockScoped || allTasks ? 'border-orange-500/30 bg-orange-500/10' : 'border-border/70 bg-muted/30',
