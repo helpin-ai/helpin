@@ -268,13 +268,18 @@ const (
 	supportProgressSameUnclear  = "same_issue_unclear"
 	supportStateProgressing     = "progressing"
 	supportStateStalled         = "stalled"
-	supportRewriteProvider      = "anthropic"
-	supportRewriteModel         = "claude-haiku-4-5"
-	supportRewriteExpand        = "expand"
-	supportRewriteRephrase      = "rephrase"
-	supportRewriteFixGrammar    = "fix_grammar"
-	supportRewriteFriendly      = "more_friendly"
-	supportRewriteFormal        = "more_formal"
+	// Direct support assistance is metered as a small-tier task. Keep these
+	// defaults aligned with the curated pricing catalog so preflight cannot
+	// reject grammar rewrites before the provider call is made.
+	supportSmallTierProvider = "openai"
+	supportSmallTierModel    = "gpt-5.6-luna"
+	supportRewriteProvider   = supportSmallTierProvider
+	supportRewriteModel      = supportSmallTierModel
+	supportRewriteExpand     = "expand"
+	supportRewriteRephrase   = "rephrase"
+	supportRewriteFixGrammar = "fix_grammar"
+	supportRewriteFriendly   = "more_friendly"
+	supportRewriteFormal     = "more_formal"
 )
 
 var (
