@@ -1603,6 +1603,7 @@ func main() {
 	commandService.SetAgentOrchestrationDependencies(commandBarService, agentRunInteractionRepo)
 	agentRuntimeHostService.SetAuthorizationService(authzService)
 	dockChatRepo := repository.NewDockChatRepository(db)
+	commandService.SetDockChatRepository(dockChatRepo)
 	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, commandBarPlanRepo, agentService, commandService, authzService).
 		SetTitleLLM(supportLLMProvider).
 		SetPMAttachmentRepository(pmAttachmentRepo).

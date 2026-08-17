@@ -1104,6 +1104,21 @@ func (r *AgentRunRepository) UpdateOutputSummary(ctx context.Context, runID stri
 	return nil
 }
 
+// UpdateInput replaces a run's immutable-at-launch input metadata only when a
+// dock chat receives a new user turn with a different attached context.
+func (r *AgentRunRepository) UpdateInput(ctx context.Context, workspaceID, runID string, input json.RawMessage) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("agent run repository is not configured")
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, runID).
+		Update("input", input).Error; err != nil {
+		return fmt.Errorf("update agent run input: %w", err)
+	}
+	return nil
+}
+
 // UpdateReconciledFailure persists only the fields changed when a stale run is
 // failed during read-time reconciliation. The targeted update keeps projected
 // list rows from overwriting large fields that were intentionally not loaded.

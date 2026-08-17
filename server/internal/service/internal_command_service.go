@@ -87,6 +87,7 @@ type InternalCommandService struct {
 	docsChangeProposalService *DocsChangeProposalService
 	agentRunRepo              *repository.AgentRunRepository
 	agentRunArtifactRepo      *repository.AgentRunArtifactRepository
+	dockChatRepo              *repository.DockChatRepository
 	agentRunInteractionRepo   *repository.AgentRunInteractionRepository
 	dockActionProposalRepo    *repository.DockActionProposalRepository
 	commandBarService         *CommandBarService
@@ -315,6 +316,15 @@ func (s *InternalCommandService) SetAgentRunDependencies(
 	}
 	s.agentRunRepo = runRepo
 	s.agentRunArtifactRepo = artifactRepo
+}
+
+// SetDockChatRepository wires the durable Ask chat association used to
+// resolve context attached to a workspace-targeted Ask run.
+func (s *InternalCommandService) SetDockChatRepository(repo *repository.DockChatRepository) {
+	if s == nil {
+		return
+	}
+	s.dockChatRepo = repo
 }
 
 // SetSupportCoverageService wires the support-gap outcome operation used by
@@ -2363,6 +2373,64 @@ func (s *InternalCommandService) resolveCommandRun(ctx context.Context, meta mod
 		return nil, fmt.Errorf("run not found")
 	}
 	return run, nil
+}
+
+// attachedEntityID resolves an entity explicitly attached to an Ask chat turn.
+// Ask runs intentionally remain workspace-targeted, so their run target cannot
+// supply defaults for the page or references attached by the user. Explicit
+// tool input and an actual matching run target always take precedence.
+func (s *InternalCommandService) attachedEntityID(ctx context.Context, meta model.InternalCommandContext, entityType string) (string, error) {
+	if s == nil || s.agentRunRepo == nil || strings.TrimSpace(meta.RunID) == "" {
+		return "", nil
+	}
+	entityType = strings.TrimSpace(entityType)
+	if entityType == "" {
+		return "", nil
+	}
+	run, err := s.resolveCommandRun(ctx, meta)
+	if err != nil {
+		return "", err
+	}
+	if run == nil {
+		return "", nil
+	}
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(run.Input, &input); err != nil {
+		return "", fmt.Errorf("decode run input: %w", err)
+	}
+	for index := len(input.AttachedContexts) - 1; index >= 0; index-- {
+		context := input.AttachedContexts[index]
+		if strings.TrimSpace(context.EntityType) == entityType && strings.TrimSpace(context.EntityID) != "" {
+			return strings.TrimSpace(context.EntityID), nil
+		}
+	}
+	if input.Trigger != nil && len(input.Trigger.Context) > 0 {
+		var triggerContext struct {
+			AttachedContexts []model.AgentRunContextReference `json:"attached_contexts"`
+		}
+		if err := json.Unmarshal(input.Trigger.Context, &triggerContext); err != nil {
+			return "", fmt.Errorf("decode run trigger context: %w", err)
+		}
+		for index := len(triggerContext.AttachedContexts) - 1; index >= 0; index-- {
+			context := triggerContext.AttachedContexts[index]
+			if strings.TrimSpace(context.EntityType) == entityType && strings.TrimSpace(context.EntityID) != "" {
+				return strings.TrimSpace(context.EntityID), nil
+			}
+		}
+	}
+	// Existing Ask runs predate attached_contexts. Retain the durable Support
+	// chat association as a backwards-compatible fallback for those runs.
+	if entityType != "support_conversation" || s.dockChatRepo == nil || run.DockChatID == nil || strings.TrimSpace(*run.DockChatID) == "" {
+		return "", nil
+	}
+	chat, err := s.dockChatRepo.GetByID(ctx, meta.WorkspaceID, strings.TrimSpace(*run.DockChatID))
+	if err != nil {
+		return "", err
+	}
+	if chat == nil || chat.SupportConversationID == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(*chat.SupportConversationID), nil
 }
 
 func fallbackActor(meta model.InternalCommandContext) string {

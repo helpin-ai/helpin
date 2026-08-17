@@ -1181,7 +1181,7 @@ describe('AskAgentsDock', () => {
       visibilityButton?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
     });
     await waitForText('Who can see this chat?');
-    expect(document.body.textContent).toContain('Customers and external users can never see Ask Agent chats.');
+    expect(document.body.textContent).not.toContain('Customers and external users can never see Ask Agent chats.');
 
     const workspaceItem = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
       .find((item) => item.textContent?.includes('Everyone at Acme'));

@@ -974,9 +974,6 @@ function DockChatVisibilityControl({
           selected={visibility === 'workspace'}
           onSelect={() => void selectVisibility('workspace')}
         />
-        <p className="mx-2 mt-1 border-t border-[#f1efea] py-2 text-[10px] leading-4 text-[#8a8781] dark:border-[#302f2b]">
-          Customers and external users can never see Ask Agent chats.
-        </p>
       </DropdownMenuContent>
     </DropdownMenu>
   );

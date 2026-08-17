@@ -103,6 +103,13 @@ func (s *InternalCommandService) executeListConversationMessages(ctx context.Con
 	}
 	conversationID := firstNonEmptyCommand(req.ConversationID, commandConversationTargetID(meta))
 	if conversationID == "" {
+		var err error
+		conversationID, err = s.attachedEntityID(ctx, meta, "support_conversation")
+		if err != nil {
+			return nil, fmt.Errorf("resolve attached support conversation: %w", err)
+		}
+	}
+	if conversationID == "" {
 		return nil, fmt.Errorf("no support conversation associated with this run")
 	}
 	if req.Limit == 0 {
