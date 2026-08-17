@@ -80,7 +80,7 @@ func (p *RecallProvider) StartCapture(ctx context.Context, input StartCaptureInp
 		},
 	}
 	if input.RecordAudio {
-		recordingConfig["audio_mixed_mp3"] = map[string]interface{}{}
+		recordingConfig["video_mixed_mp4"] = map[string]interface{}{}
 	}
 	body := map[string]interface{}{
 		"meeting_url": input.MeetingURL,
@@ -179,7 +179,7 @@ func (p *RecallProvider) GetTranscript(ctx context.Context, captureID string) (*
 	}, nil
 }
 
-// GetRecording returns Recall's expiring mixed-audio download URL when enabled.
+// GetRecording prefers Recall's mixed video MP4 and supports legacy mixed audio.
 func (p *RecallProvider) GetRecording(ctx context.Context, captureID string) (*Recording, error) {
 	if !p.Configured() {
 		return nil, ErrNotConfigured
@@ -188,11 +188,11 @@ func (p *RecallProvider) GetRecording(ctx context.Context, captureID string) (*R
 	if err := p.http.doJSON(ctx, http.MethodGet, "/api/v1/bot/"+captureID+"/", nil, &bot); err != nil {
 		return nil, err
 	}
-	recordingID, downloadURL := findRecallAudioDownload(bot)
+	recordingID, downloadURL, contentType := findRecallRecordingDownload(bot)
 	if downloadURL == "" {
-		return nil, fmt.Errorf("recall audio recording is not ready")
+		return nil, fmt.Errorf("recall recording is not ready")
 	}
-	return &Recording{ProviderRecordingID: recordingID, DownloadURL: downloadURL, ContentType: "audio/mpeg"}, nil
+	return &Recording{ProviderRecordingID: recordingID, DownloadURL: downloadURL, ContentType: contentType}, nil
 }
 
 // DeleteArtifacts permanently deletes Recall media after Helpin has copied it.
@@ -389,21 +389,27 @@ func firstRecallTranscript(recordings []recallRecording) recallArtifact {
 	return recallArtifact{}
 }
 
-func findRecallAudioDownload(bot map[string]interface{}) (string, string) {
+func findRecallRecordingDownload(bot map[string]interface{}) (string, string, string) {
 	recordings, _ := bot["recordings"].([]interface{})
 	for _, item := range recordings {
 		recording, _ := item.(map[string]interface{})
 		recordingID, _ := recording["id"].(string)
 		shortcuts, _ := recording["media_shortcuts"].(map[string]interface{})
-		for _, key := range []string{"audio_mixed", "audio_mixed_mp3"} {
-			artifact, _ := shortcuts[key].(map[string]interface{})
+		media := []struct{ key, contentType string }{
+			{key: "video_mixed", contentType: "video/mp4"},
+			{key: "video_mixed_mp4", contentType: "video/mp4"},
+			{key: "audio_mixed", contentType: "audio/mpeg"},
+			{key: "audio_mixed_mp3", contentType: "audio/mpeg"},
+		}
+		for _, candidate := range media {
+			artifact, _ := shortcuts[candidate.key].(map[string]interface{})
 			data, _ := artifact["data"].(map[string]interface{})
 			if downloadURL, _ := data["download_url"].(string); downloadURL != "" {
-				return recordingID, downloadURL
+				return recordingID, downloadURL, candidate.contentType
 			}
 		}
 	}
-	return "", ""
+	return "", "", ""
 }
 
 func firstNonBlank(values ...string) string {

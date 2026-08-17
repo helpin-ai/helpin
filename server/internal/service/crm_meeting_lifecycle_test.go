@@ -25,6 +25,7 @@ type fakeMeetingProvider struct {
 	captureID       string
 	event           *meetingcapture.ProviderEvent
 	transcript      *meetingcapture.Transcript
+	recording       *meetingcapture.Recording
 	startCalls      int
 	stopCalls       int
 	deleteCalls     int
@@ -36,6 +37,9 @@ func (f *fakeMeetingProvider) Configured() bool                        { return 
 func (f *fakeMeetingProvider) Supports(string) bool                    { return true }
 func (f *fakeMeetingProvider) VerifyWebhook(http.Header, []byte) error { return nil }
 func (f *fakeMeetingProvider) GetRecording(context.Context, string) (*meetingcapture.Recording, error) {
+	if f.recording != nil {
+		return f.recording, nil
+	}
 	return nil, errors.New("recording unavailable")
 }
 func (f *fakeMeetingProvider) GetStatus(context.Context, string) (*meetingcapture.Capture, error) {
@@ -135,6 +139,7 @@ func setupMeetingLifecycleDB(t *testing.T) *gorm.DB {
 			failure_code TEXT,
 			failure_message TEXT,
 			recording_object_key TEXT,
+			recording_content_type TEXT,
 			created_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME

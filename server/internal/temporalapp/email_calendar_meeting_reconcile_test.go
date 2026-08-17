@@ -44,6 +44,7 @@ func setupCalendarMeetingReconcileTest(t *testing.T) (*EmailSyncActivities, *rep
 		failure_code TEXT,
 		failure_message TEXT,
 		recording_object_key TEXT,
+		recording_content_type TEXT,
 		created_by TEXT,
 		created_at DATETIME,
 		updated_at DATETIME

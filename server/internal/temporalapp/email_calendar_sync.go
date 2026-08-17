@@ -106,21 +106,22 @@ func (a *EmailSyncActivities) storeCalendarEvent(
 		visibility = "default"
 	}
 	record := &model.CRMCalendarEvent{
-		WorkspaceID:     account.WorkspaceID,
-		EmailAccountID:  account.ID,
-		ExternalEventID: &externalID,
-		Title:           strings.TrimSpace(event.Title),
-		Description:     calendarStringPointer(event.Description),
-		StartTime:       event.StartTime.UTC(),
-		EndTime:         event.EndTime.UTC(),
-		Location:        calendarStringPointer(event.Location),
-		MeetingURL:      calendarStringPointer(event.MeetingURL),
-		OrganizerEmail:  calendarStringPointer(strings.ToLower(event.OrganizerEmail)),
-		Status:          status,
-		Visibility:      visibility,
-		AllDay:          event.AllDay,
-		Attendees:       attendees,
-		ContactIDs:      model.CRMStringList(resolution.ContactIDs),
+		WorkspaceID:       account.WorkspaceID,
+		EmailAccountID:    account.ID,
+		ExternalEventID:   &externalID,
+		RecurringSeriesID: calendarStringPointer(event.RecurringSeriesID),
+		Title:             strings.TrimSpace(event.Title),
+		Description:       calendarStringPointer(event.Description),
+		StartTime:         event.StartTime.UTC(),
+		EndTime:           event.EndTime.UTC(),
+		Location:          calendarStringPointer(event.Location),
+		MeetingURL:        calendarStringPointer(event.MeetingURL),
+		OrganizerEmail:    calendarStringPointer(strings.ToLower(event.OrganizerEmail)),
+		Status:            status,
+		Visibility:        visibility,
+		AllDay:            event.AllDay,
+		Attendees:         attendees,
+		ContactIDs:        model.CRMStringList(resolution.ContactIDs),
 	}
 	if existing != nil {
 		record.ID = existing.ID
@@ -132,6 +133,11 @@ func (a *EmailSyncActivities) storeCalendarEvent(
 	}
 	if err := a.reconcileScheduledCalendarMeeting(ctx, record); err != nil {
 		return fmt.Errorf("reconcile scheduled calendar meeting: %w", err)
+	}
+	if a.meetingPolicyReconciler != nil {
+		if err := a.meetingPolicyReconciler.ReconcileCalendarMeetingPolicy(ctx, account.WorkspaceID, record.ID, account.MemberID); err != nil {
+			return fmt.Errorf("reconcile calendar meeting policy: %w", err)
+		}
 	}
 	return nil
 }
