@@ -31,13 +31,13 @@ interface TaskQueryFilters {
   deal_id?: string
 }
 
-interface TaskFilters extends TaskQueryFilters {}
+type TaskFilters = TaskQueryFilters
 
-export function useTasks(wsId: string, filters?: TaskFilters) {
+export function useTasks(wsId: string, filters?: TaskFilters, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.pm.tasks(wsId, filters as Record<string, unknown>),
     queryFn: async () => unwrap(await pmTaskService.list(wsId, filters)),
-    enabled: !!wsId,
+    enabled: !!wsId && (options?.enabled ?? true),
   })
 }
 

@@ -14,6 +14,27 @@ describe('workspace rail navigation', () => {
       'settings',
     ]);
   });
+
+  it('opens CRM on Overview by default and accepts a remembered CRM section', () => {
+    const defaults = buildRailItems('acme', 0);
+    const remembered = buildRailItems('acme', 0, undefined, '/w/acme/crm/contacts');
+
+    expect(defaults.find((item) => item.id === 'crm')?.defaultLink).toBe('/w/acme/crm/overview');
+    expect(remembered.find((item) => item.id === 'crm')?.defaultLink).toBe('/w/acme/crm/contacts');
+  });
+
+  it('lists Overview before CRM records and intelligence pages', () => {
+    const groups = buildPanelNavGroups('acme', false);
+    expect(groups.crm[0]?.items.map((item) => item.label)).toEqual([
+      'Overview',
+      'Contacts',
+      'Companies',
+      'Deals',
+      'Meetings',
+      'Review',
+      'Insights',
+    ]);
+  });
 });
 
 describe('setup success rail navigation', () => {
