@@ -141,7 +141,7 @@ func (h *SupportInboxWidgetHandler) SendMessage(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, msg)
+	writeJSON(w, http.StatusCreated, widgetSafeSupportMessage(msg))
 }
 
 // TypingIndicator handles POST /widget/typing as an HTTP fallback when widget WS is unavailable.
@@ -191,7 +191,25 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 	if messages == nil {
 		messages = []model.SupportMessage{}
 	}
-	writeJSON(w, http.StatusOK, messages)
+	writeJSON(w, http.StatusOK, widgetSafeSupportMessages(messages))
+}
+
+func widgetSafeSupportMessage(message *model.SupportMessage) *model.SupportMessage {
+	if message == nil {
+		return nil
+	}
+	copy := *message
+	copy.Metadata = model.StripSupportLinkSecurityMetadata(copy.Metadata)
+	return &copy
+}
+
+func widgetSafeSupportMessages(messages []model.SupportMessage) []model.SupportMessage {
+	result := make([]model.SupportMessage, len(messages))
+	copy(result, messages)
+	for index := range result {
+		result[index].Metadata = model.StripSupportLinkSecurityMetadata(result[index].Metadata)
+	}
+	return result
 }
 
 // SendTranscript handles POST /api/widget/support/conversations/{id}/transcript.

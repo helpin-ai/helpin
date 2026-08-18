@@ -168,6 +168,7 @@ const inboxesRoutingSettingsRoute = createRoute({
   beforeLoad: requireAuth,
   validateSearch: (search: Record<string, unknown>) => ({
     tab: typeof search.tab === 'string' ? search.tab : undefined,
+    create_inbox: search.create_inbox === true || search.create_inbox === 'true',
   }),
   component: () => (
     <OpenInWebPage

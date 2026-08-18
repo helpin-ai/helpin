@@ -4,7 +4,6 @@ import type { AgentRun } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from './planSummary';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import {
-  ArrowDown01Icon,
   ArrowReloadHorizontalIcon,
   ArrowUpRight01Icon,
   Bookmark01Icon,
@@ -14,6 +13,7 @@ import {
   RotateLeft01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
+import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
 import { displayAgentName } from '@/lib/agentTerminology';
 import { StatusDot, type DotKind } from './StatusDot';
 import { PipelineRail } from './PipelineRail';
@@ -258,6 +258,7 @@ function PlanStrip({
           type="button"
           onClick={() => setOpen(!open)}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          aria-expanded={open}
         >
           <StatusDot state={dot} />
           <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -274,12 +275,7 @@ function PlanStrip({
               {formatDistanceToNow(ts, { addSuffix: true })}
             </time>
           ) : null}
-          <ArrowDown01Icon
-            className={cn(
-              'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
-              open && 'rotate-180',
-            )}
-          />
+          <DisclosureChevron open={open} className="h-3 w-3" />
         </button>
         {showHeaderOpen ? (
           <button
@@ -596,6 +592,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
           type="button"
           onClick={() => setOpen(!open)}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          aria-expanded={open}
         >
           <StatusDot state={dot} />
           <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -616,12 +613,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
           <span className="shrink-0 text-[11px] text-muted-foreground">
             {duration != null ? formatDuration(duration) : formatDistanceToNow(ts, { addSuffix: true })}
           </span>
-          <ArrowDown01Icon
-            className={cn(
-              'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
-              open && 'rotate-180',
-            )}
-          />
+          <DisclosureChevron open={open} className="h-3 w-3" />
         </button>
         {showHeaderOpen ? (
           <button

@@ -129,6 +129,36 @@ export interface DockRunSummary {
 export interface DockRunListResponse {
   runs: DockRunSummary[]
   attention_count: number
+  next_cursor?: string | null
+}
+
+export type PublicShareResourceType = 'dock_chat' | 'agent_run'
+
+export interface PublicShareLink {
+	token: string
+	url: string
+}
+
+export interface PublicSharedDockChat {
+	title: string
+	open_path?: string
+	messages: AgentRunMessage[]
+	updated_at: string
+}
+
+export interface PublicSharedAgentRun {
+	title: string
+	open_path?: string
+	session?: CodingSession | null
+	events: import('@/lib/pmTypes').CodingSessionEvent[]
+	interactions: CodingSessionInteraction[]
+	artifacts: import('@/lib/pmTypes').AgentRunArtifact[]
+}
+
+export interface PublicSharedResource {
+	resource_type: PublicShareResourceType
+	dock_chat?: PublicSharedDockChat
+	agent_run?: PublicSharedAgentRun
 }
 
 export interface DockRunAPI {

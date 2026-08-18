@@ -5,15 +5,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
-
-const dockRecentRunWindow = 24 * time.Hour
 
 // DockChatHandler serves the dock's private and shared chats backed by
 // agent-runtime chat-mode runs. Run-scoped reads are proxied through the
@@ -254,9 +251,14 @@ func (h *DockChatHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		r.Context(),
 		getWorkspaceID(r),
 		middleware.GetUserID(r.Context()),
-		time.Now().UTC().Add(-dockRecentRunWindow),
+		parseIntQuery(r, "limit", 30),
+		r.URL.Query().Get("cursor"),
 	)
 	if err != nil {
+		if errors.Is(err, service.ErrDockRunInvalidCursor) {
+			writeError(w, http.StatusBadRequest, "invalid cursor")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to list agent runs")
 		return
 	}

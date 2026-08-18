@@ -1,16 +1,12 @@
 import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useDockStore } from '@/stores/dockStore';
 
 export function SidebarRunsButton() {
   const title = 'Ask Agents';
 
   const onClick = () => {
-    const dock = useDockStore.getState();
-    dock.setTab('agents');
-    dock.setCollapsed(false);
     window.dispatchEvent(
-      new CustomEvent('helpin:ask-agents', { detail: { mode: 'runs' } }),
+      new CustomEvent('helpin:ask-agents', { detail: { mode: 'compose', intent: 'new_chat' } }),
     );
   };
 

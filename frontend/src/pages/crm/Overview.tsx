@@ -87,6 +87,9 @@ export function CRMOverviewPage() {
     per_page: 100,
     archived: false,
     owner_member_ids: memberId,
+    include_contacts: true,
+    include_companies: true,
+    include_deals: true,
   }, { enabled: Boolean(memberId) });
   const meetingsQuery = useUpcomingCalendarMeetings(workspaceId);
   const suggestionsQuery = usePendingSuggestions(workspaceId);

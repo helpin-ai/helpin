@@ -1,4 +1,4 @@
-import type { AIMessageMetadata, SupportConversation, SupportLinkPreview, SupportMessage } from '@/lib/pmTypes';
+import type { AIMessageMetadata, SupportConversation, SupportLinkPreview, SupportLinkSecurity, SupportMessage } from '@/lib/pmTypes';
 
 export const HELPIN_AI_DISPLAY_NAME = 'Helpin AI';
 
@@ -216,4 +216,43 @@ export function parseSupportLinkPreviews(metadata?: string): SupportLinkPreview[
   } catch {
     return [];
   }
+}
+
+export function normalizeSupportLinkHref(href: string): string | null {
+  try {
+    const parsed = new URL(href);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    if (parsed.username || parsed.password) return null;
+    parsed.hash = '';
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+export function parseSupportLinkSecurity(metadata?: string): SupportLinkSecurity[] {
+  if (!metadata) return [];
+  try {
+    const parsed = JSON.parse(metadata) as { link_security?: unknown };
+    if (!Array.isArray(parsed.link_security)) return [];
+    const now = Date.now();
+    return parsed.link_security.filter((entry): entry is SupportLinkSecurity => {
+      if (!entry || typeof entry !== 'object') return false;
+      const candidate = entry as Partial<SupportLinkSecurity>;
+      if (typeof candidate.url !== 'string' || normalizeSupportLinkHref(candidate.url) === null) return false;
+      if (!['no_match', 'malicious', 'unknown'].includes(candidate.status ?? '')) return false;
+      if (typeof candidate.checked_at !== 'string' || Number.isNaN(Date.parse(candidate.checked_at))) return false;
+      if (typeof candidate.expires_at !== 'string' || Date.parse(candidate.expires_at) <= now) return false;
+      return !candidate.threat_types || candidate.threat_types.every((value) =>
+        ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE'].includes(value));
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function findSupportLinkSecurity(entries: SupportLinkSecurity[], href: string): SupportLinkSecurity | undefined {
+  const normalized = normalizeSupportLinkHref(href);
+  if (!normalized) return undefined;
+  return entries.find((entry) => normalizeSupportLinkHref(entry.url) === normalized);
 }

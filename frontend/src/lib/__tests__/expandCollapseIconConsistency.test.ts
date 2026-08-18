@@ -39,7 +39,8 @@ describe('maximize and expand icon consistency', () => {
     const headerStart = source.indexOf('<header data-dock-header');
     const header = source.slice(headerStart, source.indexOf('</header>', headerStart));
     const actionRail = header.match(/<div data-dock-actions className="([^"]+)">/)?.[1];
-    const overflowIndex = header.indexOf('aria-label="Conversation actions"');
+    const overflowLabel = "aria-label={tab === 'agents' ? 'Agent run actions' : 'Conversation actions'}";
+    const overflowIndex = header.indexOf(overflowLabel);
     const expandLabel = "aria-label={maximized ? 'Restore agent dock' : 'Maximize agent dock'}";
     const expandIndex = header.indexOf(expandLabel);
     const closeIndex = header.indexOf('aria-label={closeLabel}');

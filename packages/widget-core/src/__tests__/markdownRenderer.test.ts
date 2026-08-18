@@ -40,6 +40,13 @@ describe('renderMarkdown', () => {
     expect(result).toContain('<a href="https://example.com" target="_blank" rel="noopener noreferrer">Example</a>');
   });
 
+  it('adds a compact not-secure indicator after HTTP links', () => {
+    const result = renderMarkdown('[Example](http://example.com)');
+    expect(result).toContain('href="http://example.com"');
+    expect(result).toContain('class="helpin-insecure-link-indicator"');
+    expect(result).toContain('aria-label="Not secure"');
+  });
+
   it('auto-links bare urls', () => {
     const input = 'Visit https://example.com/docs for details.';
     const result = renderMarkdown(input);

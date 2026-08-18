@@ -63,6 +63,24 @@ describe('AgentLiveStatus', () => {
     expect(loader?.classList.contains('w-7')).toBe(true);
   });
 
+  it('uses a dot before elapsed time for every in-progress phase', () => {
+    act(() => {
+      root.render(
+        <AgentLiveStatus progress={{ label: 'Working…', tone: 'working', startedAt: new Date(Date.now() - 9_000).toISOString() }} />,
+      );
+    });
+    expect(container.textContent).toContain('Working · 9s');
+    expect(container.textContent).not.toContain('Working for');
+
+    act(() => {
+      root.render(
+        <AgentLiveStatus progress={{ label: 'Finalizing…', tone: 'working', startedAt: new Date(Date.now() - 10_000).toISOString() }} />,
+      );
+    });
+    expect(container.textContent).toMatch(/Finalizing · (9|10)s/);
+    expect(container.textContent).not.toContain('Finalizing for');
+  });
+
   it('does not start or display an elapsed timer while the agent is starting', () => {
     const setIntervalSpy = vi.spyOn(window, 'setInterval');
     act(() => {

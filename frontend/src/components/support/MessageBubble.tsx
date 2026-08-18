@@ -12,13 +12,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
-import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
+import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportLinkSecurity, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
-import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
+import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity } from './helpers';
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
 import { buildTaskPath } from '@/lib/pmTaskLinks';
+import { SupportLink } from './SupportLink';
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -175,17 +176,7 @@ function renderSupportAuditSystemEventContent(
   return content;
 }
 
-const markdownComponents = {
-  a: ({ href, children }: ComponentPropsWithoutRef<'a'>) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="break-all [overflow-wrap:anywhere]"
-    >
-      {children}
-    </a>
-  ),
+const markdownBaseComponents = {
   table: ({ children }: ComponentPropsWithoutRef<'table'>) => (
     <div className="chat-markdown-table-wrap">
       <table>{children}</table>
@@ -236,38 +227,28 @@ function parseForwardedAttributionMetadata(metadata?: string): SupportForwardedA
   }
 }
 
-function LinkPreviewCard({ preview }: { preview: SupportLinkPreview }) {
+function LinkPreviewCard({ preview, security }: { preview: SupportLinkPreview; security?: SupportLinkSecurity }) {
   // Both incoming (`bg-muted`) and outgoing (`bg-blue-50`) bubbles are light,
   // so foreground/muted-foreground tokens read well on either. We dropped the
   // separate isOutgoing styling that assumed a dark/saturated outgoing bubble.
   return (
-    <a
+    <SupportLink
       href={preview.url}
-      target="_blank"
-      rel="noopener noreferrer"
+      security={security}
+      showInlineIndicator={false}
       className="block overflow-hidden rounded-xl border border-border bg-background text-foreground transition-colors hover:opacity-95"
     >
-      {preview.image_url ? (
-        <img
-          src={preview.image_url}
-          alt={preview.title}
-          className="h-36 w-full object-cover"
-          loading="lazy"
-        />
-      ) : null}
-      <div className="space-y-1.5 p-3">
-        <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-          <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
-          <LinkSquare01Icon className="h-3 w-3 shrink-0" />
+      <div className="flex items-center gap-2.5 px-3 py-2">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
+            {security?.status === 'malicious' ? <span className="shrink-0 text-red-600 dark:text-red-400">Potentially harmful</span> : preview.url.toLowerCase().startsWith('http://') ? <span className="shrink-0 text-amber-600 dark:text-amber-400">Not secure</span> : null}
+          </div>
+          <div className="truncate text-sm font-semibold leading-snug">{preview.title}</div>
         </div>
-        <div className="text-sm font-semibold leading-snug">{preview.title}</div>
-        {preview.description ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {preview.description}
-          </p>
-        ) : null}
+        <LinkSquare01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       </div>
-    </a>
+    </SupportLink>
   );
 }
 
@@ -334,6 +315,19 @@ export const MessageBubble = memo(function MessageBubble({
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
   const linkPreviews = useMemo<SupportLinkPreview[]>(() => parseSupportLinkPreviews(message.metadata), [message.metadata]);
+  const linkSecurity = useMemo<SupportLinkSecurity[]>(() => parseSupportLinkSecurity(message.metadata), [message.metadata]);
+  const markdownComponents = useMemo(() => ({
+    ...markdownBaseComponents,
+    a: ({ href, children }: ComponentPropsWithoutRef<'a'>) => (
+      <SupportLink
+        href={href}
+        security={href ? findSupportLinkSecurity(linkSecurity, href) : undefined}
+        className="break-all [overflow-wrap:anywhere]"
+      >
+        {children}
+      </SupportLink>
+    ),
+  }), [linkSecurity]);
   const forwardedAttribution = useMemo(() => parseForwardedAttributionMetadata(message.metadata), [message.metadata]);
   const effectiveSenderType = getEffectiveSenderType(message);
   const isCustomer = effectiveSenderType === 'customer';
@@ -824,6 +818,7 @@ export const MessageBubble = memo(function MessageBubble({
                           <LinkPreviewCard
                             key={`${message.id}:${preview.url}`}
                             preview={preview}
+                            security={findSupportLinkSecurity(linkSecurity, preview.url)}
                           />
                         ))}
                       </div>

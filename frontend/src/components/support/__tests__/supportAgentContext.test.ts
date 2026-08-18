@@ -5,12 +5,14 @@ describe('buildSupportConversationPageContext', () => {
   it('uses the conversation title and identifies the support conversation', () => {
     expect(buildSupportConversationPageContext({
       id: 'conv-1',
+      display_id: 482,
       title: 'Refund request',
       customer_name: 'Maya',
       customer_email: 'maya@example.com',
     })).toEqual({
       entity_type: 'support_conversation',
       entity_id: 'conv-1',
+      display_id: '#482',
       display_title: 'Refund request',
     });
   });

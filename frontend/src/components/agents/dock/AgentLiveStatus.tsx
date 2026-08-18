@@ -43,7 +43,9 @@ export function AgentLiveStatus({ progress }: { progress: AgentLiveProgress }) {
     ? null
     : formatAgentElapsed(progress.startedAt, now, pausedMs);
   const label = elapsed
-    ? `${progress.completed ? 'Worked' : progress.label.replace(/…$/, '')} for ${elapsed}`
+    ? progress.completed
+      ? `Worked for ${elapsed}`
+      : `${progress.label.replace(/…$/, '')} · ${elapsed}`
     : progress.label;
 
   return (

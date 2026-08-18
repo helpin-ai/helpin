@@ -2,7 +2,7 @@
 import { act, type ComponentProps } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/authStore'
 import type { SupportMessage } from '@/lib/pmTypes'
@@ -288,6 +288,8 @@ describe('MessageBubble', () => {
             url: LONG_PADDLE_URL,
             host: 'customer-portal.paddle.com',
             title: 'Customer Portal',
+            description: 'Manage billing details and subscription settings.',
+            image_url: 'https://customer-portal.paddle.com/preview.png',
           },
         ],
       }),
@@ -311,6 +313,8 @@ describe('MessageBubble', () => {
     })
 
     expect(container.textContent).toContain('Customer Portal')
+    expect(container.textContent).not.toContain('Manage billing details and subscription settings.')
+    expect(container.querySelector('img[src="https://customer-portal.paddle.com/preview.png"]')).toBeNull()
 
     const bubble = container.querySelector('[data-slot="support-message-bubble"]')
     expect(bubble?.className).toContain('min-w-0')
@@ -324,6 +328,53 @@ describe('MessageBubble', () => {
     })
     container.remove()
     queryClient.clear()
+  })
+
+  it('marks HTTP links and previews as not secure without blocking navigation', () => {
+    const message: SupportMessage = {
+      id: 'msg-http', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'customer',
+      content: 'Open [the page](http://example.com/path)', message_type: 'reply', is_internal: false,
+      metadata: JSON.stringify({ link_previews: [{ url: 'http://example.com/path', host: 'example.com', title: 'Example' }] }),
+      created_at: '2026-08-18T12:00:00Z', updated_at: '2026-08-18T12:00:00Z',
+    }
+    const rendered = renderBubble(message)
+
+    expect(rendered.container.querySelector('[aria-label="Not secure"]')).toBeTruthy()
+    expect(rendered.container.textContent).toContain('Not secure')
+    expect(rendered.container.querySelector('a[href="http://example.com/path"]')?.getAttribute('rel')).toBe('noopener noreferrer')
+    rendered.cleanup()
+  })
+
+  it('intercepts confirmed malicious links until risk is acknowledged', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const message: SupportMessage = {
+      id: 'msg-malicious', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'customer',
+      content: 'Open [the invoice](https://bad.example/invoice)', message_type: 'reply', is_internal: false,
+      metadata: JSON.stringify({
+        link_security: [{
+          url: 'https://bad.example/invoice', status: 'malicious', threat_types: ['SOCIAL_ENGINEERING'],
+          checked_at: '2026-08-18T12:00:00Z', expires_at: '2099-08-18T12:30:00Z',
+        }],
+      }),
+      created_at: '2026-08-18T12:00:00Z', updated_at: '2026-08-18T12:00:00Z',
+    }
+    const rendered = renderBubble(message)
+    const link = rendered.container.querySelector('a[href="https://bad.example/invoice"]') as HTMLAnchorElement
+
+    act(() => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
+    expect(document.body.textContent).toContain('Potentially harmful link')
+    expect(document.body.textContent).toContain('Phishing or deceptive site')
+    const continueButton = findButtonByText(document.body, 'Open link') as HTMLButtonElement
+    expect(continueButton.disabled).toBe(true)
+
+    const checkbox = document.body.querySelector('[data-slot="checkbox"]') as HTMLElement
+    act(() => checkbox.click())
+    expect(continueButton.disabled).toBe(false)
+    act(() => continueButton.click())
+    expect(open).toHaveBeenCalledWith('https://bad.example/invoice', '_blank', 'noopener,noreferrer')
+
+    open.mockRestore()
+    rendered.cleanup()
   })
 
   it('constrains email iframe content to the message bubble width', () => {
@@ -679,6 +730,58 @@ Can I export my data?`,
     cleanup()
   })
 
+  it('defers support image downloads until the thumbnail is near the viewport', () => {
+    let intersect: IntersectionObserverCallback | undefined
+    const originalIntersectionObserver = globalThis.IntersectionObserver
+    globalThis.IntersectionObserver = class IntersectionObserver {
+      readonly root = null
+      readonly rootMargin = '240px'
+      readonly thresholds = [0]
+      constructor(callback: IntersectionObserverCallback) {
+        intersect = callback
+      }
+      disconnect() {}
+      observe() {}
+      takeRecords() { return [] }
+      unobserve() {}
+    }
+
+    const message: SupportMessage = {
+      id: 'msg-deferred-image',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      content: '',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'widget',
+      attachments: [{
+        id: 'att-deferred-image',
+        file_key: 'support/att-deferred-image',
+        file_name: 'large-photo.png',
+        file_type: 'image/png',
+        file_size: 8_000_000,
+        url: 'https://cdn.example.com/large-photo.png',
+      }],
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    const image = rendered.container.querySelector('img[alt="large-photo.png"]') as HTMLImageElement
+    expect(image.getAttribute('src')).toBeNull()
+    expect(image.getAttribute('decoding')).toBe('async')
+    expect(image.getAttribute('fetchpriority')).toBe('low')
+
+    act(() => {
+      intersect?.([{ isIntersecting: true, target: image } as IntersectionObserverEntry], {} as IntersectionObserver)
+    })
+    expect(image.getAttribute('src')).toBe('https://cdn.example.com/large-photo.png')
+
+    rendered.cleanup()
+    globalThis.IntersectionObserver = originalIntersectionObserver
+  })
+
   it('renders internal note images as thumbnails with hover preview and image navigation', () => {
     const message: SupportMessage = {
       id: 'msg-note-attachments-1',
@@ -744,6 +847,10 @@ Can I export my data?`,
     const hoverPreview = container.querySelector('[data-testid="support-attachment-hover-preview"] img') as HTMLImageElement | null
     expect(hoverPreview?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
     expect(container.textContent).toContain('1 / 2')
+
+    const hoverPreviewBridge = container.querySelector('[data-testid="support-attachment-hover-preview"]')
+    expect(hoverPreviewBridge?.className).toContain('pb-2')
+    expect(hoverPreviewBridge?.className).not.toContain('mb-2')
 
     const hoverNext = container.querySelector('button[aria-label="Next image attachment"]')
     act(() => {

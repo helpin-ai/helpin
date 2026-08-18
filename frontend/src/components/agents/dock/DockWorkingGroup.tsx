@@ -3,6 +3,7 @@ import { Loading01Icon, Tick01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { canonicalToolName } from '@/lib/toolNames';
 import type { TranscriptSegment } from '@/components/agents/transcript';
+import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
 
 function groupPresentation(segments: TranscriptSegment[]): {
   label: string;
@@ -72,9 +73,9 @@ export function DockWorkingGroup({
         <span data-working-group-label className="min-w-0 truncate font-mono text-[11px] font-medium text-foreground/80" title={presentation.title}>
           {presentation.label}
         </span>
-        <span data-working-group-chevron aria-hidden className="shrink-0 text-[10px] text-muted-foreground">{open ? '▾' : '▸'}</span>
         <span className="min-w-0 flex-1" />
         <span className="shrink-0 text-[10px] text-muted-foreground">{presentation.meta}</span>
+        <DisclosureChevron open={open} className="h-3.5 w-3.5" />
       </button>
       {open ? (
         <div className="space-y-2 border-t border-border/60 px-2.5 py-2.5" data-working-group-body>

@@ -640,6 +640,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   useRegisterPageContext(contact ? {
     entity_type: 'crm_contact',
     entity_id: contact.id,
+    display_id: contact.display_id,
     display_title: [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email || 'CRM contact',
   } : null, 20);
   const { data: emailsData } = useContactEmails(wsId, contactId);

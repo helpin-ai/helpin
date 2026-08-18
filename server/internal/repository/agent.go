@@ -700,6 +700,43 @@ func (r *AgentRunRepository) ListDockRunsForActor(
 	return runs, nil
 }
 
+// ListActiveDockRunsForActor returns every active non-chat run owned by the actor.
+func (r *AgentRunRepository) ListActiveDockRunsForActor(ctx context.Context, workspaceID, actorID string) ([]model.AgentRun, error) {
+	activeStatuses := []string{model.AgentRunStatusQueued, model.AgentRunStatusRunning, model.AgentRunStatusPaused}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Select(_agentRunListColumns).
+		Where("workspace_id = ? AND triggered_by_user_id = ?", workspaceID, actorID).
+		Where("dock_chat_id IS NULL").
+		Where("status IN ?", activeStatuses).
+		Order("updated_at DESC, created_at DESC").
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list active dock agent runs: %w", err)
+	}
+	return runs, nil
+}
+
+// ListSettledDockRunsForActor returns one stable cursor page of terminal non-chat runs.
+func (r *AgentRunRepository) ListSettledDockRunsForActor(ctx context.Context, workspaceID, actorID string, limit int, before *time.Time, beforeID string) ([]model.AgentRun, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 30
+	}
+	activeStatuses := []string{model.AgentRunStatusQueued, model.AgentRunStatusRunning, model.AgentRunStatusPaused}
+	query := r.db.WithContext(ctx).
+		Select(_agentRunListColumns).
+		Where("workspace_id = ? AND triggered_by_user_id = ?", workspaceID, actorID).
+		Where("dock_chat_id IS NULL").
+		Where("status NOT IN ?", activeStatuses)
+	if before != nil {
+		query = query.Where("(updated_at < ? OR (updated_at = ? AND id < ?))", *before, *before, beforeID)
+	}
+	var runs []model.AgentRun
+	if err := query.Order("updated_at DESC, id DESC").Limit(limit).Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list settled dock agent runs: %w", err)
+	}
+	return runs, nil
+}
+
 // ListByTask returns runs for a task.
 func (r *AgentRunRepository) ListByTask(ctx context.Context, workspaceID, storyID string) ([]model.AgentRun, error) {
 	var runs []model.AgentRun

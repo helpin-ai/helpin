@@ -18,8 +18,9 @@ type DockRunSummary struct {
 	LastActivityAt time.Time         `json:"last_activity_at"`
 }
 
-// DockRunListResponse is the complete dock roster payload for one user.
+// DockRunListResponse contains active runs and one cursor page of settled runs.
 type DockRunListResponse struct {
 	Runs           []DockRunSummary `json:"runs"`
 	AttentionCount int              `json:"attention_count"`
+	NextCursor     *string          `json:"next_cursor,omitempty"`
 }

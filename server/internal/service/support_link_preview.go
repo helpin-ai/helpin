@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"path"
 	"regexp"
@@ -25,8 +27,9 @@ import (
 )
 
 const supportLinkPreviewMetadataKey = "link_previews"
+const supportLinkSecurityMetadataKey = "link_security"
 
-var supportPreviewURLPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
+var supportPreviewURLPattern = regexp.MustCompile(`(?i)https?://[^\s<>"']+`)
 
 // SupportMessageLinkPreviewer enriches support messages with persisted link preview metadata.
 type SupportMessageLinkPreviewer interface {
@@ -39,13 +42,21 @@ type SupportLinkPreviewService struct {
 	clients     []*http.Client
 	nextClient  atomic.Uint64
 	maxPreviews int
+	maxScans    int
 	timeout     time.Duration
 	userAgent   string
+	linkScanner SupportLinkScanner
+	resolver    supportLinkResolver
+}
+
+type supportLinkResolver interface {
+	LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error)
 }
 
 // NewSupportLinkPreviewService creates a link preview enricher.
 func NewSupportLinkPreviewService(proxyURLs string) *SupportLinkPreviewService {
 	logger := slog.Default().With("service", "support_link_preview")
+	resolver := net.DefaultResolver
 	parsedProxyURLs := crawler.ParseProxyURLs(proxyURLs)
 	clients := make([]*http.Client, 0, max(1, len(parsedProxyURLs)))
 
@@ -55,10 +66,10 @@ func NewSupportLinkPreviewService(proxyURLs string) *SupportLinkPreviewService {
 			logger.Warn("support link preview proxy ignored", "proxy_url", rawProxyURL, "error", err)
 			continue
 		}
-		clients = append(clients, newSupportLinkPreviewHTTPClient(proxyURL))
+		clients = append(clients, newSupportLinkPreviewHTTPClientWithResolver(proxyURL, resolver))
 	}
 	if len(clients) == 0 {
-		clients = append(clients, newSupportLinkPreviewHTTPClient(nil))
+		clients = append(clients, newSupportLinkPreviewHTTPClientWithResolver(nil, resolver))
 	}
 
 	if len(parsedProxyURLs) > 0 {
@@ -69,18 +80,43 @@ func NewSupportLinkPreviewService(proxyURLs string) *SupportLinkPreviewService {
 		logger:      logger,
 		clients:     clients,
 		maxPreviews: 3,
+		maxScans:    10,
 		timeout:     3500 * time.Millisecond,
 		userAgent:   "HelpinLinkPreviewBot/1.0 (+https://helpin.ai)",
+		resolver:    resolver,
+	}
+}
+
+// SetLinkScanner configures optional reputation scanning for extracted support links.
+func (s *SupportLinkPreviewService) SetLinkScanner(scanner SupportLinkScanner) {
+	if s != nil {
+		s.linkScanner = scanner
 	}
 }
 
 func newSupportLinkPreviewHTTPClient(proxyURL *url.URL) *http.Client {
+	return newSupportLinkPreviewHTTPClientWithResolver(proxyURL, net.DefaultResolver)
+}
+
+func newSupportLinkPreviewHTTPClientWithResolver(proxyURL *url.URL, resolver supportLinkResolver) *http.Client {
+	dialer := &net.Dialer{Timeout: 1500 * time.Millisecond, KeepAlive: 30 * time.Second}
+	dialContext := dialer.DialContext
+	if proxyURL == nil {
+		dialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, fmt.Errorf("split preview address: %w", err)
+			}
+			addresses, err := validateSupportPreviewHost(ctx, resolver, host)
+			if err != nil {
+				return nil, err
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort(addresses[0].String(), port))
+		}
+	}
 	transport := &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-		DialContext: (&net.Dialer{
-			Timeout:   1500 * time.Millisecond,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		Proxy:                 http.ProxyURL(proxyURL),
+		DialContext:           dialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
@@ -91,6 +127,13 @@ func newSupportLinkPreviewHTTPClient(proxyURL *url.URL) *http.Client {
 	return &http.Client{
 		Transport: transport,
 		Timeout:   4 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("preview redirect limit exceeded")
+			}
+			_, err := validateSupportPreviewURL(req.Context(), resolver, req.URL)
+			return err
+		},
 	}
 }
 
@@ -103,7 +146,7 @@ func (s *SupportLinkPreviewService) EnrichMessage(ctx context.Context, msg *mode
 		return
 	}
 
-	urls := extractSupportPreviewURLs(msg.Content, s.maxPreviews)
+	urls := extractSupportPreviewURLs(msg.Content, s.maxScans)
 	if len(urls) == 0 {
 		return
 	}
@@ -111,19 +154,38 @@ func (s *SupportLinkPreviewService) EnrichMessage(ctx context.Context, msg *mode
 	previewCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	previews, err := s.fetchLinkPreviews(previewCtx, urls)
+	previewURLs := urls
+	if len(previewURLs) > s.maxPreviews {
+		previewURLs = previewURLs[:s.maxPreviews]
+	}
+	type previewResult struct {
+		previews []model.SupportLinkPreview
+		err      error
+	}
+	securityResult := make(chan []model.SupportLinkSecurity, 1)
+	previewResults := make(chan previewResult, 1)
+	go func() {
+		if strings.EqualFold(strings.TrimSpace(msg.SenderType), "customer") {
+			securityResult <- s.scanLinks(previewCtx, urls)
+			return
+		}
+		securityResult <- nil
+	}()
+	go func() {
+		previews, err := s.fetchLinkPreviews(previewCtx, previewURLs)
+		previewResults <- previewResult{previews: previews, err: err}
+	}()
+	security := <-securityResult
+	fetched := <-previewResults
+	previews, err := fetched.previews, fetched.err
 	if err != nil {
 		s.logger.WarnContext(ctx, "support link preview fetch failed",
 			"conversation_id", msg.ConversationID,
 			"message_id", msg.ID,
-			"error", err,
+			"error_kind", supportLinkPreviewErrorKind(err),
 		)
 	}
-	if len(previews) == 0 {
-		return
-	}
-
-	merged, err := mergeSupportLinkPreviewMetadata(msg.Metadata, previews)
+	merged, err := mergeSupportLinkMetadata(msg.Metadata, previews, security)
 	if err != nil {
 		s.logger.WarnContext(ctx, "support link preview metadata merge failed",
 			"conversation_id", msg.ConversationID,
@@ -133,6 +195,30 @@ func (s *SupportLinkPreviewService) EnrichMessage(ctx context.Context, msg *mode
 		return
 	}
 	msg.Metadata = merged
+}
+
+func supportLinkPreviewErrorKind(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	default:
+		return "fetch_failed"
+	}
+}
+
+func (s *SupportLinkPreviewService) scanLinks(ctx context.Context, urls []string) []model.SupportLinkSecurity {
+	if s.linkScanner == nil {
+		return nil
+	}
+	results := make([]model.SupportLinkSecurity, 0, len(urls))
+	for _, rawURL := range urls {
+		results = append(results, s.linkScanner.Scan(ctx, rawURL))
+	}
+	return results
 }
 
 func (s *SupportLinkPreviewService) fetchLinkPreviews(ctx context.Context, urls []string) ([]model.SupportLinkPreview, error) {
@@ -169,6 +255,9 @@ func (s *SupportLinkPreviewService) fetchLinkPreview(ctx context.Context, rawURL
 	if !isAllowedSupportPreviewURL(parsedURL) {
 		return nil, nil
 	}
+	if _, err := validateSupportPreviewURL(ctx, s.resolver, parsedURL); err != nil {
+		return nil, nil
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
 	if err != nil {
@@ -199,6 +288,7 @@ func (s *SupportLinkPreviewService) fetchLinkPreview(ctx context.Context, rawURL
 	}
 	if mediaType != "" && !strings.HasPrefix(mediaType, "text/html") && !strings.HasPrefix(mediaType, "text/plain") {
 		preview := fallbackSupportLinkPreview(finalURL)
+		preview.URL = parsedURL.String()
 		return &preview, nil
 	}
 
@@ -213,6 +303,7 @@ func (s *SupportLinkPreviewService) fetchLinkPreview(ctx context.Context, rawURL
 	}
 
 	preview := extractSupportLinkPreview(finalURL, doc)
+	preview.URL = parsedURL.String()
 	return &preview, nil
 }
 
@@ -236,16 +327,14 @@ func extractSupportPreviewURLs(content string, limit int) []string {
 	seen := make(map[string]struct{}, len(matches))
 	result := make([]string, 0, min(limit, len(matches)))
 	for _, candidate := range matches {
-		cleaned := trimSupportPreviewURL(candidate)
-		if cleaned == "" {
+		normalized, err := normalizeSupportLinkURL(candidate, true)
+		if err != nil {
 			continue
 		}
-		parsed, err := url.Parse(cleaned)
+		parsed, err := url.Parse(normalized)
 		if err != nil || !isAllowedSupportPreviewURL(parsed) {
 			continue
 		}
-		parsed.Fragment = ""
-		normalized := parsed.String()
 		if _, ok := seen[normalized]; ok {
 			continue
 		}
@@ -297,6 +386,9 @@ func isAllowedSupportPreviewURL(parsed *url.URL) bool {
 	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
 		return false
 	}
+	if parsed.User != nil {
+		return false
+	}
 	host := strings.TrimSpace(parsed.Hostname())
 	if host == "" {
 		return false
@@ -307,6 +399,61 @@ func isAllowedSupportPreviewURL(parsed *url.URL) bool {
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+			return false
+		}
+	}
+	return true
+}
+
+func validateSupportPreviewURL(ctx context.Context, resolver supportLinkResolver, parsed *url.URL) ([]netip.Addr, error) {
+	if !isAllowedSupportPreviewURL(parsed) {
+		return nil, fmt.Errorf("preview URL is not allowed")
+	}
+	return validateSupportPreviewHost(ctx, resolver, parsed.Hostname())
+}
+
+func validateSupportPreviewHost(ctx context.Context, resolver supportLinkResolver, host string) ([]netip.Addr, error) {
+	if parsed, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil {
+		if !isPublicSupportPreviewIP(parsed) {
+			return nil, fmt.Errorf("preview address is not public")
+		}
+		return []netip.Addr{parsed.Unmap()}, nil
+	}
+	if resolver == nil {
+		return nil, fmt.Errorf("preview DNS resolver is unavailable")
+	}
+	addresses, err := resolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve preview host: %w", err)
+	}
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("preview host has no addresses")
+	}
+	for _, address := range addresses {
+		if !isPublicSupportPreviewIP(address) {
+			return nil, fmt.Errorf("preview host resolved to a non-public address")
+		}
+	}
+	return addresses, nil
+}
+
+func isPublicSupportPreviewIP(address netip.Addr) bool {
+	address = address.Unmap()
+	if !address.IsValid() || !address.IsGlobalUnicast() {
+		return false
+	}
+	blocked := []netip.Prefix{
+		netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("10.0.0.0/8"),
+		netip.MustParsePrefix("100.64.0.0/10"), netip.MustParsePrefix("127.0.0.0/8"),
+		netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("172.16.0.0/12"),
+		netip.MustParsePrefix("192.0.0.0/24"), netip.MustParsePrefix("192.0.2.0/24"),
+		netip.MustParsePrefix("192.168.0.0/16"), netip.MustParsePrefix("198.18.0.0/15"),
+		netip.MustParsePrefix("198.51.100.0/24"), netip.MustParsePrefix("203.0.113.0/24"),
+		netip.MustParsePrefix("240.0.0.0/4"), netip.MustParsePrefix("fc00::/7"),
+		netip.MustParsePrefix("fe80::/10"), netip.MustParsePrefix("2001:db8::/32"),
+	}
+	for _, prefix := range blocked {
+		if prefix.Contains(address) {
 			return false
 		}
 	}
@@ -488,7 +635,11 @@ func supportLinkPreviewHost(pageURL *url.URL) string {
 }
 
 func mergeSupportLinkPreviewMetadata(existing string, previews []model.SupportLinkPreview) (string, error) {
-	if len(previews) == 0 {
+	return mergeSupportLinkMetadata(existing, previews, nil)
+}
+
+func mergeSupportLinkMetadata(existing string, previews []model.SupportLinkPreview, security []model.SupportLinkSecurity) (string, error) {
+	if len(previews) == 0 && len(security) == 0 {
 		return existing, nil
 	}
 
@@ -498,7 +649,12 @@ func mergeSupportLinkPreviewMetadata(existing string, previews []model.SupportLi
 			return "", fmt.Errorf("unmarshal existing metadata: %w", err)
 		}
 	}
-	metadata[supportLinkPreviewMetadataKey] = previews
+	if len(previews) > 0 {
+		metadata[supportLinkPreviewMetadataKey] = previews
+	}
+	if len(security) > 0 {
+		metadata[supportLinkSecurityMetadataKey] = security
+	}
 
 	encoded, err := json.Marshal(metadata)
 	if err != nil {

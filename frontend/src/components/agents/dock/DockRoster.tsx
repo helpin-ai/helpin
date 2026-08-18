@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { BotIcon, GlobeIcon, MoreHorizontalIcon, NotificationBubbleIcon, PlusSignIcon, UserGroupIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +18,7 @@ import {
   relativeDockTime,
   type DockRunGroup,
 } from './dockPresentation';
+import { DOCK_DATE_GROUPS, dockDateGroup } from './dockDateGroups';
 
 interface DockRosterProps {
   workspaceId: string;
@@ -40,14 +40,16 @@ interface DockRosterProps {
   hasMoreChats?: boolean;
   loadingMoreChats?: boolean;
   onLoadMoreChats?: () => void;
+  hasMoreRuns?: boolean;
+  loadingMoreRuns?: boolean;
+  onLoadMoreRuns?: () => void;
   onRetryRuns: () => void;
   onRetryChats: () => void;
 }
 
-const GROUPS: Array<{ key: DockRunGroup; label: string; dot: string }> = [
+const ACTIVE_GROUPS: Array<{ key: DockRunGroup; label: string; dot: string }> = [
   { key: 'needs_you', label: 'Needs you', dot: '#d97706' },
   { key: 'running', label: 'Running', dot: '#059669' },
-  { key: 'recent', label: 'Paused & recent', dot: '#a5a29b' },
 ];
 
 type DockChatPresence = 'running' | 'paused' | 'stopped';
@@ -74,6 +76,16 @@ export function DockRoster(props: DockRosterProps) {
   return (
     <aside className="agent-dock-roster flex min-h-0 w-[300px] shrink-0 flex-col border-e border-[#f1efea] bg-[#fbfaf8] dark:border-[#302f2b] dark:bg-[#1d1c1a]">
       <div className="agent-dock-roster-controls flex flex-col gap-2.5 px-3 pb-2.5 pt-3">
+        <button
+          type="button"
+          aria-label="New chat or task"
+          onClick={props.onNewChat}
+          className="agent-dock-new-chat flex min-h-10 w-full items-center gap-2.5 rounded-[9px] border border-[#e6e3dd] bg-[#fffefa] px-3 py-2 text-start text-[12.5px] font-semibold text-[#4b4945] transition-colors hover:border-[#d8d3c9] hover:bg-[#f4f2ee] focus-visible:ring-2 focus-visible:ring-[#a855f7]/35 dark:border-[#37352f] dark:bg-[#242320] dark:text-[#eeeae1] dark:hover:bg-[#302f2b]"
+        >
+          <span className="agent-dock-new-chat-icon grid h-5 w-5 place-items-center rounded-[6px] bg-[#f0eee9] text-[#6f6b64] dark:bg-[#37352f] dark:text-[#d4d0c7]" aria-hidden><PlusSignIcon className="h-3.5 w-3.5" /></span>
+          <span className="agent-dock-roster-copy truncate">New chat or task</span>
+          <kbd className="agent-dock-roster-copy ms-auto rounded border border-[#d8d3c9] bg-[#f7f5f1] px-1 font-mono text-[10.5px] font-medium text-[#8a8781] dark:border-[#4a4842] dark:bg-[#302f2b] dark:text-[#aaa69e]">N</kbd>
+        </button>
         <div className="agent-dock-tab-list flex rounded-[9px] bg-[#f0eee9] p-[3px] dark:bg-[#292824]" role="tablist" aria-label="Dock views">
           {(['agents', 'chats'] as const).map((tab) => (
             <button
@@ -102,30 +114,21 @@ export function DockRoster(props: DockRosterProps) {
         className="min-h-0 flex-1 overflow-y-auto pb-2"
         role="tabpanel"
         onScroll={(event) => {
-          if (!props.hasMoreChats || props.loadingMoreChats || props.tab !== 'chats') return;
           const target = event.currentTarget;
-          if (target.scrollHeight - target.scrollTop - target.clientHeight < 120) props.onLoadMoreChats?.();
+          if (target.scrollHeight - target.scrollTop - target.clientHeight >= 120) return;
+          if (props.tab === 'chats' && props.hasMoreChats && !props.loadingMoreChats) props.onLoadMoreChats?.();
+          if (props.tab === 'agents' && props.hasMoreRuns && !props.loadingMoreRuns) props.onLoadMoreRuns?.();
         }}
       >
         {props.tab === 'agents' ? <AgentRows {...props} /> : <ChatRows {...props} />}
         {props.tab === 'chats' && props.loadingMoreChats ? (
           <p className="agent-dock-roster-copy px-3 py-2 text-center text-[11px] text-[#8a8781]">Loading more…</p>
         ) : null}
+        {props.tab === 'agents' && props.loadingMoreRuns ? (
+          <p className="agent-dock-roster-copy px-3 py-2 text-center text-[11px] text-[#8a8781]">Loading more…</p>
+        ) : null}
       </div>
 
-      <div className="agent-dock-new-chat-footer shrink-0 border-t border-[#f1efea] p-2 dark:border-[#302f2b]">
-        <button
-          type="button"
-          aria-label="New chat or task"
-          onClick={props.onNewChat}
-          className="agent-dock-new-chat flex min-h-10 w-full items-center gap-2.5 rounded-[9px] bg-[#1c1b19] px-3 py-2 text-start text-[12.5px] font-semibold text-white shadow-[0_2px_5px_rgba(28,27,25,.18)] transition-[background-color,box-shadow,transform] hover:bg-[#34322e] hover:shadow-[0_3px_8px_rgba(28,27,25,.22)] active:translate-y-px focus-visible:ring-2 focus-visible:ring-[#a855f7]/45 dark:bg-[#eeeae1] dark:text-[#1c1b19] dark:hover:bg-white"
-        >
-          <span className="agent-dock-new-chat-icon grid h-5 w-5 place-items-center rounded-[6px] bg-white/15" aria-hidden><PlusSignIcon className="h-3.5 w-3.5" /></span>
-          <AskAgentAvatar plateStyle="feather" className="ask-agent-new-chat-mark h-6 w-6" />
-          <span className="agent-dock-roster-copy truncate">New chat or task</span>
-          <kbd className="agent-dock-roster-copy ms-auto rounded border border-white/25 bg-white/10 px-1 font-mono text-[10.5px] font-medium text-white/80 dark:border-black/15 dark:bg-black/5 dark:text-[#4b4945]">N</kbd>
-        </button>
-      </div>
     </aside>
   );
 }
@@ -133,7 +136,9 @@ export function DockRoster(props: DockRosterProps) {
 function AgentRows(props: DockRosterProps) {
   const grouped = useMemo(() => {
     const result = new Map<DockRunGroup, DockRunSummary[]>();
-    for (const group of GROUPS) result.set(group.key, []);
+    result.set('needs_you', []);
+    result.set('running', []);
+    result.set('recent', []);
     for (const summary of props.runs) {
       const presentation = presentDockRun(summary.run.status, summary.run.pause_reason, summary.attention_kind);
       result.get(presentation.group)?.push(summary);
@@ -152,29 +157,34 @@ function AgentRows(props: DockRosterProps) {
     return <RosterMessage>No agents running. Describe a task below.</RosterMessage>;
   }
 
-  return GROUPS.map((group) => {
-    const rows = grouped.get(group.key) ?? [];
-    if (rows.length === 0) return null;
-    return (
-      <section key={group.key} aria-labelledby={`agent-dock-group-${group.key}`}>
-        <div className="agent-dock-group-header sticky top-0 z-[1] flex items-center gap-[7px] bg-[#fbfaf8]/95 px-3.5 pb-[5px] pt-2.5 backdrop-blur-sm dark:bg-[#1d1c1a]/95">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: group.dot }} />
-          <span id={`agent-dock-group-${group.key}`} className="agent-dock-roster-copy text-[10.5px] font-bold uppercase tracking-[.09em] text-[#8a8781] dark:text-[#96928a]">
-            {group.label}
-          </span>
-          <span className="agent-dock-roster-copy text-[10.5px] font-semibold text-[#b3b0a9]">{rows.length}</span>
-        </div>
-        {rows.map((summary) => (
-          <RunRow
-            key={summary.run.id}
-            summary={summary}
-            selected={props.selectedRunId === summary.run.id}
-            onSelect={() => props.onSelectRun(summary.run.id)}
-          />
-        ))}
-      </section>
-    );
-  });
+  return (
+    <>
+      {ACTIVE_GROUPS.map((group) => {
+        const rows = grouped.get(group.key) ?? [];
+        if (rows.length === 0) return null;
+        return (
+          <section key={group.key} aria-labelledby={`agent-dock-group-${group.key}`}>
+            <div className="agent-dock-group-header sticky top-0 z-[1] flex items-center gap-[7px] bg-[#fbfaf8]/95 px-3.5 pb-[5px] pt-2.5 backdrop-blur-sm dark:bg-[#1d1c1a]/95">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: group.dot }} />
+              <span id={`agent-dock-group-${group.key}`} className="agent-dock-roster-copy text-[10.5px] font-bold uppercase tracking-[.09em] text-[#8a8781] dark:text-[#96928a]">{group.label}</span>
+              <span className="agent-dock-roster-copy text-[10.5px] font-semibold text-[#b3b0a9]">{rows.length}</span>
+            </div>
+            {rows.map((summary) => <RunRow key={summary.run.id} summary={summary} selected={props.selectedRunId === summary.run.id} onSelect={() => props.onSelectRun(summary.run.id)} />)}
+          </section>
+        );
+      })}
+      {DOCK_DATE_GROUPS.map((group) => {
+        const rows = (grouped.get('recent') ?? []).filter((summary) => dockDateGroup(summary.last_activity_at) === group.key);
+        if (rows.length === 0) return null;
+        return (
+          <section key={group.key} aria-labelledby={`agent-dock-run-date-${group.key}`}>
+            <RosterGroupHeader id={`agent-dock-run-date-${group.key}`} label={group.label} count={rows.length} />
+            {rows.map((summary) => <RunRow key={summary.run.id} summary={summary} selected={props.selectedRunId === summary.run.id} onSelect={() => props.onSelectRun(summary.run.id)} />)}
+          </section>
+        );
+      })}
+    </>
+  );
 }
 
 function RunRow({ summary, selected, onSelect }: { summary: DockRunSummary; selected: boolean; onSelect: () => void }) {
@@ -241,14 +251,12 @@ function ChatRows(props: DockRosterProps) {
   if (props.chatsError && props.chats.length === 0) return <RosterError message={props.chatsError} onRetry={props.onRetryChats} />;
   if (props.chats.length === 0) return <RosterMessage>No conversations yet. Start one above.</RosterMessage>;
 
-  return (
-    <section aria-labelledby="agent-dock-chats-group">
-      <div className="agent-dock-group-header sticky top-0 z-[1] flex items-center gap-[7px] bg-[#fbfaf8]/95 px-3.5 pb-[5px] pt-2.5 backdrop-blur-sm dark:bg-[#1d1c1a]/95">
-        <span className="h-1.5 w-1.5 rounded-full bg-[#a5a29b]" />
-        <span id="agent-dock-chats-group" className="agent-dock-roster-copy text-[10.5px] font-bold uppercase tracking-[.09em] text-[#8a8781]">Today & earlier</span>
-        <span className="agent-dock-roster-copy text-[10.5px] font-semibold text-[#b3b0a9]">{props.chats.length}</span>
-      </div>
-      {props.chats.map((chat) => {
+  return DOCK_DATE_GROUPS.map((group) => {
+    const chats = props.chats.filter((chat) => dockDateGroup(chat.last_message_at ?? chat.updated_at ?? chat.created_at) === group.key);
+    if (chats.length === 0) return null;
+    return <section key={group.key} aria-labelledby={`agent-dock-chat-date-${group.key}`}>
+      <RosterGroupHeader id={`agent-dock-chat-date-${group.key}`} label={group.label} count={chats.length} />
+      {chats.map((chat) => {
         const presence = dockChatPresence(chat);
         const presentation = CHAT_PRESENCE[presence];
         return (
@@ -316,8 +324,16 @@ function ChatRows(props: DockRosterProps) {
           </div>
         );
       })}
-    </section>
-  );
+    </section>;
+  });
+}
+
+function RosterGroupHeader({ id, label, count }: { id: string; label: string; count: number }) {
+  return <div className="agent-dock-group-header sticky top-0 z-[1] flex items-center gap-[7px] bg-[#fbfaf8]/95 px-3.5 pb-[5px] pt-2.5 backdrop-blur-sm dark:bg-[#1d1c1a]/95">
+    <span className="h-1.5 w-1.5 rounded-full bg-[#a5a29b]" />
+    <span id={id} className="agent-dock-roster-copy text-[10.5px] font-bold uppercase tracking-[.09em] text-[#8a8781] dark:text-[#96928a]">{label}</span>
+    <span className="agent-dock-roster-copy text-[10.5px] font-semibold text-[#b3b0a9]">{count}</span>
+  </div>;
 }
 
 function ChatMarker({ chat }: { chat: DockChat }) {

@@ -305,18 +305,57 @@ func TestDockChatTitleFromPageContextUsesSourceIdentity(t *testing.T) {
 			ctx: map[string]interface{}{
 				"entity_type":   "support_conversation",
 				"entity_id":     "91cee9ac-959b-4066-b613-5b9847095a97",
+				"display_id":    "#482",
 				"display_title": "Refund request",
 			},
-			want: "Support · 91cee9ac · Refund request",
+			want: "Support · #482 · Refund request",
 		},
 		{
-			name: "fallback support title omits generic conversation label",
+			name: "fallback support title defers to semantic title when no public identity is loaded",
 			ctx: map[string]interface{}{
 				"entity_type":   "support_conversation",
 				"entity_id":     "conv-42",
 				"display_title": "Conversation conv-42",
 			},
-			want: "Support · conv-42",
+			want: "",
+		},
+		{
+			name: "task uses task key",
+			ctx: map[string]interface{}{
+				"entity_type":   "task",
+				"entity_id":     "91cee9ac-959b-4066-b613-5b9847095a97",
+				"display_id":    "ENG-124",
+				"display_title": "Fix login timeout",
+			},
+			want: "Tasks · ENG-124 · Fix login timeout",
+		},
+		{
+			name: "crm uses public record id",
+			ctx: map[string]interface{}{
+				"entity_type":   "crm_contact",
+				"entity_id":     "91cee9ac-959b-4066-b613-5b9847095a97",
+				"display_id":    "CON-381",
+				"display_title": "Maya Singh",
+			},
+			want: "CRM · CON-381 · Maya Singh",
+		},
+		{
+			name: "epic omits opaque uuid",
+			ctx: map[string]interface{}{
+				"entity_type":   "epic",
+				"entity_id":     "91cee9ac-959b-4066-b613-5b9847095a97",
+				"display_title": "Q3 onboarding",
+			},
+			want: "Tasks · Q3 onboarding",
+		},
+		{
+			name: "document omits opaque uuid",
+			ctx: map[string]interface{}{
+				"entity_type":   "document",
+				"entity_id":     "91cee9ac-959b-4066-b613-5b9847095a97",
+				"display_title": "API authentication",
+			},
+			want: "Docs · API authentication",
 		},
 		{
 			name: "workspace context defers to the semantic user-message title",
