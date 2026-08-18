@@ -20,7 +20,7 @@ const task = (overrides: Partial<Task>): Task => ({
   started: false,
   completed: false,
   blocked: false,
-  contact_id: 'contact-1',
+  contacts: [{ object_type: 'contact', object_id: 'contact-1', title: 'Buyer' }],
   archived: false,
   created_at: '2026-08-01T00:00:00Z',
   updated_at: '2026-08-01T00:00:00Z',
@@ -58,7 +58,7 @@ describe('buildTodayTaskItems', () => {
       task({ id: 'today', deadline: '2026-08-18T17:00:00' }),
       task({ id: 'overdue', deadline: '2026-08-16T09:00:00' }),
       task({ id: 'done', deadline: '2026-08-17T09:00:00', completed: true }),
-      task({ id: 'generic', contact_id: undefined, deadline: '2026-08-17T09:00:00' }),
+      task({ id: 'generic', contacts: undefined, deadline: '2026-08-17T09:00:00' }),
       task({ id: 'done-state', deadline: '2026-08-17T09:00:00', state_type: 'done' }),
     ], now);
 

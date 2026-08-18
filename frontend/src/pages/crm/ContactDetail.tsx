@@ -1348,7 +1348,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
             {/* ──────── EMAILS TAB ──────── */}
             <TabsContent value="emails" className="mt-0 h-full overflow-y-auto">
-              <EmailTimeline workspaceId={wsId} contactId={contactId} />
+              <EmailTimeline workspaceId={wsId} contactId={contactId} defaultRecipient={contact.email} />
             </TabsContent>
 
             {/* ──────── MEETINGS TAB ──────── */}
