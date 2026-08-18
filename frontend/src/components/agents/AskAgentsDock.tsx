@@ -94,6 +94,7 @@ export function AskAgentsDock({
     chatId: string;
     runId: string | null;
   } | null>(null);
+  const [draftChat, setDraftChat] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const askTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -122,7 +123,13 @@ export function AskAgentsDock({
       || summary.run.status === 'running';
   }), [orderedRuns]);
   const activeRun = orderedRuns.find((summary) => summary.run.id === activeRunId) ?? null;
-  const activeChat = chats.find((chat) => chat.id === activeChatId) ?? null;
+  // Earlier versions persisted a general chat as soon as the user clicked
+  // New chat. Keep those abandoned rows out of the roster; Support-linked
+  // chats remain visible because their association is meaningful context.
+  const visibleChats = useMemo(() => chats.filter((chat) => (
+    chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null || chat.support_conversation_id != null
+  )), [activeChatId, chats]);
+  const activeChat = visibleChats.find((chat) => chat.id === activeChatId) ?? null;
   const selectedChatId = activeChat?.id ?? null;
   const activeChatRunId = chatRunOverride?.chatId === selectedChatId
     ? chatRunOverride.runId
@@ -294,11 +301,11 @@ export function AskAgentsDock({
   }, [orderedRuns, runsLoading, setActiveRunId]);
 
   useEffect(() => {
-    if (chatsLoading) return;
+    if (chatsLoading || draftChat) return;
     const current = useDockStore.getState().activeChatId;
-    if (current && chats.some((chat) => chat.id === current)) return;
-    setActiveChatId(chats[0]?.id ?? null);
-  }, [chats, chatsLoading, setActiveChatId]);
+    if (current && visibleChats.some((chat) => chat.id === current)) return;
+    setActiveChatId(visibleChats[0]?.id ?? null);
+  }, [chatsLoading, draftChat, setActiveChatId, visibleChats]);
 
   useEffect(() => {
     if (!active || !workspaceId || !associatedSupportConversationId || chatsLoading) return;
@@ -307,6 +314,7 @@ export function AskAgentsDock({
       (chat) => chat.support_conversation_id === associatedSupportConversationId,
     );
     if (associatedChat) {
+		setDraftChat(false);
       ensuredSupportConversationRef.current = associationKey;
       if (useDockStore.getState().activeChatId !== associatedChat.id) {
         setActiveChatId(associatedChat.id);
@@ -324,6 +332,7 @@ export function AskAgentsDock({
       }
       const current = useDockStore.getState().chats;
       setChats([result.data, ...current.filter((chat) => chat.id !== result.data?.id)]);
+      setDraftChat(false);
       setActiveChatId(result.data.id);
       setTab('chats');
       focusTargetRef.current = 'composer';
@@ -397,19 +406,27 @@ export function AskAgentsDock({
     }, 0);
   }, [embedded, onClose, setCollapsed]);
 
-  const newChat = useCallback(async () => {
-    if (!workspaceId) return;
-    const result = await dockChatService.createChat(workspaceId, '', undefined, creationModule);
-    if (result.error || !result.data) {
-      toast.error(result.error ?? 'Failed to create chat');
-      return;
-    }
-    setChats([result.data, ...chats.filter((chat) => chat.id !== result.data?.id)]);
-    setActiveChatId(result.data.id);
+  const newChat = useCallback(() => {
+    setDraftChat(true);
+    setActiveChatId(null);
     setTab('chats');
     focusTargetRef.current = 'composer';
     setCollapsed(false);
-  }, [chats, creationModule, setActiveChatId, setChats, setCollapsed, setTab, workspaceId]);
+  }, [setActiveChatId, setCollapsed, setTab]);
+
+  const createDraftChat = useCallback(async () => {
+    if (!workspaceId) return null;
+    const result = await dockChatService.createChat(workspaceId, '', undefined, creationModule);
+    if (result.error || !result.data) {
+      toast.error(result.error ?? 'Failed to create chat');
+      return null;
+    }
+    setChats([result.data, ...chats.filter((chat) => chat.id !== result.data?.id)]);
+    setDraftChat(false);
+    setActiveChatId(result.data.id);
+    setTab('chats');
+    return result.data;
+  }, [chats, creationModule, setActiveChatId, setChats, setTab, workspaceId]);
 
   useLayoutEffect(() => {
     if (collapsed && !embedded) return;
@@ -556,14 +573,15 @@ export function AskAgentsDock({
           onArchiveChat={archiveChat}
           onUpdateVisibility={updateChatVisibility}
         />
-        {activeChat ? (
+        {activeChat || draftChat ? (
           <ChatView
-            key={activeChat.id}
+            key={activeChat?.id ?? 'draft'}
             workspaceId={workspaceId}
-            chatId={activeChat.id}
+            chatId={activeChat?.id}
+            onCreateChat={createDraftChat}
             textareaRef={textareaRef}
-            draftValue={drafts[`chat:${activeChat.id}`] ?? ''}
-            onDraftChange={(value) => setDraft(`chat:${activeChat.id}`, value)}
+            draftValue={drafts[`chat:${activeChat?.id ?? 'draft'}`] ?? ''}
+            onDraftChange={(value) => setDraft(`chat:${activeChat?.id ?? 'draft'}`, value)}
             onChatChanged={() => void refreshChats(true)}
             onRunStatusChange={updateChatRunStatus}
             streamController={chatStreamController}
@@ -616,7 +634,7 @@ export function AskAgentsDock({
               workspaceId={workspaceId}
               tab={tab}
               runs={orderedRuns}
-              chats={chats}
+              chats={visibleChats}
               selectedRunId={activeRunId}
               selectedChatId={activeChatId}
               loadingRuns={runsLoading}
@@ -628,13 +646,14 @@ export function AskAgentsDock({
                 setTab(next);
                 if (next === 'agents' && !activeRunId) setActiveRunId(orderedRuns[0]?.run.id ?? null);
                 if (next === 'chats') {
-                  if (!activeChatId) setActiveChatId(chats[0]?.id ?? null);
+                  if (!activeChatId) setActiveChatId(visibleChats[0]?.id ?? null);
                   setChatScrollRequest((request) => request + 1);
                 }
               }}
               onSelectRun={(runId) => { focusTargetRef.current = 'selection'; setActiveRunId(runId); setTab('agents'); }}
               onSelectChat={(chatId) => {
                 focusTargetRef.current = 'selection';
+                setDraftChat(false);
                 setActiveChatId(chatId);
                 setTab('chats');
                 setChatScrollRequest((request) => request + 1);
@@ -684,17 +703,18 @@ export function AskAgentsDock({
                 ) : (
                   <EmptyRunPane onNewChat={() => void newChat()} />
                 )
-              ) : activeChat ? (
+              ) : activeChat || draftChat ? (
                 <ChatView
-                  key={activeChat.id}
+                  key={activeChat?.id ?? 'draft'}
                   workspaceId={workspaceId}
-                  chatId={activeChat.id}
+                  chatId={activeChat?.id}
+                  onCreateChat={createDraftChat}
                   scrollToLatestRequest={chatScrollRequest}
                   textareaRef={textareaRef}
                   initialDraft={pendingDraft}
                   onDraftConsumed={() => setPendingDraft(undefined)}
-                  draftValue={drafts[`chat:${activeChat.id}`] ?? ''}
-                  onDraftChange={(value) => setDraft(`chat:${activeChat.id}`, value)}
+                  draftValue={drafts[`chat:${activeChat?.id ?? 'draft'}`] ?? ''}
+                  onDraftChange={(value) => setDraft(`chat:${activeChat?.id ?? 'draft'}`, value)}
                   onChatChanged={() => void refreshChats(true)}
                   onRunStatusChange={updateChatRunStatus}
                   streamController={chatStreamController}

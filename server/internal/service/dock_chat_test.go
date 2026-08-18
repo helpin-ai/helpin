@@ -318,6 +318,15 @@ func TestDockChatTitleFromPageContextUsesSourceIdentity(t *testing.T) {
 			},
 			want: "Support · conv-42",
 		},
+		{
+			name: "workspace context defers to the semantic user-message title",
+			ctx: map[string]interface{}{
+				"entity_type":   "workspace",
+				"entity_id":     "fb464f68-0c05-4cbd-b571-5254bc88211f",
+				"display_title": "ContentStudio",
+			},
+			want: "",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

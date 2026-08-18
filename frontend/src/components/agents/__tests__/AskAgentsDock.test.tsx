@@ -1138,15 +1138,7 @@ describe('AskAgentsDock', () => {
     expect(useDockStore.getState().tab).toBe('chats');
   });
 
-  it('creates a new chat', async () => {
-    const newChat: DockChat = { ...CHAT, id: 'chat-2', title: '' };
-    mocks.createChat.mockResolvedValue({ data: newChat, error: null });
-    mocks.getChat.mockImplementation((_: string, chatId: string) =>
-      Promise.resolve({
-        data: chatDetail({ chat: chatId === 'chat-2' ? newChat : CHAT }),
-        error: null,
-      }),
-    );
+  it('opens a local new-chat composer without creating an abandoned chat', async () => {
     await renderDock();
     await waitForText('Sprint questions');
 
@@ -1157,14 +1149,26 @@ describe('AskAgentsDock', () => {
     expect(footer).not.toBeNull();
     expect(footer?.className).toContain('border-t');
     expect(footer?.contains(newButton ?? null)).toBe(true);
-    expect(newButton?.className).toContain('border-[#e6e3dd]');
+    expect(newButton?.className).toContain('bg-[#1c1b19]');
     expect(document.body.querySelector('.agent-dock-roster-controls')?.contains(newButton ?? null)).toBe(false);
     await act(async () => {
       (newButton as HTMLButtonElement).click();
     });
-    await flush();
+    await waitForText('New chat');
+    expect(mocks.createChat).not.toHaveBeenCalled();
+    expect(useDockStore.getState().activeChatId).toBeNull();
+
+    const createdChat: DockChat = { ...CHAT, id: 'chat-2', title: '' };
+    mocks.createChat.mockResolvedValue({ data: createdChat, error: null });
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail({ chat: createdChat }), error: null });
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'Investigate the signup issue');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'draft chat message was not sent');
     expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', undefined, null);
-    expect(useDockStore.getState().activeChatId).toBe('chat-2');
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-2', expect.objectContaining({ content: 'Investigate the signup issue' }));
   });
 
   it('shows plain-language visibility and lets the owner share with the workspace', async () => {

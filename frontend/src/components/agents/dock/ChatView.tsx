@@ -43,7 +43,8 @@ import {
 
 interface ChatViewProps {
   workspaceId: string;
-  chatId: string;
+  chatId?: string;
+  onCreateChat?: () => Promise<{ id: string } | null>;
   scrollToLatestRequest: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
@@ -78,6 +79,7 @@ function newClientMessageID() {
 export function ChatView({
   workspaceId,
   chatId,
+  onCreateChat,
   scrollToLatestRequest,
   textareaRef,
   initialDraft,
@@ -154,12 +156,14 @@ export function ChatView({
     streamController;
 
   const refreshDetail = useCallback(async () => {
+	if (!chatId) return null;
     const res = await dockChatService.getChat(workspaceId, chatId);
     if (res.data) setDetail(res.data);
     return res.data ?? null;
   }, [chatId, workspaceId]);
 
   const refreshMessages = useCallback(async () => {
+	if (!chatId) return [];
     const res = await dockChatService.listMessages(workspaceId, chatId, undefined, 50);
     if (res.data) {
       setPersistedMessages((current) => mergeMessagePages(current, res.data?.messages ?? []));
@@ -183,6 +187,13 @@ export function ChatView({
 
   // Load chat on mount / chat switch.
   useEffect(() => {
+	if (!chatId) {
+	  setDetail(null);
+	  setPersistedMessages([]);
+	  setNextMessagesBefore(null);
+	  setDetailLoading(false);
+	  return;
+	}
     autoFollowRef.current = true;
     const timer = window.setTimeout(() => {
       setPersistedMessages([]);
@@ -190,7 +201,7 @@ export function ChatView({
       void Promise.all([refreshDetail(), refreshMessages()]).finally(() => setDetailLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [refreshDetail, refreshMessages]);
+	}, [chatId, refreshDetail, refreshMessages]);
 
   // Refresh the run summary when its WS event fires (stream refetch is
   // handled inside useAgentRunStream; this keeps status/pause_reason fresh).
@@ -356,6 +367,12 @@ export function ChatView({
   const sendContent = useCallback(
     async (content: string, messageReferences: DockEntityReference[] = references, retryClientMessageID?: string) => {
       if (!content || sending) return;
+	  let targetChatId = chatId;
+	  if (!targetChatId) {
+		const created = await onCreateChat?.();
+		if (!created) return;
+		targetChatId = created.id;
+	  }
       const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
@@ -376,7 +393,7 @@ export function ChatView({
       autoFollowRef.current = true;
       setAtBottom(true);
       try {
-        const res = await dockChatService.sendMessage(workspaceId, chatId, {
+		const res = await dockChatService.sendMessage(workspaceId, targetChatId, {
           client_message_id: clientMessageId,
           content,
           page_context: effectivePageContext ?? undefined,
@@ -406,7 +423,7 @@ export function ChatView({
         onChatChanged?.();
         if (needsTitle) {
           void (async () => {
-            const titleResult = await dockChatService.generateTitle(workspaceId, chatId, {
+			const titleResult = await dockChatService.generateTitle(workspaceId, targetChatId, {
               content,
               page_context: effectivePageContext ?? undefined,
             });
@@ -428,7 +445,7 @@ export function ChatView({
         setSending(false);
       }
     },
-    [chatId, detail?.chat.title, effectivePageContext, mediaAttachments, onChatChanged, references, refetch, refreshMessages, run?.id, sending, workspaceId],
+    [chatId, detail?.chat.title, effectivePageContext, mediaAttachments, onChatChanged, onCreateChat, references, refetch, refreshMessages, run?.id, sending, workspaceId],
   );
 
   const submit = async () => {
