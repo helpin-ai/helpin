@@ -1265,12 +1265,16 @@ describe('AskAgentsDock', () => {
     const newButton = Array.from(document.body.querySelectorAll('[data-helpin-dock] button')).find(
       (b) => b.textContent?.includes('New chat or task'),
     );
-    const footer = document.body.querySelector('.agent-dock-new-chat-footer');
-    expect(footer).not.toBeNull();
-    expect(footer?.className).toContain('border-t');
-    expect(footer?.contains(newButton ?? null)).toBe(true);
-    expect(newButton?.className).toContain('bg-[#1c1b19]');
-    expect(document.body.querySelector('.agent-dock-roster-controls')?.contains(newButton ?? null)).toBe(false);
+    const controls = document.body.querySelector('.agent-dock-roster-controls');
+    const tabs = document.body.querySelector('.agent-dock-tab-list');
+    expect(document.body.querySelector('.agent-dock-new-chat-footer')).toBeNull();
+    expect(controls?.contains(newButton ?? null)).toBe(true);
+    expect(newButton).toBeTruthy();
+    expect(tabs).not.toBeNull();
+    expect(newButton!.compareDocumentPosition(tabs!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(newButton?.className).not.toContain('bg-[#1c1b19]');
+    expect(newButton?.className).toContain('border-[#e6e3dd]');
+    expect(newButton?.querySelector('.ask-agent-new-chat-mark')).toBeNull();
     await act(async () => {
       (newButton as HTMLButtonElement).click();
     });

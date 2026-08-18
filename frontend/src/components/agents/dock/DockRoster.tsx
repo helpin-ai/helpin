@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { BotIcon, GlobeIcon, MoreHorizontalIcon, NotificationBubbleIcon, PlusSignIcon, UserGroupIcon } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,6 +73,16 @@ export function DockRoster(props: DockRosterProps) {
   return (
     <aside className="agent-dock-roster flex min-h-0 w-[300px] shrink-0 flex-col border-e border-[#f1efea] bg-[#fbfaf8] dark:border-[#302f2b] dark:bg-[#1d1c1a]">
       <div className="agent-dock-roster-controls flex flex-col gap-2.5 px-3 pb-2.5 pt-3">
+        <button
+          type="button"
+          aria-label="New chat or task"
+          onClick={props.onNewChat}
+          className="agent-dock-new-chat flex min-h-10 w-full items-center gap-2.5 rounded-[9px] border border-[#e6e3dd] bg-[#fffefa] px-3 py-2 text-start text-[12.5px] font-semibold text-[#4b4945] transition-colors hover:border-[#d8d3c9] hover:bg-[#f4f2ee] focus-visible:ring-2 focus-visible:ring-[#a855f7]/35 dark:border-[#37352f] dark:bg-[#242320] dark:text-[#eeeae1] dark:hover:bg-[#302f2b]"
+        >
+          <span className="agent-dock-new-chat-icon grid h-5 w-5 place-items-center rounded-[6px] bg-[#f0eee9] text-[#6f6b64] dark:bg-[#37352f] dark:text-[#d4d0c7]" aria-hidden><PlusSignIcon className="h-3.5 w-3.5" /></span>
+          <span className="agent-dock-roster-copy truncate">New chat or task</span>
+          <kbd className="agent-dock-roster-copy ms-auto rounded border border-[#d8d3c9] bg-[#f7f5f1] px-1 font-mono text-[10.5px] font-medium text-[#8a8781] dark:border-[#4a4842] dark:bg-[#302f2b] dark:text-[#aaa69e]">N</kbd>
+        </button>
         <div className="agent-dock-tab-list flex rounded-[9px] bg-[#f0eee9] p-[3px] dark:bg-[#292824]" role="tablist" aria-label="Dock views">
           {(['agents', 'chats'] as const).map((tab) => (
             <button
@@ -113,19 +122,6 @@ export function DockRoster(props: DockRosterProps) {
         ) : null}
       </div>
 
-      <div className="agent-dock-new-chat-footer shrink-0 border-t border-[#f1efea] p-2 dark:border-[#302f2b]">
-        <button
-          type="button"
-          aria-label="New chat or task"
-          onClick={props.onNewChat}
-          className="agent-dock-new-chat flex min-h-10 w-full items-center gap-2.5 rounded-[9px] bg-[#1c1b19] px-3 py-2 text-start text-[12.5px] font-semibold text-white shadow-[0_2px_5px_rgba(28,27,25,.18)] transition-[background-color,box-shadow,transform] hover:bg-[#34322e] hover:shadow-[0_3px_8px_rgba(28,27,25,.22)] active:translate-y-px focus-visible:ring-2 focus-visible:ring-[#a855f7]/45 dark:bg-[#eeeae1] dark:text-[#1c1b19] dark:hover:bg-white"
-        >
-          <span className="agent-dock-new-chat-icon grid h-5 w-5 place-items-center rounded-[6px] bg-white/15" aria-hidden><PlusSignIcon className="h-3.5 w-3.5" /></span>
-          <AskAgentAvatar plateStyle="feather" className="ask-agent-new-chat-mark h-6 w-6" />
-          <span className="agent-dock-roster-copy truncate">New chat or task</span>
-          <kbd className="agent-dock-roster-copy ms-auto rounded border border-white/25 bg-white/10 px-1 font-mono text-[10.5px] font-medium text-white/80 dark:border-black/15 dark:bg-black/5 dark:text-[#4b4945]">N</kbd>
-        </button>
-      </div>
     </aside>
   );
 }
