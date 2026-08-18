@@ -20,11 +20,7 @@ const task = (overrides: Partial<Task>): Task => ({
   started: false,
   completed: false,
   blocked: false,
-  contacts: [{
-    object_type: 'contact',
-    object_id: 'contact-1',
-    title: 'Ada Lovelace',
-  }],
+  contacts: [{ object_type: 'contact', object_id: 'contact-1', title: 'Buyer' }],
   archived: false,
   created_at: '2026-08-01T00:00:00Z',
   updated_at: '2026-08-01T00:00:00Z',
