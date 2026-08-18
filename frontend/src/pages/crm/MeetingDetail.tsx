@@ -180,6 +180,16 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   const canStart = ['scheduled', 'failed'].includes(meeting.status);
   const canStop = ['joining', 'waiting', 'recording'].includes(meeting.status);
   const canRetry = ['failed', 'blocked_usage'].includes(meeting.summary_status);
+  const participantContext = data.intelligence?.participants_context?.length
+    ? data.intelligence.participants_context
+    : meeting.participants
+      .map((participant) => participant.name && participant.email
+        ? `${participant.name} (${participant.email})`
+        : participant.name || participant.email || '')
+      .filter(Boolean);
+  const openQuestions = data.intelligence?.open_questions?.length
+    ? data.intelligence.open_questions
+    : [...new Set([...(data.intelligence?.objections ?? []), ...(data.intelligence?.risks ?? [])])];
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -217,40 +227,42 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Meeting notes</CardTitle>
-              <CardDescription>Helpin-generated outcomes from the canonical transcript.</CardDescription>
-              {data.intelligence?.summary_markdown && <CardAction><Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => copyText(data.intelligence?.summary_markdown ?? '', 'Summary')}><Copy01Icon className="h-3.5 w-3.5" /> Copy summary</Button></CardAction>}
+              <CardDescription>A clear record of the discussion, decisions, and next steps.</CardDescription>
+              {data.intelligence?.summary_markdown && <CardAction><Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => copyText(data.intelligence?.summary_markdown ?? '', 'Overview')}><Copy01Icon className="h-3.5 w-3.5" /> Copy overview</Button></CardAction>}
             </CardHeader>
             <CardContent>
               {data.intelligence ? (
-                <div className="space-y-6 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500">
-                  <MarkdownContent content={data.intelligence.summary_markdown} className="text-sm leading-7" />
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <IntelligenceList title="Key points" items={data.intelligence.key_points} />
-                    <IntelligenceList title="Decisions" items={data.intelligence.decisions} />
-                    <IntelligenceList title="Risks" items={data.intelligence.risks} />
-                    <IntelligenceList title="Next steps" items={data.intelligence.next_steps} />
-                    <IntelligenceList title="Objections" items={data.intelligence.objections} />
-                  </div>
-                  {(data.intelligence.follow_up_draft.subject || data.intelligence.follow_up_draft.body) && (
-                    <div className="rounded-lg border bg-muted/20 p-4">
-                      <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">Follow-up draft</h3><Button variant="ghost" size="sm" onClick={() => copyText([data.intelligence?.follow_up_draft.subject, data.intelligence?.follow_up_draft.body].filter(Boolean).join('\n\n'), 'Follow-up')}><Copy01Icon className="h-4 w-4" /> Copy</Button></div>
-                      {data.intelligence.follow_up_draft.subject && <p className="mt-3 text-sm font-medium">{data.intelligence.follow_up_draft.subject}</p>}
-                      {data.intelligence.follow_up_draft.body && <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{data.intelligence.follow_up_draft.body}</p>}
-                    </div>
+                <div className="space-y-7 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:duration-500">
+                  <section>
+                    <h3 className="text-sm font-semibold">Overview</h3>
+                    <MarkdownContent content={data.intelligence.summary_markdown} className="mt-2 text-sm leading-7" />
+                  </section>
+                  <IntelligenceList title="Participants + Context" items={participantContext} />
+                  <IntelligenceList title="Key Discussion Points" items={data.intelligence.key_points} />
+                  <IntelligenceList title="Decisions Made" items={data.intelligence.decisions} />
+                  <IntelligenceList title="Open Questions / Issues" items={openQuestions} />
+                  {(data.intelligence.next_steps.length > 0 || data.action_items.length > 0) && (
+                    <section>
+                      <h3 className="text-sm font-semibold">Action Items &amp; Next Steps</h3>
+                      {data.intelligence.next_steps.length > 0 && (
+                        <ul className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
+                          {data.intelligence.next_steps.map((item, index) => <li key={`next-step-${index}`} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" /><span>{item}</span></li>)}
+                        </ul>
+                      )}
+                      {data.action_items.length > 0 && (
+                        <div className="mt-3 space-y-3">
+                          {data.action_items.map((item) => (
+                            <ActionItemRow key={item.id} item={item} teams={teams} teamId={teamByAction[item.id] ?? defaultTeamId} busy={acceptAction.isPending || dismissAction.isPending} canCreateTask={canEditCRM && canEditPM} canDismiss={canEditCRM} onTeamChange={(value) => setTeamByAction((current) => ({ ...current, [item.id]: value }))} onAccept={() => accept(item)} onDismiss={() => dismiss(item)} />
+                          ))}
+                        </div>
+                      )}
+                    </section>
                   )}
+                  <IntelligenceList title="Rapport" items={data.intelligence.rapport} />
                 </div>
               ) : (
                 (['joining', 'waiting', 'recording', 'finalizing', 'processing'].includes(meeting.status) || meeting.summary_status === 'processing') ? <MeetingProcessingState status={meeting.status} summaryStatus={meeting.summary_status} /> : <div className="py-10 text-center text-sm text-muted-foreground">Meeting notes will appear when the transcript is processed.</div>
               )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle className="text-base">Action items</CardTitle><CardDescription>Review proposed work before creating canonical project tasks.</CardDescription></CardHeader>
-            <CardContent className="space-y-3">
-              {data.action_items.length ? data.action_items.map((item) => (
-                <ActionItemRow key={item.id} item={item} teams={teams} teamId={teamByAction[item.id] ?? defaultTeamId} busy={acceptAction.isPending || dismissAction.isPending} canCreateTask={canEditCRM && canEditPM} canDismiss={canEditCRM} onTeamChange={(value) => setTeamByAction((current) => ({ ...current, [item.id]: value }))} onAccept={() => accept(item)} onDismiss={() => dismiss(item)} />
-              )) : <p className="py-6 text-center text-sm text-muted-foreground">No action items were identified.</p>}
             </CardContent>
           </Card>
 
