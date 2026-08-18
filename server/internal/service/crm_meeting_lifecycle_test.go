@@ -218,11 +218,11 @@ func setupMeetingLifecycleDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE crm_meeting_settings (
 			workspace_id TEXT PRIMARY KEY,
-			enabled BOOLEAN NOT NULL DEFAULT 0,
+			enabled BOOLEAN NOT NULL DEFAULT 1,
 			default_provider TEXT NOT NULL DEFAULT 'recall',
-			bot_name TEXT NOT NULL DEFAULT 'Helpin Notetaker',
+			bot_name TEXT NOT NULL DEFAULT 'Helpin.ai Notetaker',
 			auto_join_mode TEXT NOT NULL DEFAULT 'manual',
-			record_audio_by_default BOOLEAN NOT NULL DEFAULT 0,
+			record_audio_by_default BOOLEAN NOT NULL DEFAULT 1,
 			default_visibility TEXT NOT NULL DEFAULT 'workspace',
 			include_internal BOOLEAN NOT NULL DEFAULT 0,
 			include_private BOOLEAN NOT NULL DEFAULT 0,
@@ -378,7 +378,7 @@ func TestMeetingProviderSwitchAffectsOnlyNewCaptureAttempts(t *testing.T) {
 	vexa := &fakeMeetingProvider{name: model.CRMMeetingProviderVexa, captureID: "vexa-1"}
 	settings := &model.CRMMeetingSettings{
 		WorkspaceID: meeting.WorkspaceID, Enabled: true, DefaultProvider: model.CRMMeetingProviderRecall,
-		BotName: "Helpin Notetaker", AutoJoinMode: "manual", DefaultVisibility: model.CRMMeetingVisibilityWorkspace,
+		BotName: "Helpin.ai Notetaker", AutoJoinMode: "manual", DefaultVisibility: model.CRMMeetingVisibilityWorkspace,
 		TranscriptRetentionDays: 365, AudioRetentionDays: 30,
 	}
 	if err := repo.UpsertSettings(context.Background(), settings); err != nil {

@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   useAcceptMeetingAction,
@@ -30,10 +31,12 @@ import {
   useStartMeetingCapture,
   useStopMeetingCapture,
 } from '@/hooks/queries/useCRMMeetings';
+import { useTeamWorkflow } from '@/hooks/queries/useWorkflows';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { resolveMeetingActionStateId } from '@/lib/meetingActionTaskTarget';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMMeetingActionItem } from '@/lib/crmMeetingTypes';
 
@@ -52,26 +55,43 @@ function IntelligenceList({ title, items }: { title: string; items?: string[] })
 }
 
 function ActionItemRow({
+  workspaceId,
   item,
   teamId,
+  stateId,
   teams,
   busy,
   canCreateTask,
   canDismiss,
   onTeamChange,
+  onStateChange,
   onAccept,
   onDismiss,
 }: {
+  workspaceId: string;
   item: CRMMeetingActionItem;
   teamId: string;
+  stateId?: string;
   teams: Array<{ id: string; name: string }>;
   busy: boolean;
   canCreateTask: boolean;
   canDismiss: boolean;
   onTeamChange: (value: string) => void;
-  onAccept: () => void;
+  onStateChange: (value: string) => void;
+  onAccept: (workflowId: string, workflowStateId: string) => void;
   onDismiss: () => void;
 }) {
+  const {
+    data: workflow,
+    isLoading: workflowLoading,
+    isError: workflowError,
+  } = useTeamWorkflow(workspaceId, teamId, item.status === 'pending' && canCreateTask);
+  const workflowStates = useMemo(
+    () => [...(workflow?.states ?? [])].sort((left, right) => left.position - right.position),
+    [workflow?.states],
+  );
+  const selectedStateId = resolveMeetingActionStateId(workflow, stateId);
+
   return (
     <div className="rounded-lg border p-3">
       <div className="flex items-start justify-between gap-3">
@@ -87,15 +107,43 @@ function ActionItemRow({
       </div>
       {item.evidence?.excerpt && <blockquote className="mt-3 border-l-2 pl-3 text-xs italic text-muted-foreground">{item.evidence.excerpt}</blockquote>}
       {item.status === 'pending' && (canCreateTask || canDismiss) && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {canCreateTask && <>
-            <Select value={teamId} onValueChange={onTeamChange}>
-              <SelectTrigger className="h-8 min-w-44 flex-1"><SelectValue placeholder="Select destination team" /></SelectTrigger>
-              <SelectContent>{teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}</SelectContent>
-            </Select>
-            <Button size="sm" className="h-8" onClick={onAccept} disabled={!teamId || busy}>Create task</Button>
-          </>}
-          {canDismiss && <Button size="sm" variant="ghost" className="h-8" onClick={onDismiss} disabled={busy}>Dismiss</Button>}
+        <div className="mt-3 space-y-2">
+          {canCreateTask && (
+            <>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor={`meeting-action-${item.id}-team`} className="text-[11px] text-muted-foreground">Team</Label>
+                  <Select value={teamId} onValueChange={onTeamChange}>
+                    <SelectTrigger id={`meeting-action-${item.id}-team`} className="h-8"><SelectValue placeholder="Select team" /></SelectTrigger>
+                    <SelectContent>{teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor={`meeting-action-${item.id}-state`} className="text-[11px] text-muted-foreground">State</Label>
+                  <Select value={selectedStateId || undefined} onValueChange={onStateChange} disabled={!teamId || workflowLoading || workflowStates.length === 0}>
+                    <SelectTrigger id={`meeting-action-${item.id}-state`} className="h-8">
+                      <SelectValue placeholder={workflowLoading ? 'Loading states...' : 'Select state'} />
+                    </SelectTrigger>
+                    <SelectContent>{workflowStates.map((state) => <SelectItem key={state.id} value={state.id}>{state.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {workflowError && <p className="text-xs text-destructive">Workflow states could not be loaded for this team.</p>}
+            </>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
+            {canDismiss && <Button size="sm" variant="ghost" className="h-8" onClick={onDismiss} disabled={busy}>Dismiss</Button>}
+            {canCreateTask && (
+              <Button
+                size="sm"
+                className="h-8"
+                onClick={() => workflow && onAccept(workflow.workflow.id, selectedStateId)}
+                disabled={!teamId || !workflow || !selectedStateId || workflowLoading || busy}
+              >
+                Create task
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -118,6 +166,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   const acceptAction = useAcceptMeetingAction(workspaceId, meetingId);
   const dismissAction = useDismissMeetingAction(workspaceId, meetingId);
   const { teams } = useAccessibleTeams(workspaceId);
+  const [stateByAction, setStateByAction] = useState<Record<string, string>>({});
   const [teamByAction, setTeamByAction] = useState<Record<string, string>>({});
   const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null);
   const recordingPlayerRef = useRef<MeetingRecordingPlayerHandle | null>(null);
@@ -154,10 +203,26 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   };
 
 
-  const accept = async (item: CRMMeetingActionItem) => {
+  const updateActionTeam = (itemId: string, teamId: string) => {
+    setTeamByAction((current) => ({ ...current, [itemId]: teamId }));
+    setStateByAction((current) => {
+      const next = { ...current };
+      delete next[itemId];
+      return next;
+    });
+  };
+
+  const accept = async (item: CRMMeetingActionItem, workflowId: string, workflowStateId: string) => {
     const teamId = teamByAction[item.id] ?? defaultTeamId;
     try {
-      await acceptAction.mutateAsync({ itemId: item.id, payload: { team_id: teamId } });
+      await acceptAction.mutateAsync({
+        itemId: item.id,
+        payload: {
+          team_id: teamId,
+          workflow_id: workflowId,
+          workflow_state_id: workflowStateId,
+        },
+      });
       toast.success('Project task created');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to create task');
@@ -252,7 +317,21 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                       {data.action_items.length > 0 && (
                         <div className="mt-3 space-y-3">
                           {data.action_items.map((item) => (
-                            <ActionItemRow key={item.id} item={item} teams={teams} teamId={teamByAction[item.id] ?? defaultTeamId} busy={acceptAction.isPending || dismissAction.isPending} canCreateTask={canEditCRM && canEditPM} canDismiss={canEditCRM} onTeamChange={(value) => setTeamByAction((current) => ({ ...current, [item.id]: value }))} onAccept={() => accept(item)} onDismiss={() => dismiss(item)} />
+                            <ActionItemRow
+                              key={item.id}
+                              workspaceId={workspaceId}
+                              item={item}
+                              teams={teams}
+                              teamId={teamByAction[item.id] ?? defaultTeamId}
+                              stateId={stateByAction[item.id]}
+                              busy={acceptAction.isPending || dismissAction.isPending}
+                              canCreateTask={canEditCRM && canEditPM}
+                              canDismiss={canEditCRM}
+                              onTeamChange={(value) => updateActionTeam(item.id, value)}
+                              onStateChange={(value) => setStateByAction((current) => ({ ...current, [item.id]: value }))}
+                              onAccept={(workflowId, workflowStateId) => accept(item, workflowId, workflowStateId)}
+                              onDismiss={() => dismiss(item)}
+                            />
                           ))}
                         </div>
                       )}

@@ -11,6 +11,15 @@ export function useWorkflows(wsId: string) {
   })
 }
 
+export function useTeamWorkflow(wsId: string, teamId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.pm.teamWorkflow(wsId, teamId),
+    queryFn: async () => unwrap(await pmWorkflowService.resolveTeamWorkflow(wsId, teamId)),
+    enabled: enabled && !!wsId && !!teamId,
+    staleTime: 60_000,
+  })
+}
+
 export function useEpicStates(wsId: string) {
   return useQuery({
     queryKey: queryKeys.pm.epicStates(wsId),
