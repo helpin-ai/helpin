@@ -94,6 +94,12 @@ type DockChatMessageListResponse struct {
 	NextBefore *int64            `json:"next_before,omitempty"`
 }
 
+// DockChatWorkDetailResponse contains the historical payload omitted from a
+// compact completed turn until its disclosure is expanded.
+type DockChatWorkDetailResponse struct {
+	Messages []AgentRunMessage `json:"messages"`
+}
+
 // DockChatListResponse is one stable cursor page of the user's conversations.
 type DockChatListResponse struct {
 	Chats      []DockChat `json:"chats"`

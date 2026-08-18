@@ -888,6 +888,48 @@ func (r *AgentRunMessageRepository) ListByDockChat(ctx context.Context, workspac
 	return messages, nextBefore, nil
 }
 
+// ListDockChatTurnThroughMessage returns the persisted conversation interval
+// after the preceding user message through targetMessageID. The target is
+// scoped to the same workspace and Dock chat before any interval is read.
+func (r *AgentRunMessageRepository) ListDockChatTurnThroughMessage(
+	ctx context.Context,
+	workspaceID, dockChatID, targetMessageID string,
+) ([]model.AgentRunMessage, error) {
+	var target model.AgentRunMessage
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dock_chat_id = ? AND id = ? AND dock_chat_sequence IS NOT NULL AND delivery_status <> ?", workspaceID, dockChatID, targetMessageID, "failed").
+		First(&target).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return []model.AgentRunMessage{}, nil
+		}
+		return nil, fmt.Errorf("get dock chat work target: %w", err)
+	}
+	if target.DockChatSequence == nil {
+		return []model.AgentRunMessage{}, nil
+	}
+
+	type sequenceResult struct {
+		Sequence int64
+	}
+	var previous sequenceResult
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Select("COALESCE(MAX(dock_chat_sequence), 0) AS sequence").
+		Where("workspace_id = ? AND dock_chat_id = ? AND role = ? AND dock_chat_sequence < ? AND delivery_status <> ?", workspaceID, dockChatID, "user", *target.DockChatSequence, "failed").
+		Scan(&previous).Error; err != nil {
+		return nil, fmt.Errorf("find dock chat work boundary: %w", err)
+	}
+
+	var messages []model.AgentRunMessage
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dock_chat_id = ? AND dock_chat_sequence > ? AND dock_chat_sequence <= ? AND delivery_status <> ?", workspaceID, dockChatID, previous.Sequence, *target.DockChatSequence, "failed").
+		Order("dock_chat_sequence ASC").
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("list dock chat work detail: %w", err)
+	}
+	return messages, nil
+}
+
 // UpdateDeliveryStatus records whether a persisted human message reached the
 // runtime. Failed attempts remain available for audit and idempotent retry.
 func (r *AgentRunMessageRepository) UpdateDeliveryStatus(ctx context.Context, workspaceID, messageID, status string) error {

@@ -440,7 +440,27 @@ func (s *DockChatService) ListMessages(ctx context.Context, workspaceID, userID,
 	if err != nil {
 		return nil, err
 	}
-	return &model.DockChatMessageListResponse{Messages: messages, NextBefore: nextBefore}, nil
+	return &model.DockChatMessageListResponse{Messages: compactDockChatMessagePage(messages), NextBefore: nextBefore}, nil
+}
+
+// GetMessageWorkDetail returns the full persisted assistant interval omitted
+// from compact Dock chat history.
+func (s *DockChatService) GetMessageWorkDetail(ctx context.Context, workspaceID, userID, chatID, messageID string) (*model.DockChatWorkDetailResponse, error) {
+	chat, err := s.accessibleChat(ctx, workspaceID, userID, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if s.runMessageRepo == nil {
+		return &model.DockChatWorkDetailResponse{Messages: []model.AgentRunMessage{}}, nil
+	}
+	messages, err := s.runMessageRepo.ListDockChatTurnThroughMessage(ctx, workspaceID, chat.ID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 || messages[len(messages)-1].ID != messageID || messages[len(messages)-1].Role != "assistant" {
+		return nil, ErrDockChatNotFound
+	}
+	return &model.DockChatWorkDetailResponse{Messages: messages}, nil
 }
 
 func (s *DockChatService) runUsesCurrentScopedTools(ctx context.Context, chat *model.DockChat, userID string, run *model.AgentRun) (bool, error) {

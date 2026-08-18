@@ -55,6 +55,28 @@ function stream(
 }
 
 describe('mergePersistedChatMessages', () => {
+  it('preserves a compact historical work summary for lazy expansion', () => {
+    const summary: AgentRunMessage = {
+      ...persisted(2, '', '2026-08-15T08:23:04Z'),
+      id: 'work:assistant-final',
+      message_type: 'status',
+      dock_work_summary: {
+        message_id: 'assistant-final',
+        duration_ms: 9_000,
+        activity_count: 2,
+      },
+    };
+
+    const merged = mergePersistedChatMessages(null, [summary]);
+
+    expect(merged?.transcript_messages).toEqual([
+      expect.objectContaining({
+        message_type: 'status',
+        dock_work_summary: summary.dock_work_summary,
+      }),
+    ]);
+  });
+
   it('never appends older runtime history after the newest persisted page', () => {
     const merged = mergePersistedChatMessages(
       stream([

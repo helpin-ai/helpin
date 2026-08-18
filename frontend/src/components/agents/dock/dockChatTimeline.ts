@@ -103,7 +103,7 @@ export function mergePersistedChatMessages(
     (left, right) => (left.dock_chat_sequence ?? left.sequence_no) - (right.dock_chat_sequence ?? right.sequence_no),
   );
   const persisted = orderedMessages
-    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .filter((message) => message.role === 'user' || message.role === 'assistant' || message.message_type === 'status')
     .map((message) => ({
       event_id: `msg:${message.id}`,
       message_id: message.runtime_message_id || message.id,
@@ -113,6 +113,7 @@ export function mergePersistedChatMessages(
       timestamp: message.created_at,
       sequence_no: message.dock_chat_sequence ?? message.sequence_no,
       actor_user_id: message.actor_user_id,
+      dock_work_summary: message.dock_work_summary,
       turn_segments: message.role === 'assistant' ? message.turn_segments : undefined,
     }));
 

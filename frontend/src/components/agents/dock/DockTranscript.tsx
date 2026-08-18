@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import type { CodingSessionStreamState } from '@/lib/pmTypes';
 import {
@@ -8,12 +8,16 @@ import {
 } from '@/components/agents/transcript';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
-import type { CodingSessionActor } from '@/lib/pmTypes';
+import type { AgentRunMessage, CodingSessionActor, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
+import { dockChatService } from '@/lib/services/dockChatService';
+import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import { groupAdjacentDockTools } from './dockTranscriptGrouping';
 import { buildDockWorkingTimeline } from './dockWorkingGroups';
 import { DockWorkingGroup } from './DockWorkingGroup';
-const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'review_decision'] as const);
+import { mergePersistedChatMessages } from './dockChatTimeline';
+const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'review_decision', 'status'] as const);
 const DOCK_WORKING_SEGMENT_KINDS = new Set([...DOCK_CHAT_SEGMENT_KINDS, 'reasoning'] as const);
+const dockWorkDetailCache = new Map<string, AgentRunMessage[]>();
 
 export interface DockSubAgentTimelineItem {
   id: string;
@@ -118,6 +122,82 @@ function SubAgentTimelineGroup({ items }: { items: DockSubAgentTimelineItem[] })
   );
 }
 
+function DockWorkDisclosure({
+  workspaceId,
+  chatId,
+  summary,
+}: {
+  workspaceId: string;
+  chatId: string;
+  summary: NonNullable<CodingSessionTranscriptMessage['dock_work_summary']>;
+}) {
+  const cacheKey = `${workspaceId}:${chatId}:${summary.message_id}`;
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<AgentRunMessage[] | null>(() => dockWorkDetailCache.get(cacheKey) ?? null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const loadWork = async () => {
+    if (messages || loading) return;
+    const cached = dockWorkDetailCache.get(cacheKey);
+    if (cached) {
+      setMessages(cached);
+      return;
+    }
+    setLoading(true);
+    setError(false);
+    const response = await dockChatService.getMessageWorkDetail(workspaceId, chatId, summary.message_id);
+    setLoading(false);
+    if (!response.data) {
+      setError(true);
+      return;
+    }
+    dockWorkDetailCache.set(cacheKey, response.data.messages);
+    setMessages(response.data.messages);
+  };
+
+  const toggle = () => {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen) void loadWork();
+  };
+
+  const workStream = messages ? mergePersistedChatMessages(null, messages) : null;
+  return (
+    <section className="py-1" data-dock-work-disclosure>
+      <button
+        type="button"
+        className="text-xs font-medium text-muted-foreground hover:text-foreground"
+        aria-expanded={open}
+        onClick={toggle}
+      >
+        {open ? '▾' : '▸'} Worked for {formatCodingSessionElapsed(summary.duration_ms)}
+      </button>
+      {open ? (
+        <div className="mt-2 border-l border-border/70 pl-3">
+          {loading ? <div className="text-xs text-muted-foreground">Loading work…</div> : null}
+          {error ? (
+            <button type="button" className="text-xs text-destructive" onClick={() => void loadWork()}>
+              Couldn’t load work. Retry
+            </button>
+          ) : null}
+          {workStream ? (
+            <DockTranscript
+              stream={workStream}
+              active={false}
+              useRuntimeTimeline={false}
+              workspaceId={workspaceId}
+              showUserMessages={false}
+              compactAssistantProgress
+              historyWorkOnly
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 /**
  * Renders an agent run's output inline inside the Ask Agents dock — assistant
  * messages as markdown plus a compact one-line row per tool call — so a
@@ -132,9 +212,11 @@ export function DockTranscript({
   active,
   useRuntimeTimeline = active,
   workspaceId,
+  chatId,
   fallbackActor,
   showUserMessages = true,
   compactAssistantProgress = false,
+  historyWorkOnly = false,
   subAgentRuns = [],
   className,
 }: {
@@ -145,12 +227,16 @@ export function DockTranscript({
   useRuntimeTimeline?: boolean;
   /** Workspace used to resolve the author of each human message. */
   workspaceId?: string;
+  /** Conversation used to lazily fetch completed work details. */
+  chatId?: string;
   /** Actor for older messages that predate per-message attribution. */
   fallbackActor?: CodingSessionActor | null;
   /** Main chat shows user turns; embedded execution strips stay agent-only. */
   showUserMessages?: boolean;
   /** Root Ask chat groups full progress into independently expandable work. */
   compactAssistantProgress?: boolean;
+  /** Render progress and tools without repeating the completed final answer. */
+  historyWorkOnly?: boolean;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
   className?: string;
@@ -252,6 +338,26 @@ export function DockTranscript({
         const workingGroup = 'workingGroup' in entry ? entry.workingGroup : undefined;
         const followsUserMessage = index > 0 && entries[index - 1].segment.kind === 'user';
         const assistantPresentation = assistantPresentations.get(index);
+        if (historyWorkOnly && (
+          entry.segment.kind === 'user'
+          || entry.segment.kind === 'status'
+          || assistantPresentation?.presentation === 'final'
+        )) return null;
+        if (
+          entry.segment.kind === 'status'
+          && entry.segment.message.dock_work_summary
+          && workspaceId
+          && chatId
+        ) {
+          return (
+            <DockWorkDisclosure
+              key={entry.key}
+              workspaceId={workspaceId}
+              chatId={chatId}
+              summary={entry.segment.message.dock_work_summary}
+            />
+          );
+        }
         return (
           <Fragment key={entry.key}>
             {runsByBoundary.has(index) ? <SubAgentTimelineGroup items={runsByBoundary.get(index)!} /> : null}

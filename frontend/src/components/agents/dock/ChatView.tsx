@@ -689,6 +689,7 @@ export function ChatView({
             active={isDockTranscriptStreaming(run)}
             useRuntimeTimeline={showRuntimeTimeline}
             workspaceId={workspaceId}
+            chatId={chatId}
             fallbackActor={streamController.session?.triggered_by_user}
             subAgentRuns={subAgentTimelineItems}
             compactAssistantProgress

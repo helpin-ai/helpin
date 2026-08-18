@@ -13,6 +13,7 @@ import { DockTranscript } from '../DockTranscript';
 
 const mocks = vi.hoisted(() => ({
   resolveTeamMemberAvatarSrc: vi.fn(),
+  getMessageWorkDetail: vi.fn(),
 }));
 
 vi.mock('@/lib/teamMemberAvatar', () => ({
@@ -45,6 +46,12 @@ vi.mock('@/hooks/useWorkspaceMembers', () => ({
   }),
 }));
 
+vi.mock('@/lib/services/dockChatService', () => ({
+  dockChatService: {
+    getMessageWorkDetail: mocks.getMessageWorkDetail,
+  },
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement;
@@ -52,6 +59,7 @@ let root: Root;
 
 beforeEach(() => {
   mocks.resolveTeamMemberAvatarSrc.mockReset();
+  mocks.getMessageWorkDetail.mockReset();
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -146,6 +154,75 @@ function assistantTurn(id: string, content: string): CodingSessionLiveTurnSegmen
 }
 
 describe('DockTranscript', () => {
+  it('loads completed turn work only when Worked for is expanded and reuses it', async () => {
+    mocks.getMessageWorkDetail.mockResolvedValue({
+      data: {
+        messages: [{
+          id: 'assistant-final',
+          workspace_id: 'ws-1',
+          run_id: 'run-1',
+          dock_chat_id: 'chat-1',
+          role: 'assistant',
+          content: 'Final answer.',
+          message_type: 'assistant_turn',
+          sequence_no: 2,
+          created_at: '2026-08-06T00:00:09Z',
+          turn_segments: [
+            assistantTurn('progress', 'Checking the repository.'),
+            toolTurn('tool-1', 'read_file', 8000),
+            assistantTurn('final', 'Final answer.'),
+          ],
+        }],
+      },
+      error: null,
+    });
+    const summary = {
+      ...assistantMessage('work:assistant-final', '', 2),
+      message_type: 'status',
+      dock_work_summary: { message_id: 'assistant-final', duration_ms: 9000, activity_count: 2 },
+    } as CodingSessionTranscriptMessage;
+
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            userMessage('user-1', 'Investigate this.', 1),
+            summary,
+            assistantMessage('assistant-final', 'Final answer.', 3),
+          ])}
+          active={false}
+          workspaceId="ws-1"
+          chatId="chat-1"
+          compactAssistantProgress
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Worked for 9s');
+    expect(container.textContent).toContain('Final answer.');
+    expect(container.textContent).not.toContain('Checking the repository.');
+    expect(mocks.getMessageWorkDetail).not.toHaveBeenCalled();
+
+    const disclosure = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Worked for 9s'))!;
+    await act(async () => {
+      disclosure.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.getMessageWorkDetail).toHaveBeenCalledWith('ws-1', 'chat-1', 'assistant-final');
+    expect(container.textContent).toContain('Checking the repository.');
+    expect(container.textContent).toContain('read_file');
+
+    await act(async () => {
+      disclosure.click();
+      disclosure.click();
+      await Promise.resolve();
+    });
+    expect(mocks.getMessageWorkDetail).toHaveBeenCalledTimes(1);
+  });
+
   it('adds a clear turn boundary before the first assistant reply after a user message', () => {
     act(() => {
       root.render(
