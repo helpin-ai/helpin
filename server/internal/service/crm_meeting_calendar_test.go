@@ -78,7 +78,7 @@ func TestCalendarMeetingCaptureCreatesAssociationsAndCanBeDisabled(t *testing.T)
 	if err := meetingRepo.UpsertSettings(ctx, &model.CRMMeetingSettings{
 		WorkspaceID:             workspaceID,
 		Enabled:                 true,
-		BotName:                 "Helpin Notetaker",
+		BotName:                 "Helpin.ai Notetaker",
 		AutoJoinMode:            "manual",
 		DefaultProvider:         model.CRMMeetingProviderRecall,
 		DefaultVisibility:       model.CRMMeetingVisibilityWorkspace,
@@ -155,7 +155,7 @@ func TestCalendarMeetingSeriesCaptureSchedulesEveryFutureOccurrence(t *testing.T
 	if err := meetingRepo.UpsertSettings(ctx, &model.CRMMeetingSettings{
 		WorkspaceID:             workspaceID,
 		Enabled:                 true,
-		BotName:                 "Helpin Notetaker",
+		BotName:                 "Helpin.ai Notetaker",
 		AutoJoinMode:            "manual",
 		DefaultProvider:         model.CRMMeetingProviderRecall,
 		DefaultVisibility:       model.CRMMeetingVisibilityWorkspace,
