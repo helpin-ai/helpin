@@ -33,7 +33,7 @@ export function CreateMeetingDialog({
   const [recordAudioOverride, setRecordAudioOverride] = useState<boolean | null>(null);
   const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null);
   const idempotencyKey = useRef(crypto.randomUUID());
-  const recordAudio = recordAudioOverride ?? settingsData?.settings.record_audio_by_default ?? false;
+  const recordAudio = recordAudioOverride ?? settingsData?.settings.record_audio_by_default ?? true;
   const detectedPlatform = detectMeetingPlatform(meetingUrl);
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
@@ -76,7 +76,7 @@ export function CreateMeetingDialog({
     }
   };
 
-  const settingsEnabled = settingsData?.settings.enabled ?? false;
+  const settingsEnabled = settingsData?.settings.enabled ?? true;
 
   return (
     <>

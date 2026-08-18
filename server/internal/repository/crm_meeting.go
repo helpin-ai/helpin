@@ -410,11 +410,11 @@ func normalizedPagination(pagination model.PMPagination) (int, int) {
 func defaultMeetingSettings(workspaceID string) *model.CRMMeetingSettings {
 	return &model.CRMMeetingSettings{
 		WorkspaceID:             workspaceID,
-		Enabled:                 false,
+		Enabled:                 true,
 		DefaultProvider:         model.CRMMeetingProviderRecall,
-		BotName:                 "Helpin Notetaker",
+		BotName:                 "Helpin.ai Notetaker",
 		AutoJoinMode:            "manual",
-		RecordAudioByDefault:    false,
+		RecordAudioByDefault:    true,
 		DefaultVisibility:       model.CRMMeetingVisibilityWorkspace,
 		TranscriptRetentionDays: 365,
 		AudioRetentionDays:      30,

@@ -192,11 +192,11 @@ func (CRMMeetingActionItem) TableName() string { return "crm_meeting_action_item
 // CRMMeetingSettings controls workspace meeting capture and retention defaults.
 type CRMMeetingSettings struct {
 	WorkspaceID             string    `json:"workspace_id" gorm:"type:uuid;primaryKey"`
-	Enabled                 bool      `json:"enabled" gorm:"not null;default:false"`
+	Enabled                 bool      `json:"enabled" gorm:"not null;default:true"`
 	DefaultProvider         string    `json:"-" gorm:"not null;default:'recall'"`
-	BotName                 string    `json:"bot_name" gorm:"not null;default:'Helpin Notetaker'"`
+	BotName                 string    `json:"bot_name" gorm:"not null;default:'Helpin.ai Notetaker'"`
 	AutoJoinMode            string    `json:"auto_join_mode" gorm:"not null;default:'manual'"`
-	RecordAudioByDefault    bool      `json:"record_audio_by_default" gorm:"not null;default:false"`
+	RecordAudioByDefault    bool      `json:"record_audio_by_default" gorm:"not null;default:true"`
 	DefaultVisibility       string    `json:"default_visibility" gorm:"not null;default:'workspace'"`
 	IncludeInternal         bool      `json:"include_internal" gorm:"not null;default:false"`
 	IncludePrivate          bool      `json:"include_private" gorm:"not null;default:false"`
