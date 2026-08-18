@@ -80,6 +80,7 @@ export const queryKeys = {
 
   pm: {
     workflows: (wsId: string) => ['pm', wsId, 'workflows'] as const,
+    teamWorkflow: (wsId: string, teamId: string) => ['pm', wsId, 'workflows', 'team', teamId] as const,
     epicStates: (wsId: string) => ['pm', wsId, 'epicStates'] as const,
 
     tasks: (wsId: string, filters?: Record<string, unknown>) =>
