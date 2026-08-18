@@ -22,6 +22,8 @@ Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn
 Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 
 const mocks = vi.hoisted(() => ({
+	toastError: vi.fn(),
+	toastSuccess: vi.fn(),
   listChats: vi.fn(),
   createChat: vi.fn(),
   getChat: vi.fn(),
@@ -50,6 +52,13 @@ const mocks = vi.hoisted(() => ({
   getPlan: vi.fn(),
   searchEntities: vi.fn(),
   uploadEditorFile: vi.fn(),
+}));
+
+vi.mock('sonner', () => ({
+	toast: {
+		error: mocks.toastError,
+		success: mocks.toastSuccess,
+	},
 }));
 
 vi.mock('@/lib/services/dockChatService', () => ({
@@ -1541,6 +1550,20 @@ describe('AskAgentsDock', () => {
 		await flush();
 		expect(mocks.createPublicShare).toHaveBeenCalledWith('ws-1', 'dock_chat', 'chat-1');
 		expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://helpin.ai/shared/share-token');
+	});
+
+	it('shows the API error when public link creation fails', async () => {
+		mocks.createPublicShare.mockResolvedValue({ data: null, error: 'failed to manage public link' });
+		await renderDock();
+		await waitForText('Sprint questions');
+		const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Conversation actions"]');
+		await act(async () => trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })));
+		await waitForText('Share publicly');
+		const share = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+			.find((item) => item.textContent === 'Share publicly');
+		await act(async () => share?.click());
+		await flush();
+		expect(mocks.toastError).toHaveBeenCalledWith('failed to manage public link');
 	});
 
 	it('shows public sharing in the agent run header menu', async () => {
