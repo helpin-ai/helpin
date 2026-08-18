@@ -294,8 +294,9 @@ func (r *CRMMeetingRepository) UpsertIntelligence(ctx context.Context, intellige
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "meeting_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"generation_version", "transcript_checksum", "summary_markdown", "key_points",
-			"decisions", "objections", "risks", "next_steps", "follow_up_draft", "updated_at",
+			"generation_version", "transcript_checksum", "summary_markdown", "participants_context",
+			"key_points", "decisions", "objections", "risks", "open_questions", "next_steps",
+			"rapport", "follow_up_draft", "updated_at",
 		}),
 	}).Create(intelligence).Error; err != nil {
 		return fmt.Errorf("upsert meeting intelligence: %w", err)
@@ -409,11 +410,11 @@ func normalizedPagination(pagination model.PMPagination) (int, int) {
 func defaultMeetingSettings(workspaceID string) *model.CRMMeetingSettings {
 	return &model.CRMMeetingSettings{
 		WorkspaceID:             workspaceID,
-		Enabled:                 false,
+		Enabled:                 true,
 		DefaultProvider:         model.CRMMeetingProviderRecall,
-		BotName:                 "Helpin Notetaker",
+		BotName:                 "Helpin.ai Notetaker",
 		AutoJoinMode:            "manual",
-		RecordAudioByDefault:    false,
+		RecordAudioByDefault:    true,
 		DefaultVisibility:       model.CRMMeetingVisibilityWorkspace,
 		TranscriptRetentionDays: 365,
 		AudioRetentionDays:      30,

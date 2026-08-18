@@ -85,11 +85,14 @@ export interface CRMMeetingIntelligence {
   generation_version: string;
   transcript_checksum: string;
   summary_markdown: string;
+  participants_context?: string[];
   key_points: string[];
   decisions: string[];
   objections: string[];
   risks: string[];
+  open_questions?: string[];
   next_steps: string[];
+  rapport?: string[];
   follow_up_draft: { subject?: string; body?: string };
   created_at: string;
   updated_at: string;

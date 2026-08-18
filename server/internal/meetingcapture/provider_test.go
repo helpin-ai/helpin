@@ -36,6 +36,24 @@ func TestRecallProviderStartCaptureUsesRecallContract(t *testing.T) {
 		if _, exists := recordingConfig["audio_mixed_mp3"]; exists {
 			t.Fatalf("audio_mixed_mp3 should not be requested for new video captures")
 		}
+		if body["bot_name"] != "Helpin.ai Notetaker" {
+			t.Fatalf("bot_name = %#v", body["bot_name"])
+		}
+		videoOutput, ok := body["automatic_video_output"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("automatic_video_output = %#v", body["automatic_video_output"])
+		}
+		for _, state := range []string{"in_call_not_recording", "in_call_recording"} {
+			imageOutput, ok := videoOutput[state].(map[string]interface{})
+			if !ok || imageOutput["kind"] != "jpeg" {
+				t.Fatalf("%s image output = %#v", state, videoOutput[state])
+			}
+			encoded, _ := imageOutput["b64_data"].(string)
+			imageBytes, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil || len(imageBytes) < 2 || imageBytes[0] != 0xff || imageBytes[1] != 0xd8 {
+				t.Fatalf("%s image is not a valid JPEG payload", state)
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"bot-1","status_changes":[{"code":"joining_call"}]}`))
 	}))
@@ -48,7 +66,7 @@ func TestRecallProviderStartCaptureUsesRecallContract(t *testing.T) {
 		MeetingURL:      "https://meet.google.com/abc-defg-hij",
 		Platform:        "google_meet",
 		NativeMeetingID: "abc-defg-hij",
-		BotName:         "Helpin Notetaker",
+		BotName:         "Helpin.ai Notetaker",
 		RecordAudio:     true,
 	})
 	if err != nil {
@@ -124,7 +142,7 @@ func TestVexaProviderStartCaptureUsesProviderNeutralID(t *testing.T) {
 		MeetingURL:      "https://meet.google.com/abc-defg-hij",
 		Platform:        "google_meet",
 		NativeMeetingID: "abc-defg-hij",
-		BotName:         "Helpin Notetaker",
+		BotName:         "Helpin.ai Notetaker",
 	})
 	if err != nil {
 		t.Fatalf("StartCapture: %v", err)

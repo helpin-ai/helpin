@@ -1,13 +1,20 @@
 package meetingcapture
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
+	"image/png"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,6 +22,51 @@ import (
 )
 
 const defaultRecallBaseURL = "https://us-east-1.recall.ai"
+
+//go:embed helpin-logo.png
+var helpinLogoPNG []byte
+
+var helpinRecallBotImage = buildRecallBotImage()
+
+func buildRecallBotImage() string {
+	source, err := png.Decode(bytes.NewReader(helpinLogoPNG))
+	if err != nil {
+		return ""
+	}
+
+	const (
+		canvasWidth  = 1280
+		canvasHeight = 720
+		logoBoxSize  = 288
+	)
+	canvas := image.NewRGBA(image.Rect(0, 0, canvasWidth, canvasHeight))
+	draw.Draw(canvas, canvas.Bounds(), image.NewUniform(color.RGBA{R: 248, G: 248, B: 247, A: 255}), image.Point{}, draw.Src)
+
+	sourceBounds := source.Bounds()
+	logoWidth := logoBoxSize
+	logoHeight := sourceBounds.Dy() * logoWidth / sourceBounds.Dx()
+	if logoHeight > logoBoxSize {
+		logoHeight = logoBoxSize
+		logoWidth = sourceBounds.Dx() * logoHeight / sourceBounds.Dy()
+	}
+	scaled := image.NewRGBA(image.Rect(0, 0, logoWidth, logoHeight))
+	for y := 0; y < logoHeight; y++ {
+		for x := 0; x < logoWidth; x++ {
+			sourceX := sourceBounds.Min.X + x*sourceBounds.Dx()/logoWidth
+			sourceY := sourceBounds.Min.Y + y*sourceBounds.Dy()/logoHeight
+			scaled.Set(x, y, source.At(sourceX, sourceY))
+		}
+	}
+	left := (canvasWidth - logoWidth) / 2
+	top := (canvasHeight - logoHeight) / 2
+	draw.Draw(canvas, image.Rect(left, top, left+logoWidth, top+logoHeight), scaled, image.Point{}, draw.Over)
+
+	var output bytes.Buffer
+	if err := jpeg.Encode(&output, canvas, &jpeg.Options{Quality: 90}); err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(output.Bytes())
+}
 
 // RecallConfig configures the Recall.ai adapter.
 type RecallConfig struct {
@@ -90,6 +142,16 @@ func (p *RecallProvider) StartCapture(ctx context.Context, input StartCaptureInp
 			"helpin_meeting_id":   input.MeetingID,
 		},
 		"recording_config": recordingConfig,
+	}
+	if helpinRecallBotImage != "" {
+		imageOutput := map[string]interface{}{
+			"kind":     "jpeg",
+			"b64_data": helpinRecallBotImage,
+		}
+		body["automatic_video_output"] = map[string]interface{}{
+			"in_call_not_recording": imageOutput,
+			"in_call_recording":     imageOutput,
+		}
 	}
 	if input.JoinAt != nil {
 		body["join_at"] = input.JoinAt.UTC().Format(time.RFC3339)

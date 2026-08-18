@@ -17,3 +17,16 @@ func TestMeetingCaptureLaunchLockKeyIsPostgresTextSafeAndUnambiguous(t *testing.
 		t.Fatal("lock key encoding is ambiguous")
 	}
 }
+
+func TestDefaultMeetingSettingsEnableCaptureAndRecording(t *testing.T) {
+	settings := defaultMeetingSettings("workspace-1")
+	if !settings.Enabled {
+		t.Fatal("meeting notes should be enabled by default")
+	}
+	if !settings.RecordAudioByDefault {
+		t.Fatal("meeting recording should be enabled by default")
+	}
+	if settings.BotName != "Helpin.ai Notetaker" {
+		t.Fatalf("bot name = %q", settings.BotName)
+	}
+}

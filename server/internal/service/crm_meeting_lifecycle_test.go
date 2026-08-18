@@ -95,11 +95,14 @@ func (f fakeMeetingLLM) ChatCompletion(_ context.Context, request llm.ChatReques
 	}
 	return &llm.ChatResponse{Content: `{
 		"summary_markdown":"## Summary\nThe team agreed to ship.",
+		"participants_context":["Azhar led the release discussion"],
 		"key_points":["Release is ready"],
 		"decisions":["Ship Friday"],
 		"objections":[],
 		"risks":["Migration timing"],
+		"open_questions":["Migration timing remains unresolved"],
 		"next_steps":["Azhar prepares release"],
+		"rapport":["The team aligned on shipping Friday"],
 		"action_items":[{"title":"Prepare release","details":"Publish the build","assignee_name":"Azhar","due_date":"2026-08-21","evidence":"I will prepare the release"}],
 		"follow_up_draft":{"subject":"Release plan","body":"We will ship Friday."}
 	}`}, nil
@@ -185,11 +188,14 @@ func setupMeetingLifecycleDB(t *testing.T) *gorm.DB {
 			generation_version TEXT NOT NULL,
 			transcript_checksum TEXT NOT NULL,
 			summary_markdown TEXT NOT NULL DEFAULT '',
+			participants_context BLOB NOT NULL DEFAULT x'5b5d',
 			key_points BLOB NOT NULL DEFAULT x'5b5d',
 			decisions BLOB NOT NULL DEFAULT x'5b5d',
 			objections BLOB NOT NULL DEFAULT x'5b5d',
 			risks BLOB NOT NULL DEFAULT x'5b5d',
+			open_questions BLOB NOT NULL DEFAULT x'5b5d',
 			next_steps BLOB NOT NULL DEFAULT x'5b5d',
+			rapport BLOB NOT NULL DEFAULT x'5b5d',
 			follow_up_draft BLOB NOT NULL DEFAULT x'7b7d',
 			created_at DATETIME,
 			updated_at DATETIME
@@ -212,11 +218,11 @@ func setupMeetingLifecycleDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE crm_meeting_settings (
 			workspace_id TEXT PRIMARY KEY,
-			enabled BOOLEAN NOT NULL DEFAULT 0,
+			enabled BOOLEAN NOT NULL DEFAULT 1,
 			default_provider TEXT NOT NULL DEFAULT 'recall',
-			bot_name TEXT NOT NULL DEFAULT 'Helpin Notetaker',
+			bot_name TEXT NOT NULL DEFAULT 'Helpin.ai Notetaker',
 			auto_join_mode TEXT NOT NULL DEFAULT 'manual',
-			record_audio_by_default BOOLEAN NOT NULL DEFAULT 0,
+			record_audio_by_default BOOLEAN NOT NULL DEFAULT 1,
 			default_visibility TEXT NOT NULL DEFAULT 'workspace',
 			include_internal BOOLEAN NOT NULL DEFAULT 0,
 			include_private BOOLEAN NOT NULL DEFAULT 0,
@@ -372,7 +378,7 @@ func TestMeetingProviderSwitchAffectsOnlyNewCaptureAttempts(t *testing.T) {
 	vexa := &fakeMeetingProvider{name: model.CRMMeetingProviderVexa, captureID: "vexa-1"}
 	settings := &model.CRMMeetingSettings{
 		WorkspaceID: meeting.WorkspaceID, Enabled: true, DefaultProvider: model.CRMMeetingProviderRecall,
-		BotName: "Helpin Notetaker", AutoJoinMode: "manual", DefaultVisibility: model.CRMMeetingVisibilityWorkspace,
+		BotName: "Helpin.ai Notetaker", AutoJoinMode: "manual", DefaultVisibility: model.CRMMeetingVisibilityWorkspace,
 		TranscriptRetentionDays: 365, AudioRetentionDays: 30,
 	}
 	if err := repo.UpsertSettings(context.Background(), settings); err != nil {
@@ -442,6 +448,9 @@ func TestMeetingProcessingPersistsCanonicalArtifactsAndDeletesProviderCopy(t *te
 	intelligence, err := repo.GetIntelligence(context.Background(), meeting.WorkspaceID, meeting.ID)
 	if err != nil || intelligence == nil || intelligence.SummaryMarkdown == "" {
 		t.Fatalf("intelligence = %#v, err=%v", intelligence, err)
+	}
+	if len(intelligence.ParticipantsContext) <= 2 || len(intelligence.OpenQuestions) <= 2 || len(intelligence.Rapport) <= 2 {
+		t.Fatalf("linear intelligence sections were not persisted: %#v", intelligence)
 	}
 	actions, err := repo.ListActionItems(context.Background(), meeting.WorkspaceID, meeting.ID)
 	if err != nil || len(actions) != 1 || actions[0].Title != "Prepare release" {

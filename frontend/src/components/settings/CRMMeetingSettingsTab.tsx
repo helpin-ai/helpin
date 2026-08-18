@@ -94,7 +94,7 @@ function CRMMeetingSettingsForm({
 
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center">
             <Label htmlFor="meeting-bot-name" className="text-sm font-medium">Notetaker name</Label>
-            <Input id="meeting-bot-name" value={botName} onChange={(event) => setBotName(event.target.value)} disabled={!canManage || !enabled} maxLength={100} placeholder="Helpin Notetaker" />
+            <Input id="meeting-bot-name" value={botName} onChange={(event) => setBotName(event.target.value)} disabled={!canManage || !enabled} maxLength={100} placeholder="Helpin.ai Notetaker" />
           </div>
 
           <Separator />
