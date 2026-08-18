@@ -204,6 +204,72 @@ func TestListConversationMessagesCommandRequiresConversationTarget(t *testing.T)
 	}
 }
 
+func TestListConversationMessagesCommandDefaultsToSupportContextAttachedToAskChat(t *testing.T) {
+	db := newTestDB(t)
+	seedProductToolConversation(t, db)
+	createProductToolAgentRunTables(t, db)
+	mustExec(t, db, `ALTER TABLE agent_runs ADD COLUMN dock_chat_id TEXT`)
+	mustExec(t, db, `CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT,
+		support_conversation_id TEXT, active_run_id TEXT, last_message_at DATETIME,
+		archived_at DATETIME, created_at DATETIME, updated_at DATETIME
+	)`)
+	mustExec(t, db, `INSERT INTO dock_chats (id, workspace_id, user_id, support_conversation_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)`, "chat-1", "ws-1", "user-1", "conv-1", time.Now(), time.Now())
+	mustExec(t, db, `UPDATE agent_runs SET target_type = ?, target_id = ?, dock_chat_id = ?, external_runtime_id = ? WHERE id = ?`,
+		"workspace", "ws-1", "chat-1", "rt-chat-1", "run-1")
+
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetSupportDependencies(repository.NewSupportMessageRepository(db), repository.NewSupportConversationRepository(db), nil)
+	svc.SetAgentRunDependencies(repository.NewAgentRunRepository(db), nil)
+	svc.SetDockChatRepository(repository.NewDockChatRepository(db))
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1", RunID: "rt-chat-1", TargetType: "workspace", TargetID: "ws-1",
+	}, "support.list_conversation_messages", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("list conversation messages from attached Ask context: %v", err)
+	}
+	var result struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if result.Total != 2 {
+		t.Fatalf("total = %d, want 2", result.Total)
+	}
+}
+
+func TestListConversationMessagesCommandDefaultsToPersistedAttachedContext(t *testing.T) {
+	db := newTestDB(t)
+	seedProductToolConversation(t, db)
+	createProductToolAgentRunTables(t, db)
+	mustExec(t, db, `UPDATE agent_runs SET target_type = ?, target_id = ?, external_runtime_id = ?, input = ? WHERE id = ?`,
+		"workspace", "ws-1", "rt-attached-1", []byte(`{"trigger":{"context":{"dock_chat_id":"chat-1","attached_contexts":[{"entity_type":"support_conversation","entity_id":"conv-1"}]}}}`), "run-1")
+
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetSupportDependencies(repository.NewSupportMessageRepository(db), repository.NewSupportConversationRepository(db), nil)
+	svc.SetAgentRunDependencies(repository.NewAgentRunRepository(db), nil)
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1", RunID: "rt-attached-1", TargetType: "workspace", TargetID: "ws-1",
+	}, "support.list_conversation_messages", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("list conversation messages from persisted attached context: %v", err)
+	}
+	var result struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if result.Total != 2 {
+		t.Fatalf("total = %d, want 2", result.Total)
+	}
+}
+
 func TestUpdateConversationStatusCommandUpdatesStatus(t *testing.T) {
 	db := newTestDB(t)
 	seedProductToolConversation(t, db)

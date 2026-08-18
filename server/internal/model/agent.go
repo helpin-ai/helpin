@@ -635,6 +635,13 @@ type AgentRunTargetContext struct {
 	TargetID   string `json:"target_id,omitempty"`
 }
 
+// AgentRunContextReference identifies a workspace object explicitly attached
+// to a chat turn. It is execution context, not model-only prompt text.
+type AgentRunContextReference struct {
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+}
+
 type AgentRunGitHubReleaseEventContext struct {
 	TagName         string     `json:"tag_name,omitempty"`
 	TargetCommitish string     `json:"target_commitish,omitempty"`
@@ -693,22 +700,23 @@ type AgentRunWorkspaceContext struct {
 // It preserves legacy top-level IDs and planning fields while adding
 // explicit trigger/target/event metadata for generic launches.
 type AgentRunInputPayload struct {
-	Trigger             *AgentRunTriggerContext   `json:"trigger,omitempty"`
-	Target              *AgentRunTargetContext    `json:"target,omitempty"`
-	Event               *AgentRunEventContext     `json:"event,omitempty"`
-	Output              *AgentRunOutputContext    `json:"output,omitempty"`
-	WorkspaceContext    *AgentRunWorkspaceContext `json:"workspace_context,omitempty"`
-	StoryID             string                    `json:"story_id,omitempty"`
-	EpicID              string                    `json:"epic_id,omitempty"`
-	ConversationID      string                    `json:"conversation_id,omitempty"`
-	AdditionalContext   string                    `json:"additional_context,omitempty"`
-	AllowedTools        []string                  `json:"allowed_tools,omitempty"`
-	Stage               string                    `json:"stage,omitempty"`
-	PlanDocumentID      string                    `json:"plan_document_id,omitempty"`
-	SpecDocumentID      string                    `json:"spec_document_id,omitempty"`
-	SpecVersionID       string                    `json:"spec_version_id,omitempty"`
-	PlanningMethodology string                    `json:"planning_methodology,omitempty"`
-	FlowOutputKind      string                    `json:"flow_output_kind,omitempty"`
+	Trigger             *AgentRunTriggerContext    `json:"trigger,omitempty"`
+	Target              *AgentRunTargetContext     `json:"target,omitempty"`
+	Event               *AgentRunEventContext      `json:"event,omitempty"`
+	Output              *AgentRunOutputContext     `json:"output,omitempty"`
+	WorkspaceContext    *AgentRunWorkspaceContext  `json:"workspace_context,omitempty"`
+	AttachedContexts    []AgentRunContextReference `json:"attached_contexts,omitempty"`
+	StoryID             string                     `json:"story_id,omitempty"`
+	EpicID              string                     `json:"epic_id,omitempty"`
+	ConversationID      string                     `json:"conversation_id,omitempty"`
+	AdditionalContext   string                     `json:"additional_context,omitempty"`
+	AllowedTools        []string                   `json:"allowed_tools,omitempty"`
+	Stage               string                     `json:"stage,omitempty"`
+	PlanDocumentID      string                     `json:"plan_document_id,omitempty"`
+	SpecDocumentID      string                     `json:"spec_document_id,omitempty"`
+	SpecVersionID       string                     `json:"spec_version_id,omitempty"`
+	PlanningMethodology string                     `json:"planning_methodology,omitempty"`
+	FlowOutputKind      string                     `json:"flow_output_kind,omitempty"`
 }
 
 func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {

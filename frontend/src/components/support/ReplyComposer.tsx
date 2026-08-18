@@ -68,7 +68,7 @@ import { useShortcutComposerStore } from './shortcutDialogStore';
 import { SHORTCUT_VARIABLES, resolveShortcutVariables } from './shortcutVariables';
 import { DEFAULT_SHORTCUT_CATEGORY, normalizeShortcutCategory, shortcutCategoryOptions } from './shortcutCategories';
 import { filterShortcuts, stripShortcutContent } from './shortcutFiltering';
-import { getClipboardImageFiles } from './clipboardAttachments';
+import { getClipboardImageFiles } from '@/lib/clipboardAttachments';
 import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './draftAttachments';
 import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 

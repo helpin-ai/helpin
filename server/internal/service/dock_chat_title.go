@@ -97,6 +97,12 @@ func dockChatTitleFromPageContext(pageContext map[string]interface{}) string {
 	if strings.TrimSpace(typeName) == "" || strings.TrimSpace(entityID) == "" {
 		return ""
 	}
+	// A workspace is ambient context rather than the subject of the chat. Its
+	// opaque ID makes a poor roster title; derive a semantic title from the
+	// user's first message instead.
+	if strings.TrimSpace(typeName) == "workspace" {
+		return ""
+	}
 	module := dockContextModuleLabel(typeName)
 	id := compactDockContextID(entityID)
 	name := strings.TrimSpace(displayTitle)

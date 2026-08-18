@@ -1025,6 +1025,12 @@ func (s *SupportInboxService) SearchConversations(ctx context.Context, params Su
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
 func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, params SupportConversationListParams) (*model.ConversationListResponse, error) {
+	startedAt := time.Now()
+	defer func() {
+		slog.InfoContext(ctx, "listed support inbox conversations",
+			"workspace_id", params.WorkspaceID,
+			"duration_ms", time.Since(startedAt).Milliseconds())
+	}()
 	if params.WorkspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -1897,7 +1903,10 @@ func hydrateEmailBodies(
 	if len(logs) == 0 {
 		return
 	}
+	hydrateEmailBodiesFromLogs(messages, logs)
+}
 
+func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.SupportEmailLog) {
 	byMessageID := make(map[string]*model.SupportEmailLog, len(logs))
 	for i := range logs {
 		for _, mid := range logs[i].MessageIDs {

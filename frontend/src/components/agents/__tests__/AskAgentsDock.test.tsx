@@ -18,6 +18,8 @@ import type { CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes
   unobserve() {}
   disconnect() {}
 };
+Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:clipboard-preview') });
+Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 
 const mocks = vi.hoisted(() => ({
   listChats: vi.fn(),
@@ -44,6 +46,7 @@ const mocks = vi.hoisted(() => ({
   cancelRunAuth: vi.fn(),
   getPlan: vi.fn(),
   searchEntities: vi.fn(),
+  uploadEditorFile: vi.fn(),
 }));
 
 vi.mock('@/lib/services/dockChatService', () => ({
@@ -84,6 +87,10 @@ vi.mock('@/components/docs/entitySearch', () => ({
     task: 'Task', document: 'Doc', epic: 'Epic', contact: 'Contact', deal: 'Deal',
   })[type] ?? type,
   searchDocsEntityItems: mocks.searchEntities,
+}));
+
+vi.mock('@/hooks/useEditorImageUpload', () => ({
+  uploadEditorFile: mocks.uploadEditorFile,
 }));
 
 const CHAT: DockChat = {
@@ -170,6 +177,7 @@ beforeEach(() => {
   mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [] }, error: null });
   mocks.getPlan.mockResolvedValue({ data: null, error: null });
   mocks.searchEntities.mockResolvedValue({ items: [], error: null });
+  mocks.uploadEditorFile.mockResolvedValue({ attachmentId: 'attachment-clipboard-1', publicUrl: '/clipboard.png' });
 });
 
 afterEach(() => {
@@ -280,6 +288,85 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it('shows attachment types before opening a file picker', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    await act(async () => {
+      document.body.querySelector<HTMLButtonElement>('[aria-label="Attach files"]')?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    });
+
+    await waitForText('Images & videos');
+    await waitForText('Documents');
+  });
+
+  it('uploads images pasted into the Ask composer', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const firstImage = new File(['clipboard image'], 'screenshot.png', { type: 'image/png' });
+    const secondImage = new File(['clipboard image'], 'diagram.webp', { type: 'image/webp' });
+    const textFile = new File(['ignore me'], 'notes.txt', { type: 'text/plain' });
+    mocks.uploadEditorFile
+      .mockResolvedValueOnce({ attachmentId: 'attachment-clipboard-1', publicUrl: '/clipboard-1.png' })
+      .mockResolvedValueOnce({ attachmentId: 'attachment-clipboard-2', publicUrl: '/clipboard-2.webp' });
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', { value: { files: [firstImage, textFile, secondImage] } });
+
+    await act(async () => {
+      dockTextarea().dispatchEvent(paste);
+    });
+    await waitForCondition(() => mocks.uploadEditorFile.mock.calls.length === 2, 'Pasted images were not uploaded');
+
+    expect(paste.defaultPrevented).toBe(true);
+    expect(mocks.uploadEditorFile).toHaveBeenNthCalledWith(1, firstImage, expect.objectContaining({
+      workspaceId: 'ws-1',
+      entityType: 'editor_upload',
+      private: true,
+    }));
+    expect(mocks.uploadEditorFile).toHaveBeenNthCalledWith(2, secondImage, expect.any(Object));
+    await waitForText('screenshot.png');
+    await waitForText('diagram.webp');
+  });
+
+  it('leaves ordinary text paste to the Ask composer', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', { value: { files: [], getData: () => 'Pasted text' } });
+    await act(async () => {
+      dockTextarea().dispatchEvent(paste);
+    });
+
+    expect(paste.defaultPrevented).toBe(false);
+    expect(mocks.uploadEditorFile).not.toHaveBeenCalled();
+  });
+
+  it('turns a long text paste into a private text attachment', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const longText = 'A'.repeat(10_001);
+    const paste = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, 'clipboardData', { value: { files: [], getData: (type: string) => type === 'text/plain' ? longText : '' } });
+    await act(async () => {
+      dockTextarea().dispatchEvent(paste);
+    });
+    await waitForCondition(() => mocks.uploadEditorFile.mock.calls.length === 1, 'Long pasted text was not attached');
+
+    const pastedFile = mocks.uploadEditorFile.mock.calls[0]?.[0] as File;
+    expect(paste.defaultPrevented).toBe(true);
+    expect(pastedFile.name).toBe('Pasted text.txt');
+    expect(pastedFile.type).toBe('text/plain');
+    expect(await pastedFile.text()).toBe(longText);
+    await waitForCondition(
+      () => document.body.querySelector<HTMLButtonElement>('button[title="Send"]')?.disabled === false,
+      'Attachment-only message did not enable Send',
+    );
+  });
+
+
   it('stays hidden when collapsed in support but opens from the global sidebar event', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDockWithHiddenTrigger();
@@ -1138,15 +1225,7 @@ describe('AskAgentsDock', () => {
     expect(useDockStore.getState().tab).toBe('chats');
   });
 
-  it('creates a new chat', async () => {
-    const newChat: DockChat = { ...CHAT, id: 'chat-2', title: '' };
-    mocks.createChat.mockResolvedValue({ data: newChat, error: null });
-    mocks.getChat.mockImplementation((_: string, chatId: string) =>
-      Promise.resolve({
-        data: chatDetail({ chat: chatId === 'chat-2' ? newChat : CHAT }),
-        error: null,
-      }),
-    );
+  it('opens a local new-chat composer without creating an abandoned chat', async () => {
     await renderDock();
     await waitForText('Sprint questions');
 
@@ -1157,14 +1236,26 @@ describe('AskAgentsDock', () => {
     expect(footer).not.toBeNull();
     expect(footer?.className).toContain('border-t');
     expect(footer?.contains(newButton ?? null)).toBe(true);
-    expect(newButton?.className).toContain('border-[#e6e3dd]');
+    expect(newButton?.className).toContain('bg-[#1c1b19]');
     expect(document.body.querySelector('.agent-dock-roster-controls')?.contains(newButton ?? null)).toBe(false);
     await act(async () => {
       (newButton as HTMLButtonElement).click();
     });
-    await flush();
+    await waitForText('New chat');
+    expect(mocks.createChat).not.toHaveBeenCalled();
+    expect(useDockStore.getState().activeChatId).toBeNull();
+
+    const createdChat: DockChat = { ...CHAT, id: 'chat-2', title: '' };
+    mocks.createChat.mockResolvedValue({ data: createdChat, error: null });
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail({ chat: createdChat }), error: null });
+    const textarea = dockTextarea();
+    await act(async () => {
+      setTextareaValue(textarea, 'Investigate the signup issue');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'draft chat message was not sent');
     expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', undefined, null);
-    expect(useDockStore.getState().activeChatId).toBe('chat-2');
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-2', expect.objectContaining({ content: 'Investigate the signup issue' }));
   });
 
   it('shows plain-language visibility and lets the owner share with the workspace', async () => {
@@ -1181,7 +1272,7 @@ describe('AskAgentsDock', () => {
       visibilityButton?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
     });
     await waitForText('Who can see this chat?');
-    expect(document.body.textContent).toContain('Customers and external users can never see Ask Agent chats.');
+    expect(document.body.textContent).not.toContain('Customers and external users can never see Ask Agent chats.');
 
     const workspaceItem = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
       .find((item) => item.textContent?.includes('Everyone at Acme'));

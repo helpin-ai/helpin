@@ -33,6 +33,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useMarkConversationRead: () => ({ mutate: vi.fn(), isPending: false }),
   useMarkConversationUnread: () => ({ mutate: vi.fn(), isPending: false }),
   useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useSendConversationTranscript: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateConversationSubject: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateConversationStatus: () => ({ mutate: vi.fn(), isPending: false }),
 }))

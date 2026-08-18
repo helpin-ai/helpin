@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { seedSupportMessagePages } from '@/lib/supportMessagePages'
 import { MessageThread } from '../MessageThread'
 
 const supportHooks = vi.hoisted(() => ({
@@ -31,6 +32,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useUpdateConversationStatus: () => ({ mutate: vi.fn(), isPending: false }),
   useCreateTaskFromConversation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useSendConversationTranscript: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDismissConversationTriage: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteSupportMessage: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMarkConversationRead: () => ({ mutate: supportHooks.markConversationRead, isPending: false }),
@@ -77,7 +79,14 @@ describe('MessageThread', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     supportHooks.useConversation.mockReturnValue({ data: undefined, isFetched: false })
-    supportHooks.useConversationMessages.mockReturnValue({ data: [], isLoading: true })
+    supportHooks.useConversationMessages.mockReturnValue({
+      data: seedSupportMessagePages([]),
+      isLoading: true,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      isFetchingNextPage: false,
+      isFetchNextPageError: false,
+    })
     supportHooks.markConversationRead.mockReset()
     useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', name: 'Acme', slug: 'acme' } })
   })
@@ -128,7 +137,7 @@ describe('MessageThread', () => {
         updated_at: '2026-06-03T10:01:00.000Z',
       },
     })
-    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: [] })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([]) })
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -183,7 +192,7 @@ describe('MessageThread', () => {
     })
     supportHooks.useConversationMessages.mockReturnValue({
       isLoading: false,
-      data: [
+      data: seedSupportMessagePages([
         {
           id: 'msg-1',
           workspace_id: 'ws-1',
@@ -195,7 +204,7 @@ describe('MessageThread', () => {
           created_at: '2026-06-03T10:01:00.000Z',
           updated_at: '2026-06-03T10:01:00.000Z',
         },
-      ],
+      ]),
     })
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -246,7 +255,7 @@ describe('MessageThread', () => {
         updated_at: '2026-06-03T10:01:00.000Z',
       },
     })
-    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: [] })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([]) })
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)

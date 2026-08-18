@@ -112,4 +112,16 @@ func TestAgentRunMessageRepositoryDockChatTimelineSpansRunsAndPaginates(t *testi
 	if recovered.DockChatSequence == nil || *recovered.DockChatSequence != 4 {
 		t.Fatalf("recovered sequence = %v, want 4", recovered.DockChatSequence)
 	}
+
+	turn, err := repo.ListDockChatTurnThroughMessage(ctx, workspaceID, chatID, recovered.ID)
+	if err != nil {
+		t.Fatalf("list turn through message: %v", err)
+	}
+	if len(turn) != 1 || turn[0].ID != recovered.ID {
+		t.Fatalf("unexpected turn detail: %#v", turn)
+	}
+	crossChat, err := repo.ListDockChatTurnThroughMessage(ctx, workspaceID, "00000000-0000-0000-0000-000000000099", recovered.ID)
+	if err != nil || len(crossChat) != 0 {
+		t.Fatalf("cross-chat detail leaked: %#v err=%v", crossChat, err)
+	}
 }

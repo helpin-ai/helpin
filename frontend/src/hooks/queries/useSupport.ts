@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
 import { uploadToS3 } from '@/lib/api';
@@ -19,6 +19,13 @@ import {
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
 } from '@/lib/supportQueryCache';
+import {
+  appendMessageToNewestPage,
+  removeMessageFromPages,
+  replaceMessageInPages,
+  seedSupportMessagePages,
+  type SupportMessagePages,
+} from '@/lib/supportMessagePages';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type {
@@ -36,6 +43,7 @@ import type {
   ConversationStatus,
   ConversationListResponse,
   SupportConversation,
+  SupportMessagePage,
   VisitorContextResponse,
   SupportAIRewriteDraftRequest,
   CreateSupportMailboxRequest,
@@ -857,11 +865,18 @@ export function useConversationAssignees(workspaceId: string, conversationId: st
 }
 
 export function useConversationMessages(workspaceId: string, conversationId: string | null) {
-  return useQuery({
+  return useInfiniteQuery<SupportMessagePage, Error, SupportMessagePages, QueryKey, string | undefined>({
     queryKey: queryKeys.support.messages(workspaceId, conversationId ?? ''),
-    queryFn: async () => unwrap(await supportService.listConversationMessages(workspaceId, conversationId!)),
+    queryFn: async ({ pageParam }) => unwrap(await supportService.listConversationMessagePage(
+      workspaceId,
+      conversationId!,
+      20,
+      pageParam,
+    )),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!workspaceId && !!conversationId,
-    staleTime: 5_000,
+    staleTime: 60_000,
   });
 }
 
@@ -910,10 +925,10 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
     mutationFn: (payload: SendMessagePayload) =>
       supportService.createConversationMessage(workspaceId, conversationId!, payload).then(unwrap),
     onMutate: async (payload) => {
-      if (!conversationId) return { previousMessages: undefined as SupportMessage[] | undefined, optimisticId: '' };
+      if (!conversationId) return { previousMessages: undefined as SupportMessagePages | undefined, optimisticId: '' };
       const key = queryKeys.support.messages(workspaceId, conversationId);
       await queryClient.cancelQueries({ queryKey: key });
-      const previousMessages = queryClient.getQueryData<SupportMessage[]>(key);
+      const previousMessages = queryClient.getQueryData<SupportMessagePages>(key);
       const now = new Date().toISOString();
       const optimisticId = `optimistic-${conversationId}-${Date.now()}`;
       const optimistic = buildOptimisticSupportMessage({
@@ -924,18 +939,17 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
         now,
         optimisticId,
       });
-      queryClient.setQueryData<SupportMessage[]>(key, (current) => appendOptimisticSupportMessage(current, optimistic));
+      queryClient.setQueryData<SupportMessagePages>(key, (current) => appendMessageToNewestPage(current, optimistic));
       return { previousMessages, optimisticId };
     },
     onSuccess: (message, _payload, context) => {
       if (conversationId) {
         if (context?.optimisticId) {
-          queryClient.setQueryData<SupportMessage[]>(
+          queryClient.setQueryData<SupportMessagePages>(
             queryKeys.support.messages(workspaceId, conversationId),
-            (current) => reconcileOptimisticSupportMessage(current, context.optimisticId, message),
+            (current) => replaceMessageInPages(current, context.optimisticId, message),
           );
         }
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
@@ -955,13 +969,11 @@ export function useDeleteSupportMessage(workspaceId: string, conversationId: str
     mutationFn: ({ messageId, undo }: { messageId: string; undo?: boolean }) =>
       supportService.deleteConversationMessage(workspaceId, conversationId!, messageId, !!undo).then(unwrap),
     onMutate: async ({ messageId }) => {
-      if (!conversationId) return { previousMessages: undefined as SupportMessage[] | undefined };
+      if (!conversationId) return { previousMessages: undefined as SupportMessagePages | undefined };
       const key = queryKeys.support.messages(workspaceId, conversationId);
       await queryClient.cancelQueries({ queryKey: key });
-      const previousMessages = queryClient.getQueryData<SupportMessage[]>(key);
-      queryClient.setQueryData<SupportMessage[]>(key, (current) =>
-        current?.filter((message) => message.id !== messageId) ?? current,
-      );
+      const previousMessages = queryClient.getQueryData<SupportMessagePages>(key);
+      queryClient.setQueryData<SupportMessagePages>(key, (current) => removeMessageFromPages(current, messageId));
       return { previousMessages };
     },
     onError: (error: Error, _variables, context) => {
@@ -1173,7 +1185,10 @@ export function useCreateConversationWithMessage(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       if (data?.conversation?.id) {
         queryClient.setQueryData(queryKeys.support.conversation(workspaceId, data.conversation.id), data.conversation);
-        queryClient.setQueryData(queryKeys.support.messages(workspaceId, data.conversation.id), [data.message]);
+        queryClient.setQueryData(
+          queryKeys.support.messages(workspaceId, data.conversation.id),
+          seedSupportMessagePages([data.message]),
+        );
       }
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },

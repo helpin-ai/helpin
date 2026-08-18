@@ -132,6 +132,23 @@ func (h *DockChatHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+// GetMessageWorkDetail handles GET
+// /api/dock/chats/{chatID}/messages/{messageID}/work.
+func (h *DockChatHandler) GetMessageWorkDetail(w http.ResponseWriter, r *http.Request) {
+	response, err := h.dockChatService.GetMessageWorkDetail(
+		r.Context(),
+		getWorkspaceID(r),
+		middleware.GetUserID(r.Context()),
+		chi.URLParam(r, "chatID"),
+		chi.URLParam(r, "messageID"),
+	)
+	if err != nil {
+		writeDockChatError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 // GenerateTitle handles POST /api/dock/chats/{chatID}/title.
 func (h *DockChatHandler) GenerateTitle(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

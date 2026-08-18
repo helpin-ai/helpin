@@ -68,11 +68,11 @@ export function useContacts(wsId: string, filters?: ContactFilters) {
   })
 }
 
-export function useContact(wsId: string, id: string) {
+export function useContact(wsId: string, id: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.crm.contact(wsId, id),
     queryFn: async () => unwrap(await crmContactService.get(wsId, id)),
-    enabled: !!wsId && !!id,
+    enabled: enabled && !!wsId && !!id,
   })
 }
 
@@ -84,19 +84,19 @@ export function useContactActivities(wsId: string, contactId: string) {
   })
 }
 
-export function useContactAssociations(wsId: string, contactId: string) {
+export function useContactAssociations(wsId: string, contactId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.crm.contactAssociations(wsId, contactId),
     queryFn: async () => unwrap(await crmContactService.listAssociations(wsId, contactId)),
-    enabled: !!wsId && !!contactId,
+    enabled: enabled && !!wsId && !!contactId,
   })
 }
 
-export function useContactSupportConversations(wsId: string, contactId: string) {
+export function useContactSupportConversations(wsId: string, contactId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.crm.contactSupportConversations(wsId, contactId),
     queryFn: async () => unwrap(await crmContactService.listSupportConversations(wsId, contactId)),
-    enabled: !!wsId && !!contactId,
+    enabled: enabled && !!wsId && !!contactId,
   })
 }
 

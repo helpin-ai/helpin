@@ -341,6 +341,7 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 	if err != nil {
 		return nil, err
 	}
+	attachedContexts := dockChatAttachedContexts(chat, req.PageContext, references)
 	attachments, err := s.resolveDockChatMediaAttachments(ctx, workspaceID, userID, req.AttachmentIDs)
 	if err != nil {
 		return nil, err
@@ -366,7 +367,7 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 	switch {
 	case currentRun == nil || !model.IsAgentRunActiveStatus(currentRun.Status):
 		// First message, or the previous backing run ended.
-		if err := s.startChatRun(ctx, chat, userID, composed, currentRun, clientMessageID); err != nil {
+		if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID); err != nil {
 			return nil, err
 		}
 	case model.IsAgentRunPausedStatus(currentRun.Status):
@@ -382,9 +383,11 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 			if _, err := s.agentService.CancelRun(ctx, workspaceID, currentRun.ID, userID); err != nil {
 				return nil, fmt.Errorf("rotate stale chat run: %w", err)
 			}
-			if err := s.startChatRun(ctx, chat, userID, composed, currentRun, clientMessageID); err != nil {
+			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID); err != nil {
 				return nil, err
 			}
+		} else if err := s.setRunAttachedContexts(ctx, currentRun, attachedContexts); err != nil {
+			return nil, err
 		} else if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed, ClientMessageID: clientMessageID}); err != nil {
 			if !isChatRunExpiredError(err) {
 				return nil, err
@@ -392,7 +395,7 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 			// The runtime idle-expired the run; it is completed on its side.
 			// Continue the conversation through a successor run.
 			clientMessageID = uuid.NewString()
-			if err := s.startChatRun(ctx, chat, userID, composed, currentRun, clientMessageID); err != nil {
+			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID); err != nil {
 				return nil, err
 			}
 		}
@@ -437,7 +440,27 @@ func (s *DockChatService) ListMessages(ctx context.Context, workspaceID, userID,
 	if err != nil {
 		return nil, err
 	}
-	return &model.DockChatMessageListResponse{Messages: messages, NextBefore: nextBefore}, nil
+	return &model.DockChatMessageListResponse{Messages: compactDockChatMessagePage(messages), NextBefore: nextBefore}, nil
+}
+
+// GetMessageWorkDetail returns the full persisted assistant interval omitted
+// from compact Dock chat history.
+func (s *DockChatService) GetMessageWorkDetail(ctx context.Context, workspaceID, userID, chatID, messageID string) (*model.DockChatWorkDetailResponse, error) {
+	chat, err := s.accessibleChat(ctx, workspaceID, userID, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if s.runMessageRepo == nil {
+		return &model.DockChatWorkDetailResponse{Messages: []model.AgentRunMessage{}}, nil
+	}
+	messages, err := s.runMessageRepo.ListDockChatTurnThroughMessage(ctx, workspaceID, chat.ID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 || messages[len(messages)-1].ID != messageID || messages[len(messages)-1].Role != "assistant" {
+		return nil, ErrDockChatNotFound
+	}
+	return &model.DockChatWorkDetailResponse{Messages: messages}, nil
 }
 
 func (s *DockChatService) runUsesCurrentScopedTools(ctx context.Context, chat *model.DockChat, userID string, run *model.AgentRun) (bool, error) {
@@ -685,7 +708,7 @@ func validDockChatModule(moduleID model.ModuleID) bool {
 
 // startChatRun starts a (possibly successor) backing run for the chat and
 // repoints the chat at it.
-func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, previousRun *model.AgentRun, clientMessageID string) error {
+func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, attachedContexts []model.AgentRunContextReference, previousRun *model.AgentRun, clientMessageID string) error {
 	agent, err := s.agentService.ensureBuiltInAgent(ctx, chat.WorkspaceID, userID, model.AgentPresetAskAgent)
 	if err != nil {
 		return fmt.Errorf("ensure ask agent: %w", err)
@@ -713,12 +736,19 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 	}
 
 	now := time.Now().UTC()
+	triggerContext, err := json.Marshal(struct {
+		DockChatID       string                           `json:"dock_chat_id"`
+		AttachedContexts []model.AgentRunContextReference `json:"attached_contexts,omitempty"`
+	}{DockChatID: chat.ID, AttachedContexts: attachedContexts})
+	if err != nil {
+		return fmt.Errorf("encode dock chat context: %w", err)
+	}
 	trigger := &model.AgentRunTriggerContext{
 		Source:      model.AgentRunTriggerSourceManual,
 		TriggerType: dockChatTriggerType,
 		ActorID:     &userID,
 		FiredAt:     &now,
-		Context:     json.RawMessage(fmt.Sprintf(`{"dock_chat_id":%q}`, chat.ID)),
+		Context:     triggerContext,
 	}
 
 	run, err := s.agentService.startTargetRunWithOptions(
@@ -750,6 +780,54 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 				"workspace_id", chat.WorkspaceID, "plan_id", planID, "error", err)
 		}
 	}
+	return nil
+}
+
+func dockChatAttachedContexts(chat *model.DockChat, pageContext map[string]interface{}, references []model.DockEntityReference) []model.AgentRunContextReference {
+	contexts := make([]model.AgentRunContextReference, 0, len(references)+2)
+	if chat != nil && chat.SupportConversationID != nil && strings.TrimSpace(*chat.SupportConversationID) != "" {
+		contexts = append(contexts, model.AgentRunContextReference{EntityType: "support_conversation", EntityID: strings.TrimSpace(*chat.SupportConversationID)})
+	}
+	if pageContext != nil {
+		entityType, _ := pageContext["entity_type"].(string)
+		entityID, _ := pageContext["entity_id"].(string)
+		if entityType, entityID = strings.TrimSpace(entityType), strings.TrimSpace(entityID); entityType != "" && entityID != "" {
+			contexts = append(contexts, model.AgentRunContextReference{EntityType: entityType, EntityID: entityID})
+		}
+	}
+	for _, reference := range references {
+		contexts = append(contexts, model.AgentRunContextReference{EntityType: reference.EntityType, EntityID: reference.EntityID})
+	}
+	seen := make(map[string]struct{}, len(contexts))
+	unique := contexts[:0]
+	for _, context := range contexts {
+		key := context.EntityType + ":" + context.EntityID
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, context)
+	}
+	return unique
+}
+
+func (s *DockChatService) setRunAttachedContexts(ctx context.Context, run *model.AgentRun, contexts []model.AgentRunContextReference) error {
+	if s == nil || s.runRepo == nil || run == nil {
+		return nil
+	}
+	var input model.AgentRunInputPayload
+	if err := json.Unmarshal(run.Input, &input); err != nil {
+		return fmt.Errorf("decode chat run input: %w", err)
+	}
+	input.AttachedContexts = contexts
+	updated, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("encode chat run input: %w", err)
+	}
+	if err := s.runRepo.UpdateInput(ctx, run.WorkspaceID, run.ID, updated); err != nil {
+		return err
+	}
+	run.Input = updated
 	return nil
 }
 
@@ -1008,8 +1086,8 @@ func (s *DockChatService) resolveDockChatMediaAttachments(ctx context.Context, w
 		if attachment == nil || attachment.WorkspaceID != workspaceID || attachment.UploadedByID != userID || !attachment.IsUploaded || attachment.EntityType != entityTypeEditorUpload {
 			return nil, fmt.Errorf("Ask media attachment is unavailable")
 		}
-		if !isDockChatMediaType(attachment.ContentType) {
-			return nil, fmt.Errorf("Ask supports images and short videos only")
+		if !isDockChatAttachmentType(attachment.ContentType) {
+			return nil, fmt.Errorf("Ask does not support this file type")
 		}
 		if attachment.FileSize > 20*1024*1024 {
 			return nil, fmt.Errorf("Ask media attachments must be 20 MB or smaller")
@@ -1017,6 +1095,18 @@ func (s *DockChatService) resolveDockChatMediaAttachments(ctx context.Context, w
 		result = append(result, dockChatMediaAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.ContentType, FileSize: attachment.FileSize})
 	}
 	return result, nil
+}
+
+func isDockChatAttachmentType(contentType string) bool {
+	if isDockChatMediaType(contentType) {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(contentType)) {
+	case "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/json", "text/plain", "text/markdown", "text/x-markdown", "text/csv":
+		return true
+	default:
+		return false
+	}
 }
 
 func isDockChatMediaType(contentType string) bool {

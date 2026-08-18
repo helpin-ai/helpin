@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -304,6 +305,47 @@ func (h *SupportInboxHandler) ListConversationMessages(w http.ResponseWriter, r 
 		messages = []model.SupportMessage{}
 	}
 	writeJSON(w, http.StatusOK, messages)
+}
+
+// ListConversationMessagePage handles GET
+// /api/support/inbox/conversations/{id}/message-pages.
+func (h *SupportInboxHandler) ListConversationMessagePage(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	limit, err := parseSupportMessagePageLimit(r.URL.Query().Get("limit"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "limit must be between 1 and 100")
+		return
+	}
+
+	page, err := h.supportService.ListConversationMessagePage(
+		r.Context(),
+		workspaceID,
+		conversationID,
+		true,
+		limit,
+		r.URL.Query().Get("cursor"),
+	)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidSupportMessageCursor) {
+			writeError(w, http.StatusBadRequest, "invalid message cursor")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func parseSupportMessagePageLimit(raw string) (int, error) {
+	if raw == "" {
+		return 20, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 1 || limit > 100 {
+		return 0, errors.New("invalid message page limit")
+	}
+	return limit, nil
 }
 
 // CreateConversationMessage handles POST /api/support/tickets/{id}/messages.

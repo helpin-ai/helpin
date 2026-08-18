@@ -237,6 +237,11 @@ export interface AgentRunMessage {
   turn_segments?: CodingSessionLiveTurnSegment[];
   tool_invocations?: Array<Record<string, unknown>>;
   token_usage?: Record<string, unknown>;
+  dock_work_summary?: {
+    message_id: string;
+    duration_ms: number;
+    activity_count: number;
+  };
   sequence_no: number;
   created_at: string;
 }

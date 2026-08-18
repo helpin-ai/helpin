@@ -43,7 +43,8 @@ import {
 
 interface ChatViewProps {
   workspaceId: string;
-  chatId: string;
+  chatId?: string;
+  onCreateChat?: () => Promise<{ id: string } | null>;
   scrollToLatestRequest: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
@@ -78,6 +79,7 @@ function newClientMessageID() {
 export function ChatView({
   workspaceId,
   chatId,
+  onCreateChat,
   scrollToLatestRequest,
   textareaRef,
   initialDraft,
@@ -154,12 +156,14 @@ export function ChatView({
     streamController;
 
   const refreshDetail = useCallback(async () => {
+	if (!chatId) return null;
     const res = await dockChatService.getChat(workspaceId, chatId);
     if (res.data) setDetail(res.data);
     return res.data ?? null;
   }, [chatId, workspaceId]);
 
   const refreshMessages = useCallback(async () => {
+	if (!chatId) return [];
     const res = await dockChatService.listMessages(workspaceId, chatId, undefined, 50);
     if (res.data) {
       setPersistedMessages((current) => mergeMessagePages(current, res.data?.messages ?? []));
@@ -169,7 +173,7 @@ export function ChatView({
   }, [chatId, workspaceId]);
 
   const loadEarlierMessages = useCallback(async () => {
-    if (!nextMessagesBefore || loadingEarlier) return;
+    if (!chatId || !nextMessagesBefore || loadingEarlier) return;
     setLoadingEarlier(true);
     try {
       const res = await dockChatService.listMessages(workspaceId, chatId, nextMessagesBefore, 50);
@@ -183,6 +187,13 @@ export function ChatView({
 
   // Load chat on mount / chat switch.
   useEffect(() => {
+	if (!chatId) {
+	  setDetail(null);
+	  setPersistedMessages([]);
+	  setNextMessagesBefore(null);
+	  setDetailLoading(false);
+	  return;
+	}
     autoFollowRef.current = true;
     const timer = window.setTimeout(() => {
       setPersistedMessages([]);
@@ -190,7 +201,7 @@ export function ChatView({
       void Promise.all([refreshDetail(), refreshMessages()]).finally(() => setDetailLoading(false));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [refreshDetail, refreshMessages]);
+	}, [chatId, refreshDetail, refreshMessages]);
 
   // Refresh the run summary when its WS event fires (stream refetch is
   // handled inside useAgentRunStream; this keeps status/pause_reason fresh).
@@ -260,7 +271,7 @@ export function ChatView({
   // approval card always renders instead of leaving the composer open.
   const [fallbackInteraction, setFallbackInteraction] = useState<CodingSessionInteraction | null>(null);
   const pausedOnInteraction =
-    run?.status === 'paused' && (run.pause_reason === 'human_approval' || run.pause_reason === 'human_input');
+    !!chatId && run?.status === 'paused' && (run.pause_reason === 'human_approval' || run.pause_reason === 'human_input');
   useEffect(() => {
     if (!pausedOnInteraction) {
       const timer = window.setTimeout(() => setFallbackInteraction(null), 0);
@@ -356,6 +367,12 @@ export function ChatView({
   const sendContent = useCallback(
     async (content: string, messageReferences: DockEntityReference[] = references, retryClientMessageID?: string) => {
       if (!content || sending) return;
+	  let targetChatId = chatId;
+	  if (!targetChatId) {
+		const created = await onCreateChat?.();
+		if (!created) return;
+		targetChatId = created.id;
+	  }
       const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
@@ -376,7 +393,7 @@ export function ChatView({
       autoFollowRef.current = true;
       setAtBottom(true);
       try {
-        const res = await dockChatService.sendMessage(workspaceId, chatId, {
+		const res = await dockChatService.sendMessage(workspaceId, targetChatId, {
           client_message_id: clientMessageId,
           content,
           page_context: effectivePageContext ?? undefined,
@@ -406,7 +423,7 @@ export function ChatView({
         onChatChanged?.();
         if (needsTitle) {
           void (async () => {
-            const titleResult = await dockChatService.generateTitle(workspaceId, chatId, {
+			const titleResult = await dockChatService.generateTitle(workspaceId, targetChatId, {
               content,
               page_context: effectivePageContext ?? undefined,
             });
@@ -428,11 +445,12 @@ export function ChatView({
         setSending(false);
       }
     },
-    [chatId, detail?.chat.title, effectivePageContext, mediaAttachments, onChatChanged, references, refetch, refreshMessages, run?.id, sending, workspaceId],
+    [chatId, detail?.chat.title, effectivePageContext, mediaAttachments, onChatChanged, onCreateChat, references, refetch, refreshMessages, run?.id, sending, workspaceId],
   );
 
   const submit = async () => {
-    const content = value.trim();
+    const readyAttachmentCount = mediaAttachments.filter((attachment) => attachment.status === 'ready' && attachment.id).length;
+    const content = value.trim() || (readyAttachmentCount === 1 ? 'Review the attached file.' : readyAttachmentCount > 1 ? 'Review the attached files.' : '');
     if (!content) return;
     setValue('');
     await sendContent(content, references);
@@ -440,12 +458,17 @@ export function ChatView({
 
   const addMediaAttachments = useCallback(async (files: File[]) => {
     const accepted = files.filter((file) => (
-      ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm', 'video/mpeg'].includes(file.type)
+      [
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+        'video/mp4', 'video/quicktime', 'video/webm', 'video/mpeg',
+        'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'text/plain', 'text/markdown', 'text/csv', 'application/json',
+      ].includes(file.type)
       && file.size > 0
       && file.size <= 20 * 1024 * 1024
     ));
     if (accepted.length !== files.length) {
-      toast.error('Ask supports PNG, JPG, GIF, WebP, MP4, MOV, WebM, and MPEG files up to 20 MB.');
+      toast.error('Ask supports images, short videos, PDF, DOCX, TXT, Markdown, CSV, and JSON files up to 20 MB.');
     }
     for (const file of accepted) {
       const localId = newClientMessageID();
@@ -475,7 +498,7 @@ export function ChatView({
           ...attachment,
           status: 'failed',
         } : attachment));
-        toast.error(error instanceof Error ? error.message : 'Failed to upload media');
+        toast.error(error instanceof Error ? error.message : 'Failed to upload file');
       }
     }
   }, [mediaAttachments.length, workspaceId]);
@@ -489,7 +512,7 @@ export function ChatView({
   const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
   const cancellationPending = stopping || run?.execution_stage === 'cancelling';
   const handleStop = useCallback(async () => {
-    if (cancellationPending) return;
+    if (!chatId || cancellationPending) return;
     setStopping(true);
     try {
       const res = await dockChatService.cancelChatRun(workspaceId, chatId);
@@ -508,6 +531,7 @@ export function ChatView({
 
   const resolveInteraction = useCallback(
     async (interactionId: string, payload: { response_payload: Record<string, unknown>; followup_message?: string }) => {
+      if (!chatId) return { error: 'Chat is not ready' };
       const res = await dockChatService.resolveInteraction(workspaceId, chatId, interactionId, payload);
       if (!res.error) {
         clearPendingInteraction(interactionId);
@@ -665,6 +689,7 @@ export function ChatView({
             active={isDockTranscriptStreaming(run)}
             useRuntimeTimeline={showRuntimeTimeline}
             workspaceId={workspaceId}
+            chatId={chatId}
             fallbackActor={streamController.session?.triggered_by_user}
             subAgentRuns={subAgentTimelineItems}
             compactAssistantProgress

@@ -55,6 +55,10 @@ export interface DockChatMessageListResponse {
   next_before?: number | null
 }
 
+export interface DockChatWorkDetailResponse {
+  messages: AgentRunMessage[]
+}
+
 export type DockEntityReference = CommandBarPageContext
 
 export interface DockChatMediaAttachment {

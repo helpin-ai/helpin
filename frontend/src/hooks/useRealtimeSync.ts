@@ -13,7 +13,8 @@ import { queryKeys } from '@/lib/queryKeys'
 import { classifyAgentRunUpdate, type AgentRunUpdateKind } from '@/lib/agentRunRealtime'
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload'
 import { isSupportConversationListQueryKey, moveConversationToTopForMessageActivity, patchConversationDetailStatus, patchConversationStatusInCache, type SupportConversationListCache, type SupportConversationStatusPatch } from '@/lib/supportQueryCache'
-import type { ConversationStatus, SupportConversation, Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
+import { appendMessageToNewestPage, type SupportMessagePages } from '@/lib/supportMessagePages'
+import type { ConversationStatus, SupportConversation, SupportMessage, Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
 
 const BOARD_ENTITIES = new Set(['task'])
 const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link', 'task_git_link'])
@@ -617,6 +618,30 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
             message: event.data,
           }),
         )
+        const messageData = event.data
+        const hasHydratedMessage = messageData
+          && typeof messageData.content === 'string'
+          && typeof messageData.sender_type === 'string'
+        if (hasHydratedMessage && messageData) {
+          const createdAt = typeof messageData.created_at === 'string'
+            ? messageData.created_at
+            : event.sent_at ?? new Date().toISOString()
+          const realtimeMessage = {
+            ...messageData,
+            id: event.entity_id,
+            workspace_id: workspaceId,
+            conversation_id: parentId,
+            content: messageData.content,
+            sender_type: messageData.sender_type,
+            is_internal: Boolean(messageData.is_internal),
+            created_at: createdAt,
+            updated_at: typeof messageData.updated_at === 'string' ? messageData.updated_at : createdAt,
+          } as SupportMessage
+          queryClient.setQueryData<SupportMessagePages>(
+            queryKeys.support.messages(workspaceId, parentId),
+            (current) => current ? appendMessageToNewestPage(current, realtimeMessage) : current,
+          )
+        }
         queryClient.invalidateQueries({
           predicate: (query) => {
             const key = query.queryKey
@@ -624,7 +649,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
               // conversations list: ['support', wsId, 'conversations']
               key.length === 3 ||
               // conversation detail or messages: ['support', wsId, 'conversations', parentId, ...]
-              key[3] === parentId
+              (key[3] === parentId && !(hasHydratedMessage && key[4] === 'messages'))
             )
           },
         })

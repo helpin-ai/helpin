@@ -9,7 +9,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { queryKeys } from '@/lib/queryKeys'
-import type { ConversationListResponse } from '@/lib/pmTypes'
+import type { ConversationListResponse, SupportMessage } from '@/lib/pmTypes'
+import { flattenSupportMessagePages, seedSupportMessagePages, type SupportMessagePages } from '@/lib/supportMessagePages'
 
 const captured = {
   onEvent: null as ((event: unknown) => void) | null,
@@ -712,6 +713,20 @@ describe('useRealtimeSync task ordering events', () => {
       per_page: 50,
       total_pages: 1,
     })
+    const existingMessage: SupportMessage = {
+      id: 'msg-0',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-replied',
+      sender_type: 'customer',
+      content: 'Customer question',
+      is_internal: false,
+      created_at: '2026-06-04T08:00:00Z',
+      updated_at: '2026-06-04T08:00:00Z',
+    }
+    client.setQueryData(
+      queryKeys.support.messages('ws-1', 'conv-replied'),
+      seedSupportMessagePages([existingMessage]),
+    )
 
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -751,6 +766,8 @@ describe('useRealtimeSync task ordering events', () => {
       last_message: 'We will check this.',
       updated_at: '2026-06-04T09:00:00Z',
     }))
+    const messagePages = client.getQueryData<SupportMessagePages>(queryKeys.support.messages('ws-1', 'conv-replied'))
+    expect(flattenSupportMessagePages(messagePages).map((message) => message.id)).toEqual(['msg-0', 'msg-1'])
 
     act(() => root.unmount())
     container.remove()

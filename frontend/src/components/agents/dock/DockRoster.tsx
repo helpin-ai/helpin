@@ -113,17 +113,17 @@ export function DockRoster(props: DockRosterProps) {
         ) : null}
       </div>
 
-      <div className="agent-dock-new-chat-footer shrink-0 border-t border-[#f1efea] px-2 py-2 dark:border-[#302f2b]">
+      <div className="agent-dock-new-chat-footer shrink-0 border-t border-[#f1efea] p-2 dark:border-[#302f2b]">
         <button
           type="button"
           aria-label="New chat or task"
           onClick={props.onNewChat}
-          className="agent-dock-new-chat flex min-h-9 w-full items-center gap-2 rounded-[8px] border border-[#e6e3dd] bg-[#fffefa] px-2 py-1.5 text-start text-[12.5px] font-medium text-[#6b6862] shadow-[0_1px_0_rgba(28,27,25,.03)] transition-[background-color,border-color,color,box-shadow] hover:border-[#d2cec5] hover:bg-[#f8f6f2] hover:text-[#1c1b19] hover:shadow-[0_1px_2px_rgba(28,27,25,.08)] dark:border-[#3a3832] dark:bg-[#242320] dark:text-[#b8b4ab] dark:shadow-none dark:hover:border-[#4a473f] dark:hover:bg-[#292824] dark:hover:text-[#eeeae1]"
+          className="agent-dock-new-chat flex min-h-10 w-full items-center gap-2.5 rounded-[9px] bg-[#1c1b19] px-3 py-2 text-start text-[12.5px] font-semibold text-white shadow-[0_2px_5px_rgba(28,27,25,.18)] transition-[background-color,box-shadow,transform] hover:bg-[#34322e] hover:shadow-[0_3px_8px_rgba(28,27,25,.22)] active:translate-y-px focus-visible:ring-2 focus-visible:ring-[#a855f7]/45 dark:bg-[#eeeae1] dark:text-[#1c1b19] dark:hover:bg-white"
         >
-          <span className="agent-dock-new-chat-icon hidden" aria-hidden><PlusSignIcon className="h-4 w-4" /></span>
+          <span className="agent-dock-new-chat-icon grid h-5 w-5 place-items-center rounded-[6px] bg-white/15" aria-hidden><PlusSignIcon className="h-3.5 w-3.5" /></span>
           <AskAgentAvatar plateStyle="feather" className="ask-agent-new-chat-mark h-6 w-6" />
           <span className="agent-dock-roster-copy truncate">New chat or task</span>
-          <kbd className="agent-dock-roster-copy ms-auto rounded border border-[#e8e5df] px-1 font-mono text-[10.5px] font-normal text-[#b3b0a9] dark:border-[#3a3832]">N</kbd>
+          <kbd className="agent-dock-roster-copy ms-auto rounded border border-white/25 bg-white/10 px-1 font-mono text-[10.5px] font-medium text-white/80 dark:border-black/15 dark:bg-black/5 dark:text-[#4b4945]">N</kbd>
         </button>
       </div>
     </aside>

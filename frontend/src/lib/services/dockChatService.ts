@@ -5,6 +5,7 @@ import type {
   DockChatDetail,
   DockChatListResponse,
   DockChatMessageListResponse,
+  DockChatWorkDetailResponse,
   GenerateDockChatTitleRequest,
   DockRunListResponse,
   SendDockChatMessageRequest,
@@ -47,6 +48,10 @@ export const dockChatService = {
       `/dock/chats/${encodeURIComponent(chatId)}/messages?${query.toString()}`,
     );
   },
+  getMessageWorkDetail: (workspaceId: string, chatId: string, messageId: string) =>
+    api.get<DockChatWorkDetailResponse>(
+      `/dock/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/work${qs(workspaceId)}`,
+    ),
   generateTitle: (workspaceId: string, chatId: string, payload: GenerateDockChatTitleRequest) =>
     api.post<DockChat>(`/dock/chats/${encodeURIComponent(chatId)}/title${qs(workspaceId)}`, payload),
   getChatRun: (workspaceId: string, chatId: string) =>

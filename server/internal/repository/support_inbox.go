@@ -61,6 +61,45 @@ func (r *SupportMessageRepository) ListConversationPageFromNewest(ctx context.Co
 	return messages, total, nil
 }
 
+// ListConversationPageBefore returns one chronological page before a stable
+// newest-first cursor. It fetches one extra row to determine whether older
+// history remains without running a separate count query.
+func (r *SupportMessageRepository) ListConversationPageBefore(
+	ctx context.Context,
+	workspaceID, conversationID string,
+	includeInternal bool,
+	limit int,
+	beforeCreatedAt *time.Time,
+	beforeID string,
+) ([]model.SupportMessage, bool, error) {
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID)
+	if !includeInternal {
+		query = query.Where("is_internal = false")
+	}
+	if beforeCreatedAt != nil {
+		query = query.Where(
+			"created_at < ? OR (created_at = ? AND id < ?)",
+			*beforeCreatedAt,
+			*beforeCreatedAt,
+			beforeID,
+		)
+	}
+
+	messages := make([]model.SupportMessage, 0, limit+1)
+	if err := query.Order("created_at DESC, id DESC").Limit(limit + 1).Find(&messages).Error; err != nil {
+		return nil, false, fmt.Errorf("list message page: %w", err)
+	}
+	hasMore := len(messages) > limit
+	if hasMore {
+		messages = messages[:limit]
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+	return messages, hasMore, nil
+}
+
 // Create creates a new message.
 //
 // Invariant: every row with MessageType == "system" MUST carry a recognized
