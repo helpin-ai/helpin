@@ -4,6 +4,7 @@ import { defaultConversationListFiltersForNav, parseSupportInboxViewFilters } fr
 
 export type NavFilter = 'inbox' | 'mine' | 'waiting' | 'resolved' | 'spam' | 'ai_active' | 'resolved_by_ai';
 export type ReplyMode = 'reply' | 'note';
+export type DetailSidebarMode = 'details' | 'agents';
 export type ActivePanel = 'nav' | 'list' | 'thread' | 'detail';
 export type ConversationHandoff = {
   fromConversationId: string;
@@ -159,6 +160,7 @@ interface SupportInboxState {
   replyMode: ReplyMode;
   // Detail sidebar
   detailSidebarCollapsed: boolean;
+  detailSidebarMode: DetailSidebarMode;
   // Create dialog
   createDialogOpen: boolean;
   teamInboxDialogOpen: boolean;
@@ -196,6 +198,7 @@ interface SupportInboxState {
   cancelConversationHandoff: () => void;
   setReplyMode: (mode: ReplyMode) => void;
   toggleDetailSidebar: () => void;
+  setDetailSidebarMode: (mode: DetailSidebarMode) => void;
   setCreateDialogOpen: (open: boolean) => void;
   setTeamInboxDialogOpen: (open: boolean) => void;
   setEditMailboxId: (id: string | null) => void;
@@ -223,6 +226,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     conversationHandoff: null,
     replyMode: 'reply',
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
+    detailSidebarMode: 'details',
     createDialogOpen: false,
     teamInboxDialogOpen: false,
     editMailboxId: null,
@@ -407,6 +411,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         version: STORE_VERSION,
       });
     },
+    setDetailSidebarMode: (mode) => set({ detailSidebarMode: mode }),
     setCreateDialogOpen: (open) => set({ createDialogOpen: open }),
     setTeamInboxDialogOpen: (open) => set({ teamInboxDialogOpen: open, ...(!open && { editMailboxId: null }) }),
     setEditMailboxId: (id) => set({ editMailboxId: id }),

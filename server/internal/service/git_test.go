@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	agentruntime "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -798,6 +799,10 @@ type fakeGitHubMergeCall struct {
 	CommitMessage  string
 }
 
+func (f *fakeGitHubAppClient) MintInstallationToken(context.Context, string) (string, error) {
+	return "github-installation-token", nil
+}
+
 func (f *fakeGitHubAppClient) ListInstallationRepositories(context.Context, string) ([]githubapp.Repository, error) {
 	return nil, nil
 }
@@ -1064,6 +1069,7 @@ func TestEpicDeliveryBranchFlowEnsuresMergesAndOpensFinalPR(t *testing.T) {
 
 	app := &fakeGitHubAppClient{}
 	svc := newGitDeliveryStatusService(db, app)
+	svc.appBaseURL = "https://stage.helpin.ai"
 	ctx := context.Background()
 
 	target, err := svc.GetEpicDeliveryTarget(ctx, "ws-1", "epic-1")
@@ -1127,11 +1133,110 @@ func TestEpicDeliveryBranchFlowEnsuresMergesAndOpensFinalPR(t *testing.T) {
 	if prCall.Head != "epic/hel-900-checkout-automation" || prCall.Base != "main" || prCall.Title != "Merge epic: Checkout automation" {
 		t.Fatalf("unexpected final PR call: %#v", prCall)
 	}
+	if !strings.Contains(prCall.Body, "https://stage.helpin.ai/w/demo/pm/epics/epic-1") || !strings.Contains(prCall.Body, "run_id=run-final") {
+		t.Fatalf("final PR body should link the epic and run: %s", prCall.Body)
+	}
 	if finalTarget.FinalPRNumber == nil || *finalTarget.FinalPRNumber != 1 || finalTarget.FinalPRStatus == nil || *finalTarget.FinalPRStatus != "open" {
 		t.Fatalf("final target PR fields = %#v", finalTarget)
 	}
 	if finalTarget.DeliveryState != "pr_open" {
 		t.Fatalf("final delivery state = %q, want pr_open", finalTarget.DeliveryState)
+	}
+}
+
+func TestResolveAgentRuntimeRepositorySpecForTaskDeliveryTarget(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	svc := newGitDeliveryStatusService(db, &fakeGitHubAppClient{})
+
+	spec, err := svc.ResolveAgentRuntimeRepositorySpec(context.Background(), "ws-1", agentruntime.TargetRef{
+		Type: "task",
+		ID:   "task-1",
+	}, "run-runtime-1")
+	if err != nil {
+		t.Fatalf("ResolveAgentRuntimeRepositorySpec returned error: %v", err)
+	}
+	if spec.CloneURL != "https://github.com/acme/api.git" {
+		t.Fatalf("unexpected clone URL: %q", spec.CloneURL)
+	}
+	if spec.Auth == nil || spec.Auth.Type != "github" || spec.Auth.Token != "github-installation-token" {
+		t.Fatalf("unexpected auth: %#v", spec.Auth)
+	}
+	if spec.BaseBranch != "main" || spec.WorkBranch != "hel-31-fix-merge-status" || spec.FinalizePolicy != agentruntime.RepositoryFinalizePushBranch {
+		t.Fatalf("unexpected branch/finalize spec: %#v", spec)
+	}
+	if spec.Metadata["workspace_id"] != "ws-1" || spec.Metadata["delivery_target_id"] != "target-1" {
+		t.Fatalf("unexpected metadata: %#v", spec.Metadata)
+	}
+}
+
+func TestResolveAgentRuntimeRepositorySpecEnsuresEpicTaskBaseBranch(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	ensureEpicDeliveryTargetTable(t, db)
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO workspaces (
+		id, name, slug, workspace_key, owner_id, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"ws-1", "Demo Workspace", "demo", "HEL", "user-1", now, now)
+	mustExec(t, db, `INSERT INTO pm_epics (
+		id, workspace_id, name, external_id, team_id, planning_repository_id, position, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		"epic-1", "ws-1", "Checkout automation", "HEL-900", "team-1", "repo-1", now, now)
+	mustExec(t, db, `UPDATE task_delivery_targets
+		SET base_branch = ?, target_source = ?, source_epic_id = ?
+		WHERE id = ?`,
+		"epic/hel-900-checkout-automation", model.TaskDeliveryTargetSourceEpic, "epic-1", "target-1")
+
+	app := &fakeGitHubAppClient{}
+	svc := newGitDeliveryStatusService(db, app)
+	spec, err := svc.ResolveAgentRuntimeRepositorySpec(context.Background(), "ws-1", agentruntime.TargetRef{
+		Type: "task",
+		ID:   "task-1",
+	}, "run-scribe-1")
+	if err != nil {
+		t.Fatalf("ResolveAgentRuntimeRepositorySpec returned error: %v", err)
+	}
+	if spec.BaseBranch != "epic/hel-900-checkout-automation" {
+		t.Fatalf("base branch = %q, want epic branch", spec.BaseBranch)
+	}
+	if len(app.ensureBranches) != 1 {
+		t.Fatalf("ensure branch calls = %d, want 1", len(app.ensureBranches))
+	}
+	call := app.ensureBranches[0]
+	if call.InstallationID != "inst-1" || call.Owner != "acme" || call.Repo != "api" || call.Branch != "epic/hel-900-checkout-automation" || call.Base != "main" {
+		t.Fatalf("unexpected ensure branch call: %#v", call)
+	}
+}
+
+func TestResolveAgentRuntimeRepositorySpecForRepositoryFullName(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	svc := newGitDeliveryStatusService(db, &fakeGitHubAppClient{})
+
+	spec, err := svc.ResolveAgentRuntimeRepositorySpec(context.Background(), "ws-1", agentruntime.TargetRef{
+		Type: "repository",
+		ID:   "acme/api",
+		Metadata: map[string]interface{}{
+			"repo_full_name": "acme/api",
+			"base_branch":    "release",
+			"work_branch":    "agent/runtime-checkout",
+		},
+	}, "run-runtime-1")
+	if err != nil {
+		t.Fatalf("ResolveAgentRuntimeRepositorySpec returned error: %v", err)
+	}
+	if spec.CloneURL != "https://github.com/acme/api.git" {
+		t.Fatalf("unexpected clone URL: %q", spec.CloneURL)
+	}
+	if spec.Auth == nil || spec.Auth.Type != "github" || spec.Auth.Token != "github-installation-token" {
+		t.Fatalf("unexpected auth: %#v", spec.Auth)
+	}
+	if spec.BaseBranch != "release" || spec.WorkBranch != "agent/runtime-checkout" {
+		t.Fatalf("unexpected branch spec: %#v", spec)
+	}
+	if spec.Metadata["repository_id"] != "repo-1" || spec.Metadata["repo_full_name"] != "acme/api" {
+		t.Fatalf("unexpected metadata: %#v", spec.Metadata)
 	}
 }
 
@@ -1273,6 +1378,23 @@ func TestUpdateTaskDeliveryTargetRejectsUnselectedRepository(t *testing.T) {
 	}, "actor-1")
 	if err == nil || !strings.Contains(err.Error(), "repository is not available for PM delivery") {
 		t.Fatalf("expected unavailable repository error, got %v", err)
+	}
+}
+
+func TestUpdateTaskDeliveryTargetCanClearConfiguration(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	svc := newGitDeliveryStatusService(db, nil)
+
+	target, err := svc.UpdateTaskDeliveryTarget(context.Background(), "ws-1", "task-1", model.UpdateTaskDeliveryTargetRequest{ClearTarget: true}, "actor-1")
+	if err != nil {
+		t.Fatalf("clear task delivery target: %v", err)
+	}
+	if target.RepositoryID != nil || target.RepoFullName != nil || target.IntegrationID != nil || target.BaseBranch != nil || target.WorkingBranch != nil {
+		t.Fatalf("delivery target was not cleared: %#v", target)
+	}
+	if target.DeliveryState != "unconfigured" {
+		t.Fatalf("delivery state = %q, want unconfigured", target.DeliveryState)
 	}
 }
 

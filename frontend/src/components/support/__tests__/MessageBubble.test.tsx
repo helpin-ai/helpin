@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, type ComponentProps } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -17,7 +17,11 @@ function findButtonByText(container: HTMLElement, text: string) {
   return Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes(text)) ?? null
 }
 
-function renderBubble(message: SupportMessage, receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null) {
+function renderBubble(
+  message: SupportMessage,
+  receiptStatus?: 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null,
+  extraProps: Partial<ComponentProps<typeof MessageBubble>> = {},
+) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -27,7 +31,7 @@ function renderBubble(message: SupportMessage, receiptStatus?: 'delivered' | 'se
     root.render(
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <MessageBubble message={message} receiptStatus={receiptStatus} />
+          <MessageBubble message={message} receiptStatus={receiptStatus} {...extraProps} />
         </TooltipProvider>
       </QueryClientProvider>,
     )
@@ -47,6 +51,13 @@ function renderBubble(message: SupportMessage, receiptStatus?: 'delivered' | 'se
 
 describe('MessageBubble', () => {
   beforeEach(() => {
+    if (!globalThis.ResizeObserver) {
+      globalThis.ResizeObserver = class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    }
     useAuthStore.setState({
       user: {
         id: 'viewer-1',
@@ -220,12 +231,21 @@ describe('MessageBubble', () => {
       },
     ]
 
-    const rendered = messages.map(renderBubble)
+    const rendered = messages.map((message) => renderBubble(message, undefined, {
+      workspaceSlug: 'acme',
+      linkedTaskId: 'task-123',
+    }))
     expect(rendered[0].container.querySelectorAll('strong')[0]?.textContent).toBe('jane@example.com')
     expect(rendered[0].container.querySelectorAll('strong')[1]?.textContent).toBe('teammate@example.com')
     expect(rendered[1].container.querySelector('strong')?.textContent).toBe('Billing')
     expect(rendered[2].container.querySelectorAll('strong')[0]?.textContent).toBe('#ENG-123')
     expect(rendered[2].container.querySelectorAll('strong')[1]?.textContent).toBe('Fix billing webhook')
+    expect(rendered[2].container.querySelector('a')?.getAttribute('href')).toBe('/w/acme/pm/tasks/task-123')
+    expect(rendered[2].container.querySelector('[data-support-system-callout]')?.className).toContain('max-w-[70%]')
+    expect(rendered[2].container.querySelector('[data-task-created-event]')?.className).not.toContain('mx-auto')
+    expect(rendered[2].container.querySelector('[data-task-created-prefix]')?.className).toContain('mr-1')
+    expect(rendered[2].container.querySelector('[data-task-created-link]')?.className).toContain('hover:bg-muted')
+    expect(rendered[2].container.querySelector('[data-task-created-title]')?.className).toContain('truncate')
     rendered.forEach((entry) => entry.cleanup())
   })
 
@@ -355,6 +375,61 @@ describe('MessageBubble', () => {
     queryClient.clear()
   })
 
+  it('uses the backend visible email projection instead of full fallback content', () => {
+    const message: SupportMessage = {
+      id: 'msg-email-projection-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Customer',
+      content: 'Fresh reply\n\nOn Tuesday someone wrote:\nOld quoted body',
+      email_visible_text: 'Fresh reply',
+      email_quoted_text: 'On Tuesday someone wrote:\nOld quoted body',
+      email_has_quoted_content: true,
+      email_projection_confidence: 'high',
+      email_projection_version: 1,
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    expect(rendered.container.textContent).toContain('Fresh reply')
+    expect(rendered.container.textContent).not.toContain('Old quoted body')
+    rendered.cleanup()
+  })
+
+  it('defaults rich quoted email HTML to collapsed even with attribution metadata', () => {
+    const message: SupportMessage = {
+      id: 'msg-email-projection-2',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Jane Customer',
+      content: 'Fresh reply',
+      html_body: '<p>Fresh reply</p><div data-helpin-quote="true">Old quoted body</div>',
+      email_visible_text: 'Fresh reply',
+      email_quoted_text: 'Old quoted body',
+      email_has_quoted_content: true,
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      metadata: JSON.stringify({
+        forwarded_by_email: 'founder@company.com',
+        original_sender_email: 'jane@customer.example',
+      }),
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    const iframe = rendered.container.querySelector('iframe[title="Email body"]')
+    expect(iframe?.getAttribute('data-collapsed-by-default')).toBe('true')
+    rendered.cleanup()
+  })
+
   it('renders compact forwarded attribution in the email badge', () => {
     const message: SupportMessage = {
       id: 'msg-forwarded-1',
@@ -436,6 +511,30 @@ describe('MessageBubble', () => {
     rendered.cleanup()
   })
 
+  it('shows a generic inbound email badge when from matches the conversation customer email', () => {
+    const message: SupportMessage = {
+      id: 'msg-customer-email-same-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Taylor Visitor',
+      content: 'Following up here.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      email_from: 'Taylor Visitor <taylor.visitor@example.com>',
+      email_reply_to: 'support-thread+123@example.com',
+      created_at: '2026-06-02T10:14:00.000Z',
+      updated_at: '2026-06-02T10:14:00.000Z',
+    }
+
+    const rendered = renderBubble(message, undefined, { customerEmail: 'taylor.visitor@example.com' })
+    expect(rendered.container.textContent).toContain('Received by email')
+    expect(rendered.container.textContent).not.toContain('Received by email from taylor.visitor@example.com')
+    expect(findButtonByText(rendered.container, 'Received by email')).toBeTruthy()
+    rendered.cleanup()
+  })
+
   it('shows the forwarded customer body when the email has no note above the forwarded header', () => {
     const message: SupportMessage = {
       id: 'msg-forwarded-empty-note-1',
@@ -497,6 +596,11 @@ Can I export my data?`,
     expect(findButtonByText(sent.container, 'Sent via email')).toBeTruthy()
     sent.cleanup()
 
+    const sending = renderBubble({ ...message, id: 'msg-email-status-sending', email_notified_at: undefined }, 'sending_email')
+    expect(sending.container.textContent).toContain('Sending email')
+    expect(sending.container.textContent).not.toContain('Delivered')
+    sending.cleanup()
+
     const delivered = renderBubble({ ...message, id: 'msg-email-status-delivered', email_delivery_status: 'delivered' }, 'delivered_email')
     expect(delivered.container.textContent).toContain('Delivered via email')
     delivered.cleanup()
@@ -533,6 +637,46 @@ Can I export my data?`,
     expect(active.container.textContent).toContain('Undo')
     expect(active.container.textContent).not.toContain('Delivered to email')
     active.cleanup()
+  })
+
+  it('anchors message actions to the text bubble instead of image attachments', () => {
+    const message: SupportMessage = {
+      id: 'msg-with-image-attachment',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Customer',
+      content: 'Please check this screenshot.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'widget',
+      attachments: [
+        {
+          id: 'att-image-1',
+          file_key: 'support/att-image-1',
+          file_name: 'screenshot.png',
+          file_type: 'image/png',
+          file_size: 2048,
+          url: 'https://cdn.example.com/screenshot.png',
+        },
+      ],
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const { container, cleanup } = renderBubble(message)
+    const bubbleFrame = container.querySelector('[data-slot="support-message-bubble-frame"]')
+    const actions = container.querySelector('[aria-label="Message actions"]')
+    const attachment = container.querySelector('img[alt="screenshot.png"]')
+
+    expect(bubbleFrame).toBeTruthy()
+    expect(bubbleFrame?.className).toContain('relative')
+    expect(actions).toBeTruthy()
+    expect(attachment).toBeTruthy()
+    expect(bubbleFrame?.contains(actions)).toBe(true)
+    expect(bubbleFrame?.contains(attachment)).toBe(false)
+
+    cleanup()
   })
 
   it('renders internal note images as thumbnails with hover preview and image navigation', () => {

@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -120,6 +122,45 @@ func (h *PMEpicHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		tasks = []model.BoardTask{}
 	}
 	writeJSON(w, http.StatusOK, tasks)
+}
+
+// LinkTasks handles POST /api/pm/epics/{id}/tasks/link.
+func (h *PMEpicHandler) LinkTasks(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	var req model.LinkEpicTasksRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := validateLinkEpicTasksRequest(req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := h.epicService.LinkTasks(r.Context(), workspaceID, chi.URLParam(r, "id"), req.TaskIDs, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, pmTaskUpdateErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func validateLinkEpicTasksRequest(req model.LinkEpicTasksRequest) error {
+	if len(req.TaskIDs) == 0 {
+		return fmt.Errorf("at least one task_id is required")
+	}
+	if len(req.TaskIDs) > 100 {
+		return fmt.Errorf("at most 100 task_ids are allowed")
+	}
+	for _, taskID := range req.TaskIDs {
+		if strings.TrimSpace(taskID) == "" {
+			return fmt.Errorf("task_ids cannot be empty")
+		}
+	}
+	return nil
 }
 
 // UpdateHealth handles PUT /api/pm/epics/{id}/health.

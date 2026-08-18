@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as React from 'react';
 import { render, screen } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
@@ -85,7 +85,29 @@ describe('useHelpin (Next.js)', () => {
     expect(typeof result.current.toggle).toBe('function');
     expect(typeof result.current.openMessages).toBe('function');
     expect(typeof result.current.openNewMessage).toBe('function');
+    expect(typeof result.current.openConversation).toBe('function');
+    expect(typeof result.current.openArticle).toBe('function');
     expect(typeof result.current.shutdown).toBe('function');
+  });
+
+  it('should forward article and conversation controls to the client', () => {
+    const client = createMockClient();
+    const openConversation = vi.spyOn(client, 'openConversation');
+    const openArticle = vi.spyOn(client, 'openArticle');
+    const { result } = renderHook(() => useHelpin(), {
+      wrapper: createWrapper(client),
+    });
+
+    result.current.openConversation('conversation-123');
+    result.current.openArticle('how-to-add-first-comment-2906b16e', {
+      spaceId: 'space-123',
+    });
+
+    expect(openConversation).toHaveBeenCalledWith('conversation-123');
+    expect(openArticle).toHaveBeenCalledWith(
+      'how-to-add-first-comment-2906b16e',
+      { spaceId: 'space-123' },
+    );
   });
 
   it('should return no-op client when client is null (SSR)', () => {
@@ -106,6 +128,8 @@ describe('useHelpin (Next.js)', () => {
     expect(typeof result.current.toggle).toBe('function');
     expect(typeof result.current.openMessages).toBe('function');
     expect(typeof result.current.openNewMessage).toBe('function');
+    expect(typeof result.current.openConversation).toBe('function');
+    expect(typeof result.current.openArticle).toBe('function');
     expect(typeof result.current.shutdown).toBe('function');
     expect(typeof result.current.rawTrack).toBe('function');
     expect(typeof result.current.set).toBe('function');

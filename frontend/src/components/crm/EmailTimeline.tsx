@@ -7,10 +7,10 @@ import {
   Forward01Icon,
   Mail01Icon,
   ArrowTurnBackwardIcon,
-  Delete01Icon,
 } from '@/lib/icons';
 // ArrowDownLeft/ArrowUpRight kept for email detail dialog direction badge
-import { useContactEmails, useDealEmails, useEmailAccounts } from '@/hooks/queries/useCRM';
+import { useInfiniteContactEmails, useInfiniteDealEmails, useEmailAccounts } from '@/hooks/queries/useCRM';
+import { CRMEmailComposerDialog, type EmailDraft } from './CRMEmailComposerDialog';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -23,6 +23,7 @@ interface EmailTimelineProps {
   workspaceId: string;
   contactId?: string;
   dealId?: string;
+  defaultRecipient?: string;
 }
 
 type EmailBucket = 'Today' | 'Yesterday' | 'Last Week' | 'Older';
@@ -180,15 +181,15 @@ function LoadingState() {
   );
 }
 
-export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineProps) {
-  const contactQuery = useContactEmails(workspaceId, contactId ?? '');
-  const dealQuery = useDealEmails(workspaceId, dealId ?? '');
+export function EmailTimeline({ workspaceId, contactId, dealId, defaultRecipient }: EmailTimelineProps) {
+  const contactQuery = useInfiniteContactEmails(workspaceId, contactId ?? '');
+  const dealQuery = useInfiniteDealEmails(workspaceId, dealId ?? '');
   const accountsQuery = useEmailAccounts(workspaceId);
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
 
   const query = contactId ? contactQuery : dealQuery;
-  const sourceMessages = (query.data?.data ?? []) as CRMEmailMessage[];
+  const sourceMessages = (query.data?.pages.flatMap((page) => page.data) ?? []) as CRMEmailMessage[];
   const messages = [...sourceMessages].sort(
     (left, right) => new Date(right.sent_at).getTime() - new Date(left.sent_at).getTime(),
   );
@@ -199,8 +200,19 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
     }))
     .filter((group) => group.messages.length > 0);
   const [selectedMessage, setSelectedMessage] = useState<CRMEmailMessage | null>(null);
+  const [composeDraft, setComposeDraft] = useState<EmailDraft | null>(null);
 
-  const hasConnectedAccounts = (accountsQuery.data?.length ?? 0) > 0;
+  const connectedAccounts = (accountsQuery.data ?? []).filter(
+    (account) => account.is_active && account.status !== 'pending_oauth' && account.status !== 'disconnected',
+  );
+  const hasConnectedAccounts = connectedAccounts.length > 0;
+  const openNewEmail = () => {
+    setComposeDraft({
+      title: 'New email',
+      to: defaultRecipient ? [defaultRecipient] : undefined,
+    });
+  };
+
   const openEmailSettings = () => {
     if (!currentWorkspace?.slug) {
       return;
@@ -215,34 +227,78 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
     });
   };
 
+  const accountEmails = new Set(connectedAccounts.map((account) => account.email_address.toLowerCase()));
+  const externalAddresses = (message: CRMEmailMessage) => {
+    const addresses = [message.from_address, ...(message.to_addresses ?? []), ...(message.cc_addresses ?? [])];
+    return [...new Set(addresses.map((address) => parseAddress(address).secondary ?? address).filter((address) => !accountEmails.has(address.toLowerCase())))];
+  };
+  const subjectWithPrefix = (subject: string, prefix: 'Re:' | 'Fwd:') =>
+    subject.toLowerCase().startsWith(prefix.toLowerCase()) ? subject : `${prefix} ${subject || '(no subject)'}`;
+  const openReply = (message: CRMEmailMessage, replyAll: boolean) => {
+    const recipients = externalAddresses(message);
+    setComposeDraft({
+      title: replyAll ? 'Reply all' : 'Reply',
+      to: replyAll ? recipients : recipients.slice(0, 1),
+      subject: subjectWithPrefix(message.subject, 'Re:'),
+    });
+  };
+  const openForward = (message: CRMEmailMessage) => {
+    setComposeDraft({
+      title: 'Forward email',
+      subject: subjectWithPrefix(message.subject, 'Fwd:'),
+      body: `\n\n---------- Forwarded message ----------\nFrom: ${message.from_address}\nDate: ${formatDetailTimestamp(message.sent_at)}\nSubject: ${message.subject}\n\n${getMessageText(message)}`,
+    });
+  };
+
+  const composerDialog = composeDraft ? (
+    <CRMEmailComposerDialog
+      workspaceId={workspaceId}
+      accounts={connectedAccounts}
+      open
+      draft={composeDraft}
+      onOpenChange={(nextOpen) => !nextOpen && setComposeDraft(null)}
+    />
+  ) : null;
+
   if (query.isLoading) {
     return <LoadingState />;
   }
 
   if (messages.length === 0) {
     return (
-      <div className="px-6 py-6">
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-12 text-center">
-          <div className="rounded-full bg-muted p-3">
-            <Mail01Icon className="h-7 w-7 text-muted-foreground" />
+      <>
+        <div className="px-6 py-6">
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-12 text-center">
+            <div className="rounded-full bg-muted p-3">
+              <Mail01Icon className="h-7 w-7 text-muted-foreground" />
+            </div>
+            <p className="mt-4 text-base font-medium text-foreground">No emails tracked</p>
+            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+              {hasConnectedAccounts
+                ? 'This contact does not have any synced messages yet.'
+                : 'Connect Gmail to sync conversations, show all participants, and open full message threads here.'}
+            </p>
+            <Button variant="outline" className="mt-5" onClick={openEmailSettings}>
+              {hasConnectedAccounts ? 'Manage email accounts' : 'Set up email sending'}
+            </Button>
+            {hasConnectedAccounts && (
+              <Button className="mt-2" onClick={openNewEmail}>Compose email</Button>
+            )}
           </div>
-          <p className="mt-4 text-base font-medium text-foreground">No emails tracked</p>
-          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-            {hasConnectedAccounts
-              ? 'This contact does not have any synced messages yet.'
-              : 'Connect Gmail to sync conversations, show all participants, and open full message threads here.'}
-          </p>
-          <Button variant="outline" className="mt-5" onClick={openEmailSettings}>
-            {hasConnectedAccounts ? 'Manage email accounts' : 'Set up email sending'}
-          </Button>
         </div>
-      </div>
+        {composerDialog}
+      </>
     );
   }
 
   return (
     <>
       <div>
+        {hasConnectedAccounts && (
+          <div className="flex justify-end border-b border-border/60 px-5 py-3">
+            <Button size="sm" onClick={openNewEmail}>Compose email</Button>
+          </div>
+        )}
         {groupedMessages.map((group) => (
           <section key={group.bucket}>
             <div className="px-5 py-2 text-sm font-medium text-muted-foreground">
@@ -279,6 +335,13 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
             })}
           </section>
         ))}
+        {query.hasNextPage && (
+          <div className="flex justify-center px-5 py-4">
+            <Button variant="outline" size="sm" onClick={() => query.fetchNextPage()} disabled={query.isFetchingNextPage}>
+              {query.isFetchingNextPage ? 'Loading…' : 'Load older messages'}
+            </Button>
+          </div>
+        )}
       </div>
 
       <Dialog open={!!selectedMessage} onOpenChange={(open) => !open && setSelectedMessage(null)}>
@@ -342,28 +405,22 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
 
                   <div className="flex flex-col gap-3 border-t border-border/60 bg-muted/20 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm" disabled>
+                      <Button variant="outline" size="sm" disabled={!hasConnectedAccounts} onClick={() => { openReply(selectedMessage, false); setSelectedMessage(null); }}>
                         <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5 -scale-y-100" />
                         Reply
                       </Button>
-                      <Button variant="outline" size="sm" disabled>
+                      <Button variant="outline" size="sm" disabled={!hasConnectedAccounts} onClick={() => { openReply(selectedMessage, true); setSelectedMessage(null); }}>
                         <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5 -scale-y-100" />
                         Reply all
                       </Button>
-                      <Button variant="outline" size="sm" disabled>
+                      <Button variant="outline" size="sm" disabled={!hasConnectedAccounts} onClick={() => { openForward(selectedMessage); setSelectedMessage(null); }}>
                         <Forward01Icon className="mr-2 h-3.5 w-3.5" />
                         Forward
                       </Button>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <Button variant="ghost" size="sm" className="text-primary hover:text-primary" onClick={openEmailSettings}>
-                        Set up email sending
-                      </Button>
-                      <Button variant="outline" size="sm" disabled>
-                        <Delete01Icon className="mr-2 h-3.5 w-3.5" />
-                        Delete
-                      </Button>
+                      {!hasConnectedAccounts && <Button variant="ghost" size="sm" className="text-primary hover:text-primary" onClick={openEmailSettings}>Set up email sending</Button>}
                     </div>
                   </div>
                 </>
@@ -372,6 +429,7 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
           </DialogContent>
         ) : null}
       </Dialog>
+      {composerDialog}
     </>
   );
 }

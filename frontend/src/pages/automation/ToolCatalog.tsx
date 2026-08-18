@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   ArrowDown01Icon,
   ArrowRight01Icon,
@@ -39,6 +39,7 @@ const CATEGORY_ICONS: Record<string, typeof Wrench01Icon> = {
   Commands: TerminalIcon,
   Security: Wrench01Icon,
   'Web Search': GlobeIcon,
+  Browser: GlobeIcon,
   Git: GitBranchIcon,
   Interaction: MessagePreview01Icon,
   'PM / Tasks': FileSearchIcon,
@@ -46,6 +47,7 @@ const CATEGORY_ICONS: Record<string, typeof Wrench01Icon> = {
   Support: Message01Icon,
   CRM: ChartIncreaseIcon,
   Docs: File01Icon,
+  'External MCP': GlobeIcon,
 };
 
 // PRESET_STYLES imported from @/lib/presetStyles
@@ -92,43 +94,60 @@ function ParamRow({
   );
 }
 
-function ToolCard({ tool }: { tool: ToolCatalogEntry }) {
+export function ToolRow({ tool }: { tool: ToolCatalogEntry }) {
   const [open, setOpen] = useState(false);
+  const paramsId = useId();
   const properties = tool.input_schema?.properties ?? {};
   const requiredSet = new Set(tool.input_schema?.required ?? []);
   const paramNames = Object.keys(properties);
   const hasParams = paramNames.length > 0;
-
-  return (
-    <div className="rounded-lg border border-border/60 bg-card/80 transition-colors hover:border-border">
-      <div className="px-4 py-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <code className="text-sm font-semibold">{tool.name}</code>
-              {tool.presets.map((preset) => (
-                <PresetBadge key={preset} preset={preset} />
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">{tool.description}</p>
-          </div>
-
-          {hasParams && (
-            <button
-              type="button"
-              className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              onClick={() => setOpen(!open)}
-            >
-              {open ? <ArrowDown01Icon className="h-3.5 w-3.5" /> : <ArrowRight01Icon className="h-3.5 w-3.5" />}
-              {paramNames.length} param{paramNames.length !== 1 ? 's' : ''}
-            </button>
-          )}
+  const rowContent = (
+    <>
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="text-sm font-semibold">{tool.name}</code>
+          {tool.presets.map((preset) => (
+            <PresetBadge key={preset} preset={preset} />
+          ))}
         </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
       </div>
 
+      {hasParams ? (
+        <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+          {paramNames.length} param{paramNames.length !== 1 ? 's' : ''}
+          {open ? <ArrowDown01Icon className="h-3.5 w-3.5" /> : <ArrowRight01Icon className="h-3.5 w-3.5" />}
+        </span>
+      ) : null}
+    </>
+  );
+
+  return (
+    <div className="border-b border-border/60">
+      {hasParams ? (
+        <button
+          type="button"
+          className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-[14px] py-[13px] text-left outline-none transition-colors duration-100 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          aria-expanded={open}
+          aria-controls={paramsId}
+          onClick={() => setOpen((current) => !current)}
+        >
+          {rowContent}
+        </button>
+      ) : (
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-[14px] py-[13px]">
+          {rowContent}
+        </div>
+      )}
+
       {open && hasParams && (
-        <div className="border-t border-border/40 px-4 py-2">
-          <table className="w-full">
+        <div
+          id={paramsId}
+          role="region"
+          aria-label={`${tool.name} parameters`}
+          className="overflow-x-auto border-t border-border/40 px-[14px] py-3"
+        >
+          <table className="w-full min-w-[36rem]">
             <thead>
               <tr className="border-b border-border/40 text-left">
                 <th className="pb-1 pr-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Name</th>
@@ -164,31 +183,34 @@ function CategorySection({
   defaultOpen: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const toolsId = useId();
   const Icon = CATEGORY_ICONS[category] ?? Wrench01Icon;
 
   return (
-    <div>
+    <section>
       <button
         type="button"
-        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/40"
-        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-2 border-b border-border px-[14px] py-2.5 text-left outline-none transition-colors duration-100 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        aria-expanded={open}
+        aria-controls={toolsId}
+        onClick={() => setOpen((current) => !current)}
       >
         {open ? <ArrowDown01Icon className="h-4 w-4 text-muted-foreground" /> : <ArrowRight01Icon className="h-4 w-4 text-muted-foreground" />}
         <Icon className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">{category}</span>
+        <span className="text-xs font-medium uppercase tracking-wide">{category}</span>
         <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
           {tools.length}
         </Badge>
       </button>
 
       {open && (
-        <div className="mt-1 ml-8 space-y-2">
+        <div id={toolsId}>
           {tools.map((tool) => (
-            <ToolCard key={tool.name} tool={tool} />
+            <ToolRow key={tool.name} tool={tool} />
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -317,7 +339,7 @@ export function ToolCatalogContent({
           No tools match your search.
         </div>
       ) : (
-        <div className="space-y-4">
+        <div>
           {grouped.map(({ category, tools }) => (
             <CategorySection
               key={category}
@@ -332,9 +354,9 @@ export function ToolCatalogContent({
   );
 }
 
-export function ToolCatalogPage() {
+export function ToolCatalogPage({ embedded = false }: { embedded?: boolean }) {
   useTitle('Tool Catalog');
   const workspaceId = useWorkspaceStore((s) => s.currentWorkspace?.id) ?? '';
 
-  return <ToolCatalogContent workspaceId={workspaceId} />;
+  return <ToolCatalogContent workspaceId={workspaceId} embedded={embedded} />;
 }

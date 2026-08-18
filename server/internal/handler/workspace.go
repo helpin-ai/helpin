@@ -57,6 +57,23 @@ func (h *WorkspaceHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, ws)
 }
 
+// GenerateCompanyProductDescription drafts workspace context from a website.
+func (h *WorkspaceHandler) GenerateCompanyProductDescription(w http.ResponseWriter, r *http.Request) {
+	var req model.GenerateWorkspaceContextDescriptionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.workspaceService.GenerateCompanyProductDescription(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // GetBySlug handles GET /api/workspaces/by-slug/{slug}.
 func (h *WorkspaceHandler) GetBySlug(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")

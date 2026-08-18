@@ -24,7 +24,26 @@ const mockSupportData = vi.hoisted(() => ({
       region_name: 'New York',
       city_name: 'New York',
     },
-    contact: null,
+    contact: {
+      id: 'contact-1',
+      name: 'Alex Buyer',
+      email: 'alex@example.com',
+      phone: null,
+      job_title: 'VP Product',
+      lifecycle_stage: 'customer',
+      lead_status: 'open',
+      source: 'live_chat',
+      custom_properties: {
+        seats_requested: 25,
+        agent_enrichment: {
+          linkedin_url: {
+            value: 'https://linkedin.com/in/alex-buyer',
+            source_url: 'https://example.com/internal-source',
+            confidence: 0.95,
+          },
+        },
+      },
+    },
     other_conversations: [],
     total_conversations: 1,
     session_created_at: '2026-06-01T12:00:00Z',
@@ -70,10 +89,17 @@ describe('SidebarVisitorContext', () => {
     document.body.innerHTML = ''
   })
 
-  it('merges session and device signals into user details', () => {
+  it('merges CRM contact and current visit signals into Contact Details', () => {
     const { container, cleanup } = renderSidebarContext()
 
-    expect(container.textContent).toContain('User details')
+    expect(container.textContent).not.toContain('User details')
+    expect(container.textContent).toContain('Contact Details')
+    expect(container.textContent).toContain('VP Product')
+    expect(container.textContent).toContain('seats requested')
+    expect(container.textContent).toContain('25')
+    expect(container.textContent).not.toContain('agent enrichment')
+    expect(container.textContent).not.toContain('internal-source')
+    expect(container.textContent).toContain('Current visit')
     expect(container.textContent).not.toContain('Main information')
     expect(container.textContent).not.toContain('Visitor device')
     expect(container.textContent).toContain('Chat')

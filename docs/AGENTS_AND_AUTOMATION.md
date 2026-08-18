@@ -12,6 +12,26 @@ Use this doc for runtime and model truth. For the product-facing mental model, s
 
 For repository-backed coding-agent execution, see `CODING_AGENT_RUNTIME_FLOW.md` if present in the checkout.
 
+## Architectural summary
+
+Helpin has one agent abstraction and one execution boundary.
+
+- Helpin owns agent definitions, workspace and team access, presets, versions,
+  triggers, targets, entitlements, billing preflight, and product launch
+  surfaces.
+- Agent Runtime owns execution mechanics: durable workflows, runtime adapters,
+  tool invocation, workspaces, transcripts, interactions, artifacts, and usage.
+- `is_system` describes who owns an agent's configuration. It does not select
+  an executor.
+- `runtime_kind` selects an Agent Runtime adapter (`native_sdk`, `codex`, or
+  `opencode`). It does not select product behavior or ownership.
+- Every real agent execution creates the normal Helpin `agent_run`, is projected
+  to Agent Runtime, and returns through the same event/projection lifecycle.
+
+In one sentence: **system agents are product-managed configurations of the
+generic agent primitive, while custom agents are workspace-managed
+configurations of that same primitive.**
+
 ## Core model
 
 The platform now treats Automation as one system with four related concepts:
@@ -154,7 +174,6 @@ Current trigger families in code:
   - `github.release_published`
   - `github.check_suite_completed`
 - schedules and cron
-  - `agent.schedule`
   - `automation_rule.cron`
 - built-in or product-owned launchers
   - `support.widget_message`
@@ -211,7 +230,6 @@ Important fields:
 - `allowed_commands`
 - `allowed_targets`
 - `team_ids`
-- `schedule`
 - `approval_mode`
 - `default_invocation_mode`
 
@@ -285,33 +303,47 @@ Repo-local execution tools such as file reads, patching, and shell commands may
 still be provided directly by a backend where appropriate. Helpin product tools
 should go through MCP for both `native_sdk` and `codex`.
 
+Authenticated browser automation is also runtime-owned. The canonical browser
+bundle is `browser_open`, `browser_snapshot`, `browser_act`, and
+`browser_screenshot`. Agent Runtime executes the bounded contracts through the
+pinned `agent-browser` CLI and Kernel; Helpin owns selection metadata and the
+durable S3-backed screenshot asset endpoint. Each app/run receives an isolated,
+short-lived browser session without a persistent Kernel profile. Paused turns
+retain the session; the runtime closes it when the run becomes terminal, and
+Kernel's configured idle timeout is the fallback. Login state does not survive
+a closed or timed-out session.
+
+Use web search, `fetch_url`, or `crawl_url` for public read-only research. Use
+the browser bundle only for authenticated pages, UI interactions, or visual
+capture. Browser output is compact and screenshots return asset metadata rather
+than inline image bytes.
+
 When writing prompts, skill markdown, or planner guidance, use the runtime-facing
 tool name from the prompt renderer, for example `mcp__helpin__update_plan`, not
 the bare alias. When writing backend tests, policies, or artifact decoders, use
 canonical aliases unless the test is specifically about runtime tool naming.
 
-## Ask Agents
+## The Dock (Ask Agents)
 
-Ask Agents is the orchestration chat layer over the agent system.
+The dock is the primary chat surface over the agent system. Each user has
+multiple dock chats per workspace; **each chat is an agent-runtime chat-mode
+run** of the `ask_agent` system preset (`turn_policy.mode =
+pause_after_assistant`). There is no in-app classifier or inline LLM tool loop
+anymore — the chat run itself answers read-only questions with product command
+tools and orchestrates durable work through the `agents.*` command tools.
 
-Full runtime reference with mermaid diagrams (component map, intent routing, read-only
-vs mutation gating, plan-kind dispatch, Temporal DAG loop, persistence):
-[ASK_AGENTS_BAR.md](./ASK_AGENTS_BAR.md).
-
-It can:
-
-- answer simple read-only questions inline with non-mutating context/tool access
-- load bounded live read-only context for common task, docs, and CRM list/count questions
-- propose a normal command-bar run plan for saved agents, one-shot Command Agent runs, fan-out, or DAGs
-- propose reusable custom-agent drafts
-- create reusable custom agents only after explicit approval
+Current reference: [ASK_AGENTS_BAR.md](./ASK_AGENTS_BAR.md).
 
 Important boundaries:
 
-- Ask Agents is not a new runtime and not a super-agent with every tool enabled
-- inline answers must stay read-only, must not create `agent_run` records, and must fall back to a one-shot Command Agent run when the requested data needs broader tool execution
-- inline answers and runtime tools should share command-backed product reads where a tool already exists, for example `workspace.list_teams` backing the `list_workspace_teams` runtime alias
-- durable work still creates `agent_run` records, grouped by `command_bar_plans` when orchestration is needed
+- the chat agent's tool surface is read-only product tools + `agents.*`
+  orchestration tools, narrowed per user at run start
+- mutating `agents.*` launches require a server-verified `dock_plan_confirm`
+  approval interaction (canonical action hash, single-use)
+- durable work still creates `agent_run` records, grouped by
+  `command_bar_plans` when orchestration is needed; plans launched from a chat
+  carry `parent_chat_run_id` / `dock_chat_id` and deliver a
+  `<child_run_result>` back into the chat when they settle
 - one-shot ad hoc work still uses the system `Command Agent`
 - saved custom agents still persist through the normal `agents` creation path
 
@@ -391,7 +423,7 @@ automation flow event
   -> startTargetRun
   -> agent_run
 
-agent schedule
+automation-rule schedule
   -> scheduled trigger
   -> agent_trigger_execution(source=schedule)
   -> agent_run
@@ -401,10 +433,20 @@ built-in automation
   -> may create trigger execution and/or agent_run depending on behavior
 ```
 
-## Agent ownership and defaults
+## Agent ownership and configuration
 
-The code still records two ownership styles. They are not separate execution
-paths.
+The code records two ownership styles. They share the same execution path.
+
+| Concern | System agent | Custom agent | Owner |
+| --- | --- | --- | --- |
+| Identity | `is_system = true` | `is_system = false` | Helpin |
+| Scope | Managed per preset and workspace | Created inside one workspace | Helpin |
+| Behavior source | Product preset or workspace version of that preset | Active custom-agent version | Helpin |
+| Prompt and skills | Preset-owned defaults and guardrails | Explicit workspace configuration | Helpin |
+| Tools and targets | Preset policy, optionally workspace-versioned | Explicit allowlists | Helpin |
+| Runtime backend | `runtime_kind` | `runtime_kind` | Agent Runtime |
+| Durable execution | `agent_run` | `agent_run` | Shared |
+| Transcript, interactions, artifacts, usage | Generic runtime contracts | Generic runtime contracts | Agent Runtime, projected into Helpin |
 
 ### System agents
 
@@ -426,6 +468,9 @@ Characteristics:
 - usually preset-bound
 - backend-owned defaults, prompt/skill bundles, allowed tools, and guardrails
 - may have product-owned launch buttons, default targets, or seed behavior
+- are reconciled by preset family so product defaults can be upgraded
+- may be pinned to a workspace-owned preset version while remaining system
+  agents
 
 Preset contract behavior:
 
@@ -445,6 +490,9 @@ Current truth:
 - not preset-backed
 - generic executor model
 - not on a special custom-agent execution path
+- scoped to a Helpin workspace and optionally limited to teams
+- carry an active, durable `agent_version` containing runtime, model, prompt,
+  skills, tools, targets, and invocation configuration
 
 Simplified creation behavior:
 
@@ -452,6 +500,44 @@ Simplified creation behavior:
 - created custom agents still use the existing `/automation/agents` persistence path
 - execution still creates normal `agent_run` records
 - no separate custom-agent runtime, trigger model, or persistence model exists
+- custom-agent creation rejects `preset_key` and `preset_version_key`; a custom
+  agent can reproduce planner/reviewer-like behavior by explicitly selecting
+  the corresponding prompt, skills, tools, targets, and contracts, but it does
+  not inherit or track the product preset
+
+### Launch and registration boundary
+
+Helpin is the source of truth for both ownership styles. Agent Runtime is
+host-neutral and does not decide which agents should exist in a workspace.
+
+At launch, Helpin:
+
+1. resolves the workspace agent and its active configuration;
+2. checks access, target policy, entitlements, and AI usage;
+3. creates the Helpin `agent_run`;
+4. projects and upserts the executable agent definition into Agent Runtime;
+5. starts the runtime run and stores its external runtime ID;
+6. projects runtime messages, interactions, artifacts, status, and usage back
+   into the Helpin run.
+
+Agent Runtime partitions its own durable records by host `app_id`. Helpin's
+`workspace_id` and team rules remain host-owned tenancy and authorization
+boundaries. Do not move workspace ownership decisions into Agent Runtime.
+
+### What shared execution does not imply
+
+Sharing the executor does not mean every agent automatically has identical
+capabilities or entry points.
+
+- A tool must be both registered for the Helpin app and allowed by the agent.
+- A run-level tool policy may narrow, but never expand, the agent policy.
+- Target context and repository workspaces depend on host-provided target and
+  workspace contracts.
+- System presets may have product-owned buttons, trigger defaults, artifact
+  requirements, and finalizers.
+- Genuine product exceptions, such as support ingestion or delivery-pipeline
+  orchestration, may wrap the generic run path. They must not introduce a
+  second executor for custom agents.
 
 Direction:
 

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -24,7 +26,55 @@ func NewPMSprintRepository(db *gorm.DB) *PMSprintRepository {
 
 // List returns sprints with filters.
 func (r *PMSprintRepository) List(ctx context.Context, workspaceID string, filters model.PMSprintListFilters) ([]model.PMSprint, error) {
+	query := r.listQuery(ctx, workspaceID, filters)
+
+	var sprints []model.PMSprint
+	if err := query.Order("COALESCE(start_date, created_at) DESC").Find(&sprints).Error; err != nil {
+		return nil, fmt.Errorf("list sprints: %w", err)
+	}
+	r.setSprintStatuses(sprints)
+	return sprints, nil
+}
+
+// ListPage counts and selects only the requested sprint page before enriching it.
+func (r *PMSprintRepository) ListPage(ctx context.Context, workspaceID string, filters model.PMSprintListFilters, pagination model.PMPagination) ([]model.SprintWithStats, int, int, int, error) {
+	page, perPage := normalizeSprintPagination(pagination)
+	query := r.listQuery(ctx, workspaceID, filters)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, page, perPage, fmt.Errorf("count sprints: %w", err)
+	}
+	offset := 0
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	} else {
+		if page-1 > math.MaxInt/perPage {
+			return []model.SprintWithStats{}, int(total), page, perPage, nil
+		}
+		offset = (page - 1) * perPage
+	}
+	if total == 0 || int64(offset) >= total {
+		return []model.SprintWithStats{}, int(total), page, perPage, nil
+	}
+
+	var sprints []model.PMSprint
+	if err := query.Order("COALESCE(start_date, created_at) DESC").Offset(offset).Limit(perPage).Find(&sprints).Error; err != nil {
+		return nil, 0, page, perPage, fmt.Errorf("list sprint page: %w", err)
+	}
+	r.setSprintStatuses(sprints)
+	enriched, err := r.EnrichSprints(ctx, sprints)
+	if err != nil {
+		return nil, 0, page, perPage, err
+	}
+	return enriched, int(total), page, perPage, nil
+}
+
+func (r *PMSprintRepository) listQuery(ctx context.Context, workspaceID string, filters model.PMSprintListFilters) *gorm.DB {
 	query := r.db.WithContext(ctx).Model(&model.PMSprint{}).Where("workspace_id = ?", workspaceID)
+	if filters.Search != nil && strings.TrimSpace(*filters.Search) != "" {
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("(LOWER(name) LIKE ? OR LOWER(COALESCE(description, '')) LIKE ?)", search, search)
+	}
 	if filters.TeamID != nil && *filters.TeamID != "" {
 		query = query.Where("team_id = ?", *filters.TeamID)
 	}
@@ -38,30 +88,64 @@ func (r *PMSprintRepository) List(ctx context.Context, workspaceID string, filte
 			query = query.Where("team_id IN ?", filters.AccessibleTeamIDs)
 		}
 	}
-
-	var sprints []model.PMSprint
-	if err := query.Order("COALESCE(start_date, created_at) DESC").Find(&sprints).Error; err != nil {
-		return nil, fmt.Errorf("list sprints: %w", err)
-	}
-
-	if filters.Status != nil && *filters.Status != "" {
-		filtered := make([]model.PMSprint, 0, len(sprints))
-		now := time.Now().UTC()
-		for _, it := range sprints {
-			status := computeSprintStatus(it.StartDate, it.EndDate, now)
-			if status == *filters.Status {
-				it.Status = status
-				filtered = append(filtered, it)
-			}
+	if filters.AgentTeamIDs != nil {
+		if len(filters.AgentTeamIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("team_id IN ?", filters.AgentTeamIDs)
 		}
-		return filtered, nil
 	}
+	if filters.Status != nil && *filters.Status != "" {
+		today := time.Now().UTC().Format("2006-01-02")
+		switch *filters.Status {
+		case model.PMSprintStatusUnstarted:
+			query = query.Where("start_date IS NULL OR end_date IS NULL OR start_date > ?", today)
+		case model.PMSprintStatusStarted:
+			query = query.Where("start_date IS NOT NULL AND end_date IS NOT NULL AND start_date <= ? AND end_date >= ?", today, today)
+		case model.PMSprintStatusDone:
+			query = query.Where("start_date IS NOT NULL AND end_date IS NOT NULL AND end_date < ?", today)
+		default:
+			query = query.Where("1 = 0")
+		}
+	}
+	return query
+}
 
+// ListByIDs returns sprint rows for target-title enrichment in one query.
+func (r *PMSprintRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMSprint, error) {
+	if len(ids) == 0 {
+		return []model.PMSprint{}, nil
+	}
+	var sprints []model.PMSprint
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&sprints).Error; err != nil {
+		return nil, fmt.Errorf("list sprints by IDs: %w", err)
+	}
+	r.setSprintStatuses(sprints)
+	return sprints, nil
+}
+
+func (r *PMSprintRepository) setSprintStatuses(sprints []model.PMSprint) {
 	now := time.Now().UTC()
 	for i := range sprints {
 		sprints[i].Status = computeSprintStatus(sprints[i].StartDate, sprints[i].EndDate, now)
 	}
-	return sprints, nil
+}
+
+func normalizeSprintPagination(pagination model.PMPagination) (int, int) {
+	page := pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+	perPage := pagination.PerPage
+	if perPage <= 0 {
+		perPage = 50
+	}
+	if perPage > 100 {
+		perPage = 100
+	}
+	return page, perPage
 }
 
 // ListPlanningWorkspace returns grouped sprint cards plus an unassigned backlog preview for the planning page.
@@ -101,9 +185,9 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 
 	now := time.Now().UTC()
 	buckets := map[string]*model.SprintPlanningBucket{
-		"active":    {Key: "active", Label: "Active"},
-		"upcoming":  {Key: "upcoming", Label: "Upcoming"},
-		"completed": {Key: "completed", Label: "Completed"},
+		"active":    {Key: "active", Label: "Active", Sprints: []model.SprintPlanningCard{}},
+		"upcoming":  {Key: "upcoming", Label: "Upcoming", Sprints: []model.SprintPlanningCard{}},
+		"completed": {Key: "completed", Label: "Completed", Sprints: []model.SprintPlanningCard{}},
 	}
 	orderedBucketKeys := []string{"active", "upcoming", "completed"}
 
@@ -147,7 +231,9 @@ func (r *PMSprintRepository) ListPlanningWorkspace(ctx context.Context, workspac
 				continue
 			}
 			card.Stats = statsBySprintID[sprintID]
-			card.PreviewTasks = previewStoriesBySprintID[sprintID]
+			if previewTasks, ok := previewStoriesBySprintID[sprintID]; ok {
+				card.PreviewTasks = previewTasks
+			}
 			if overflow := card.Stats.TaskCount - len(card.PreviewTasks); overflow > 0 {
 				card.TaskPreviewOverflow = overflow
 			}
@@ -202,6 +288,39 @@ func (r *PMSprintRepository) GetWithStats(ctx context.Context, id string) (*mode
 	return &model.SprintWithStats{Sprint: sprint, Labels: labels, Stats: stats}, nil
 }
 
+// EnrichSprints loads labels and statistics in batches for an already-bounded set.
+func (r *PMSprintRepository) EnrichSprints(ctx context.Context, sprints []model.PMSprint) ([]model.SprintWithStats, error) {
+	result := make([]model.SprintWithStats, 0, len(sprints))
+	if len(sprints) == 0 {
+		return result, nil
+	}
+
+	ids := make([]string, 0, len(sprints))
+	for _, sprint := range sprints {
+		ids = append(ids, sprint.ID)
+	}
+	labelsBySprintID, err := r.listLabelsBySprintIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	statsBySprintID, err := r.computePlanningStats(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, sprint := range sprints {
+		labels := labelsBySprintID[sprint.ID]
+		if labels == nil {
+			labels = []model.PMLabel{}
+		}
+		result = append(result, model.SprintWithStats{
+			Sprint: sprint,
+			Labels: labels,
+			Stats:  statsBySprintID[sprint.ID],
+		})
+	}
+	return result, nil
+}
+
 // Create inserts a sprint.
 func (r *PMSprintRepository) Create(ctx context.Context, sprint *model.PMSprint) error {
 	if err := r.db.WithContext(ctx).Create(sprint).Error; err != nil {
@@ -210,12 +329,41 @@ func (r *PMSprintRepository) Create(ctx context.Context, sprint *model.PMSprint)
 	return nil
 }
 
+// CreateWithLabels inserts a sprint and its label links atomically.
+func (r *PMSprintRepository) CreateWithLabels(ctx context.Context, sprint *model.PMSprint, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(sprint).Error; err != nil {
+			return fmt.Errorf("create sprint: %w", err)
+		}
+		if err := replaceSprintLabels(tx, sprint.ID, labelIDs); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
 // Update updates a sprint.
 func (r *PMSprintRepository) Update(ctx context.Context, sprint *model.PMSprint) error {
 	if err := r.db.WithContext(ctx).Save(sprint).Error; err != nil {
 		return fmt.Errorf("update sprint: %w", err)
 	}
 	return nil
+}
+
+// UpdateWithLabels saves sprint scalar fields and, when labelIDs is non-nil,
+// replaces its label links in the same transaction.
+func (r *PMSprintRepository) UpdateWithLabels(ctx context.Context, sprint *model.PMSprint, labelIDs []string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(sprint).Error; err != nil {
+			return fmt.Errorf("update sprint: %w", err)
+		}
+		if labelIDs != nil {
+			if err := replaceSprintLabels(tx, sprint.ID, labelIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Delete hard-deletes a sprint.
@@ -278,17 +426,21 @@ func (r *PMSprintRepository) ComputeStats(ctx context.Context, sprintID string) 
 // ReplaceLabels replaces all labels linked to a sprint.
 func (r *PMSprintRepository) ReplaceLabels(ctx context.Context, sprintID string, labelIDs []string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Delete(&model.PMSprintLabel{}, "sprint_id = ?", sprintID).Error; err != nil {
-			return fmt.Errorf("clear sprint labels: %w", err)
-		}
-		for _, labelID := range labelIDs {
-			link := model.PMSprintLabel{SprintID: sprintID, LabelID: labelID}
-			if err := tx.Create(&link).Error; err != nil {
-				return fmt.Errorf("set sprint labels: %w", err)
-			}
-		}
-		return nil
+		return replaceSprintLabels(tx, sprintID, labelIDs)
 	})
+}
+
+func replaceSprintLabels(tx *gorm.DB, sprintID string, labelIDs []string) error {
+	if err := tx.Delete(&model.PMSprintLabel{}, "sprint_id = ?", sprintID).Error; err != nil {
+		return fmt.Errorf("clear sprint labels: %w", err)
+	}
+	for _, labelID := range labelIDs {
+		link := model.PMSprintLabel{SprintID: sprintID, LabelID: labelID}
+		if err := tx.Create(&link).Error; err != nil {
+			return fmt.Errorf("set sprint labels: %w", err)
+		}
+	}
+	return nil
 }
 
 // ListTasks returns tasks in a sprint.
@@ -311,6 +463,39 @@ func (r *PMSprintRepository) ListEnrichedTasks(ctx context.Context, sprintID str
 		return nil, err
 	}
 	return NewPMTaskRepository(r.db).EnrichTasksForList(ctx, tasks), nil
+}
+
+// ListEnrichedTasksPage counts and selects only the requested task page before enrichment.
+func (r *PMSprintRepository) ListEnrichedTasksPage(ctx context.Context, sprintID string, search *string, pagination model.PMPagination) ([]model.BoardTask, int, int, int, error) {
+	page, perPage := normalizeSprintPagination(pagination)
+	query := r.db.WithContext(ctx).Model(&model.PMTask{}).
+		Where("sprint_id = ? AND archived = false", sprintID)
+	if search != nil && strings.TrimSpace(*search) != "" {
+		pattern := "%" + strings.ToLower(strings.TrimSpace(*search)) + "%"
+		query = query.Where("(LOWER(name) LIKE ? OR LOWER(COALESCE(description, '')) LIKE ? OR CAST(display_id AS TEXT) LIKE ?)", pattern, pattern, pattern)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, page, perPage, fmt.Errorf("count sprint stories: %w", err)
+	}
+	offset := 0
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	} else {
+		if page-1 > math.MaxInt/perPage {
+			return []model.BoardTask{}, int(total), page, perPage, nil
+		}
+		offset = (page - 1) * perPage
+	}
+	if total == 0 || int64(offset) >= total {
+		return []model.BoardTask{}, int(total), page, perPage, nil
+	}
+
+	var tasks []model.PMTask
+	if err := query.Order("position ASC, created_at DESC").Offset(offset).Limit(perPage).Find(&tasks).Error; err != nil {
+		return nil, 0, page, perPage, fmt.Errorf("list sprint story page: %w", err)
+	}
+	return NewPMTaskRepository(r.db).EnrichTasksForList(ctx, tasks), int(total), page, perPage, nil
 }
 
 // HasDateOverlap checks whether another sprint overlaps date range for workspace/team.
@@ -349,6 +534,43 @@ func (r *PMSprintRepository) listLabels(ctx context.Context, sprintID string) ([
 		return nil, fmt.Errorf("list sprint labels: %w", err)
 	}
 	return labels, nil
+}
+
+func (r *PMSprintRepository) listLabelsBySprintIDs(ctx context.Context, sprintIDs []string) (map[string][]model.PMLabel, error) {
+	labelsBySprintID := make(map[string][]model.PMLabel, len(sprintIDs))
+	if len(sprintIDs) == 0 {
+		return labelsBySprintID, nil
+	}
+	var links []model.PMSprintLabel
+	if err := r.db.WithContext(ctx).Where("sprint_id IN ?", sprintIDs).Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list sprint label links: %w", err)
+	}
+	if len(links) == 0 {
+		return labelsBySprintID, nil
+	}
+	labelIDs := make([]string, 0, len(links))
+	for _, link := range links {
+		labelIDs = append(labelIDs, link.LabelID)
+	}
+	var labels []model.PMLabel
+	if err := r.db.WithContext(ctx).Where("id IN ?", labelIDs).Order("name ASC").Find(&labels).Error; err != nil {
+		return nil, fmt.Errorf("list sprint labels: %w", err)
+	}
+	labelsByID := make(map[string]model.PMLabel, len(labels))
+	for _, label := range labels {
+		labelsByID[label.ID] = label
+	}
+	for _, link := range links {
+		if label, ok := labelsByID[link.LabelID]; ok {
+			labelsBySprintID[link.SprintID] = append(labelsBySprintID[link.SprintID], label)
+		}
+	}
+	for sprintID := range labelsBySprintID {
+		sort.SliceStable(labelsBySprintID[sprintID], func(i, j int) bool {
+			return labelsBySprintID[sprintID][i].Name < labelsBySprintID[sprintID][j].Name
+		})
+	}
+	return labelsBySprintID, nil
 }
 
 func computeSprintStatus(startDate, endDate *time.Time, now time.Time) string {
@@ -507,15 +729,41 @@ func (r *PMSprintRepository) ListPreviewTasksPage(ctx context.Context, sprintID 
 	}, nil
 }
 
-func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, sprintIDs []string, limitPerSprint int) (map[string][]model.SprintPlanningTaskPreview, error) {
-	bySprint := make(map[string][]model.SprintPlanningTaskPreview, len(sprintIDs))
-	if len(sprintIDs) == 0 {
-		return bySprint, nil
+// ListBacklogTasksPage returns a paginated page of accessible, non-completed unsprinted tasks.
+func (r *PMSprintRepository) ListBacklogTasksPage(ctx context.Context, workspaceID string, filters model.PMSprintPlanningFilters, pagination model.PMPagination) (*model.PaginatedResponse, error) {
+	perPage := pagination.PerPage
+	if perPage <= 0 {
+		perPage = 50
+	}
+	page := pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+	offset := (page - 1) * perPage
+
+	base := r.db.WithContext(ctx).
+		Table("pm_tasks s").
+		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
+		Where("s.workspace_id = ? AND s.archived = false AND s.sprint_id IS NULL", workspaceID).
+		Where("ws.state_type <> ?", model.PMStateTypeDone)
+	if filters.TeamID != nil && *filters.TeamID != "" {
+		base = base.Where("s.team_id = ?", *filters.TeamID)
+	}
+	if filters.AccessibleTeamIDs != nil {
+		if len(filters.AccessibleTeamIDs) == 0 {
+			base = base.Where("1 = 0")
+		} else {
+			base = base.Where("s.team_id IN ?", filters.AccessibleTeamIDs)
+		}
 	}
 
-	var rows []model.SprintPlanningTaskPreview
-	if err := r.db.WithContext(ctx).
-		Table("pm_tasks s").
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("count planning backlog tasks: %w", err)
+	}
+
+	rows := make([]model.SprintPlanningTaskPreview, 0, perPage)
+	if err := base.
 		Select(`
 			s.id,
 			s.display_id,
@@ -528,9 +776,61 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 			s.sprint_id,
 			s.team_id
 		`).
+		Order("s.position ASC, s.updated_at DESC, s.created_at DESC").
+		Offset(offset).
+		Limit(perPage).
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list planning backlog task page: %w", err)
+	}
+	if err := r.enrichPlanningTaskPreviewOwners(ctx, rows); err != nil {
+		return nil, err
+	}
+
+	totalPages := 0
+	if perPage > 0 {
+		totalPages = int((total + int64(perPage) - 1) / int64(perPage))
+	}
+	return &model.PaginatedResponse{
+		Data:       rows,
+		Total:      int(total),
+		Page:       page,
+		PerPage:    perPage,
+		TotalPages: totalPages,
+	}, nil
+}
+
+func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, sprintIDs []string, limitPerSprint int) (map[string][]model.SprintPlanningTaskPreview, error) {
+	bySprint := make(map[string][]model.SprintPlanningTaskPreview, len(sprintIDs))
+	if len(sprintIDs) == 0 {
+		return bySprint, nil
+	}
+
+	ranked := r.db.WithContext(ctx).
+		Table("pm_tasks s").
+		Select(`
+			s.id,
+			s.display_id,
+			s.name,
+			s.workflow_state_id,
+			ws.name AS state_name,
+			ws.state_type AS state_type,
+			s.estimate,
+			s.priority,
+			s.sprint_id,
+			s.team_id,
+			ROW_NUMBER() OVER (
+				PARTITION BY s.sprint_id
+				ORDER BY s.position ASC, s.created_at DESC
+			) AS preview_rank
+		`).
 		Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
-		Where("s.sprint_id IN ? AND s.archived = false", sprintIDs).
-		Order("s.sprint_id ASC, s.position ASC, s.created_at DESC").
+		Where("s.sprint_id IN ? AND s.archived = false", sprintIDs)
+
+	var rows []model.SprintPlanningTaskPreview
+	if err := r.db.WithContext(ctx).
+		Table("(?) AS ranked_tasks", ranked).
+		Where("preview_rank <= ?", limitPerSprint).
+		Order("sprint_id ASC, preview_rank ASC").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list planning preview stories: %w", err)
 	}
@@ -542,11 +842,7 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 		if row.SprintID == nil {
 			continue
 		}
-		current := bySprint[*row.SprintID]
-		if len(current) >= limitPerSprint {
-			continue
-		}
-		bySprint[*row.SprintID] = append(current, row)
+		bySprint[*row.SprintID] = append(bySprint[*row.SprintID], row)
 	}
 	return bySprint, nil
 }
@@ -573,7 +869,9 @@ func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, wor
 		return nil, 0, fmt.Errorf("count planning backlog stories: %w", err)
 	}
 
-	var stories []model.SprintPlanningTaskPreview
+	// Always return an array to clients, including when the team's backlog is empty.
+	// A nil slice is encoded as JSON null, which is not a usable collection in the UI.
+	stories := make([]model.SprintPlanningTaskPreview, 0)
 	if err := base.
 		Select(`
 			s.id,

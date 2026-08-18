@@ -557,10 +557,9 @@ func (s *SupportInboxService) moveConversationInternal(ctx context.Context, work
 	}
 
 	fields := map[string]any{
-		"mailbox_id":        targetMailboxID,
-		"team_last_seen_at": nil,
-		"assigned_user_id":  ownerID,
-		"flow_state":        flowState,
+		"mailbox_id":       targetMailboxID,
+		"assigned_user_id": ownerID,
+		"flow_state":       flowState,
 	}
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
 		return nil, err

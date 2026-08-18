@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SupportConversation, SupportMessage } from '@/lib/pmTypes'
 import {
   copyCustomerEmailToClipboard,
+  conversationDetailSidebarRootClassName,
   customerEmailCopyButtonClassName,
   customerEmailDisplayRowClassName,
   customerNameDisplayRowClassName,
@@ -13,6 +14,14 @@ import {
   getLastActiveTooltipLabel,
   shouldShowLastActiveIndicator,
 } from '../ConversationDetailSidebar'
+
+describe('details sidebar scrolling', () => {
+  it('constrains the sidebar to its panel height so the inner content can scroll', () => {
+    expect(conversationDetailSidebarRootClassName).toContain('h-full')
+    expect(conversationDetailSidebarRootClassName).toContain('min-h-0')
+    expect(conversationDetailSidebarRootClassName).not.toContain('border-l')
+  })
+})
 
 const baseMessage: SupportMessage = {
   id: 'msg-1',
@@ -129,12 +138,10 @@ describe('last active presence helpers', () => {
     expect(shouldShowLastActiveIndicator(false, null)).toBe(false)
   })
 
-  it('labels CRM-contact scoped activity as contact-level activity', () => {
+  it('keeps the last active label compact for sidebar display', () => {
     const label = getLastActiveTooltipLabel('2026-06-16T10:00:00Z', 'crm_contact', new Date('2026-06-16T10:12:00Z'))
 
-    expect(label).toContain('Last active')
-    expect(label).toContain('12 minutes ago')
-    expect(label).toContain('across this contact')
+    expect(label).toBe('Last active 12 minutes ago')
   })
 })
 

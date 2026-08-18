@@ -38,9 +38,13 @@ func (PMSprintLabel) TableName() string { return "pm_sprint_labels" }
 
 // PMSprintListFilters applies filters when listing sprints.
 type PMSprintListFilters struct {
+	Search   *string
 	TeamID   *string
 	Status   *string
 	Archived *bool
+	// AgentTeamIDs is an additional command-agent scope restriction.
+	// nil = workspace-scoped/no agent filter, [ids] = restrict to those teams.
+	AgentTeamIDs []string
 	// AccessibleTeamIDs enforces team-based access boundaries.
 	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
 	AccessibleTeamIDs []string
@@ -78,6 +82,17 @@ type UpdateSprintRequest struct {
 	TeamID      *string    `json:"team_id"`
 	Archived    *bool      `json:"archived"`
 	LabelIDs    []string   `json:"label_ids"`
+}
+
+// LinkSprintTasksRequest links or moves existing same-team tasks into a sprint.
+type LinkSprintTasksRequest struct {
+	TaskIDs []string `json:"task_ids"`
+}
+
+// LinkSprintTasksResponse summarizes an atomic sprint task-linking operation.
+type LinkSprintTasksResponse struct {
+	LinkedCount int `json:"linked_count"`
+	MovedCount  int `json:"moved_count"`
 }
 
 // PMSprintStats contains derived sprint progress metrics.

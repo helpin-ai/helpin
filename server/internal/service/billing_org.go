@@ -44,64 +44,77 @@ type BillingOwnerRef struct {
 
 // WorkspaceBillingCard is a per-workspace entry in the org roll-up.
 type WorkspaceBillingCard struct {
-	WorkspaceID       string            `json:"workspace_id"`
-	WorkspaceName     string            `json:"workspace_name"`
-	WorkspaceSlug     string            `json:"workspace_slug"`
-	Plan              string            `json:"plan"`
-	Status            string            `json:"status"`
-	Locked            bool              `json:"locked"`
-	Trialing          bool              `json:"trialing"`
-	TrialEndsAt       *time.Time        `json:"trial_ends_at,omitempty"`
-	CurrentPeriodEnd  time.Time         `json:"current_period_end"`
-	IncludedCredits   int               `json:"included_credits"`
-	CreditsUsed       int               `json:"credits_used"`
-	OnDemandEnabled   bool              `json:"on_demand_enabled"`
-	OnDemandAvailable bool              `json:"on_demand_available"`
-	PriceCents        int               `json:"price_cents"`
-	BillingInterval   string            `json:"billing_interval"`
-	PaymentMethod     *PaymentMethodRef `json:"payment_method"`
-	BillingOwner      *BillingOwnerRef  `json:"billing_owner"`
-	CanManage         bool              `json:"can_manage"`
+	WorkspaceID              string            `json:"workspace_id"`
+	WorkspaceName            string            `json:"workspace_name"`
+	WorkspaceSlug            string            `json:"workspace_slug"`
+	Plan                     string            `json:"plan"`
+	Status                   string            `json:"status"`
+	Locked                   bool              `json:"locked"`
+	Trialing                 bool              `json:"trialing"`
+	TrialEndsAt              *time.Time        `json:"trial_ends_at,omitempty"`
+	CurrentPeriodEnd         time.Time         `json:"current_period_end"`
+	AIUsageAllowanceMicrousd int64             `json:"ai_usage_allowance_microusd"`
+	AIUsageUsedMicrousd      int64             `json:"ai_usage_used_microusd"`
+	AIUsageReservedMicrousd  int64             `json:"ai_usage_reserved_microusd"`
+	AIUsagePercent           float64           `json:"ai_usage_percent"`
+	ExtraAIUsageEnabled      bool              `json:"extra_ai_usage_enabled"`
+	ExtraAIUsageAvailable    bool              `json:"extra_ai_usage_available"`
+	PriceCents               int               `json:"price_cents"`
+	BillingInterval          string            `json:"billing_interval"`
+	PaymentMethod            *PaymentMethodRef `json:"payment_method"`
+	BillingOwner             *BillingOwnerRef  `json:"billing_owner"`
+	CanManage                bool              `json:"can_manage"`
 }
 
 // OrganizationBillingSummary is the org roll-up returned by GET /billing.
 type OrganizationBillingSummary struct {
-	OrganizationID         string                 `json:"organization_id"`
-	TotalMonthlySpendCents int                    `json:"total_monthly_spend_cents"`
-	PaidCount              int                    `json:"paid_count"`
-	TrialingCount          int                    `json:"trialing_count"`
-	CreditsUsed            int                    `json:"credits_used"`
-	IncludedCreditsTotal   int                    `json:"included_credits_total"`
-	SetupComplete          bool                   `json:"setup_complete"`
-	Workspaces             []WorkspaceBillingCard `json:"workspaces"`
+	OrganizationID           string                 `json:"organization_id"`
+	TotalMonthlySpendCents   int                    `json:"total_monthly_spend_cents"`
+	PaidCount                int                    `json:"paid_count"`
+	TrialingCount            int                    `json:"trialing_count"`
+	AIUsageUsedMicrousd      int64                  `json:"ai_usage_used_microusd"`
+	AIUsageAllowanceMicrousd int64                  `json:"ai_usage_allowance_microusd"`
+	AIUsagePercent           float64                `json:"ai_usage_percent"`
+	SetupComplete            bool                   `json:"setup_complete"`
+	Workspaces               []WorkspaceBillingCard `json:"workspaces"`
 }
 
 // UsageFeature is a per-feature usage table row.
 type UsageFeature struct {
-	FeatureKey string  `json:"feature_key"`
-	Label      string  `json:"label"`
-	Cost       int     `json:"cost"`
-	Usage      int     `json:"usage"`
-	Credits    int     `json:"credits"`
-	Pct        float64 `json:"pct"`
+	FeatureKey       string   `json:"feature_key"`
+	Label            string   `json:"label"`
+	ModelTier        string   `json:"model_tier,omitempty"`
+	ModelTiers       []string `json:"model_tiers"`
+	ActionCount      int      `json:"action_count"`
+	ActualCount      int      `json:"actual_count"`
+	EstimatedCount   int      `json:"estimated_count"`
+	ChargedMicrousd  int64    `json:"charged_microusd"`
+	InputTokens      int64    `json:"input_tokens"`
+	CacheReadTokens  int64    `json:"cache_read_tokens"`
+	CacheWriteTokens int64    `json:"cache_write_tokens"`
+	OutputTokens     int64    `json:"output_tokens"`
+	ReasoningTokens  int64    `json:"reasoning_tokens"`
+	Pct              float64  `json:"pct"`
 }
 
 // UsageSeriesPoint is one day in the usage chart, with per-feature credits.
 type UsageSeriesPoint struct {
-	Date     string         `json:"date"`
-	Features map[string]int `json:"features"`
+	Date     string           `json:"date"`
+	Features map[string]int64 `json:"features"`
 }
 
 // WorkspaceUsage is the response for GET /billing/usage.
 type WorkspaceUsage struct {
-	Period          string             `json:"period"`
-	PeriodStart     time.Time          `json:"period_start"`
-	PeriodEnd       time.Time          `json:"period_end"`
-	Mode            string             `json:"mode"`
-	IncludedCredits int                `json:"included_credits"`
-	CreditsUsed     int                `json:"credits_used"`
-	Series          []UsageSeriesPoint `json:"series"`
-	Features        []UsageFeature     `json:"features"`
+	Period                   string             `json:"period"`
+	PeriodStart              time.Time          `json:"period_start"`
+	PeriodEnd                time.Time          `json:"period_end"`
+	Mode                     string             `json:"mode"`
+	AIUsageAllowanceMicrousd int64              `json:"ai_usage_allowance_microusd"`
+	AIUsageUsedMicrousd      int64              `json:"ai_usage_used_microusd"`
+	AIUsageReservedMicrousd  int64              `json:"ai_usage_reserved_microusd"`
+	AIUsageOverageMicrousd   int64              `json:"ai_usage_overage_microusd"`
+	Series                   []UsageSeriesPoint `json:"series"`
+	Features                 []UsageFeature     `json:"features"`
 }
 
 // PriceCentsForPlan returns the price (in cents) for a plan + interval.
@@ -277,21 +290,33 @@ func (s *BillingService) GetOrganizationBilling(ctx context.Context, userID, org
 		price := PriceCentsForPlan(plan, interval)
 		trialing := b.Status == model.BillingStatusTrialing
 		card := WorkspaceBillingCard{
-			WorkspaceID:       rows[i].WorkspaceID,
-			WorkspaceName:     rows[i].WorkspaceName,
-			WorkspaceSlug:     rows[i].WorkspaceSlug,
-			Plan:              plan,
-			Status:            b.Status,
-			Locked:            billingStatusLocked(b.Status),
-			Trialing:          trialing,
-			TrialEndsAt:       b.TrialEndsAt,
-			CurrentPeriodEnd:  b.CurrentPeriodEnd,
-			IncludedCredits:   b.IncludedCredits,
-			CreditsUsed:       b.CreditsUsed,
-			OnDemandEnabled:   b.OnDemandEnabled,
-			OnDemandAvailable: billingCanUseOnDemand(&b),
-			PriceCents:        price,
-			BillingInterval:   interval,
+			WorkspaceID:           rows[i].WorkspaceID,
+			WorkspaceName:         rows[i].WorkspaceName,
+			WorkspaceSlug:         rows[i].WorkspaceSlug,
+			Plan:                  plan,
+			Status:                b.Status,
+			Locked:                billingStatusLocked(b.Status),
+			Trialing:              trialing,
+			TrialEndsAt:           b.TrialEndsAt,
+			CurrentPeriodEnd:      b.CurrentPeriodEnd,
+			ExtraAIUsageEnabled:   b.OnDemandEnabled,
+			ExtraAIUsageAvailable: billingCanUseOnDemand(&b),
+			PriceCents:            price,
+			BillingInterval:       interval,
+		}
+		period, periodErr := s.repo.GetOpenAIUsagePeriod(ctx, b.WorkspaceID)
+		if periodErr != nil {
+			return nil, periodErr
+		}
+		if period != nil {
+			card.AIUsageAllowanceMicrousd = period.AllowanceMicrousd
+			card.AIUsageUsedMicrousd = period.UsedMicrousd
+			card.AIUsageReservedMicrousd = period.ReservedMicrousd
+			if period.AllowanceMicrousd > 0 {
+				card.AIUsagePercent = float64(period.UsedMicrousd) / float64(period.AllowanceMicrousd) * 100
+			}
+			summary.AIUsageUsedMicrousd += period.UsedMicrousd
+			summary.AIUsageAllowanceMicrousd += period.AllowanceMicrousd
 		}
 		// Resolve linked card: explicit link, else org default.
 		linkedID := b.PaymentMethodID
@@ -325,9 +350,10 @@ func (s *BillingService) GetOrganizationBilling(ctx context.Context, userID, org
 				summary.TotalMonthlySpendCents += price
 			}
 		}
-		summary.CreditsUsed += b.CreditsUsed
-		summary.IncludedCreditsTotal += b.IncludedCredits
 		summary.Workspaces = append(summary.Workspaces, card)
+	}
+	if summary.AIUsageAllowanceMicrousd > 0 {
+		summary.AIUsagePercent = float64(summary.AIUsageUsedMicrousd) / float64(summary.AIUsageAllowanceMicrousd) * 100
 	}
 	summary.SetupComplete = ob != nil && (ob.FounderPlanEnabled || (ob.StripeCustomerID != nil && len(methods) > 0))
 	return summary, nil
@@ -489,31 +515,46 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 		return nil, err
 	}
 
-	featureCredits := map[string]int{}
-	featureUsage := map[string]int{}
-	totalCredits := 0
+	featureRows := map[string]UsageFeature{}
+	featureTiers := map[string]map[string]struct{}{}
 	dayIndex := map[string]int{}
 	series := make([]UsageSeriesPoint, 0)
 	for _, row := range rows {
-		featureCredits[row.FeatureKey] += row.Credits
-		featureUsage[row.FeatureKey] += row.Entries
-		totalCredits += row.Credits
+		key := row.FeatureKey
+		feature := featureRows[key]
+		feature.FeatureKey, feature.Label = row.FeatureKey, billingFeatureLabel(row.FeatureKey)
+		if featureTiers[key] == nil {
+			featureTiers[key] = map[string]struct{}{}
+		}
+		if row.ModelTier != "" {
+			featureTiers[key][row.ModelTier] = struct{}{}
+		}
+		feature.ActionCount += row.Entries
+		feature.ActualCount += row.ActualEntries
+		feature.EstimatedCount += row.EstimatedEntries
+		feature.ChargedMicrousd += row.ChargedMicrousd
+		feature.InputTokens += row.InputTokens
+		feature.CacheReadTokens += row.CacheReadTokens
+		feature.CacheWriteTokens += row.CacheWriteTokens
+		feature.OutputTokens += row.OutputTokens
+		feature.ReasoningTokens += row.ReasoningTokens
+		featureRows[key] = feature
 		idx, ok := dayIndex[row.Day]
 		if !ok {
 			idx = len(series)
 			dayIndex[row.Day] = idx
-			series = append(series, UsageSeriesPoint{Date: row.Day, Features: map[string]int{}})
+			series = append(series, UsageSeriesPoint{Date: row.Day, Features: map[string]int64{}})
 		}
-		series[idx].Features[row.FeatureKey] += row.Credits
+		series[idx].Features[row.FeatureKey] += row.ChargedMicrousd
 	}
 
 	if mode == "cumulative" {
-		running := map[string]int{}
+		running := map[string]int64{}
 		for i := range series {
 			for f, c := range series[i].Features {
 				running[f] += c
 			}
-			cum := make(map[string]int, len(running))
+			cum := make(map[string]int64, len(running))
 			for f, c := range running {
 				cum[f] = c
 			}
@@ -521,45 +562,62 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 		}
 	}
 
-	features := buildUsageFeatures(featureCredits, featureUsage, totalCredits)
-
-	return &WorkspaceUsage{
-		Period:          period,
-		PeriodStart:     start,
-		PeriodEnd:       end,
-		Mode:            mode,
-		IncludedCredits: summary.IncludedCredits,
-		CreditsUsed:     summary.CreditsUsed,
-		Series:          series,
-		Features:        features,
-	}, nil
-}
-
-// buildUsageFeatures turns grouped credit/usage maps into a sorted per-feature
-// table with cost and percentage of total.
-func buildUsageFeatures(featureCredits, featureUsage map[string]int, totalCredits int) []UsageFeature {
-	features := make([]UsageFeature, 0, len(featureCredits))
-	for key, credits := range featureCredits {
-		pct := 0.0
-		if totalCredits > 0 {
-			pct = float64(credits) / float64(totalCredits) * 100
+	features := make([]UsageFeature, 0, len(featureRows))
+	for key, feature := range featureRows {
+		feature.ModelTiers = orderedModelTiers(featureTiers[key])
+		if len(feature.ModelTiers) == 1 {
+			feature.ModelTier = feature.ModelTiers[0]
 		}
-		features = append(features, UsageFeature{
-			FeatureKey: key,
-			Label:      billingFeatureLabel(key),
-			Cost:       BillingCreditsForFeature(key),
-			Usage:      featureUsage[key],
-			Credits:    credits,
-			Pct:        pct,
-		})
+		feature.Pct = aiUsageAllowancePercentage(feature.ChargedMicrousd, summary.AIUsageAllowanceMicrousd)
+		features = append(features, feature)
 	}
 	sort.Slice(features, func(i, j int) bool {
-		if features[i].Credits != features[j].Credits {
-			return features[i].Credits > features[j].Credits
+		if features[i].ChargedMicrousd != features[j].ChargedMicrousd {
+			return features[i].ChargedMicrousd > features[j].ChargedMicrousd
 		}
 		return features[i].FeatureKey < features[j].FeatureKey
 	})
-	return features
+
+	return &WorkspaceUsage{
+		Period: period, PeriodStart: start, PeriodEnd: end, Mode: mode,
+		AIUsageAllowanceMicrousd: summary.AIUsageAllowanceMicrousd,
+		AIUsageUsedMicrousd:      summary.AIUsageUsedMicrousd,
+		AIUsageReservedMicrousd:  summary.AIUsageReservedMicrousd,
+		AIUsageOverageMicrousd:   summary.AIUsageOverageMicrousd,
+		Series:                   series, Features: features,
+	}, nil
+}
+
+func aiUsageAllowancePercentage(chargedMicrousd, allowanceMicrousd int64) float64 {
+	if chargedMicrousd <= 0 || allowanceMicrousd <= 0 {
+		return 0
+	}
+	return float64(chargedMicrousd) / float64(allowanceMicrousd) * 100
+}
+
+func orderedModelTiers(values map[string]struct{}) []string {
+	order := []string{"small", "medium", "large", "flagship"}
+	result := make([]string, 0, len(values))
+	for _, tier := range order {
+		if _, ok := values[tier]; ok {
+			result = append(result, tier)
+		}
+	}
+	unknown := make([]string, 0, len(values))
+	for tier := range values {
+		known := false
+		for _, standard := range order {
+			if tier == standard {
+				known = true
+				break
+			}
+		}
+		if !known {
+			unknown = append(unknown, tier)
+		}
+	}
+	sort.Strings(unknown)
+	return append(result, unknown...)
 }
 
 // parseBillingPeriod resolves a "YYYY-MM" period into [start, end). An empty

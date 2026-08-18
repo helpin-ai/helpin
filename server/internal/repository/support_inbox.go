@@ -39,6 +39,67 @@ func (r *SupportMessageRepository) ListByConversation(ctx context.Context, works
 	return messages, nil
 }
 
+// ListConversationPageFromNewest returns a bounded page counted backward from
+// the newest message, while preserving chronological order within the page.
+func (r *SupportMessageRepository) ListConversationPageFromNewest(ctx context.Context, workspaceID, conversationID string, includeInternal bool, limit, offset int) ([]model.SupportMessage, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
+		Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID)
+	if !includeInternal {
+		query = query.Where("is_internal = false")
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count messages: %w", err)
+	}
+	var messages []model.SupportMessage
+	if err := query.Order("created_at DESC, id DESC").Limit(limit).Offset(offset).Find(&messages).Error; err != nil {
+		return nil, 0, fmt.Errorf("list newest messages: %w", err)
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+	return messages, total, nil
+}
+
+// ListConversationPageBefore returns one chronological page before a stable
+// newest-first cursor. It fetches one extra row to determine whether older
+// history remains without running a separate count query.
+func (r *SupportMessageRepository) ListConversationPageBefore(
+	ctx context.Context,
+	workspaceID, conversationID string,
+	includeInternal bool,
+	limit int,
+	beforeCreatedAt *time.Time,
+	beforeID string,
+) ([]model.SupportMessage, bool, error) {
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID)
+	if !includeInternal {
+		query = query.Where("is_internal = false")
+	}
+	if beforeCreatedAt != nil {
+		query = query.Where(
+			"created_at < ? OR (created_at = ? AND id < ?)",
+			*beforeCreatedAt,
+			*beforeCreatedAt,
+			beforeID,
+		)
+	}
+
+	messages := make([]model.SupportMessage, 0, limit+1)
+	if err := query.Order("created_at DESC, id DESC").Limit(limit + 1).Find(&messages).Error; err != nil {
+		return nil, false, fmt.Errorf("list message page: %w", err)
+	}
+	hasMore := len(messages) > limit
+	if hasMore {
+		messages = messages[:limit]
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+	return messages, hasMore, nil
+}
+
 // Create creates a new message.
 //
 // Invariant: every row with MessageType == "system" MUST carry a recognized
@@ -90,6 +151,18 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 		return nil, fmt.Errorf("get messages by ids: %w", err)
 	}
 	return messages, nil
+}
+
+// UpdateMetadata updates only the persisted metadata for a support message.
+// Link previews are enriched after message creation so a slow external page
+// cannot delay the reply acknowledgement.
+func (r *SupportMessageRepository) UpdateMetadata(ctx context.Context, id, metadata string) error {
+	if err := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
+		Where("id = ?", id).
+		Update("metadata", metadata).Error; err != nil {
+		return fmt.Errorf("update message metadata: %w", err)
+	}
+	return nil
 }
 
 // ListEmailFallbackReconciliationCandidates returns recent outbound replies
@@ -342,6 +415,7 @@ func (r *SupportInboxSessionRepository) Create(ctx context.Context, session *mod
 		"country_name":    session.CountryName,
 		"region_name":     session.RegionName,
 		"city_name":       session.CityName,
+		"crm_company_id":  session.CRMCompanyID,
 		"last_active_at":  session.LastActiveAt,
 		"revoked_at":      session.RevokedAt,
 		"expires_at":      session.ExpiresAt,
@@ -399,6 +473,18 @@ func (r *SupportInboxSessionRepository) TouchActivityByToken(ctx context.Context
 		Update("last_active_at", time.Now().UTC())
 	if result.Error != nil {
 		return fmt.Errorf("touch session activity: %w", result.Error)
+	}
+	return nil
+}
+
+// ExtendExpiryByToken advances the expiry for an active, non-revoked widget session.
+func (r *SupportInboxSessionRepository) ExtendExpiryByToken(ctx context.Context, sessionToken string, expiresAt time.Time) error {
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("session_token = ? AND revoked_at IS NULL AND expires_at < ?", sessionToken, expiresAt).
+		Update("expires_at", expiresAt)
+	if result.Error != nil {
+		return fmt.Errorf("extend session expiry: %w", result.Error)
 	}
 	return nil
 }
@@ -1402,11 +1488,15 @@ func (r *SupportConversationRepository) Search(ctx context.Context, params Conve
 		SupportSearchScore float64 `gorm:"column:support_search_score"`
 	}
 	selectSQL := fmt.Sprintf(`support_conversations.*, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon, (%s) AS support_search_score`, scoreSQL)
+	offset := (page - 1) * perPage
+	if params.Pagination.Offset != nil {
+		offset = *params.Pagination.Offset
+	}
 	if err := fetch.
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Select(selectSQL, scoreArgs...).
 		Order(supportSearchOrder(sortOrder, params.Query)).
-		Offset((page - 1) * perPage).
+		Offset(offset).
 		Limit(perPage).
 		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("search conversations: %w", err)
@@ -1460,6 +1550,9 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 		perPage = 50
 	}
 	offset := (page - 1) * perPage
+	if params.Pagination.Offset != nil {
+		offset = *params.Pagination.Offset
+	}
 
 	// Fresh query for fetch — Count() taints the SELECT clause
 	fetch := r.db.WithContext(ctx).Table("support_conversations").Where("support_conversations.workspace_id = ?", params.WorkspaceID)
@@ -2153,6 +2246,53 @@ func (r *SupportInboxSessionRepository) UpdateSessionsByAnonymousID(ctx context.
 		return fmt.Errorf("backfill session identity: %w", err)
 	}
 	return nil
+}
+
+// UpdateCompanyByID changes company context for one exact widget session.
+func (r *SupportInboxSessionRepository) UpdateCompanyByID(ctx context.Context, workspaceID, sessionID string, companyID *string) error {
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, sessionID).
+		UpdateColumn("crm_company_id", companyID)
+	if result.Error != nil {
+		return fmt.Errorf("update session company: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("update session company: session not found")
+	}
+	return nil
+}
+
+// UpdateActiveSessionsCompanyByAnonymousID updates mutable company context only
+// on non-revoked, unexpired sessions and returns the sessions in that scope.
+func (r *SupportInboxSessionRepository) UpdateActiveSessionsCompanyByAnonymousID(ctx context.Context, workspaceID, anonymousID, companyID string) ([]model.SupportWidgetSession, error) {
+	now := time.Now()
+	scope := r.db.WithContext(ctx).
+		Model(&model.SupportWidgetSession{}).
+		Where("workspace_id = ? AND anonymous_id = ? AND revoked_at IS NULL AND expires_at > ?", workspaceID, anonymousID, now)
+	if err := scope.UpdateColumn("crm_company_id", companyID).Error; err != nil {
+		return nil, fmt.Errorf("update active session company: %w", err)
+	}
+	var sessions []model.SupportWidgetSession
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND anonymous_id = ? AND revoked_at IS NULL AND expires_at > ?", workspaceID, anonymousID, now).
+		Find(&sessions).Error; err != nil {
+		return nil, fmt.Errorf("list active sessions after company update: %w", err)
+	}
+	return sessions, nil
+}
+
+// SetCRMCompanyIfUnset captures stable company identity without overwriting a
+// conversation that already has explicit context.
+func (r *SupportConversationRepository) SetCRMCompanyIfUnset(ctx context.Context, workspaceID, conversationID, companyID string) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Model(&model.SupportConversation{}).
+		Where("workspace_id = ? AND id = ? AND crm_company_id IS NULL", workspaceID, conversationID).
+		UpdateColumn("crm_company_id", companyID)
+	if result.Error != nil {
+		return false, fmt.Errorf("set conversation company if unset: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // DB returns the underlying *gorm.DB for transaction support.

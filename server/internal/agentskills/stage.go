@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 type SkillPackageStore interface {
@@ -23,12 +23,13 @@ func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
 	if agent == nil {
 		return nil
 	}
-	if refs := agent.Skills.Normalize(); len(refs) > 0 {
-		return refs
-	}
+	explicitRefs := agent.Skills.Normalize()
 	if shouldUseBuiltInAvailableSkillFallback(agent) {
-		if bundle, ok := worker.BuiltInPresetSkillBundleForPreset(agent.EffectivePresetKey()); ok {
-			runtimeSkillKeys := worker.RuntimeSkillKeysForPresetBundle(bundle)
+		if bundle, ok := agentcontract.BuiltInPresetSkillBundleForPreset(agent.EffectivePresetKey()); ok {
+			if len(explicitRefs) > 0 {
+				return mergeRequiredBuiltInRuntimeSkillRefs(agentcontract.RuntimeSkillKeysForPresetBundle(bundle), explicitRefs)
+			}
+			runtimeSkillKeys := agentcontract.RuntimeSkillKeysForPresetBundle(bundle)
 			refs := make(model.AgentSkillRefs, 0, len(runtimeSkillKeys))
 			for _, key := range runtimeSkillKeys {
 				key = strings.TrimSpace(key)
@@ -40,7 +41,49 @@ func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
 			return refs
 		}
 	}
-	return agent.Skills.Normalize()
+	return explicitRefs
+}
+
+func mergeRequiredBuiltInRuntimeSkillRefs(requiredSkillKeys []string, explicitRefs model.AgentSkillRefs) model.AgentSkillRefs {
+	if len(requiredSkillKeys) == 0 {
+		return explicitRefs
+	}
+
+	refs := make(model.AgentSkillRefs, 0, len(requiredSkillKeys)+len(explicitRefs))
+	usedExplicitRefs := make([]bool, len(explicitRefs))
+	for _, requiredKey := range requiredSkillKeys {
+		requiredKey = agentcontract.CanonicalBuiltInSkillKey(requiredKey)
+		if requiredKey == "" {
+			continue
+		}
+
+		matchedIndex := -1
+		for index, ref := range explicitRefs {
+			// A workspace skill with the same key must not replace a required,
+			// product-owned preset skill. It remains available as an additional
+			// explicit skill below.
+			if usedExplicitRefs[index] || ref.SkillID != nil {
+				continue
+			}
+			if agentcontract.CanonicalBuiltInSkillKey(ref.Key) == requiredKey {
+				matchedIndex = index
+				break
+			}
+		}
+		if matchedIndex >= 0 {
+			refs = append(refs, explicitRefs[matchedIndex])
+			usedExplicitRefs[matchedIndex] = true
+			continue
+		}
+		refs = append(refs, model.AgentSkillRef{Key: requiredKey})
+	}
+
+	for index, ref := range explicitRefs {
+		if !usedExplicitRefs[index] {
+			refs = append(refs, ref)
+		}
+	}
+	return refs
 }
 
 func shouldUseBuiltInAvailableSkillFallback(agent *model.Agent) bool {
@@ -139,11 +182,11 @@ func StageInto(
 			if err != nil {
 				return Resolution{}, fmt.Errorf("load workspace skill package %q: %w", skill.Key, err)
 			}
-			if err := worker.ExtractSkillArchiveToDir(archiveData, stageDir); err != nil {
+			if err := agentcontract.ExtractSkillArchiveToDir(archiveData, stageDir); err != nil {
 				return Resolution{}, fmt.Errorf("stage workspace skill %q: %w", skill.Key, err)
 			}
 		default:
-			if err := worker.CopyBuiltInSkillPackageToDir(definition.Key, stageDir); err != nil {
+			if err := agentcontract.CopyBuiltInSkillPackageToDir(definition.Key, stageDir); err != nil {
 				return Resolution{}, fmt.Errorf("stage built-in skill %q: %w", definition.Key, err)
 			}
 		}
@@ -167,7 +210,7 @@ func rewriteStagedSkillRuntimeToolNames(stageDir string) error {
 		if err != nil {
 			return fmt.Errorf("read staged skill markdown %q: %w", path, err)
 		}
-		rendered := worker.RenderRuntimeToolNamesInInstructions(string(payload))
+		rendered := agentcontract.RenderRuntimeToolNamesInInstructions(string(payload))
 		if rendered == string(payload) {
 			return nil
 		}

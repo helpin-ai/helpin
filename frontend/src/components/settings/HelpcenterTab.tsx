@@ -335,6 +335,7 @@ interface ConfigState {
   protected_terms: string[];
   is_published: boolean;
   chat_widget_enabled: boolean;
+  ai_answers_enabled: boolean;
   seo_title: string;
   seo_description: string;
   og_title: string;
@@ -370,6 +371,7 @@ const DEFAULT_CONFIG: ConfigState = {
   protected_terms: [],
   is_published: false,
   chat_widget_enabled: true,
+  ai_answers_enabled: true,
   seo_title: '',
   seo_description: '',
   og_title: '',
@@ -652,6 +654,7 @@ export function HelpcenterTab({
           protected_terms: d.protected_terms ?? [],
           is_published: d.is_published ?? false,
           chat_widget_enabled: d.chat_widget_enabled !== false,
+          ai_answers_enabled: d.ai_answers_enabled !== false,
           seo_title: d.seo_title ?? '',
           seo_description: d.seo_description ?? '',
           og_title: d.og_title ?? '',
@@ -745,6 +748,7 @@ export function HelpcenterTab({
       protected_terms: config.protected_terms.filter(Boolean),
       is_published: config.is_published,
       chat_widget_enabled: config.chat_widget_enabled,
+      ai_answers_enabled: config.ai_answers_enabled,
       seo_title: config.seo_title || undefined,
       seo_description: config.seo_description || undefined,
       og_title: config.og_title,
@@ -1691,6 +1695,20 @@ export function HelpcenterTab({
                     checked={config.chat_widget_enabled}
                     onCheckedChange={(checked) => setConfig({ ...config, chat_widget_enabled: checked })}
                     aria-label="Show chat widget on help center"
+                  />
+                </div>
+                <div className="flex flex-col gap-4 rounded-lg border border-border/70 bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 space-y-1">
+                    <Label htmlFor="hc-ai-answers-enabled">AI answers in help center search</Label>
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Lets visitors request an AI-generated answer grounded in your published articles. Answers cite their sources and are rate limited.
+                    </p>
+                  </div>
+                  <Switch
+                    id="hc-ai-answers-enabled"
+                    checked={config.ai_answers_enabled}
+                    onCheckedChange={(checked) => setConfig({ ...config, ai_answers_enabled: checked })}
+                    aria-label="AI answers in help center search"
                   />
                 </div>
                 <div className="flex gap-3 rounded-lg border border-border/60 bg-muted/30 p-4 text-xs leading-relaxed text-muted-foreground">

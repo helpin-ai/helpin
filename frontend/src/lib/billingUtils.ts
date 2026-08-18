@@ -41,15 +41,14 @@ export const INTERVAL_LABEL: Record<BillingInterval, string> = {
 export interface PlanOption {
   plan: BillingPlan;
   label: string;
-  credits: number;
   monthlyCents: number;
   annualCents: number; // total per year
 }
 
 // Reference pricing from docs/pricing-strategy.md (see design spec §4).
 export const PLAN_OPTIONS: PlanOption[] = [
-  { plan: 'starter', label: 'Starter', credits: 5000, monthlyCents: 9900, annualCents: 94800 },
-  { plan: 'growth', label: 'Growth', credits: 25000, monthlyCents: 29900, annualCents: 286800 },
+  { plan: 'starter', label: 'Starter', monthlyCents: 9900, annualCents: 94800 },
+  { plan: 'growth', label: 'Growth', monthlyCents: 29900, annualCents: 286800 },
 ];
 
 export function planPriceCents(opt: PlanOption, interval: BillingInterval): number {

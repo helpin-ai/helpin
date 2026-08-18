@@ -11,6 +11,7 @@ import (
 
 // CRMDealService contains CRM deal and pipeline business logic.
 type CRMDealService struct {
+	productAnalyticsEmitter
 	dealRepo  *repository.CRMDealRepository
 	assocRepo *repository.CRMAssociationRepository
 }
@@ -248,7 +249,17 @@ func (s *CRMDealService) Create(ctx context.Context, req model.CreateCRMDealRequ
 		return nil, err
 	}
 
-	return s.dealRepo.GetByID(ctx, deal.ID)
+	created, err := s.dealRepo.GetByID(ctx, deal.ID)
+	if err != nil {
+		return nil, err
+	}
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "crm_deal_created:" + deal.ID,
+		WorkspaceID: deal.WorkspaceID, Name: "crm_deal_created", Source: "api",
+		OccurredAt: deal.CreatedAt,
+		Attributes: map[string]any{"entity_id": deal.ID, "pipeline_id": deal.PipelineID, "stage_id": deal.StageID, "amount": deal.Amount, "currency": deal.Currency, "module": "crm"},
+	})
+	return created, nil
 }
 
 // Update updates a deal.
@@ -261,6 +272,7 @@ func (s *CRMDealService) Update(ctx context.Context, id string, req model.Update
 		return nil, fmt.Errorf("deal not found")
 	}
 
+	previousStageID := deal.StageID
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -274,19 +286,27 @@ func (s *CRMDealService) Update(ctx context.Context, id string, req model.Update
 	if req.StageID != nil {
 		deal.StageID = *req.StageID
 	}
-	if req.Amount != nil {
+	if req.ClearAmount {
+		deal.Amount = nil
+	} else if req.Amount != nil {
 		deal.Amount = req.Amount
 	}
 	if req.Currency != nil {
 		deal.Currency = *req.Currency
 	}
-	if req.CloseDate != nil {
+	if req.ClearCloseDate {
+		deal.CloseDate = nil
+	} else if req.CloseDate != nil {
 		deal.CloseDate = req.CloseDate
 	}
-	if req.OwnerMemberID != nil {
+	if req.ClearOwner {
+		deal.OwnerMemberID = nil
+	} else if req.OwnerMemberID != nil {
 		deal.OwnerMemberID = req.OwnerMemberID
 	}
-	if req.Probability != nil {
+	if req.ClearProbability {
+		deal.Probability = nil
+	} else if req.Probability != nil {
 		deal.Probability = req.Probability
 	}
 	if req.CustomProperties != nil {
@@ -300,7 +320,23 @@ func (s *CRMDealService) Update(ctx context.Context, id string, req model.Update
 	if err := s.dealRepo.Update(ctx, deal); err != nil {
 		return nil, err
 	}
-	return s.dealRepo.GetByID(ctx, id)
+	updated, err := s.dealRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if previousStageID != updated.StageID {
+		stageType := ""
+		if updated.Stage != nil {
+			stageType = updated.Stage.StageType
+		}
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: fmt.Sprintf("crm_deal_stage_changed:%s:%s:%d", updated.ID, updated.StageID, updated.UpdatedAt.UnixNano()),
+			WorkspaceID: updated.WorkspaceID, Name: "crm_deal_stage_changed", Source: "api",
+			OccurredAt: updated.UpdatedAt,
+			Attributes: map[string]any{"entity_id": updated.ID, "pipeline_id": updated.PipelineID, "previous_stage_id": previousStageID, "stage_id": updated.StageID, "stage_type": stageType, "amount": updated.Amount, "currency": updated.Currency, "module": "crm"},
+		})
+	}
+	return updated, nil
 }
 
 // Delete removes a deal.

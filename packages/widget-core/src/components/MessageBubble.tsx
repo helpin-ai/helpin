@@ -2,13 +2,14 @@ import { FunctionComponent } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Message, Attachment, WidgetConfig } from '../types';
 import { renderMarkdown } from '../utils/markdownRenderer';
-import { FileTextIcon } from './icons';
+import { FileTextIcon, ThumbsDownIcon, ThumbsUpIcon } from './icons';
 
 interface MessageBubbleProps {
   message: Message;
   config?: WidgetConfig;
   isFirstInGroup?: boolean;
   onImageClick?: (src: string, alt: string) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
 }
 
 function isImageType(type: string): boolean {
@@ -121,6 +122,48 @@ function LinkPreviews({ previews, outgoing }: { previews: NonNullable<Message['l
   );
 }
 
+function MessageContent({ message }: { message: Message }) {
+  const [quotedExpanded, setQuotedExpanded] = useState(false);
+  const isEmail = message.viaChannel === 'email';
+  const visibleContent = isEmail && message.emailVisibleText !== undefined
+    ? message.emailVisibleText
+    : message.content;
+  const quotedContent = message.emailQuotedText?.trim() ?? '';
+  const hasQuotedContent = isEmail
+    && message.emailHasQuotedContent === true
+    && quotedContent.length > 0;
+
+  return (
+    <div className={isEmail ? 'helpin-email-message-content' : undefined}>
+      {visibleContent.trim().length > 0 && (
+        <div
+          className="helpin-message-content"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(visibleContent) }}
+        />
+      )}
+
+      {hasQuotedContent && (
+        <div className="helpin-email-history">
+          <button
+            type="button"
+            className="helpin-email-history-toggle"
+            aria-expanded={quotedExpanded}
+            onClick={() => setQuotedExpanded(previous => !previous)}
+          >
+            {quotedExpanded ? 'Hide previous messages' : 'Show previous messages'}
+          </button>
+          {quotedExpanded && (
+            <div
+              className="helpin-message-content helpin-email-quoted-content"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(quotedContent) }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SourcePopover({ sources }: { sources: NonNullable<Message['sources']> }) {
   const [open, setOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -164,7 +207,7 @@ function SourcePopover({ sources }: { sources: NonNullable<Message['sources']> }
         aria-expanded={open}
         onClick={() => setOpen(prev => !prev)}
       >
-        {formatSourceCount(sources.length)}
+        Based on {formatSourceCount(sources.length)}
       </button>
 
       {open && (
@@ -188,7 +231,9 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   config,
   isFirstInGroup = true,
   onImageClick,
+  onAnswerFeedback,
 }) => {
+  const [answerFeedback, setAnswerFeedback] = useState<'helpful' | 'not-helpful' | null>(null);
   const isCustomer = message.role === 'customer';
   const isAI = message.role === 'ai';
   const isAgent = message.role === 'agent';
@@ -201,21 +246,36 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
     isAI && 'helpin-message--ai',
     isSystem && 'helpin-message--system',
     message.isInternal && 'helpin-message--internal',
+    message.isStreaming && 'helpin-message--streaming',
+    isCustomer && message.deliveryStatus === 'sending' && 'helpin-message--sending',
   ]
     .filter(Boolean)
     .join(' ');
 
-  const hasTextContent = message.content.trim().length > 0;
+  const displayContent = message.viaChannel === 'email' && message.emailVisibleText !== undefined
+    ? message.emailVisibleText
+    : message.content;
+  const hasTextContent = displayContent.trim().length > 0;
   const hasFiles = message.attachments?.some(a => a.url && !isImageType(a.fileType)) ?? false;
   const hasImages = message.attachments?.some(a => a.url && isImageType(a.fileType)) ?? false;
   const hasSources = Boolean(message.sources && message.sources.length > 0);
   const hasLinkPreviews = Boolean(message.linkPreviews && message.linkPreviews.length > 0);
-  const showConfidence = hasSources && message.aiConfidence !== undefined;
-  const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || hasSources || hasLinkPreviews;
-  const hasMeta = hasSources || showConfidence;
+  const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || hasSources || hasLinkPreviews || message.isStreaming;
+  const showAnswerFeedback = isAI
+    && message.id !== '__intro__'
+    && hasTextContent
+    && !message.isStreaming
+    && Boolean(onAnswerFeedback);
+  const hasMeta = hasSources || showAnswerFeedback;
+
+  const submitAnswerFeedback = (helpful: boolean) => {
+    setAnswerFeedback(helpful ? 'helpful' : 'not-helpful');
+    onAnswerFeedback?.(message.id, helpful);
+  };
 
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
+  const isWorkspaceBrandAvatar = message.id === '__intro__' && Boolean(agentAvatar);
   // Flat Intercom-style pill is reserved for teammate_joined — the one and
   // only widget-visible routing event. Every other system_event_type either
   // falls through to a normal bubble (when sender context is present — e.g.
@@ -247,7 +307,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
 
   return (
     <div
-      className={`helpin-message-row ${isCustomer ? 'helpin-message-row--customer' : 'helpin-message-row--agent'} ${isFirstInGroup ? '' : 'helpin-message-row--consecutive'}`}
+      className={`helpin-message-row ${isCustomer ? 'helpin-message-row--customer' : 'helpin-message-row--agent'} ${isFirstInGroup ? '' : 'helpin-message-row--consecutive'} ${message.clientId ? 'helpin-message-row--optimistic' : ''}`}
       role="listitem"
       aria-label={`${displayName || 'You'} message`}
     >
@@ -256,7 +316,14 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
           {/* Agent: avatar + name row, shown only on first message */}
           {isFirstInGroup && (
             <div className="helpin-message-agent-header">
-              {agentAvatar ? (
+              {isWorkspaceBrandAvatar ? (
+                <span
+                  className="helpin-message-avatar helpin-message-avatar--brand"
+                  style={{ backgroundColor: config?.branding?.primaryColor || '#6366f1' }}
+                >
+                  <img src={agentAvatar} alt={displayName} className="helpin-message-brand-logo" />
+                </span>
+              ) : agentAvatar ? (
                 <img src={agentAvatar} alt={displayName} className="helpin-message-avatar" />
               ) : displayName ? (
                 <span className="helpin-message-avatar-placeholder">
@@ -273,10 +340,8 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
           <div className="helpin-message-agent-bubble-wrap">
             {showBubble && (
               <div className={bubbleClass} data-tooltip={tooltipText}>
-                <div
-                  className="helpin-message-content"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-                />
+                <MessageContent message={message} />
+                {message.isStreaming && <span className="helpin-streaming-cursor" aria-hidden="true" />}
 
                 {message.viaChannel === 'email' && (
                   <div className="helpin-message-channel">Via email</div>
@@ -287,9 +352,31 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                     {hasSources && (
                       <SourcePopover sources={message.sources!} />
                     )}
-                    {showConfidence && (
-                      <div className="helpin-message-confidence">
-                        Confidence: {Math.round(message.aiConfidence! * 100)}%
+                    {showAnswerFeedback && (
+                      <div className="helpin-answer-feedback" aria-live="polite">
+                        {answerFeedback ? (
+                          <span className="helpin-answer-feedback-thanks">Thanks for the feedback</span>
+                        ) : (
+                          <>
+                            <span className="helpin-answer-feedback-label">Helpful?</span>
+                            <button
+                              type="button"
+                              className="helpin-answer-feedback-btn"
+                              aria-label="This answer was helpful"
+                              onClick={() => submitAnswerFeedback(true)}
+                            >
+                              <ThumbsUpIcon size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="helpin-answer-feedback-btn"
+                              aria-label="This answer was not helpful"
+                              onClick={() => submitAnswerFeedback(false)}
+                            >
+                              <ThumbsDownIcon size={14} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -314,10 +401,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
         <>
           {showBubble && (
             <div className={bubbleClass} data-tooltip={tooltipText}>
-              <div
-                className="helpin-message-content"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-              />
+              <MessageContent message={message} />
               {message.viaChannel === 'email' && (
                 <div className="helpin-message-channel">Via email</div>
               )}

@@ -115,6 +115,7 @@ func (PMTaskLabel) TableName() string { return "pm_task_labels" }
 
 // PMTaskFilters applies filter options when listing tasks.
 type PMTaskFilters struct {
+	Search                *string
 	TeamID                *string
 	EpicID                *string
 	SprintID              *string
@@ -149,6 +150,9 @@ type PMTaskFilters struct {
 type PMPagination struct {
 	Page    int
 	PerPage int
+	// Offset is the canonical agent-tool pagination position. Nil preserves
+	// legacy page/per_page behavior for existing API callers.
+	Offset *int
 }
 
 // CreateTaskRequest is the payload for creating a task.
@@ -212,9 +216,11 @@ type UpdateTaskRequest struct {
 	Priority          *string    `json:"priority"`
 	Severity          *string    `json:"severity"`
 	Deadline          *time.Time `json:"deadline"`
+	DeadlineSet       bool       `json:"-" gorm:"-"`
 	Position          *int       `json:"position"`
 	Blocked           *bool      `json:"blocked"`
 	Blocker           *string    `json:"blocker"`
+	BlockerSet        bool       `json:"-" gorm:"-"`
 	Archived          *bool      `json:"archived"`
 	TemplateID        *string    `json:"template_id"`
 	ExternalID        *string    `json:"external_id"`

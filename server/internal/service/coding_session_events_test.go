@@ -3,16 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestListCodingSessionEventsSkipsLegacyInteractionArtifactsWhenInteractionsExist(t *testing.T) {
@@ -346,6 +342,83 @@ func TestGetCodingSessionIncludesLiveStreamSnapshotForActiveRuns(t *testing.T) {
 	if session.StreamStateSnapshot.LiveAssistantMessage.Content != "Inspecting workspace" {
 		t.Fatalf("unexpected snapshot content %#v", session.StreamStateSnapshot.LiveAssistantMessage)
 	}
+	if session.ApprovalState != "not_required" {
+		t.Fatalf("approval state = %q", session.ApprovalState)
+	}
+}
+
+func TestListCodingSessionEventsIncludesLiveStreamSnapshotForActiveRuns(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	snapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-event-snapshot",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	payload, err := model.EncodeCodingSessionStreamSnapshot(&model.CodingSessionStreamSnapshot{
+		LiveTurnSegments: []model.CodingSessionLiveTurnSegment{{
+			SegmentID: "tool-1",
+			Kind:      "tool_call",
+			ToolCall: &model.CodingSessionLiveToolCall{
+				ToolCallID: "tool-1",
+				ToolName:   "read_file",
+				Status:     "running",
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("encode snapshot: %v", err)
+	}
+	if err := snapshotRepo.Upsert(context.Background(), &model.CodingSessionStateSnapshot{
+		ID:              "snapshot-event-1",
+		WorkspaceID:     run.WorkspaceID,
+		RunID:           run.ID,
+		SchemaVersion:   model.CodingSessionStateSnapshotSchemaVersionV1,
+		SnapshotPayload: payload,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}); err != nil {
+		t.Fatalf("upsert snapshot: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:             runRepo,
+		runMessageRepo:      runMessageRepo,
+		artifactRepo:        artifactRepo,
+		sessionSnapshotRepo: snapshotRepo,
+	}
+
+	events, err := svc.ListCodingSessionEvents(context.Background(), run.WorkspaceID, run.ID, 0)
+	if err != nil {
+		t.Fatalf("ListCodingSessionEvents returned error: %v", err)
+	}
+	if events.StreamStateSnapshot == nil || len(events.StreamStateSnapshot.LiveTurnSegments) != 1 {
+		t.Fatalf("expected stream snapshot on event list, got %#v", events.StreamStateSnapshot)
+	}
+	if got := events.StreamStateSnapshot.LiveTurnSegments[0].ToolCall.ToolName; got != "read_file" {
+		t.Fatalf("unexpected snapshot tool name %q", got)
+	}
 }
 
 func TestGetCodingSessionIncludesStreamSnapshotForFailedRuns(t *testing.T) {
@@ -666,6 +739,95 @@ func TestListCodingSessionEventsIncludesPersistedTurnSegmentsOnAssistantMessages
 	}
 }
 
+func TestListCodingSessionEventsIncludesRuntimeToolCallArtifacts(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-events-runtime-tool",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "workspace",
+		TargetID:       "ws-1",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	started := `{"tool_call_id":"tool-1","tool_name":"fetch_url","args_text":"{\"url\":\"https://example.com\"}","parent_message_id":"assistant-1"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-tool-started",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeToolCall,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &started,
+		Metadata:      json.RawMessage(`{"runtime_event_type":"tool_call_started"}`),
+		SequenceNo:    1,
+		CreatedAt:     now.Add(time.Second),
+	}); err != nil {
+		t.Fatalf("create started artifact: %v", err)
+	}
+	completed := `{"tool_call_id":"tool-1","tool_name":"fetch_url","output_summary":"Fetched page","duration_ms":42,"parent_message_id":"assistant-1"}`
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-tool-completed",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  model.AgentRunArtifactTypeToolCall,
+		Format:        "json",
+		StorageMode:   "inline",
+		InlineContent: &completed,
+		Metadata:      json.RawMessage(`{"runtime_event_type":"tool_call_finished"}`),
+		SequenceNo:    2,
+		CreatedAt:     now.Add(2 * time.Second),
+	}); err != nil {
+		t.Fatalf("create completed artifact: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:        runRepo,
+		runMessageRepo: runMessageRepo,
+		artifactRepo:   artifactRepo,
+	}
+	events, err := svc.ListCodingSessionEvents(context.Background(), run.WorkspaceID, run.ID, 0)
+	if err != nil {
+		t.Fatalf("ListCodingSessionEvents returned error: %v", err)
+	}
+
+	var startedEvent, completedEvent *model.CodingSessionEvent
+	for index := range events.Events {
+		switch events.Events[index].Type {
+		case "tool.call.started":
+			startedEvent = &events.Events[index]
+		case "tool.call.completed":
+			completedEvent = &events.Events[index]
+		}
+	}
+	if startedEvent == nil || completedEvent == nil {
+		t.Fatalf("expected tool call events, got %#v", events.Events)
+	}
+	if startedEvent.Payload["tool_call_id"] != "tool-1" || startedEvent.Payload["tool_name"] != "fetch_url" {
+		t.Fatalf("expected flattened started payload, got %#v", startedEvent.Payload)
+	}
+	if completedEvent.Payload["output_summary"] != "Fetched page" {
+		t.Fatalf("expected flattened completed payload, got %#v", completedEvent.Payload)
+	}
+}
+
 func TestListCodingSessionEventsEmitsResolvedInteractionAfterPreviousSequence(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 
@@ -750,7 +912,7 @@ func TestListCodingSessionEventsEmitsResolvedInteractionAfterPreviousSequence(t 
 	}
 }
 
-func TestGetCodingSessionDiffUsesRunWorkspace(t *testing.T) {
+func TestGetCodingSessionDiffUsesPersistedArtifact(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 
 	runRepo := repository.NewAgentRunRepository(db)
@@ -778,23 +940,19 @@ func TestGetCodingSessionDiffUsesRunWorkspace(t *testing.T) {
 		t.Fatalf("create run: %v", err)
 	}
 
-	defer func() {
-		_ = worker.CleanupWorkspaceForRun(run.ID)
-	}()
-	workDir := worker.PersistentWorkspacePathForRun(run.ID)
-	_ = os.RemoveAll(filepath.Dir(workDir))
-	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		t.Fatalf("mkdir workdir: %v", err)
-	}
-	runGitCommand(t, workDir, "init")
-	filePath := filepath.Join(workDir, "session.txt")
-	if err := os.WriteFile(filePath, []byte("before\n"), 0o644); err != nil {
-		t.Fatalf("write initial file: %v", err)
-	}
-	runGitCommand(t, workDir, "add", "session.txt")
-	runGitCommand(t, workDir, "-c", "user.name=Test Runner", "-c", "user.email=test@example.com", "commit", "-m", "init")
-	if err := os.WriteFile(filePath, []byte("after\n"), 0o644); err != nil {
-		t.Fatalf("write modified file: %v", err)
+	diffContent := "diff --git a/session.txt b/session.txt\n--- a/session.txt\n+++ b/session.txt\n@@ -1 +1 @@\n-before\n+after\n"
+	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
+		ID:            "artifact-diff-session",
+		WorkspaceID:   run.WorkspaceID,
+		RunID:         run.ID,
+		ArtifactType:  "diff",
+		Format:        "text",
+		StorageMode:   "inline",
+		InlineContent: &diffContent,
+		SequenceNo:    1,
+		CreatedAt:     now,
+	}); err != nil {
+		t.Fatalf("create diff artifact: %v", err)
 	}
 
 	svc := &AgentService{
@@ -808,7 +966,7 @@ func TestGetCodingSessionDiffUsesRunWorkspace(t *testing.T) {
 		t.Fatalf("GetCodingSessionDiff returned error: %v", err)
 	}
 	if !strings.Contains(diff.Diff, "session.txt") || !strings.Contains(diff.Diff, "-before") || !strings.Contains(diff.Diff, "+after") {
-		t.Fatalf("expected diff from session checkout, got %q", diff.Diff)
+		t.Fatalf("expected persisted diff artifact, got %q", diff.Diff)
 	}
 }
 
@@ -820,14 +978,4 @@ func codingSessionEventTypes(events []model.CodingSessionEvent, eventType string
 		}
 	}
 	return count
-}
-
-func runGitCommand(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(output))
-	}
 }

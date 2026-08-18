@@ -57,30 +57,64 @@ func renderMessageMarkdownToHTML(content string) string {
 	return rendered
 }
 
-// inboundPayloadBodies picks the best content source from a Postmark inbound
-// payload and returns both a markdown-friendly variant for plaintext display
-// and a sanitized HTML variant for rich rendering in a sandboxed iframe.
-//
-// Preference order for the markdown variant:
-//  1. HtmlBody converted to markdown — preserves anchor text so long tracking
-//     URLs don't render as plaintext walls.
-//  2. StrippedTextReply — Postmark-stripped plain-text reply (quoted history
-//     removed), used when HTML is absent or conversion yields nothing.
-//  3. TextBody — full plain-text body as final fallback.
-//
-// htmlBody is populated only when HtmlBody was present and processing
-// succeeded; callers should treat an empty string as "no rich body".
+type inboundEmailProjection struct {
+	VisibleText          string
+	QuotedText           string
+	HTMLBody             string
+	HasQuotedContent     bool
+	ProjectionConfidence string
+	Version              int
+}
+
+// inboundPayloadProjection derives one lossless display projection for every
+// consumer. Canonical provider bodies remain on the raw payload/log; this
+// value contains sanitized HTML plus independently renderable visible and
+// quoted Markdown.
+func inboundPayloadProjection(payload model.PostmarkInboundPayload) inboundEmailProjection {
+	strippedReply := stripSupportEmailReplyDelimiter(payload.StrippedTextReply)
+	processed := inboundhtml.Project(inboundhtml.ProjectionInput{
+		HTML:              payload.HtmlBody,
+		TextBody:          payload.TextBody,
+		StrippedTextReply: strippedReply,
+	})
+
+	visible := stripSupportEmailReplyDelimiter(processed.Markdown)
+	quoted := strings.TrimSpace(processed.QuotedMarkdown)
+	hasQuoted := processed.HasQuotedContent && quoted != ""
+	confidence := processed.ProjectionConfidence
+
+	// Helpin's own reply delimiter is deterministic even when an email client
+	// has flattened the message into otherwise unstructured HTML.
+	if before, after, ok := splitSupportEmailReplyDelimiter(processed.Markdown); ok {
+		visible = stripInboundCIDTextPlaceholders(before)
+		quoted = stripInboundCIDTextPlaceholders(after)
+		hasQuoted = quoted != ""
+		if hasQuoted {
+			confidence = inboundhtml.ProjectionConfidenceHigh
+		}
+	}
+	if visible == "" {
+		visible = strippedReply
+	}
+	if visible == "" {
+		visible = stripSupportEmailReplyDelimiter(payload.TextBody)
+	}
+
+	return inboundEmailProjection{
+		VisibleText:          visible,
+		QuotedText:           quoted,
+		HTMLBody:             processed.HTML,
+		HasQuotedContent:     hasQuoted,
+		ProjectionConfidence: confidence,
+		Version:              processed.ProjectionVersion,
+	}
+}
+
+// inboundPayloadBodies is retained for callers/tests that only need the two
+// legacy display variants.
 func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlBody string) {
-	processed := inboundhtml.Process(payload.HtmlBody, "")
-	markdown = stripSupportEmailReplyDelimiter(processed.Markdown)
-	htmlBody = processed.HTML
-	if markdown != "" {
-		return markdown, htmlBody
-	}
-	if stripped := stripSupportEmailReplyDelimiter(payload.StrippedTextReply); stripped != "" {
-		return stripped, htmlBody
-	}
-	return stripSupportEmailReplyDelimiter(payload.TextBody), htmlBody
+	projection := inboundPayloadProjection(payload)
+	return projection.VisibleText, projection.HTMLBody
 }
 
 var (
@@ -88,9 +122,97 @@ var (
 	inboundCIDTextPlaceholderRe = regexp.MustCompile(`(?i)\[cid:[^\]\s]+]`)
 )
 
-func inboundPayloadBodiesWithHTML(payload model.PostmarkInboundPayload, htmlBody string) (markdown, processedHTML string) {
+func inboundPayloadProjectionWithHTML(payload model.PostmarkInboundPayload, htmlBody string) inboundEmailProjection {
 	payload.HtmlBody = htmlBody
-	return inboundPayloadBodies(payload)
+	return inboundPayloadProjection(payload)
+}
+
+func applyForwardedEmailProjection(projection *inboundEmailProjection, visibleText string) {
+	if projection == nil {
+		return
+	}
+	projection.VisibleText = cleanForwardedEmailProjectionText(visibleText)
+	projection.QuotedText = ""
+	projection.HasQuotedContent = false
+	projection.ProjectionConfidence = inboundhtml.ProjectionConfidenceNone
+	projection.Version = inboundhtml.CurrentProjectionVersion
+}
+
+func cleanForwardedEmailProjectionText(content string) string {
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	markerIndex, _ := firstForwardedEmailMarker(lines)
+	if markerIndex < 0 {
+		return strings.TrimSpace(content)
+	}
+
+	note := strings.TrimSpace(strings.Join(lines[:markerIndex], "\n"))
+	bodyStart := -1
+	sawMetadata := false
+	for i := markerIndex + 1; i < len(lines); i++ {
+		if isForwardedEmailMetadataLine(lines[i]) {
+			sawMetadata = true
+			continue
+		}
+		if sawMetadata && strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		if sawMetadata {
+			bodyStart = i
+			break
+		}
+	}
+	if bodyStart < 0 {
+		if note != "" {
+			return note
+		}
+		return strings.TrimSpace(content)
+	}
+
+	bodyEnd := len(lines)
+	for i := bodyStart + 1; i < len(lines); i++ {
+		if nextMarker, _ := firstForwardedEmailMarker([]string{lines[i]}); nextMarker == 0 {
+			bodyEnd = i
+			break
+		}
+	}
+	body := strings.TrimSpace(strings.Join(lines[bodyStart:bodyEnd], "\n"))
+	return strings.TrimSpace(strings.Join(nonEmptyForwardedEmailParts(note, body), "\n\n"))
+}
+
+func isForwardedEmailMetadataLine(line string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(strings.TrimLeft(line, "> ")))
+	for _, prefix := range []string{
+		"from:", "date:", "sent:", "subject:", "to:", "cc:", "bcc:",
+		"de:", "fecha:", "enviado:", "para:", "asunto:",
+		"von:", "datum:", "gesendet:", "an:", "betreff:",
+		"expéditeur:", "envoyé:", "à:", "objet:",
+	} {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func nonEmptyForwardedEmailParts(values ...string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			result = append(result, strings.TrimSpace(value))
+		}
+	}
+	return result
+}
+
+func splitSupportEmailReplyDelimiter(content string) (before, after string, ok bool) {
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	index := strings.Index(normalized, supportEmailReplyDelimiter)
+	if index < 0 {
+		return "", "", false
+	}
+	return strings.TrimSpace(normalized[:index]), strings.TrimSpace(normalized[index+len(supportEmailReplyDelimiter):]), true
 }
 
 func stripInboundCIDTextPlaceholders(content string) string {
@@ -295,10 +417,53 @@ const (
 const (
 	supportEmailAttachmentMaxFileBytes     = 5 * 1024 * 1024
 	supportEmailAttachmentMaxTotalRawBytes = 7 * 1024 * 1024
-	emailFallbackPoweredByFooterURL        = "https://helpin.ai?utm_source=support_email&utm_medium=email&utm_campaign=powered_by_footer&utm_content=fallback_footer"
 	supportEmailReplyDelimiter             = "-- Please type your reply above this line --"
 	supportEmailPreviewMaxRunes            = 160
 )
+
+func helpinAttributionSlug(value, fallback string) string {
+	var slug strings.Builder
+	lastWasSeparator := false
+	for _, char := range strings.ToLower(strings.TrimSpace(value)) {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
+			slug.WriteRune(char)
+			lastWasSeparator = false
+			continue
+		}
+		if slug.Len() > 0 && !lastWasSeparator {
+			slug.WriteByte('-')
+			lastWasSeparator = true
+		}
+	}
+	cleaned := strings.Trim(slug.String(), "-")
+	if cleaned == "" {
+		return fallback
+	}
+	return cleaned
+}
+
+func buildHelpinAttributionSource(workspaceName, workspaceID string) string {
+	workspaceSlug := helpinAttributionSlug(workspaceName, "workspace")
+	idPrefix := strings.TrimSpace(workspaceID)
+	if len(idPrefix) > 8 {
+		idPrefix = idPrefix[:8]
+	}
+	idPrefix = helpinAttributionSlug(idPrefix, "")
+	if idPrefix == "" {
+		return workspaceSlug
+	}
+	return workspaceSlug + "-" + idPrefix
+}
+
+func buildHelpinEmailAttributionURL(workspaceName, workspaceID string) string {
+	params := []string{
+		"utm_source=" + url.QueryEscape(buildHelpinAttributionSource(workspaceName, workspaceID)),
+		"utm_medium=email",
+		"utm_campaign=powered_by_helpin",
+		"utm_content=support_email_footer",
+	}
+	return "https://helpin.ai/?" + strings.Join(params, "&")
+}
 
 type supportEmailAttachmentDownloader interface {
 	DownloadContent(ctx context.Context, attachment model.SupportAttachmentPayload) ([]byte, error)
@@ -823,7 +988,8 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	}
 
 	fromEmail := inboundEmailAddress(payload)
-	content, htmlBody := inboundPayloadBodies(payload)
+	projection := inboundPayloadProjection(payload)
+	content, htmlBody := projection.VisibleText, projection.HTMLBody
 	if content == "" {
 		return nil
 	}
@@ -895,6 +1061,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		if len(content) > 50_000 {
 			content = content[:50_000]
 		}
+		applyForwardedEmailProjection(&projection, content)
 	}
 
 	rfcMessageID := inboundRFCMessageID(payload)
@@ -941,31 +1108,47 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			msg.Attachments = attachments
 		}
 		if len(cidURLs) > 0 {
-			_, htmlBody = inboundPayloadBodiesWithHTML(payload, rewriteInboundCIDImageSources(payload.HtmlBody, cidURLs))
+			projection = inboundPayloadProjectionWithHTML(payload, rewriteInboundCIDImageSources(payload.HtmlBody, cidURLs))
+			htmlBody = projection.HTMLBody
+			if forwardedAttribution.Applied {
+				applyForwardedEmailProjection(&projection, content)
+			} else {
+				projection.VisibleText = content
+			}
 		}
 		msg.HTMLBody = htmlBody
 		msg.StrippedText = content
+		msg.EmailVisibleText = projection.VisibleText
+		msg.EmailQuotedText = projection.QuotedText
+		msg.EmailHasQuotedContent = boolPtr(projection.HasQuotedContent)
+		msg.EmailProjectionConfidence = projection.ProjectionConfidence
+		msg.EmailProjectionVersion = projection.Version
 
 		logRow := &model.SupportEmailLog{
-			WorkspaceID:       conv.WorkspaceID,
-			ConversationID:    conv.ID,
-			Direction:         "inbound",
-			MessageIDs:        model.DocsStringArray{msg.ID},
-			FromEmail:         fromEmail,
-			ToEmail:           strings.TrimSpace(payload.To),
-			ReplyTo:           replyToRaw,
-			RecipientAddress:  recipientAddress,
-			CCEmails:          model.DocsStringArray(ccEmails),
-			BCCEmails:         model.DocsStringArray(bccEmails),
-			Subject:           strings.TrimSpace(payload.Subject),
-			RFCMessageID:      rfcMessageID,
-			InReplyTo:         inReplyTo,
-			ReferencesHeader:  referencesHeader,
-			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
-			RawBody:           rawPayload,
-			StrippedText:      content,
-			HTMLBody:          htmlBody,
-			Status:            "sent",
+			WorkspaceID:               conv.WorkspaceID,
+			ConversationID:            conv.ID,
+			Direction:                 "inbound",
+			MessageIDs:                model.DocsStringArray{msg.ID},
+			FromEmail:                 fromEmail,
+			ToEmail:                   strings.TrimSpace(payload.To),
+			ReplyTo:                   replyToRaw,
+			RecipientAddress:          recipientAddress,
+			CCEmails:                  model.DocsStringArray(ccEmails),
+			BCCEmails:                 model.DocsStringArray(bccEmails),
+			Subject:                   strings.TrimSpace(payload.Subject),
+			RFCMessageID:              rfcMessageID,
+			InReplyTo:                 inReplyTo,
+			ReferencesHeader:          referencesHeader,
+			PostmarkMessageID:         strPtr(strings.TrimSpace(payload.MessageID)),
+			RawBody:                   rawPayload,
+			StrippedText:              content,
+			HTMLBody:                  htmlBody,
+			EmailVisibleText:          projection.VisibleText,
+			EmailQuotedText:           projection.QuotedText,
+			EmailHasQuotedContent:     projection.HasQuotedContent,
+			EmailProjectionConfidence: projection.ProjectionConfidence,
+			EmailProjectionVersion:    projection.Version,
+			Status:                    "sent",
 		}
 		if route != nil {
 			logRow.EmailRouteID = &route.ID
@@ -2393,6 +2576,14 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	}
 
 	var htmlBody strings.Builder
+	workspaceID := ""
+	for _, message := range messages {
+		if strings.TrimSpace(message.WorkspaceID) != "" {
+			workspaceID = message.WorkspaceID
+			break
+		}
+	}
+	attributionURL := buildHelpinEmailAttributionURL(workspaceName, workspaceID)
 	htmlBody.WriteString(renderSupportEmailHiddenPreheader(messages, workspaceName))
 	htmlBody.WriteString(`<p style="margin:0 0 16px;color:#9ca3af;font-size:12px;line-height:18px;">`)
 	htmlBody.WriteString(html.EscapeString(supportEmailReplyDelimiter))
@@ -2411,7 +2602,7 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 		htmlBody.WriteString(`">View conversation in browser</a></p>`)
 	}
 	htmlBody.WriteString(`<p style="border-top:1px solid #e5e7eb;margin-top:20px;padding-top:12px;color:#6b7280;font-size:12px;line-height:18px;">Powered by <a href="`)
-	htmlBody.WriteString(emailFallbackPoweredByFooterURL)
+	htmlBody.WriteString(html.EscapeString(attributionURL))
 	htmlBody.WriteString(`" style="color:#6b7280;text-decoration:none;"><strong>Helpin AI</strong></a></p>`)
 
 	textBody := supportEmailReplyDelimiter + "\n\n" + strings.Join(textChunks, "\n\n")
@@ -2422,7 +2613,7 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	if chatLink != "" {
 		textBody += "\n\nView conversation in browser:\n" + chatLink
 	}
-	textBody += "\n\nPowered by Helpin AI: " + emailFallbackPoweredByFooterURL
+	textBody += "\n\nPowered by Helpin AI: " + attributionURL
 	return htmlBody.String(), textBody
 }
 
@@ -2635,7 +2826,7 @@ func (s *EmailFallbackService) postpone(ctx context.Context, conversationID stri
 }
 
 func normalizedEmailFallbackDelaySecs(delaySecs int) int {
-	if delaySecs < 30 || delaySecs > 600 {
+	if delaySecs < 10 || delaySecs > 600 {
 		return model.DefaultSupportInboxSettings().EmailFallbackDelaySecs
 	}
 	return delaySecs
@@ -2914,6 +3105,14 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 	if route == nil {
 		return nil
 	}
+	isConfirmation := isProviderForwardingConfirmation(payload)
+	consumed, err := s.inspectInboundRouteVerification(ctx, route, payload)
+	if err != nil {
+		return err
+	}
+	if consumed {
+		return nil
+	}
 
 	conversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload)
 	if err != nil {
@@ -2926,10 +3125,74 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 		}
 	}
 	if conversation != nil {
+		if isConfirmation {
+			if err := s.storeRouteConfirmationConversation(ctx, route, conversation.ID); err != nil {
+				return err
+			}
+		}
 		return s.processInboundConversationReply(ctx, conversation, route, payload, rawPayload)
 	}
 
 	return s.createInboundConversationFromRoute(ctx, route, payload, rawPayload)
+}
+
+func (s *EmailFallbackService) inspectInboundRouteVerification(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload) (bool, error) {
+	if s == nil || route == nil || s.supportInboxService == nil || s.supportInboxService.emailRouteRepo == nil {
+		return false, nil
+	}
+	now := time.Now().UTC()
+	if s.now != nil {
+		now = s.now().UTC()
+	}
+
+	if isProviderForwardingConfirmation(payload) {
+		if route.ConfirmationReceivedAt == nil {
+			route.ConfirmationReceivedAt = &now
+			if err := s.supportInboxService.emailRouteRepo.Update(ctx, route); err != nil {
+				return false, err
+			}
+		}
+		return false, nil
+	}
+
+	token := strings.TrimSpace(route.ForwardingVerificationToken)
+	if strings.Contains(payload.Subject, supportEmailRouteVerificationSubject) {
+		if token != "" && strings.Contains(payload.Subject, "["+token+"]") {
+			route.ForwardingVerifiedAt = &now
+			route.LastInboundAt = &now
+			route.ForwardingVerificationToken = ""
+			route.ForwardingLastError = nil
+			if err := s.supportInboxService.emailRouteRepo.Update(ctx, route); err != nil {
+				return false, err
+			}
+			s.logger.InfoContext(ctx, "postmark inbound forwarding test verified",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"workspace_id", route.WorkspaceID,
+				"route_id", route.ID,
+			)
+		}
+		return true, nil
+	}
+
+	if route.ForwardingVerifiedAt == nil && route.SourceAddress != nil && inboundPayloadMentionsAddress(payload, *route.SourceAddress) {
+		route.ForwardingVerifiedAt = &now
+		route.ForwardingLastError = nil
+		if err := s.supportInboxService.emailRouteRepo.Update(ctx, route); err != nil {
+			return false, err
+		}
+	}
+	return false, nil
+}
+
+func isProviderForwardingConfirmation(payload model.PostmarkInboundPayload) bool {
+	sender := strings.ToLower(strings.TrimSpace(payload.FromFull.Email))
+	subject := strings.ToLower(strings.TrimSpace(payload.Subject))
+	body := strings.ToLower(payload.TextBody + "\n" + payload.HtmlBody)
+	if sender == "forwarding-noreply@google.com" || strings.Contains(body, "mail-settings.google.com/mail/vf-") {
+		return true
+	}
+	return strings.Contains(sender, "zoho") && strings.Contains(subject, "forward") &&
+		(strings.Contains(subject, "confirm") || strings.Contains(subject, "verif"))
 }
 
 func (s *EmailFallbackService) findInboundRouteByRecipient(ctx context.Context, recipientAddress string) (*model.SupportEmailRoute, error) {
@@ -2992,7 +3255,8 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		return nil
 	}
 
-	content, htmlBody := inboundPayloadBodies(payload)
+	projection := inboundPayloadProjection(payload)
+	content, htmlBody := projection.VisibleText, projection.HTMLBody
 	if content == "" {
 		return nil
 	}
@@ -3035,6 +3299,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		if len(content) > 50_000 {
 			content = content[:50_000]
 		}
+		applyForwardedEmailProjection(&projection, content)
 		effectiveSenderName = strings.TrimSpace(forwardedAttribution.OriginalName)
 		effectiveSenderEmail = strings.TrimSpace(forwardedAttribution.OriginalEmail)
 		if effectiveSenderName == "" {
@@ -3187,32 +3452,48 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 			message.Attachments = attachments
 		}
 		if len(cidURLs) > 0 {
-			_, htmlBody = inboundPayloadBodiesWithHTML(payload, rewriteInboundCIDImageSources(payload.HtmlBody, cidURLs))
+			projection = inboundPayloadProjectionWithHTML(payload, rewriteInboundCIDImageSources(payload.HtmlBody, cidURLs))
+			htmlBody = projection.HTMLBody
+			if forwardedAttribution.Applied {
+				applyForwardedEmailProjection(&projection, content)
+			} else {
+				projection.VisibleText = content
+			}
 		}
 		message.HTMLBody = htmlBody
 		message.StrippedText = content
+		message.EmailVisibleText = projection.VisibleText
+		message.EmailQuotedText = projection.QuotedText
+		message.EmailHasQuotedContent = boolPtr(projection.HasQuotedContent)
+		message.EmailProjectionConfidence = projection.ProjectionConfidence
+		message.EmailProjectionVersion = projection.Version
 
 		logRow := &model.SupportEmailLog{
-			WorkspaceID:       route.WorkspaceID,
-			ConversationID:    conversation.ID,
-			EmailRouteID:      &route.ID,
-			Direction:         "inbound",
-			MessageIDs:        model.DocsStringArray{message.ID},
-			FromEmail:         fromEmail,
-			ToEmail:           strings.TrimSpace(payload.To),
-			ReplyTo:           replyToRaw,
-			RecipientAddress:  recipientAddress,
-			CCEmails:          model.DocsStringArray(ccEmails),
-			BCCEmails:         model.DocsStringArray(bccEmails),
-			Subject:           subject,
-			RFCMessageID:      rfcMessageID,
-			InReplyTo:         inReplyTo,
-			ReferencesHeader:  referencesHeader,
-			PostmarkMessageID: strPtr(strings.TrimSpace(payload.MessageID)),
-			RawBody:           rawPayload,
-			StrippedText:      content,
-			HTMLBody:          htmlBody,
-			Status:            "sent",
+			WorkspaceID:               route.WorkspaceID,
+			ConversationID:            conversation.ID,
+			EmailRouteID:              &route.ID,
+			Direction:                 "inbound",
+			MessageIDs:                model.DocsStringArray{message.ID},
+			FromEmail:                 fromEmail,
+			ToEmail:                   strings.TrimSpace(payload.To),
+			ReplyTo:                   replyToRaw,
+			RecipientAddress:          recipientAddress,
+			CCEmails:                  model.DocsStringArray(ccEmails),
+			BCCEmails:                 model.DocsStringArray(bccEmails),
+			Subject:                   subject,
+			RFCMessageID:              rfcMessageID,
+			InReplyTo:                 inReplyTo,
+			ReferencesHeader:          referencesHeader,
+			PostmarkMessageID:         strPtr(strings.TrimSpace(payload.MessageID)),
+			RawBody:                   rawPayload,
+			StrippedText:              content,
+			HTMLBody:                  htmlBody,
+			EmailVisibleText:          projection.VisibleText,
+			EmailQuotedText:           projection.QuotedText,
+			EmailHasQuotedContent:     projection.HasQuotedContent,
+			EmailProjectionConfidence: projection.ProjectionConfidence,
+			EmailProjectionVersion:    projection.Version,
+			Status:                    "sent",
 		}
 		if logRow.PostmarkMessageID != nil && *logRow.PostmarkMessageID == "" {
 			logRow.PostmarkMessageID = nil
@@ -3234,7 +3515,15 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		return txErr
 	}
 	if s.supportInboxService.emailRouteRepo != nil {
-		_ = s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, now)
+		route.LastInboundAt = &now
+		if err := s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, now); err != nil {
+			return err
+		}
+		if isProviderForwardingConfirmation(payload) {
+			if err := s.storeRouteConfirmationConversation(ctx, route, conversation.ID); err != nil {
+				return err
+			}
+		}
 	}
 
 	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conversation, content, customerName)
@@ -3261,6 +3550,17 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 				s.logger.ErrorContext(context.Background(), "support triage failed for inbound email conversation", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", err)
 			}
 		}(conversation.WorkspaceID, conversation.ID, message.ID)
+	}
+	return nil
+}
+
+func (s *EmailFallbackService) storeRouteConfirmationConversation(ctx context.Context, route *model.SupportEmailRoute, conversationID string) error {
+	if s == nil || route == nil || s.supportInboxService == nil || s.supportInboxService.emailRouteRepo == nil || strings.TrimSpace(conversationID) == "" {
+		return nil
+	}
+	route.ConfirmationConversationID = strPtr(conversationID)
+	if err := s.supportInboxService.emailRouteRepo.Update(ctx, route); err != nil {
+		return fmt.Errorf("store forwarding confirmation conversation: %w", err)
 	}
 	return nil
 }

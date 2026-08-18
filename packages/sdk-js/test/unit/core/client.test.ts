@@ -85,6 +85,51 @@ describe('HelpinClient', () => {
       expect(widgetController.open).toHaveBeenCalled();
     });
 
+    it('uses the latest grouped company when the widget boots after an account switch', async () => {
+      const widgetController = {
+        boot: vi.fn(),
+        shutdown: vi.fn(),
+        show: vi.fn(),
+        hide: vi.fn(),
+        open: vi.fn(),
+        close: vi.fn(),
+        toggle: vi.fn(),
+        openMessages: vi.fn(),
+        openNewMessage: vi.fn(),
+        openConversation: vi.fn(),
+        openArticle: vi.fn(),
+        onOpen: vi.fn(),
+        onClose: vi.fn(),
+        onUnreadCountChange: vi.fn(),
+        onUserEmailSupplied: vi.fn(),
+        onConversationStarted: vi.fn(),
+        onMessageReceived: vi.fn(),
+        getVisitorId: vi.fn(() => ''),
+        isWidgetReady: vi.fn(() => false),
+      };
+      const lazyClient = new HelpinClient(mockConfig, widgetController);
+      const originalCompany = {
+        id: 'account-1',
+        name: 'Account One',
+        created_at: '2025-01-01',
+      };
+      const activeCompany = {
+        id: 'account-2',
+        name: 'Account Two',
+        created_at: '2025-02-01',
+      };
+
+      await lazyClient.id({ id: 'user-1', company: originalCompany }, true);
+      await lazyClient.group(activeCompany, true);
+      lazyClient.open();
+
+      expect(widgetController.boot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user: expect.objectContaining({ company: activeCompany }),
+        }),
+      );
+    });
+
     it('should include company data in backend identify payload', async () => {
       const originalFetch = globalThis.fetch;
       const fetchSpy = vi.fn(() => Promise.resolve({ ok: true } as Response));
@@ -135,6 +180,31 @@ describe('HelpinClient', () => {
       } finally {
         globalThis.fetch = originalFetch;
       }
+    });
+
+    it('uses a previously grouped company when id has no inline company', async () => {
+      const originalFetch = globalThis.fetch;
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true } as Response));
+      globalThis.fetch = fetchSpy as any;
+      try {
+        const company = { id: 'account-1', name: 'Account One', created_at: '2025-01-01' };
+        await client.group(company, true);
+        await client.id({ id: 'user-1', email: 'user@example.com' }, true);
+        const body = JSON.parse(fetchSpy.mock.calls.at(-1)?.[1].body);
+        expect(body.company).toEqual(company);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  describe('shutdown', () => {
+    it('rotates the anonymous visitor identity', () => {
+      const resetSpy = vi.spyOn(client, 'reset');
+
+      client.shutdown();
+
+      expect(resetSpy).toHaveBeenCalledWith(true);
     });
   });
 
@@ -274,6 +344,20 @@ describe('HelpinClient', () => {
       });
       expect(queuedPayload.event_attributes.company).toBeUndefined();
     });
+
+    it('does not inherit the persisted customer company for an unrelated lead', async () => {
+      await client.group({
+        id: 'customer-account',
+        name: 'Customer Account',
+        created_at: '2025-01-01',
+      }, true);
+      addSpy.mockClear();
+
+      client.lead({ email: 'lead@example.com', name: 'New Lead' });
+
+      const queuedPayload = addSpy.mock.calls.at(-1)?.[0] as any;
+      expect(queuedPayload.company).toBeUndefined();
+    });
   });
 
   describe('group method', () => {
@@ -300,6 +384,26 @@ describe('HelpinClient', () => {
       await client.group(companyProps, true);
 
       expect(client.track).not.toHaveBeenCalled();
+    });
+
+    it('syncs a new active company when an identified email is stored', async () => {
+      const originalFetch = globalThis.fetch;
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true } as Response));
+      globalThis.fetch = fetchSpy as any;
+      try {
+        await client.id({ id: 'user-1', email: 'user@example.com', name: 'User One' }, true);
+        fetchSpy.mockClear();
+        const company = { id: 'account-2', name: 'Account Two', created_at: '2025-02-01' };
+        await client.group(company, true);
+        const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+        expect(body).toEqual(expect.objectContaining({
+          email: 'user@example.com',
+          source: 'sdk_group',
+          company,
+        }));
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
 
     it('should throw an error for invalid company properties', async () => {

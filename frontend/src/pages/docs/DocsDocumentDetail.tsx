@@ -33,7 +33,7 @@ import {
   SquareUnlock01Icon,
   UserCheck01Icon,
 } from '@/lib/icons'
-import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
+import { StoredIcon } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
@@ -71,6 +71,7 @@ import {
   usePermissions,
   useToggleDocShare,
   useToggleDocLock,
+  useCreateDocsVersion,
   useRevertDocsVersion,
   useDocsBlocks,
   useDocsChangeProposal,
@@ -117,6 +118,7 @@ import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/Mi
 import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialog'
 import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposalBadge'
 import { ProposalReviewView } from '@/components/docs/proposals/ProposalReviewView'
+import { InlineProposalReview } from '@/components/docs/InlineProposalReview'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { CommentThread } from '@/components/pm/CommentThread'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -132,6 +134,8 @@ import type { CommandBarPageContext, CommentWithAuthor } from '@/lib/pmTypes'
 import { prepareDocsContentForPublish } from '@/lib/docsPublishTransforms'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
+import { areMermaidDiagramsReady, preloadMermaidDiagrams } from '@/components/editor/mermaidPreviewCache'
+import { collectMermaidSources } from '@/components/editor/mermaidContent'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
 import { useRegisterPageContext, type PageContextScopeOption } from '@/components/command-bar/pageContext'
@@ -148,19 +152,29 @@ function docStatusColor(status: string): string {
 }
 
 function DocCollectionIcon({ name }: { name?: string | null }) {
-  if (name) {
-    const Icon = ICON_MAP[name];
-    if (Icon) return <Icon className="h-3 w-3 shrink-0" />;
-  }
-  return <FolderOpenIcon className="h-3 w-3 shrink-0" />;
+  return (
+    <StoredIcon
+      name={name}
+      className="h-3 w-3 shrink-0"
+      fallback={<FolderOpenIcon className="h-3 w-3 shrink-0" />}
+    />
+  );
 }
 
 import type { DocumentOutlineItem } from '@/components/docs/DocsOutlineMinimap'
 
+// Document JSON reaches this page from several sources (saved content, version
+// snapshots, coverage handoff, translation drafts) and agents can author it
+// directly, so a malformed node must degrade the outline rather than take down
+// the whole document view.
+function childNodes(node: JSONContent | undefined): JSONContent[] {
+  return Array.isArray(node?.content) ? node.content : []
+}
+
 function collectDocumentOutline(content: JSONContent | null | undefined): DocumentOutlineItem[] {
   const items: DocumentOutlineItem[] = []
   const walk = (node: JSONContent | undefined) => {
-    if (!node) return
+    if (!node || typeof node !== 'object') return
     if (node.type === 'heading') {
       const text = collectJSONText(node).trim()
       if (text) {
@@ -171,19 +185,20 @@ function collectDocumentOutline(content: JSONContent | null | undefined): Docume
         })
       }
     }
-    node.content?.forEach(walk)
+    childNodes(node).forEach(walk)
   }
   walk(content ?? undefined)
   return items
 }
 
-function collectJSONText(node: JSONContent): string {
+function collectJSONText(node: JSONContent | undefined): string {
+  if (!node || typeof node !== 'object') return ''
   if (typeof node.text === 'string') return node.text
-  return node.content?.map(collectJSONText).join('') ?? ''
+  return childNodes(node).map(collectJSONText).join('')
 }
 
 function getFocusedEditorBlockId(editor: TiptapEditor | null): string | null {
-  if (!editor) return null
+  if (!editor || editor.isDestroyed) return null
   const { from } = editor.state.selection
   const $from = editor.state.doc.resolve(from)
   for (let depth = $from.depth; depth >= 0; depth -= 1) {
@@ -198,7 +213,7 @@ function useFocusedDocsBlockId(editor: TiptapEditor | null) {
   const [blockId, setBlockId] = useState<string | null>(() => getFocusedEditorBlockId(editor))
 
   useEffect(() => {
-    if (!editor) {
+    if (!editor || editor.isDestroyed) {
       setBlockId(null)
       return
     }
@@ -243,10 +258,12 @@ function buildDocsBlockCommandContext(doc: DocsDocument | undefined, block: Docs
 function DocsPendingProposalsBanner({
   proposal,
   count,
+  reviewLabel,
   onReview,
 }: {
   proposal: DocsChangeProposal
   count: number
+  reviewLabel: string
   onReview: () => void
 }) {
   const scopeLabel = proposal.scope === 'block' ? 'Block change' : 'Document change'
@@ -269,7 +286,7 @@ function DocsPendingProposalsBanner({
         <div className="flex shrink-0 items-center gap-2 lg:justify-end">
           <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={onReview}>
             <ViewIcon className="h-3 w-3" />
-            Review
+            {reviewLabel}
           </Button>
         </div>
       </div>
@@ -397,6 +414,29 @@ export function DocsDocumentDetail({
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
   const { data: blocks = [] } = useDocsBlocks(wsId, docId)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
+  const mermaidSources = useMemo(
+    () => collectMermaidSources(content?.content as JSONContent | null | undefined),
+    [content?.content],
+  )
+  const mermaidPreloadKey = useMemo(
+    () => mermaidSources.length > 0 ? `${docId}:${mermaidSources.join('\u001f')}` : '',
+    [docId, mermaidSources],
+  )
+  const [completedMermaidPreloadKey, setCompletedMermaidPreloadKey] = useState('')
+  const mermaidPreloadReady = !mermaidPreloadKey
+    || completedMermaidPreloadKey === mermaidPreloadKey
+    || areMermaidDiagramsReady(mermaidSources)
+
+  useEffect(() => {
+    if (!mermaidPreloadKey || areMermaidDiagramsReady(mermaidSources)) return
+    let cancelled = false
+    void preloadMermaidDiagrams(mermaidSources).then(() => {
+      if (!cancelled) setCompletedMermaidPreloadKey(mermaidPreloadKey)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [mermaidPreloadKey, mermaidSources])
   const { data: changeProposals = [] } = useDocsChangeProposals(wsId, docId)
   const {
     data: searchedChangeProposal,
@@ -408,8 +448,11 @@ export function DocsDocumentDetail({
   const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
 
   const saveContent = useSaveDocsContent(wsId)
+  const createRepairVersion = useCreateDocsVersion(wsId)
   const applyChangeProposal = useApplyDocsChangeProposal(wsId)
   const discardChangeProposal = useDiscardDocsChangeProposal(wsId)
+  const applyingProposalId = applyChangeProposal.isPending ? applyChangeProposal.variables?.proposalId ?? null : null
+  const discardingProposalId = discardChangeProposal.isPending ? discardChangeProposal.variables?.proposalId ?? null : null
   const updateDoc = useUpdateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
   const unpublishDoc = useUnpublishDocsDocument(wsId)
@@ -660,8 +703,10 @@ export function DocsDocumentDetail({
     }
   }, [previewVersion, revertVersion, docId])
 
-  const handleApplyChangeProposal = useCallback(async () => {
-    const proposal = activeReviewProposal ?? visibleChangeProposal
+  const handleApplyChangeProposal = useCallback(async (proposalId?: string) => {
+    const proposal = proposalId
+      ? changeProposals.find((item) => item.id === proposalId) ?? activeReviewProposal
+      : activeReviewProposal ?? visibleChangeProposal
     if (!proposal) return
     try {
       await applyChangeProposal.mutateAsync({ docId, proposalId: proposal.id })
@@ -669,12 +714,19 @@ export function DocsDocumentDetail({
       setProposalStatusMessage('Proposal applied. The document has been updated.')
       if (activeReviewProposal) setProposalSearchId(null)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to apply proposal')
+      const message = err instanceof Error ? err.message : 'Failed to apply proposal'
+      toast.error(
+        message.includes('stale')
+          ? 'This block was edited after the proposal was created. Discard it and ask the agent to re-propose from the latest version.'
+          : message,
+      )
     }
-  }, [activeReviewProposal, applyChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
+  }, [activeReviewProposal, applyChangeProposal, changeProposals, docId, setProposalSearchId, visibleChangeProposal])
 
-  const handleDiscardChangeProposal = useCallback(async () => {
-    const proposal = activeReviewProposal ?? visibleChangeProposal
+  const handleDiscardChangeProposal = useCallback(async (proposalId?: string) => {
+    const proposal = proposalId
+      ? changeProposals.find((item) => item.id === proposalId) ?? activeReviewProposal
+      : activeReviewProposal ?? visibleChangeProposal
     if (!proposal) return
     if (!window.confirm("Discard Quill's proposal? You'll lose this draft.")) return
     try {
@@ -685,7 +737,42 @@ export function DocsDocumentDetail({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to discard proposal')
     }
-  }, [activeReviewProposal, discardChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
+  }, [activeReviewProposal, changeProposals, discardChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
+
+  // A deep link to a pending block proposal (?proposal=<id>) resolves to the
+  // inline card rather than the standalone review screen, which is now only
+  // used for document-scope rewrites.
+  useEffect(() => {
+    if (!proposalSearchId || !activeReviewProposal) return
+    if (activeReviewProposal.scope !== 'block' || activeReviewProposal.status !== 'pending') return
+    const blockId = activeReviewProposal.block_id?.trim()
+    if (!blockId || !editorInstance || editorInstance.isDestroyed) return
+    setProposalSearchId(null)
+    requestAnimationFrame(() => {
+      if (!editorInstance || editorInstance.isDestroyed) return
+      editorInstance.view.dom
+        .querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [activeReviewProposal, editorInstance, proposalSearchId, setProposalSearchId])
+
+  // Block proposals are reviewed inline, so the banner jumps to the block
+  // rather than opening a separate review screen.
+  const handleRevealChangeProposal = useCallback((proposal: DocsChangeProposal) => {
+    const blockId = proposal.scope === 'block' ? proposal.block_id?.trim() : ''
+    if (!blockId || !editorInstance || editorInstance.isDestroyed) {
+      setProposalSearchId(proposal.id)
+      return
+    }
+    const target = editorInstance.view.dom.querySelector<HTMLElement>(
+      `[data-block-id="${CSS.escape(blockId)}"]`,
+    )
+    if (!target) {
+      setProposalSearchId(proposal.id)
+      return
+    }
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [editorInstance, setProposalSearchId])
 
   // Title state — keep a local draft only for the active document.
   const [titleDraftState, setTitleDraftState] = useState<{ docId: string; value: string } | null>(null)
@@ -866,6 +953,15 @@ export function DocsDocumentDetail({
       queryClient,
     ],
   )
+
+  const handleRepairInvalidContent = useCallback(async (repairedContent: JSONContent) => {
+    await createRepairVersion.mutateAsync({
+      docId,
+      snapshot_label: 'Before automatic content repair',
+    })
+    await handleSave(repairedContent)
+    toast.success('Document repaired. The original is available in version history.')
+  }, [createRepairVersion, docId, handleSave])
 
   const isExternalHelpCenter = space?.type === 'external_capable'
   const { data: helpcenterConfig } = useDocsHelpcenterConfig(wsId)
@@ -1121,6 +1217,11 @@ export function DocsDocumentDetail({
     await persistTranslationDraft(next)
   }, [activeLocale, articleTranslationsByLocale, docId, persistTranslationDraft])
 
+  const handleRepairInvalidTranslationContent = useCallback(async (repairedContent: JSONContent) => {
+    await handleTranslationContentSave(repairedContent)
+    toast.success('Translation repaired and saved.')
+  }, [handleTranslationContentSave])
+
   const handleSelectLocale = useCallback((locale: string) => {
     setPreviewVersion(null)
     setPendingTranslationLocale(null)
@@ -1268,7 +1369,7 @@ export function DocsDocumentDetail({
       }
     : articleTranslationsByLocale.get(editingTranslationLocale ?? '') ?? null
 
-  if (docLoading || contentLoading) {
+  if (docLoading || contentLoading || !mermaidPreloadReady) {
     return (
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-3 border-b border-border/60 px-4 py-2">
@@ -1317,7 +1418,7 @@ export function DocsDocumentDetail({
             already tells users they're in the Docs module; repeating
             it here wastes the first breadcrumb slot on something
             they already know. */}
-        <nav className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
+        <nav className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
           {space && (
             <button
               type="button"
@@ -1327,7 +1428,7 @@ export function DocsDocumentDetail({
                   params: { slug: wsSlug, spaceId: space.id },
                 })
               }
-              className="truncate hover:text-foreground transition-colors"
+              className="truncate transition-colors hover:text-foreground"
             >
               <span className="inline-flex items-center gap-1">
                 <StoredIcon name={space.icon} className="h-3.5 w-3.5 shrink-0" textClassName="" />
@@ -1347,13 +1448,29 @@ export function DocsDocumentDetail({
                     search: { collection: node.collection.id },
                   })
                 }
-                className="inline-flex min-w-0 items-center gap-1 truncate hover:text-foreground transition-colors"
+                className="inline-flex min-w-0 items-center gap-1 truncate transition-colors hover:text-foreground"
               >
                 <DocCollectionIcon name={node.collection.icon} />
                 <span className="truncate">{node.collection.name}</span>
               </button>
             </div>
           ))}
+          {doc && (
+            <div className="flex min-w-0 items-center gap-1">
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
+              <span
+                aria-current="page"
+                className="inline-flex min-w-0 items-center gap-1 font-medium"
+              >
+                <StoredIcon
+                  name={doc.icon}
+                  className="h-3 w-3 shrink-0"
+                  fallback={<File01Icon className="h-3 w-3 shrink-0" />}
+                />
+                <span className="truncate">{titleDraft.trim() || 'Untitled'}</span>
+              </span>
+            </div>
+          )}
         </nav>
 
         {(editorSaveStatus !== 'idle' || editorLastSavedAt) && (
@@ -1628,7 +1745,8 @@ export function DocsDocumentDetail({
         <DocsPendingProposalsBanner
           proposal={visibleChangeProposal}
           count={changeProposals.length}
-          onReview={() => setProposalSearchId(visibleChangeProposal.id)}
+          reviewLabel={visibleChangeProposal.scope === 'block' ? 'Jump to change' : 'Review'}
+          onReview={() => handleRevealChangeProposal(visibleChangeProposal)}
         />
       )}
 
@@ -1657,7 +1775,11 @@ export function DocsDocumentDetail({
           <ProposalReviewView
             proposal={activeReviewProposal}
             pendingProposals={changeProposals}
-            currentText={content?.content_text ?? ''}
+            currentText={
+              activeReviewProposal.scope === 'block'
+                ? (blocks.find((block) => block.id === activeReviewProposal.block_id)?.content_text ?? '')
+                : (content?.content_text ?? '')
+            }
             canEdit={canEditDocs && !effectiveReadOnly}
             applying={applyChangeProposal.isPending}
             discarding={discardChangeProposal.isPending}
@@ -1698,6 +1820,19 @@ export function DocsDocumentDetail({
             editor={editorInstance}
             onComment={(anchor) => handleCreateCommentAnchor(anchor)}
           />
+          {!previewVersion && (
+            <InlineProposalReview
+              editor={editorInstance}
+              proposals={changeProposals}
+              blocks={blocks}
+              canEdit={canEditDocs && !effectiveReadOnly}
+              applyingProposalId={applyingProposalId}
+              discardingProposalId={discardingProposalId}
+              workspaceId={wsId}
+              onApply={handleApplyChangeProposal}
+              onDiscard={handleDiscardChangeProposal}
+            />
+          )}
           {previewVersion ? (
             <DocsEditor
               key={`preview-${previewVersion.id}`}
@@ -1752,6 +1887,14 @@ export function DocsDocumentDetail({
                   : activeTranslationDraft.content
               }
               onSave={isSourceLocaleActive ? handleSave : handleTranslationContentSave}
+              onRepairInvalidContent={
+                effectiveReadOnly
+                  ? undefined
+                  : isSourceLocaleActive
+                    ? handleRepairInvalidContent
+                    : handleRepairInvalidTranslationContent
+              }
+              repairCreatesRecoveryVersion={isSourceLocaleActive}
               readOnly={effectiveReadOnly}
               uploadConfig={
                 !effectiveReadOnly

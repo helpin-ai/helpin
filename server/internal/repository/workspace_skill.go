@@ -51,6 +51,17 @@ func (r *WorkspaceSkillRepository) GetActiveByKey(ctx context.Context, workspace
 	return &skill, nil
 }
 
+func (r *WorkspaceSkillRepository) GetActiveByPackageObjectKey(ctx context.Context, objectKey string) (*model.WorkspaceSkill, error) {
+	var skill model.WorkspaceSkill
+	if err := r.db.WithContext(ctx).Where("package_object_key = ? AND is_archived = ?", objectKey, false).First(&skill).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get workspace skill by package object key: %w", err)
+	}
+	return &skill, nil
+}
+
 func (r *WorkspaceSkillRepository) Create(ctx context.Context, skill *model.WorkspaceSkill) error {
 	if err := r.db.WithContext(ctx).Create(skill).Error; err != nil {
 		return fmt.Errorf("create workspace skill: %w", err)

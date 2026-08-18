@@ -9,7 +9,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { queryKeys } from '@/lib/queryKeys'
-import type { ConversationListResponse } from '@/lib/pmTypes'
+import type { ConversationListResponse, SupportMessage } from '@/lib/pmTypes'
+import { flattenSupportMessagePages, seedSupportMessagePages, type SupportMessagePages } from '@/lib/supportMessagePages'
 
 const captured = {
   onEvent: null as ((event: unknown) => void) | null,
@@ -382,7 +383,7 @@ describe('useRealtimeSync task ordering events', () => {
     })
 
     expect(updated).toHaveBeenCalledTimes(1)
-    expect(created).toHaveBeenCalledTimes(1)
+    expect(created).not.toHaveBeenCalled()
     expect((updated.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(expect.objectContaining({
       entity_id: 'run-2',
       parent_type: 'task',
@@ -390,6 +391,7 @@ describe('useRealtimeSync task ordering events', () => {
       agent_id: 'agent-2',
       status: 'running',
       pause_reason: '',
+      update_kind: 'progress',
     }))
 
     const state = usePMBoardStore.getState()
@@ -411,6 +413,120 @@ describe('useRealtimeSync task ordering events', () => {
 
     window.removeEventListener('agent_run-updated', updated)
     window.removeEventListener('agent_run-created', created)
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('patches a running transition once without invalidating broad queries on repeated progress', async () => {
+    usePMBoardStore.setState({
+      columns: [{
+        state: { id: 'state-todo', state_type: 'backlog' },
+        tasks: [{
+          id: 'task-1',
+          latest_run_id: 'run-1',
+          latest_run_agent_id: 'agent-1',
+          latest_run_status: 'queued',
+          latest_run_pause_reason: null,
+          latest_run_at: '2026-08-04T08:00:00Z',
+        }],
+        task_count: 1,
+        point_total: 0,
+        has_more: false,
+      }] as never,
+      memberColumns: [],
+    })
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(queryKeys.automation.runs('ws-1', 1, 100), {
+      data: [{ id: 'run-1', agent_id: 'agent-1', status: 'queued', pause_reason: 'none' }],
+      total: 1,
+    })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    const emitProgress = (sentAt: string) => captured.onEvent?.({
+      action: 'updated',
+      entity: 'agent_run',
+      entity_id: 'run-1',
+      workspace_id: 'ws-1',
+      parent_type: 'task',
+      parent_id: 'task-1',
+      sent_at: sentAt,
+      data: { agent_id: 'agent-1', status: 'running', pause_reason: 'none' },
+    })
+
+    await act(async () => {
+      emitProgress('2026-08-04T09:00:00Z')
+      await Promise.resolve()
+    })
+    const firstTask = usePMBoardStore.getState().columns[0]?.tasks[0]
+    expect(firstTask?.latest_run_at).toBe('2026-08-04T09:00:00Z')
+    expect(client.getQueryData(queryKeys.automation.runs('ws-1', 1, 100))).toEqual(expect.objectContaining({
+      data: [expect.objectContaining({ status: 'running' })],
+    }))
+
+    await act(async () => {
+      emitProgress('2026-08-04T09:01:00Z')
+      vi.advanceTimersByTime(500)
+      await Promise.resolve()
+    })
+    const secondTask = usePMBoardStore.getState().columns[0]?.tasks[0]
+    expect(secondTask).toBe(firstTask)
+    expect(secondTask?.latest_run_at).toBe('2026-08-04T09:00:00Z')
+    expect(invalidateQueries).not.toHaveBeenCalled()
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('coalesces lifecycle invalidations and refreshes the standalone attention count', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    const pausedEvent = {
+      action: 'updated',
+      entity: 'agent_run',
+      entity_id: 'run-1',
+      workspace_id: 'ws-1',
+      parent_type: 'task',
+      parent_id: 'task-1',
+      data: { agent_id: 'agent-1', status: 'paused', pause_reason: 'human_input' },
+    }
+    await act(async () => {
+      captured.onEvent?.(pausedEvent)
+      captured.onEvent?.(pausedEvent)
+      vi.advanceTimersByTime(450)
+      await Promise.resolve()
+    })
+
+    expect(invalidateQueries.mock.calls.filter(([options]) =>
+      JSON.stringify(options.queryKey) === JSON.stringify(queryKeys.automation.runsRoot('ws-1')),
+    )).toHaveLength(1)
+    expect(invalidateQueries.mock.calls.filter(([options]) =>
+      JSON.stringify(options.queryKey) === JSON.stringify(queryKeys.automation.runAttentionCount('ws-1')),
+    )).toHaveLength(1)
+
     act(() => root.unmount())
     container.remove()
   })
@@ -597,6 +713,20 @@ describe('useRealtimeSync task ordering events', () => {
       per_page: 50,
       total_pages: 1,
     })
+    const existingMessage: SupportMessage = {
+      id: 'msg-0',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-replied',
+      sender_type: 'customer',
+      content: 'Customer question',
+      is_internal: false,
+      created_at: '2026-06-04T08:00:00Z',
+      updated_at: '2026-06-04T08:00:00Z',
+    }
+    client.setQueryData(
+      queryKeys.support.messages('ws-1', 'conv-replied'),
+      seedSupportMessagePages([existingMessage]),
+    )
 
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -636,6 +766,8 @@ describe('useRealtimeSync task ordering events', () => {
       last_message: 'We will check this.',
       updated_at: '2026-06-04T09:00:00Z',
     }))
+    const messagePages = client.getQueryData<SupportMessagePages>(queryKeys.support.messages('ws-1', 'conv-replied'))
+    expect(flattenSupportMessagePages(messagePages).map((message) => message.id)).toEqual(['msg-0', 'msg-1'])
 
     act(() => root.unmount())
     container.remove()
@@ -715,6 +847,37 @@ describe('useRealtimeSync task ordering events', () => {
       selectedConversationId: 'conv-reopen',
       activePanel: 'thread',
     }))
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('refreshes live company visitor context and conversation associations', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const visitorKey = queryKeys.support.visitorContext('ws-1', 'conv-company')
+    const associationKey = queryKeys.support.conversationAssociations('ws-1', 'conv-company')
+    client.setQueryData(visitorKey, { company_context_status: 'ok' })
+    client.setQueryData(associationKey, { crm_records: [] })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>)
+    })
+
+    await act(async () => {
+      captured.onEvent?.({ action: 'updated', entity: 'support_conversation', entity_id: 'conv-company', workspace_id: 'ws-1' })
+      await Promise.resolve()
+    })
+    expect(client.getQueryState(visitorKey)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(associationKey)?.isInvalidated).toBe(true)
+
+    client.setQueryData(visitorKey, { company_context_status: 'ok' })
+    await act(async () => {
+      captured.onEvent?.({ action: 'updated', entity: 'crm_company', entity_id: 'company-1', workspace_id: 'ws-1' })
+      await Promise.resolve()
+    })
+    expect(client.getQueryState(visitorKey)?.isInvalidated).toBe(true)
 
     act(() => root.unmount())
     container.remove()

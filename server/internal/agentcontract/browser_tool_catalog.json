@@ -1,0 +1,89 @@
+{
+  "tools": [
+    {
+      "name": "browser_open",
+      "description": "Open an allowed page in the workspace's ephemeral browser session, wait briefly for client rendering, and return the final URL, title, and a compact interactive snapshot. Use fetch_url or crawl_url for public pages that do not require interaction.",
+      "category": "Browser",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "minLength": 1, "description": "HTTP or HTTPS URL on a workspace-approved domain." },
+          "depth": { "type": "integer", "minimum": 1, "maximum": 8, "description": "Snapshot depth. Defaults to 5." },
+          "wait_ms": { "type": "integer", "minimum": 0, "maximum": 10000, "description": "Additional client-rendering settle time after the load event. Defaults to 1500 milliseconds." }
+        },
+        "required": ["url"],
+        "additionalProperties": false
+      },
+      "presets": []
+    },
+    {
+      "name": "browser_snapshot",
+      "description": "Return the current page URL, title, and a refreshed bounded accessibility snapshot with element references.",
+      "category": "Browser",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "selector": { "type": "string", "description": "Optional CSS selector used only to scope snapshot output." },
+          "depth": { "type": "integer", "minimum": 1, "maximum": 8, "description": "Snapshot depth. Defaults to 5." }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "presets": []
+    },
+    {
+      "name": "browser_act",
+      "description": "Perform one bounded browser interaction using an element reference from the latest snapshot, then return the resulting URL, title, and refreshed compact snapshot.",
+      "category": "Browser",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["click", "fill", "type", "press", "select", "check", "uncheck", "hover", "scroll", "wait"], "description": "One browser action to execute." },
+          "ref": { "type": "string", "description": "Element reference such as @e4. Required for element actions." },
+          "value": { "type": "string", "description": "Text, key, select option, scroll direction, or wait target required by the selected action." },
+          "amount": { "type": "integer", "minimum": 1, "maximum": 5000, "description": "Optional scroll amount in pixels or wait duration in milliseconds." },
+          "depth": { "type": "integer", "minimum": 1, "maximum": 8, "description": "Returned snapshot depth. Defaults to 5." }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      },
+      "presets": []
+    },
+    {
+      "name": "browser_screenshot",
+      "description": "Capture the current page as a durable externally renderable workspace asset without returning image bytes to the model. Set annotate=true for numbered interactive-element labels.",
+      "category": "Browser",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Short descriptive asset name. Defaults to browser-screenshot." },
+          "selector": { "type": "string", "description": "Optional element reference or CSS selector to capture." },
+          "full_page": { "type": "boolean", "description": "Capture the full page instead of the viewport. Defaults to false." },
+          "annotate": { "type": "boolean", "description": "Add numbered labels to interactive elements. Defaults to false." },
+          "format": { "type": "string", "enum": ["png", "jpeg"], "description": "Image format. Defaults to png." }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "presets": []
+    },
+    {
+      "name": "browser_record",
+      "description": "Start or stop a bounded Kernel replay of the current private browser session. Stopping removes idle agent-reasoning gaps when possible and persists one MP4 as a durable private workspace artifact without returning video bytes or provider URLs to the model. To embed it in a Helpin document, call insert_document_artifact with the returned artifact_id; writing its filename or artifact_ref into document content does not embed the video.",
+      "category": "Browser",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["start", "stop"], "description": "Start or stop the current run-scoped browser recording." },
+          "name": { "type": "string", "description": "Short descriptive recording name. Used only with action=start and defaults to browser-recording." },
+          "max_duration_seconds": { "type": "integer", "minimum": 10, "maximum": 600, "description": "Maximum recording duration. Used only with action=start and defaults to 180 seconds." },
+          "record_audio": { "type": "boolean", "description": "Include browser audio. Used only with action=start and defaults to false." }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      },
+      "presets": []
+    }
+  ],
+  "categories": ["Browser"]
+}

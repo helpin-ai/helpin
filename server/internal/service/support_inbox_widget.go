@@ -17,6 +17,11 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
+const (
+	widgetSessionTTL               = 7 * 24 * time.Hour
+	widgetSessionActivityExtension = time.Hour
+)
+
 // CreateWidgetSession creates a new session for external widget chat.
 // Always creates a new session — multiple concurrent sessions per visitor are allowed.
 func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL, timezone, locale *string) (*model.SupportWidgetSession, error) {
@@ -51,7 +56,7 @@ func (s *SupportInboxService) CreateWidgetSession(ctx context.Context, widgetKey
 		Timezone:      timezone,
 		Locale:        locale,
 		IPAddress:     clientIP,
-		ExpiresAt:     time.Now().Add(30 * 24 * time.Hour),
+		ExpiresAt:     time.Now().Add(widgetSessionTTL),
 	}
 	if geoLookup != nil {
 		session.CountryCode = stringPtrOrNil(geoLookup.CountryCode)
@@ -79,8 +84,16 @@ func (s *SupportInboxService) GetWidgetSession(ctx context.Context, token string
 	if session.RevokedAt != nil {
 		return nil, fmt.Errorf("session revoked")
 	}
-	if time.Now().After(session.ExpiresAt) {
+	now := time.Now().UTC()
+	if now.After(session.ExpiresAt) {
 		return nil, fmt.Errorf("session expired")
+	}
+	nextExpiry := now.Add(widgetSessionActivityExtension)
+	if session.ExpiresAt.Before(nextExpiry) {
+		if err := s.sessionRepo.ExtendExpiryByToken(ctx, session.SessionToken, nextExpiry); err != nil {
+			return nil, err
+		}
+		session.ExpiresAt = nextExpiry
 	}
 	s.refreshWidgetSessionGeo(ctx, session)
 	s.touchWidgetSessionActivity(ctx, session.SessionToken)
@@ -152,8 +165,19 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 			return err
 		}
 		if contactID != nil && companyID != nil {
-			if err := s.ensurePrimaryContactCompanyAssociationTx(ctx, assocRepoTx, session.WorkspaceID, *contactID, *companyID); err != nil {
+			if err := s.ensureContactCompanyMembershipTx(ctx, assocRepoTx, session.WorkspaceID, *contactID, *companyID); err != nil {
 				return err
+			}
+		}
+		if companyID != nil {
+			if err := sessionRepoTx.UpdateCompanyByID(ctx, session.WorkspaceID, session.ID, companyID); err != nil {
+				return err
+			}
+			session.CRMCompanyID = companyID
+			if session.ConversationID != nil {
+				if _, err := convRepoTx.SetCRMCompanyIfUnset(ctx, session.WorkspaceID, *session.ConversationID, *companyID); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -228,8 +252,22 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 			return err
 		}
 		if contactID != nil && companyID != nil {
-			if err := s.ensurePrimaryContactCompanyAssociationTx(ctx, assocRepoTx, workspaceID, *contactID, *companyID); err != nil {
+			if err := s.ensureContactCompanyMembershipTx(ctx, assocRepoTx, workspaceID, *contactID, *companyID); err != nil {
 				return err
+			}
+		}
+		if companyID != nil {
+			activeSessions, err := sessionRepoTx.UpdateActiveSessionsCompanyByAnonymousID(ctx, workspaceID, anonymousID, *companyID)
+			if err != nil {
+				return err
+			}
+			for _, activeSession := range activeSessions {
+				if activeSession.ConversationID == nil {
+					continue
+				}
+				if _, err := convRepoTx.SetCRMCompanyIfUnset(ctx, workspaceID, *activeSession.ConversationID, *companyID); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -379,25 +417,7 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 		}
 	}
 
-	messages, err := s.ListConversationMessages(ctx, session.WorkspaceID, conversationID, false)
-	if err != nil {
-		return nil, err
-	}
-
-	workspaceName := "Support"
-	if s.workspaceRepo != nil {
-		if workspace, err := s.workspaceRepo.GetByID(ctx, session.WorkspaceID); err == nil && workspace != nil && strings.TrimSpace(workspace.Name) != "" {
-			workspaceName = strings.TrimSpace(workspace.Name)
-		}
-	}
-
-	htmlBody, textBody := renderSupportTranscriptBodies(workspaceName, conversation, messages)
-	subject := fmt.Sprintf("Your conversation transcript with %s", workspaceName)
-
-	if s.emailFallbackService == nil || s.emailFallbackService.emailClient == nil {
-		return nil, fmt.Errorf("email is not configured")
-	}
-	if err := s.emailFallbackService.emailClient.SendEmail(recipientEmail, subject, htmlBody, textBody); err != nil {
+	if err := s.sendConversationTranscript(ctx, session.WorkspaceID, conversation, recipientEmail, strings.TrimSpace(derefString(conversation.CustomerEmail)) == "" && strings.TrimSpace(email) != ""); err != nil {
 		return nil, err
 	}
 
@@ -417,67 +437,58 @@ func (s *SupportInboxService) SendWidgetConversationTranscript(ctx context.Conte
 	}, nil
 }
 
-// WidgetCreateConversation eagerly creates a new conversation for a widget session
-// and returns the conversation with its server-assigned ID.
-func (s *SupportInboxService) WidgetCreateConversation(ctx context.Context, sessionToken string) (*model.SupportConversation, error) {
-	session, err := s.GetWidgetSession(ctx, sessionToken)
+// SendSupportConversationTranscript sends a transcript from the authenticated support inbox.
+func (s *SupportInboxService) SendSupportConversationTranscript(ctx context.Context, workspaceID, conversationID, email string, updateCustomerEmail bool) (*model.SendSupportConversationTranscriptResponse, error) {
+	if strings.TrimSpace(conversationID) == "" {
+		return nil, fmt.Errorf("conversation_id is required")
+	}
+	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return nil, err
 	}
-
-	ticket := &model.SupportConversation{
-		WorkspaceID:   session.WorkspaceID,
-		Subject:       "New conversation",
-		Status:        "open",
-		FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
-		Priority:      "medium",
-		Channel:       "widget",
-		CustomerName:  session.CustomerName,
-		CustomerEmail: session.CustomerEmail,
-		AnonymousID:   &session.AnonymousID,
-		Source:        "widget",
+	if conversation == nil {
+		return nil, fmt.Errorf("conversation not found")
 	}
+	recipientEmail := strings.TrimSpace(email)
+	if recipientEmail == "" {
+		recipientEmail = strings.TrimSpace(derefString(conversation.CustomerEmail))
+	}
+	if recipientEmail == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+	if _, err := mail.ParseAddress(recipientEmail); err != nil {
+		return nil, fmt.Errorf("invalid email address")
+	}
+	if err := s.sendConversationTranscript(ctx, workspaceID, conversation, recipientEmail, updateCustomerEmail); err != nil {
+		return nil, err
+	}
+	return &model.SendSupportConversationTranscriptResponse{Success: true, Email: recipientEmail, Message: fmt.Sprintf("Transcript sent to %s", recipientEmail)}, nil
+}
 
-	mailboxID, mailbox, err := s.maybeApplyMailboxRoutingForChannel(ctx, session.WorkspaceID, nil, true, "widget")
+func (s *SupportInboxService) sendConversationTranscript(ctx context.Context, workspaceID string, conversation *model.SupportConversation, recipientEmail string, updateCustomerEmail bool) error {
+	messages, err := s.ListConversationMessages(ctx, workspaceID, conversation.ID, false)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	ticket.MailboxID = mailboxID
-	if mailbox != nil {
-		ownerID, flowState, ownerErr := s.determineMailboxOwner(ctx, session.WorkspaceID, mailbox, nil)
-		if ownerErr != nil {
-			return nil, ownerErr
-		}
-		ticket.AssignedUserID = ownerID
-		ticket.FlowState = strPtr(flowState)
-	}
-
-	if contactID := s.matchOrCreateCRMContact(ctx, session.WorkspaceID, session.CustomerEmail, session.CustomerName); contactID != nil {
-		ticket.CRMContactID = contactID
-	}
-
-	if err := s.conversationRepo.Create(ctx, ticket); err != nil {
-		return nil, err
-	}
-
-	session.ConversationID = &ticket.ID
-	if err := s.sessionRepo.Update(ctx, session); err != nil {
-		return nil, err
-	}
-
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "created",
-		Entity:      "support_conversation",
-		EntityID:    ticket.ID,
-		WorkspaceID: session.WorkspaceID,
-	})
-	if s.triageService != nil {
-		if err := s.triageService.HydrateConversation(ctx, ticket); err != nil {
-			slog.ErrorContext(ctx, "hydrate widget support conversation triage", "error", err, "workspace_id", session.WorkspaceID, "conversation_id", ticket.ID)
+	workspaceName := "Support"
+	if s.workspaceRepo != nil {
+		if workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID); err == nil && workspace != nil && strings.TrimSpace(workspace.Name) != "" {
+			workspaceName = strings.TrimSpace(workspace.Name)
 		}
 	}
-
-	return ticket, nil
+	if s.emailFallbackService == nil || s.emailFallbackService.emailClient == nil {
+		return fmt.Errorf("email is not configured")
+	}
+	htmlBody, textBody := renderSupportTranscriptBodies(workspaceName, conversation, messages)
+	if err := s.emailFallbackService.emailClient.SendEmail(recipientEmail, fmt.Sprintf("Your conversation transcript with %s", workspaceName), htmlBody, textBody); err != nil {
+		return err
+	}
+	if updateCustomerEmail && strings.TrimSpace(derefString(conversation.CustomerEmail)) != strings.TrimSpace(recipientEmail) {
+		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversation.ID, map[string]any{"customer_email": recipientEmail}); err != nil {
+			slog.WarnContext(ctx, "persist transcript recipient email failed", "error", err, "conversation_id", conversation.ID)
+		}
+	}
+	return nil
 }
 
 // WidgetCreateMessage creates a message from an external widget user.
@@ -486,12 +497,32 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	if err != nil {
 		return nil, err
 	}
+	initialConversationID := session.ConversationID
+	if s.attachmentService != nil && len(attachmentIDs) > 0 {
+		if err := s.attachmentService.ValidateWidgetAttachments(
+			ctx, attachmentIDs, session.WorkspaceID, session.ID, initialConversationID,
+		); err != nil {
+			return nil, err
+		}
+	}
+	createdConversationID := ""
+	conversationSubject := truncate(strings.TrimSpace(content), 100)
+	if conversationSubject == "" && len(attachmentIDs) > 0 {
+		conversationSubject = "Attachment"
+	}
 
 	// Update conversation subject from first message if it was eagerly created with placeholder.
 	if session.ConversationID != nil {
 		conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner)
-		if err == nil && conv != nil && conv.Subject == "New conversation" {
-			s.conversationRepo.UpdateSubject(ctx, conv.ID, truncate(strings.TrimSpace(content), 100))
+		if err != nil {
+			return nil, err
+		}
+		if conv == nil {
+			session.ConversationID = nil
+		} else if conv.Subject == "New conversation" {
+			if err := s.conversationRepo.UpdateSubject(ctx, conv.ID, conversationSubject); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -499,7 +530,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	if session.ConversationID == nil {
 		ticket := &model.SupportConversation{
 			WorkspaceID:   session.WorkspaceID,
-			Subject:       truncate(content, 100),
+			Subject:       conversationSubject,
 			Status:        "open",
 			FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
 			Priority:      "medium",
@@ -507,6 +538,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 			CustomerName:  session.CustomerName,
 			CustomerEmail: session.CustomerEmail,
 			AnonymousID:   &session.AnonymousID,
+			CRMCompanyID:  session.CRMCompanyID,
 			Source:        "widget",
 		}
 
@@ -534,8 +566,12 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		}
 		session.ConversationID = &ticket.ID
 		if err := s.sessionRepo.Update(ctx, session); err != nil {
+			if cleanupErr := s.conversationRepo.Delete(ctx, session.WorkspaceID, ticket.ID); cleanupErr != nil {
+				slog.ErrorContext(ctx, "clean up widget conversation after session update failure", "error", cleanupErr, "conversation_id", ticket.ID)
+			}
 			return nil, err
 		}
+		createdConversationID = ticket.ID
 
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "created",
@@ -560,17 +596,28 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		MessageType:       "reply",
 		ViaChannel:        strPtr("widget"),
 	}
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, msg)
-	}
-
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
+		if createdConversationID != "" {
+			session.ConversationID = nil
+			if cleanupErr := s.sessionRepo.Update(ctx, session); cleanupErr != nil {
+				slog.ErrorContext(ctx, "clear widget session after first-message failure", "error", cleanupErr, "conversation_id", createdConversationID)
+			}
+			if cleanupErr := s.conversationRepo.Delete(ctx, session.WorkspaceID, createdConversationID); cleanupErr != nil {
+				slog.ErrorContext(ctx, "clean up widget conversation after first-message failure", "error", cleanupErr, "conversation_id", createdConversationID)
+			} else {
+				s.wsPublisher.Publish(websocket.Event{
+					Action: "deleted", Entity: "support_conversation", EntityID: createdConversationID, WorkspaceID: session.WorkspaceID,
+				})
+			}
+		}
 		return nil, err
 	}
 
 	// Link pre-uploaded attachments to this message.
 	if s.attachmentService != nil && len(attachmentIDs) > 0 {
-		if err := s.attachmentService.LinkToMessage(ctx, attachmentIDs, msg.ID); err != nil {
+		if err := s.attachmentService.LinkWidgetAttachments(
+			ctx, attachmentIDs, session.WorkspaceID, session.ID, *session.ConversationID, msg.ID, initialConversationID,
+		); err != nil {
 			slog.ErrorContext(ctx, "link widget attachments to message", "error", err, "message_id", msg.ID)
 		}
 		msgs := []model.SupportMessage{*msg}
@@ -580,6 +627,7 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
+	s.enrichSupportMessageLinksAsync(msg, "widget:"+session.ID)
 
 	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner); err == nil {
 		if conv != nil && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {

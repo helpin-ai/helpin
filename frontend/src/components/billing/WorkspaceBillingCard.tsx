@@ -9,12 +9,13 @@ import {
   INTERVAL_LABEL,
   PLAN_LABEL,
   formatDate,
-  formatNumber,
   planBadgeLabel,
   statusBadgeVariant,
 } from '@/lib/billingUtils';
+import { formatAIUsagePercent } from '@/lib/aiUsage';
 import { useSetOnDemand, useBillingPortal } from '@/hooks/queries';
 import { BilledToPopover } from './BilledToPopover';
+import { getWorkspaceBillingCardPresentation } from './workspaceBillingCardPresentation';
 
 interface Props {
   orgId: string;
@@ -42,24 +43,23 @@ export function WorkspaceBillingCard({
 }: Props) {
   const setOnDemand = useSetOnDemand(orgId);
   const portal = useBillingPortal();
+  const view = getWorkspaceBillingCardPresentation(card);
 
-  const isTrial = card.trialing;
-  const isFounderPlan = card.plan === 'founder';
-  const isLocked = card.locked || card.status === 'trial_expired' || card.status === 'unpaid' || card.status === 'canceled';
-  const isPastDue = card.status === 'past_due';
-  const isActivePaid = !isTrial && !isLocked && !isPastDue && !isFounderPlan;
+  const isTrial = view.isTrial;
+  const isFounderPlan = view.isFounderPlan;
+  const isLocked = view.isLocked;
+  const isPaymentIssue = view.isPaymentIssue;
+  const isActivePaid = view.isActivePaid;
 
-  const usagePct = card.included_credits
-    ? Math.min(100, Math.round((card.credits_used / card.included_credits) * 100))
-    : 0;
+  const usagePct = card.ai_usage_percent ?? 0;
 
-  const onDemandDisabled = isFounderPlan || isLocked || isTrial || !card.can_manage || setOnDemand.isPending || !card.on_demand_available;
+  const onDemandDisabled = isFounderPlan || isLocked || isTrial || !card.can_manage || setOnDemand.isPending || !card.extra_ai_usage_available;
 
   const handleOnDemand = (enabled: boolean) => {
     setOnDemand.mutate(
       { wsId: card.workspace_id, enabled },
       {
-        onSuccess: () => toast.success(enabled ? 'On-demand enabled' : 'On-demand disabled'),
+        onSuccess: () => toast.success(enabled ? 'Extra AI usage enabled' : 'Extra AI usage disabled'),
         onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to update'),
       },
     );
@@ -76,17 +76,21 @@ export function WorkspaceBillingCard({
   };
 
   // Primary CTA depends on state.
-  const primaryCta = isPastDue
-    ? { label: 'Update payment', onClick: handlePortal }
-    : isLocked || isTrial
-      ? { label: isLocked ? 'Reactivate' : 'Upgrade', onClick: () => onChangePlan(card) }
-      : { label: isFounderPlan ? 'Usage' : 'Manage', onClick: () => onManage(card) };
+  const handlePrimaryCta = () => {
+    if (view.primaryCtaAction === 'portal') {
+      handlePortal();
+    } else if (view.primaryCtaAction === 'upgrade') {
+      onChangePlan(card);
+    } else {
+      onManage(card);
+    }
+  };
 
   return (
     <div
       className={cn(
         'flex flex-col gap-4 rounded-xl border bg-card p-4 transition-shadow hover:shadow-sm',
-        isPastDue && 'border-destructive/60',
+        isPaymentIssue && 'border-destructive/60',
       )}
     >
       {/* Header */}
@@ -113,14 +117,14 @@ export function WorkspaceBillingCard({
               Payment overdue — update payment to reactivate
             </div>
           )}
-          {isPastDue && (
+          {isPaymentIssue && (
             <div className="text-xs font-medium text-destructive">
               Payment past due — update your card
             </div>
           )}
         </div>
         <Badge variant={statusBadgeVariant(card.status, isTrial)} className="shrink-0 capitalize">
-          {isPastDue ? 'Past due' : isLocked ? 'Locked' : planBadgeLabel(card.plan, isTrial)}
+          {isPaymentIssue ? 'Payment issue' : isLocked ? 'Locked' : planBadgeLabel(card.plan, isTrial)}
         </Badge>
       </div>
 
@@ -129,10 +133,10 @@ export function WorkspaceBillingCard({
         <div className="mb-1 flex items-center justify-between text-xs">
           <span className="text-muted-foreground">AI usage</span>
           <span className="tabular-nums">
-            {formatNumber(card.credits_used)} / {formatNumber(card.included_credits)} used
+            {formatAIUsagePercent(usagePct)} used
           </span>
         </div>
-        <Progress value={usagePct} className={cn(isPastDue && '[&>div]:bg-destructive')} />
+        <Progress value={usagePct} className={cn(isPaymentIssue && '[&>div]:bg-destructive')} />
       </div>
 
       {/* Plan */}
@@ -148,28 +152,22 @@ export function WorkspaceBillingCard({
       {/* Billed to */}
       <Row label="Billed to">
         <span className="min-w-0 truncate">
-          {card.payment_method ? (
-            <span className="capitalize">
-              {card.payment_method.brand} ···· {card.payment_method.last4}
-            </span>
-          ) : isFounderPlan ? (
-            <span className="text-muted-foreground">No payment required</span>
-          ) : (
-            <span className="text-muted-foreground">Organization card</span>
-          )}
+          <span className={cn(card.payment_method && 'capitalize', !card.payment_method && 'text-muted-foreground')}>
+            {view.billedToLabel}
+          </span>
         </span>
-        {card.can_manage && !isFounderPlan && (
+        {view.showBilledToChange && (
           <BilledToPopover orgId={orgId} card={card} cards={cards} onAddCard={handlePortal} />
         )}
       </Row>
 
-      {/* On-demand */}
+      {/* Extra AI usage */}
       <Row label="Extra AI usage">
         <span className="text-xs text-muted-foreground">
-          {isFounderPlan ? 'Not needed on Founder' : isLocked || isTrial ? 'Available after activation' : 'Add usage past your plan limit'}
+          {view.extraUsageLabel}
         </span>
         <Switch
-          checked={card.on_demand_enabled}
+          checked={card.extra_ai_usage_enabled}
           disabled={onDemandDisabled}
           onCheckedChange={handleOnDemand}
         />
@@ -179,12 +177,12 @@ export function WorkspaceBillingCard({
       <div className="mt-auto flex items-center gap-2 pt-1">
         <Button
           className="flex-1"
-          variant={isPastDue ? 'destructive' : 'default'}
+          variant={isPaymentIssue ? 'destructive' : 'default'}
           size="sm"
-          onClick={primaryCta.onClick}
+          onClick={handlePrimaryCta}
           disabled={!card.can_manage}
         >
-          {primaryCta.label}
+          {view.primaryCtaLabel}
         </Button>
         {isActivePaid && (
           <Button

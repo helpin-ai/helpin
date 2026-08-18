@@ -19,6 +19,14 @@ export const queryKeys = {
     workspace: (wsId: string) => ['billing', 'workspace', wsId] as const,
   },
 
+  dock: {
+    root: (wsId: string) => ['dock', wsId] as const,
+    runs: (wsId: string) => ['dock', wsId, 'runs'] as const,
+    chats: (wsId: string) => ['dock', wsId, 'chats'] as const,
+    run: (wsId: string, runId: string) => ['dock', wsId, 'runs', runId] as const,
+    chat: (wsId: string, chatId: string) => ['dock', wsId, 'chats', chatId] as const,
+  },
+
   workspaces: {
     all: (orgId?: string) => ['workspaces', { orgId }] as const,
     bySlug: (slug: string) => ['workspaces', 'slug', slug] as const,
@@ -31,6 +39,7 @@ export const queryKeys = {
     teams: (wsId: string) => ['workspaces', wsId, 'teams'] as const,
     session: (wsId: string) => ['workspaces', wsId, 'session'] as const,
     access: (wsId: string) => ['workspaces', wsId, 'access'] as const,
+    setup: (wsId: string) => ['workspaces', wsId, 'setup'] as const,
   },
 
   automation: {
@@ -49,15 +58,29 @@ export const queryKeys = {
     agentTemplate: (wsId: string, id: string) => ['automation', wsId, 'agent-templates', id] as const,
     agentsRoot: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agents: (wsId: string) => ['automation', wsId, 'agents'] as const,
+    agentFleet: (wsId: string) => ['automation', wsId, 'agents', 'fleet'] as const,
     agent: (wsId: string, id: string) => ['automation', wsId, 'agents', id] as const,
     agentUsage: (wsId: string, id: string) => ['automation', wsId, 'agents', id, 'usage'] as const,
     runsRoot: (wsId: string) => ['automation', wsId, 'runs'] as const,
     runs: (wsId: string, page?: number, perPage?: number) => ['automation', wsId, 'runs', page, perPage] as const,
+    runAttentionCount: (wsId: string) => ['automation', wsId, 'run-attention-count'] as const,
     targetRuns: (wsId: string, targetType: string, targetId: string) => ['automation', wsId, 'runs', 'target', targetType, targetId] as const,
+  },
+
+  mcp: {
+    root: (wsId: string) => ['mcp', wsId] as const,
+    dashboard: (wsId: string) => ['mcp', wsId, 'dashboard'] as const,
+    activity: (wsId: string) => ['mcp', wsId, 'activity'] as const,
+    serviceTokens: (wsId: string, principalId: string) => ['mcp', wsId, 'service-principals', principalId, 'tokens'] as const,
+    authorization: (query: object) => ['mcp', 'authorization', query] as const,
+    externalRoot: (wsId: string) => ['mcp', wsId, 'external'] as const,
+    externalProviders: (wsId: string) => ['mcp', wsId, 'external', 'providers'] as const,
+    externalServers: (wsId: string) => ['mcp', wsId, 'external', 'servers'] as const,
   },
 
   pm: {
     workflows: (wsId: string) => ['pm', wsId, 'workflows'] as const,
+    teamWorkflow: (wsId: string, teamId: string) => ['pm', wsId, 'workflows', 'team', teamId] as const,
     epicStates: (wsId: string) => ['pm', wsId, 'epicStates'] as const,
 
     tasks: (wsId: string, filters?: Record<string, unknown>) =>
@@ -89,9 +112,13 @@ export const queryKeys = {
     sprintTasks: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', sprintId, 'tasks'] as const,
     sprintPreviewTasksRoot: (wsId: string) => ['pm', wsId, 'sprints', 'previewTasks'] as const,
     sprintPreviewTasks: (wsId: string, sprintId: string) => ['pm', wsId, 'sprints', 'previewTasks', sprintId] as const,
+    sprintBacklogTasksRoot: (wsId: string) => ['pm', wsId, 'sprints', 'backlogTasks'] as const,
+    sprintBacklogTasks: (wsId: string, teamId?: string) => ['pm', wsId, 'sprints', 'backlogTasks', teamId] as const,
 
     taskAssociations: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'associations'] as const,
     taskRelationships: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'relationships'] as const,
+    taskUpdates: (wsId: string, taskId: string, filter: string) => ['pm', wsId, 'tasks', taskId, 'updates', filter] as const,
+    taskStandingBrief: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'standingBrief'] as const,
 
     labels: (wsId: string) => ['pm', wsId, 'labels'] as const,
     labelsWithStats: (wsId: string) => ['pm', wsId, 'labels', 'withStats'] as const,
@@ -135,6 +162,7 @@ export const queryKeys = {
     detail: (wsId: string, id: string) => ['agents', wsId, id] as const,
     runs: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'runs'] as const,
     knowledgeSources: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'knowledge-sources'] as const,
+    curatedGuidance: (wsId: string, agentId: string) => ['agents', wsId, agentId, 'curated-guidance'] as const,
     contentSources: (wsId: string) => ['agents', wsId, 'content-sources'] as const,
     contentSourcePages: (wsId: string, contentSourceId: string) => ['agents', wsId, 'content-sources', contentSourceId, 'pages'] as const,
     contentSourcePage: (wsId: string, contentSourceId: string, pageId: string) => ['agents', wsId, 'content-sources', contentSourceId, 'pages', pageId] as const,
@@ -180,6 +208,8 @@ export const queryKeys = {
       ['docs', wsId, 'collections', collectionId, 'deleteImpact'] as const,
     spaceDeleteImpact: (wsId: string, spaceId: string) =>
       ['docs', wsId, 'spaces', spaceId, 'deleteImpact'] as const,
+    apiReferences: (wsId: string, spaceId: string) =>
+      ['docs', wsId, 'spaces', spaceId, 'apiReferences'] as const,
     documents: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['docs', wsId, 'documents', filters] as const) : (['docs', wsId, 'documents'] as const),
     document: (wsId: string, id: string) => ['docs', wsId, 'documents', id] as const,

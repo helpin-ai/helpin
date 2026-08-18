@@ -91,6 +91,12 @@ func NewNotificationService(
 	emailClient emailSender,
 	appBaseURL string,
 ) *NotificationService {
+	// A nil *email.Client converted to emailSender is a non-nil interface.
+	// Normalize it here so unconfigured Postmark cannot reach SendEmail and
+	// panic when a pending notification sweep runs.
+	if client, ok := emailClient.(*emailtpl.Client); ok && client == nil {
+		emailClient = nil
+	}
 	return &NotificationService{
 		notifRepo:        notifRepo,
 		prefRepo:         prefRepo,

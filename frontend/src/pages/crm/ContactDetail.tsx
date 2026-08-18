@@ -65,6 +65,7 @@ import {
   useTasks,
   useCreateAssociation,
   useDeleteAssociation,
+  useWorkspaceMembers,
 } from '@/hooks/queries';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { CalendarEvents } from '@/components/crm/CalendarEvents';
@@ -81,6 +82,7 @@ import { SocialPlatformIcon } from '@/components/docs/helpcenter/SocialPlatformI
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
+import { BILLING_CHOOSE_PLAN_SEARCH } from '@/lib/billingNavigation';
 import { useTitle } from '@/hooks/useTitle';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { cn } from '@/lib/utils';
@@ -444,7 +446,7 @@ function buildEnrichedDetailRows(contact: CRMContact): EnrichedDetailRow[] {
   if (!agentEnrichment) return rows;
 
   for (const [key, rawValue] of Object.entries(agentEnrichment)) {
-    if (key === 'notes') continue;
+    if (['notes', 'email', 'phone', 'job_title', 'avatar_url', 'linkedin_url', 'location'].includes(key)) continue;
 
     const valueRecord = asRecord(rawValue);
     const fieldValue = nonEmptyString(valueRecord?.value ?? rawValue);
@@ -647,6 +649,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const { data: supportConversationsData, refetch: refetchSupportConversations } = useContactSupportConversations(wsId, contactId);
   const { data: emailAccounts } = useEmailAccounts(wsId);
   const { data: tasksData } = useTasks(wsId, { contact_id: contactId });
+  const { data: workspaceMembers = [] } = useWorkspaceMembers(wsId);
 
   const updateContact = useUpdateContact(wsId);
   const deleteContact = useDeleteContact(wsId);
@@ -728,9 +731,16 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const manualMeetings = (activitiesData?.data ?? []).filter(
     (a) => a.activity_type === 'meeting',
   );
-  const meetingCount = syncedMeetingCount + manualMeetings.length;
+  const capturedMeetingCount = (associations ?? []).filter((association) =>
+    association.from_object_type === 'meeting' || association.to_object_type === 'meeting',
+  ).length;
+  const meetingCount = syncedMeetingCount + manualMeetings.length + capturedMeetingCount;
   const notesAndCalls = (activitiesData?.data ?? []).filter(
     (a) => a.activity_type === 'note' || a.activity_type === 'call',
+  );
+  const activityActorNames = useMemo(
+    () => new Map(workspaceMembers.map((member) => [member.id, member.full_name || member.email])),
+    [workspaceMembers],
   );
 
   const linkedAssociations = useMemo(() => {
@@ -753,6 +763,10 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   );
   const dealAssociations = useMemo(
     () => linkedAssociations.filter((a) => a.linkedType === 'deal'),
+    [linkedAssociations],
+  );
+  const capturedMeetingAssociations = useMemo(
+    () => linkedAssociations.filter((a) => a.linkedType === 'meeting'),
     [linkedAssociations],
   );
   const taskAssociations = useMemo(
@@ -1046,7 +1060,11 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   };
 
   const goBack = () => navigate({ to: '/w/$slug/crm/contacts', params: { slug: wsSlug } });
-  const goToBilling = () => navigate({ to: '/w/$slug/settings/billing', params: { slug: wsSlug } });
+  const goToBilling = () => navigate({
+    to: '/w/$slug/settings/billing',
+    params: { slug: wsSlug },
+    search: BILLING_CHOOSE_PLAN_SEARCH,
+  });
   const toggleExpandedSection = (section: ContactSidebarSection) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };
@@ -1225,6 +1243,8 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                     <div className="space-y-1">
                       {notesAndCalls.map((activity) => {
                         const Icon = activity.activity_type === 'call' ? TelephoneIcon : Message01Icon;
+                        const actorName = activity.owner_member_id ? activityActorNames.get(activity.owner_member_id) : undefined;
+                        const immutable = activity.metadata?.immutable === true;
                         return (
                           <div key={activity.id} className="group flex gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/30">
                             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -1236,7 +1256,8 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                                 <span className="text-xs text-muted-foreground">
                                   {formatDistanceToNow(new Date(activity.occurred_at), { addSuffix: true })}
                                 </span>
-                                <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                                {actorName && <span className="text-xs text-muted-foreground">by {actorName}</span>}
+                                {!immutable && <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -1245,7 +1266,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                                   >
                                     <Delete01Icon className="h-3 w-3" />
                                   </Button>
-                                </div>
+                                </div>}
                               </div>
                               {activity.subject && <p className="mt-0.5 text-sm">{activity.subject}</p>}
                               {activity.body && (
@@ -1327,11 +1348,37 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
             {/* ──────── EMAILS TAB ──────── */}
             <TabsContent value="emails" className="mt-0 h-full overflow-y-auto">
-              <EmailTimeline workspaceId={wsId} contactId={contactId} />
+              <EmailTimeline workspaceId={wsId} contactId={contactId} defaultRecipient={contact.email} />
             </TabsContent>
 
             {/* ──────── MEETINGS TAB ──────── */}
             <TabsContent value="meetings" className="mt-0 h-full overflow-y-auto px-8 py-6">
+              {capturedMeetingAssociations.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Helpin meeting notes</h3>
+                  <div className="space-y-2">
+                    {capturedMeetingAssociations.map((meeting) => (
+                      <button
+                        key={meeting.id}
+                        type="button"
+                        className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/30"
+                        onClick={() => navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: meeting.linkedId } })}
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                          <Calendar01Icon className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{meeting.linked_object_name || 'Meeting notes'}</p>
+                          <p className="mt-0.5 text-xs capitalize text-muted-foreground">
+                            {(meeting.linked_object_status || 'scheduled').replace(/_/g, ' ')}
+                          </p>
+                        </div>
+                        <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* Manual meetings */}
               {manualMeetings.length > 0 && (
                 <div className="mb-6">

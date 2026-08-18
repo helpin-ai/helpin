@@ -1,12 +1,16 @@
 import { api } from './api'
 import type {
   HelpCenterConfig,
+  HelpCenterBootstrap,
   Space,
   ArticleDetail,
   CollectionPage,
   PreviewArticleDetail,
   SearchResult,
+  AIAnswerResponse,
   NavItem,
+  APIReference,
+  APIReferenceSummary,
 } from './types'
 
 function buildHelpCenterPath(
@@ -25,6 +29,11 @@ function buildHelpCenterPath(
 export const helpCenterService = {
   getConfig: (subdomain: string) =>
     api.get<HelpCenterConfig>(`/hc/${subdomain}/config`),
+
+  getBootstrap: (subdomain: string, pathname: string) =>
+    api.get<HelpCenterBootstrap>(
+      `/hc/${subdomain}/bootstrap?path=${encodeURIComponent(pathname)}`,
+    ),
 
   getSpaces: (subdomain: string, locale: string, multilingualEnabled: boolean) =>
     api.get<Space[]>(
@@ -50,6 +59,39 @@ export const helpCenterService = {
         multilingualEnabled,
         `/spaces/${spaceSlug}/navigation`,
         `/spaces/${spaceSlug}/navigation`,
+      ),
+    ),
+
+  getAPIReferences: (
+    subdomain: string,
+    locale: string,
+    spaceSlug: string,
+    multilingualEnabled: boolean,
+  ) =>
+    api.get<APIReferenceSummary[]>(
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/spaces/${spaceSlug}/api-references`,
+        `/spaces/${spaceSlug}/api-references`,
+      ),
+    ),
+
+  getAPIReference: (
+    subdomain: string,
+    locale: string,
+    spaceSlug: string,
+    referenceSlug: string,
+    multilingualEnabled: boolean,
+  ) =>
+    api.get<APIReference>(
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/spaces/${spaceSlug}/api-references/${referenceSlug}`,
+        `/spaces/${spaceSlug}/api-references/${referenceSlug}`,
       ),
     ),
 
@@ -91,6 +133,7 @@ export const helpCenterService = {
     query: string,
     multilingualEnabled: boolean,
     spaceSlug?: string,
+    mode?: 'semantic',
   ) =>
     api.get<SearchResult[]>(
       `${buildHelpCenterPath(
@@ -99,7 +142,36 @@ export const helpCenterService = {
         multilingualEnabled,
         '/search',
         '/search',
-      )}?q=${encodeURIComponent(query)}&limit=20${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}`,
+      )}?q=${encodeURIComponent(query)}&limit=20${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}${mode ? `&mode=${mode}` : ''}`,
+    ),
+
+  askAnswer: (
+    subdomain: string,
+    locale: string,
+    multilingualEnabled: boolean,
+    payload: { query: string; space?: string },
+  ) =>
+    api.post<AIAnswerResponse>(
+      buildHelpCenterPath(subdomain, locale, multilingualEnabled, '/answer', '/answer'),
+      payload,
+    ),
+
+  answerFeedback: (
+    subdomain: string,
+    locale: string,
+    multilingualEnabled: boolean,
+    answerId: string,
+    payload: { is_helpful: boolean },
+  ) =>
+    api.post(
+      buildHelpCenterPath(
+        subdomain,
+        locale,
+        multilingualEnabled,
+        `/answer/${answerId}/feedback`,
+        `/answer/${answerId}/feedback`,
+      ),
+      payload,
     ),
 
   submitFeedback: (

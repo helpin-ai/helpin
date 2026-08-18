@@ -2,9 +2,19 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
+
+type failingSetCache struct {
+	*LRU
+	err error
+}
+
+func (c *failingSetCache) Set(context.Context, string, []byte, time.Duration, ...string) error {
+	return c.err
+}
 
 // TestLRU_SetGetHit verifies the happy path.
 func TestLRU_SetGetHit(t *testing.T) {
@@ -118,6 +128,22 @@ func TestTiered_InvalidateTagsDropsBothTiers(t *testing.T) {
 	}
 	if _, ok, _ := l2.Get(ctx, "k"); ok {
 		t.Error("L2 not invalidated")
+	}
+}
+
+func TestTiered_SetKeepsL1ValueWhenL2Fails(t *testing.T) {
+	l1 := NewLRU(8)
+	l2Err := errors.New("remote cache unavailable")
+	l2 := &failingSetCache{LRU: NewLRU(8), err: l2Err}
+	ctx := context.Background()
+
+	tc := NewTiered(TieredConfig{L1: l1, L2: l2, L1TTL: time.Minute})
+	if err := tc.Set(ctx, "k", []byte("v"), time.Minute, "ws:1"); !errors.Is(err, l2Err) {
+		t.Fatalf("Set error = %v, want %v", err, l2Err)
+	}
+
+	if v, ok, err := l1.Get(ctx, "k"); err != nil || !ok || string(v) != "v" {
+		t.Fatalf("L1 Get after L2 failure = (%q, %v, %v), want (\"v\", true, nil)", v, ok, err)
 	}
 }
 

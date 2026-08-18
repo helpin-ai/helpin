@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { File01Icon, Loading01Icon, LockKeyIcon } from '@/lib/icons';
+import { AttachmentIcon, Copy01Icon, File01Icon, Loading01Icon, LockKeyIcon, Tick01Icon } from '@/lib/icons';
 
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type {
   CodingSessionActor,
@@ -9,23 +8,39 @@ import type {
   CodingSessionLiveToolCall,
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
-import { ApplyPatchDiff } from '@/components/pm/CodingSession/ApplyPatchDiff';
-import { isPublishedPreviewToolName } from '@/components/pm/runPreviews';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
-import { PublishedToolPreviewCard } from '@/components/pm/CodingSession/PublishedToolPreviewCard';
-import { describeToolCall, type ToolCallPresentation } from '@/components/pm/CodingSession/toolCallPresentation';
-import { isToolName } from '@/lib/toolNames';
+import { canonicalToolName } from '@/lib/toolNames';
 import { formatCodingSessionRelative } from '@/components/pm/CodingSession/codingSessionUtils';
+import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { TranscriptRow } from './TranscriptRow';
-import { formatToolDuration, toolStatusChrome } from './toolRowChrome';
+import { toolStatusChrome } from './toolRowChrome';
 import type { TranscriptSegment } from './segments';
 
+export interface TranscriptToolGroupPresentation {
+  count: number;
+  totalDurationMs?: number;
+  status: CodingSessionLiveToolCall['status'];
+}
+
 export interface RenderSegmentOptions {
-  /** Slider passes true (depth on click); dock passes false (flat, lossy). */
+  /** When true, reasoning and run-context rows expand on click. */
   expandable: boolean;
+  /** Whether long assistant text should use the Show more / Show less control. */
+  collapseLongAssistantContent?: boolean;
   /** Resolves the actor for user / review-decision segments (slider only). */
   resolveActor?: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
+  /** Surface-specific label when actor details are intentionally unavailable. */
+  fallbackUserLabel?: string;
+  /** Dock-only aggregation metadata for adjacent calls to the same tool. */
+  toolGroup?: TranscriptToolGroupPresentation;
+  /** Show the original tool input/result/error inline inside a working group. */
+  showToolDetails?: boolean;
+  /** Show reasoning inline because the surrounding working group is disclosed. */
+  showReasoningDetails?: boolean;
+  /** Structural assistant role within its conversational interval. */
+  assistantPresentation?: 'progress' | 'final';
 }
 
 /** Renders a single normalized transcript segment as a flat one-line entry. */
@@ -38,17 +53,42 @@ export function TranscriptSegmentView({
 }) {
   switch (segment.kind) {
     case 'assistant':
-      return <AssistantSegment content={segment.content} streaming={segment.streaming} expandable={options.expandable} />;
+      return (
+        <AssistantSegment
+          content={segment.content}
+          streaming={segment.streaming}
+          expandable={options.collapseLongAssistantContent ?? options.expandable}
+          presentation={options.assistantPresentation ?? 'final'}
+        />
+      );
     case 'tool':
-      return <ToolSegment toolCall={segment.toolCall} expandable={options.expandable} />;
+      return (
+        <ToolSegment
+          toolCall={segment.toolCall}
+          group={options.toolGroup}
+          showDetails={options.showToolDetails ?? options.expandable}
+        />
+      );
     case 'reasoning':
-      return <ReasoningSegment reasoning={segment.reasoning} expandable={options.expandable} />;
+      return (
+        <ReasoningSegment
+          reasoning={segment.reasoning}
+          expandable={options.expandable}
+          showDetails={options.showReasoningDetails}
+        />
+      );
     case 'status':
       return <StatusSegment message={segment.message} />;
     case 'context':
       return <ContextSegment message={segment.message} expandable={options.expandable} />;
     case 'user':
-      return <UserSegment message={segment.message} actor={options.resolveActor?.(segment.message) ?? null} />;
+      return (
+        <UserSegment
+          message={segment.message}
+          actor={options.resolveActor?.(segment.message) ?? null}
+          fallbackLabel={options.fallbackUserLabel}
+        />
+      );
     case 'review_decision':
       return <ReviewDecisionSegment message={segment.message} actor={options.resolveActor?.(segment.message) ?? null} />;
   }
@@ -60,103 +100,108 @@ function AssistantSegment({
   content,
   streaming,
   expandable,
+  presentation,
 }: {
   content: string;
   streaming?: boolean;
   expandable: boolean;
+  presentation: 'progress' | 'final';
 }) {
-  if (!expandable) {
-    return <MarkdownContent content={content} streaming={streaming} className="text-[13px] leading-6 text-foreground/90" />;
-  }
-  return <CollapsibleMarkdown content={content} streaming={streaming} />;
+  return (
+    <div className="group/assistant">
+      {expandable ? (
+        <CollapsibleMarkdown content={content} streaming={streaming} presentation={presentation} />
+      ) : (
+        <MarkdownContent
+          content={content}
+          streaming={streaming}
+          className={cn(
+            'text-[13px] leading-6',
+            presentation === 'progress' ? 'text-muted-foreground' : 'text-foreground',
+          )}
+        />
+      )}
+      {!streaming && presentation === 'final' ? (
+        <div className="mt-1 flex justify-start">
+          <CopyMessageButton content={content} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CopyMessageButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      aria-label="Copy message"
+      title="Copy message"
+      onClick={() => {
+        void navigator.clipboard.writeText(content).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="rounded-md border border-border/70 bg-background/95 p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/assistant:opacity-100"
+    >
+      {copied ? <Tick01Icon className="h-3 w-3 text-emerald-600 dark:text-emerald-400" /> : <Copy01Icon className="h-3 w-3" />}
+    </button>
+  );
 }
 
 // ─── Tool call ───────────────────────────────────────────────────────────────
 
-function ToolSegment({ toolCall, expandable }: { toolCall: CodingSessionLiveToolCall; expandable: boolean }) {
-  const failed = toolCall.status === 'failed';
-  const isApplyPatch = isToolName(toolCall.tool_name, 'apply_patch');
-  const hasPublishedPreview = !failed
-    && !isApplyPatch
-    && toolCall.args_text.trim().length > 0
-    && isPublishedPreviewToolName(toolCall.tool_name);
-  // A tool row earns a chevron only when it has a body worth opening:
-  // failures (args + error output), apply_patch diffs, or a published-preview
-  // card. Plain successful tools stay as flat one-liners. apply_patch opens by
-  // default; failures stay collapsed.
-  const hasBody = failed || isApplyPatch || hasPublishedPreview;
-  const rowExpandable = expandable && hasBody;
-  const { icon, className } = toolStatusChrome(toolCall.status);
-  const presentation = describeToolCall(toolCall);
-  const durationLabel = rowExpandable ? formatToolDuration(toolCall.duration_ms) : undefined;
+function ToolSegment({
+  toolCall,
+  group,
+  showDetails = false,
+}: {
+  toolCall: CodingSessionLiveToolCall;
+  group?: TranscriptToolGroupPresentation;
+  showDetails?: boolean;
+}) {
+  const status = group?.status ?? toolCall.status;
+  const failed = status === 'failed';
+  const { icon, className } = toolStatusChrome(status);
+  const grouped = !!group && group.count > 1;
+  const canonicalName = canonicalToolName(toolCall.tool_name).toLowerCase();
+  const humanizedName = canonicalName
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .join(' ');
+  const friendlyLabel = humanizedName.charAt(0).toUpperCase() + humanizedName.slice(1);
+  const canShowError = showDetails && failed;
 
   return (
     <TranscriptRow
       icon={icon}
       iconClassName={className}
-      label={presentation.primaryLabel}
+      label={(
+        <>
+          <span className="font-mono text-foreground/80">
+            {canonicalName}{grouped ? ` ×${group.count}` : ''}
+          </span>
+          <span className="text-foreground/50"> · {friendlyLabel}</span>
+        </>
+      )}
       tone={failed ? 'failed' : 'muted'}
-      meta={durationLabel}
-      expandable={rowExpandable}
-      defaultOpen={isApplyPatch && !failed}
+      expandable={canShowError}
+      defaultOpen={false}
+      lazyMount
     >
-      {rowExpandable ? <ToolBody toolCall={toolCall} presentation={presentation} /> : null}
+      {canShowError ? <ToolCallError error={toolCall.result?.error} /> : null}
     </TranscriptRow>
   );
 }
 
-function ToolBody({
-  toolCall,
-  presentation,
-}: {
-  toolCall: CodingSessionLiveToolCall;
-  presentation: ToolCallPresentation;
-}) {
-  const failed = toolCall.status === 'failed';
-  const isApplyPatch = isToolName(toolCall.tool_name, 'apply_patch');
-  const argsText = toolCall.args_text.trim();
-  const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const showSecondary = presentation.secondaryLabel.trim().toLowerCase() !== presentation.primaryLabel.trim().toLowerCase();
-  const publishedPreviewCard = !failed && !isApplyPatch && argsText
-    ? <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} />
-    : null;
-  const filePaths = !isApplyPatch && !publishedPreviewCard && argsText ? extractFilePathsFromText(argsText) : [];
-  const chips = [...presentation.chips];
-  for (const filePath of filePaths) {
-    if (!chips.includes(filePath)) chips.push(filePath);
-  }
-
+function ToolCallError({ error }: { error?: string }) {
   return (
-    <div className="space-y-1.5 text-xs text-muted-foreground">
-      {showSecondary || chips.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {showSecondary ? (
-            <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] font-medium text-muted-foreground">
-              {presentation.secondaryLabel}
-            </Badge>
-          ) : null}
-          {chips.map((chip) => (
-            <span key={chip} className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-              {chip}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {publishedPreviewCard ?? (
-        <>
-          {isApplyPatch
-            ? <ApplyPatchDiff argsText={argsText || resultText} />
-            : argsText ? <CollapsibleCodeBlock text={argsText} /> : null}
-          {resultText && !isApplyPatch ? (
-            failed
-              ? <CollapsibleCodeBlock text={resultText} failed />
-              : <p className="text-[11px] text-muted-foreground">{resultText.length > 200 ? `${resultText.slice(0, 200)}…` : resultText}</p>
-          ) : null}
-          {isApplyPatch && failed && resultText ? (
-            <CollapsibleCodeBlock text={resultText} failed />
-          ) : null}
-        </>
-      )}
+    <div className="space-y-1" data-tool-call-details>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-destructive">Error</div>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 font-mono text-[11px] leading-5 text-destructive">
+        {error?.trim() || 'Error details unavailable.'}
+      </pre>
     </div>
   );
 }
@@ -166,38 +211,82 @@ function ToolBody({
 function ReasoningSegment({
   reasoning,
   expandable,
+  showDetails = false,
 }: {
   reasoning: CodingSessionLiveReasoningMessage;
   expandable: boolean;
+  showDetails?: boolean;
 }) {
   const streaming = reasoning.status === 'streaming';
   const hasContent = reasoning.content.trim().length > 0;
+  // Open while streaming, auto-collapse on completion — unless the user has
+  // toggled the row themselves, in which case their choice wins.
+  const [open, setOpen] = useState(streaming);
+  const [userToggled, setUserToggled] = useState(false);
+  const [prevStreaming, setPrevStreaming] = useState(streaming);
+  if (prevStreaming !== streaming) {
+    setPrevStreaming(streaming);
+    if (!userToggled) setOpen(streaming);
+  }
+
+  const thoughtDurationMs =
+    reasoning.started_at && reasoning.completed_at
+      ? Date.parse(reasoning.completed_at) - Date.parse(reasoning.started_at)
+      : 0;
+  const label = streaming
+    ? 'Thinking…'
+    : thoughtDurationMs > 0
+      ? `Thought for ${formatCodingSessionElapsed(thoughtDurationMs)}`
+      : 'Thought';
+
+  const detail = (
+    <div className="text-xs text-muted-foreground">
+      {hasContent ? (
+        <div className={cn('whitespace-pre-wrap leading-6', streaming && 'italic')}>{reasoning.content}</div>
+      ) : (
+        <div className="rounded-lg border border-border bg-card px-3 py-2">
+          Reasoning is being tracked separately from the assistant reply.
+        </div>
+      )}
+      {reasoning.encrypted_value ? (
+        <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+          <LockKeyIcon className="h-3.5 w-3.5" />
+          Encrypted reasoning payload attached.
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (showDetails) {
+    return (
+      <div>
+        <TranscriptRow
+          icon={<LockKeyIcon className="h-3 w-3" />}
+          iconClassName="text-muted-foreground"
+          label={label}
+          tone="muted"
+          meta={streaming ? 'Live' : undefined}
+        />
+        <div className="ml-5 mt-1.5">{detail}</div>
+      </div>
+    );
+  }
 
   return (
     <TranscriptRow
       icon={<LockKeyIcon className="h-3 w-3" />}
       iconClassName="text-muted-foreground"
-      label={streaming ? 'Thinking…' : 'Thinking'}
+      label={label}
       tone="muted"
       meta={streaming ? 'Live' : undefined}
       expandable={expandable}
-      defaultOpen={streaming}
+      open={expandable ? open : undefined}
+      onOpenChange={(next) => {
+        setUserToggled(true);
+        setOpen(next);
+      }}
     >
-      <div className="text-xs text-muted-foreground">
-        {hasContent ? (
-          <div className="whitespace-pre-wrap leading-6">{reasoning.content}</div>
-        ) : (
-          <div className="rounded-lg border border-border bg-card px-3 py-2">
-            Reasoning is being tracked separately from the assistant reply.
-          </div>
-        )}
-        {reasoning.encrypted_value ? (
-          <div className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
-            <LockKeyIcon className="h-3.5 w-3.5" />
-            Encrypted reasoning payload attached.
-          </div>
-        ) : null}
-      </div>
+      {detail}
     </TranscriptRow>
   );
 }
@@ -225,7 +314,11 @@ function ContextSegment({
   message: CodingSessionTranscriptMessage;
   expandable: boolean;
 }) {
-  const label = message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt';
+  const label = message.message_type === 'system_prompt'
+    ? 'System prompt'
+    : message.message_type === 'prompt'
+      ? 'Prompt'
+      : 'Developer prompt';
   return (
     <TranscriptRow
       icon={<File01Icon className="h-3 w-3" />}
@@ -249,11 +342,13 @@ function ContextSegment({
 function UserSegment({
   message,
   actor,
+  fallbackLabel = 'User',
 }: {
   message: CodingSessionTranscriptMessage;
   actor: CodingSessionActor | null;
+  fallbackLabel?: string;
 }) {
-  const actorLabel = actor?.full_name || actor?.email || 'User';
+  const actorLabel = actor?.full_name || actor?.email || fallbackLabel;
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
@@ -262,11 +357,36 @@ function UserSegment({
         <UserAvatar
           name={actorLabel}
           avatarUrl={actor?.avatar_url}
+          avatarStyle={actor?.avatar_style}
+          avatarSeed={actor?.avatar_seed}
+          avatarBackgroundMode={actor?.avatar_background_mode}
+          avatarBackgroundColor={actor?.avatar_background_color}
           className="h-6 w-6"
           fallbackClassName="text-[10px]"
         />
       </div>
       {message.content.trim() ? <UserMessageBubble content={message.content} /> : null}
+      {message.attachments?.length ? (
+        <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+          {message.attachments.map((attachment) => (
+            <a
+              key={attachment.id}
+              href={pmAttachmentService.contentUrl(attachment.id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-[220px] items-center gap-1 rounded-md border border-border/70 bg-muted/30 px-2 py-1 text-[11px] hover:bg-muted/50"
+              title={attachment.file_name}
+            >
+              {attachment.file_type.startsWith('image/') ? (
+                <img src={pmAttachmentService.contentUrl(attachment.id)} alt="" className="h-5 w-5 rounded object-cover" />
+              ) : (
+                <AttachmentIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <span className="truncate font-medium">{attachment.file_name}</span>
+            </a>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -295,6 +415,10 @@ function ReviewDecisionSegment({
         <UserAvatar
           name={reviewerName}
           avatarUrl={actor?.avatar_url}
+          avatarStyle={actor?.avatar_style}
+          avatarSeed={actor?.avatar_seed}
+          avatarBackgroundMode={actor?.avatar_background_mode}
+          avatarBackgroundColor={actor?.avatar_background_color}
           className="h-6 w-6"
           fallbackClassName="text-[10px]"
         />
@@ -309,31 +433,49 @@ function ReviewDecisionSegment({
 // ─── Shared collapsibles ─────────────────────────────────────────────────────
 
 const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;
-const TOOL_COLLAPSED_LINES = 2;
 
-function CollapsibleMarkdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
+function CollapsibleMarkdown({
+  content,
+  streaming = false,
+  presentation = 'final',
+}: {
+  content: string;
+  streaming?: boolean;
+  presentation?: 'progress' | 'final';
+}) {
   const [expanded, setExpanded] = useState(false);
   const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
+  const contentClassName = cn(
+    'text-[13px] leading-6',
+    presentation === 'progress' ? 'text-muted-foreground' : 'text-foreground',
+  );
 
-  if (!isLong) {
-    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />;
+  if (!isLong && !streaming) {
+    return <MarkdownContent content={content} className={contentClassName} streaming={streaming} />;
   }
 
   return (
     <div>
-      <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
-        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />
-        {!expanded && (
+      <div className={cn(
+        'relative',
+        streaming
+          ? 'max-h-[12rem] overflow-y-auto overscroll-contain'
+          : !expanded && 'max-h-[10rem] overflow-hidden',
+      )}>
+        <MarkdownContent content={content} className={contentClassName} streaming={streaming} />
+        {!expanded && !streaming && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
         )}
       </div>
-      <button
-        type="button"
-        className="mt-1 text-[11px] font-medium text-primary hover:underline"
-        onClick={() => setExpanded((prev) => !prev)}
-      >
-        {expanded ? 'Show less' : 'Show more'}
-      </button>
+      {!streaming && (
+        <button
+          type="button"
+          className="mt-1 text-[11px] font-medium text-primary hover:underline"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
     </div>
   );
 }
@@ -362,49 +504,6 @@ function UserMessageBubble({ content }: { content: string }) {
         </div>
       ) : (
         <MarkdownContent content={content} className="text-inherit" />
-      )}
-    </div>
-  );
-}
-
-function extractFilePathsFromText(text: string): string[] {
-  const matches = text.match(/(?:^|\s)((?:\/|\.\.?\/)?[\w./-]+\.(?:ts|tsx|js|jsx|go|py|css|html|json|sql|md|yaml|yml|toml|sh))\b/g);
-  if (!matches) return [];
-  const unique = [...new Set(matches.map((m) => m.trim()))];
-  return unique.slice(0, 6);
-}
-
-function CollapsibleCodeBlock({ text, failed }: { text: string; failed?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const lines = text.split('\n');
-  const isLong = lines.length > TOOL_COLLAPSED_LINES;
-
-  return (
-    <div className="relative">
-      <pre className={cn(
-        'overflow-auto whitespace-pre-wrap break-all rounded-md border px-2.5 py-1.5 font-mono text-[11px] leading-5',
-        failed
-          ? 'border-destructive/20 bg-destructive/5 text-destructive dark:bg-destructive/10'
-          : 'border-border/60 bg-muted/50 text-foreground/80',
-        !expanded && isLong && 'max-h-[52px]',
-        expanded && 'max-h-60',
-      )}>
-        {expanded || !isLong ? text : lines.slice(0, TOOL_COLLAPSED_LINES).join('\n')}
-      </pre>
-      {isLong && !expanded && (
-        <div className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 h-6 rounded-b-md bg-gradient-to-t',
-          failed ? 'from-destructive/5 to-transparent' : 'from-muted/80 to-transparent',
-        )} />
-      )}
-      {isLong && (
-        <button
-          type="button"
-          className="mt-1 text-[11px] font-medium text-primary hover:underline"
-          onClick={() => setExpanded((prev) => !prev)}
-        >
-          {expanded ? 'Show less' : `Show more (${lines.length} lines)`}
-        </button>
       )}
     </div>
   );

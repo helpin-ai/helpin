@@ -12,14 +12,18 @@ export interface TranscriptRowProps {
   /** When true and `children` are present, the row toggles a disclosure. */
   expandable?: boolean;
   defaultOpen?: boolean;
+  /** Controlled disclosure state; omit to let the row manage its own. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Avoid mounting expensive disclosure bodies until they are opened. */
+  lazyMount?: boolean;
   children?: ReactNode;
 }
 
 /**
  * The single one-line transcript primitive: `[icon] label … [meta] [chevron]`.
- * Flat — no avatar, no connector rail. The dock renders it collapsed and
- * lossy (`expandable={false}`); the slider passes `expandable` so depth
- * (args/result/diff/reasoning) is a click away.
+ * Flat — no avatar, no connector rail. Tool calls use the static form; rows
+ * that still benefit from depth (reasoning and run context) opt into disclosure.
  */
 export function TranscriptRow({
   icon,
@@ -29,28 +33,38 @@ export function TranscriptRow({
   tone = 'muted',
   expandable = false,
   defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange,
+  lazyMount = false,
   children,
 }: TranscriptRowProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(next);
+    onOpenChange?.(next);
+  };
   const canExpand = expandable && children != null;
 
   const header = (
     <div className="flex items-center gap-1.5 text-[11px]">
       <span className={cn('flex h-3.5 w-3.5 shrink-0 items-center justify-center', iconClassName)}>{icon}</span>
       <span
+        data-transcript-row-label
         className={cn(
-          'min-w-0 flex-1 truncate',
+          'min-w-0 truncate',
           tone === 'failed' ? 'text-destructive' : tone === 'muted' ? 'text-muted-foreground' : 'text-foreground',
         )}
       >
         {label}
       </span>
-      {meta ? <span className="shrink-0 text-[10px] text-muted-foreground">{meta}</span> : null}
       {canExpand ? (
-        <span aria-hidden className="shrink-0 text-[10px] text-muted-foreground">
+        <span data-transcript-row-chevron aria-hidden className="shrink-0 text-[10px] text-muted-foreground">
           {open ? '▾' : '▸'}
         </span>
       ) : null}
+      <span className="min-w-0 flex-1" />
+      {meta ? <span className="shrink-0 text-[10px] text-muted-foreground">{meta}</span> : null}
     </div>
   );
 
@@ -62,15 +76,15 @@ export function TranscriptRow({
     <div>
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
         className="w-full rounded-sm text-left transition-colors hover:bg-muted/30"
         aria-expanded={open}
       >
         {header}
       </button>
-      {/* Kept mounted (hidden via CSS) so the body stays measurable and present
-          in the DOM even while collapsed. */}
-      <div className={cn('mt-1.5 space-y-1.5 pl-5', !open && 'hidden')}>{children}</div>
+      {!lazyMount || open ? (
+        <div className={cn('mt-1.5 space-y-1.5 pl-5', !open && 'hidden')}>{children}</div>
+      ) : null}
     </div>
   );
 }

@@ -146,6 +146,30 @@ describe('SupportSearchToolbar', () => {
     container.remove()
   })
 
+  it('preserves spaces while typing a conversation search', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<SupportSearchPage />)
+    })
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      'input[placeholder="Search conversations by email, #number, title, customer, or message"]',
+    )
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(searchInput, 'billing ')
+      searchInput?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    expect(searchInput?.value).toBe('billing ')
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
   it('closes search back to the saved support inbox context', () => {
     window.sessionStorage.setItem(
       'support-search-return:test-workspace',

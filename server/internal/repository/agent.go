@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -67,6 +69,21 @@ func (r *AgentRepository) GetByID(ctx context.Context, workspaceID, id string) (
 	}
 	agent = agents[0]
 	return &agent, nil
+}
+
+// ListByIDs returns lightweight agent records for the requested workspace IDs.
+func (r *AgentRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.Agent, error) {
+	if len(ids) == 0 {
+		return []model.Agent{}, nil
+	}
+	var agents []model.Agent
+	if err := r.db.WithContext(ctx).
+		Select("id", "workspace_id", "name", "icon_key", "preset_key").
+		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+		Find(&agents).Error; err != nil {
+		return nil, fmt.Errorf("list agents by ids: %w", err)
+	}
+	return agents, nil
 }
 
 // GetSystemByPreset returns the first system agent for a preset within a workspace.
@@ -309,6 +326,52 @@ type AgentRunRepository struct {
 	triggerExecutionRepo *AgentTriggerExecutionRepository
 }
 
+const (
+	_agentRunListDefaultPageSize = 50
+	_agentRunListMaxPageSize     = 500
+	_agentRunListColumns         = `
+		id,
+		workspace_id,
+		agent_id,
+		task_id,
+		conversation_id,
+		target_type,
+		target_id,
+		runtime_kind,
+		invocation_mode,
+		parent_run_id,
+		dock_chat_id,
+		handoff_state,
+		approval_state,
+		pause_reason,
+		triggered_by_user_id,
+		status,
+		workflow_id,
+		workflow_run_id,
+		external_runtime,
+		external_runtime_id,
+		task_queue,
+		runner_pool,
+		agent_version_id,
+		repository_id,
+		repo_full_name,
+		base_branch,
+		working_branch,
+		delivery_target_id,
+		execution_stage,
+		last_heartbeat_at,
+		input,
+		cached_input_tokens,
+		input_tokens,
+		output_tokens,
+		tokens_used,
+		error_message,
+		started_at,
+		completed_at,
+		created_at,
+		updated_at`
+)
+
 // NewAgentRunRepository creates a new AgentRunRepository.
 func NewAgentRunRepository(db *gorm.DB) *AgentRunRepository {
 	return &AgentRunRepository{db: db}
@@ -341,18 +404,15 @@ func (r *AgentRunRepository) ListByAgent(ctx context.Context, workspaceID, agent
 		return nil, 0, fmt.Errorf("count agent runs: %w", err)
 	}
 
-	page := pagination.Page
-	perPage := pagination.PerPage
-	if page <= 0 {
-		page = 1
-	}
-	if perPage <= 0 {
-		perPage = 50
-	}
+	page, perPage := agentRunListPagination(pagination)
 	offset := (page - 1) * perPage
 
 	var runs []model.AgentRun
-	if err := query.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&runs).Error; err != nil {
+	if err := query.Select(_agentRunListColumns).
+		Order("created_at DESC, id DESC").
+		Offset(offset).
+		Limit(perPage).
+		Find(&runs).Error; err != nil {
 		return nil, 0, fmt.Errorf("list agent runs: %w", err)
 	}
 	return runs, total, nil
@@ -379,21 +439,49 @@ func (r *AgentRunRepository) ListByWorkspace(ctx context.Context, workspaceID st
 		return nil, 0, fmt.Errorf("count workspace agent runs: %w", err)
 	}
 
-	page := pagination.Page
-	perPage := pagination.PerPage
-	if page <= 0 {
-		page = 1
-	}
-	if perPage <= 0 {
-		perPage = 50
-	}
+	page, perPage := agentRunListPagination(pagination)
 	offset := (page - 1) * perPage
 
 	var runs []model.AgentRun
-	if err := query.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&runs).Error; err != nil {
+	if err := query.Select(_agentRunListColumns).
+		Order("created_at DESC, id DESC").
+		Offset(offset).
+		Limit(perPage).
+		Find(&runs).Error; err != nil {
 		return nil, 0, fmt.Errorf("list workspace agent runs: %w", err)
 	}
 	return runs, total, nil
+}
+
+// CountWorkspaceRunsRequiringAttention returns the number of paused runs that
+// need a user action. Runs paused while waiting for a chat reply are excluded.
+func (r *AgentRunRepository) CountWorkspaceRunsRequiringAttention(ctx context.Context, workspaceID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ?", workspaceID).
+		Where("status = ?", model.AgentRunStatusPaused).
+		Where("COALESCE(pause_reason, '') <> ?", model.AgentRunPauseReasonUserMessage).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count workspace agent runs requiring attention: %w", err)
+	}
+	return count, nil
+}
+
+func agentRunListPagination(pagination model.PMPagination) (int, int) {
+	page := pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+
+	perPage := pagination.PerPage
+	if perPage <= 0 {
+		perPage = _agentRunListDefaultPageSize
+	}
+	if perPage > _agentRunListMaxPageSize {
+		perPage = _agentRunListMaxPageSize
+	}
+	return page, perPage
 }
 
 // ListWorkspaceRunsWithoutTriggerExecutions returns agent runs that do not
@@ -578,6 +666,40 @@ func (r *AgentRunRepository) ListRecentForActor(ctx context.Context, workspaceID
 	return runs, nil
 }
 
+// ListDockRunsForActor returns active user-owned runs plus terminal runs
+// updated since the supplied cutoff. Chat-backing runs stay on the Chats tab.
+func (r *AgentRunRepository) ListDockRunsForActor(
+	ctx context.Context,
+	workspaceID string,
+	actorID string,
+	recentSince time.Time,
+	limit int,
+) ([]model.AgentRun, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("agent run repository is not configured")
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	activeStatuses := []string{
+		model.AgentRunStatusQueued,
+		model.AgentRunStatusRunning,
+		model.AgentRunStatusPaused,
+	}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Select(_agentRunListColumns).
+		Where("workspace_id = ? AND triggered_by_user_id = ?", workspaceID, actorID).
+		Where("dock_chat_id IS NULL").
+		Where("(status IN ? OR updated_at >= ?)", activeStatuses, recentSince).
+		Order("updated_at DESC, created_at DESC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list dock agent runs: %w", err)
+	}
+	return runs, nil
+}
+
 // ListByTask returns runs for a task.
 func (r *AgentRunRepository) ListByTask(ctx context.Context, workspaceID, storyID string) ([]model.AgentRun, error) {
 	var runs []model.AgentRun
@@ -677,9 +799,180 @@ func (r *AgentRunMessageRepository) NextSequence(ctx context.Context, workspaceI
 }
 
 func (r *AgentRunMessageRepository) Create(ctx context.Context, message *model.AgentRunMessage) error {
+	if message != nil && message.DockChatID != nil && strings.TrimSpace(*message.DockChatID) != "" && message.DockChatSequence == nil {
+		var sequence int64
+		if err := r.db.WithContext(ctx).Raw(`
+			UPDATE dock_chats AS chat
+			SET next_message_sequence = CASE
+					WHEN COALESCE(chat.next_message_sequence, 0) >= COALESCE((
+						SELECT MAX(existing.dock_chat_sequence)
+						FROM agent_run_messages AS existing
+						WHERE existing.dock_chat_id = chat.id
+					), 0)
+					THEN COALESCE(chat.next_message_sequence, 0)
+					ELSE COALESCE((
+						SELECT MAX(existing.dock_chat_sequence)
+						FROM agent_run_messages AS existing
+						WHERE existing.dock_chat_id = chat.id
+					), 0)
+				END + 1,
+				updated_at = updated_at
+			WHERE chat.workspace_id = ? AND chat.id = ?
+			RETURNING next_message_sequence
+		`, message.WorkspaceID, strings.TrimSpace(*message.DockChatID)).Scan(&sequence).Error; err != nil {
+			return fmt.Errorf("allocate dock chat message sequence: %w", err)
+		}
+		if sequence <= 0 {
+			return fmt.Errorf("allocate dock chat message sequence: dock chat not found")
+		}
+		message.DockChatSequence = &sequence
+	}
 	sanitizeAgentRunMessageForPostgres(message)
-	if err := r.db.WithContext(ctx).Create(message).Error; err != nil {
+	query := r.db.WithContext(ctx)
+	// Legacy/non-Dock run-message tables do not participate in the chat
+	// timeline. Omitting Dock-only columns also keeps focused embedders and
+	// migrations that intentionally expose the older table contract working.
+	if message != nil && message.DockChatID == nil && message.ClientMessageID == nil {
+		query = query.Omit("dock_chat_id", "dock_chat_sequence", "client_message_id", "delivery_status")
+	}
+	if err := query.Create(message).Error; err != nil {
 		return fmt.Errorf("create agent run message: %w", err)
+	}
+	return nil
+}
+
+// GetByClientMessageID returns an idempotently submitted human message.
+func (r *AgentRunMessageRepository) GetByClientMessageID(ctx context.Context, workspaceID, clientMessageID string) (*model.AgentRunMessage, error) {
+	clientMessageID = strings.TrimSpace(clientMessageID)
+	if clientMessageID == "" {
+		return nil, nil
+	}
+	var message model.AgentRunMessage
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND client_message_id = ?", workspaceID, clientMessageID).
+		First(&message).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get agent run message by client id: %w", err)
+	}
+	return &message, nil
+}
+
+// ListByDockChat returns the newest persisted chat messages as an ascending
+// page. before is an exclusive stable cursor; nil starts at the current tail.
+func (r *AgentRunMessageRepository) ListByDockChat(ctx context.Context, workspaceID, dockChatID string, before *int64, limit int) ([]model.AgentRunMessage, *int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dock_chat_id = ? AND dock_chat_sequence IS NOT NULL AND delivery_status <> ?", workspaceID, dockChatID, "failed")
+	if before != nil && *before > 0 {
+		query = query.Where("dock_chat_sequence < ?", *before)
+	}
+	var messages []model.AgentRunMessage
+	if err := query.Order("dock_chat_sequence DESC").Limit(limit + 1).Find(&messages).Error; err != nil {
+		return nil, nil, fmt.Errorf("list dock chat messages: %w", err)
+	}
+	var nextBefore *int64
+	if len(messages) > limit {
+		messages = messages[:limit]
+		if sequence := messages[len(messages)-1].DockChatSequence; sequence != nil {
+			value := *sequence
+			nextBefore = &value
+		}
+	}
+	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
+		messages[left], messages[right] = messages[right], messages[left]
+	}
+	return messages, nextBefore, nil
+}
+
+// ListDockChatTurnThroughMessage returns the persisted conversation interval
+// after the preceding user message through targetMessageID. The target is
+// scoped to the same workspace and Dock chat before any interval is read.
+func (r *AgentRunMessageRepository) ListDockChatTurnThroughMessage(
+	ctx context.Context,
+	workspaceID, dockChatID, targetMessageID string,
+) ([]model.AgentRunMessage, error) {
+	var target model.AgentRunMessage
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dock_chat_id = ? AND id = ? AND dock_chat_sequence IS NOT NULL AND delivery_status <> ?", workspaceID, dockChatID, targetMessageID, "failed").
+		First(&target).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return []model.AgentRunMessage{}, nil
+		}
+		return nil, fmt.Errorf("get dock chat work target: %w", err)
+	}
+	if target.DockChatSequence == nil {
+		return []model.AgentRunMessage{}, nil
+	}
+
+	type sequenceResult struct {
+		Sequence int64
+	}
+	var previous sequenceResult
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Select("COALESCE(MAX(dock_chat_sequence), 0) AS sequence").
+		Where("workspace_id = ? AND dock_chat_id = ? AND role = ? AND dock_chat_sequence < ? AND delivery_status <> ?", workspaceID, dockChatID, "user", *target.DockChatSequence, "failed").
+		Scan(&previous).Error; err != nil {
+		return nil, fmt.Errorf("find dock chat work boundary: %w", err)
+	}
+
+	var messages []model.AgentRunMessage
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND dock_chat_id = ? AND dock_chat_sequence > ? AND dock_chat_sequence <= ? AND delivery_status <> ?", workspaceID, dockChatID, previous.Sequence, *target.DockChatSequence, "failed").
+		Order("dock_chat_sequence ASC").
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("list dock chat work detail: %w", err)
+	}
+	return messages, nil
+}
+
+// UpdateDeliveryStatus records whether a persisted human message reached the
+// runtime. Failed attempts remain available for audit and idempotent retry.
+func (r *AgentRunMessageRepository) UpdateDeliveryStatus(ctx context.Context, workspaceID, messageID, status string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, messageID).
+		Update("delivery_status", status).Error; err != nil {
+		return fmt.Errorf("update agent run message delivery status: %w", err)
+	}
+	return nil
+}
+
+func (r *AgentRunMessageRepository) UpdatePendingDeliveryByRun(ctx context.Context, workspaceID, runID, status string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Where("workspace_id = ? AND run_id = ? AND delivery_status = ?", workspaceID, runID, "pending").
+		Update("delivery_status", status).Error; err != nil {
+		return fmt.Errorf("update pending run message delivery status: %w", err)
+	}
+	return nil
+}
+
+// Update replaces the mutable transcript fields of an existing run message.
+func (r *AgentRunMessageRepository) Update(ctx context.Context, message *model.AgentRunMessage) error {
+	if message == nil {
+		return nil
+	}
+	sanitizeAgentRunMessageForPostgres(message)
+	updates := map[string]any{
+		"runtime_message_id": message.RuntimeMessageID,
+		"role":               message.Role,
+		"content":            message.Content,
+		"message_type":       message.MessageType,
+		"content_blocks":     message.ContentBlocks,
+		"turn_segments":      message.TurnSegments,
+		"tool_invocations":   message.ToolInvocations,
+		"token_usage":        message.TokenUsage,
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRunMessage{}).
+		Where("workspace_id = ? AND run_id = ? AND id = ?", message.WorkspaceID, message.RunID, message.ID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update agent run message: %w", err)
 	}
 	return nil
 }
@@ -706,6 +999,50 @@ func (r *AgentRunRepository) GetByIDAny(ctx context.Context, id string) (*model.
 		return nil, fmt.Errorf("get agent run: %w", err)
 	}
 	return &run, nil
+}
+
+// GetByExternalRuntimeID returns a run linked to an external runtime run ID.
+func (r *AgentRunRepository) GetByExternalRuntimeID(ctx context.Context, externalRuntime, externalRuntimeID string) (*model.AgentRun, error) {
+	externalRuntime = strings.TrimSpace(externalRuntime)
+	externalRuntimeID = strings.TrimSpace(externalRuntimeID)
+	if externalRuntime == "" || externalRuntimeID == "" {
+		return nil, nil
+	}
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("external_runtime = ? AND external_runtime_id = ?", externalRuntime, externalRuntimeID).
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get agent run by external runtime id: %w", err)
+	}
+	return &run, nil
+}
+
+// ListActiveByExternalRuntime returns non-terminal mapped runs old enough to reconcile.
+func (r *AgentRunRepository) ListActiveByExternalRuntime(ctx context.Context, externalRuntime string, olderThan time.Time, limit int) ([]model.AgentRun, error) {
+	externalRuntime = strings.TrimSpace(externalRuntime)
+	if externalRuntime == "" {
+		return []model.AgentRun{}, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	var runs []model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where("external_runtime = ? AND external_runtime_id IS NOT NULL AND status IN ?", externalRuntime, []string{
+			model.AgentRunStatusQueued,
+			model.AgentRunStatusRunning,
+			model.AgentRunStatusPaused,
+		}).
+		Where("updated_at < ?", olderThan).
+		Order("updated_at ASC").
+		Limit(limit).
+		Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list active agent runs by external runtime: %w", err)
+	}
+	return runs, nil
 }
 
 // ListByIDs returns runs in a workspace for a set of IDs.
@@ -794,6 +1131,68 @@ func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) er
 	return nil
 }
 
+// UpdateOutputSummary updates only the run output summary.
+func (r *AgentRunRepository) UpdateOutputSummary(ctx context.Context, runID string, outputSummary json.RawMessage) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("agent run repository is not configured")
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("id = ?", runID).
+		Update("output_summary", outputSummary).
+		Error; err != nil {
+		return fmt.Errorf("update agent run output summary: %w", err)
+	}
+	return nil
+}
+
+// UpdateInput replaces a run's immutable-at-launch input metadata only when a
+// dock chat receives a new user turn with a different attached context.
+func (r *AgentRunRepository) UpdateInput(ctx context.Context, workspaceID, runID string, input json.RawMessage) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("agent run repository is not configured")
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, runID).
+		Update("input", input).Error; err != nil {
+		return fmt.Errorf("update agent run input: %w", err)
+	}
+	return nil
+}
+
+// UpdateReconciledFailure persists only the fields changed when a stale run is
+// failed during read-time reconciliation. The targeted update keeps projected
+// list rows from overwriting large fields that were intentionally not loaded.
+func (r *AgentRunRepository) UpdateReconciledFailure(ctx context.Context, run *model.AgentRun) error {
+	if r == nil || r.db == nil {
+		return fmt.Errorf("agent run repository is not configured")
+	}
+	if run == nil {
+		return fmt.Errorf("agent run is required")
+	}
+	updates := map[string]any{
+		"status":            run.Status,
+		"pause_reason":      run.PauseReason,
+		"completed_at":      run.CompletedAt,
+		"error_message":     run.ErrorMessage,
+		"execution_stage":   run.ExecutionStage,
+		"last_heartbeat_at": run.LastHeartbeatAt,
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", run.WorkspaceID, run.ID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update reconciled agent run failure: %w", err)
+	}
+	if r.triggerExecutionRepo != nil {
+		if err := r.triggerExecutionRepo.SyncRunStatus(ctx, run); err != nil {
+			return fmt.Errorf("sync reconciled agent run status: %w", err)
+		}
+	}
+	return nil
+}
+
 // GetByWorkflowID returns a run by temporal workflow ID.
 func (r *AgentRunRepository) GetByWorkflowID(ctx context.Context, workflowID string) (*model.AgentRun, error) {
 	var run model.AgentRun
@@ -819,6 +1218,25 @@ func (r *AgentRunRepository) UpdateStage(ctx context.Context, workspaceID, runID
 		Where("workspace_id = ? AND id = ?", workspaceID, runID).
 		Updates(updates).Error; err != nil {
 		return fmt.Errorf("update agent run stage: %w", err)
+	}
+	return nil
+}
+
+// UpdateRuntimeResumeState updates local bookkeeping fields after a delegated
+// runtime resume. Runtime event projection owns status and pause fields.
+func (r *AgentRunRepository) UpdateRuntimeResumeState(ctx context.Context, workspaceID, runID, approvalState, stage string, heartbeatAt *time.Time) error {
+	updates := map[string]any{
+		"approval_state":  approvalState,
+		"execution_stage": stage,
+	}
+	if heartbeatAt != nil {
+		updates["last_heartbeat_at"] = heartbeatAt
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, runID).
+		Updates(updates).Error; err != nil {
+		return fmt.Errorf("update agent run runtime resume state: %w", err)
 	}
 	return nil
 }
@@ -915,34 +1333,42 @@ func (r *AgentTriggerExecutionRepository) ListLatestAutomationRuleExecutions(ctx
 	return result, nil
 }
 
-// CountAutomationRuleExecutions returns the lifetime trigger execution count
-// for each automation rule reference in the workspace.
-func (r *AgentTriggerExecutionRepository) CountAutomationRuleExecutions(ctx context.Context, workspaceID string, ruleIDs []string) (map[string]int64, error) {
+// AutomationRuleExecutionCounts contains lifetime execution totals used by the
+// Flows inventory read model.
+type AutomationRuleExecutionCounts struct {
+	Total  int64
+	Failed int64
+}
+
+// CountAutomationRuleExecutions returns lifetime total and failed trigger
+// execution counts for each automation rule reference in the workspace.
+func (r *AgentTriggerExecutionRepository) CountAutomationRuleExecutions(ctx context.Context, workspaceID string, ruleIDs []string) (map[string]AutomationRuleExecutionCounts, error) {
 	if len(ruleIDs) == 0 {
-		return map[string]int64{}, nil
+		return map[string]AutomationRuleExecutionCounts{}, nil
 	}
 
 	type countRow struct {
 		ReferenceID string
-		Count       int64
+		Total       int64
+		Failed      int64
 	}
 	var rows []countRow
 	if err := r.db.WithContext(ctx).
 		Model(&model.AgentTriggerExecution{}).
-		Select("reference_id, COUNT(*) AS count").
+		Select("reference_id, COUNT(*) AS total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS failed", model.AgentTriggerExecutionStatusFailed).
 		Where("workspace_id = ? AND binding_kind = ? AND reference_type = ? AND reference_id IN ?", workspaceID, "automation_rule", "automation_rule", ruleIDs).
 		Group("reference_id").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("count automation rule executions: %w", err)
 	}
 
-	counts := make(map[string]int64, len(rows))
+	counts := make(map[string]AutomationRuleExecutionCounts, len(rows))
 	for _, row := range rows {
 		refID := strings.TrimSpace(row.ReferenceID)
 		if refID == "" {
 			continue
 		}
-		counts[refID] = row.Count
+		counts[refID] = AutomationRuleExecutionCounts{Total: row.Total, Failed: row.Failed}
 	}
 	return counts, nil
 }
@@ -1062,6 +1488,18 @@ func (r *AgentRunArtifactRepository) ListByRun(ctx context.Context, workspaceID,
 		return nil, fmt.Errorf("list run artifacts: %w", err)
 	}
 	return artifacts, nil
+}
+
+// GetByIDAndWorkspace returns one artifact without allowing cross-workspace lookup.
+func (r *AgentRunArtifactRepository) GetByIDAndWorkspace(ctx context.Context, workspaceID, artifactID string) (*model.AgentRunArtifact, error) {
+	var artifact model.AgentRunArtifact
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, artifactID).First(&artifact).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get run artifact: %w", err)
+	}
+	return &artifact, nil
 }
 
 // NextSequence returns the next sequence number for a run artifact.

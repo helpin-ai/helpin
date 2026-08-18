@@ -13,12 +13,14 @@ vi.mock('@/components/pm/CommentEditor', () => ({
     onImageSelect,
     onSubmit,
     uploadedFiles = [],
+    contentVariant,
   }: {
     onImageSelect?: (files: File[]) => void
     onSubmit: (text: string) => void | Promise<void>
     uploadedFiles?: { id: string; name: string; url?: string }[]
+    contentVariant?: 'default' | 'pm'
   }) => (
-    <div data-testid="comment-editor">
+    <div data-testid="comment-editor" data-content-variant={contentVariant}>
       <button
         type="button"
         data-testid="paste-image"
@@ -301,6 +303,15 @@ describe('CommentThread attachment uploads', () => {
   afterEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
+  })
+
+  it('uses compact PM rich text for task comments', () => {
+    const { container, root } = renderThread()
+
+    expect(container.querySelector('[data-testid="comment-editor"]')?.getAttribute('data-content-variant')).toBe('pm')
+
+    act(() => root.unmount())
+    container.remove()
   })
 
   it('keeps earlier pasted images when a second image is uploaded before submit', async () => {
@@ -719,6 +730,58 @@ describe('CommentThread attachment uploads', () => {
     })
 
     expect(container.querySelector('[aria-label="Collapse replies"]')).toBeNull()
+    act(() => root.unmount())
+  })
+
+  it('identifies comments created through a named AI agent', () => {
+    const comment = existingCommentByCurrentUser('comment-agent')
+    comment.comment.agent_id = 'agent-1'
+    comment.comment.agent_name = 'Code Review Agent'
+    comment.comment.agent_run_id = 'run-1'
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(
+        <CommentThread
+          workspaceId={workspaceId}
+          entityType="task"
+          entityId="task-1"
+          comments={[comment]}
+          currentUserId="user-1"
+          commentService={createCommentService()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Test User')
+    expect(container.textContent).toContain('(via Code Review Agent)')
+    expect(container.querySelector('[aria-label="AI agent comment"]')).toBeTruthy()
+    act(() => root.unmount())
+  })
+
+  it('uses the generic AI Agent label when the agent name is unavailable', () => {
+    const comment = existingCommentByCurrentUser('comment-agent-fallback')
+    comment.comment.agent_id = 'deleted-agent'
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(
+        <CommentThread
+          workspaceId={workspaceId}
+          entityType="task"
+          entityId="task-1"
+          comments={[comment]}
+          currentUserId="user-1"
+          commentService={createCommentService()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('(via AI Agent)')
     act(() => root.unmount())
   })
 })

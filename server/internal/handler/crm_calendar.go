@@ -30,6 +30,7 @@ func (h *CRMCalendarHandler) List(w http.ResponseWriter, r *http.Request) {
 	filters := model.CRMCalendarEventListFilters{
 		EmailAccountID: queryStringPtr(r, "email_account_id"),
 		DealID:         queryStringPtr(r, "deal_id"),
+		Status:         queryStringPtr(r, "status"),
 	}
 
 	// Parse date filters.
@@ -64,7 +65,7 @@ func (h *CRMCalendarHandler) List(w http.ResponseWriter, r *http.Request) {
 // Get handles GET /api/crm/calendar/events/{id}.
 func (h *CRMCalendarHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	event, err := h.calendarService.GetByID(r.Context(), id)
+	event, err := h.calendarService.GetByID(r.Context(), getWorkspaceID(r), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -98,7 +99,7 @@ func (h *CRMCalendarHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	event, err := h.calendarService.Update(r.Context(), id, req)
+	event, err := h.calendarService.Update(r.Context(), getWorkspaceID(r), id, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -109,7 +110,7 @@ func (h *CRMCalendarHandler) Update(w http.ResponseWriter, r *http.Request) {
 // Delete handles DELETE /api/crm/calendar/events/{id}.
 func (h *CRMCalendarHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.calendarService.Delete(r.Context(), id); err != nil {
+	if err := h.calendarService.Delete(r.Context(), getWorkspaceID(r), id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

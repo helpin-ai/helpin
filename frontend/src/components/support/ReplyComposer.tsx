@@ -53,6 +53,7 @@ import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useDockStore } from '@/stores/dockStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -67,8 +68,9 @@ import { useShortcutComposerStore } from './shortcutDialogStore';
 import { SHORTCUT_VARIABLES, resolveShortcutVariables } from './shortcutVariables';
 import { DEFAULT_SHORTCUT_CATEGORY, normalizeShortcutCategory, shortcutCategoryOptions } from './shortcutCategories';
 import { filterShortcuts, stripShortcutContent } from './shortcutFiltering';
-import { getClipboardImageFiles } from './clipboardAttachments';
+import { getClipboardImageFiles } from '@/lib/clipboardAttachments';
 import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './draftAttachments';
+import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -799,7 +801,8 @@ function ShortcutFormPanel({
 }
 
 export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, onUpgradeRequired }: ReplyComposerProps) {
-  const { replyMode, setReplyMode, setDraft, clearDraft } = useSupportInboxStore();
+  const { replyMode, setReplyMode, setDraft, clearDraft, detailSidebarMode, setDetailSidebarMode } = useSupportInboxStore();
+  const askChat = useDockStore((state) => state.chats.find((chat) => chat.support_conversation_id === conversationId) ?? null);
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
@@ -821,6 +824,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aiAssistedRef = useRef(false);
   const isTypingRef = useRef(false);
   const isNote = replyMode === 'note';
   const isNoteRef = useRef(isNote);
@@ -1127,7 +1131,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     extensions,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[160px] overflow-y-auto text-sm leading-relaxed',
+        class: 'rich-text-soft prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[160px] overflow-y-auto text-sm leading-relaxed',
       },
       handleKeyDown: (_view, event) => {
         const currentShortcut = shortcutStateRef.current;
@@ -1474,14 +1478,17 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     await sendMutation.mutateAsync({
       content: markdown || ' ',
       is_internal: isInternal,
+      ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
       ...(!isInternal && primaryEmail ? { channels: ['email' as const] } : {}),
       ...(!isInternal && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
       ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
     });
 
+
     // Clean up preview URLs
     pendingAttachments.forEach((a) => { if (a.previewUrl && a.previewObjectUrl) URL.revokeObjectURL(a.previewUrl); });
     setPendingAttachments([]);
+		aiAssistedRef.current = false;
     editor.commands.clearContent();
     clearDraft(conversationId);
     editor.commands.focus();
@@ -1520,6 +1527,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
       editor.commands.setContent(rewritten.content);
       editor.commands.focus('end');
+			aiAssistedRef.current = true;
     } catch (error) {
       const reason = getUpgradeRequiredReason(error);
       if (reason) onUpgradeRequired?.(reason);
@@ -1875,7 +1883,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       })()}
 
       {/* Mode toggle */}
-      <div className="flex items-center gap-1 px-4 pt-3">
+      <div className="flex items-center justify-between gap-3 px-4 pt-3">
+        <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"
           onClick={() => {
@@ -1981,6 +1990,13 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
             })}
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
+        <SupportAskAgentsButton
+          open={detailSidebarMode === 'agents'}
+          onOpen={() => setDetailSidebarMode('agents')}
+          chatExists={!!askChat}
+          runStatus={askChat?.active_run_status ?? null}
+        />
       </div>
 
       {/* TipTap Editor */}

@@ -61,6 +61,7 @@ export interface SupportConversation {
   linked_task_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
+  crm_company_id?: string | null;
   ai_state?: 'pending' | 'resolved' | 'escalated' | null;
   ai_resolved_at?: string;
   ai_escalated_at?: string;
@@ -85,6 +86,12 @@ export interface SupportConversation {
   system_tags?: SupportSystemTag[];
   created_at: string;
   updated_at: string;
+}
+
+export interface SendSupportConversationTranscriptResponse {
+  success: boolean;
+  message: string;
+  email: string;
 }
 
 export interface UnreadStats {
@@ -209,6 +216,11 @@ export interface SupportEmailRoute {
   provider_type: 'forwarding';
   active: boolean;
   last_inbound_at?: string | null;
+  confirmation_received_at?: string | null;
+  confirmation_conversation_id?: string | null;
+  verification_sent_at?: string | null;
+  forwarding_verified_at?: string | null;
+  forwarding_last_error?: string | null;
   created_by_id: string;
   created_at: string;
   updated_at: string;
@@ -554,6 +566,14 @@ export interface SupportMessage {
   html_body?: string;
   /** Markdown-friendly plaintext body — present only for inbound email messages. */
   stripped_text?: string;
+  /** Backend-projected visible reply text, excluding confidently detected history. */
+  email_visible_text?: string;
+  /** Backend-projected quoted history, retained for explicit expansion. */
+  email_quoted_text?: string;
+  /** Explicit quote-presence signal. Undefined means a legacy unprojected message. */
+  email_has_quoted_content?: boolean;
+  email_projection_confidence?: 'high' | 'medium' | 'none';
+  email_projection_version?: number;
   /** Delivery status of the outbound email for this message. Only set when the message was sent via email. */
   email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
   /** Human-readable bounce or complaint description. Empty unless delivery failed. */
@@ -570,6 +590,12 @@ export interface SupportMessage {
   email_bcc?: string[];
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportMessagePage {
+  data: SupportMessage[];
+  has_more: boolean;
+  next_cursor?: string;
 }
 
 export interface SupportMessageActionResponse {
@@ -753,7 +779,10 @@ export interface AIMessageMetadata {
 export interface AgentKnowledgeSource {
   id: string;
   agent_id: string;
+  scope_type?: 'space' | 'collection' | 'article';
   space_id: string;
+  collection_id?: string | null;
+  document_id?: string | null;
   workspace_id: string;
   sync_status: 'queued' | 'running' | 'ready' | 'failed' | 'stale' | 'disabled';
   sync_progress: number;
@@ -764,15 +793,64 @@ export interface AgentKnowledgeSource {
   last_sync_completed_at?: string | null;
   space_name?: string;
   space_type?: string;
+  collection_name?: string;
+  document_title?: string;
   created_at: string;
   updated_at: string;
+}
+
+export type CuratedGuidanceIntent = 'pricing_general' | 'plan_recommendation' | 'billing_tax' | 'unknown';
+export type CuratedGuidanceStatus = 'active' | 'disabled';
+
+export interface CuratedGuidance {
+  id: string;
+  workspace_id: string;
+  agent_id: string;
+  title: string;
+  question_patterns: string[];
+  answer: string;
+  intent: CuratedGuidanceIntent;
+  topics: string[];
+  language: string;
+  status: CuratedGuidanceStatus;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCuratedGuidanceRequest {
+  title: string;
+  question_patterns: string[];
+  answer: string;
+  intent: CuratedGuidanceIntent;
+  topics: string[];
+  language: string;
+  valid_from?: string | null;
+  valid_until?: string | null;
+}
+
+export interface UpdateCuratedGuidanceRequest extends Partial<CreateCuratedGuidanceRequest> {
+  status?: CuratedGuidanceStatus;
+}
+
+export interface AgentKnowledgeSourceRequest {
+  scope_type: 'space' | 'collection' | 'article';
+  space_id: string;
+  collection_id?: string | null;
+  document_id?: string | null;
 }
 
 export interface SupportContentSource {
   id: string;
   workspace_id: string;
   name: string;
+  source_type?: 'website' | 'file';
   start_url: string;
+  file_name?: string | null;
+  file_size?: number;
+  content_type?: string | null;
+  storage_key?: string | null;
   crawl_limit: number;
   crawl_depth: number;
   crawl_source: 'all' | 'sitemaps' | 'links';
@@ -834,6 +912,18 @@ export interface CreateSupportContentSourceRequest {
   json_response_format?: unknown;
 }
 
+export interface CreateSupportContentSourceFileUploadRequest {
+  name: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+}
+
+export interface CreateSupportContentSourceFileUploadResponse {
+  source: SupportContentSource;
+  upload_url: string;
+}
+
 export interface UpdateSupportContentSourceRequest {
   name?: string;
   start_url?: string;
@@ -865,6 +955,7 @@ export interface CreateConversationRequest {
 export interface CreateMessageRequest {
   content: string;
   is_internal?: boolean;
+  ai_assisted?: boolean;
   channels?: ('chat' | 'email')[];
   cc_emails?: string[];
   bcc_emails?: string[];
@@ -900,6 +991,7 @@ export interface LinkTaskRequest {
 }
 
 export interface CreateTaskFromConversationRequest {
+  team_id: string;
   name?: string;
   description?: string;
   task_type?: 'feature' | 'bug' | 'chore';
@@ -907,7 +999,6 @@ export interface CreateTaskFromConversationRequest {
   workflow_state_id?: string;
   epic_id?: string;
   sprint_id?: string;
-  team_id?: string;
   owner_member_id?: string;
   requester_member_id?: string;
   estimate?: number;
@@ -948,6 +1039,10 @@ export interface AssignConversationUserRequest {
 
 export interface UpdateConversationCRMContactRequest {
   crm_contact_id: string | null;
+}
+
+export interface UpdateConversationCRMCompanyRequest {
+  crm_company_id: string | null;
 }
 
 export interface UpdateConversationCustomerNameRequest {

@@ -14,9 +14,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
@@ -51,6 +51,37 @@ func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
 	}
 	if created.RuntimeKind != "codex" {
 		t.Fatalf("expected default runtime codex, got %q", created.RuntimeKind)
+	}
+}
+
+func TestCustomAgentIconCanBeCreatedAndUpdated(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	svc := &AgentService{agentRepo: repository.NewAgentRepository(db)}
+
+	req := modelCreateAgentRequest(nil)
+	req.IconKey = agentTestStringPtr("violet_star")
+	created, err := svc.CreateAgent(context.Background(), req, "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgent returned error: %v", err)
+	}
+	if created.IconKey != "violet_star" {
+		t.Fatalf("created.IconKey = %q, want violet_star", created.IconKey)
+	}
+
+	updated, err := svc.UpdateAgent(context.Background(), "ws-test", created.ID, model.UpdateAgentRequest{
+		IconKey: agentTestStringPtr("ocean_orbit"),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent returned error: %v", err)
+	}
+	if updated.IconKey != "ocean_orbit" {
+		t.Fatalf("updated.IconKey = %q, want ocean_orbit", updated.IconKey)
+	}
+
+	if _, err := svc.UpdateAgent(context.Background(), "ws-test", created.ID, model.UpdateAgentRequest{
+		IconKey: agentTestStringPtr("forge"),
+	}, "user-1"); err == nil {
+		t.Fatal("expected named product-agent icon key to be rejected")
 	}
 }
 
@@ -251,7 +282,7 @@ func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
 	if strings.Contains(*updated.SystemPrompt, "`publish_preview`") || strings.Contains(*updated.SystemPrompt, "`request_human_approval`") {
 		t.Fatalf("expected refreshed task planner prompt to remove legacy preview/approval tools, got %q", *updated.SystemPrompt)
 	}
-	if !strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc)+"`") {
+	if !strings.Contains(*updated.SystemPrompt, "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc)+"`") {
 		t.Fatalf("expected refreshed task planner prompt to include publish_task_plan_doc, got %q", *updated.SystemPrompt)
 	}
 	if updated.Name != "Scribe" {
@@ -288,6 +319,9 @@ func TestEnsureBuiltInCommandAgentReconcilesLegacyResearcherPreset(t *testing.T)
 	}
 	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent) {
 		t.Fatalf("expected canonical command agent preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent), updated.PresetVersionKey)
+	}
+	if updated.Name != "Sub-agent" {
+		t.Fatalf("expected legacy command agent display name to reconcile to Sub-agent, got %q", updated.Name)
 	}
 
 	agents, err := agentRepo.List(context.Background(), "ws-test")
@@ -331,19 +365,19 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 		t.Fatalf("expected review preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent), updated.PresetVersionKey)
 	}
 	if updated.SystemPrompt == nil ||
-		!strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput)+"`") ||
-		!strings.Contains(*updated.SystemPrompt, "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestReviewCheckpoint)+"`") {
+		!strings.Contains(*updated.SystemPrompt, "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestUserInput)+"`") ||
+		!strings.Contains(*updated.SystemPrompt, "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestReviewCheckpoint)+"`") {
 		t.Fatalf("expected refreshed review prompt with interactive loop tools, got %+v", updated.SystemPrompt)
 	}
 	var tools []string
 	if err := json.Unmarshal(updated.AllowedTools, &tools); err != nil {
 		t.Fatalf("unmarshal allowed tools: %v", err)
 	}
-	if !slices.Contains(tools, worker.ToolRequestUserInput) {
-		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestUserInput, tools)
+	if !slices.Contains(tools, agentcontract.ToolRequestUserInput) {
+		t.Fatalf("expected review agent tools to include %q, got %v", agentcontract.ToolRequestUserInput, tools)
 	}
-	if !slices.Contains(tools, worker.ToolRequestReviewCheckpoint) {
-		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestReviewCheckpoint, tools)
+	if !slices.Contains(tools, agentcontract.ToolRequestReviewCheckpoint) {
+		t.Fatalf("expected review agent tools to include %q, got %v", agentcontract.ToolRequestReviewCheckpoint, tools)
 	}
 	if updated.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("expected review agent default invocation mode interactive, got %q", updated.DefaultInvocationMode)
@@ -473,7 +507,7 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	}
 
 	agentRepo := repository.NewAgentRepository(db)
-	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	if err := svc.SeedWorkspaceDefaults(context.Background(), "ws-test", "user-1"); err != nil {
 		t.Fatalf("SeedWorkspaceDefaults returned error: %v", err)
@@ -488,6 +522,36 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	for _, agent := range agents {
 		if agent.IsSystem {
 			systemPresets = append(systemPresets, agent.PresetKey)
+			wantProvider, wantModel := model.AgentModelProviderOpenAI, "gpt-5.6-terra"
+			switch agent.PresetKey {
+			case model.AgentPresetEpicPlanner:
+				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAtlasAgentModel
+			case model.AgentPresetTaskPlanner:
+				wantProvider, wantModel = model.AgentModelProviderOpenAI, defaultScribeAgentModel
+			case model.AgentPresetDocumentationAgent:
+				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultQuillAgentModel
+			case model.AgentPresetAskAgent, model.AgentPresetSupportAgent:
+				// The dock orchestrator and support agent default to a
+				// flash-tier OpenRouter model.
+				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAskAgentModel
+			}
+			if agent.Provider == nil || *agent.Provider != wantProvider {
+				t.Errorf("system preset %q provider = %+v, want %s", agent.PresetKey, agent.Provider, wantProvider)
+			}
+			if agent.Model == nil || *agent.Model != wantModel {
+				t.Errorf("system preset %q model = %+v, want %s", agent.PresetKey, agent.Model, wantModel)
+			}
+			runtimeAgent := runtimeAgentFromHelpinAgent(&agent, "helpin")
+			if runtimeAgent.Provider != wantProvider || runtimeAgent.Model != wantModel {
+				t.Errorf(
+					"system preset %q runtime routing = %q/%q, want %s/%s",
+					agent.PresetKey,
+					runtimeAgent.Provider,
+					runtimeAgent.Model,
+					wantProvider,
+					wantModel,
+				)
+			}
 		}
 	}
 	for _, presetKey := range builtInPresetKeys() {
@@ -508,8 +572,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if forge.Provider == nil || *forge.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected forge provider openai, got %+v", forge.Provider)
 	}
-	if forge.Model == nil || *forge.Model != "gpt-5.5" {
-		t.Fatalf("expected forge model gpt-5.5, got %+v", forge.Model)
+	if forge.Model == nil || *forge.Model != "gpt-5.6-terra" {
+		t.Fatalf("expected forge model gpt-5.6-terra, got %+v", forge.Model)
 	}
 	lens, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetReviewAgent)
 	if err != nil {
@@ -524,8 +588,21 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if lens.Provider == nil || *lens.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected lens provider openai, got %+v", lens.Provider)
 	}
-	if lens.Model == nil || *lens.Model != "gpt-5.5" {
-		t.Fatalf("expected lens model gpt-5.5, got %+v", lens.Model)
+	if lens.Model == nil || *lens.Model != "gpt-5.6-terra" {
+		t.Fatalf("expected lens model gpt-5.6-terra, got %+v", lens.Model)
+	}
+	supportAgent, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetSupportAgent)
+	if err != nil {
+		t.Fatalf("GetSystemByPreset returned error: %v", err)
+	}
+	if supportAgent == nil {
+		t.Fatal("expected system support agent")
+	}
+	if supportAgent.Provider == nil || *supportAgent.Provider != model.AgentModelProviderOpenRouter {
+		t.Fatalf("expected support agent provider openrouter, got %+v", supportAgent.Provider)
+	}
+	if supportAgent.Model == nil || *supportAgent.Model != defaultAskAgentModel {
+		t.Fatalf("expected support agent model %s, got %+v", defaultAskAgentModel, supportAgent.Model)
 	}
 	docsAgent, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetDocumentationAgent)
 	if err != nil {
@@ -537,8 +614,14 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if docsAgent.Name != "Quill" {
 		t.Fatalf("expected documentation agent name, got %q", docsAgent.Name)
 	}
-	if docsAgent.RuntimeKind != "codex" {
-		t.Fatalf("expected documentation runtime codex, got %q", docsAgent.RuntimeKind)
+	if docsAgent.RuntimeKind != "native_sdk" {
+		t.Fatalf("expected documentation runtime native_sdk, got %q", docsAgent.RuntimeKind)
+	}
+	if docsAgent.Provider == nil || *docsAgent.Provider != model.AgentModelProviderOpenRouter {
+		t.Fatalf("expected documentation provider openrouter, got %+v", docsAgent.Provider)
+	}
+	if docsAgent.Model == nil || *docsAgent.Model != defaultQuillAgentModel {
+		t.Fatalf("expected documentation model %s, got %+v", defaultQuillAgentModel, docsAgent.Model)
 	}
 	if docsAgent.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("expected documentation default invocation mode interactive, got %q", docsAgent.DefaultInvocationMode)
@@ -581,7 +664,7 @@ func TestSeedWorkspaceDefaults_ReconcilesAndDedupesExistingSystemPresetAgents(t 
 	}
 
 	agentRepo := repository.NewAgentRepository(db)
-	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	if err := svc.SeedWorkspaceDefaults(context.Background(), "ws-test", "user-1"); err != nil {
 		t.Fatalf("SeedWorkspaceDefaults returned error: %v", err)
@@ -622,7 +705,7 @@ func TestUpdateAgent_PreservesSystemAgentPresetFamily(t *testing.T) {
 		activitySvc: activitySvc,
 		wsPublisher: nil,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -654,6 +737,239 @@ func TestUpdateAgent_PreservesSystemAgentPresetFamily(t *testing.T) {
 	if updated.Model == nil || *updated.Model != newModel {
 		t.Fatalf("expected updated model %q, got %+v", newModel, updated.Model)
 	}
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if reconciled.Model == nil || *reconciled.Model != newModel {
+		t.Fatalf("expected custom model %q to survive reconciliation, got %+v", newModel, reconciled.Model)
+	}
+}
+
+func TestEnsureBuiltInAgent_UpgradesLegacyDefaultModelToGPT56Terra(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	legacyModel := "gpt-5.5"
+	systemAgent.Model = &legacyModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist legacy model: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if reconciled.Model == nil || *reconciled.Model != "gpt-5.6-terra" {
+		t.Fatalf("expected reconciled model gpt-5.6-terra, got %+v", reconciled.Model)
+	}
+}
+
+func TestEnsureBuiltInAgent_UpgradesLegacyScribeDefaultRouting(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	legacyProvider := model.AgentModelProviderOpenRouter
+	legacyModel := "deepseek/deepseek-v4-flash"
+	systemAgent.RuntimeKind = "native_sdk"
+	systemAgent.Provider = &legacyProvider
+	systemAgent.Model = &legacyModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist legacy Scribe routing: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if reconciled.RuntimeKind != "codex" {
+		t.Fatalf("expected reconciled runtime codex, got %q", reconciled.RuntimeKind)
+	}
+	if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected reconciled provider openai, got %+v", reconciled.Provider)
+	}
+	if reconciled.Model == nil || *reconciled.Model != defaultScribeAgentModel {
+		t.Fatalf("expected reconciled model %s, got %+v", defaultScribeAgentModel, reconciled.Model)
+	}
+}
+
+func TestEnsureBuiltInAgent_UpgradesLegacyQuillDefaultRouting(t *testing.T) {
+	legacyModels := []string{"gpt-5.5", defaultOpenAIAgentModel}
+	for _, legacyModel := range legacyModels {
+		t.Run(legacyModel, func(t *testing.T) {
+			db := newAgentServiceTestDB(t)
+			agentRepo := repository.NewAgentRepository(db)
+			svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+			systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetDocumentationAgent)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			legacyProvider := model.AgentModelProviderOpenAI
+			systemAgent.RuntimeKind = "codex"
+			systemAgent.Provider = &legacyProvider
+			systemAgent.Model = &legacyModel
+			if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+				t.Fatalf("persist legacy Quill routing: %v", err)
+			}
+
+			reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetDocumentationAgent)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			if reconciled.RuntimeKind != "native_sdk" {
+				t.Fatalf("expected reconciled runtime native_sdk, got %q", reconciled.RuntimeKind)
+			}
+			if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
+				t.Fatalf("expected reconciled provider openrouter, got %+v", reconciled.Provider)
+			}
+			if reconciled.Model == nil || *reconciled.Model != defaultQuillAgentModel {
+				t.Fatalf("expected reconciled model %s, got %+v", defaultQuillAgentModel, reconciled.Model)
+			}
+		})
+	}
+}
+
+func TestEnsureBuiltInAgent_UpgradesLegacyAtlasDefaultRouting(t *testing.T) {
+	legacyModels := []string{"gpt-5.5", defaultOpenAIAgentModel}
+	for _, legacyModel := range legacyModels {
+		t.Run(legacyModel, func(t *testing.T) {
+			db := newAgentServiceTestDB(t)
+			agentRepo := repository.NewAgentRepository(db)
+			svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+			systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			legacyProvider := model.AgentModelProviderOpenAI
+			systemAgent.Provider = &legacyProvider
+			systemAgent.Model = &legacyModel
+			if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+				t.Fatalf("persist legacy Atlas routing: %v", err)
+			}
+
+			reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
+			if err != nil {
+				t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+			}
+			if reconciled.RuntimeKind != "native_sdk" {
+				t.Fatalf("expected reconciled runtime native_sdk, got %q", reconciled.RuntimeKind)
+			}
+			if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
+				t.Fatalf("expected reconciled provider openrouter, got %+v", reconciled.Provider)
+			}
+			if reconciled.Model == nil || *reconciled.Model != defaultAtlasAgentModel {
+				t.Fatalf("expected reconciled model %s, got %+v", defaultAtlasAgentModel, reconciled.Model)
+			}
+		})
+	}
+}
+
+func TestEnsureBuiltInAgent_PreservesCustomAtlasRouting(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	customProvider := model.AgentModelProviderOpenAI
+	customModel := "gpt-5-mini"
+	systemAgent.Provider = &customProvider
+	systemAgent.Model = &customModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist custom Atlas routing: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if reconciled.RuntimeKind != "native_sdk" {
+		t.Fatalf("expected reconciled runtime native_sdk, got %q", reconciled.RuntimeKind)
+	}
+	if reconciled.Provider == nil || *reconciled.Provider != customProvider {
+		t.Fatalf("expected custom provider %s, got %+v", customProvider, reconciled.Provider)
+	}
+	if reconciled.Model == nil || *reconciled.Model != customModel {
+		t.Fatalf("expected custom model %s, got %+v", customModel, reconciled.Model)
+	}
+}
+
+func TestEnsureBuiltInAgent_PreservesCustomScribeRouting(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	customProvider := model.AgentModelProviderOpenAI
+	customModel := "gpt-5-mini"
+	systemAgent.Provider = &customProvider
+	systemAgent.Model = &customModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist custom Scribe routing: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetTaskPlanner)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if reconciled.Provider == nil || *reconciled.Provider != customProvider {
+		t.Fatalf("expected custom provider %s, got %+v", customProvider, reconciled.Provider)
+	}
+	if reconciled.RuntimeKind != "codex" {
+		t.Fatalf("expected Scribe runtime codex, got %q", reconciled.RuntimeKind)
+	}
+	if reconciled.Model == nil || *reconciled.Model != customModel {
+		t.Fatalf("expected custom model %s, got %+v", customModel, reconciled.Model)
+	}
+}
+
+func TestEnsureBuiltInAgent_PreservesCustomQuillRouting(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetDocumentationAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	customProvider := model.AgentModelProviderOpenAI
+	customModel := "gpt-5-mini"
+	systemAgent.Provider = &customProvider
+	systemAgent.Model = &customModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist custom Quill routing: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetDocumentationAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if reconciled.RuntimeKind != "native_sdk" {
+		t.Fatalf("expected reconciled runtime native_sdk, got %q", reconciled.RuntimeKind)
+	}
+	if reconciled.Provider == nil || *reconciled.Provider != customProvider {
+		t.Fatalf("expected custom provider %s, got %+v", customProvider, reconciled.Provider)
+	}
+	if reconciled.Model == nil || *reconciled.Model != customModel {
+		t.Fatalf("expected custom model %s, got %+v", customModel, reconciled.Model)
+	}
 }
 
 func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
@@ -667,7 +983,7 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 		activitySvc:                activitySvc,
 		wsPublisher:                nil,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -726,7 +1042,7 @@ func TestUpdateAgent_ClearsSystemModelWhenBlankStringProvided(t *testing.T) {
 		activitySvc: activitySvc,
 		wsPublisher: nil,
 	}
-	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -765,7 +1081,7 @@ func TestUpdateAgent_AllowsSystemAgentMonthlyTokenBudgetUpdate(t *testing.T) {
 		activitySvc: activitySvc,
 		wsPublisher: nil,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -807,7 +1123,7 @@ func TestEnsureBuiltInAgent_UpgradesLegacyCodeBuilderRuntimeToCodex(t *testing.T
 		activitySvc: activitySvc,
 		wsPublisher: nil,
 	}
-	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	defaultPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	if defaultPrompt == nil {
@@ -852,7 +1168,7 @@ func TestUpdateAgent_AllowsSystemPresetVersionRuntimeFromSelectedVersion(t *test
 		activitySvc:                activitySvc,
 		wsPublisher:                nil,
 	}
-	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -927,7 +1243,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 		agentRepo:                  agentRepo,
 		workspacePresetVersionRepo: workspacePresetVersionRepo,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	req := model.CreateWorkspaceAgentPresetVersionRequest{
 		WorkspaceID:      "ws-test",
@@ -971,7 +1287,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	if version.SystemPrompt == nil || *version.SystemPrompt != "Use the repo conventions and keep changes incremental." {
 		t.Fatalf("expected persisted system prompt override, got %+v", version.SystemPrompt)
 	}
-	if !slices.Equal(version.AllowedTools, []string{"read_file", "run_command"}) {
+	if !slices.Equal(version.AllowedTools, []string{"read_files", "run_command"}) {
 		t.Fatalf("expected allowed tools override, got %v", version.AllowedTools)
 	}
 	if version.ApprovalMode != "never" {
@@ -1036,7 +1352,7 @@ func TestEnsureBuiltInAgent_PreservesWorkspacePresetVersionDuringReconcile(t *te
 		activitySvc:                activitySvc,
 		wsPublisher:                nil,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetReviewAgent)
 	if err != nil {
@@ -1087,7 +1403,7 @@ func TestEnsureBuiltInAgent_FallsBackWhenWorkspacePresetVersionDeleted(t *testin
 		activitySvc:                activitySvc,
 		wsPublisher:                nil,
 	}
-	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -1140,7 +1456,7 @@ func TestUpdateWorkspacePresetVersion(t *testing.T) {
 		agentRepo:                  agentRepo,
 		workspacePresetVersionRepo: workspacePresetVersionRepo,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
 		WorkspaceID:      "ws-test",
@@ -1184,7 +1500,7 @@ func TestUpdateWorkspacePresetVersion(t *testing.T) {
 	if updated.Model == nil || *updated.Model != "" {
 		t.Fatalf("expected explicit blank model preserved, got %+v", updated.Model)
 	}
-	if !slices.Equal(updated.AllowedTools, []string{"read_file"}) {
+	if !slices.Equal(updated.AllowedTools, []string{"read_files"}) {
 		t.Fatalf("expected updated allowed tools, got %v", updated.AllowedTools)
 	}
 	if !slices.Equal(updated.SupportedModes, []string{model.InvocationModeAutonomous, model.InvocationModeInteractive}) {
@@ -1200,7 +1516,7 @@ func TestUpdateWorkspacePresetVersion_PersistsPromptOnlyEditAndExplicitEmptyList
 		agentRepo:                  agentRepo,
 		workspacePresetVersionRepo: workspacePresetVersionRepo,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
 		WorkspaceID:      "ws-test",
@@ -1208,7 +1524,7 @@ func TestUpdateWorkspacePresetVersion_PersistsPromptOnlyEditAndExplicitEmptyList
 		Label:            "Workspace Atlas",
 		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
 		SystemPrompt:     agentTestStringPtr("Workspace atlas v1"),
-		AllowedTools:     mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		AllowedTools:     mustJSONStringSlice([]string{agentcontract.ToolUpdatePlan}),
 		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeInteractive}),
 	}, "user-1")
 	if err != nil {
@@ -1268,7 +1584,7 @@ func TestCreateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t 
 		agentRepo:                  agentRepo,
 		workspacePresetVersionRepo: workspacePresetVersionRepo,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	rawPrompt := "Use this exact custom system prompt."
 	legacyPreamble := "This legacy preamble must not replace the raw prompt."
@@ -1280,7 +1596,7 @@ func TestCreateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t 
 		SystemPrompt:          &rawPrompt,
 		InstructionPreamble:   &legacyPreamble,
 		InstructionSkills:     mustJSONStringSlice([]string{"engineering_planner_operating_rules"}),
-		AllowedTools:          mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		AllowedTools:          mustJSONStringSlice([]string{agentcontract.ToolUpdatePlan}),
 		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeInteractive}),
 		DefaultInvocationMode: agentTestStringPtr(model.InvocationModeInteractive),
 	}, "user-1")
@@ -1300,7 +1616,7 @@ func TestUpdateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t 
 		agentRepo:                  agentRepo,
 		workspacePresetVersionRepo: workspacePresetVersionRepo,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
 		WorkspaceID:      "ws-test",
@@ -1308,7 +1624,7 @@ func TestUpdateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t 
 		Label:            "Workspace Atlas",
 		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
 		SystemPrompt:     agentTestStringPtr("Workspace atlas v1"),
-		AllowedTools:     mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		AllowedTools:     mustJSONStringSlice([]string{agentcontract.ToolUpdatePlan}),
 		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeInteractive}),
 	}, "user-1")
 	if err != nil {
@@ -1344,7 +1660,7 @@ func TestUpdateWorkspacePresetVersion_PropagatesToPinnedSystemAgent(t *testing.T
 		activitySvc:                activitySvc,
 		wsPublisher:                nil,
 	}
-	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -1410,7 +1726,7 @@ func TestUpdateWorkspacePresetVersion_PropagatesToPinnedSystemAgent(t *testing.T
 	if strings.TrimSpace(string(refetched.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
 		t.Fatalf("expected pinned agent execution config to update, got %s", refetched.ExecutionConfig)
 	}
-	if !slices.Equal(parseJSONStringSlice(refetched.AllowedTools), []string{"read_file"}) {
+	if !slices.Equal(parseJSONStringSlice(refetched.AllowedTools), []string{"read_files"}) {
 		t.Fatalf("expected pinned agent allowed tools to update, got %v", parseJSONStringSlice(refetched.AllowedTools))
 	}
 	if refetched.DefaultInvocationMode != model.InvocationModeInteractive {
@@ -1426,7 +1742,7 @@ func TestUpdateWorkspacePresetVersion_RejectsInvalidRouting(t *testing.T) {
 		agentRepo:                  agentRepo,
 		workspacePresetVersionRepo: workspacePresetVersionRepo,
 	}
-	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
 		WorkspaceID:      "ws-test",
@@ -1476,7 +1792,7 @@ func TestDeleteWorkspacePresetVersionRejectsPinnedVersion(t *testing.T) {
 		activitySvc:                activitySvc,
 		wsPublisher:                nil,
 	}
-	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -1556,7 +1872,7 @@ func TestEnsureBuiltInAgent_AppliesDefaultExecutionConfigForForgeAndLens(t *test
 		activitySvc: activitySvc,
 		wsPublisher: nil,
 	}
-	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
 	for _, presetKey := range []string{model.AgentPresetCodeBuilder, model.AgentPresetReviewAgent} {
 		agent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", presetKey)
@@ -1653,6 +1969,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			preset_key TEXT,
 			preset_version_key TEXT,
 			source_preset_key TEXT,

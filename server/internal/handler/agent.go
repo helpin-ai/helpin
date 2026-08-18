@@ -187,13 +187,12 @@ func (h *AgentHandler) ListModelProviders(w http.ResponseWriter, r *http.Request
 
 // ListToolCatalog handles GET /api/pm/tool-catalog.
 func (h *AgentHandler) ListToolCatalog(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.agentService.ListToolCatalog())
-}
-
-// GetRunnerHealth handles GET /api/pm/runner-health.
-func (h *AgentHandler) GetRunnerHealth(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	writeJSON(w, http.StatusOK, h.agentService.GetRunnerHealth(r.Context(), workspaceID))
+	catalog, err := h.agentService.ListToolCatalogForWorkspace(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
 }
 
 // CreateAgent handles POST /api/pm/agents.
@@ -790,7 +789,7 @@ func (h *AgentHandler) HandoffRun(w http.ResponseWriter, r *http.Request) {
 func (h *AgentHandler) ListAgentRuns(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	agentID := chi.URLParam(r, "id")
-	pagination := queryPagination(r)
+	pagination := queryAgentRunPagination(r)
 
 	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
 		writeError(w, http.StatusForbidden, err.Error())
@@ -821,7 +820,7 @@ func (h *AgentHandler) ListAgentRuns(w http.ResponseWriter, r *http.Request) {
 // ListWorkspaceRuns handles GET /api/pm/agent-runs/workspace.
 func (h *AgentHandler) ListWorkspaceRuns(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	pagination := queryPagination(r)
+	pagination := queryAgentRunPagination(r)
 
 	runs, total, err := h.agentService.ListWorkspaceRuns(r.Context(), workspaceID, pagination)
 	if err != nil {

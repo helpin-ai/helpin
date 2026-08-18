@@ -199,7 +199,13 @@ func TestRenderHTML_ToggleSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`<details class="docs-toggle-section" data-toggle-section open`, `<summary>More context</summary>`, `Hidden until expanded.`} {
+	for _, want := range []string{
+		`<details class="docs-toggle-section" data-toggle-section open`,
+		`<span class="docs-toggle-title">More context</span>`,
+		`<span class="docs-toggle-chevron" aria-hidden="true"></span>`,
+		`<div class="docs-toggle-content" data-toggle-content>`,
+		`Hidden until expanded.`,
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected %q in rendered toggle, got: %s", want, got)
 		}
@@ -207,7 +213,7 @@ func TestRenderHTML_ToggleSection(t *testing.T) {
 }
 
 func TestRenderHTML_ToggleSectionWithHelpScoutMetadata(t *testing.T) {
-	input := `{"type":"doc","content":[{"type":"toggleSection","attrs":{"title":"Authentication & Setup","icon":"🔑","badgeText":"3 topics","sourceStyle":"helpScoutCard","open":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"How to Get Your API Key"}]}]}]}`
+	input := `{"type":"doc","content":[{"type":"toggleSection","attrs":{"title":"Authentication & Setup","icon":"🔑","badgeText":"3 topics","open":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"How to Get Your API Key"}]}]}]}`
 	got, err := RenderHTML(json.RawMessage(input))
 	if err != nil {
 		t.Fatal(err)
@@ -476,6 +482,22 @@ func TestRenderHTML_VideoEmbedUnsafeURL(t *testing.T) {
 	}
 	if strings.Contains(got, "iframe") {
 		t.Errorf("expected no iframe for unsafe URL, got: %s", got)
+	}
+}
+
+func TestRenderHTML_ArtifactVideoUsesPrivatePlaceholder(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"artifactVideo","attrs":{"artifactId":"asset-1","src":"helpin://artifacts/asset-1","fileName":"login-flow.mp4","description":"Login flow","caption":"Authentication walkthrough"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatalf("RenderHTML: %v", err)
+	}
+	for _, want := range []string{`data-private-artifact-video`, `login-flow.mp4`, `Authentication walkthrough`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in artifact video HTML, got: %s", want, got)
+		}
+	}
+	if strings.Contains(got, "helpin://") || strings.Contains(got, "asset-1") {
+		t.Fatalf("private artifact reference leaked into static HTML: %s", got)
 	}
 }
 

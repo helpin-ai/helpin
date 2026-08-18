@@ -18,6 +18,60 @@ import {
 
 export const EPIC_DELIVERY_PANEL_ID = 'epic-delivery-panel';
 
+interface EpicDeliveryPipelineButtonProps {
+  workspaceId: string;
+  epicId: string;
+  onStarted: () => Promise<void> | void;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+/**
+ * Launches the epic delivery pipeline (implement → review → merge every open
+ * task on the epic integration branch, ordered by blocking links, then open
+ * the epic PR). Backed by POST /pm/epics/{id}/delivery-pipeline.
+ */
+export function EpicDeliveryPipelineButton({
+  workspaceId,
+  epicId,
+  onStarted,
+  disabled = false,
+  disabledReason,
+}: EpicDeliveryPipelineButtonProps) {
+  const [busy, setBusy] = useState(false);
+
+  const start = async () => {
+    setBusy(true);
+    try {
+      const res = await commandBarService.startEpicDeliveryPipeline(workspaceId, epicId);
+      if (res.error || !res.data) {
+        toast.error(res.error ?? 'Failed to start delivery pipeline');
+        return;
+      }
+      const skipped = res.data.skipped_tasks?.length ?? 0;
+      toast.success(
+        `Delivery pipeline started for ${res.data.task_count} task${res.data.task_count === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped)` : ''}`,
+      );
+      await onStarted();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-7 text-xs"
+      disabled={disabled || busy}
+      title={disabled ? disabledReason : undefined}
+      onClick={() => void start()}
+    >
+      {busy ? 'Starting…' : 'Run delivery pipeline'}
+    </Button>
+  );
+}
+
 interface EpicDeliveryRunsPanelProps {
   workspaceId: string;
   plan: CommandBarRunPlan;
@@ -163,11 +217,11 @@ export function EpicDeliveryStatusChip({
             .getElementById(EPIC_DELIVERY_PANEL_ID)
             ?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
       }
-      className="mt-2 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card px-2 py-1.5 text-left hover:bg-accent"
-      title="Jump to delivery"
+      className="mt-4 flex w-full items-center gap-2 border-t border-border/60 pt-4 text-left transition-colors hover:text-foreground"
+      title="Open delivery"
     >
       <StatusDot state={dot} />
-      <span className="text-[11px] font-medium text-foreground/80">Delivery</span>
+      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70">Delivery</span>
       <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
         {planSummaryText(plan, runsById)}
       </span>

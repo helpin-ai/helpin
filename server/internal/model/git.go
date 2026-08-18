@@ -423,6 +423,7 @@ type UpdateTaskDeliveryTargetRequest struct {
 	RepositoryID  *string `json:"repository_id"`
 	BaseBranch    *string `json:"base_branch"`
 	WorkingBranch *string `json:"working_branch"`
+	ClearTarget   bool    `json:"clear_target"`
 }
 
 // UpdateEpicDeliveryTargetRequest updates the selected delivery target for an epic.
@@ -430,6 +431,7 @@ type UpdateEpicDeliveryTargetRequest struct {
 	RepositoryID *string `json:"repository_id"`
 	BaseBranch   *string `json:"base_branch"`
 	EpicBranch   *string `json:"epic_branch"`
+	ClearTarget  bool    `json:"clear_target"`
 }
 
 // SyncGitRepositoriesRequest controls manual repository synchronization.

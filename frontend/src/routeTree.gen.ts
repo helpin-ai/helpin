@@ -14,17 +14,21 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as BillingPreviewRouteImport } from './routes/billing-preview'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShareShareTokenRouteImport } from './routes/share/$shareToken'
 import { Route as JoinTokenRouteImport } from './routes/join/$token'
 import { Route as AuthenticatedWorkspacesRouteImport } from './routes/_authenticated/workspaces'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedWSlugRouteImport } from './routes/_authenticated/w/$slug'
+import { Route as AuthenticatedOauthAuthorizeRouteImport } from './routes/_authenticated/oauth/authorize'
 import { Route as AuthenticatedWSlugIndexRouteImport } from './routes/_authenticated/w/$slug/index'
 import { Route as AuthenticatedWSlugTeamGoalsRouteImport } from './routes/_authenticated/w/$slug/team-goals'
 import { Route as AuthenticatedWSlugTasksRouteImport } from './routes/_authenticated/w/$slug/tasks'
 import { Route as AuthenticatedWSlugSupportRouteImport } from './routes/_authenticated/w/$slug/support'
+import { Route as AuthenticatedWSlugSetupRouteImport } from './routes/_authenticated/w/$slug/setup'
 import { Route as AuthenticatedWSlugNotificationsRouteImport } from './routes/_authenticated/w/$slug/notifications'
 import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authenticated/w/$slug/docs'
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
@@ -49,17 +53,19 @@ import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './ro
 import { Route as AuthenticatedWSlugSettingsRedirectsRouteImport } from './routes/_authenticated/w/$slug/settings/redirects'
 import { Route as AuthenticatedWSlugSettingsRecurringTasksRouteImport } from './routes/_authenticated/w/$slug/settings/recurring-tasks'
 import { Route as AuthenticatedWSlugSettingsMembersRouteImport } from './routes/_authenticated/w/$slug/settings/members'
+import { Route as AuthenticatedWSlugSettingsMcpRouteImport } from './routes/_authenticated/w/$slug/settings/mcp'
 import { Route as AuthenticatedWSlugSettingsLabelsRouteImport } from './routes/_authenticated/w/$slug/settings/labels'
 import { Route as AuthenticatedWSlugSettingsKnowledgeRouteImport } from './routes/_authenticated/w/$slug/settings/knowledge'
 import { Route as AuthenticatedWSlugSettingsInboxesRoutingRouteImport } from './routes/_authenticated/w/$slug/settings/inboxes-routing'
 import { Route as AuthenticatedWSlugSettingsImportRouteImport } from './routes/_authenticated/w/$slug/settings/import'
 import { Route as AuthenticatedWSlugSettingsHelpcenterRouteImport } from './routes/_authenticated/w/$slug/settings/helpcenter'
 import { Route as AuthenticatedWSlugSettingsGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/general'
+import { Route as AuthenticatedWSlugSettingsExternalMcpRouteImport } from './routes/_authenticated/w/$slug/settings/external-mcp'
 import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes/_authenticated/w/$slug/settings/delivery'
 import { Route as AuthenticatedWSlugSettingsCrmPipelinesRouteImport } from './routes/_authenticated/w/$slug/settings/crm-pipelines'
+import { Route as AuthenticatedWSlugSettingsCrmMeetingsRouteImport } from './routes/_authenticated/w/$slug/settings/crm-meetings'
 import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes/_authenticated/w/$slug/settings/crm-email'
 import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './routes/_authenticated/w/$slug/settings/crm-autonomy'
-import { Route as AuthenticatedWSlugSettingsCommandIntentsRouteImport } from './routes/_authenticated/w/$slug/settings/command-intents'
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
 import { Route as AuthenticatedWSlugSettingsBillingRouteImport } from './routes/_authenticated/w/$slug/settings/billing'
 import { Route as AuthenticatedWSlugSettingsAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/automations'
@@ -81,6 +87,7 @@ import { Route as AuthenticatedWSlugDocsRecentRouteImport } from './routes/_auth
 import { Route as AuthenticatedWSlugDocsMyRouteImport } from './routes/_authenticated/w/$slug/docs/my'
 import { Route as AuthenticatedWSlugDocsDraftsRouteImport } from './routes/_authenticated/w/$slug/docs/drafts'
 import { Route as AuthenticatedWSlugCrmReviewRouteImport } from './routes/_authenticated/w/$slug/crm/review'
+import { Route as AuthenticatedWSlugCrmOverviewRouteImport } from './routes/_authenticated/w/$slug/crm/overview'
 import { Route as AuthenticatedWSlugCrmInsightsRouteImport } from './routes/_authenticated/w/$slug/crm/insights'
 import { Route as AuthenticatedWSlugAutomationTriggersRouteImport } from './routes/_authenticated/w/$slug/automation/triggers'
 import { Route as AuthenticatedWSlugAutomationToolsRouteImport } from './routes/_authenticated/w/$slug/automation/tools'
@@ -94,9 +101,11 @@ import { Route as AuthenticatedWSlugPmTasksIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
+import { Route as AuthenticatedWSlugCrmMeetingsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/meetings/index'
 import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/deals/index'
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
 import { Route as AuthenticatedWSlugCrmCompaniesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/companies/index'
+import { Route as AuthenticatedWSlugAutomationToolsIndexRouteImport } from './routes/_authenticated/w/$slug/automation/tools/index'
 import { Route as AuthenticatedWSlugPmTasksTaskIdRouteImport } from './routes/_authenticated/w/$slug/pm/tasks/$taskId'
 import { Route as AuthenticatedWSlugPmSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/$sprintId'
 import { Route as AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/$objectiveId'
@@ -104,9 +113,11 @@ import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_a
 import { Route as AuthenticatedWSlugPmCodingSessionsSessionIdRouteImport } from './routes/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
 import { Route as AuthenticatedWSlugDocsSpacesSpaceIdRouteImport } from './routes/_authenticated/w/$slug/docs/spaces/$spaceId'
 import { Route as AuthenticatedWSlugDocsDocumentsDocIdRouteImport } from './routes/_authenticated/w/$slug/docs/documents/$docId'
+import { Route as AuthenticatedWSlugCrmMeetingsMeetingIdRouteImport } from './routes/_authenticated/w/$slug/crm/meetings/$meetingId'
 import { Route as AuthenticatedWSlugCrmDealsDealIdRouteImport } from './routes/_authenticated/w/$slug/crm/deals/$dealId'
 import { Route as AuthenticatedWSlugCrmContactsContactIdRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/$contactId'
 import { Route as AuthenticatedWSlugCrmCompaniesCompanyIdRouteImport } from './routes/_authenticated/w/$slug/crm/companies/$companyId'
+import { Route as AuthenticatedWSlugAutomationToolsConnectionsRouteImport } from './routes/_authenticated/w/$slug/automation/tools/connections'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
@@ -131,6 +142,11 @@ const LoginRoute = LoginRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BillingPreviewRoute = BillingPreviewRouteImport.update({
+  id: '/billing-preview',
+  path: '/billing-preview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -162,11 +178,22 @@ const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedWSlugRoute = AuthenticatedWSlugRouteImport.update({
   id: '/w/$slug',
   path: '/w/$slug',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedOauthAuthorizeRoute =
+  AuthenticatedOauthAuthorizeRouteImport.update({
+    id: '/oauth/authorize',
+    path: '/oauth/authorize',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedWSlugIndexRoute = AuthenticatedWSlugIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -189,6 +216,11 @@ const AuthenticatedWSlugSupportRoute =
     path: '/support',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSetupRoute = AuthenticatedWSlugSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => AuthenticatedWSlugRoute,
+} as any)
 const AuthenticatedWSlugNotificationsRoute =
   AuthenticatedWSlugNotificationsRouteImport.update({
     id: '/notifications',
@@ -331,6 +363,12 @@ const AuthenticatedWSlugSettingsMembersRoute =
     path: '/settings/members',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsMcpRoute =
+  AuthenticatedWSlugSettingsMcpRouteImport.update({
+    id: '/settings/mcp',
+    path: '/settings/mcp',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsLabelsRoute =
   AuthenticatedWSlugSettingsLabelsRouteImport.update({
     id: '/settings/labels',
@@ -367,6 +405,12 @@ const AuthenticatedWSlugSettingsGeneralRoute =
     path: '/settings/general',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsExternalMcpRoute =
+  AuthenticatedWSlugSettingsExternalMcpRouteImport.update({
+    id: '/settings/external-mcp',
+    path: '/settings/external-mcp',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsDeliveryRoute =
   AuthenticatedWSlugSettingsDeliveryRouteImport.update({
     id: '/settings/delivery',
@@ -379,6 +423,12 @@ const AuthenticatedWSlugSettingsCrmPipelinesRoute =
     path: '/settings/crm-pipelines',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsCrmMeetingsRoute =
+  AuthenticatedWSlugSettingsCrmMeetingsRouteImport.update({
+    id: '/settings/crm-meetings',
+    path: '/settings/crm-meetings',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsCrmEmailRoute =
   AuthenticatedWSlugSettingsCrmEmailRouteImport.update({
     id: '/settings/crm-email',
@@ -389,12 +439,6 @@ const AuthenticatedWSlugSettingsCrmAutonomyRoute =
   AuthenticatedWSlugSettingsCrmAutonomyRouteImport.update({
     id: '/settings/crm-autonomy',
     path: '/settings/crm-autonomy',
-    getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
-const AuthenticatedWSlugSettingsCommandIntentsRoute =
-  AuthenticatedWSlugSettingsCommandIntentsRouteImport.update({
-    id: '/settings/command-intents',
-    path: '/settings/command-intents',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsChatGeneralRoute =
@@ -523,6 +567,12 @@ const AuthenticatedWSlugCrmReviewRoute =
     path: '/review',
     getParentRoute: () => AuthenticatedWSlugCrmRoute,
   } as any)
+const AuthenticatedWSlugCrmOverviewRoute =
+  AuthenticatedWSlugCrmOverviewRouteImport.update({
+    id: '/overview',
+    path: '/overview',
+    getParentRoute: () => AuthenticatedWSlugCrmRoute,
+  } as any)
 const AuthenticatedWSlugCrmInsightsRoute =
   AuthenticatedWSlugCrmInsightsRouteImport.update({
     id: '/insights',
@@ -601,6 +651,12 @@ const AuthenticatedWSlugPmEpicsIndexRoute =
     path: '/pm/epics/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugCrmMeetingsIndexRoute =
+  AuthenticatedWSlugCrmMeetingsIndexRouteImport.update({
+    id: '/meetings/',
+    path: '/meetings/',
+    getParentRoute: () => AuthenticatedWSlugCrmRoute,
+  } as any)
 const AuthenticatedWSlugCrmDealsIndexRoute =
   AuthenticatedWSlugCrmDealsIndexRouteImport.update({
     id: '/deals/',
@@ -618,6 +674,12 @@ const AuthenticatedWSlugCrmCompaniesIndexRoute =
     id: '/companies/',
     path: '/companies/',
     getParentRoute: () => AuthenticatedWSlugCrmRoute,
+  } as any)
+const AuthenticatedWSlugAutomationToolsIndexRoute =
+  AuthenticatedWSlugAutomationToolsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedWSlugAutomationToolsRoute,
   } as any)
 const AuthenticatedWSlugPmTasksTaskIdRoute =
   AuthenticatedWSlugPmTasksTaskIdRouteImport.update({
@@ -661,6 +723,12 @@ const AuthenticatedWSlugDocsDocumentsDocIdRoute =
     path: '/documents/$docId',
     getParentRoute: () => AuthenticatedWSlugDocsRoute,
   } as any)
+const AuthenticatedWSlugCrmMeetingsMeetingIdRoute =
+  AuthenticatedWSlugCrmMeetingsMeetingIdRouteImport.update({
+    id: '/meetings/$meetingId',
+    path: '/meetings/$meetingId',
+    getParentRoute: () => AuthenticatedWSlugCrmRoute,
+  } as any)
 const AuthenticatedWSlugCrmDealsDealIdRoute =
   AuthenticatedWSlugCrmDealsDealIdRouteImport.update({
     id: '/deals/$dealId',
@@ -679,24 +747,34 @@ const AuthenticatedWSlugCrmCompaniesCompanyIdRoute =
     path: '/companies/$companyId',
     getParentRoute: () => AuthenticatedWSlugCrmRoute,
   } as any)
+const AuthenticatedWSlugAutomationToolsConnectionsRoute =
+  AuthenticatedWSlugAutomationToolsConnectionsRouteImport.update({
+    id: '/connections',
+    path: '/connections',
+    getParentRoute: () => AuthenticatedWSlugAutomationToolsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/billing-preview': typeof BillingPreviewRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
+  '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
+  '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/w/$slug/support': typeof AuthenticatedWSlugSupportRouteWithChildren
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
@@ -707,9 +785,10 @@ export interface FileRoutesByFullPath {
   '/w/$slug/automation/library': typeof AuthenticatedWSlugAutomationLibraryRoute
   '/w/$slug/automation/runs': typeof AuthenticatedWSlugAutomationRunsRoute
   '/w/$slug/automation/skills': typeof AuthenticatedWSlugAutomationSkillsRoute
-  '/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRoute
+  '/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRouteWithChildren
   '/w/$slug/automation/triggers': typeof AuthenticatedWSlugAutomationTriggersRoute
   '/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
+  '/w/$slug/crm/overview': typeof AuthenticatedWSlugCrmOverviewRoute
   '/w/$slug/crm/review': typeof AuthenticatedWSlugCrmReviewRoute
   '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
@@ -731,17 +810,19 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
-  '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
+  '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
   '/w/$slug/settings/inboxes-routing': typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   '/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
+  '/w/$slug/settings/mcp': typeof AuthenticatedWSlugSettingsMcpRoute
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
@@ -761,9 +842,11 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/': typeof AuthenticatedWSlugSettingsIndexRoute
   '/w/$slug/sprints/': typeof AuthenticatedWSlugSprintsIndexRoute
   '/w/$slug/support/': typeof AuthenticatedWSlugSupportIndexRoute
+  '/w/$slug/automation/tools/connections': typeof AuthenticatedWSlugAutomationToolsConnectionsRoute
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  '/w/$slug/crm/meetings/$meetingId': typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -771,9 +854,11 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   '/w/$slug/pm/tasks/$taskId': typeof AuthenticatedWSlugPmTasksTaskIdRoute
+  '/w/$slug/automation/tools/': typeof AuthenticatedWSlugAutomationToolsIndexRoute
   '/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -781,17 +866,21 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/billing-preview': typeof BillingPreviewRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
+  '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
+  '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
@@ -801,9 +890,9 @@ export interface FileRoutesByTo {
   '/w/$slug/automation/library': typeof AuthenticatedWSlugAutomationLibraryRoute
   '/w/$slug/automation/runs': typeof AuthenticatedWSlugAutomationRunsRoute
   '/w/$slug/automation/skills': typeof AuthenticatedWSlugAutomationSkillsRoute
-  '/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRoute
   '/w/$slug/automation/triggers': typeof AuthenticatedWSlugAutomationTriggersRoute
   '/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
+  '/w/$slug/crm/overview': typeof AuthenticatedWSlugCrmOverviewRoute
   '/w/$slug/crm/review': typeof AuthenticatedWSlugCrmReviewRoute
   '/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
@@ -825,17 +914,19 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
-  '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  '/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
+  '/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
   '/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
   '/w/$slug/settings/inboxes-routing': typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   '/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
+  '/w/$slug/settings/mcp': typeof AuthenticatedWSlugSettingsMcpRoute
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
@@ -855,9 +946,11 @@ export interface FileRoutesByTo {
   '/w/$slug/settings': typeof AuthenticatedWSlugSettingsIndexRoute
   '/w/$slug/sprints': typeof AuthenticatedWSlugSprintsIndexRoute
   '/w/$slug/support': typeof AuthenticatedWSlugSupportIndexRoute
+  '/w/$slug/automation/tools/connections': typeof AuthenticatedWSlugAutomationToolsConnectionsRoute
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  '/w/$slug/crm/meetings/$meetingId': typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -865,9 +958,11 @@ export interface FileRoutesByTo {
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   '/w/$slug/pm/tasks/$taskId': typeof AuthenticatedWSlugPmTasksTaskIdRoute
+  '/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsIndexRoute
   '/w/$slug/crm/companies': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/meetings': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -877,21 +972,25 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/billing-preview': typeof BillingPreviewRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
+  '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/_authenticated/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/_authenticated/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
   '/_authenticated/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
+  '/_authenticated/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
   '/_authenticated/w/$slug/support': typeof AuthenticatedWSlugSupportRouteWithChildren
   '/_authenticated/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/_authenticated/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
@@ -902,9 +1001,10 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/automation/library': typeof AuthenticatedWSlugAutomationLibraryRoute
   '/_authenticated/w/$slug/automation/runs': typeof AuthenticatedWSlugAutomationRunsRoute
   '/_authenticated/w/$slug/automation/skills': typeof AuthenticatedWSlugAutomationSkillsRoute
-  '/_authenticated/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRoute
+  '/_authenticated/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRouteWithChildren
   '/_authenticated/w/$slug/automation/triggers': typeof AuthenticatedWSlugAutomationTriggersRoute
   '/_authenticated/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
+  '/_authenticated/w/$slug/crm/overview': typeof AuthenticatedWSlugCrmOverviewRoute
   '/_authenticated/w/$slug/crm/review': typeof AuthenticatedWSlugCrmReviewRoute
   '/_authenticated/w/$slug/docs/drafts': typeof AuthenticatedWSlugDocsDraftsRoute
   '/_authenticated/w/$slug/docs/my': typeof AuthenticatedWSlugDocsMyRoute
@@ -926,17 +1026,19 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/_authenticated/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
-  '/_authenticated/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/_authenticated/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/_authenticated/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  '/_authenticated/w/$slug/settings/crm-meetings': typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   '/_authenticated/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   '/_authenticated/w/$slug/settings/delivery': typeof AuthenticatedWSlugSettingsDeliveryRoute
+  '/_authenticated/w/$slug/settings/external-mcp': typeof AuthenticatedWSlugSettingsExternalMcpRoute
   '/_authenticated/w/$slug/settings/general': typeof AuthenticatedWSlugSettingsGeneralRoute
   '/_authenticated/w/$slug/settings/helpcenter': typeof AuthenticatedWSlugSettingsHelpcenterRoute
   '/_authenticated/w/$slug/settings/import': typeof AuthenticatedWSlugSettingsImportRoute
   '/_authenticated/w/$slug/settings/inboxes-routing': typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   '/_authenticated/w/$slug/settings/knowledge': typeof AuthenticatedWSlugSettingsKnowledgeRoute
   '/_authenticated/w/$slug/settings/labels': typeof AuthenticatedWSlugSettingsLabelsRoute
+  '/_authenticated/w/$slug/settings/mcp': typeof AuthenticatedWSlugSettingsMcpRoute
   '/_authenticated/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/_authenticated/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/_authenticated/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
@@ -956,9 +1058,11 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/': typeof AuthenticatedWSlugSettingsIndexRoute
   '/_authenticated/w/$slug/sprints/': typeof AuthenticatedWSlugSprintsIndexRoute
   '/_authenticated/w/$slug/support/': typeof AuthenticatedWSlugSupportIndexRoute
+  '/_authenticated/w/$slug/automation/tools/connections': typeof AuthenticatedWSlugAutomationToolsConnectionsRoute
   '/_authenticated/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/_authenticated/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/_authenticated/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  '/_authenticated/w/$slug/crm/meetings/$meetingId': typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
   '/_authenticated/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/_authenticated/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/_authenticated/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -966,9 +1070,11 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/_authenticated/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   '/_authenticated/w/$slug/pm/tasks/$taskId': typeof AuthenticatedWSlugPmTasksTaskIdRoute
+  '/_authenticated/w/$slug/automation/tools/': typeof AuthenticatedWSlugAutomationToolsIndexRoute
   '/_authenticated/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/_authenticated/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/_authenticated/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -978,21 +1084,25 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/billing-preview'
     | '/forgot-password'
     | '/login'
     | '/register'
     | '/reset-password'
     | '/verify-email'
+    | '/onboarding'
     | '/profile'
     | '/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
+    | '/oauth/authorize'
     | '/w/$slug'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/dashboard'
     | '/w/$slug/docs'
     | '/w/$slug/notifications'
+    | '/w/$slug/setup'
     | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
@@ -1006,6 +1116,7 @@ export interface FileRouteTypes {
     | '/w/$slug/automation/tools'
     | '/w/$slug/automation/triggers'
     | '/w/$slug/crm/insights'
+    | '/w/$slug/crm/overview'
     | '/w/$slug/crm/review'
     | '/w/$slug/docs/drafts'
     | '/w/$slug/docs/my'
@@ -1027,17 +1138,19 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
-    | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
+    | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
+    | '/w/$slug/settings/external-mcp'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
     | '/w/$slug/settings/import'
     | '/w/$slug/settings/inboxes-routing'
     | '/w/$slug/settings/knowledge'
     | '/w/$slug/settings/labels'
+    | '/w/$slug/settings/mcp'
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
@@ -1057,9 +1170,11 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/'
     | '/w/$slug/sprints/'
     | '/w/$slug/support/'
+    | '/w/$slug/automation/tools/connections'
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
+    | '/w/$slug/crm/meetings/$meetingId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/coding-sessions/$sessionId'
@@ -1067,9 +1182,11 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
     | '/w/$slug/pm/tasks/$taskId'
+    | '/w/$slug/automation/tools/'
     | '/w/$slug/crm/companies/'
     | '/w/$slug/crm/contacts/'
     | '/w/$slug/crm/deals/'
+    | '/w/$slug/crm/meetings/'
     | '/w/$slug/pm/epics/'
     | '/w/$slug/pm/objectives/'
     | '/w/$slug/pm/sprints/'
@@ -1077,17 +1194,21 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/billing-preview'
     | '/forgot-password'
     | '/login'
     | '/register'
     | '/reset-password'
     | '/verify-email'
+    | '/onboarding'
     | '/profile'
     | '/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
+    | '/oauth/authorize'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
+    | '/w/$slug/setup'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug'
@@ -1097,9 +1218,9 @@ export interface FileRouteTypes {
     | '/w/$slug/automation/library'
     | '/w/$slug/automation/runs'
     | '/w/$slug/automation/skills'
-    | '/w/$slug/automation/tools'
     | '/w/$slug/automation/triggers'
     | '/w/$slug/crm/insights'
+    | '/w/$slug/crm/overview'
     | '/w/$slug/crm/review'
     | '/w/$slug/docs/drafts'
     | '/w/$slug/docs/my'
@@ -1121,17 +1242,19 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
-    | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
+    | '/w/$slug/settings/crm-meetings'
     | '/w/$slug/settings/crm-pipelines'
     | '/w/$slug/settings/delivery'
+    | '/w/$slug/settings/external-mcp'
     | '/w/$slug/settings/general'
     | '/w/$slug/settings/helpcenter'
     | '/w/$slug/settings/import'
     | '/w/$slug/settings/inboxes-routing'
     | '/w/$slug/settings/knowledge'
     | '/w/$slug/settings/labels'
+    | '/w/$slug/settings/mcp'
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
@@ -1151,9 +1274,11 @@ export interface FileRouteTypes {
     | '/w/$slug/settings'
     | '/w/$slug/sprints'
     | '/w/$slug/support'
+    | '/w/$slug/automation/tools/connections'
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
+    | '/w/$slug/crm/meetings/$meetingId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/coding-sessions/$sessionId'
@@ -1161,9 +1286,11 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
     | '/w/$slug/pm/tasks/$taskId'
+    | '/w/$slug/automation/tools'
     | '/w/$slug/crm/companies'
     | '/w/$slug/crm/contacts'
     | '/w/$slug/crm/deals'
+    | '/w/$slug/crm/meetings'
     | '/w/$slug/pm/epics'
     | '/w/$slug/pm/objectives'
     | '/w/$slug/pm/sprints'
@@ -1172,21 +1299,25 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/billing-preview'
     | '/forgot-password'
     | '/login'
     | '/register'
     | '/reset-password'
     | '/verify-email'
+    | '/_authenticated/onboarding'
     | '/_authenticated/profile'
     | '/_authenticated/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
+    | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
     | '/_authenticated/w/$slug/automation'
     | '/_authenticated/w/$slug/crm'
     | '/_authenticated/w/$slug/dashboard'
     | '/_authenticated/w/$slug/docs'
     | '/_authenticated/w/$slug/notifications'
+    | '/_authenticated/w/$slug/setup'
     | '/_authenticated/w/$slug/support'
     | '/_authenticated/w/$slug/tasks'
     | '/_authenticated/w/$slug/team-goals'
@@ -1200,6 +1331,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/automation/tools'
     | '/_authenticated/w/$slug/automation/triggers'
     | '/_authenticated/w/$slug/crm/insights'
+    | '/_authenticated/w/$slug/crm/overview'
     | '/_authenticated/w/$slug/crm/review'
     | '/_authenticated/w/$slug/docs/drafts'
     | '/_authenticated/w/$slug/docs/my'
@@ -1221,17 +1353,19 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/automations'
     | '/_authenticated/w/$slug/settings/billing'
     | '/_authenticated/w/$slug/settings/chat-general'
-    | '/_authenticated/w/$slug/settings/command-intents'
     | '/_authenticated/w/$slug/settings/crm-autonomy'
     | '/_authenticated/w/$slug/settings/crm-email'
+    | '/_authenticated/w/$slug/settings/crm-meetings'
     | '/_authenticated/w/$slug/settings/crm-pipelines'
     | '/_authenticated/w/$slug/settings/delivery'
+    | '/_authenticated/w/$slug/settings/external-mcp'
     | '/_authenticated/w/$slug/settings/general'
     | '/_authenticated/w/$slug/settings/helpcenter'
     | '/_authenticated/w/$slug/settings/import'
     | '/_authenticated/w/$slug/settings/inboxes-routing'
     | '/_authenticated/w/$slug/settings/knowledge'
     | '/_authenticated/w/$slug/settings/labels'
+    | '/_authenticated/w/$slug/settings/mcp'
     | '/_authenticated/w/$slug/settings/members'
     | '/_authenticated/w/$slug/settings/recurring-tasks'
     | '/_authenticated/w/$slug/settings/redirects'
@@ -1251,9 +1385,11 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/'
     | '/_authenticated/w/$slug/sprints/'
     | '/_authenticated/w/$slug/support/'
+    | '/_authenticated/w/$slug/automation/tools/connections'
     | '/_authenticated/w/$slug/crm/companies/$companyId'
     | '/_authenticated/w/$slug/crm/contacts/$contactId'
     | '/_authenticated/w/$slug/crm/deals/$dealId'
+    | '/_authenticated/w/$slug/crm/meetings/$meetingId'
     | '/_authenticated/w/$slug/docs/documents/$docId'
     | '/_authenticated/w/$slug/docs/spaces/$spaceId'
     | '/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
@@ -1261,9 +1397,11 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/objectives/$objectiveId'
     | '/_authenticated/w/$slug/pm/sprints/$sprintId'
     | '/_authenticated/w/$slug/pm/tasks/$taskId'
+    | '/_authenticated/w/$slug/automation/tools/'
     | '/_authenticated/w/$slug/crm/companies/'
     | '/_authenticated/w/$slug/crm/contacts/'
     | '/_authenticated/w/$slug/crm/deals/'
+    | '/_authenticated/w/$slug/crm/meetings/'
     | '/_authenticated/w/$slug/pm/epics/'
     | '/_authenticated/w/$slug/pm/objectives/'
     | '/_authenticated/w/$slug/pm/sprints/'
@@ -1273,6 +1411,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  BillingPreviewRoute: typeof BillingPreviewRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
@@ -1319,6 +1458,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/billing-preview': {
+      id: '/billing-preview'
+      path: '/billing-preview'
+      fullPath: '/billing-preview'
+      preLoaderRoute: typeof BillingPreviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated': {
       id: '/_authenticated'
       path: ''
@@ -1361,11 +1507,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProfileRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/onboarding': {
+      id: '/_authenticated/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/w/$slug': {
       id: '/_authenticated/w/$slug'
       path: '/w/$slug'
       fullPath: '/w/$slug'
       preLoaderRoute: typeof AuthenticatedWSlugRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/oauth/authorize': {
+      id: '/_authenticated/oauth/authorize'
+      path: '/oauth/authorize'
+      fullPath: '/oauth/authorize'
+      preLoaderRoute: typeof AuthenticatedOauthAuthorizeRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/w/$slug/': {
@@ -1394,6 +1554,13 @@ declare module '@tanstack/react-router' {
       path: '/support'
       fullPath: '/w/$slug/support'
       preLoaderRoute: typeof AuthenticatedWSlugSupportRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/setup': {
+      id: '/_authenticated/w/$slug/setup'
+      path: '/setup'
+      fullPath: '/w/$slug/setup'
+      preLoaderRoute: typeof AuthenticatedWSlugSetupRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/notifications': {
@@ -1564,6 +1731,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsMembersRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/mcp': {
+      id: '/_authenticated/w/$slug/settings/mcp'
+      path: '/settings/mcp'
+      fullPath: '/w/$slug/settings/mcp'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsMcpRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/labels': {
       id: '/_authenticated/w/$slug/settings/labels'
       path: '/settings/labels'
@@ -1606,6 +1780,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsGeneralRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/external-mcp': {
+      id: '/_authenticated/w/$slug/settings/external-mcp'
+      path: '/settings/external-mcp'
+      fullPath: '/w/$slug/settings/external-mcp'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsExternalMcpRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/delivery': {
       id: '/_authenticated/w/$slug/settings/delivery'
       path: '/settings/delivery'
@@ -1620,6 +1801,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/crm-meetings': {
+      id: '/_authenticated/w/$slug/settings/crm-meetings'
+      path: '/settings/crm-meetings'
+      fullPath: '/w/$slug/settings/crm-meetings'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsCrmMeetingsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/crm-email': {
       id: '/_authenticated/w/$slug/settings/crm-email'
       path: '/settings/crm-email'
@@ -1632,13 +1820,6 @@ declare module '@tanstack/react-router' {
       path: '/settings/crm-autonomy'
       fullPath: '/w/$slug/settings/crm-autonomy'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRouteImport
-      parentRoute: typeof AuthenticatedWSlugRoute
-    }
-    '/_authenticated/w/$slug/settings/command-intents': {
-      id: '/_authenticated/w/$slug/settings/command-intents'
-      path: '/settings/command-intents'
-      fullPath: '/w/$slug/settings/command-intents'
-      preLoaderRoute: typeof AuthenticatedWSlugSettingsCommandIntentsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/chat-general': {
@@ -1788,6 +1969,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugCrmReviewRouteImport
       parentRoute: typeof AuthenticatedWSlugCrmRoute
     }
+    '/_authenticated/w/$slug/crm/overview': {
+      id: '/_authenticated/w/$slug/crm/overview'
+      path: '/overview'
+      fullPath: '/w/$slug/crm/overview'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmOverviewRouteImport
+      parentRoute: typeof AuthenticatedWSlugCrmRoute
+    }
     '/_authenticated/w/$slug/crm/insights': {
       id: '/_authenticated/w/$slug/crm/insights'
       path: '/insights'
@@ -1879,6 +2067,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/crm/meetings/': {
+      id: '/_authenticated/w/$slug/crm/meetings/'
+      path: '/meetings'
+      fullPath: '/w/$slug/crm/meetings/'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmMeetingsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugCrmRoute
+    }
     '/_authenticated/w/$slug/crm/deals/': {
       id: '/_authenticated/w/$slug/crm/deals/'
       path: '/deals'
@@ -1899,6 +2094,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/crm/companies/'
       preLoaderRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugCrmRoute
+    }
+    '/_authenticated/w/$slug/automation/tools/': {
+      id: '/_authenticated/w/$slug/automation/tools/'
+      path: '/'
+      fullPath: '/w/$slug/automation/tools/'
+      preLoaderRoute: typeof AuthenticatedWSlugAutomationToolsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugAutomationToolsRoute
     }
     '/_authenticated/w/$slug/pm/tasks/$taskId': {
       id: '/_authenticated/w/$slug/pm/tasks/$taskId'
@@ -1949,6 +2151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugDocsDocumentsDocIdRouteImport
       parentRoute: typeof AuthenticatedWSlugDocsRoute
     }
+    '/_authenticated/w/$slug/crm/meetings/$meetingId': {
+      id: '/_authenticated/w/$slug/crm/meetings/$meetingId'
+      path: '/meetings/$meetingId'
+      fullPath: '/w/$slug/crm/meetings/$meetingId'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmMeetingsMeetingIdRouteImport
+      parentRoute: typeof AuthenticatedWSlugCrmRoute
+    }
     '/_authenticated/w/$slug/crm/deals/$dealId': {
       id: '/_authenticated/w/$slug/crm/deals/$dealId'
       path: '/deals/$dealId'
@@ -1970,8 +2179,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugCrmCompaniesCompanyIdRouteImport
       parentRoute: typeof AuthenticatedWSlugCrmRoute
     }
+    '/_authenticated/w/$slug/automation/tools/connections': {
+      id: '/_authenticated/w/$slug/automation/tools/connections'
+      path: '/connections'
+      fullPath: '/w/$slug/automation/tools/connections'
+      preLoaderRoute: typeof AuthenticatedWSlugAutomationToolsConnectionsRouteImport
+      parentRoute: typeof AuthenticatedWSlugAutomationToolsRoute
+    }
   }
 }
+
+interface AuthenticatedWSlugAutomationToolsRouteChildren {
+  AuthenticatedWSlugAutomationToolsConnectionsRoute: typeof AuthenticatedWSlugAutomationToolsConnectionsRoute
+  AuthenticatedWSlugAutomationToolsIndexRoute: typeof AuthenticatedWSlugAutomationToolsIndexRoute
+}
+
+const AuthenticatedWSlugAutomationToolsRouteChildren: AuthenticatedWSlugAutomationToolsRouteChildren =
+  {
+    AuthenticatedWSlugAutomationToolsConnectionsRoute:
+      AuthenticatedWSlugAutomationToolsConnectionsRoute,
+    AuthenticatedWSlugAutomationToolsIndexRoute:
+      AuthenticatedWSlugAutomationToolsIndexRoute,
+  }
+
+const AuthenticatedWSlugAutomationToolsRouteWithChildren =
+  AuthenticatedWSlugAutomationToolsRoute._addFileChildren(
+    AuthenticatedWSlugAutomationToolsRouteChildren,
+  )
 
 interface AuthenticatedWSlugAutomationRouteChildren {
   AuthenticatedWSlugAutomationActivityRoute: typeof AuthenticatedWSlugAutomationActivityRoute
@@ -1980,7 +2214,7 @@ interface AuthenticatedWSlugAutomationRouteChildren {
   AuthenticatedWSlugAutomationLibraryRoute: typeof AuthenticatedWSlugAutomationLibraryRoute
   AuthenticatedWSlugAutomationRunsRoute: typeof AuthenticatedWSlugAutomationRunsRoute
   AuthenticatedWSlugAutomationSkillsRoute: typeof AuthenticatedWSlugAutomationSkillsRoute
-  AuthenticatedWSlugAutomationToolsRoute: typeof AuthenticatedWSlugAutomationToolsRoute
+  AuthenticatedWSlugAutomationToolsRoute: typeof AuthenticatedWSlugAutomationToolsRouteWithChildren
   AuthenticatedWSlugAutomationTriggersRoute: typeof AuthenticatedWSlugAutomationTriggersRoute
   AuthenticatedWSlugAutomationIndexRoute: typeof AuthenticatedWSlugAutomationIndexRoute
 }
@@ -2000,7 +2234,7 @@ const AuthenticatedWSlugAutomationRouteChildren: AuthenticatedWSlugAutomationRou
     AuthenticatedWSlugAutomationSkillsRoute:
       AuthenticatedWSlugAutomationSkillsRoute,
     AuthenticatedWSlugAutomationToolsRoute:
-      AuthenticatedWSlugAutomationToolsRoute,
+      AuthenticatedWSlugAutomationToolsRouteWithChildren,
     AuthenticatedWSlugAutomationTriggersRoute:
       AuthenticatedWSlugAutomationTriggersRoute,
     AuthenticatedWSlugAutomationIndexRoute:
@@ -2014,18 +2248,22 @@ const AuthenticatedWSlugAutomationRouteWithChildren =
 
 interface AuthenticatedWSlugCrmRouteChildren {
   AuthenticatedWSlugCrmInsightsRoute: typeof AuthenticatedWSlugCrmInsightsRoute
+  AuthenticatedWSlugCrmOverviewRoute: typeof AuthenticatedWSlugCrmOverviewRoute
   AuthenticatedWSlugCrmReviewRoute: typeof AuthenticatedWSlugCrmReviewRoute
   AuthenticatedWSlugCrmIndexRoute: typeof AuthenticatedWSlugCrmIndexRoute
   AuthenticatedWSlugCrmCompaniesCompanyIdRoute: typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   AuthenticatedWSlugCrmContactsContactIdRoute: typeof AuthenticatedWSlugCrmContactsContactIdRoute
   AuthenticatedWSlugCrmDealsDealIdRoute: typeof AuthenticatedWSlugCrmDealsDealIdRoute
+  AuthenticatedWSlugCrmMeetingsMeetingIdRoute: typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
   AuthenticatedWSlugCrmCompaniesIndexRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   AuthenticatedWSlugCrmContactsIndexRoute: typeof AuthenticatedWSlugCrmContactsIndexRoute
   AuthenticatedWSlugCrmDealsIndexRoute: typeof AuthenticatedWSlugCrmDealsIndexRoute
+  AuthenticatedWSlugCrmMeetingsIndexRoute: typeof AuthenticatedWSlugCrmMeetingsIndexRoute
 }
 
 const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
   AuthenticatedWSlugCrmInsightsRoute: AuthenticatedWSlugCrmInsightsRoute,
+  AuthenticatedWSlugCrmOverviewRoute: AuthenticatedWSlugCrmOverviewRoute,
   AuthenticatedWSlugCrmReviewRoute: AuthenticatedWSlugCrmReviewRoute,
   AuthenticatedWSlugCrmIndexRoute: AuthenticatedWSlugCrmIndexRoute,
   AuthenticatedWSlugCrmCompaniesCompanyIdRoute:
@@ -2033,11 +2271,15 @@ const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
   AuthenticatedWSlugCrmContactsContactIdRoute:
     AuthenticatedWSlugCrmContactsContactIdRoute,
   AuthenticatedWSlugCrmDealsDealIdRoute: AuthenticatedWSlugCrmDealsDealIdRoute,
+  AuthenticatedWSlugCrmMeetingsMeetingIdRoute:
+    AuthenticatedWSlugCrmMeetingsMeetingIdRoute,
   AuthenticatedWSlugCrmCompaniesIndexRoute:
     AuthenticatedWSlugCrmCompaniesIndexRoute,
   AuthenticatedWSlugCrmContactsIndexRoute:
     AuthenticatedWSlugCrmContactsIndexRoute,
   AuthenticatedWSlugCrmDealsIndexRoute: AuthenticatedWSlugCrmDealsIndexRoute,
+  AuthenticatedWSlugCrmMeetingsIndexRoute:
+    AuthenticatedWSlugCrmMeetingsIndexRoute,
 }
 
 const AuthenticatedWSlugCrmRouteWithChildren =
@@ -2099,6 +2341,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugDashboardRoute: typeof AuthenticatedWSlugDashboardRoute
   AuthenticatedWSlugDocsRoute: typeof AuthenticatedWSlugDocsRouteWithChildren
   AuthenticatedWSlugNotificationsRoute: typeof AuthenticatedWSlugNotificationsRoute
+  AuthenticatedWSlugSetupRoute: typeof AuthenticatedWSlugSetupRoute
   AuthenticatedWSlugSupportRoute: typeof AuthenticatedWSlugSupportRouteWithChildren
   AuthenticatedWSlugTasksRoute: typeof AuthenticatedWSlugTasksRoute
   AuthenticatedWSlugTeamGoalsRoute: typeof AuthenticatedWSlugTeamGoalsRoute
@@ -2120,17 +2363,19 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsAutomationsRoute: typeof AuthenticatedWSlugSettingsAutomationsRoute
   AuthenticatedWSlugSettingsBillingRoute: typeof AuthenticatedWSlugSettingsBillingRoute
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
-  AuthenticatedWSlugSettingsCommandIntentsRoute: typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   AuthenticatedWSlugSettingsCrmAutonomyRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   AuthenticatedWSlugSettingsCrmEmailRoute: typeof AuthenticatedWSlugSettingsCrmEmailRoute
+  AuthenticatedWSlugSettingsCrmMeetingsRoute: typeof AuthenticatedWSlugSettingsCrmMeetingsRoute
   AuthenticatedWSlugSettingsCrmPipelinesRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
   AuthenticatedWSlugSettingsDeliveryRoute: typeof AuthenticatedWSlugSettingsDeliveryRoute
+  AuthenticatedWSlugSettingsExternalMcpRoute: typeof AuthenticatedWSlugSettingsExternalMcpRoute
   AuthenticatedWSlugSettingsGeneralRoute: typeof AuthenticatedWSlugSettingsGeneralRoute
   AuthenticatedWSlugSettingsHelpcenterRoute: typeof AuthenticatedWSlugSettingsHelpcenterRoute
   AuthenticatedWSlugSettingsImportRoute: typeof AuthenticatedWSlugSettingsImportRoute
   AuthenticatedWSlugSettingsInboxesRoutingRoute: typeof AuthenticatedWSlugSettingsInboxesRoutingRoute
   AuthenticatedWSlugSettingsKnowledgeRoute: typeof AuthenticatedWSlugSettingsKnowledgeRoute
   AuthenticatedWSlugSettingsLabelsRoute: typeof AuthenticatedWSlugSettingsLabelsRoute
+  AuthenticatedWSlugSettingsMcpRoute: typeof AuthenticatedWSlugSettingsMcpRoute
   AuthenticatedWSlugSettingsMembersRoute: typeof AuthenticatedWSlugSettingsMembersRoute
   AuthenticatedWSlugSettingsRecurringTasksRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   AuthenticatedWSlugSettingsRedirectsRoute: typeof AuthenticatedWSlugSettingsRedirectsRoute
@@ -2161,6 +2406,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugDashboardRoute: AuthenticatedWSlugDashboardRoute,
   AuthenticatedWSlugDocsRoute: AuthenticatedWSlugDocsRouteWithChildren,
   AuthenticatedWSlugNotificationsRoute: AuthenticatedWSlugNotificationsRoute,
+  AuthenticatedWSlugSetupRoute: AuthenticatedWSlugSetupRoute,
   AuthenticatedWSlugSupportRoute: AuthenticatedWSlugSupportRouteWithChildren,
   AuthenticatedWSlugTasksRoute: AuthenticatedWSlugTasksRoute,
   AuthenticatedWSlugTeamGoalsRoute: AuthenticatedWSlugTeamGoalsRoute,
@@ -2187,16 +2433,18 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsBillingRoute,
   AuthenticatedWSlugSettingsChatGeneralRoute:
     AuthenticatedWSlugSettingsChatGeneralRoute,
-  AuthenticatedWSlugSettingsCommandIntentsRoute:
-    AuthenticatedWSlugSettingsCommandIntentsRoute,
   AuthenticatedWSlugSettingsCrmAutonomyRoute:
     AuthenticatedWSlugSettingsCrmAutonomyRoute,
   AuthenticatedWSlugSettingsCrmEmailRoute:
     AuthenticatedWSlugSettingsCrmEmailRoute,
+  AuthenticatedWSlugSettingsCrmMeetingsRoute:
+    AuthenticatedWSlugSettingsCrmMeetingsRoute,
   AuthenticatedWSlugSettingsCrmPipelinesRoute:
     AuthenticatedWSlugSettingsCrmPipelinesRoute,
   AuthenticatedWSlugSettingsDeliveryRoute:
     AuthenticatedWSlugSettingsDeliveryRoute,
+  AuthenticatedWSlugSettingsExternalMcpRoute:
+    AuthenticatedWSlugSettingsExternalMcpRoute,
   AuthenticatedWSlugSettingsGeneralRoute:
     AuthenticatedWSlugSettingsGeneralRoute,
   AuthenticatedWSlugSettingsHelpcenterRoute:
@@ -2207,6 +2455,7 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsKnowledgeRoute:
     AuthenticatedWSlugSettingsKnowledgeRoute,
   AuthenticatedWSlugSettingsLabelsRoute: AuthenticatedWSlugSettingsLabelsRoute,
+  AuthenticatedWSlugSettingsMcpRoute: AuthenticatedWSlugSettingsMcpRoute,
   AuthenticatedWSlugSettingsMembersRoute:
     AuthenticatedWSlugSettingsMembersRoute,
   AuthenticatedWSlugSettingsRecurringTasksRoute:
@@ -2246,14 +2495,18 @@ const AuthenticatedWSlugRouteWithChildren =
   AuthenticatedWSlugRoute._addFileChildren(AuthenticatedWSlugRouteChildren)
 
 interface AuthenticatedRouteChildren {
+  AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedWorkspacesRoute: typeof AuthenticatedWorkspacesRoute
+  AuthenticatedOauthAuthorizeRoute: typeof AuthenticatedOauthAuthorizeRoute
   AuthenticatedWSlugRoute: typeof AuthenticatedWSlugRouteWithChildren
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedWorkspacesRoute: AuthenticatedWorkspacesRoute,
+  AuthenticatedOauthAuthorizeRoute: AuthenticatedOauthAuthorizeRoute,
   AuthenticatedWSlugRoute: AuthenticatedWSlugRouteWithChildren,
 }
 
@@ -2264,6 +2517,7 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  BillingPreviewRoute: BillingPreviewRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,

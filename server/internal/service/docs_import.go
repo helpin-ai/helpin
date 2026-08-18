@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,24 +16,40 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/docsimport"
 	"github.com/helpin-ai/helpin/server/internal/helpscout"
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	"go.temporal.io/api/serviceerror"
+	tclient "go.temporal.io/sdk/client"
 )
 
 // DocsImportService orchestrates help center article imports.
 type DocsImportService struct {
-	importRepo    *repository.DocsImportRepository
-	spaceSvc      *DocsSpaceService
-	collectionSvc *DocsCollectionService
-	documentSvc   *DocsDocumentService
-	contentSvc    *DocsContentService
-	helpcenterSvc *DocsHelpcenterService
-	redirectRepo  *repository.DocsRedirectRepository
-	s3Client      *storage.S3Client
-	logger        *slog.Logger
+	importRepo     *repository.DocsImportRepository
+	spaceSvc       *DocsSpaceService
+	collectionSvc  *DocsCollectionService
+	documentSvc    *DocsDocumentService
+	contentSvc     *DocsContentService
+	helpcenterSvc  *DocsHelpcenterService
+	redirectRepo   *repository.DocsRedirectRepository
+	s3Client       *storage.S3Client
+	llmProvider    llm.Provider
+	aiConversion   DocsImportAIConversionConfig
+	temporalClient tclient.Client
+	encryptionKey  []byte
+	logger         *slog.Logger
+}
+
+// SetTemporalClient enables durable HelpScout import execution through Temporal.
+func (s *DocsImportService) SetTemporalClient(client tclient.Client, encryptionKey []byte) *DocsImportService {
+	s.temporalClient = client
+	s.encryptionKey = encryptionKey
+	return s
 }
 
 // NewDocsImportService creates a new DocsImportService.
@@ -45,6 +62,8 @@ func NewDocsImportService(
 	helpcenterSvc *DocsHelpcenterService,
 	redirectRepo *repository.DocsRedirectRepository,
 	s3Client *storage.S3Client,
+	llmProvider llm.Provider,
+	aiConversion DocsImportAIConversionConfig,
 ) *DocsImportService {
 	return &DocsImportService{
 		importRepo:    importRepo,
@@ -55,6 +74,8 @@ func NewDocsImportService(
 		helpcenterSvc: helpcenterSvc,
 		redirectRepo:  redirectRepo,
 		s3Client:      s3Client,
+		llmProvider:   llmProvider,
+		aiConversion:  aiConversion.withDefaults(),
 		logger:        slog.Default().With("service", "docs_import"),
 	}
 }
@@ -184,13 +205,19 @@ func (s *DocsImportService) Preview(ctx context.Context, apiKey string) (*model.
 	return &model.DocsImportPreviewResponse{Collections: previews}, nil
 }
 
-// Start validates the request, creates an import job, and launches a background import.
+// Start validates the request, creates an import job, and launches a durable import workflow.
 func (s *DocsImportService) Start(ctx context.Context, req model.DocsImportStartRequest, workspaceID, userID string) (string, error) {
 	if req.HelpscoutCollectionID == "" {
 		return "", fmt.Errorf("helpscout collection ID is required")
 	}
 	if req.TargetSpaceID == nil && req.NewSpaceName == nil {
 		return "", fmt.Errorf("either target_space_id or new_space_name is required")
+	}
+	if s.temporalClient == nil {
+		return "", fmt.Errorf("docs import worker is not configured")
+	}
+	if len(s.encryptionKey) != 32 {
+		return "", fmt.Errorf("docs import encryption key is not configured")
 	}
 
 	var spaceID string
@@ -209,6 +236,18 @@ func (s *DocsImportService) Start(ctx context.Context, req model.DocsImportStart
 		spaceID = *req.TargetSpaceID
 	}
 
+	storedReq := req
+	storedReq.TargetSpaceID = &spaceID
+	storedReq.NewSpaceName = nil
+	payload, err := json.Marshal(storedReq)
+	if err != nil {
+		return "", fmt.Errorf("marshal import payload: %w", err)
+	}
+	encryptedPayload, err := appcrypto.EncryptString(string(payload), s.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("encrypt import payload: %w", err)
+	}
+
 	now := time.Now()
 	configJSON, err := json.Marshal(docsImportJobConfig{
 		HelpScoutCollectionID: req.HelpscoutCollectionID,
@@ -218,30 +257,34 @@ func (s *DocsImportService) Start(ctx context.Context, req model.DocsImportStart
 		return "", fmt.Errorf("marshal import config: %w", err)
 	}
 	job := &model.DocsImportJob{
-		WorkspaceID: workspaceID,
-		SpaceID:     &spaceID,
-		Source:      "helpscout",
-		Status:      model.DocsImportStatusPending,
-		Failures:    json.RawMessage("[]"),
-		Config:      configJSON,
-		StartedBy:   userID,
-		StartedAt:   &now,
+		WorkspaceID:      workspaceID,
+		SpaceID:          &spaceID,
+		Source:           "helpscout",
+		Status:           model.DocsImportStatusPending,
+		Failures:         json.RawMessage("[]"),
+		Config:           configJSON,
+		StartedBy:        userID,
+		StartedAt:        &now,
+		PayloadEncrypted: &encryptedPayload,
 	}
+	job.ID = uuid.NewString()
+	workflowID := temporalapp.WorkflowIDForDocsImport(job.ID)
+	job.WorkflowID = &workflowID
 	if err := s.importRepo.Create(ctx, job); err != nil {
 		return "", fmt.Errorf("create import job: %w", err)
 	}
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				s.logger.Error("import job panicked", "job_id", job.ID, "panic", r)
-				_ = s.importRepo.SetError(context.Background(), job.ID, fmt.Sprintf("panic: %v", r))
-				failTime := time.Now()
-				_ = s.importRepo.UpdateStatus(context.Background(), job.ID, model.DocsImportStatusFailed, &failTime)
-			}
-		}()
-		s.runImport(job.ID, req.APIKey, req, spaceID, workspaceID, userID)
-	}()
+	_, err = s.temporalClient.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: temporalapp.QueueAutomation,
+	}, temporalapp.DocsImportWorkflow, temporalapp.DocsImportWorkflowInput{ImportID: job.ID})
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if !errors.As(err, &alreadyStarted) {
+			s.failJob(ctx, job.ID, fmt.Sprintf("start docs import workflow: %v", err))
+			return "", fmt.Errorf("start docs import workflow: %w", err)
+		}
+	}
 
 	return job.ID, nil
 }
@@ -280,14 +323,12 @@ type helpscoutCategoryMapping struct {
 	uncategorized helpscoutCategoryTarget
 }
 
-// runImport is the background worker that performs the actual HelpScout import.
-func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImportStartRequest, spaceID, workspaceID, userID string) {
-	ctx := context.Background()
-
+// runImport performs the HelpScout import and resumes from stored provenance.
+func (s *DocsImportService) runImport(ctx context.Context, jobID, apiKey string, req model.DocsImportStartRequest, spaceID, workspaceID, userID string, heartbeat func(int)) error {
 	// Mark job as running.
 	if err := s.importRepo.UpdateStatus(ctx, jobID, model.DocsImportStatusRunning, nil); err != nil {
 		s.logger.Error("failed to set job running", "job_id", jobID, "error", err)
-		return
+		return err
 	}
 
 	client := helpscout.NewClient(apiKey)
@@ -295,21 +336,44 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	// Fetch categories and create collections.
 	categories, err := client.ListCategories(ctx, req.HelpscoutCollectionID)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		s.failJob(ctx, jobID, fmt.Sprintf("list categories: %v", err))
-		return
+		return nil
+	}
+
+	existingCollections, err := s.collectionSvc.List(ctx, spaceID)
+	if err != nil {
+		s.failJob(ctx, jobID, fmt.Sprintf("list existing collections: %v", err))
+		return nil
+	}
+	existingBySlug := make(map[string]model.DocsCollection, len(existingCollections))
+	for _, collection := range existingCollections {
+		existingBySlug[collection.Slug] = collection
 	}
 
 	categoryToCollection := make(map[string]string, len(categories))
 	categoryToCollectionSlug := make(map[string]string, len(categories))
+	collectionsCreated := 0
 	for _, cat := range categories {
 		slug := cat.Slug
-		coll, err := s.collectionSvc.Create(ctx, workspaceID, spaceID, model.CreateDocsCollectionRequest{
-			Name: cat.Name,
-			Slug: &slug,
-		}, userID)
-		if err != nil {
-			s.failJob(ctx, jobID, fmt.Sprintf("create collection %q: %v", cat.Name, err))
-			return
+		coll, exists := existingBySlug[slug]
+		if !exists {
+			created, createErr := s.collectionSvc.Create(ctx, workspaceID, spaceID, model.CreateDocsCollectionRequest{
+				Name: cat.Name,
+				Slug: &slug,
+			}, userID)
+			if createErr != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				s.failJob(ctx, jobID, fmt.Sprintf("create collection %q: %v", cat.Name, createErr))
+				return nil
+			}
+			coll = *created
+			existingBySlug[slug] = coll
+			collectionsCreated++
 		}
 		categoryToCollection[cat.ID] = coll.ID
 		categoryToCollectionSlug[cat.ID] = slug
@@ -326,7 +390,7 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 			SourceObjectType:     stringPtr("category"),
 			SourceObjectID:       stringPtr(cat.ID),
 		}
-		if err := s.redirectRepo.Create(ctx, catRedirect); err != nil {
+		if _, err := s.redirectRepo.UpsertImported(ctx, catRedirect); err != nil {
 			s.logger.Error("create category redirect", "error", err, "category_id", cat.ID)
 		}
 	}
@@ -334,13 +398,39 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	// Fetch article list.
 	articleRefs, err := client.ListArticles(ctx, req.HelpscoutCollectionID)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		s.failJob(ctx, jobID, fmt.Sprintf("list articles: %v", err))
-		return
+		return nil
+	}
+	if limit := s.aiConversion.ArticleLimit; s.aiConversion.Enabled && limit > 0 && len(articleRefs) > limit {
+		s.logger.InfoContext(ctx, "limiting AI docs import for test run",
+			"job_id", jobID,
+			"available_articles", len(articleRefs),
+			"article_limit", limit,
+		)
+		articleRefs = articleRefs[:limit]
 	}
 
 	// Update total count.
 	if err := s.importRepo.SetTotal(ctx, jobID, len(articleRefs)); err != nil {
 		s.logger.Error("failed to set job total", "job_id", jobID, "error", err)
+	}
+	completedSourceIDs, err := s.contentSvc.contentRepo.ListImportSourceObjectIDs(ctx, spaceID, "helpscout")
+	if err != nil {
+		s.failJob(ctx, jobID, fmt.Sprintf("load import checkpoints: %v", err))
+		return nil
+	}
+	completedSources := make(map[string]struct{}, len(completedSourceIDs))
+	currentSourceIDs := make(map[string]struct{}, len(articleRefs))
+	for _, ref := range articleRefs {
+		currentSourceIDs[ref.ID] = struct{}{}
+	}
+	for _, sourceID := range completedSourceIDs {
+		if _, belongsToImport := currentSourceIDs[sourceID]; belongsToImport {
+			completedSources[sourceID] = struct{}{}
+		}
 	}
 
 	// Prepare image uploader.
@@ -350,7 +440,7 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	}
 
 	var (
-		completed             int
+		completed             = len(completedSources)
 		failed                int
 		published             int
 		drafted               int
@@ -367,8 +457,20 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 	categoryMapping := buildHelpScoutCategoryMapping(categories, categoryToCollection, categoryToCollectionSlug)
 
 	for i, ref := range articleRefs {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if _, alreadyImported := completedSources[ref.ID]; alreadyImported {
+			if heartbeat != nil {
+				heartbeat(completed + failed)
+			}
+			continue
+		}
 		stats, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, categoryMapping, uploader, req.ImportStatus, &redirects)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			s.logger.Error("article import failed",
 				"job_id", jobID,
 				"article_id", ref.ID,
@@ -383,6 +485,7 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 			})
 		} else {
 			completed++
+			completedSources[ref.ID] = struct{}{}
 			if stats.Published {
 				published++
 			} else {
@@ -402,8 +505,8 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 			normalizedNoteBlocks += stats.NormalizedNoteBlocks
 		}
 
-		// Update progress every 5 articles or on last article.
-		if (i+1)%5 == 0 || i == len(articleRefs)-1 {
+		// AI conversions can take longer, so expose progress after every article.
+		if s.aiConversion.Enabled || (i+1)%5 == 0 || i == len(articleRefs)-1 {
 			failuresJSON, _ := json.Marshal(failures)
 			if failuresJSON == nil {
 				failuresJSON = json.RawMessage("[]")
@@ -411,6 +514,9 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 			if err := s.importRepo.UpdateProgress(ctx, jobID, completed, failed, failuresJSON); err != nil {
 				s.logger.Error("failed to update progress", "job_id", jobID, "error", err)
 			}
+		}
+		if heartbeat != nil {
+			heartbeat(completed + failed)
 		}
 	}
 
@@ -426,7 +532,7 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 
 	// Store import summary.
 	summary := model.ImportSummary{
-		CollectionsCreated:             len(categories),
+		CollectionsCreated:             collectionsCreated,
 		ArticlesPublished:              published,
 		ArticlesDrafted:                drafted,
 		RedirectsCreated:               len(categories) + artRedirects, // category + article redirects
@@ -461,6 +567,7 @@ func (s *DocsImportService) runImport(jobID, apiKey string, req model.DocsImport
 		"failed", failed,
 		"total", len(articleRefs),
 	)
+	return nil
 }
 
 // importArticle imports a single HelpScout article into Helpin.
@@ -507,7 +614,7 @@ func (s *DocsImportService) importArticle(
 	}
 
 	sourceHTML := html
-	convResult, allWarnings, err := convertHelpScoutHTML(html)
+	convResult, allWarnings, err := s.convertHelpScoutHTML(ctx, workspaceID, ref.ID, article.Name, html)
 	if err != nil {
 		return nil, fmt.Errorf("convert HTML for article %s: %w", ref.ID, err)
 	}
@@ -544,10 +651,6 @@ func (s *DocsImportService) importArticle(
 		return nil, fmt.Errorf("save content for article %s: %w", ref.ID, err)
 	}
 
-	// Store import provenance — post-image-rewrite, pre-conversion HTML snapshot.
-	sourceSystem := "helpscout"
-	s.contentSvc.SetImportProvenance(ctx, savedContent.ID, sourceHTML, sourceSystem, ref.ID)
-
 	// Create helpcenter article record with slug from HelpScout.
 	hcArticle := &model.DocsHelpcenterArticle{
 		DocumentID: doc.ID,
@@ -578,11 +681,12 @@ func (s *DocsImportService) importArticle(
 			SourceObjectType:     stringPtr("article"),
 			SourceObjectID:       stringPtr(ref.ID),
 		}
-		if err := s.redirectRepo.Create(ctx, articleRedirect); err != nil {
+		created, err := s.redirectRepo.UpsertImported(ctx, articleRedirect)
+		if err == nil {
+			stats.RedirectCreated = created
+		} else {
 			s.logger.Error("create article redirect", "error", err, "article_id", ref.ID)
 			// Non-fatal.
-		} else {
-			stats.RedirectCreated = true
 		}
 	}
 
@@ -601,6 +705,12 @@ func (s *DocsImportService) importArticle(
 		OldURL:  fmt.Sprintf("/article/%s-%s", article.Slug, ref.ID),
 		NewSlug: article.Slug,
 	})
+
+	// Store import provenance only after every required article step succeeds.
+	// This field is also the durable resume checkpoint used after worker restarts.
+	if err := s.contentSvc.SetImportProvenance(ctx, savedContent.ID, sourceHTML, "helpscout", ref.ID); err != nil {
+		return nil, fmt.Errorf("store import checkpoint for article %s: %w", ref.ID, err)
+	}
 
 	return stats, nil
 }
@@ -633,6 +743,14 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 	if err != nil {
 		return nil, fmt.Errorf("list reconvertible docs: %w", err)
 	}
+	if limit := s.aiConversion.ArticleLimit; s.aiConversion.Enabled && limit > 0 && len(contents) > limit {
+		s.logger.InfoContext(ctx, "limiting AI docs reconversion for test run",
+			"job_id", jobID,
+			"available_articles", len(contents),
+			"article_limit", limit,
+		)
+		contents = contents[:limit]
+	}
 
 	result := &ReconvertResult{Total: len(contents)}
 
@@ -657,7 +775,7 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 
 		default:
 			// HelpScout and other HTML-based sources.
-			convResult, convWarnings, err := convertHelpScoutHTML(*c.ImportSourceHTML)
+			convResult, convWarnings, err := s.convertHelpScoutHTML(ctx, job.WorkspaceID, c.DocumentID, "Imported help article", *c.ImportSourceHTML)
 			if err != nil {
 				s.logger.Error("reconvert failed", "content_id", c.ID, "error", err)
 				result.Failed++
@@ -746,25 +864,61 @@ func (s *DocsImportService) Retry(ctx context.Context, jobID, apiKey string) err
 	if spaceID == "" {
 		return fmt.Errorf("job has no target space")
 	}
-
-	// Mark job as running again.
-	if err := s.importRepo.UpdateStatus(ctx, jobID, model.DocsImportStatusRunning, nil); err != nil {
-		return fmt.Errorf("update job status: %w", err)
+	if s.temporalClient == nil || len(s.encryptionKey) != 32 {
+		return fmt.Errorf("docs import worker is not configured")
+	}
+	importCfg := readDocsImportJobConfig(job)
+	req := model.DocsImportStartRequest{
+		APIKey:                apiKey,
+		HelpscoutCollectionID: importCfg.HelpScoutCollectionID,
+		TargetSpaceID:         &spaceID,
+		ImportStatus:          importCfg.ImportStatus,
+	}
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("marshal retry payload: %w", err)
+	}
+	encryptedPayload, err := appcrypto.EncryptString(string(payload), s.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("encrypt retry payload: %w", err)
+	}
+	workflowID := fmt.Sprintf("%s-retry-%s", temporalapp.WorkflowIDForDocsImport(job.ID), uuid.NewString())
+	if err := s.importRepo.PrepareExecution(ctx, job.ID, encryptedPayload, workflowID); err != nil {
+		return err
+	}
+	_, err = s.temporalClient.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: temporalapp.QueueAutomation,
+	}, temporalapp.DocsImportWorkflow, temporalapp.DocsImportWorkflowInput{ImportID: job.ID})
+	if err != nil {
+		s.failJob(ctx, job.ID, fmt.Sprintf("start docs import retry workflow: %v", err))
+		return fmt.Errorf("start docs import retry workflow: %w", err)
 	}
 
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				s.logger.Error("retry import panicked", "job_id", jobID, "panic", r)
-				_ = s.importRepo.SetError(context.Background(), jobID, fmt.Sprintf("panic: %v", r))
-				failTime := time.Now()
-				_ = s.importRepo.UpdateStatus(context.Background(), jobID, model.DocsImportStatusFailed, &failTime)
-			}
-		}()
-		s.runRetry(jobID, apiKey, failures, spaceID, job.WorkspaceID, job.StartedBy)
-	}()
-
 	return nil
+}
+
+// Cancel stops an active durable docs import.
+func (s *DocsImportService) Cancel(ctx context.Context, jobID, workspaceID string) error {
+	job, err := s.importRepo.GetByID(ctx, jobID)
+	if err != nil {
+		return fmt.Errorf("get import job: %w", err)
+	}
+	if job == nil {
+		return fmt.Errorf("import job not found")
+	}
+	if job.WorkspaceID != workspaceID {
+		return fmt.Errorf("import job not found")
+	}
+	if job.Status != model.DocsImportStatusPending && job.Status != model.DocsImportStatusRunning {
+		return nil
+	}
+	if s.temporalClient != nil && job.WorkflowID != nil && strings.TrimSpace(*job.WorkflowID) != "" {
+		if err := s.temporalClient.CancelWorkflow(ctx, *job.WorkflowID, ""); err != nil {
+			s.logger.WarnContext(ctx, "cancel docs import workflow", "job_id", job.ID, "error", err)
+		}
+	}
+	return s.importRepo.MarkInterrupted(ctx, job.ID, "Import canceled by user")
 }
 
 func readDocsImportJobConfig(job *model.DocsImportJob) docsImportJobConfig {
@@ -775,88 +929,6 @@ func readDocsImportJobConfig(job *model.DocsImportJob) docsImportJobConfig {
 	_ = json.Unmarshal(job.Config, &cfg)
 	cfg.ImportStatus = normalizeDocsImportStatus(cfg.ImportStatus)
 	return cfg
-}
-
-// runRetry re-imports failed articles in the background.
-func (s *DocsImportService) runRetry(jobID, apiKey string, failures []model.ImportFailure, spaceID, workspaceID, userID string) {
-	ctx := context.Background()
-	client := helpscout.NewClient(apiKey)
-	job, err := s.importRepo.GetByID(ctx, jobID)
-	if err != nil {
-		s.logger.Error("retry load job failed", "job_id", jobID, "error", err)
-		return
-	}
-	importCfg := readDocsImportJobConfig(job)
-
-	var uploader helpscout.ImageUploader
-	if s.s3Client != nil {
-		uploader = &s3ImageUploader{store: s.s3Client}
-	}
-
-	var (
-		retryCompleted int
-		retryFailed    int
-		newFailures    []model.ImportFailure
-		redirects      []redirectEntry
-	)
-
-	for i, f := range failures {
-		// Fetch article ref by getting the full article.
-		article, err := client.GetArticle(ctx, f.ArticleID, false)
-		if err != nil {
-			s.logger.Error("retry fetch failed", "article_id", f.ArticleID, "error", err)
-			retryFailed++
-			newFailures = append(newFailures, model.ImportFailure{
-				ArticleID: f.ArticleID,
-				Title:     f.Title,
-				Error:     err.Error(),
-			})
-			continue
-		}
-
-		ref := article.ArticleRef
-		if _, err := s.importArticle(ctx, client, ref, spaceID, workspaceID, userID, helpscoutCategoryMapping{uncategorized: helpscoutCategoryTarget{collectionSlug: "uncategorized"}}, uploader, importCfg.ImportStatus, &redirects); err != nil {
-			s.logger.Error("retry article import failed", "article_id", f.ArticleID, "error", err)
-			retryFailed++
-			newFailures = append(newFailures, model.ImportFailure{
-				ArticleID: f.ArticleID,
-				Title:     f.Title,
-				Error:     err.Error(),
-			})
-		} else {
-			retryCompleted++
-		}
-
-		// Update progress every 5 articles or on last.
-		if (i+1)%5 == 0 || i == len(failures)-1 {
-			failuresJSON, _ := json.Marshal(newFailures)
-			if failuresJSON == nil {
-				failuresJSON = json.RawMessage("[]")
-			}
-			_ = s.importRepo.UpdateProgress(ctx, jobID, retryCompleted, retryFailed, failuresJSON)
-		}
-	}
-
-	// Append new redirects to existing redirect map.
-	if len(redirects) > 0 {
-		redirectJSON, err := json.Marshal(redirects)
-		if err == nil {
-			_ = s.importRepo.SetRedirectMap(ctx, jobID, redirectJSON)
-		}
-	}
-
-	doneTime := time.Now()
-	status := model.DocsImportStatusDone
-	if retryFailed > 0 && retryCompleted == 0 {
-		status = model.DocsImportStatusFailed
-	}
-	_ = s.importRepo.UpdateStatus(ctx, jobID, status, &doneTime)
-
-	s.logger.Info("retry import finished",
-		"job_id", jobID,
-		"completed", retryCompleted,
-		"failed", retryFailed,
-	)
 }
 
 // GetRedirectMap returns the redirect map for an import job.

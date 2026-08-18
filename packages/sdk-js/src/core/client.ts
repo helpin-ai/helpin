@@ -81,7 +81,7 @@ export type HelpinWidgetController = {
   openMessages(): void;
   openNewMessage(content?: string): void;
   openConversation(conversationId: string): void;
-  openArticle(articleId: string, options?: ShowArticleOptions): void;
+  openArticle(articleKey: string, options?: ShowArticleOptions): void;
   onOpen(callback: WidgetCallback): void;
   onClose(callback: WidgetCallback): void;
   onUnreadCountChange(callback: WidgetCallback): void;
@@ -217,17 +217,24 @@ export class HelpinClient {
       ...(storedIdentity || {}),
       ...userProps,
     });
+    const email = identity.email || storedIdentity?.email;
+    const name = identity.name || getStoredIdentityName(storedIdentity);
+    const firstName = identity.firstName || storedIdentity?.firstName;
+    const lastName = identity.lastName || storedIdentity?.lastName;
+    const company = resolveCompanyPayload(this.persistence.get('companyProps')) || identity.company;
+    const userId =
+      typeof persistedUserId === 'string'
+        ? persistedUserId
+        : typeof userProps.id === 'string'
+          ? userProps.id
+          : undefined;
     const user = {
-      email: identity.email || storedIdentity?.email,
-      name: identity.name || getStoredIdentityName(storedIdentity),
-      firstName: identity.firstName || storedIdentity?.firstName,
-      lastName: identity.lastName || storedIdentity?.lastName,
-      userId:
-        typeof persistedUserId === 'string'
-          ? persistedUserId
-          : typeof userProps.id === 'string'
-            ? userProps.id
-            : undefined,
+      ...(email ? { email } : {}),
+      ...(name ? { name } : {}),
+      ...(firstName ? { firstName } : {}),
+      ...(lastName ? { lastName } : {}),
+      ...(userId ? { userId } : {}),
+      ...(company ? { company } : {}),
     };
 
     if (!user.email && !user.name && !user.userId) {
@@ -433,13 +440,19 @@ export class HelpinClient {
       throw new Error('User ID must be a string');
     }
 
+    const inlineCompany = resolveCompanyPayload(userData.company);
+    const persistedCompany = resolveCompanyPayload(this.persistence.get('companyProps'));
+    const activeCompany = inlineCompany || persistedCompany;
     const userId = userData.id;
     this.persistence.set('userId', userId);
     this.persistence.set('userProps', userData);
+    if (inlineCompany) {
+      this.persistence.set('companyProps', inlineCompany);
+    }
     this.syncWidgetSettings();
 
     // Persist identity for widget auto-restore on page refresh
-    const identity = resolveIdentityPayload(userData);
+    const identity = resolveIdentityPayload({ ...userData, company: activeCompany });
 
     if (identity.email && this.config.widgetKey) {
       persistIdentity(this.config.widgetKey, identity.email, identity.name, identity.firstName, identity.lastName);
@@ -566,9 +579,17 @@ export class HelpinClient {
     }
 
     this.persistence.set('companyProps', props);
+    this.syncWidgetSettings();
 
     if (!doNotSendEvent) {
       await this.track('group', props);
+    }
+
+    const userProps = this.persistence.get('userProps') || {};
+    const storedIdentity = this.config.widgetKey ? getStoredIdentity(this.config.widgetKey) : null;
+    const identity = resolveIdentityPayload({ ...(storedIdentity || {}), ...userProps, company: props });
+    if (identity.email) {
+      this.sendIdentifyToBackend(identity, 'sdk_group');
     }
 
     this.logger.info('Company identified:', props);
@@ -583,7 +604,9 @@ export class HelpinClient {
     const eventCompanyProps = resolveCompanyPayload(restEventProps.company);
     const persistedCompanyProps = resolveCompanyPayload(this.persistence.get('companyProps'));
     const userCompanyProps = resolveCompanyPayload(userProps?.company);
-    const companyProps = eventCompanyProps || persistedCompanyProps || userCompanyProps;
+    const companyProps = eventCompanyProps || (
+      eventName === 'lead' ? undefined : persistedCompanyProps || userCompanyProps
+    );
     const userId = this.persistence.get('userId');
     const globalProps = this.persistence.get('global_props') || {};
     const eventTypeProps = this.persistence.get(`props_${eventName}`) || {};
@@ -784,10 +807,9 @@ export class HelpinClient {
   }
 
   public shutdown(): void {
-    if (this.hasBootedWidget) {
-      this.widgetController?.shutdown();
-    }
+    this.widgetController?.shutdown();
     this.hasBootedWidget = false;
+    void this.reset(true);
   }
 
   public show(): void {
@@ -829,11 +851,11 @@ export class HelpinClient {
   }
 
   public openArticle(
-    articleId: string,
+    articleKey: string,
     options?: ShowArticleOptions,
   ): void {
     this.ensureWidgetBooted();
-    this.widgetController?.openArticle(articleId, options);
+    this.widgetController?.openArticle(articleKey, options);
   }
 
   public onOpen(callback: WidgetCallback): void {

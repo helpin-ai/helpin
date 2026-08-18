@@ -3,6 +3,7 @@ import type { AssignableMember } from '../types';
 import type {
   SupportConversation,
   SupportMessage,
+  SupportMessagePage,
   CreateConversationRequest,
   CreateConversationWithMessageRequest,
   CreateConversationWithMessageResponse,
@@ -13,6 +14,7 @@ import type {
   AssignConversationAgentRequest,
   AssignConversationUserRequest,
   UpdateConversationCRMContactRequest,
+  UpdateConversationCRMCompanyRequest,
   UpdateConversationCustomerNameRequest,
   UpdateConversationEmailRecipientsRequest,
   AgentRun,
@@ -58,6 +60,7 @@ import type {
   SupportTag,
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
+  SendSupportConversationTranscriptResponse,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -147,6 +150,10 @@ export const supportService = {
     api.get<SupportEmailRoute[]>(`/support/inbox/email-routes${qs(workspaceId)}`),
   createEmailRoute: (workspaceId: string, payload: CreateSupportEmailRouteRequest) =>
     api.post<SupportEmailRoute>(`/support/inbox/email-routes${qs(workspaceId)}`, payload),
+  sendEmailRouteTest: (workspaceId: string, routeId: string, sourceAddress: string) =>
+    api.post<SupportEmailRoute>(`/support/inbox/email-routes/${routeId}/send-test${qs(workspaceId)}`, {
+      source_address: sourceAddress,
+    }),
   disableEmailRoute: (workspaceId: string, routeId: string) =>
     api.post(`/support/inbox/email-routes/${routeId}/disable${qs(workspaceId)}`, {}),
   listEmailSenders: (workspaceId: string) =>
@@ -211,6 +218,14 @@ export const supportService = {
     api.post<CreateConversationWithMessageResponse>(`/support/inbox/conversations/create-and-send${qs(workspaceId)}`, payload),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
     api.get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
+  listConversationMessagePage: (workspaceId: string, conversationId: string, limit: number, cursor?: string) => {
+    const cursorQuery = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+    return api.get<SupportMessagePage>(
+      `/support/inbox/conversations/${conversationId}/message-pages${qs(workspaceId)}&limit=${limit}${cursorQuery}`,
+    );
+  },
+  sendConversationTranscript: (workspaceId: string, conversationId: string, payload: { email?: string; update_customer_email?: boolean }) =>
+    api.post<SendSupportConversationTranscriptResponse>(`/support/inbox/conversations/${conversationId}/transcript${qs(workspaceId)}`, payload),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
     api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
   deleteConversationMessage: (workspaceId: string, conversationId: string, messageId: string, undo = false) => {
@@ -231,7 +246,7 @@ export const supportService = {
   createTaskFromConversation: (
     workspaceId: string,
     conversationId: string,
-    payload: CreateTaskFromConversationRequest = {},
+    payload: CreateTaskFromConversationRequest,
   ) => api.post<CreateTaskFromConversationResponse>(
     `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
     payload,
@@ -245,6 +260,8 @@ export const supportService = {
     api.post(`/support/inbox/conversations/${conversationId}/assign-user${qs(workspaceId)}`, payload),
   updateConversationCRMContact: (workspaceId: string, conversationId: string, payload: UpdateConversationCRMContactRequest) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/crm-contact${qs(workspaceId)}`, payload),
+  updateConversationCRMCompany: (workspaceId: string, conversationId: string, payload: UpdateConversationCRMCompanyRequest) =>
+    api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/crm-company${qs(workspaceId)}`, payload),
   updateConversationCustomerName: (workspaceId: string, conversationId: string, payload: UpdateConversationCustomerNameRequest) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/customer-name${qs(workspaceId)}`, payload),
   updateConversationEmailRecipients: (workspaceId: string, conversationId: string, payload: UpdateConversationEmailRecipientsRequest) =>
@@ -304,4 +321,21 @@ export const supportService = {
   // Email details for an individual message (only when via_channel === 'email').
   getMessageEmailDetail: (workspaceId: string, messageId: string) =>
     api.get<SupportMessageEmailDetail>(`/support/inbox/messages/${messageId}/email${qs(workspaceId)}`),
+
+  // Interactions raised by the conversation's AI chat run (e.g. child-launch
+  // approvals a teammate must resolve).
+  listAIRunInteractions: (workspaceId: string, conversationId: string) =>
+    api.get<{ run_id: string; interactions: import('@/lib/pmTypes').CodingSessionInteraction[] }>(
+      `/support/inbox/conversations/${conversationId}/ai-run/interactions${qs(workspaceId)}`,
+    ),
+  resolveAIRunInteraction: (
+    workspaceId: string,
+    conversationId: string,
+    interactionId: string,
+    payload: { response_payload: Record<string, unknown>; followup_message?: string },
+  ) =>
+    api.post(
+      `/support/inbox/conversations/${conversationId}/ai-run/interactions/${interactionId}/resolve${qs(workspaceId)}`,
+      payload,
+    ),
 };

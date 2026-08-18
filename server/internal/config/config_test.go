@@ -21,11 +21,31 @@ func TestLoadDefaultsCommandRouterToOpenRouterGeminiFlashLite(t *testing.T) {
 	if cfg.CommandRouterLLMProvider != "openrouter" {
 		t.Fatalf("unexpected command router provider: %q", cfg.CommandRouterLLMProvider)
 	}
-	if cfg.CommandRouterLLMModel != "google/gemini-3.1-flash-lite" {
+	if cfg.CommandRouterLLMModel != "openai/gpt-5.6-luna" {
 		t.Fatalf("unexpected command router model: %q", cfg.CommandRouterLLMModel)
 	}
 	if string(cfg.CommandRouterOpenRouterProviderOptions) != `{"order":["google-vertex/global"],"allow_fallbacks":false}` {
 		t.Fatalf("unexpected provider options: %s", string(cfg.CommandRouterOpenRouterProviderOptions))
+	}
+}
+
+func TestLoadDefaultsQueryExpansionToGPT56Luna(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("QUERY_EXPANSION_MODEL", "")
+	t.Setenv("QUERY_EXPANSION_PROVIDER", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.QueryExpansionProvider != "openai" {
+		t.Fatalf("unexpected query expansion provider: %q", cfg.QueryExpansionProvider)
+	}
+	if cfg.QueryExpansionModel != "gpt-5.6-luna" {
+		t.Fatalf("unexpected query expansion model: %q", cfg.QueryExpansionModel)
+	}
+	if cfg.QueryExpansionTimeoutMS != 10000 {
+		t.Fatalf("unexpected query expansion timeout: %d", cfg.QueryExpansionTimeoutMS)
 	}
 }
 
@@ -63,56 +83,64 @@ func TestLoadParsesCommandRouterOpenRouterProviderOptions(t *testing.T) {
 	}
 }
 
-func TestLoadSetsDefaultCodexHelpinMCPBridgePath(t *testing.T) {
+func TestLoadAgentRuntimeConfig(t *testing.T) {
 	setRequiredConfigEnv(t)
+	t.Setenv("AGENT_RUNTIME_BASE_URL", " https://runtime.internal/ ")
+	t.Setenv("AGENT_RUNTIME_SERVICE_TOKEN", " runtime-token ")
+	t.Setenv("AGENT_RUNTIME_APP_ID", " helpin-stage ")
+	t.Setenv("AGENT_RUNTIME_LAUNCH_ENABLED", "true")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.CodexHelpinMCPBridgePath == "" {
-		t.Fatal("expected Codex Helpin MCP bridge path default")
+	if cfg.AgentRuntimeBaseURL != "https://runtime.internal" {
+		t.Fatalf("unexpected runtime base URL: %q", cfg.AgentRuntimeBaseURL)
+	}
+	if cfg.AgentRuntimeServiceToken != "runtime-token" {
+		t.Fatalf("unexpected runtime token: %q", cfg.AgentRuntimeServiceToken)
+	}
+	if cfg.AgentRuntimeAppID != "helpin-stage" {
+		t.Fatalf("unexpected runtime app id: %q", cfg.AgentRuntimeAppID)
+	}
+	if !cfg.AgentRuntimeLaunchEnabled {
+		t.Fatal("expected runtime launch flag")
 	}
 }
 
-func TestLoadExpandsCodexHelpinMCPBridgePath(t *testing.T) {
+func TestLoadMeetingCaptureProvider(t *testing.T) {
 	setRequiredConfigEnv(t)
-	t.Setenv("PWD", "/tmp/helpin-server")
-	t.Setenv("CODEX_HELPIN_MCP_BRIDGE_PATH", "$PWD/bin/helpin-mcp-bridge")
+	t.Setenv("CRM_MEETING_CAPTURE_PROVIDER", " VEXA ")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.CodexHelpinMCPBridgePath != "/tmp/helpin-server/bin/helpin-mcp-bridge" {
-		t.Fatalf("expected expanded bridge path, got %q", cfg.CodexHelpinMCPBridgePath)
+	if cfg.CRMMeetingCaptureProvider != "vexa" {
+		t.Fatalf("unexpected meeting capture provider: %q", cfg.CRMMeetingCaptureProvider)
 	}
 }
 
-func TestLoadDefaultsCodexHelpinAPIBaseURLToLocalAPI(t *testing.T) {
+func TestLoadDefaultsMeetingCaptureProviderToRecall(t *testing.T) {
 	setRequiredConfigEnv(t)
-	t.Setenv("PORT", "9090")
-	t.Setenv("APP_BASE_URL", "https://frontend.example")
+	t.Setenv("CRM_MEETING_CAPTURE_PROVIDER", "")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.CodexHelpinAPIBaseURL != "http://127.0.0.1:9090/api" {
-		t.Fatalf("expected local API base URL, got %q", cfg.CodexHelpinAPIBaseURL)
+	if cfg.CRMMeetingCaptureProvider != "recall" {
+		t.Fatalf("unexpected default meeting capture provider: %q", cfg.CRMMeetingCaptureProvider)
 	}
 }
 
-func TestLoadAllowsCodexHelpinAPIBaseURLOverride(t *testing.T) {
+func TestLoadRejectsInvalidMeetingCaptureProvider(t *testing.T) {
 	setRequiredConfigEnv(t)
-	t.Setenv("CODEX_HELPIN_API_BASE_URL", " http://helpin-server-svc:8080/api/ ")
+	t.Setenv("CRM_MEETING_CAPTURE_PROVIDER", "unknown")
 
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	if cfg.CodexHelpinAPIBaseURL != "http://helpin-server-svc:8080/api" {
-		t.Fatalf("expected override API base URL, got %q", cfg.CodexHelpinAPIBaseURL)
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "CRM_MEETING_CAPTURE_PROVIDER must be recall or vexa") {
+		t.Fatalf("expected meeting provider config error, got %v", err)
 	}
 }
 

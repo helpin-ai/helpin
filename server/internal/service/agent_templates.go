@@ -39,7 +39,7 @@ Treat these configured values as already resolved and authoritative. Do not plan
 
 Use the configured competitor list when it is not empty. If no competitors are configured, discover competitors with web search and cite sources.
 
-For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
+For each competitor, first use web_search (or the runtime's built-in web search when available) to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog. A missing search provider is a tool limitation, not evidence that a competitor has no public changelog.
 
 Create exactly one competitors changelog tracking report task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
@@ -128,6 +128,8 @@ Configured audit:
 Treat these configured values as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or repository selection.
 
 Scan only the configured ecosystems. Ignore indirect or transitive dependencies unless include_indirect is true. Do not modify files.
+
+Use fetch_url for exact public registry and advisory API GET requests. Do not invoke curl or wget through run_command.
 
 Repositories may contain more than one language ecosystem. Scan every selected ecosystem in the same run and deduplicate tasks within each ecosystem identity.
 
@@ -360,7 +362,7 @@ Raw configuration:
 			},
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"update_plan",
-				"web_search_exa",
+				"web_search",
 				"fetch_url",
 				"crawl_url",
 				"list_workspace_teams",
@@ -388,14 +390,11 @@ Raw configuration:
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"update_plan",
 				"list_directory",
-				"read_file",
 				"read_files",
-				"read_file_range",
-				"search_files",
-				"ripgrep",
-				"grep",
+				"repository_search",
 				"run_command",
-				"web_search_exa",
+				"web_search",
+				"fetch_url",
 				"create_task",
 			})),
 			AllowedCommands: model.JSONBlob(mustJSONStringSlice([]string{
@@ -445,17 +444,13 @@ Raw configuration:
 			AllowedTools: model.JSONBlob(mustJSONStringSlice([]string{
 				"update_plan",
 				"list_directory",
-				"read_file",
 				"read_files",
-				"read_file_range",
-				"search_files",
-				"ripgrep",
-				"grep",
+				"repository_search",
 				"run_command",
 				"scan_semgrep",
 				"scan_trivy",
 				"scan_gitleaks",
-				"web_search_exa",
+				"web_search",
 				"ensure_task_label",
 				"list_tasks",
 				"create_task",
@@ -676,7 +671,7 @@ func (s *AgentService) CreateAgentFromTemplate(ctx context.Context, workspaceID,
 
 	var flow *model.AutomationRule
 	if req.CreateFlow {
-		flow, err = s.createStarterFlowForTemplate(ctx, workspaceID, template, agent, req)
+		flow, err = s.createStarterFlowForTemplate(ctx, workspaceID, actorID, template, agent, req)
 		if err != nil {
 			if deleteErr := s.agentRepo.Delete(ctx, workspaceID, agent.ID); deleteErr != nil {
 				slog.WarnContext(ctx, "failed to clean up template-created agent after starter flow error",
@@ -759,6 +754,9 @@ func materializeCreateAgentRequestFromTemplate(workspaceID string, template *mod
 		DefaultInvocationMode: &defaultInvocationMode,
 	}
 	if req.Overrides != nil {
+		if req.Overrides.IconKey != nil {
+			createReq.IconKey = trimPtr(req.Overrides.IconKey)
+		}
 		if req.Overrides.Role != nil {
 			roleValue := strings.TrimSpace(*req.Overrides.Role)
 			if roleValue != "" {
@@ -827,25 +825,25 @@ func materializeCreateAgentRequestFromTemplate(workspaceID string, template *mod
 	return createReq
 }
 
-func (s *AgentService) createStarterFlowForTemplate(ctx context.Context, workspaceID string, template *model.AgentTemplate, agent *model.Agent, req model.CreateAgentFromTemplateRequest) (*model.AutomationRule, error) {
+func (s *AgentService) createStarterFlowForTemplate(ctx context.Context, workspaceID, actorID string, template *model.AgentTemplate, agent *model.Agent, req model.CreateAgentFromTemplateRequest) (*model.AutomationRule, error) {
 	if s == nil || s.ruleEngine == nil {
 		return nil, fmt.Errorf("automation rule engine is not configured")
 	}
 	switch strings.TrimSpace(template.Key) {
 	case model.AgentTemplateTypeReleaseNotes:
-		return s.createReleaseNotesStarterFlow(ctx, workspaceID, agent, req.Flow)
+		return s.createReleaseNotesStarterFlow(ctx, workspaceID, actorID, agent, req.Flow)
 	case model.AgentTemplateTypeCompetitiveIntel:
-		return s.createCompetitiveIntelStarterFlow(ctx, workspaceID, agent, req.Flow)
+		return s.createCompetitiveIntelStarterFlow(ctx, workspaceID, actorID, agent, req.Flow)
 	case model.AgentTemplateTypeDependencyAuditor:
-		return s.createDependencyAuditorStarterFlow(ctx, workspaceID, agent, req.Flow)
+		return s.createDependencyAuditorStarterFlow(ctx, workspaceID, actorID, agent, req.Flow)
 	case model.AgentTemplateTypeSecurityTriage:
-		return s.createSecurityTriageStarterFlow(ctx, workspaceID, agent, req.Flow)
+		return s.createSecurityTriageStarterFlow(ctx, workspaceID, actorID, agent, req.Flow)
 	default:
 		return nil, fmt.Errorf("starter flow is not supported for template %q", strings.TrimSpace(template.Key))
 	}
 }
 
-func (s *AgentService) createReleaseNotesStarterFlow(ctx context.Context, workspaceID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
+func (s *AgentService) createReleaseNotesStarterFlow(ctx context.Context, workspaceID, actorID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
 	if flow == nil {
 		return nil, fmt.Errorf("flow configuration is required when create_flow is true")
 	}
@@ -902,7 +900,7 @@ func (s *AgentService) createReleaseNotesStarterFlow(ctx context.Context, worksp
 
 	name := fmt.Sprintf("%s for %s releases", strings.TrimSpace(agent.Name), repoFullName)
 	description := fmt.Sprintf("Runs %s when GitHub publishes matching releases for %s and writes release notes to Docs.", strings.TrimSpace(agent.Name), repoFullName)
-	rule, err := s.ruleEngine.CreateRule(ctx, workspaceID, model.CreateAutomationRuleRequest{
+	rule, err := s.ruleEngine.CreateRuleForActor(ctx, workspaceID, actorID, model.CreateAutomationRuleRequest{
 		WorkspaceID:   workspaceID,
 		Name:          name,
 		Description:   &description,
@@ -927,7 +925,7 @@ type competitiveIntelStarterFlowInput struct {
 	DestinationStateID string   `json:"destination_state_id,omitempty"`
 }
 
-func (s *AgentService) createCompetitiveIntelStarterFlow(ctx context.Context, workspaceID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
+func (s *AgentService) createCompetitiveIntelStarterFlow(ctx context.Context, workspaceID, actorID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
 	input, err := competitiveIntelInputFromTemplateFlow(flow)
 	if err != nil {
 		return nil, err
@@ -951,7 +949,7 @@ func (s *AgentService) createCompetitiveIntelStarterFlow(ctx context.Context, wo
 
 	name := fmt.Sprintf("%s %s digest for %s", strings.TrimSpace(agent.Name), input.SchedulePreset, input.TargetCompany)
 	description := fmt.Sprintf("Runs %s on a %s schedule to research competitor updates for %s and create one marketing task.", strings.TrimSpace(agent.Name), input.SchedulePreset, input.TargetCompany)
-	rule, err := s.ruleEngine.CreateRule(ctx, workspaceID, model.CreateAutomationRuleRequest{
+	rule, err := s.ruleEngine.CreateRuleForActor(ctx, workspaceID, actorID, model.CreateAutomationRuleRequest{
 		WorkspaceID:   workspaceID,
 		Name:          name,
 		Description:   &description,
@@ -1088,7 +1086,7 @@ These values were configured when this custom agent was created. Treat them as a
 - schedule_preset: %s (informational; the automation rule already handled cadence)
 
 Use the destination IDs directly when calling create_task. Only discover competitors if the configured competitors list is empty.
-Use web_search_exa to find candidate official update sources, fetch_url to verify exact source pages, and crawl_url on official or docs hosts when search results are thin.
+Use web_search to find candidate official update sources, fetch_url to verify exact source pages, and crawl_url on official or docs hosts when search results are thin.
 
 Raw configuration:
 
@@ -1105,7 +1103,7 @@ type dependencyAuditorStarterFlowInput struct {
 	MaxTasks           int      `json:"max_tasks,omitempty"`
 }
 
-func (s *AgentService) createDependencyAuditorStarterFlow(ctx context.Context, workspaceID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
+func (s *AgentService) createDependencyAuditorStarterFlow(ctx context.Context, workspaceID, actorID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
 	input, err := dependencyAuditorInputFromTemplateFlow(flow)
 	if err != nil {
 		return nil, err
@@ -1149,7 +1147,7 @@ func (s *AgentService) createDependencyAuditorStarterFlow(ctx context.Context, w
 
 	name := fmt.Sprintf("%s %s audit for %s", strings.TrimSpace(agent.Name), input.SchedulePreset, repoLabel)
 	description := fmt.Sprintf("Runs %s on a %s schedule to audit direct dependencies in %s and create verified update tasks.", strings.TrimSpace(agent.Name), input.SchedulePreset, repoLabel)
-	rule, err := s.ruleEngine.CreateRule(ctx, workspaceID, model.CreateAutomationRuleRequest{
+	rule, err := s.ruleEngine.CreateRuleForActor(ctx, workspaceID, actorID, model.CreateAutomationRuleRequest{
 		WorkspaceID:   workspaceID,
 		Name:          name,
 		Description:   &description,
@@ -1315,7 +1313,7 @@ type securityTriageStarterFlowInput struct {
 	MaxTasks           int      `json:"max_tasks,omitempty"`
 }
 
-func (s *AgentService) createSecurityTriageStarterFlow(ctx context.Context, workspaceID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
+func (s *AgentService) createSecurityTriageStarterFlow(ctx context.Context, workspaceID, actorID string, agent *model.Agent, flow *model.CreateAgentFromTemplateFlow) (*model.AutomationRule, error) {
 	input, err := securityTriageInputFromTemplateFlow(flow)
 	if err != nil {
 		return nil, err
@@ -1359,7 +1357,7 @@ func (s *AgentService) createSecurityTriageStarterFlow(ctx context.Context, work
 
 	name := fmt.Sprintf("%s %s scan for %s", strings.TrimSpace(agent.Name), input.SchedulePreset, repoLabel)
 	description := fmt.Sprintf("Runs %s on a %s schedule to triage security scanner findings in %s and create applicable remediation tasks.", strings.TrimSpace(agent.Name), input.SchedulePreset, repoLabel)
-	rule, err := s.ruleEngine.CreateRule(ctx, workspaceID, model.CreateAutomationRuleRequest{
+	rule, err := s.ruleEngine.CreateRuleForActor(ctx, workspaceID, actorID, model.CreateAutomationRuleRequest{
 		WorkspaceID:   workspaceID,
 		Name:          name,
 		Description:   &description,

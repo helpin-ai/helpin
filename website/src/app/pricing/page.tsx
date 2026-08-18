@@ -2,50 +2,34 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Check, ArrowRight, Zap, Users, Building2, Layers, MessageCircle, BarChart3, FileText, Search, Code2, CheckCircle, Send } from 'lucide-react';
+import { Check, ArrowRight, Zap, Users, Building2, Layers, MessageCircle, BarChart3, FileText, Code2, Send } from 'lucide-react';
+import { HelpinBrand } from '@/components/HelpinBrand';
+import { AI_PRICING } from '@/generated/aiPricing';
+
+const SIGNUP_URL = 'https://app.helpin.ai/register';
 
 const PLANS = [
-  {
-    name: 'Free',
-    price: 0,
-    annual: 0,
-    description: 'For solo founders and small projects getting started.',
-    Icon: Zap,
-    color: 'oklch(0.48 0.15 155)',
-    seats: 'Unlimited',
-    credits: '1,000',
-    cta: 'Get started free',
-    popular: false,
-    features: [
-      'All modules — PM, Support, Sales, Docs',
-      'Tasks, epics & board views',
-      'Live chat widget & shared inbox',
-      'CRM with contacts & deals',
-      'Internal docs & knowledge base',
-      'Built-in AI agents (limited)',
-      'Import from other tools',
-    ],
-  },
   {
     name: 'Starter',
     price: 99,
     annual: 79,
-    description: 'For teams that need the full platform without limits on work.',
+    description: 'For teams that want the full workspace after trial.',
     Icon: Users,
     color: 'oklch(0.52 0.16 250)',
     seats: 'Unlimited',
-    credits: '5,000',
-    cta: 'Choose Starter',
+    aiUsage: 'Standard',
+    cta: 'Start Starter trial',
+    href: `${SIGNUP_URL}?plan=starter`,
     popular: false,
     features: [
-      'Everything in Free, plus:',
-      'Unlimited tasks & epics',
-      'Built-in AI agents',
+      'All modules — PM, Support, Sales, Docs',
+      'Unlimited users',
+      '10 teams',
+      '500 documents',
+      '5,000 contacts',
+      'Built-in AI agents and workflows',
       'GitHub integration',
       'Public help center + custom domain',
-      'Basic automations',
-      'Analytics & reporting',
-      'Unlimited conversation history',
     ],
   },
   {
@@ -56,18 +40,20 @@ const PLANS = [
     Icon: Building2,
     color: 'oklch(0.55 0.18 310)',
     seats: 'Unlimited',
-    credits: '25,000',
+    aiUsage: '3× Starter',
     cta: 'Start Growth trial',
+    href: `${SIGNUP_URL}?plan=growth`,
     popular: true,
     features: [
       'Everything in Starter, plus:',
+      'Unlimited teams',
+      'Unlimited documents',
+      'Unlimited contacts',
       'Custom AI agents',
-      'Advanced automations',
       'Agent scheduling & cron',
-      'API access & webhooks',
+      'Advanced automation flows',
+      'AI conversation routing',
       'Remove Helpin branding',
-      'Advanced RBAC',
-      'Advanced analytics',
       'Priority support',
     ],
   },
@@ -75,67 +61,60 @@ const PLANS = [
 
 const COMPARISON_FEATURES = [
   { name: 'Users & Access', category: true },
-  { name: 'Users', free: 'Unlimited', starter: 'Unlimited', growth: 'Unlimited' },
-  { name: 'Mobile access', free: true, starter: true, growth: true },
+  { name: 'Users', starter: 'Unlimited', growth: 'Unlimited' },
+  { name: 'Teams', starter: '10', growth: 'Unlimited' },
+  { name: 'Mobile access', starter: true, growth: true },
 
   { name: 'Project Management', category: true },
-  { name: 'Tasks & stories', free: 'Unlimited', starter: 'Unlimited', growth: 'Unlimited' },
-  { name: 'Epics', free: 'Unlimited', starter: 'Unlimited', growth: 'Unlimited' },
-  { name: 'Sprints', free: true, starter: true, growth: true },
-  { name: 'Board & list views', free: true, starter: true, growth: true },
-  { name: 'Custom fields', free: false, starter: true, growth: true },
-  { name: 'Roadmap', free: false, starter: true, growth: true },
+  { name: 'Tasks & stories', starter: 'Unlimited', growth: 'Unlimited' },
+  { name: 'Epics', starter: 'Unlimited', growth: 'Unlimited' },
+  { name: 'Sprints', starter: true, growth: true },
+  { name: 'Board, list, and roadmap views', starter: true, growth: true },
+  { name: 'Custom fields', starter: true, growth: true },
 
   { name: 'Support', category: true },
-  { name: 'Live chat widget', free: true, starter: true, growth: true },
-  { name: 'Shared inbox', free: true, starter: true, growth: true },
-  { name: 'Conversations/month', free: '50', starter: '500', growth: 'Unlimited' },
-  { name: 'Conversation history', free: '30 days', starter: 'Unlimited', growth: 'Unlimited' },
-  { name: 'SLA management', free: false, starter: true, growth: true },
-  { name: 'CSAT surveys', free: false, starter: true, growth: true },
+  { name: 'Live chat widget', starter: true, growth: true },
+  { name: 'Shared inbox', starter: true, growth: true },
+  { name: 'Team inboxes', starter: true, growth: true },
+  { name: 'Saved replies', starter: true, growth: true },
+  { name: 'Email forwarding', starter: true, growth: true },
+  { name: 'Round-robin assignment', starter: false, growth: true },
+  { name: 'SLA management', starter: false, growth: true },
+  { name: 'AI conversation routing', starter: false, growth: true },
 
   { name: 'Sales / CRM', category: true },
-  { name: 'Contacts', free: '100', starter: '1,000', growth: '10,000' },
-  { name: 'Deals', free: '10', starter: '100', growth: 'Unlimited' },
-  { name: 'Pipeline & activity', free: true, starter: true, growth: true },
-  { name: 'Email integration', free: false, starter: true, growth: true },
-  { name: 'Deal automation', free: false, starter: false, growth: true },
-  { name: 'Forecasting', free: false, starter: false, growth: true },
+  { name: 'Contacts', starter: '5,000', growth: 'Unlimited' },
+  { name: 'Deals and pipelines', starter: true, growth: true },
+  { name: 'Gmail sync', starter: true, growth: true },
+  { name: 'Buyer signal detection', starter: true, growth: true },
+  { name: 'Deal automation', starter: false, growth: true },
 
   { name: 'Docs / Knowledge', category: true },
-  { name: 'Documents', free: '20', starter: '200', growth: 'Unlimited' },
-  { name: 'Internal docs', free: true, starter: true, growth: true },
-  { name: 'Public help center', free: false, starter: true, growth: true },
-  { name: 'Custom domain', free: false, starter: true, growth: true },
+  { name: 'Documents', starter: '500', growth: 'Unlimited' },
+  { name: 'Internal docs', starter: true, growth: true },
+  { name: 'Public help center', starter: true, growth: true },
+  { name: 'Custom domain', starter: true, growth: true },
+  { name: 'AI article translation', starter: false, growth: true },
 
   { name: 'AI Agents', category: true },
-  { name: 'AI credits/month', free: '1,000', starter: '5,000', growth: '25,000' },
-  { name: 'Built-in agents', free: 'Limited', starter: true, growth: true },
-  { name: 'Custom agents', free: false, starter: false, growth: true },
-  { name: 'Agent scheduling', free: false, starter: false, growth: true },
-  { name: 'On-demand credit blocks', free: false, starter: '$50 / 5,000', growth: '$50 / 5,000' },
+  { name: 'Included AI usage', starter: 'Standard monthly allowance', growth: '3× Starter allowance' },
+  { name: 'Built-in agents', starter: true, growth: true },
+  { name: 'Custom agents', starter: false, growth: true },
+  { name: 'Agent scheduling', starter: false, growth: true },
+  { name: 'Extra AI usage', starter: 'Exact metered usage', growth: 'Exact metered usage' },
 
   { name: 'Platform', category: true },
-  { name: 'Storage', free: '500 MB', starter: '5 GB', growth: '50 GB' },
-  { name: 'GitHub integration', free: false, starter: true, growth: true },
-  { name: 'Import tools', free: true, starter: true, growth: true },
-  { name: 'Basic automations', free: false, starter: true, growth: true },
-  { name: 'Advanced automations', free: false, starter: false, growth: true },
-  { name: 'API access & webhooks', free: false, starter: false, growth: true },
-  { name: 'Analytics', free: false, starter: true, growth: true },
-  { name: 'Advanced analytics', free: false, starter: false, growth: true },
+  { name: 'GitHub integration', starter: true, growth: true },
+  { name: 'Import tools', starter: true, growth: true },
+  { name: 'Module access controls', starter: true, growth: true },
+  { name: 'Automation flows', starter: false, growth: true },
 
   { name: 'Branding', category: true },
-  { name: 'Widget branding', free: 'Helpin', starter: 'Helpin', growth: 'Removed' },
-
-  { name: 'Security & Compliance', category: true },
-  { name: 'Advanced RBAC', free: false, starter: false, growth: true },
-  { name: 'SSO / SAML', free: false, starter: false, growth: false },
-  { name: 'Audit logs', free: false, starter: false, growth: false },
+  { name: 'Widget branding', starter: 'Helpin', growth: 'Removed' },
 
   { name: 'Support', category: true },
-  { name: 'Community support', free: true, starter: true, growth: true },
-  { name: 'Priority support', free: false, starter: false, growth: true },
+  { name: 'Standard support', starter: true, growth: true },
+  { name: 'Priority support', starter: false, growth: true },
 ];
 
 const FAQS = [
@@ -144,12 +123,12 @@ const FAQS = [
     a: 'No. Every plan includes all modules — PM, Support, Sales, and Docs. We don\'t sell features separately. Your whole team gets access to everything from day one.',
   },
   {
-    q: 'What happens if I exceed my AI credit limit?',
-    a: 'Free workspaces pause AI usage until the next monthly refresh. Paid workspaces can enable on-demand credits, billed at $50 per 5,000-credit block.',
+    q: 'What happens if I use all of my included AI usage?',
+    a: 'Paid workspaces can allow extra AI usage. Only exact usage beyond the allowance is settled each month, before applicable taxes — there are no prepaid blocks.',
   },
   {
-    q: 'What counts as an AI credit?',
-    a: 'Credits are consumed based on the type of work. A support AI reply uses 5 credits, a CRM/deal action uses 10, document generation uses 20, planning uses 50, and coding or review runs use 100.',
+    q: 'How is AI usage measured?',
+    a: 'Usage reflects the model size and the amount of AI work completed. Routine tasks use the allowance more slowly than demanding planning, coding, and review work. Settings shows consumption as a simple percentage.',
   },
   {
     q: 'Can I switch plans anytime?',
@@ -160,8 +139,8 @@ const FAQS = [
     a: 'Yes. Starter is $99/month or $948/year. Growth is $299/month or $2,868/year.',
   },
   {
-    q: 'Is there a free plan?',
-    a: 'Yes. The Free plan includes all modules, unlimited seats, and 1,000 AI credits/month. New workspaces start on a no-card 14-day Growth trial, then move to Free if you do not upgrade.',
+    q: 'Is a credit card required for the trial?',
+    a: 'No. New workspaces start on a no-card 14-day Growth trial. Add billing only when you are ready to keep using the workspace.',
   },
   {
     q: 'What AI models does Helpin support?',
@@ -172,16 +151,16 @@ const FAQS = [
     a: 'A typical 20-person team pays $1,000-2,000/month across Jira, Intercom, HubSpot, Notion, and ChatGPT. Helpin replaces all of them starting at $99/month on Starter — with AI agents included.',
   },
   {
-    q: 'Do unused credits roll over?',
-    a: 'Credits reset monthly. Your included credits refresh at the start of each billing cycle. We keep it simple.',
+    q: 'Does unused AI usage roll over?',
+    a: 'No. Included AI usage resets on your subscription renewal date each month.',
   },
   {
     q: 'How does per-workspace pricing work?',
-    a: 'Each workspace gets its own plan and billing. Create a workspace, start with a 14-day Growth trial, then choose Starter or Growth. If you do not upgrade, that workspace moves to Free.',
+    a: 'Each workspace gets its own plan and billing. Create a workspace, start with a 14-day Growth trial, then choose Starter or Growth. If you do not upgrade, workspace access is limited until you choose a paid plan.',
   },
   {
     q: 'Are seats really unlimited on paid plans?',
-    a: 'Yes. Free, Starter, and Growth all include unlimited seats. We do not charge per seat — your whole team gets access.',
+    a: 'Yes. Starter and Growth both include unlimited seats. We do not charge per seat — your whole team gets access.',
   },
   {
     q: 'Is my data safe?',
@@ -215,10 +194,10 @@ export default function PricingPage() {
       <section className="pt-20 md:pt-28 pb-16 text-center">
         <div className="mx-auto max-w-4xl px-6 lg:px-8">
           <h1 className="text-[clamp(2.25rem,5vw,4.75rem)] font-bold tracking-[-0.04em] leading-[1.0] text-foreground mb-6">
-            Pay for output,<br />not headcount.
+            Focus on Growth,<br />not the seat count.
           </h1>
           <p className="text-[17px] text-muted-foreground leading-relaxed max-w-2xl mx-auto mb-14">
-            Your whole team gets PM, Support, Sales, and Docs — with AI agents that plan, build, triage, and follow up. No per-seat pricing.
+            Bring projects, support, sales, and docs into one workspace—with AI agents that help every team get more done.
           </p>
 
           {/* What's included strip */}
@@ -266,8 +245,8 @@ export default function PricingPage() {
           PLAN CARDS
           ══════════════════════════════════ */}
       <section className="pb-24">
-        <div className="mx-auto max-w-6xl px-6 lg:px-8">
-          <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
+        <div className="mx-auto max-w-5xl px-6 lg:px-8">
+          <div className="grid gap-6 md:grid-cols-2 lg:gap-8">
             {PLANS.map((plan) => (
               <div
                 key={plan.name}
@@ -315,16 +294,16 @@ export default function PricingPage() {
                     <p className="text-[10px] text-muted-foreground uppercase tracking-wide leading-tight mt-1">Seats</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-lg font-bold text-foreground leading-tight">{plan.credits}<span className="text-xs font-normal text-muted-foreground">/mo</span></p>
-                    <a href="#credits" className="text-[10px] text-muted-foreground uppercase tracking-wide hover:text-pop cursor-pointer leading-tight mt-1 block"
-                      onClick={(e) => { e.preventDefault(); document.getElementById('credits')?.scrollIntoView({ behavior: 'smooth' }); }}>
-                      AI Credits ↓
+                    <p className="text-lg font-bold text-foreground leading-tight">{plan.aiUsage}</p>
+                    <a href="#ai-usage" className="text-[10px] text-muted-foreground uppercase tracking-wide hover:text-pop cursor-pointer leading-tight mt-1 block"
+                      onClick={(e) => { e.preventDefault(); document.getElementById('ai-usage')?.scrollIntoView({ behavior: 'smooth' }); }}>
+                      AI allowance ↓
                     </a>
                   </div>
                 </div>
 
                 <Link
-                  href="https://app.helpin.ai"
+                  href={plan.href}
                   className="block w-full text-center rounded-xl py-3 text-[15px] font-semibold transition-all hover:-translate-y-0.5 mb-6"
                   style={{
                     background: plan.popular ? 'var(--color-foreground)' : 'transparent',
@@ -380,51 +359,47 @@ export default function PricingPage() {
             ))}
             <div className="flex items-center justify-between px-6 py-5 bg-pop-light border-t-2 border-pop">
               <div className="flex items-center gap-3">
-                <img src="/logos/helpin-light-mode-logo.svg" className="h-7" alt="Helpin" />
+                <HelpinBrand iconClassName="h-7 w-7" />
                 <span className="text-[16px] font-medium text-muted-foreground">(replaces all of the above)</span>
               </div>
-              <span className="text-[16px] font-bold text-pop">Free forever — paid from $99/mo</span>
+              <span className="text-[16px] font-bold text-pop">14-day Growth trial — paid plans from $99/mo</span>
             </div>
           </div>
         </div>
       </section>
 
       {/* ══════════════════════════════════
-          AI CREDITS EXPLAINED
+          AI USAGE EXPLAINED
           ══════════════════════════════════ */}
-      <section id="credits" className="py-16 md:py-24 border-t border-border scroll-mt-20">
+      <section id="ai-usage" className="py-16 md:py-24 border-t border-border scroll-mt-20">
         <div className="mx-auto max-w-4xl px-6 lg:px-8">
           <h2 className="text-[clamp(1.875rem,3.5vw,3rem)] font-bold leading-[1.08] tracking-tight text-foreground text-center mb-6">
-            AI credits, explained simply.
+            AI usage, explained simply.
           </h2>
           <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">
-            Every plan includes AI credits that power your agents. Credits are consumed when agents work.
+            Every plan includes a monthly allowance for AI work. Routine tasks use less, while longer and more advanced work uses more. You always see a simple percentage used and remaining.
           </p>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              { action: 'Support AI reply', credits: '5', Icon: MessageCircle, color: 'oklch(0.58 0.15 55)', bg: 'oklch(0.58 0.15 55 / 0.08)' },
-              { action: 'CRM/deal action', credits: '10', Icon: Send, color: 'oklch(0.52 0.14 28)', bg: 'oklch(0.52 0.14 28 / 0.08)' },
-              { action: 'Document generation', credits: '20', Icon: FileText, color: 'oklch(0.55 0.16 160)', bg: 'oklch(0.55 0.16 160 / 0.08)' },
-              { action: 'Planning run', credits: '50', Icon: Layers, color: 'oklch(0.55 0.18 310)', bg: 'oklch(0.55 0.18 310 / 0.08)' },
-              { action: 'Coding run', credits: '100', Icon: Code2, color: 'oklch(0.50 0.14 200)', bg: 'oklch(0.50 0.14 200 / 0.08)' },
-              { action: 'Review run', credits: '100', Icon: CheckCircle, color: 'oklch(0.48 0.15 155)', bg: 'oklch(0.48 0.15 155 / 0.08)' },
-              { action: 'Knowledge search', credits: 'Included in action', Icon: Search, color: 'oklch(0.55 0.15 130)', bg: 'oklch(0.55 0.15 130 / 0.08)' },
-              { action: 'On-demand block', credits: '5,000 for $50', Icon: Zap, color: 'oklch(0.52 0.16 250)', bg: 'oklch(0.52 0.16 250 / 0.08)' },
-            ].map((item) => (
-              <div key={item.action} className="rounded-xl border border-border p-4 text-center">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center mx-auto mb-3" style={{ background: item.bg }}>
-                  <item.Icon className="w-[16px] h-[16px]" style={{ color: item.color }} />
+            {AI_PRICING.tiers.map((tier, index) => {
+              const icons = [MessageCircle, Send, Code2, Zap];
+              const colors = ['#b56c31', '#ad5544', '#27879a', '#4b77bd'];
+              const Icon = icons[index];
+              return (
+                <div key={tier.key} className="rounded-xl border border-border p-4 text-center">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center mx-auto mb-3 bg-muted">
+                    <Icon className="w-[16px] h-[16px]" style={{ color: colors[index] }} />
+                  </div>
+                  <p className="text-sm font-medium text-foreground mb-1">{tier.label}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{tier.description}</p>
                 </div>
-                <p className="text-sm font-medium text-foreground mb-1">{item.action}</p>
-                <p className="text-xs text-muted-foreground">{item.credits} credits</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="mt-10 rounded-xl bg-muted/50 p-6 text-center">
             <p className="text-sm text-muted-foreground leading-relaxed max-w-lg mx-auto">
-              <strong className="text-foreground">Need more?</strong> Paid workspaces can enable on-demand 5,000-credit blocks.
+              Your allowance resets on your renewal date. If you enable extra AI usage, agents can keep working after the included allowance is used and only the additional usage is billed. Connect your own provider account when you prefer to pay the provider directly.
             </p>
           </div>
         </div>
@@ -447,7 +422,6 @@ export default function PricingPage() {
               <thead>
                 <tr className="border-b border-border">
                   <th className="py-4 pr-4 text-[15px] font-medium text-muted-foreground w-[30%]">Feature</th>
-                  <th className="py-4 px-4 text-[15px] font-bold text-foreground text-center">Free</th>
                   <th className="py-4 px-4 text-[15px] font-bold text-foreground text-center">Starter</th>
                   <th className="py-4 px-4 text-[15px] font-bold text-pop text-center">Growth</th>
                 </tr>
@@ -457,7 +431,7 @@ export default function PricingPage() {
                   if ('category' in row && row.category) {
                     return (
                       <tr key={i}>
-                        <td colSpan={4} className="pt-8 pb-3 text-sm font-bold uppercase tracking-widest text-muted-foreground/60">
+                        <td colSpan={3} className="pt-8 pb-3 text-sm font-bold uppercase tracking-widest text-muted-foreground/60">
                           {row.name}
                         </td>
                       </tr>
@@ -466,7 +440,6 @@ export default function PricingPage() {
                   return (
                     <tr key={i} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
                       <td className="py-4 pr-4 text-[15px] text-foreground">{row.name}</td>
-                      <td className="py-4 px-4 text-center"><CellValue value={row.free} /></td>
                       <td className="py-4 px-4 text-center"><CellValue value={row.starter} /></td>
                       <td className="py-4 px-4 text-center"><CellValue value={row.growth} /></td>
                     </tr>

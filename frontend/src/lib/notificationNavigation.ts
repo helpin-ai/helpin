@@ -1,4 +1,5 @@
 import type { Notification } from './notificationTypes'
+import { buildSettingsRoutePath } from './settingsSections'
 
 function stringMetadataField(notification: Notification, key: string): string | null {
   const value = notification.metadata?.[key]
@@ -27,4 +28,12 @@ export function getNotificationTaskRunTarget(notification: Notification): { task
     taskId,
     runId: stringMetadataField(notification, 'run_id') ?? notification.entity_id,
   }
+}
+
+export function getExternalMCPNotificationTarget(notification: Notification, workspaceSlug: string): string | null {
+  if (!workspaceSlug || notification.entity_type !== 'external_mcp_server') {
+    return null
+  }
+
+  return buildSettingsRoutePath(workspaceSlug, 'external-mcp')
 }

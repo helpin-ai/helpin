@@ -7,9 +7,9 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func TestCreateAgentResolvesBuiltInSkillRefs(t *testing.T) {
@@ -20,7 +20,7 @@ func TestCreateAgentResolvesBuiltInSkillRefs(t *testing.T) {
 
 	req := modelCreateAgentRequest(nil)
 	req.Skills = model.AgentSkillRefs{{Key: "prd_task_plan_approval"}}
-	req.AllowedTools = mustJSONStringSlice([]string{worker.ToolRequestApproval, worker.ToolPublishPRDDraft, worker.ToolPublishTaskPlan})
+	req.AllowedTools = mustJSONStringSlice([]string{agentcontract.ToolRequestApproval, agentcontract.ToolPublishPRDDraft, agentcontract.ToolPublishTaskPlan})
 
 	created, err := svc.CreateAgent(context.Background(), req, "user-1")
 	if err != nil {

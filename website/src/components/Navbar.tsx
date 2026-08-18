@@ -3,8 +3,14 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
+import { HelpinBrand } from '@/components/HelpinBrand';
 
-const NAV_LINKS: { label: string; href: string }[] = [];
+const SIGNUP_URL = 'https://app.helpin.ai/register';
+
+const NAV_LINKS: { label: string; href: string }[] = [
+  { label: 'Agents', href: '/#agents' },
+  { label: 'Pricing', href: '/pricing' },
+];
 
 export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -26,7 +32,7 @@ export function Navbar() {
     >
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-8">
         <Link href="/">
-          <img src="/logos/helpin-light-mode-logo.svg" alt="Helpin" className="h-7" />
+          <HelpinBrand />
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
@@ -42,8 +48,6 @@ export function Navbar() {
         </div>
 
         <div className="hidden md:flex items-center gap-4">
-          {/* TODO: Unhide when trial is enabled */}
-          {/* <Link href="/pricing" className="text-[15px] font-medium text-muted-foreground hover:text-foreground transition-colors">Pricing</Link> */}
           <Link
             href="https://app.helpin.ai"
             className="text-[15px] font-medium text-muted-foreground hover:text-foreground transition-colors"
@@ -51,22 +55,10 @@ export function Navbar() {
             Log in
           </Link>
           <Link
-            href="#early-access"
-            className="rounded-xl bg-foreground px-5 py-2.5 text-[15px] font-semibold text-background transition-all hover:shadow-lg hover:shadow-foreground/10 hover:-translate-y-0.5"
-            onClick={(e) => {
-              e.preventDefault();
-              const forms = document.querySelectorAll('.email-glow-wrapper');
-              let target: Element | null = null;
-              for (const form of forms) {
-                const rect = form.getBoundingClientRect();
-                if (rect.top > window.innerHeight * 0.2) { target = form; break; }
-              }
-              if (!target) target = forms[forms.length - 1];
-              target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              setTimeout(() => (target?.querySelector('input') as HTMLInputElement)?.focus(), 600);
-            }}
+            href={SIGNUP_URL}
+            className="rounded-xl bg-foreground px-5 py-2.5 text-[15px] font-semibold text-background transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-foreground/10"
           >
-            Get early access
+            Start free trial
           </Link>
         </div>
 
@@ -95,29 +87,16 @@ export function Navbar() {
             <Link
               href="https://app.helpin.ai"
               className="text-sm text-muted-foreground hover:text-foreground"
+              onClick={() => setMobileOpen(false)}
             >
               Log in
             </Link>
             <Link
-              href="#early-access"
-              className="rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background text-center"
-              onClick={(e) => {
-                e.preventDefault();
-                setMobileOpen(false);
-                setTimeout(() => {
-                  const forms = document.querySelectorAll('.email-glow-wrapper');
-                  let target: Element | null = null;
-                  for (const form of forms) {
-                    const rect = form.getBoundingClientRect();
-                    if (rect.top > window.innerHeight * 0.2) { target = form; break; }
-                  }
-                  if (!target) target = forms[forms.length - 1];
-                  target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  setTimeout(() => (target?.querySelector('input') as HTMLInputElement)?.focus(), 600);
-                }, 300);
-              }}
+              href={SIGNUP_URL}
+              className="rounded-xl bg-foreground px-4 py-2.5 text-center text-sm font-semibold text-background"
+              onClick={() => setMobileOpen(false)}
             >
-              Get early access
+              Start free trial
             </Link>
           </div>
         </div>

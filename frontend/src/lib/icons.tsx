@@ -36,6 +36,7 @@ import {
   Calendar03Icon as _Calendar03Icon,
   Camera01Icon as _Camera01Icon,
   Cancel01Icon as _Cancel01Icon,
+  CollapseIcon as _CollapseIcon,
   ChartGanttIcon as _ChartGanttIcon,
   ChromeIcon as _ChromeIcon,
   ClipboardIcon as _ClipboardIcon,
@@ -47,6 +48,13 @@ import {
   CheckmarkCircle02Icon as _CheckmarkCircle02Icon,
   CheckmarkSquare02Icon as _CheckmarkSquare02Icon,
   CircleIcon as _CircleIcon,
+  SquareIcon as _SquareIcon,
+  HighlighterIcon as _HighlighterIcon,
+  PenTool02Icon as _PenTool02Icon,
+  CursorPointer01Icon as _CursorPointer01Icon,
+  TextIcon as _TextIcon,
+  ArrowMoveUpRightIcon as _ArrowMoveUpRightIcon,
+  BubbleChatIcon as _BubbleChatIcon,
   Clock01Icon as _Clock01Icon,
   Clock02Icon as _Clock02Icon,
   CodeIcon as _CodeIcon,
@@ -63,6 +71,7 @@ import {
   Download04Icon as _Download04Icon,
   DragDropVerticalIcon as _DragDropVerticalIcon,
   EraserIcon as _EraserIcon,
+  ExpandIcon as _ExpandIcon,
   FavouriteIcon as _FavouriteIcon,
   File01Icon as _File01Icon,
   FileCodeIcon as _FileCodeIcon,
@@ -164,6 +173,7 @@ import {
   SparklesIcon as _SparklesIcon,
   AiMagicIcon as _AiMagicIcon,
   SquareUnlock01Icon as _SquareUnlock01Icon,
+  StopIcon as _StopIcon,
   StarIcon as _StarIcon,
   StickyNote01Icon as _StickyNote01Icon,
   Sun01Icon as _Sun01Icon,
@@ -221,6 +231,7 @@ export const ClipboardIcon = hi(_ClipboardIcon);
 export const Clock03Icon = hi(_Clock03Icon);
 export const DashedLineCircleIcon = hi(_DashedLineCircleIcon);
 export const EraserIcon = hi(_EraserIcon);
+export const ExpandIcon = hi(_ExpandIcon);
 export const FileDownIcon = hi(_FileDownIcon);
 export const FileSearchIcon = hi(_FileSearchIcon);
 export const FileUpIcon = hi(_FileUpIcon);
@@ -250,6 +261,7 @@ export const SignalLow01Icon = hi(_SignalLow01Icon);
 export const SignalMedium01Icon = hi(_SignalMedium01Icon);
 export const SmartPhone01Icon = hi(_SmartPhone01Icon);
 export const SquareUnlock01Icon = hi(_SquareUnlock01Icon);
+export const StopIcon = hi(_StopIcon);
 export const Table01Icon = hi(_Table01Icon);
 export const Tablet01Icon = hi(_Tablet01Icon);
 export const Target02Icon = hi(_Target02Icon);
@@ -316,6 +328,7 @@ export const Calendar01Icon = hi(_Calendar01Icon);
 export const Calendar03Icon = hi(_Calendar03Icon);
 export const Camera01Icon = hi(_Camera01Icon);
 export const Cancel01Icon = hi(_Cancel01Icon);
+export const CollapseIcon = hi(_CollapseIcon);
 export const CancelCircleIcon = hi(_CancelCircleIcon);
 export const ChartColumnIcon = hi(_ChartColumnIcon);
 export const ChartIncreaseIcon = hi(_ChartIncreaseIcon);
@@ -323,6 +336,13 @@ export const CheckListIcon = hi(_CheckListIcon);
 export const CheckmarkCircle02Icon = hi(_CheckmarkCircle02Icon);
 export const CheckmarkSquare02Icon = hi(_CheckmarkSquare02Icon);
 export const CircleIcon = hi(_CircleIcon);
+export const SquareIcon = hi(_SquareIcon);
+export const HighlighterIcon = hi(_HighlighterIcon);
+export const PenTool02Icon = hi(_PenTool02Icon);
+export const CursorPointer01Icon = hi(_CursorPointer01Icon);
+export const TextIcon = hi(_TextIcon);
+export const ArrowMoveUpRightIcon = hi(_ArrowMoveUpRightIcon);
+export const BubbleChatIcon = hi(_BubbleChatIcon);
 export const Clock01Icon = hi(_Clock01Icon);
 export const Clock02Icon = hi(_Clock02Icon);
 export const CodeIcon = hi(_CodeIcon);

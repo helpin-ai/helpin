@@ -14,7 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Switch } from '@/components/ui/switch';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useCreateSupportInboxView, useInfiniteConversations, useInboxScopes, useMarkConversationRead, useSupportInboxViews, useSupportTags, useUpdateSupportBuiltinInboxView, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
+import { useCreateSupportInboxView, useInfiniteConversations, useInboxScopes, useSupportInboxViews, useSupportTags, useUpdateSupportBuiltinInboxView, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { supportInboxBuiltinViewKey, useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
@@ -260,7 +260,6 @@ export function ConversationList({
   const [saveViewShared, setSaveViewShared] = useState(false);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
-  const markConversationRead = useMarkConversationRead(workspaceId);
   const createInboxView = useCreateSupportInboxView(workspaceId);
   const updateInboxView = useUpdateSupportInboxView(workspaceId);
   const updateBuiltinInboxView = useUpdateSupportBuiltinInboxView(workspaceId);
@@ -268,14 +267,9 @@ export function ConversationList({
   const { data: customViews = [] } = useSupportInboxViews(workspaceId, !!activeCustomViewId);
   const { data: supportTags = [] } = useSupportTags(workspaceId);
 
-  const handleSelect = useCallback((id: string, unreadCount?: number) => {
+  const handleSelect = useCallback((id: string) => {
     selectConversation(id);
-    if ((unreadCount ?? 0) > 0) {
-      window.requestAnimationFrame(() => {
-        window.setTimeout(() => markConversationRead.mutate(id), 0);
-      });
-    }
-  }, [markConversationRead, selectConversation]);
+  }, [selectConversation]);
 
   const filters = useMemo(() => buildConversationListRequestFilters({
     navFilter,
@@ -389,7 +383,7 @@ export function ConversationList({
   useEffect(() => {
     if (selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
     const firstConversation = filteredConversations[0];
-    handleSelect(firstConversation.id, firstConversation.unread_count);
+    handleSelect(firstConversation.id);
   }, [error, filteredConversations, handleSelect, selectedConversationId, shouldShowListSkeleton]);
 
   useEffect(() => {

@@ -2,15 +2,19 @@
 
 Unified platform for product development, marketing task management, sales (CRM), customer support, and internal/external knowledge — powered by AI agents that work autonomously or with human approval. Helpin eliminates silos between teams and helps them operate at 10X speed by offloading work to AI agents.
 
+## Small Fix Workflow
+
+For small, well-scoped fixes, do not create or modify plan, specification, or design documents unless the user explicitly requests them. Inspect the issue, implement the fix, verify it, and commit it directly. Reserve planning, specification, and design documents for substantial multi-step work or explicit user requests.
+
 ## Working with Media
 
 When the user shares a URL to an image or screenshot, always download it using `curl -sL <url> -o /tmp/<filename>` and then view it using the Read tool. Do not use MCP fetch tools for binary image files — use curl directly to download and Read to view.
 
 ## Architecture
 
-- **Backend**: Go 1.24 + Chi router + GORM (PostgreSQL/Neon) + Temporal workflows
+- **Backend**: Go 1.24 + Chi router + GORM (PostgreSQL) + Temporal workflows
 - **Frontend**: React 19 + Vite 7 + TypeScript 5.9 + TanStack Router + TanStack Query + Zustand + shadcn/ui
-- **Database**: Neon PostgreSQL (pgcrypto for UUIDs)
+- **Database**: PostgreSQL (pgcrypto for UUIDs) — in-cluster Postgres on stage/prod k8s (`helpin-pg-cluster`, db `app`), Docker Postgres for local dev
 - **Storage**: AWS S3 / MinIO (presigned URLs + direct upload)
 - **Infra**: Kubernetes with Traefik, Doppler secrets, GHCR container registry
 
@@ -371,36 +375,39 @@ Use this taxonomy when working on backend agent features:
 - `agent_run` is the durable execution primitive
 - run input now carries explicit `trigger` / `target` / `event` metadata while preserving legacy fields
 
-The backend already behaves as two practical agent categories:
+The backend records two ownership styles. They are not separate execution
+paths:
 
 - `system agents`
   - `is_system = true`
   - product-owned
-  - preset-bound
-  - for `native_sdk`, share the same core run machinery as custom agents
-  - differ mainly in preset/default ownership plus some target-aware launch and context-loading paths
+  - usually preset-bound
+  - differ mainly in backend-owned defaults, prompt/skill bundles, allowed tools, and product launch surfaces
 - `custom agents`
   - `is_system = false`
-  - generic executors
-  - current product direction is `native_sdk` only
+  - workspace-managed, versioned generic executors
+  - use the same `agent_run` executor path as system agents
   - should gather most context through tools after receiving a minimal trigger payload
+
+Agent Runtime is the only executor. `runtime_kind` selects `native_sdk`,
+`codex`, or `opencode`; it does not select an ownership-specific path.
 
 Current trigger surfaces in code:
 
 - manual run actions
 - agent `trigger_mode`
-- agent `schedule`
-- automation-rule triggers: `story.state_entered`, `agent_run.approved`, `cron`
+- automation-rule event triggers such as `task.state_entered` and `agent_run.approved`
+- automation-rule `cron`
 
 Current limitation to keep in mind:
 
 - agent execution is generic
 - agent launch paths are still partially target-specific
-- native planning instructions are selected from effective tools plus target
+- active planning/review/support instructions are selected from effective skills, tools, target, and durable run state
 - generic target launching exists for direct runs and automation-rule `start_agent_run`
 - automation-rule `start_agent_run` now uses the generic target contract, with event-target defaulting and explicit targets required for cron
 
-Proposed direction for custom agents:
+Direction for custom agents:
 
 - keep genuine special-case orchestration only for real product exceptions like support flow
 - keep automation rules as the event and cron trigger layer
@@ -636,66 +643,3 @@ if (has('pm.edit')) { /* show edit button */ }
 | `@tanstack/react-virtual` | Virtualized lists |
 | `cmdk` | Command palette |
 | `next-themes` | Dark mode |
-
-# context-mode — MANDATORY routing rules
-
-You have context-mode MCP tools available. These rules are NOT optional — they protect your context window from flooding. A single unrouted command can dump 56 KB into context and waste the entire session.
-
-## BLOCKED commands — do NOT attempt these
-
-### curl / wget — BLOCKED
-Any Bash command containing `curl` or `wget` is intercepted and replaced with an error message. Do NOT retry.
-Instead use:
-- `ctx_fetch_and_index(url, source)` to fetch and index web pages
-- `ctx_execute(language: "javascript", code: "const r = await fetch(...)")` to run HTTP calls in sandbox
-
-### Inline HTTP — BLOCKED
-Any Bash command containing `fetch('http`, `requests.get(`, `requests.post(`, `http.get(`, or `http.request(` is intercepted and replaced with an error message. Do NOT retry with Bash.
-Instead use:
-- `ctx_execute(language, code)` to run HTTP calls in sandbox — only stdout enters context
-
-### WebFetch — BLOCKED
-WebFetch calls are denied entirely. The URL is extracted and you are told to use `ctx_fetch_and_index` instead.
-Instead use:
-- `ctx_fetch_and_index(url, source)` then `ctx_search(queries)` to query the indexed content
-
-## REDIRECTED tools — use sandbox equivalents
-
-### Bash (>20 lines output)
-Bash is ONLY for: `git`, `mkdir`, `rm`, `mv`, `cd`, `ls`, `npm install`, `pip install`, and other short-output commands.
-For everything else, use:
-- `ctx_batch_execute(commands, queries)` — run multiple commands + search in ONE call
-- `ctx_execute(language: "shell", code: "...")` — run in sandbox, only stdout enters context
-
-### Read (for analysis)
-If you are reading a file to **Edit** it → Read is correct (Edit needs content in context).
-If you are reading to **analyze, explore, or summarize** → use `ctx_execute_file(path, language, code)` instead. Only your printed summary enters context. The raw file content stays in the sandbox.
-
-### Grep (large results)
-Grep results can flood context. Use `ctx_execute(language: "shell", code: "grep ...")` to run searches in sandbox. Only your printed summary enters context.
-
-## Tool selection hierarchy
-
-1. **GATHER**: `ctx_batch_execute(commands, queries)` — Primary tool. Runs all commands, auto-indexes output, returns search results. ONE call replaces 30+ individual calls.
-2. **FOLLOW-UP**: `ctx_search(queries: ["q1", "q2", ...])` — Query indexed content. Pass ALL questions as array in ONE call.
-3. **PROCESSING**: `ctx_execute(language, code)` | `ctx_execute_file(path, language, code)` — Sandbox execution. Only stdout enters context.
-4. **WEB**: `ctx_fetch_and_index(url, source)` then `ctx_search(queries)` — Fetch, chunk, index, query. Raw HTML never enters context.
-5. **INDEX**: `ctx_index(content, source)` — Store content in FTS5 knowledge base for later search.
-
-## Subagent routing
-
-When spawning subagents (Agent/Task tool), the routing block is automatically injected into their prompt. Bash-type subagents are upgraded to general-purpose so they have access to MCP tools. You do NOT need to manually instruct subagents about context-mode.
-
-## Output constraints
-
-- Keep responses under 500 words.
-- Write artifacts (code, configs, PRDs) to FILES — never return them as inline text. Return only: file path + 1-line description.
-- When indexing content, use descriptive source labels so others can `ctx_search(source: "label")` later.
-
-## ctx commands
-
-| Command | Action |
-|---------|--------|
-| `ctx stats` | Call the `ctx_stats` MCP tool and display the full output verbatim |
-| `ctx doctor` | Call the `ctx_doctor` MCP tool, run the returned shell command, display as checklist |
-| `ctx upgrade` | Call the `ctx_upgrade` MCP tool, run the returned shell command, display as checklist |

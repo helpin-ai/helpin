@@ -99,19 +99,6 @@ const STATUS_STYLES: Record<string, string> = {
   skipped: 'border-border/70 bg-muted/40 text-muted-foreground',
 };
 
-const STATUS_DOT_STYLES: Record<string, string> = {
-  completed: 'text-emerald-700 dark:text-emerald-400',
-  failed: 'text-rose-700 dark:text-rose-400',
-  running: 'text-sky-700 dark:text-sky-400',
-  queued: 'text-muted-foreground',
-  paused: 'text-amber-700 dark:text-amber-400',
-  awaiting_approval: 'text-amber-700 dark:text-amber-400',
-  awaiting_input: 'text-amber-700 dark:text-amber-400',
-  awaiting_auth: 'text-amber-700 dark:text-amber-400',
-  cancelled: 'text-muted-foreground',
-  skipped: 'text-muted-foreground',
-};
-
 const STATUS_FILTER_OPTIONS = [
   { value: 'queued', label: 'Queued' },
   { value: 'running', label: 'Running' },
@@ -684,7 +671,7 @@ function SummaryCard({
   return (
     <Card
       className={cn(
-        'border-border/70 bg-card/80 transition',
+        'border-border/70 bg-card/80 py-0 transition',
         interactive && 'cursor-pointer hover:border-border hover:bg-card focus-within:ring-2 focus-within:ring-ring/60',
       )}
     >
@@ -718,15 +705,94 @@ function SummaryCard({
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <Badge variant="outline" className={cn('rounded-full px-2.5 py-0.5 text-[11px] font-medium', STATUS_STYLES[status] ?? STATUS_STYLES.queued)}>
+function StatusBadge({ status, errorMessage }: { status: string; errorMessage?: string }) {
+  const badge = (
+    <Badge
+      variant="outline"
+      tabIndex={status === 'failed' && errorMessage?.trim() ? 0 : undefined}
+      className={cn('rounded-full px-2.5 py-0.5 text-[11px] font-medium', STATUS_STYLES[status] ?? STATUS_STYLES.queued)}
+    >
       {SHORT_STATUS_LABELS[status] ?? status}
     </Badge>
   );
+
+  if (status !== 'failed' || !errorMessage?.trim()) return badge;
+
+  return (
+    <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap break-words text-xs leading-relaxed">
+        {errorMessage}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
-function NeedActionCard({
+const ACTIVITY_TABLE_GRID_CLASS =
+  'xl:grid-cols-[minmax(15rem,1fr)_12rem_7rem_6.5rem_5.5rem_2.5rem]';
+const NEEDS_ATTENTION_TABLE_GRID_CLASS =
+  'xl:grid-cols-[minmax(15rem,1fr)_11rem_8.5rem_6.5rem_7rem_11.5rem]';
+
+export function ActivityTableHeader() {
+  return (
+    <div
+      className={cn(
+        'hidden items-center gap-4 border-b border-border px-[14px] pb-[9px] text-xs font-medium uppercase tracking-wide text-muted-foreground xl:grid',
+        ACTIVITY_TABLE_GRID_CLASS,
+      )}
+    >
+      <div>Activity</div>
+      <div>Agent</div>
+      <div>Status</div>
+      <div>Started</div>
+      <div>Duration</div>
+      <div />
+    </div>
+  );
+}
+
+export function NeedsAttentionTableHeader() {
+  return (
+    <div
+      className={cn(
+        'hidden items-center gap-4 border-b border-border px-[14px] pb-[9px] text-xs font-medium uppercase tracking-wide text-muted-foreground xl:grid',
+        NEEDS_ATTENTION_TABLE_GRID_CLASS,
+      )}
+    >
+      <div>Activity</div>
+      <div>Agent</div>
+      <div>Status</div>
+      <div>Waiting</div>
+      <div>Started</div>
+      <div className="text-right">Actions</div>
+    </div>
+  );
+}
+
+function AttentionStatusBadge({ run }: { run: AgentRun }) {
+  const badge = (
+    <Badge
+      variant="outline"
+      tabIndex={run.error_message?.trim() ? 0 : undefined}
+      className="rounded-full border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+    >
+      {runBlockingLabel(run)}
+    </Badge>
+  );
+
+  if (!run.error_message?.trim()) return badge;
+
+  return (
+    <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap break-words text-xs leading-relaxed">
+        {run.error_message}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+export function NeedsAttentionTableRow({
   run,
   agent,
   onOpenRun,
@@ -748,44 +814,104 @@ function NeedActionCard({
   const target = buildActivityTargetPresentation({ run });
 
   return (
-    <div className="grid gap-4 rounded-2xl border border-border/70 bg-card/80 p-4 md:grid-cols-[1fr_auto] md:items-center">
-      <div className="min-w-0 space-y-2 border-l-2 border-amber-500 pl-3">
+    <div
+      className={cn(
+        'group grid gap-x-4 border-b border-border/60 px-[14px] py-[13px] outline-none transition-colors duration-100 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring xl:items-center',
+        NEEDS_ATTENTION_TABLE_GRID_CLASS,
+      )}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open run for ${target.primary}`}
+      onClick={() => onOpenRun(run.id)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpenRun(run.id);
+        }
+      }}
+    >
+      <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Badge variant="outline" className="rounded-full border-amber-500/40 bg-amber-500/10 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-            {runBlockingLabel(run)}
-          </Badge>
+          <div className="xl:hidden"><AttentionStatusBadge run={run} /></div>
           <TargetSummaryButton
             target={target}
             onOpen={() => onOpenTarget(target.targetType, target.targetId)}
-            className="flex-1 text-[15px]"
+            className="flex-1"
           />
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          {agent ? <AgentAvatar agent={agent} className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none" genericBare /> : null}
-          <span>{agent?.name ?? 'Agent'}</span>
+
+        <p className="mt-1.5 text-xs text-muted-foreground">{subtitle}</p>
+
+        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground xl:hidden">
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-foreground">
+            {agent?.is_system ? (
+              <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
+            ) : (
+              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/40">
+                <BotIcon className="h-3 w-3" />
+              </span>
+            )}
+            <span className="truncate">{agent?.name ?? 'Agent'}</span>
+          </span>
           <span className="text-muted-foreground/60">·</span>
-          <span>blocked for <span className="font-mono text-foreground/80">{waitTime}</span></span>
+          <span>Waiting <span className="tabular-nums text-foreground/80">{waitTime}</span></span>
           <span className="text-muted-foreground/60">·</span>
-          <span className="font-mono">{formatShortDate(run.created_at)}</span>
+          <span>{formatShortDate(run.created_at)}</span>
         </div>
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
-        {run.error_message ? (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
-            {run.error_message}
-          </div>
-        ) : null}
       </div>
-      <div className="flex items-center gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={() => onOpenRun(run.id)}>
+
+      <div className="hidden min-w-0 items-center gap-1.5 text-sm text-foreground xl:flex">
+        {agent?.is_system ? (
+          <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
+        ) : (
+          <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/40">
+            <BotIcon className="h-3 w-3" />
+          </span>
+        )}
+        <span className="truncate">{agent?.name ?? 'Agent'}</span>
+      </div>
+      <div className="hidden xl:block"><AttentionStatusBadge run={run} /></div>
+      <div className="hidden text-xs tabular-nums text-muted-foreground xl:block">{waitTime}</div>
+      <div className="hidden text-xs text-muted-foreground xl:block">{formatShortDate(run.created_at)}</div>
+
+      <div className="mt-3 flex items-center gap-2 xl:mt-0 xl:justify-end">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 text-muted-foreground hover:text-foreground"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenRun(run.id);
+          }}
+        >
           View run
         </Button>
         {needsApproval ? (
-          <Button type="button" size="sm" onClick={() => void onApprove(run.id)} disabled={approving}>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            onClick={(event) => {
+              event.stopPropagation();
+              void onApprove(run.id);
+            }}
+            disabled={approving}
+          >
             {approving ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
             Approve
           </Button>
         ) : (
-          <Button type="button" size="sm" onClick={() => onOpenRun(run.id)}>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenRun(run.id);
+            }}
+          >
             Respond
           </Button>
         )}
@@ -794,7 +920,7 @@ function NeedActionCard({
   );
 }
 
-function TimelineRow({
+export function ActivityTableRow({
   item,
   agent,
   run,
@@ -821,19 +947,34 @@ function TimelineRow({
   const canOpenRun = Boolean(item.run_id);
 
   const handleRowActivate = canOpenRun ? () => onOpenRun(item.run_id!) : undefined;
+  const agentSummary = (
+    <>
+      {agent?.is_system ? (
+        <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
+      ) : (
+        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted/40">
+          <BotIcon className="h-3 w-3" />
+        </span>
+      )}
+      <span className="min-w-0 truncate">{metadata.subject}</span>
+    </>
+  );
 
   return (
     <div
       className={cn(
-        'group grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 px-4 py-3 transition-colors',
-        canOpenRun && 'cursor-pointer hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none',
+        'group grid grid-cols-[minmax(0,1fr)_2.5rem] gap-x-4 border-b border-border/60 px-[14px] py-[13px] outline-none transition-colors duration-100',
+        ACTIVITY_TABLE_GRID_CLASS,
+        canOpenRun && 'cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
       )}
       role={canOpenRun ? 'button' : undefined}
       tabIndex={canOpenRun ? 0 : undefined}
+      aria-label={canOpenRun ? `Open run for ${target.primary}` : undefined}
       onClick={handleRowActivate}
       onKeyDown={
         handleRowActivate
           ? (event) => {
+              if (event.target !== event.currentTarget) return;
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
                 handleRowActivate();
@@ -842,38 +983,23 @@ function TimelineRow({
           : undefined
       }
     >
-      <div className="relative flex justify-center">
-        <span className={cn(
-          'relative z-10 mt-1 block h-[10px] w-[10px] min-w-[10px] shrink-0 rounded-full bg-current leading-none ring-4 ring-background',
-          STATUS_DOT_STYLES[item.status] ?? STATUS_DOT_STYLES.queued,
-          item.status === 'running' && 'animate-pulse',
-        )} />
-      </div>
-
-      <div className="min-w-0 space-y-2">
+      <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <StatusBadge status={item.status} />
+          <div className="xl:hidden"><StatusBadge status={item.status} errorMessage={item.error_message} /></div>
           <TargetSummaryButton
             target={target}
             onOpen={() => onOpenTarget(item)}
-            className="flex-1 text-[15px]"
+            className="flex-1"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <div className="flex min-w-0 items-center gap-1.5">
-            {agent?.is_system ? (
-              <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
-            ) : (
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-muted/40">
-                <BotIcon className="h-3 w-3" />
-              </span>
-            )}
-            <span className="text-foreground">{metadata.subject}</span>
+        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-1.5 text-foreground xl:hidden">
+            {agentSummary}
           </div>
           {metadata.sourceLabel ? (
             <>
-              <span className="text-muted-foreground/40">·</span>
+              <span className="text-muted-foreground/40 xl:hidden">·</span>
               {flowHref && metadata.sourceIsFlow ? (
                 <Tooltip delayDuration={0}>
                   <TooltipTrigger asChild>
@@ -907,12 +1033,6 @@ function TimelineRow({
               <span className="text-foreground">{metadata.triggerLabel}</span>
             </>
           ) : null}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-          <span className="font-mono text-foreground/80">{relativeTime(item.fired_at)}</span>
-          <span className="text-muted-foreground/40">·</span>
-          <span>Duration <span className="font-mono text-foreground/80">{duration}</span></span>
           {item.actor_name ? (
             <>
               <span className="text-muted-foreground/40">·</span>
@@ -921,26 +1041,34 @@ function TimelineRow({
           ) : null}
         </div>
 
-        {item.error_message ? (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
-            ⚠ {item.error_message}
-          </div>
-        ) : null}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground xl:hidden">
+          <span className="tabular-nums text-foreground/80">{relativeTime(item.fired_at)}</span>
+          <span className="text-muted-foreground/40">·</span>
+          <span>Duration <span className="tabular-nums text-foreground/80">{duration}</span></span>
+        </div>
+
       </div>
 
-      <div className="flex h-full flex-col items-end justify-center gap-2">
+      <div className="hidden min-w-0 items-center gap-1.5 text-sm text-foreground xl:flex">
+        {agentSummary}
+      </div>
+      <div className="hidden xl:block"><StatusBadge status={item.status} errorMessage={item.error_message} /></div>
+      <div className="hidden text-xs tabular-nums text-muted-foreground xl:block">{relativeTime(item.fired_at)}</div>
+      <div className="hidden text-xs tabular-nums text-muted-foreground xl:block">{duration}</div>
+      <div className="col-start-2 row-start-1 flex self-center justify-end xl:col-auto xl:row-auto">
         {canOpenRun ? (
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            className="pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
             onClick={(event) => {
               event.stopPropagation();
               onOpenRun(item.run_id!);
             }}
+            aria-label="View run"
           >
-            View run
+            <ArrowUpRight01Icon className="h-4 w-4" />
           </Button>
         ) : null}
       </div>
@@ -1113,20 +1241,6 @@ export function AutomationActivityPage({
     refetchInterval: 30_000,
   });
   const isRefreshing = runsQuery.isFetching || executionsQuery.isFetching || overviewQuery.isFetching;
-
-  useEffect(() => {
-    const handler = () => {
-      void runsQuery.refetch();
-      void executionsQuery.refetch();
-      void overviewQuery.refetch();
-    };
-    window.addEventListener('agent_run-created', handler);
-    window.addEventListener('agent_run-updated', handler);
-    return () => {
-      window.removeEventListener('agent_run-created', handler);
-      window.removeEventListener('agent_run-updated', handler);
-    };
-  }, [executionsQuery, overviewQuery, runsQuery]);
 
   const agentList = Array.isArray(agents) ? agents : [];
   const agentById = useMemo(() => new Map(agentList.map((agent) => [agent.id, agent])), [agentList]);
@@ -1452,8 +1566,8 @@ export function AutomationActivityPage({
         </Button>
       )}
     >
-      <div className="space-y-5 pb-20">
-        <div className="grid gap-3 lg:grid-cols-4">
+      <div className="space-y-5">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <SummaryCard
             label="Needs You"
             value={String(pausedRuns.length)}
@@ -1518,7 +1632,7 @@ export function AutomationActivityPage({
         </div>
 
         <Tabs value={selectedActivityTab} onValueChange={(value) => setActiveTab(value as 'timeline' | 'needs_you')} className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <TabsList variant="line">
               <TabsTrigger value="timeline">
                 All runs
@@ -1532,13 +1646,24 @@ export function AutomationActivityPage({
                 ) : null}
               </TabsTrigger>
             </TabsList>
+            {selectedActivityTab === 'timeline' ? (
+              <ActivityFilterTrigger
+                definitions={activityFilterDefinitions}
+                filterState={activityFilterState}
+                visibleKeys={visibleActivityFilterKeys}
+                activeCount={activeActivityFilterKeys.length}
+                onAdd={handleActivityFilterAdd}
+                onToggle={handleActivityFilterToggle}
+              />
+            ) : null}
           </div>
 
-          <TabsContent value="needs_you" className="mt-0 space-y-3">
+          <TabsContent value="needs_you" className="mt-0">
             {pausedRuns.length > 0 ? (
-              <div className="space-y-3">
+              <div>
+                <NeedsAttentionTableHeader />
                 {pausedRuns.map((run) => (
-                  <NeedActionCard
+                  <NeedsAttentionTableRow
                     key={run.id}
                     run={run}
                     agent={agentById.get(run.agent_id)}
@@ -1550,7 +1675,7 @@ export function AutomationActivityPage({
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-border/70 px-6 py-10 text-center text-sm text-muted-foreground">
+              <div className="border-y border-border px-6 py-12 text-center text-sm text-muted-foreground">
                 No runs need your attention.
               </div>
             )}
@@ -1558,16 +1683,6 @@ export function AutomationActivityPage({
 
           <TabsContent value="timeline" className="mt-0 space-y-3">
             <div className="flex flex-col gap-2">
-              <div className="flex justify-start">
-                <ActivityFilterTrigger
-                  definitions={activityFilterDefinitions}
-                  filterState={activityFilterState}
-                  visibleKeys={visibleActivityFilterKeys}
-                  activeCount={activeActivityFilterKeys.length}
-                  onAdd={handleActivityFilterAdd}
-                  onToggle={handleActivityFilterToggle}
-                />
-              </div>
               {visibleActivityFilterKeys.length > 0 ? (
                 <div className="ui-divider-bottom-fade flex flex-wrap items-center justify-start gap-1.5 pb-2">
                   {activityFilterDefinitions
@@ -1616,40 +1731,35 @@ export function AutomationActivityPage({
                 <Skeleton className="h-28 w-full rounded-2xl" />
               </div>
             ) : executionsQuery.isError ? (
-              <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              <div className="border-y border-destructive/30 bg-destructive/5 px-4 py-4 text-sm text-destructive">
                 Could not load trigger executions
                 {executionsQuery.error instanceof Error ? `: ${executionsQuery.error.message}` : ''}
               </div>
             ) : groupedExecutions.length > 0 ? (
-              <div className="space-y-4">
+              <div>
+                <ActivityTableHeader />
                 {groupedExecutions.map((group) => (
-                  <div key={group.key} className="space-y-2">
-                    <div className="px-1">
-                      <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{group.label}</p>
+                  <div key={group.key}>
+                    <div className="border-b border-border px-[14px] py-2.5">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{group.label}</p>
                     </div>
-                    <div className="rounded-2xl border border-border/70 bg-card/80">
-                      <div className="pl-3">
-                        <div className="divide-y divide-border/60">
-                          {group.rows.map((item) => (
-                            <TimelineRow
-                              key={item.execution_id}
-                              item={item}
-                              agent={agentById.get(item.agent_id)}
-                              run={item.run_id ? runById.get(item.run_id) : undefined}
-                              workspaceSlug={workspace?.slug}
-                              onOpenRun={openRun}
-                              onOpenFlow={openFlow}
-                              onOpenTarget={openTarget}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                    {group.rows.map((item) => (
+                      <ActivityTableRow
+                        key={item.execution_id}
+                        item={item}
+                        agent={agentById.get(item.agent_id)}
+                        run={item.run_id ? runById.get(item.run_id) : undefined}
+                        workspaceSlug={workspace?.slug}
+                        onOpenRun={openRun}
+                        onOpenFlow={openFlow}
+                        onOpenTarget={openTarget}
+                      />
+                    ))}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-border/70 px-6 py-10 text-center text-sm text-muted-foreground">
+              <div className="border-y border-border px-6 py-12 text-center text-sm text-muted-foreground">
                 No activity matches the current filter.
               </div>
             )}

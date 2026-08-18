@@ -148,6 +148,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.AIResponseMode != nil {
 		current.AIResponseMode = *patch.AIResponseMode
 	}
+	if patch.AIPreRouterMode != nil {
+		current.AIPreRouterMode = *patch.AIPreRouterMode
+	}
 	if patch.AIMaxFollowups != nil {
 		current.AIMaxFollowups = *patch.AIMaxFollowups
 	}
@@ -369,6 +372,14 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	if settings.AIResponseMode != "" && !validResponseMode[settings.AIResponseMode] {
 		return fmt.Errorf("ai_response_mode must be ai_first, internal_note, or off")
 	}
+	validPreRouterMode := map[string]bool{
+		model.SupportAIPreRouterModeOff:     true,
+		model.SupportAIPreRouterModeShadow:  true,
+		model.SupportAIPreRouterModeEnabled: true,
+	}
+	if !validPreRouterMode[settings.AIPreRouterMode] {
+		return fmt.Errorf("ai_pre_router_mode must be off, shadow, or enabled")
+	}
 	if settings.ReplyTimePreset != "" && !model.IsValidSupportReplyTimePreset(settings.ReplyTimePreset) {
 		return fmt.Errorf("reply_time_preset must be few_minutes, few_hours, same_day, or custom")
 	}
@@ -389,8 +400,8 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	if settings.AIAutoResolveTimeout < 0 {
 		return fmt.Errorf("ai_auto_resolve_timeout must be >= 0")
 	}
-	if settings.EmailFallbackDelaySecs < 30 || settings.EmailFallbackDelaySecs > 600 {
-		return fmt.Errorf("email_fallback_delay_secs must be between 30 and 600")
+	if settings.EmailFallbackDelaySecs < 10 || settings.EmailFallbackDelaySecs > 600 {
+		return fmt.Errorf("email_fallback_delay_secs must be between 10 and 600")
 	}
 	if settings.EmailFallbackMaxDeliveryAgeSecs < 120 || settings.EmailFallbackMaxDeliveryAgeSecs > 1800 {
 		return fmt.Errorf("email_fallback_max_delivery_age_secs must be between 120 and 1800")

@@ -434,3 +434,146 @@ func TestProcessHTMLRespectsMaxLen(t *testing.T) {
 		t.Fatalf("Process().HTML length = %d, want <= %d", len(got.HTML), maxHTMLLen)
 	}
 }
+
+func TestProjectSeparatesKnownQuotedWrappers(t *testing.T) {
+	tests := []struct {
+		name string
+		html string
+	}{
+		{name: "gmail", html: `<p>Fresh reply</p><div class="gmail_quote"><p>Gmail history</p></div>`},
+		{name: "outlook", html: `<p>Fresh reply</p><div id="divRplyFwdMsg"><p>Outlook history</p></div>`},
+		{name: "apple", html: `<p>Fresh reply</p><blockquote type="cite"><p>Apple history</p></blockquote>`},
+		{name: "yahoo", html: `<p>Fresh reply</p><div class="yahoo_quoted"><p>Yahoo history</p></div>`},
+		{name: "proton", html: `<p>Fresh reply</p><div class="protonmail_quote"><p>Proton history</p></div>`},
+		{name: "pre-annotated", html: `<p>Fresh reply</p><div data-helpin-quote="true"><p>Stored history</p></div>`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Project(ProjectionInput{HTML: tt.html})
+			if !got.HasQuotedContent {
+				t.Fatal("Project().HasQuotedContent = false, want true")
+			}
+			if got.ProjectionConfidence != ProjectionConfidenceHigh {
+				t.Fatalf("Project().ProjectionConfidence = %q, want %q", got.ProjectionConfidence, ProjectionConfidenceHigh)
+			}
+			if got.ProjectionVersion != CurrentProjectionVersion {
+				t.Fatalf("Project().ProjectionVersion = %d, want %d", got.ProjectionVersion, CurrentProjectionVersion)
+			}
+			if !strings.Contains(got.Markdown, "Fresh reply") {
+				t.Fatalf("Project().Markdown missing fresh reply: %q", got.Markdown)
+			}
+			if strings.Contains(got.Markdown, "history") {
+				t.Fatalf("Project().Markdown contains quote history: %q", got.Markdown)
+			}
+			if !strings.Contains(got.QuotedMarkdown, "history") {
+				t.Fatalf("Project().QuotedMarkdown missing history: %q", got.QuotedMarkdown)
+			}
+			if !strings.Contains(got.HTML, `data-helpin-quote="true"`) {
+				t.Fatalf("Project().HTML missing quote marker: %q", got.HTML)
+			}
+		})
+	}
+}
+
+func TestProjectExtractsNestedQuotesOnce(t *testing.T) {
+	got := Project(ProjectionInput{HTML: `<p>Fresh reply</p><div class="gmail_quote"><p>Outer history</p><blockquote type="cite"><p>Inner history</p></blockquote></div>`})
+
+	if strings.Count(got.QuotedMarkdown, "Inner history") != 1 {
+		t.Fatalf("Project().QuotedMarkdown nested quote count = %d, want 1:\n%s", strings.Count(got.QuotedMarkdown, "Inner history"), got.QuotedMarkdown)
+	}
+}
+
+func TestProjectDetectsWordReplyHeaders(t *testing.T) {
+	tests := []struct {
+		name string
+		html string
+	}{
+		{
+			name: "english",
+			html: `<p>New reply</p><div style="border:none;border-top:solid #E1E1E1 1.0pt;padding:3pt 0 0 0"><p><b>From:</b> Sender<br><b>Sent:</b> Tuesday<br><b>To:</b> Team<br><b>Subject:</b> Earlier message</p></div><p>Old body</p>`,
+		},
+		{
+			name: "spanish",
+			html: `<p>Respuesta nueva</p><div style="border-top:solid #E1E1E1 1pt"><p><b>De:</b> Remitente<br><b>Enviado:</b> martes<br><b>Para:</b> Equipo<br><b>Asunto:</b> Mensaje anterior</p></div><p>Cuerpo anterior</p>`,
+		},
+		{
+			name: "german",
+			html: `<p>Neue Antwort</p><div style="border-top:solid #E1E1E1 1pt"><p><b>Von:</b> Absender<br><b>Gesendet:</b> Dienstag<br><b>An:</b> Team<br><b>Betreff:</b> Frühere Nachricht</p></div><p>Alter Inhalt</p>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Project(ProjectionInput{HTML: tt.html})
+			if !got.HasQuotedContent {
+				t.Fatal("Project().HasQuotedContent = false, want true")
+			}
+			if got.ProjectionConfidence != ProjectionConfidenceMedium {
+				t.Fatalf("Project().ProjectionConfidence = %q, want %q", got.ProjectionConfidence, ProjectionConfidenceMedium)
+			}
+			if !strings.Contains(got.Markdown, strings.Fields(strings.TrimPrefix(tt.html, "<p>"))[0]) {
+				t.Fatalf("Project().Markdown missing visible reply: %q", got.Markdown)
+			}
+			if !strings.Contains(got.QuotedMarkdown, "body") && !strings.Contains(got.QuotedMarkdown, "anterior") && !strings.Contains(got.QuotedMarkdown, "Inhalt") {
+				t.Fatalf("Project().QuotedMarkdown missing old body: %q", got.QuotedMarkdown)
+			}
+		})
+	}
+}
+
+func TestProjectDoesNotHideAmbiguousBorderedContent(t *testing.T) {
+	html := `<p>Visible introduction</p><div style="border-top:1px solid #ddd"><p><b>Subject:</b> Quarterly report</p><p>This is a normal callout, not email history.</p></div>`
+	got := Project(ProjectionInput{HTML: html})
+
+	if got.HasQuotedContent {
+		t.Fatalf("Project().HasQuotedContent = true for ambiguous content; quote: %q", got.QuotedMarkdown)
+	}
+	if got.ProjectionConfidence != ProjectionConfidenceNone {
+		t.Fatalf("Project().ProjectionConfidence = %q, want %q", got.ProjectionConfidence, ProjectionConfidenceNone)
+	}
+	if !strings.Contains(got.Markdown, "normal callout") {
+		t.Fatalf("Project().Markdown hid ambiguous content: %q", got.Markdown)
+	}
+}
+
+func TestProjectSplitsDeterministicPlainTextReply(t *testing.T) {
+	got := Project(ProjectionInput{
+		TextBody:          "Fresh reply\n\nOn Tuesday, Sender wrote:\nOld message",
+		StrippedTextReply: "Fresh reply",
+	})
+
+	if got.Markdown != "Fresh reply" {
+		t.Fatalf("Project().Markdown = %q, want fresh reply", got.Markdown)
+	}
+	if !got.HasQuotedContent || !strings.Contains(got.QuotedMarkdown, "Old message") {
+		t.Fatalf("Project() did not retain quoted remainder: %#v", got)
+	}
+	if got.ProjectionConfidence != ProjectionConfidenceHigh {
+		t.Fatalf("Project().ProjectionConfidence = %q, want high", got.ProjectionConfidence)
+	}
+}
+
+func TestProjectRejectsAmbiguousPlainTextSplits(t *testing.T) {
+	tests := []struct {
+		name     string
+		full     string
+		stripped string
+	}{
+		{name: "no prefix match", full: "Different text\nOld message", stripped: "Fresh reply"},
+		{name: "repeated reply", full: "Fresh reply\nOld message\nFresh reply", stripped: "Fresh reply"},
+		{name: "empty remainder", full: "Fresh reply", stripped: "Fresh reply"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Project(ProjectionInput{TextBody: tt.full, StrippedTextReply: tt.stripped})
+			if got.HasQuotedContent {
+				t.Fatalf("Project().HasQuotedContent = true for ambiguous split: %#v", got)
+			}
+			if got.Markdown != tt.full {
+				t.Fatalf("Project().Markdown = %q, want full safe content %q", got.Markdown, tt.full)
+			}
+		})
+	}
+}

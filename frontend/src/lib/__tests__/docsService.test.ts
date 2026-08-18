@@ -18,6 +18,25 @@ vi.mock('@/lib/api', () => ({
 
 import { docsService } from '@/lib/services/docsService'
 
+describe('docsService.listDocuments', () => {
+  afterEach(() => {
+    getMock.mockReset()
+  })
+
+  it('sends owner and archived filters for the My Documents view', async () => {
+    getMock.mockResolvedValueOnce({ data: [], error: null, status: 200 })
+
+    await docsService.listDocuments('ws-1', {
+      owner_id: 'member-1',
+      include_archived: 'true',
+    })
+
+    expect(getMock).toHaveBeenCalledWith(
+      '/docs/documents?workspace_id=ws-1&owner_id=member-1&include_archived=true',
+    )
+  })
+})
+
 describe('docsService.getCollectionDeleteImpact', () => {
   afterEach(() => {
     getMock.mockReset()
@@ -32,6 +51,45 @@ describe('docsService.getCollectionDeleteImpact', () => {
       '/docs/collections/collection-1/delete-impact?workspace_id=ws-1',
     )
     expect(result.error).toBeNull()
+  })
+})
+
+describe('docsService API references', () => {
+  afterEach(() => {
+    getMock.mockReset()
+    postMock.mockReset()
+  })
+
+  it('lists references inside the selected space', async () => {
+    getMock.mockResolvedValueOnce({ data: [], error: null, status: 200 })
+
+    await docsService.listAPIReferences('ws-1', 'space-1')
+
+    expect(getMock).toHaveBeenCalledWith(
+      '/docs/spaces/space-1/api-references?workspace_id=ws-1',
+    )
+  })
+
+  it('imports a managed draft and publishes it explicitly', async () => {
+    postMock.mockResolvedValue({ data: { id: 'reference-1' }, error: null, status: 200 })
+    const payload = {
+      name: 'Product API',
+      source_type: 'url' as const,
+      source_url: 'https://api.example.com/openapi.json',
+    }
+
+    await docsService.createAPIReference('ws-1', 'space-1', payload)
+    await docsService.publishAPIReference('ws-1', 'reference-1')
+
+    expect(postMock).toHaveBeenNthCalledWith(
+      1,
+      '/docs/spaces/space-1/api-references?workspace_id=ws-1',
+      payload,
+    )
+    expect(postMock).toHaveBeenNthCalledWith(
+      2,
+      '/docs/api-references/reference-1/publish?workspace_id=ws-1',
+    )
   })
 })
 

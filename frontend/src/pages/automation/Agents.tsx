@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import {
   BotIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  ArrowExpandIcon,
+  ExpandIcon,
   HelpCircleIcon,
   LayoutGridIcon,
   LayoutTable01Icon,
@@ -27,27 +28,38 @@ import {
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
+import { CuratedModelSelect } from '@/components/automation/CuratedModelSelect';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
+import { useAutomationAgentFleet } from '@/hooks/queries/useAutomation';
 import { automationService } from '@/lib/services/automationService';
 import { agentService } from '@/lib/services/agentService';
 import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
-import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import {
+  AGENT_RUNTIME_HELP_TEXT,
+  AGENT_RUNTIME_LABELS,
+  MAX_NATIVE_TOOL_STEPS,
+  MIN_NATIVE_TOOL_STEPS,
+  isValidNativeToolStepLimit,
+  parseNativeToolStepLimit,
+} from '@/lib/agentRuntime';
+import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
+import { getAgentTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
-import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
+import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import type {
   Agent,
   AgentAnalyticsResponse,
   AgentExecutionConfig,
+  AgentIconKey,
   AgentPresetDefinition,
   AgentPresetKey,
   AgentVersion,
@@ -131,11 +143,26 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CustomAgentCreatePanel } from './CustomAgentCreatePanel';
 import {
   buildCustomAgentCreatePayload,
   createDefaultCustomAgentForm,
+  defaultModelForAgentProvider,
 } from './customAgentCreateModel';
+
+const CodingSessionDrawer = lazy(async () => {
+  const module = await import('@/components/pm/CodingSession/CodingSessionDrawer');
+  return { default: module.CodingSessionDrawer };
+});
+
+const CustomAgentCreatePanel = lazy(async () => {
+  const module = await import('./CustomAgentCreatePanel');
+  return { default: module.CustomAgentCreatePanel };
+});
+
+const AgentRunNowDialog = lazy(async () => {
+  const module = await import('./agents/AgentRunNowDialog');
+  return { default: module.AgentRunNowDialog };
+});
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -145,6 +172,10 @@ const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_s
 const REASONING_EFFORT_OPTIONS: AgentReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 const SERVICE_TIER_OPTIONS: AgentServiceTier[] = ['fast', 'flex'];
 const DEFAULT_SYSTEM_PRESET_KEY: AgentPresetKey = 'code_builder';
+const DEFAULT_PRESET_MODEL = {
+  provider: 'openai' as const,
+  model: defaultModelForAgentProvider('openai'),
+};
 const PRESET_FALLBACKS: Record<AgentPresetKey, {
   label: string;
   default_role: string;
@@ -156,6 +187,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   model?: string;
 }> = {
   epic_planner: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Epic Planner',
     default_role: 'Epic Planner',
     description: 'Interactive product planning for epics, PRDs, docs, and tasks.',
@@ -164,6 +196,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   task_planner: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Coding Task Planner',
     default_role: 'Coding Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
@@ -172,6 +205,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   story_planner: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Coding Task Planner',
     default_role: 'Coding Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
@@ -180,6 +214,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   crm_operator: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Beacon',
     default_role: 'CRM Operator',
     description: 'Cross-app CRM execution across deals, contacts, docs, and support context.',
@@ -188,6 +223,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   support_agent: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Support Agent',
     default_role: 'Support Agent',
     description: 'Handles support conversations and drafts replies with review controls.',
@@ -196,6 +232,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   documentation_agent: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Quill',
     default_role: 'Documentation Agent',
     description: 'Keeps internal docs, public help docs, and API docs accurate and organized.',
@@ -204,6 +241,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   marketer: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Mira',
     default_role: 'Marketer',
     description: 'Plans growth work, writes marketing assets, audits funnels, and creates campaigns from workspace context.',
@@ -212,29 +250,28 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   code_builder: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'Code Builder',
     default_role: 'Code Builder',
     description: 'Writes code, implements features, and fixes bugs in the repo.',
     runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
-    provider: 'openai',
-    model: 'gpt-5.5',
   },
   review_agent: {
+    ...DEFAULT_PRESET_MODEL,
     label: 'QA & Code Reviewer',
     default_role: 'QA & Code Reviewer',
     description: 'Reviews work, runs tests, and checks quality without repo mutation.',
     runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
-    provider: 'openai',
-    model: 'gpt-5.5',
   },
   command_agent: {
-    label: 'Command Agent',
-    default_role: 'Command Agent',
-    description: 'One-shot command-bar agent: runs a single instruction with a narrowed tool set.',
+    ...DEFAULT_PRESET_MODEL,
+    label: 'Sub-agent',
+    default_role: 'Sub-agent',
+    description: 'Runs one delegated task with a limited tool set.',
     runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
@@ -242,6 +279,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
 };
 
 const PRESET_FALLBACK_DEFAULT: (typeof PRESET_FALLBACKS)[AgentPresetKey] = {
+  ...DEFAULT_PRESET_MODEL,
   label: 'Agent',
   default_role: 'Automation Agent',
   description: '',
@@ -303,7 +341,7 @@ Treat these configured values as already resolved and authoritative. Do not plan
 
 Use the configured competitor list when it is not empty. If no competitors are configured, discover competitors with web search and cite sources.
 
-For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
+For each competitor, first use web_search (or the runtime's built-in web search when available) to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog. A missing search provider is a tool limitation, not evidence that a competitor has no public changelog.
 
 Create exactly one competitors changelog tracking report task with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
 
@@ -387,6 +425,7 @@ type SecurityTriageSeverity = typeof SECURITY_TRIAGE_SEVERITY_OPTIONS[number]['v
 
 interface AgentFormData {
   name: string;
+  icon_key: AgentIconKey;
   preset_key: AgentPresetKey;
   preset_version_key: string;
   runtime_kind: AgentRuntimeKind;
@@ -395,6 +434,7 @@ interface AgentFormData {
   model: string;
   reasoning_effort: AgentReasoningEffort | '';
   service_tier: AgentServiceTier | '';
+  max_tool_steps: string;
   system_prompt: string;
   instruction_preamble: string;
   instruction_skills: string[];
@@ -456,9 +496,11 @@ interface TemplateDraft {
   createStarterFlow: boolean;
 }
 
-const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string; description: string }> = [
+export const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string; description: string }> = [
   { value: 'task', label: 'Tasks', description: 'Run on tasks and task planning loops.' },
   { value: 'epic', label: 'Epics', description: 'Run on epics and planning loops.' },
+  { value: 'sprint', label: 'Sprints', description: 'Run on sprints and sprint planning loops.' },
+  { value: 'objective', label: 'Objectives', description: 'Run on objectives and outcome planning loops.' },
   { value: 'crm_deal', label: 'CRM deals', description: 'Run on CRM deal records.' },
   { value: 'document', label: 'Docs', description: 'Run on documents and docs-backed context.' },
   { value: 'support_conversation', label: 'Support', description: 'Run on support inbox conversations.' },
@@ -469,22 +511,12 @@ const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string
 const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
   'task',
   'epic',
+  'sprint',
+  'objective',
   'repository',
   'workspace',
   'support_conversation',
 ]);
-
-const RUN_NOW_TARGET_ID_LABELS: Partial<Record<AgentTargetType, string>> = {
-  task: 'Task ID',
-  epic: 'Epic ID',
-  support_conversation: 'Conversation ID',
-};
-
-const RUN_NOW_TARGET_ID_PLACEHOLDERS: Partial<Record<AgentTargetType, string>> = {
-  task: 'Paste a task ID',
-  epic: 'Paste an epic ID',
-  support_conversation: 'Paste a support conversation ID',
-};
 
 function ProviderIcon({ provider, className = 'h-4 w-4' }: { provider: string; className?: string }) {
   switch (provider) {
@@ -515,14 +547,16 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   {
     value: 'anthropic',
     label: 'Anthropic',
-    model_placeholder: 'claude-sonnet-4-20250514',
+    default_model: 'claude-opus-4-8',
+    model_placeholder: 'claude-opus-4-8',
     supports_reasoning_effort: false,
     supports_service_tier: false,
   },
   {
     value: 'openai',
     label: 'OpenAI',
-    model_placeholder: 'gpt-5.5',
+    default_model: 'gpt-5.6-terra',
+    model_placeholder: 'gpt-5.6-terra',
     supports_reasoning_effort: true,
     supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
     supports_service_tier: true,
@@ -531,23 +565,24 @@ const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
   {
     value: 'openrouter',
     label: 'OpenRouter',
-    model_placeholder: 'openai/gpt-5.5',
+    default_model: 'openai/gpt-5.6-terra',
+    model_placeholder: 'openai/gpt-5.6-terra',
     supports_reasoning_effort: true,
     supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
     supports_service_tier: false,
   },
 ];
 
-// Shared pill used in the fleet card + list row. An empty model resolves to
-// "Auto" at runtime — render that as a neutral value (not a red-flag state).
+// Shared pill used in the fleet card + list row. Legacy blank values display
+// the same explicit provider default that Agent Runtime will resolve.
 function AgentModelPill({ provider, model }: { provider?: AgentModelProvider | null; model?: string | null }) {
-  const trimmed = model?.trim();
   const effectiveProvider = provider ?? 'openai';
+  const displayedModel = model?.trim() || defaultModelForAgentProvider(effectiveProvider);
   return (
     <span className="inline-flex items-center gap-2 text-sm">
       <ProviderIcon provider={effectiveProvider} className="h-4 w-4 shrink-0" />
       <span className="font-mono text-xs text-foreground">
-        {trimmed || <span className="text-muted-foreground">Auto</span>}
+        {displayedModel}
       </span>
     </span>
   );
@@ -727,7 +762,7 @@ function labelForAgentTarget(target: AgentTargetType) {
   return CUSTOM_AGENT_TARGET_OPTIONS.find((option) => option.value === target)?.label ?? target;
 }
 
-function runNowTargetOptions(agent: Agent | null): AgentTargetType[] {
+export function runNowTargetOptions(agent: Agent | null): AgentTargetType[] {
   if (!agent) return [];
   return normalizeTargetList(
     (agent.allowed_targets ?? [])
@@ -767,28 +802,37 @@ function deriveExecutionConfigFields(
   runtimeKind: AgentRuntimeKind,
   provider: AgentModelProvider,
   executionConfig?: AgentExecutionConfig,
-): Pick<AgentFormData, 'reasoning_effort' | 'service_tier'> {
+): Pick<AgentFormData, 'reasoning_effort' | 'service_tier' | 'max_tool_steps'> {
   const normalizedProvider = normalizeProviderForRuntime(runtimeKind, provider);
   const reasoningEffort = runtimeKind === 'codex' ? (executionConfig?.reasoning_effort ?? '') : '';
   const serviceTier = runtimeKind === 'codex' && normalizedProvider === 'openai'
     ? (executionConfig?.service_tier ?? '')
     : '';
+  const maxToolSteps = runtimeKind === 'native_sdk' && executionConfig?.max_tool_steps
+    ? String(executionConfig.max_tool_steps)
+    : '';
   return {
     reasoning_effort: reasoningEffort,
     service_tier: serviceTier,
+    max_tool_steps: maxToolSteps,
   };
 }
 
 function buildExecutionConfigPayload(form: AgentFormData): AgentExecutionConfig | undefined {
-  if (form.runtime_kind !== 'codex') {
-    return undefined;
-  }
   const config: AgentExecutionConfig = {};
-  if (form.reasoning_effort) {
-    config.reasoning_effort = form.reasoning_effort;
+  if (form.runtime_kind === 'codex') {
+    if (form.reasoning_effort) {
+      config.reasoning_effort = form.reasoning_effort;
+    }
+    if (form.provider === 'openai' && form.service_tier) {
+      config.service_tier = form.service_tier;
+    }
   }
-  if (form.provider === 'openai' && form.service_tier) {
-    config.service_tier = form.service_tier;
+  if (form.runtime_kind === 'native_sdk') {
+    const maxToolSteps = parseNativeToolStepLimit(form.max_tool_steps);
+    if (maxToolSteps !== undefined) {
+      config.max_tool_steps = maxToolSteps;
+    }
   }
   return Object.keys(config).length > 0 ? config : undefined;
 }
@@ -818,13 +862,23 @@ function normalizeDefaultInvocationMode(
 function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDefinition[]): boolean {
   if (!agent) return false;
   if (!agent.is_system) {
-    return Boolean(agent.monthly_token_budget || agent.execution_config?.reasoning_effort || agent.execution_config?.service_tier);
+    return Boolean(
+      agent.monthly_token_budget
+      || agent.execution_config?.reasoning_effort
+      || agent.execution_config?.service_tier
+      || agent.execution_config?.max_tool_steps,
+    );
   }
   const presetKey = fallbackPresetKey(agent);
   const presetVersionKey = agent.preset_version_key ?? fallbackPresetVersionKey(presetKey);
   return (
     agent.runtime_kind !== presetRuntimeKindForSelection(presetKey, presetVersionKey, presets) ||
-    Boolean(agent.monthly_token_budget || agent.execution_config?.reasoning_effort || agent.execution_config?.service_tier)
+    Boolean(
+      agent.monthly_token_budget
+      || agent.execution_config?.reasoning_effort
+      || agent.execution_config?.service_tier
+      || agent.execution_config?.max_tool_steps,
+    )
   );
 }
 
@@ -857,7 +911,7 @@ function buildUpdatePayload(
       preset_key: form.preset_key,
       preset_version_key: form.preset_version_key,
       provider: provider || undefined,
-      model: form.model.trim(),
+      model: form.model.trim() || defaultModelForAgentProvider(provider),
       execution_config: buildExecutionConfigPayload(form),
       monthly_token_budget: form.monthly_token_budget.trim()
         ? Number.parseInt(form.monthly_token_budget, 10)
@@ -868,9 +922,10 @@ function buildUpdatePayload(
 
   return {
     name: form.name.trim(),
+    icon_key: form.icon_key,
     trigger_mode: 'manual',
     provider: provider || undefined,
-    model: form.model.trim(),
+    model: form.model.trim() || defaultModelForAgentProvider(provider),
     execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
     team_ids: teamIds,
@@ -894,26 +949,25 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
   const defaultInvocationMode = agent.default_invocation_mode?.trim()
     ? agent.default_invocation_mode
     : (preset?.default_invocation_mode ?? presetFallback(presetKey).default_invocation_mode);
+  const provider = normalizeProviderForRuntime(
+    agent.runtime_kind || runtimeKind,
+    agent.provider ?? preset?.provider ?? presetFallback(presetKey).provider ?? 'anthropic',
+  );
   return {
     name: agent.name,
+    icon_key: agent.icon_key ?? 'violet_star',
     preset_key: presetKey,
     preset_version_key: agent.preset_version_key?.trim() || preset?.version_key || fallbackPresetVersionKey(presetKey),
     runtime_kind: agent.runtime_kind || runtimeKind,
     supported_modes: supportedModes,
-    provider: normalizeProviderForRuntime(
-      agent.runtime_kind || runtimeKind,
-      agent.provider ?? preset?.provider ?? presetFallback(presetKey).provider ?? 'anthropic',
-    ),
-    model: agent.model ?? preset?.model ?? '',
+    provider,
+    model: agent.model?.trim() || preset?.model?.trim() || defaultModelForAgentProvider(provider),
     ...deriveExecutionConfigFields(
       agent.runtime_kind || runtimeKind,
-      normalizeProviderForRuntime(
-        agent.runtime_kind || runtimeKind,
-        agent.provider ?? preset?.provider ?? presetFallback(presetKey).provider ?? 'anthropic',
-      ),
+      provider,
       agent.execution_config ?? preset?.execution_config,
     ),
-    system_prompt: preset?.instruction_preamble?.trim() || agent.system_prompt || preset?.system_prompt || '',
+    system_prompt: agent.system_prompt || preset?.system_prompt || preset?.instruction_preamble?.trim() || '',
     instruction_preamble: preset?.instruction_preamble ?? '',
     instruction_skills: preset?.instruction_skills ?? [],
     available_skill_keys: preset?.available_skills ?? [],
@@ -943,12 +997,13 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
   const provider = normalizeProviderForRuntime(runtimeKind, 'anthropic');
   return {
     name: template.name,
+    icon_key: 'violet_star',
     preset_key: DEFAULT_SYSTEM_PRESET_KEY,
     preset_version_key: fallbackPresetVersionKey(DEFAULT_SYSTEM_PRESET_KEY),
     runtime_kind: runtimeKind,
     supported_modes: supportedModesForForm(runtimeKind),
     provider,
-    model: '',
+    model: defaultModelForAgentProvider(provider),
     ...deriveExecutionConfigFields(runtimeKind, provider, template.execution_config),
     system_prompt: template.system_prompt ?? '',
     instruction_preamble: '',
@@ -970,17 +1025,19 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
 function buildCustomAgentForm(agent: Agent): AgentFormData {
   const presetKey = fallbackPresetKey(agent);
   const runtimeKind = agent.runtime_kind;
+  const provider = normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic');
   return {
     name: agent.name,
+    icon_key: agent.icon_key ?? 'violet_star',
     preset_key: presetKey,
     preset_version_key: fallbackPresetVersionKey(presetKey),
     runtime_kind: runtimeKind,
     supported_modes: supportedModesForForm(runtimeKind),
-    provider: normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
-    model: agent.model ?? '',
+    provider,
+    model: agent.model?.trim() || defaultModelForAgentProvider(provider),
     ...deriveExecutionConfigFields(
       runtimeKind,
-      normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
+      provider,
       agent.execution_config,
     ),
     system_prompt: agent.system_prompt ?? '',
@@ -1008,7 +1065,7 @@ function buildCustomAgentVersionForm(agent: Agent, version: AgentVersion): Agent
     runtime_kind: runtimeKind,
     supported_modes: version.supported_modes?.length ? version.supported_modes : supportedModesForForm(runtimeKind),
     provider,
-    model: version.model ?? '',
+    model: version.model?.trim() || defaultModelForAgentProvider(provider),
     ...deriveExecutionConfigFields(runtimeKind, provider, version.execution_config),
     system_prompt: version.system_prompt ?? '',
     instruction_preamble: '',
@@ -1028,11 +1085,13 @@ function comparableCustomAgentForm(form: AgentFormData) {
     : [];
   return {
     name: form.name.trim(),
+    icon_key: form.icon_key,
     runtime_kind: form.runtime_kind,
     provider,
     model: form.model.trim(),
     reasoning_effort: form.runtime_kind === 'codex' ? form.reasoning_effort : '',
     service_tier: form.runtime_kind === 'codex' && provider === 'openai' ? form.service_tier : '',
+    max_tool_steps: form.runtime_kind === 'native_sdk' ? parseNativeToolStepLimit(form.max_tool_steps) ?? 0 : 0,
     system_prompt: form.system_prompt.trim(),
     monthly_token_budget: normalizeTokenBudgetFormValue(form.monthly_token_budget),
     team_ids: teamIDs,
@@ -1061,14 +1120,6 @@ function agentSkillDisplayName(skill: Pick<SkillCatalogEntry, 'title' | 'key'> |
   return skill?.title?.trim() || fallbackKey;
 }
 
-const NATIVE_AVAILABLE_SKILLS_SYSTEM_PROMPT_GUIDANCE = `## Available Skills
-
-This agent has available skills it can choose to use when they are relevant to the task. Use list_available_skills or search_available_skills to inspect options, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default.`;
-
-const RUNTIME_AVAILABLE_SKILLS_SYSTEM_PROMPT_GUIDANCE = `## Available Skills
-
-This agent has available skills it can use when they would help or are required for the task. Use the runtime's skill access mechanism to inspect and apply only the specific skill instructions the task needs. Do not load every available skill by default.`;
-
 function customAgentFormDirtyKey(form: AgentFormData) {
   return JSON.stringify(comparableCustomAgentForm(form));
 }
@@ -1096,6 +1147,8 @@ const AGENT_RUN_TARGET_LABELS: Partial<Record<AgentTargetType, string>> = {
   support_conversation: 'Support conversation',
   support_coverage_gap: 'Coverage gap',
   epic: 'Epic',
+  sprint: 'Sprint',
+  objective: 'Objective',
   document: 'Document',
   crm_deal: 'Deal',
   repository: 'Repository',
@@ -1328,6 +1381,56 @@ function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children
           </TooltipContent>
         </Tooltip>
       )}
+    </div>
+  );
+}
+
+function NativeToolStepLimitField({
+  id,
+  value,
+  disabled = false,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const valid = isValidNativeToolStepLimit('native_sdk', value);
+  const helpID = `${id}-help`;
+  return (
+    <div className="space-y-2">
+      <FieldLabel
+        htmlFor={id}
+        tooltip="Maximum model and tool-call rounds in one run. Leave empty to use the agent default."
+      >
+        Tool step limit
+      </FieldLabel>
+      <Input
+        id={id}
+        type="number"
+        min={MIN_NATIVE_TOOL_STEPS}
+        max={MAX_NATIVE_TOOL_STEPS}
+        step={1}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Use agent default"
+        aria-invalid={!valid}
+        aria-describedby={helpID}
+        className="h-9 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive/30"
+      />
+      <p
+        id={helpID}
+        className={cn(
+          'text-[11px] leading-relaxed',
+          valid ? 'text-muted-foreground' : 'text-destructive',
+        )}
+      >
+        {valid
+          ? `${MIN_NATIVE_TOOL_STEPS}–${MAX_NATIVE_TOOL_STEPS} rounds per run.`
+          : `Enter a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`}
+      </p>
     </div>
   );
 }
@@ -1597,11 +1700,8 @@ function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
   return 'Custom agent';
 }
 
-// An empty model resolves to "Auto" (the runtime picks a default). That is a
-// valid configured state — do not flag it amber. Only custom agents that were
-// created but never saved with a model + provider would be truly unconfigured,
-// which the creation flow prevents today, so this is effectively always false.
-function needsModelConfiguration(_agent: Agent) {
+// Legacy blank models resolve to the provider default and are not an error.
+function needsModelConfiguration() {
   return false;
 }
 
@@ -1613,8 +1713,8 @@ function isFailingAgent(stats?: AgentRunStats) {
   return Boolean(stats?.recentFailed) || stats?.lastRun?.status === 'failed';
 }
 
-function needsAttention(agent: Agent, stats?: AgentRunStats) {
-  return needsModelConfiguration(agent) || Boolean(stats?.attentionRunCount) || isUnusedAgent(stats) || isFailingAgent(stats);
+function needsAttention(stats?: AgentRunStats) {
+  return needsModelConfiguration() || Boolean(stats?.attentionRunCount) || isUnusedAgent(stats) || isFailingAgent(stats);
 }
 
 export function sortAgentsForDisplay(agents: Agent[]) {
@@ -1683,14 +1783,6 @@ function lastRunStatusClass(run?: AgentRun) {
     default:
       return 'border-border/70 bg-muted/40 text-muted-foreground';
   }
-}
-
-function attentionRunPriority(run: AgentRun) {
-  const displayStatus = getAgentRunDisplayStatus(run);
-  if (displayStatus === 'awaiting_approval') return 3;
-  if (displayStatus === 'awaiting_auth') return 2;
-  if (displayStatus === 'awaiting_input') return 1;
-  return 0;
 }
 
 function attentionRunLabel(run: AgentRun) {
@@ -2001,7 +2093,7 @@ function AgentCard({
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
-  const attention = needsAttention(agent, stats);
+  const attention = needsAttention(stats);
   const runNowBlocker = agentRunNowBlocker(agent, stats);
   const showRunNow = canEdit && !agent.is_system;
   const canRunNow = showRunNow && !runNowBlocker;
@@ -2166,12 +2258,12 @@ function AgentCard({
 // ---------------------------------------------------------------------------
 
 const AGENTS_LIST_GRID_CLASS =
-  'lg:grid-cols-[minmax(12rem,1.6fr)_10rem_6.5rem_8.25rem_6.75rem_9rem] xl:grid-cols-[minmax(15rem,1.7fr)_12rem_7rem_9rem_8rem_9.5rem]';
+  'lg:grid-cols-[minmax(12rem,1.6fr)_17rem_6.5rem_8.25rem_4rem_2.5rem]';
 
 export function AgentsListTable({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border/70 bg-card">
-      <div className="min-w-[64rem] xl:min-w-[72rem]">{children}</div>
+    <div className="overflow-x-auto">
+      <div className="min-w-[64rem]">{children}</div>
     </div>
   );
 }
@@ -2180,7 +2272,7 @@ export function AgentsListHeader() {
   return (
     <div
       className={cn(
-        'hidden items-center gap-4 border-b border-border/70 bg-muted/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid',
+        'hidden items-center gap-4 border-b border-border px-[14px] pb-[9px] text-xs font-medium uppercase tracking-wide text-muted-foreground lg:grid',
         AGENTS_LIST_GRID_CLASS,
       )}
     >
@@ -2188,8 +2280,8 @@ export function AgentsListHeader() {
       <div>Config</div>
       <div>Runs · 7d</div>
       <div>Last run</div>
-      <div>Used in flows</div>
-      <div className="text-right">Action</div>
+      <div className="whitespace-nowrap">Used in flows</div>
+      <div />
     </div>
   );
 }
@@ -2220,39 +2312,6 @@ export function AgentActions({
 
   return (
     <div className="flex items-center justify-end gap-1">
-      {showRunNow ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              className={cn(
-                'inline-flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
-                canRunNow ? 'cursor-pointer' : 'cursor-not-allowed',
-              )}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!canRunNow}
-                className={cn(
-                  'h-8 px-2.5 text-xs',
-                  canRunNow ? 'cursor-pointer' : 'pointer-events-none cursor-not-allowed',
-                )}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRunNow(agent);
-                }}
-              >
-                <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
-                Run now
-              </Button>
-            </span>
-          </TooltipTrigger>
-          {runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}
-        </Tooltip>
-      ) : null}
-
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -2332,7 +2391,7 @@ function versionReadOnlyHelperText(area: string) {
   return `Duplicate this version to edit ${area}.`;
 }
 
-function AgentRow({
+export function AgentRow({
   agent,
   stats,
   usage,
@@ -2357,17 +2416,23 @@ function AgentRow({
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
-  const attention = needsAttention(agent, stats);
   const invocationLabel = INVOCATION_MODE_LABELS[agent.default_invocation_mode];
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${agent.name}`}
       className={cn(
-        'group grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3.5 transition-colors last:border-b-0 hover:bg-muted/25',
+        'group grid cursor-pointer items-center gap-4 border-b border-border/60 px-[14px] py-[13px] outline-none transition-colors duration-100 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         AGENTS_LIST_GRID_CLASS,
-        attention && 'bg-amber-500/[0.03]',
       )}
       onClick={() => onOpen(agent)}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        onOpen(agent);
+      }}
     >
       <div className="min-w-0" title={purpose}>
         <div className="flex items-center gap-3">
@@ -2395,9 +2460,7 @@ function AgentRow({
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Runs · 7d</p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <RunBars5 statuses={stats?.lastFiveStatuses ?? []} />
-          <span className="text-sm">
-            <span className="font-mono text-foreground">{stats?.recentRuns ?? 0}</span>
-          </span>
+          <span className="text-sm tabular-nums text-foreground">{stats?.recentRuns ?? 0}</span>
         </div>
       </div>
 
@@ -2405,9 +2468,9 @@ function AgentRow({
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Last run</p>
         <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
         {stats?.lastRun ? (
-          <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
+          <p className="text-xs text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
         ) : (
-          <p className="text-[11px] text-muted-foreground">Never</p>
+          <p className="text-xs text-muted-foreground">Never</p>
         )}
       </div>
 
@@ -2440,17 +2503,43 @@ export function AgentsPage() {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
   const repositoriesSettingsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'repositories') : undefined;
+  const toolConnectionsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'external-mcp') : undefined;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');
 
-  const [agents, setAgents] = useState<Agent[]>([]);
   const [providerOptions, setProviderOptions] = useState<AgentModelProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
   const [presets, setPresets] = useState<AgentPresetDefinition[]>([]);
   const [toolCatalog, setToolCatalog] = useState<ToolCatalogResponse | null>(null);
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalogResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const agentFleetQuery = useAutomationAgentFleet(workspaceId ?? '');
+  const agents = useMemo(
+    () => (agentFleetQuery.data?.agents ?? []).map((item) => item.agent),
+    [agentFleetQuery.data?.agents],
+  );
+  const runStats = useMemo<Record<string, AgentRunStats>>(
+    () => Object.fromEntries((agentFleetQuery.data?.agents ?? []).map((item) => [item.agent.id, {
+      recentRuns: item.stats.recent_runs,
+      recentCompleted: item.stats.recent_completed,
+      recentFailed: item.stats.recent_failed,
+      recentTokens: item.stats.recent_tokens,
+      lastRun: item.stats.last_run,
+      attentionRun: item.stats.attention_run,
+      attentionRunCount: item.stats.attention_count,
+      lastFiveStatuses: item.stats.recent_run_items.map((run) => run.status),
+      recentRunItems: item.stats.recent_run_items,
+    }])),
+    [agentFleetQuery.data?.agents],
+  );
+  const agentUsageMap = useMemo<Record<string, AgentTriggerUsageSummary | null>>(
+    () => Object.fromEntries((agentFleetQuery.data?.agents ?? []).map((item) => [item.agent.id, item.usage])),
+    [agentFleetQuery.data?.agents],
+  );
+  const loading = agentFleetQuery.isPending;
+  const refetchAgentFleet = agentFleetQuery.refetch;
+  const error = agentFleetQuery.error instanceof Error
+    ? agentFleetQuery.error.message
+    : agentFleetQuery.error ? String(agentFleetQuery.error) : null;
 
   const { data: settings } = useWorkspaceSettings(workspaceId ?? '');
   const teams = settings?.teams ?? [];
@@ -2461,8 +2550,6 @@ export function AgentsPage() {
   const visibleTeams = isAdmin ? teams : accessibleTeams;
 
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
-  const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
-  const [agentUsageMap, setAgentUsageMap] = useState<Record<string, AgentTriggerUsageSummary | null>>({});
   const agentTemplates: AgentTemplate[] = [];
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [templateSetupDialogOpen, setTemplateSetupDialogOpen] = useState(false);
@@ -2523,7 +2610,6 @@ export function AgentsPage() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [automationOpen, setAutomationOpen] = useState(false);
   const [compiledPromptOpen, setCompiledPromptOpen] = useState(false);
-  const [openCoreSkillKeys, setOpenCoreSkillKeys] = useState<string[]>([]);
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [versionSkillsOpen, setVersionSkillsOpen] = useState(false);
@@ -2566,16 +2652,8 @@ export function AgentsPage() {
 
   const loadAgents = useCallback(async () => {
     if (!workspaceId) return;
-    setLoading(true);
-    setError(null);
-    const agentsRes = await automationService.listAgents(workspaceId);
-    if (agentsRes.error) {
-      setError(agentsRes.error);
-    } else {
-      setAgents(agentsRes.data ?? []);
-    }
-    setLoading(false);
-  }, [workspaceId]);
+    await refetchAgentFleet();
+  }, [refetchAgentFleet, workspaceId]);
 
   const loadProviderOptions = useCallback(async () => {
     if (!workspaceId) return;
@@ -2812,86 +2890,8 @@ export function AgentsPage() {
   }, []);
 
   useEffect(() => {
-    loadAgents();
-    loadProviderOptions();
     loadPresets();
-    loadToolCatalog();
-    loadSkillCatalog();
-  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog]);
-
-  const loadFleetData = useCallback(async () => {
-    if (!workspaceId || agents.length === 0) {
-      setRunStats({});
-      setAgentUsageMap({});
-      return;
-    }
-
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const results: Record<string, AgentRunStats> = {};
-    for (const agent of agents) {
-      results[agent.id] = {
-        recentRuns: 0,
-        recentCompleted: 0,
-        recentFailed: 0,
-        recentTokens: 0,
-        lastRun: undefined,
-        attentionRun: undefined,
-        attentionRunCount: 0,
-        lastFiveStatuses: [],
-        recentRunItems: [],
-      };
-    }
-
-    const [runsRes, usageEntries] = await Promise.all([
-      automationService.listWorkspaceRuns(workspaceId, 1, 500),
-      Promise.all(
-        agents.map(async (agent) => {
-          const res = await automationService.getAgentUsage(workspaceId, agent.id);
-          return [agent.id, res.error ? null : (res.data ?? null)] as const;
-        }),
-      ),
-    ]);
-
-    const runs = runsRes.error ? [] : (runsRes.data?.data ?? []);
-    for (const run of runs) {
-      const stats = results[run.agent_id];
-      if (!stats) continue;
-
-      if (!stats.lastRun) {
-        stats.lastRun = run;
-      }
-
-      if (isPausedAgentRun(run)) {
-        stats.attentionRunCount += 1;
-        if (!stats.attentionRun || attentionRunPriority(run) > attentionRunPriority(stats.attentionRun)) {
-          stats.attentionRun = run;
-        }
-      }
-
-      if (stats.lastFiveStatuses.length < 5) {
-        stats.lastFiveStatuses.push(run.status);
-      }
-      if (stats.recentRunItems.length < 5) {
-        stats.recentRunItems.push(run);
-      }
-
-      const createdAt = new Date(run.created_at).getTime();
-      if (Number.isNaN(createdAt) || createdAt < sevenDaysAgo) continue;
-
-      stats.recentRuns += 1;
-      stats.recentTokens += run.tokens_used ?? 0;
-      if (run.status === 'completed') stats.recentCompleted += 1;
-      if (run.status === 'failed') stats.recentFailed += 1;
-    }
-
-    setRunStats(results);
-    setAgentUsageMap(Object.fromEntries(usageEntries));
-  }, [agents, workspaceId]);
-
-  // Fetch fleet-level run stats and trigger usage once, then derive agent rows from that shared data.
-  useEffect(() => {
-    void loadFleetData();
-  }, [loadFleetData]);
+  }, [loadPresets]);
 
   useEffect(() => {
     if (!systemDrawerOpen || systemDrawerTab !== 'analytics' || !editingAgent?.id) return;
@@ -2899,21 +2899,26 @@ export function AgentsPage() {
   }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, systemDrawerOpen, systemDrawerTab]);
 
   useEffect(() => {
-    const handler = () => {
-      void loadFleetData();
-      if (systemDrawerOpen && systemDrawerTab === 'analytics' && editingAgent?.id) {
+    if (!systemDrawerOpen || systemDrawerTab !== 'analytics' || !editingAgent?.id) return;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const handler = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event) || refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
         void loadAgentAnalytics(editingAgent.id, agentAnalyticsRange);
-      }
+      }, 400);
     };
     window.addEventListener('agent_run-created', handler);
     window.addEventListener('agent_run-updated', handler);
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       window.removeEventListener('agent_run-created', handler);
       window.removeEventListener('agent_run-updated', handler);
     };
-  }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, loadFleetData, systemDrawerOpen, systemDrawerTab]);
+  }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, systemDrawerOpen, systemDrawerTab]);
 
   const openCreateDialog = () => {
+    void Promise.all([loadProviderOptions(), loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(null);
     setTemplateDraft(null);
     setAgentUsage(null);
@@ -2930,6 +2935,7 @@ export function AgentsPage() {
   };
 
   const openCreateFromTemplateDrawer = async (template: AgentTemplate) => {
+    void Promise.all([loadProviderOptions(), loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(null);
     const defaultStarterFlowEnabled = template.starter_flows?.some((flow) => flow.default_enabled) ?? false;
     setTemplateDraft({ template, createStarterFlow: defaultStarterFlowEnabled });
@@ -3120,6 +3126,7 @@ export function AgentsPage() {
   };
 
   const openEditDialog = (agent: Agent) => {
+    void Promise.all([loadProviderOptions(), loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(agent);
     setTemplateDraft(null);
     setAgentUsage(null);
@@ -3160,9 +3167,6 @@ export function AgentsPage() {
       const payload = buildUpdatePayload(form, advancedOpen, presets, editingAgent);
       const res = await automationService.updateAgent(workspaceId, editingAgent.id, payload);
       if (!res.error) {
-        if (res.data) {
-          setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
-        }
         setDialogOpen(false);
         setSystemDrawerOpen(false);
         if (editingAgent.is_system) {
@@ -3323,6 +3327,7 @@ export function AgentsPage() {
           team_id: form.team_id || undefined,
           overrides: {
             role: templateDraft.template.default_role,
+            icon_key: form.icon_key,
             runtime_kind: form.runtime_kind,
             skills: form.skills,
             provider: form.provider,
@@ -3415,8 +3420,7 @@ export function AgentsPage() {
       provider: form.provider,
       model: form.model.trim(),
       execution_config: buildExecutionConfigPayload(form),
-      system_prompt: hasCoreSkills ? undefined : form.system_prompt.trim() || undefined,
-      instruction_preamble: hasCoreSkills ? form.system_prompt.trim() : undefined,
+      system_prompt: form.system_prompt.trim() || undefined,
       instruction_skills: form.instruction_skills,
       available_skills: form.available_skill_keys,
       allowed_tools: normalizeToolList(form.allowed_tools),
@@ -3431,7 +3435,7 @@ export function AgentsPage() {
       setForm((current) => ({
         ...current,
         preset_version_key: res.data?.version_key ?? current.preset_version_key,
-        system_prompt: res.data?.instruction_preamble?.trim() || res.data?.system_prompt || current.system_prompt,
+        system_prompt: res.data?.system_prompt || current.system_prompt,
         instruction_preamble: res.data?.instruction_preamble ?? current.instruction_preamble,
         instruction_skills: res.data?.instruction_skills ?? current.instruction_skills,
         available_skill_keys: res.data?.available_skills ?? current.available_skill_keys,
@@ -3491,8 +3495,7 @@ export function AgentsPage() {
       provider: form.provider,
       model: form.model.trim(),
       execution_config: buildExecutionConfigPayload(form),
-      system_prompt: hasCoreSkills ? undefined : form.system_prompt.trim() || undefined,
-      instruction_preamble: hasCoreSkills ? form.system_prompt.trim() : undefined,
+      system_prompt: form.system_prompt.trim() || undefined,
       instruction_skills: form.instruction_skills,
       available_skills: form.available_skill_keys,
       allowed_tools: normalizeToolList(form.allowed_tools),
@@ -3529,7 +3532,6 @@ export function AgentsPage() {
     }
     if (res.data) {
       setEditingAgent(res.data);
-      setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
       setForm((current) => ({
         ...current,
         monthly_token_budget: res.data?.monthly_token_budget?.toString() ?? '',
@@ -3553,7 +3555,6 @@ export function AgentsPage() {
       }
       if (res.data) {
         setEditingAgent(res.data);
-        setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
         setForm(buildCustomAgentForm(res.data));
         await loadCustomAgentVersions(res.data);
       }
@@ -3575,7 +3576,6 @@ export function AgentsPage() {
     }
     if (res.data) {
       setEditingAgent(res.data);
-      setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
       setForm(buildSystemAgentForm(res.data, presets));
     }
     await loadPresets();
@@ -3655,10 +3655,6 @@ export function AgentsPage() {
     setSaving(false);
   };
 
-  if (!workspace) {
-    return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
-  }
-
   const visibleAgents = agents.filter((agent) => {
     if (!agent.team_id) {
       return true;
@@ -3723,12 +3719,15 @@ export function AgentsPage() {
   const isEditingCustomVersion = editingCustomAgent && !versionDraftOpen && Boolean(selectedCustomVersion);
   const systemVersionReadOnly = editingSystemAgent && !versionDraftOpen && !isEditingWorkspaceVersion;
   const versionReadOnly = editingSystemAgent ? systemVersionReadOnly : false;
+  const versionSystemPromptValue = versionReadOnly
+    ? selectedPreset?.system_prompt?.trim() || form.system_prompt
+    : form.system_prompt;
   const hasWorkspaceVersionChanges = Boolean(isEditingWorkspaceVersion && selectedPreset && (
     form.runtime_kind !== selectedPreset.runtime_kind ||
     form.provider !== (selectedPreset.provider ?? '') ||
     form.model.trim() !== (selectedPreset.model ?? '') ||
     stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(selectedPreset.execution_config) ||
-    form.system_prompt.trim() !== (selectedPreset.instruction_preamble || selectedPreset.system_prompt || '').trim() ||
+    form.system_prompt.trim() !== (selectedPreset.system_prompt || selectedPreset.instruction_preamble || '').trim() ||
     stableJSON(form.instruction_skills) !== stableJSON(selectedPreset.instruction_skills ?? []) ||
     stableJSON(form.available_skill_keys) !== stableJSON(selectedPreset.available_skills ?? []) ||
     stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(selectedPreset.allowed_tools ?? [])) ||
@@ -3762,6 +3761,7 @@ export function AgentsPage() {
     ?? templateDraft?.template.starter_flows?.[0];
   const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
   const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
+  const maxToolStepsValid = isValidNativeToolStepLimit(form.runtime_kind, form.max_tool_steps);
   const versionToolEditingState = getVersionToolEditingState({ versionReadOnly, runtimeKind: form.runtime_kind });
   const isBlankCustomCreate = !editingAgent && !templateDraft;
   const isCustomEdit = Boolean(editingAgent && !editingAgent.is_system && !templateDraft);
@@ -3785,6 +3785,9 @@ export function AgentsPage() {
     }
     if (!providerConfigState.selectedProviderOption) {
       missing.push('compatible AI provider');
+    }
+    if (!maxToolStepsValid) {
+      missing.push(`tool step limit from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}`);
     }
     if (starterFlowEnabled && templateDraft?.template.key === 'release_notes_writer') {
       if (!templateForm.repository_id) missing.push('repository');
@@ -3879,8 +3882,6 @@ export function AgentsPage() {
   const skillCatalogEntries = skillCatalog?.skills ?? [];
   const attachedSkillIdentities = new Set(form.skills.map(agentSkillIdentity));
   const availableSkillEntries = skillCatalogEntries.filter((s) => !attachedSkillIdentities.has(agentSkillIdentity(s)));
-  const coreSkillItems = form.instruction_skills.map((key) => ({ key, identity: key }));
-  const hasCoreSkills = coreSkillItems.length > 0;
   const availableSystemSkillItems = form.available_skill_keys.map((key) => ({ key, identity: key }));
   const versionSkillItems = editingCustomAgent
     ? form.skills.map((skill) => ({ key: skill.key, identity: agentSkillIdentity(skill) }))
@@ -3976,7 +3977,7 @@ export function AgentsPage() {
       provider: nextProvider,
       model: nextPreset.model ?? '',
       ...deriveExecutionConfigFields(nextPreset.runtime_kind, nextProvider, nextPreset.execution_config),
-      system_prompt: nextPreset.instruction_preamble?.trim() || nextPreset.system_prompt || '',
+      system_prompt: nextPreset.system_prompt || nextPreset.instruction_preamble?.trim() || '',
       instruction_preamble: nextPreset.instruction_preamble ?? '',
       instruction_skills: nextPreset.instruction_skills ?? [],
       available_skill_keys: nextPreset.available_skills ?? [],
@@ -4001,261 +4002,8 @@ export function AgentsPage() {
     setForm(buildCustomAgentVersionForm(editingAgent, nextVersion));
   };
 
-  return (
-    <div className="mx-auto max-w-7xl space-y-4 pb-20">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold">Agents</h1>
-          <p className="text-sm text-muted-foreground">
-            Built-in and custom agents for manual runs and automated flows.
-          </p>
-        </div>
-        {sortedAgents.length > 0 && (
-          <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-md border border-border">
-              <button
-                type="button"
-                className={`p-1.5 ${viewMode === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => setViewMode('list')}
-              >
-                <LayoutTable01Icon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                className={`p-1.5 ${viewMode === 'cards' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                onClick={() => setViewMode('cards')}
-              >
-                <LayoutGridIcon className="h-4 w-4" />
-              </button>
-            </div>
-            {canEdit && (
-              <Button size="sm" onClick={openCreateDialog}>
-                <PlusSignIcon className="mr-1.5 h-4 w-4" />
-                New Custom Agent
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {loading && <p className="text-sm text-muted-foreground">Loading agents...</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      {/* ---- Empty state with onboarding ---- */}
-      {!loading && visibleAgents.length === 0 && !error && (
-        <div className="flex flex-col items-center justify-center py-16 px-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
-            <BotIcon className="h-7 w-7 text-violet-500" />
-          </div>
-          <h3 className="text-lg font-semibold mb-1.5">Create your first agent</h3>
-          <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-            AI-powered teammates that plan features, write code, review work, update docs, reply to customers, and manage deals — automatically or on demand.
-          </p>
-          {canEdit && (
-            <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
-              <Button className="gap-2" onClick={openCreateDialog}>
-                <PlusSignIcon className="h-4 w-4" />
-                New Custom Agent
-              </Button>
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
-            {EMPTY_STATE_CARDS.map((card) => (
-              <div key={card.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
-                <card.icon className="h-5 w-5 text-muted-foreground mb-3" />
-                <p className="text-sm font-medium mb-1">{card.title}</p>
-                <p className="text-sm text-muted-foreground leading-relaxed">{card.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ---- Agent list / grid ---- */}
-      {sortedAgents.length > 0 && viewMode === 'list' && (
-        <AgentsListTable>
-          <AgentsListHeader />
-          {sortedAgents.map((agent) => (
-            <AgentRow
-              key={agent.id}
-              agent={agent}
-              stats={runStats[agent.id]}
-              usage={agentUsageMap[agent.id]}
-              presets={presets}
-              onOpen={openEditDialog}
-              onOpenRun={openRunDetails}
-              onRunNow={openRunNowDialog}
-              onDelete={openDeleteDialog}
-              canEdit={canEdit}
-              workspaceSlug={workspace?.slug}
-            />
-          ))}
-        </AgentsListTable>
-      )}
-
-      {sortedAgents.length > 0 && viewMode === 'cards' && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {sortedAgents.map((agent) => (
-            <AgentCard
-              key={agent.id}
-              agent={agent}
-              stats={runStats[agent.id]}
-              usage={agentUsageMap[agent.id]}
-              presets={presets}
-              onOpen={openEditDialog}
-              onOpenRun={openRunDetails}
-              onRunNow={openRunNowDialog}
-              onDelete={openDeleteDialog}
-              canEdit={canEdit}
-              workspaceSlug={workspace?.slug}
-            />
-          ))}
-        </div>
-      )}
-
-      <Dialog
-        open={runNowOpen}
-        onOpenChange={(open) => {
-          setRunNowOpen(open);
-          if (!open) {
-            setRunNowAgent(null);
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-[560px]">
-          <DialogHeader>
-            <DialogTitle>Run agent now</DialogTitle>
-            <DialogDescription>
-              {runNowAgent ? `Start ${runNowAgent.name} manually with a concrete target and optional instructions.` : 'Start this agent manually.'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {runNowTargets.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
-                This agent does not have a manually runnable target enabled.
-              </div>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="run-now-target-type">Target</Label>
-                  <Select value={runNowTargetType} onValueChange={handleRunNowTargetChange}>
-                    <SelectTrigger id="run-now-target-type">
-                      <SelectValue placeholder="Choose a target" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {runNowTargets.map((target) => (
-                        <SelectItem key={target} value={target}>
-                          {labelForAgentTarget(target)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {runNowTargetType === 'workspace' ? (
-                  <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
-                    <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Workspace</p>
-                    <p className="mt-1 text-sm">{workspace.name}</p>
-                  </div>
-                ) : null}
-
-                {runNowTargetType === 'repository' ? (
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="run-now-repository">Repository</Label>
-                      <Select
-                        value={runNowTargetId}
-                        onValueChange={(repoId) => {
-                          setRunNowTargetId(repoId);
-                          const repo = repositories.find((item) => item.id === repoId);
-                          setRunNowBaseBranch(repo?.default_branch ?? '');
-                        }}
-                        disabled={runNowRepositoriesLoading || runnableRepositories.length === 0}
-                      >
-                        <SelectTrigger id="run-now-repository">
-                          <SelectValue placeholder={runNowRepositoriesLoading ? 'Loading repositories...' : 'Choose a repository'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {runnableRepositories.map((repo) => (
-                            <SelectItem key={repo.id} value={repo.id}>
-                              {repo.full_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {!runNowRepositoriesLoading && runnableRepositories.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          No workspace repositories are available for agent runs.
-                          {repositoriesSettingsHref ? (
-                            <>
-                              {' '}
-                              <a href={repositoriesSettingsHref} className="underline underline-offset-2 hover:text-foreground">Manage repositories</a>
-                            </>
-                          ) : null}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="run-now-base-branch">Base branch</Label>
-                      <Input
-                        id="run-now-base-branch"
-                        value={runNowBaseBranch}
-                        onChange={(event) => setRunNowBaseBranch(event.target.value)}
-                        placeholder={selectedRunNowRepository?.default_branch || 'Repository default branch'}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-
-                {runNowTargetType && !['workspace', 'repository'].includes(runNowTargetType) ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="run-now-target-id">{RUN_NOW_TARGET_ID_LABELS[runNowTargetType] ?? 'Target ID'}</Label>
-                    <Input
-                      id="run-now-target-id"
-                      value={runNowTargetId}
-                      onChange={(event) => setRunNowTargetId(event.target.value)}
-                      placeholder={RUN_NOW_TARGET_ID_PLACEHOLDERS[runNowTargetType] ?? 'Paste a target ID'}
-                    />
-                  </div>
-                ) : null}
-
-                <div className="space-y-2">
-                  <Label htmlFor="run-now-context">Run instructions</Label>
-                  <Textarea
-                    id="run-now-context"
-                    value={runNowAdditionalContext}
-                    onChange={(event) => setRunNowAdditionalContext(event.target.value)}
-                    placeholder="Add anything this run should focus on."
-                    rows={4}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRunNowOpen(false)}
-              disabled={runNowSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void handleRunNow()}
-              disabled={!runNowCanSubmit || runNowSubmitting}
-            >
-              {runNowSubmitting ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <ZapIcon className="mr-1.5 h-3.5 w-3.5" />}
-              Run now
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Sheet
+  const renderSystemDrawer = () => (
+<Sheet
         open={systemDrawerOpen}
         onOpenChange={(open) => {
           setSystemDrawerOpen(open);
@@ -4400,7 +4148,7 @@ export function AgentsPage() {
                             </div>
                             <div>
                               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tokens</p>
-                              <p className="font-mono text-sm">{(run.tokens_used ?? 0).toLocaleString()}</p>
+                              <p className="font-mono text-sm">{getAgentTokenUsageTotal(run).toLocaleString()}</p>
                             </div>
                             <div>
                               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">When</p>
@@ -4790,7 +4538,7 @@ export function AgentsPage() {
                     </div>
                     <div className="space-y-1 p-3">
                       <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
-                      <dd className="truncate text-sm font-medium" title={form.model}>{form.model || 'Auto'}</dd>
+                      <dd className="truncate text-sm font-medium" title={form.model}>{form.model || defaultModelForAgentProvider(form.provider, providerOptions)}</dd>
                     </div>
                     <div className="space-y-1 p-3">
                       <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
@@ -4838,7 +4586,7 @@ export function AgentsPage() {
                       <div className="space-y-4 border-t border-border/60 p-4">
                         <div>
                           <Textarea
-                            value={form.system_prompt}
+                            value={versionSystemPromptValue}
                             readOnly={versionReadOnly}
                             onChange={(e) => setForm((current) => ({ ...current, system_prompt: e.target.value }))}
                             rows={12}
@@ -4851,56 +4599,6 @@ export function AgentsPage() {
                             )}
                           />
                         </div>
-                        {coreSkillItems.length > 0 && (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3 pt-2">
-                              <span className="h-px flex-1 bg-border/60" />
-                              <p className="text-xs font-medium text-muted-foreground">These core skills are sent with the system prompt</p>
-                              <span className="h-px flex-1 bg-border/60" />
-                            </div>
-                            <div className="space-y-2">
-                              {coreSkillItems.map((skill, idx) => {
-                                const entry = skillCatalogEntries.find((s) => s.key === skill.key);
-                                const instructionPreview = entry?.instructions?.trim() || entry?.description?.trim();
-                                return (
-                                  <Collapsible.Root
-                                    key={skill.identity}
-                                    open={openCoreSkillKeys.includes(skill.identity)}
-                                    onOpenChange={(open) => setOpenCoreSkillKeys((current) => (
-                                      open
-                                        ? Array.from(new Set([...current, skill.identity]))
-                                        : current.filter((key) => key !== skill.identity)
-                                    ))}
-                                    className="overflow-hidden rounded-lg border border-border/50 bg-muted/20"
-                                  >
-                                    <Collapsible.Trigger asChild>
-                                      <button type="button" className="group flex w-full items-center gap-2 px-3 py-2 text-left">
-                                        <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-background text-[10px] font-semibold text-muted-foreground">{idx + 1}</span>
-                                        <BookOpen01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                        <span className="min-w-0 flex-1 truncate text-xs font-medium">{agentSkillDisplayName(entry, skill.key)}</span>
-                                        <span className="font-mono text-[10px] text-muted-foreground">{skill.key}</span>
-                                      </button>
-                                    </Collapsible.Trigger>
-                                    <Collapsible.Content>
-                                      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap border-t border-border/50 px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">{instructionPreview || (skillCatalog ? 'Skill details are not available in the current catalog response.' : 'Loading skill details...')}</pre>
-                                    </Collapsible.Content>
-                                  </Collapsible.Root>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                        {versionSkillItems.length > 0 && (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-3 pt-2">
-                              <span className="h-px flex-1 bg-border/60" />
-                              <p className="text-xs font-medium text-muted-foreground">Available skills guidance is sent with the system prompt</p>
-                              <span className="h-px flex-1 bg-border/60" />
-                            </div>
-                            <pre className="whitespace-pre-wrap rounded-lg border border-border/50 bg-muted/20 px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">{form.runtime_kind === 'native_sdk' ? NATIVE_AVAILABLE_SKILLS_SYSTEM_PROMPT_GUIDANCE : RUNTIME_AVAILABLE_SKILLS_SYSTEM_PROMPT_GUIDANCE}</pre>
-                          </div>
-                        )}
                       </div>
                     </Collapsible.Content>
                   </Collapsible.Root>
@@ -5037,6 +4735,7 @@ export function AgentsPage() {
                           onOpenChange={setToolPickerOpen}
                           tools={toolCatalogEntries}
                           selectedTools={form.allowed_tools}
+                          connectionsHref={toolConnectionsHref}
                           disabled={!versionToolEditingState.canEdit}
                           disabledReason={versionToolEditingState.disabledReason}
                           onToggleTool={toggleTool}
@@ -5215,7 +4914,7 @@ export function AgentsPage() {
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                         <span className="flex-1 text-sm font-medium">Execution</span>
-                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind} · {form.model || 'Auto'}</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind} · {form.model || defaultModelForAgentProvider(form.provider, providerOptions)}</span>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
@@ -5233,14 +4932,19 @@ export function AgentsPage() {
                                   const nextDefaultMode = nextSupportedModes.includes(current.default_invocation_mode)
                                     ? current.default_invocation_mode
                                     : nextSupportedModes[0];
+                                  const provider = normalizeProviderForRuntime(runtimeKind, current.provider);
+                                  const modelName = provider !== current.provider || !current.model.trim()
+                                    ? defaultModelForAgentProvider(provider, providerOptions)
+                                    : current.model;
                                   return {
                                     ...current,
                                     runtime_kind: runtimeKind,
                                     supported_modes: nextSupportedModes,
-                                    provider: normalizeProviderForRuntime(runtimeKind, current.provider),
+                                    provider,
+                                    model: modelName,
                                     ...deriveExecutionConfigFields(
                                       runtimeKind,
-                                      normalizeProviderForRuntime(runtimeKind, current.provider),
+                                      provider,
                                       buildExecutionConfigPayload(current),
                                     ),
                                     default_invocation_mode: nextDefaultMode,
@@ -5278,6 +4982,7 @@ export function AgentsPage() {
                                   return {
                                     ...current,
                                     provider,
+                                    model: defaultModelForAgentProvider(provider, providerOptions),
                                     ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
                                   };
                                 })
@@ -5313,23 +5018,29 @@ export function AgentsPage() {
                         <div className="grid gap-5 md:grid-cols-2">
                           <div className="space-y-2">
                             <FieldLabel htmlFor="system-agent-model">Model</FieldLabel>
-                            <Input
+                            <CuratedModelSelect
                               id="system-agent-model"
+                              provider={form.provider}
                               value={form.model}
-                              disabled={versionReadOnly || providerConfigState.modelDisabled}
-                              onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                              placeholder={selectedProviderOption?.model_placeholder ?? 'Select provider first'}
-                              className="h-9"
+                              disabled
+                              onValueChange={(model) => setForm((current) => ({ ...current, model }))}
                             />
                             <p className={cn(
                               'text-[11px] leading-relaxed',
                               versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
                             )}>
-                              {versionReadOnly
-                                ? versionReadOnlyHelperText('the model')
-                                : providerConfigState.modelMessage || 'The language model that powers this agent.'}
+                              Built-in model size and route are managed by Helpin so capability and pricing stay predictable.
                             </p>
                           </div>
+
+                          {form.runtime_kind === 'native_sdk' && (
+                            <NativeToolStepLimitField
+                              id="system-agent-tool-step-limit"
+                              value={form.max_tool_steps}
+                              disabled={versionReadOnly}
+                              onChange={(value) => setForm((current) => ({ ...current, max_tool_steps: value }))}
+                            />
+                          )}
 
                           {supportsReasoningEffort && (
                             <div className="space-y-2">
@@ -5429,7 +5140,13 @@ export function AgentsPage() {
               </Button>
               <Button
                 size="sm"
-	                disabled={saving || !(isEditingWorkspaceVersion || isEditingCustomVersion) || !hasVersionChanges || !providerConfigState.selectedProviderOption}
+                disabled={
+                  saving
+                  || !(isEditingWorkspaceVersion || isEditingCustomVersion)
+                  || !hasVersionChanges
+                  || !providerConfigState.selectedProviderOption
+                  || !maxToolStepsValid
+                }
                 onClick={() => handleSaveWorkspaceVersion()}
               >
                 {saving ? 'Saving…' : 'Save'}
@@ -5439,87 +5156,10 @@ export function AgentsPage() {
           )}
         </SheetContent>
       </Sheet>
+  );
 
-      {/* ---- New custom version dialog ---- */}
-      <Dialog
-        open={versionDraftOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setVersionDraftOpen(false);
-            setVersionLabelDraft('');
-            setVersionDescriptionDraft('');
-	            if (editingAgent) {
-	              if (editingAgent.is_system) {
-	                setForm(buildSystemAgentForm(editingAgent, presets));
-	              } else if (selectedCustomVersion) {
-	                setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
-	              }
-	            }
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader>
-            <DialogTitle>New custom version</DialogTitle>
-            <DialogDescription>
-              Creates a custom version from the current configuration. Review it first, then set it as active when you are ready.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <FieldLabel htmlFor="preset-version-label">Version label</FieldLabel>
-              <Input
-                id="preset-version-label"
-                value={versionLabelDraft}
-                onChange={(e) => setVersionLabelDraft(e.target.value)}
-                placeholder="e.g. Engineering tuned"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-2">
-              <FieldLabel htmlFor="preset-version-description">Description</FieldLabel>
-              <Textarea
-                id="preset-version-description"
-                value={versionDescriptionDraft}
-                onChange={(e) => setVersionDescriptionDraft(e.target.value)}
-                placeholder="What changed in this version?"
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setVersionDraftOpen(false);
-                setVersionLabelDraft('');
-                setVersionDescriptionDraft('');
-	                if (editingAgent) {
-	                  if (editingAgent.is_system) {
-	                    setForm(buildSystemAgentForm(editingAgent, presets));
-	                  } else if (selectedCustomVersion) {
-	                    setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
-	                  }
-	                }
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={creatingVersion || !versionLabelDraft.trim()}
-              onClick={handleCreatePresetVersion}
-            >
-              {creatingVersion ? 'Creating…' : 'Create custom version'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
+  const renderTemplateSetupDialog = () => (
+<Dialog
         open={templateSetupDialogOpen && Boolean(templateDraft)}
         onOpenChange={(open) => {
           if (!open) {
@@ -6260,9 +5900,10 @@ export function AgentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+  );
 
-      {/* ---- Create / Edit drawer ---- */}
-      <Sheet
+  const renderAgentEditor = () => (
+<Sheet
         open={dialogOpen}
         onOpenChange={(open) => {
           if (open) {
@@ -6282,22 +5923,24 @@ export function AgentsPage() {
           )}
         >
           {isBlankCustomCreate || isCustomEdit ? (
-            <CustomAgentCreatePanel
-              workspaceId={workspaceId ?? ''}
-              form={form}
-              onChange={setForm}
-              teams={visibleTeams}
-              tools={toolCatalogEntries}
-              skills={skillCatalogEntries}
-              providerOptions={visibleProviderOptions}
-              advancedOpen={advancedOpen}
-              onAdvancedOpenChange={setAdvancedOpen}
-              onCreate={handleSave}
-              saving={saving}
-              mode={isCustomEdit ? 'edit' : 'create'}
-              canSave={isCustomEdit ? customEditHasChanges : undefined}
-              statusText={isCustomEdit ? (customEditHasChanges ? 'Unsaved changes' : 'No changes to save') : undefined}
-            />
+            <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading editor…</div>}>
+              <CustomAgentCreatePanel
+                workspaceId={workspaceId ?? ''}
+                form={form}
+                onChange={setForm}
+                teams={visibleTeams}
+                tools={toolCatalogEntries}
+                skills={skillCatalogEntries}
+                providerOptions={visibleProviderOptions}
+                advancedOpen={advancedOpen}
+                onAdvancedOpenChange={setAdvancedOpen}
+                onCreate={handleSave}
+                saving={saving}
+                mode={isCustomEdit ? 'edit' : 'create'}
+                canSave={isCustomEdit ? customEditHasChanges : undefined}
+                statusText={isCustomEdit ? (customEditHasChanges ? 'Unsaved changes' : 'No changes to save') : undefined}
+              />
+            </Suspense>
           ) : (
             <>
               <SheetHeader className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
@@ -6352,7 +5995,7 @@ export function AgentsPage() {
                   </div>
                   <div className="space-y-1 p-3">
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
-                    <dd className="truncate text-sm font-medium" title={form.model}>{form.model || 'Auto'}</dd>
+                    <dd className="truncate text-sm font-medium" title={form.model}>{form.model || defaultModelForAgentProvider(form.provider, providerOptions)}</dd>
                   </div>
                   <div className="space-y-1 p-3">
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
@@ -6449,7 +6092,7 @@ export function AgentsPage() {
                       className="h-7 gap-1.5 px-2 text-[11px]"
                       onClick={() => setSystemPromptEditorOpen(true)}
                     >
-                      <ArrowExpandIcon className="h-3.5 w-3.5" />
+                      <ExpandIcon className="h-3.5 w-3.5" />
                       Expand
                     </Button>
                   </div>
@@ -6862,14 +6505,19 @@ export function AgentsPage() {
                         if (!availableRuntimeKinds.includes(runtimeKind)) {
                           return current;
                         }
+                        const provider = normalizeProviderForRuntime(runtimeKind, current.provider);
+                        const modelName = provider !== current.provider || !current.model.trim()
+                          ? defaultModelForAgentProvider(provider, providerOptions)
+                          : current.model;
                         return {
                           ...current,
                           runtime_kind: runtimeKind,
                           supported_modes: supportedModesForForm(runtimeKind),
-                          provider: normalizeProviderForRuntime(runtimeKind, current.provider),
+                          provider,
+                          model: modelName,
                           ...deriveExecutionConfigFields(
                             runtimeKind,
-                            normalizeProviderForRuntime(runtimeKind, current.provider),
+                            provider,
                             buildExecutionConfigPayload(current),
                           ),
                           default_invocation_mode: normalizeDefaultInvocationMode(
@@ -6943,6 +6591,7 @@ export function AgentsPage() {
                         return {
                           ...current,
                           provider,
+                          model: defaultModelForAgentProvider(provider, providerOptions),
                           ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
                         };
                       })
@@ -6972,20 +6621,19 @@ export function AgentsPage() {
                 <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-model"
-                    tooltip="Leave blank to use the recommended model. Only change this if you need a specific model."
+                    tooltip="The provider default is selected automatically. Enter a different provider-compatible model only when needed."
                   >
                     Model
                   </FieldLabel>
-                  <Input
+                  <CuratedModelSelect
                     id="agent-model"
+                    provider={form.provider}
                     value={form.model}
-                    onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
-                    placeholder={selectedProviderOption?.model_placeholder ?? 'Select provider first'}
                     disabled={providerConfigState.modelDisabled}
-                    className="h-9"
+                    onValueChange={(model) => setForm((current) => ({ ...current, model }))}
                   />
                   <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    {providerConfigState.modelMessage || 'The language model that powers this agent.'}
+                    {providerConfigState.modelMessage || 'Choose from the approved catalog; model size and pricing are shown in the selector.'}
                   </p>
                 </div>
               </div>
@@ -7045,6 +6693,7 @@ export function AgentsPage() {
                         onOpenChange={setToolPickerOpen}
                         tools={toolCatalogEntries}
                         selectedTools={form.allowed_tools}
+                        connectionsHref={toolConnectionsHref}
                         onToggleTool={toggleTool}
                       />
                     </div>
@@ -7078,11 +6727,40 @@ export function AgentsPage() {
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
                   <span className="flex items-center gap-2 text-sm">
                     {automationOpen ? <ArrowDown01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
-                    Run limits
+                    Run behavior
                   </span>
                 </Button>
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
+                <div className="space-y-2">
+                  <FieldLabel
+                    htmlFor="agent-approval-policy"
+                    tooltip="Choose when this agent needs a person to approve its work."
+                  >
+                    Approval policy
+                  </FieldLabel>
+                  <Select
+                    value={form.approval_mode}
+                    onValueChange={(value) => setForm((current) => ({
+                      ...current,
+                      approval_mode: value as AgentApprovalMode,
+                    }))}
+                  >
+                    <SelectTrigger id="agent-approval-policy">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AGENT_APPROVAL_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {agentApprovalDescription(form.approval_mode)}
+                  </p>
+                </div>
                 <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-concurrency"
@@ -7184,6 +6862,13 @@ export function AgentsPage() {
                     </Select>
                   </div>
                 )}
+                {form.runtime_kind === 'native_sdk' && (
+                  <NativeToolStepLimitField
+                    id="agent-tool-step-limit"
+                    value={form.max_tool_steps}
+                    onChange={(value) => setForm((current) => ({ ...current, max_tool_steps: value }))}
+                  />
+                )}
                 <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-budget"
@@ -7238,6 +6923,241 @@ export function AgentsPage() {
           )}
         </SheetContent>
       </Sheet>
+  );
+
+  if (!workspace) {
+    return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold">Agents</h1>
+          <p className="text-sm text-muted-foreground">
+            Built-in and custom agents for manual runs and automated flows.
+          </p>
+        </div>
+        {sortedAgents.length > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-md border border-border">
+              <button
+                type="button"
+                className={`p-1.5 ${viewMode === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setViewMode('list')}
+              >
+                <LayoutTable01Icon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                className={`p-1.5 ${viewMode === 'cards' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setViewMode('cards')}
+              >
+                <LayoutGridIcon className="h-4 w-4" />
+              </button>
+            </div>
+            {canEdit && (
+              <Button size="sm" onClick={openCreateDialog}>
+                <PlusSignIcon className="mr-1.5 h-4 w-4" />
+                New Custom Agent
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {loading && <p className="text-sm text-muted-foreground">Loading agents...</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {/* ---- Empty state with onboarding ---- */}
+      {!loading && visibleAgents.length === 0 && !error && (
+        <div className="flex flex-col items-center justify-center py-16 px-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
+            <BotIcon className="h-7 w-7 text-violet-500" />
+          </div>
+          <h3 className="text-lg font-semibold mb-1.5">Create your first agent</h3>
+          <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
+            AI-powered teammates that plan features, write code, review work, update docs, reply to customers, and manage deals — automatically or on demand.
+          </p>
+          {canEdit && (
+            <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
+              <Button className="gap-2" onClick={openCreateDialog}>
+                <PlusSignIcon className="h-4 w-4" />
+                New Custom Agent
+              </Button>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
+            {EMPTY_STATE_CARDS.map((card) => (
+              <div key={card.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
+                <card.icon className="h-5 w-5 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium mb-1">{card.title}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">{card.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---- Agent list / grid ---- */}
+      {sortedAgents.length > 0 && viewMode === 'list' && (
+        <AgentsListTable>
+          <AgentsListHeader />
+          {sortedAgents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              stats={runStats[agent.id]}
+              usage={agentUsageMap[agent.id]}
+              presets={presets}
+              onOpen={openEditDialog}
+              onOpenRun={openRunDetails}
+              onRunNow={openRunNowDialog}
+              onDelete={openDeleteDialog}
+              canEdit={canEdit}
+              workspaceSlug={workspace?.slug}
+            />
+          ))}
+        </AgentsListTable>
+      )}
+
+      {sortedAgents.length > 0 && viewMode === 'cards' && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {sortedAgents.map((agent) => (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              stats={runStats[agent.id]}
+              usage={agentUsageMap[agent.id]}
+              presets={presets}
+              onOpen={openEditDialog}
+              onOpenRun={openRunDetails}
+              onRunNow={openRunNowDialog}
+              onDelete={openDeleteDialog}
+              canEdit={canEdit}
+              workspaceSlug={workspace?.slug}
+            />
+          ))}
+        </div>
+      )}
+
+      {runNowOpen ? (
+        <Suspense fallback={null}>
+          <AgentRunNowDialog
+            open
+            onOpenChange={(open) => {
+              setRunNowOpen(open);
+              if (!open) setRunNowAgent(null);
+            }}
+            agent={runNowAgent}
+            targets={runNowTargets}
+            targetLabel={labelForAgentTarget}
+            targetType={runNowTargetType}
+            onTargetTypeChange={handleRunNowTargetChange}
+            workspaceName={workspace.name}
+            repositories={repositories}
+            runnableRepositories={runnableRepositories}
+            repositoriesLoading={runNowRepositoriesLoading}
+            repositoriesSettingsHref={repositoriesSettingsHref}
+            targetId={runNowTargetId}
+            onTargetIdChange={setRunNowTargetId}
+            baseBranch={runNowBaseBranch}
+            onBaseBranchChange={setRunNowBaseBranch}
+            selectedRepository={selectedRunNowRepository}
+            additionalContext={runNowAdditionalContext}
+            onAdditionalContextChange={setRunNowAdditionalContext}
+            submitting={runNowSubmitting}
+            canSubmit={runNowCanSubmit}
+            onSubmit={() => void handleRunNow()}
+          />
+        </Suspense>
+      ) : null}
+
+      {renderSystemDrawer()}
+
+      {/* ---- New custom version dialog ---- */}
+      <Dialog
+        open={versionDraftOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setVersionDraftOpen(false);
+            setVersionLabelDraft('');
+            setVersionDescriptionDraft('');
+	            if (editingAgent) {
+	              if (editingAgent.is_system) {
+	                setForm(buildSystemAgentForm(editingAgent, presets));
+	              } else if (selectedCustomVersion) {
+	                setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
+	              }
+	            }
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>New custom version</DialogTitle>
+            <DialogDescription>
+              Creates a custom version from the current configuration. Review it first, then set it as active when you are ready.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <FieldLabel htmlFor="preset-version-label">Version label</FieldLabel>
+              <Input
+                id="preset-version-label"
+                value={versionLabelDraft}
+                onChange={(e) => setVersionLabelDraft(e.target.value)}
+                placeholder="e.g. Engineering tuned"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel htmlFor="preset-version-description">Description</FieldLabel>
+              <Textarea
+                id="preset-version-description"
+                value={versionDescriptionDraft}
+                onChange={(e) => setVersionDescriptionDraft(e.target.value)}
+                placeholder="What changed in this version?"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setVersionDraftOpen(false);
+                setVersionLabelDraft('');
+                setVersionDescriptionDraft('');
+	                if (editingAgent) {
+	                  if (editingAgent.is_system) {
+	                    setForm(buildSystemAgentForm(editingAgent, presets));
+	                  } else if (selectedCustomVersion) {
+	                    setForm(buildCustomAgentVersionForm(editingAgent, selectedCustomVersion));
+	                  }
+	                }
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={creatingVersion || !versionLabelDraft.trim() || !maxToolStepsValid}
+              onClick={handleCreatePresetVersion}
+            >
+              {creatingVersion ? 'Creating…' : 'Create custom version'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {renderTemplateSetupDialog()}
+
+      {/* ---- Create / Edit drawer ---- */}
+      {renderAgentEditor()}
 
       <Dialog open={systemPromptEditorOpen} onOpenChange={setSystemPromptEditorOpen}>
         <DialogContent className="z-[140] max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-5xl">
@@ -7466,16 +7386,20 @@ export function AgentsPage() {
         </DialogContent>
       </Dialog>
 
-      <CodingSessionDrawer
-        sessionId={selectedRunId}
-        open={runDrawerOpen && !!selectedRunId}
-        onOpenChange={(open) => {
-          setRunDrawerOpen(open);
-          if (!open) setSelectedRunId(null);
-        }}
-        title="Agent Run"
-        description="Interactive transcript, approvals, artifacts, and session details."
-      />
+      {runDrawerOpen && selectedRunId ? (
+        <Suspense fallback={null}>
+          <CodingSessionDrawer
+            sessionId={selectedRunId}
+            open
+            onOpenChange={(open) => {
+              setRunDrawerOpen(open);
+              if (!open) setSelectedRunId(null);
+            }}
+            title="Agent Run"
+            description="Interactive transcript, approvals, artifacts, and session details."
+          />
+        </Suspense>
+      ) : null}
       <UpgradeRequiredDialog
         open={upgradeDialogReason !== null}
         onOpenChange={(open) => {

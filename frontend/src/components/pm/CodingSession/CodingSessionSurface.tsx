@@ -33,6 +33,7 @@ import {
 import { useWorkspaceMembers } from '@/hooks/queries';
 import type { Agent, AgentRun, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -93,6 +94,10 @@ export function CodingSessionSurface({
     if (!workspaceId || !activeSessionId) return;
     const eventsRes = await codingSessionService.listEvents(workspaceId, activeSessionId, after);
     if (eventsRes.error) throw new Error(eventsRes.error);
+    setStreamSnapshotSeed((current) => mergeCodingSessionStreamSnapshotSeed(
+      current,
+      eventsRes.data?.stream_state_snapshot ?? null,
+    ));
     const nextEvents = eventsRes.data?.events ?? [];
     if (after > 0) {
       setEvents((current) => {
@@ -151,13 +156,25 @@ export function CodingSessionSurface({
     const onSessionUpdated = (raw: Event) => {
       const detail = (raw as CustomEvent).detail as { entity_id?: string; data?: Record<string, unknown> } | undefined;
       if (!detail || detail.entity_id !== activeSessionId) return;
+      const nextStatus = typeof detail.data?.status === 'string' ? detail.data.status as CodingSession['status'] : undefined;
+      const nextPauseReason = typeof detail.data?.pause_reason === 'string' ? detail.data.pause_reason as CodingSession['pause_reason'] : undefined;
+      const shouldReloadSession = (
+        nextStatus === 'paused'
+        || nextStatus === 'completed'
+        || nextStatus === 'failed'
+        || nextStatus === 'cancelled'
+        || (nextPauseReason && nextPauseReason !== 'none')
+      );
       setSession((current) => current ? {
         ...current,
         parent_run_id: typeof detail.data?.parent_run_id === 'string'
           ? detail.data.parent_run_id || undefined
           : current.parent_run_id,
-        status: typeof detail.data?.status === 'string' ? detail.data.status as CodingSession['status'] : current.status,
-        pause_reason: typeof detail.data?.pause_reason === 'string' ? detail.data.pause_reason as CodingSession['pause_reason'] : current.pause_reason,
+        status: nextStatus ?? current.status,
+        pause_reason: nextPauseReason ?? current.pause_reason,
+        approval_state: typeof detail.data?.approval_state === 'string'
+          ? detail.data.approval_state as CodingSession['approval_state']
+          : current.approval_state,
         execution_stage: typeof detail.data?.execution_stage === 'string'
           ? detail.data.execution_stage || undefined
           : current.execution_stage,
@@ -169,8 +186,10 @@ export function CodingSessionSurface({
           : current.error_message,
         updated_at: new Date().toISOString(),
       } : current);
-      void loadSession();
-      void loadArtifacts();
+      if (shouldReloadSession) {
+        void loadSession();
+        void loadArtifacts();
+      }
     };
     const onSessionEvent = (raw: Event) => {
       const detail = (raw as CustomEvent).detail as { parent_id?: string; data?: CodingSessionEvent } | undefined;
@@ -223,8 +242,10 @@ export function CodingSessionSurface({
   );
   const { data: workspaceMembers } = useWorkspaceMembers(session?.workspace_id ?? workspaceId);
   const activeInteraction = useMemo(
-    () => latestPendingCodingSessionInteraction(events),
-    [events],
+    () => (session && (session.status === 'running' || session.status === 'paused')
+      ? latestPendingCodingSessionInteraction(events)
+      : null),
+    [events, session],
   );
   const approvalStatesByPreviewKey = useMemo(
     () => codingSessionApprovalStatesByPreviewKey(events),
@@ -349,6 +370,10 @@ export function CodingSessionSurface({
     }));
   }, [runAction, activeSessionId, workspaceId]);
 
+  const approveRunGate = useCallback(async () => {
+    await runAction('approve-run', () => codingSessionService.approve(workspaceId, activeSessionId));
+  }, [runAction, activeSessionId, workspaceId]);
+
   const continueRun = useCallback(async (content?: string) => {
     if (!workspaceId || !activeSessionId) return;
     const result = await codingSessionService.continue(workspaceId, activeSessionId, content?.trim() ? { content: content.trim() } : {});
@@ -417,6 +442,7 @@ export function CodingSessionSurface({
   useEffect(() => {
     if (!session?.target_id || session.target_type !== 'task') return;
     const handler = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event)) return;
       const detail = (event as CustomEvent).detail as { parent_type?: string; parent_id?: string } | undefined;
       if (detail?.parent_type === 'task' && detail.parent_id === session.target_id) {
         setHandoffRuns(null);
@@ -573,6 +599,7 @@ export function CodingSessionSurface({
           onViewPreview={handleViewPreview}
           onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
           onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, activeSessionId))}
+          onApproveRun={() => void approveRunGate()}
           onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
         />
 

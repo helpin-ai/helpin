@@ -143,6 +143,27 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	if got := workspace.BacklogTasks[0].OwnerMemberIDs; len(got) != 1 || got[0] != "member-bob" {
 		t.Fatalf("backlog owner_member_ids = %#v, want bob", got)
 	}
+
+	firstBacklogPage, err := repo.ListBacklogTasksPage(ctx, workspaceID, model.PMSprintPlanningFilters{TeamID: &teamA}, model.PMPagination{Page: 1, PerPage: 1})
+	if err != nil {
+		t.Fatalf("ListBacklogTasksPage page 1: %v", err)
+	}
+	firstBacklogTasks, ok := firstBacklogPage.Data.([]model.SprintPlanningTaskPreview)
+	if !ok || len(firstBacklogTasks) != 1 || firstBacklogTasks[0].ID != "story-backlog-1" {
+		t.Fatalf("backlog page 1 = %#v, want story-backlog-1", firstBacklogPage.Data)
+	}
+	if firstBacklogPage.Total != 2 || firstBacklogPage.TotalPages != 2 {
+		t.Fatalf("backlog page 1 metadata = total:%d pages:%d, want 2/2", firstBacklogPage.Total, firstBacklogPage.TotalPages)
+	}
+
+	secondBacklogPage, err := repo.ListBacklogTasksPage(ctx, workspaceID, model.PMSprintPlanningFilters{TeamID: &teamA}, model.PMPagination{Page: 2, PerPage: 1})
+	if err != nil {
+		t.Fatalf("ListBacklogTasksPage page 2: %v", err)
+	}
+	secondBacklogTasks, ok := secondBacklogPage.Data.([]model.SprintPlanningTaskPreview)
+	if !ok || len(secondBacklogTasks) != 1 || secondBacklogTasks[0].ID != "story-backlog-2" {
+		t.Fatalf("backlog page 2 = %#v, want story-backlog-2", secondBacklogPage.Data)
+	}
 }
 
 func newPMSprintPlanningTestDB(t *testing.T) *gorm.DB {

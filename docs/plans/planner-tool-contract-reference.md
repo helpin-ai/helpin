@@ -92,6 +92,72 @@ Rules:
 - `content` must be the full markdown draft being reviewed
 - `title` is optional metadata only and must not be sent by itself
 
+### Approved task planning document application
+
+After a human approves the `task_doc` preview, the task planner applies it through two bounded product tools:
+
+1. Call `ensure_task_plan_doc` with an empty object:
+
+```json
+{}
+```
+
+This creates or loads the canonical task planning document, attaches it to the current task, and returns:
+
+```json
+{
+  "document_id": "...",
+  "title": "..."
+}
+```
+
+2. Call `write_document_content` with the returned ID and the full approved markdown:
+
+```json
+{
+  "document_id": "...",
+  "content": "# Outcome\n..."
+}
+```
+
+Rules:
+
+- use `ensure_task_plan_doc`; do not create and link a generic document manually
+- write the exact full markdown draft that the human approved
+- do not claim the document was persisted or attached until both calls succeed
+- repository access remains read-only throughout the task-planning run
+
+### Approved epic PRD application
+
+After a human approves the `prd` preview, the epic planner applies it through three bounded product tools:
+
+1. Call `ensure_epic_spec_doc` with `{}` to create or load the canonical PRD document and attach it to the current epic.
+2. Call `write_document_content` with the returned `document_id` and the exact full approved markdown.
+3. Call `approve_epic_spec` with `{}` to snapshot the current document content and record that version as the epic's approved spec.
+
+Do not create and link a generic document manually. Do not claim the PRD was persisted or attached, and do not continue to task planning, until all three calls succeed.
+
+### Approved epic task-plan application
+
+After a human approves the `tasks` preview, call `create_task_batch` with the exact approved task array:
+
+```json
+{
+  "proposed_tasks": [
+    {
+      "ref": "task_1",
+      "name": "Add tracking helper",
+      "description": "...",
+      "task_type": "chore",
+      "acceptance_criteria": ["..."],
+      "dependency_refs": []
+    }
+  ]
+}
+```
+
+Preserve all approved fields, stable refs, and `dependency_refs`. Do not claim tasks were created until the tool succeeds.
+
 ### `request_approval`
 
 ```json

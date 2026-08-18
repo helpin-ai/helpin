@@ -47,6 +47,7 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
     invocation_mode: 'interactive',
     status: 'paused',
     pause_reason: 'authentication',
+    approval_state: 'not_required',
     title: 'Coding Session',
     capabilities: {
       live_text_streaming: true,
@@ -304,9 +305,13 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(container.textContent).toContain('User input required');
+    expect(container.textContent).toContain('Needs your input');
+    expect(container.textContent).not.toContain('User input required');
     expect(container.textContent).toContain('How should the coding run continue?');
     expect(container.textContent).toContain('Submit answers');
+    const interactionShell = container.querySelector<HTMLElement>('[data-coding-session-interaction-shell]');
+    expect(interactionShell?.className).toContain('border-y');
+    expect(interactionShell?.className).not.toContain('rounded-xl');
     expect(container.textContent).toContain('Review history');
     expect(container.textContent).toContain('Nil panic in retry path');
     expect(container.textContent).toContain('approved');
@@ -510,7 +515,7 @@ describe('CodingInterruptionPanel', () => {
     });
   });
 
-  it('renders a system prompt card when no prompt artifact exists', () => {
+  it('does not render the agent system prompt as user context', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -532,15 +537,15 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(container.textContent).toContain('System prompt');
-    expect(container.textContent).toContain('Research configured competitors');
+    expect(container.textContent).not.toContain('System prompt');
+    expect(container.textContent).not.toContain('Research configured competitors');
 
     act(() => {
       root.unmount();
     });
   });
 
-  it('prefers developer prompt artifacts over the session system prompt', () => {
+  it('uses the user section of legacy prompt artifacts', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -563,8 +568,9 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(container.textContent).toContain('Developer prompt');
-    expect(container.textContent).toContain('Use the repository conventions');
+    expect(container.textContent).toContain('Prompt');
+    expect(container.textContent).toContain('Implement the requested change');
+    expect(container.textContent).not.toContain('Use the repository conventions');
     expect(container.textContent).not.toContain('Fallback native agent system prompt');
 
     act(() => {
@@ -706,7 +712,7 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    const scrollContainer = container.querySelector('.min-h-0.flex-1.overflow-auto') as HTMLDivElement | null;
+    const scrollContainer = container.querySelector('.h-full.overflow-auto') as HTMLDivElement | null;
     expect(scrollContainer).toBeTruthy();
     if (!scrollContainer) {
       throw new Error('expected transcript scroll container');

@@ -9,6 +9,7 @@ export type DocsBlockKind =
   | 'richEmbed'
   | 'callout'
   | 'videoEmbed'
+  | 'artifactVideo'
   | 'excalidraw'
   | 'resizableImage';
 
@@ -91,6 +92,13 @@ export const docsBlockRegistry = {
     attrs: ['url', 'provider', 'title'],
     agentReadableKind: 'video',
   },
+  artifactVideo: {
+    kind: 'artifactVideo',
+    label: 'Private video',
+    description: 'Embed a private Helpin artifact recording',
+    attrs: ['artifactId', 'fileName', 'contentType', 'description', 'caption'],
+    agentReadableKind: 'artifact_video',
+  },
   excalidraw: {
     kind: 'excalidraw',
     label: 'Excalidraw',
@@ -102,7 +110,7 @@ export const docsBlockRegistry = {
     kind: 'resizableImage',
     label: 'Image',
     description: 'Upload an image',
-    attrs: ['src', 'alt', 'caption', 'align'],
+    attrs: ['src', 'alt', 'caption', 'align', 'artifactId'],
     agentReadableKind: 'image',
   },
 } satisfies Record<DocsBlockKind, DocsBlockDefinition>;

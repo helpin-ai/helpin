@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { Moon02Icon, Sun01Icon } from '@/lib/icons';
 import { isModuleEnabled } from '@/lib/featureFlags';
 import type { WorkspaceModule } from '@/lib/types';
 import type { RailId, RailItem } from './types';
 import { SidebarRunsButton } from './SidebarRunsButton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 type SidebarRailProps = {
   railItems: RailItem[];
@@ -37,8 +38,9 @@ export function SidebarRail({
             return isModuleEnabled(item.id, userEmail)
           })
           .map((item) => (
+            <Fragment key={item.id}>
+            {item.separatorBefore && <div className="my-1 h-px w-8 bg-border" aria-hidden="true" />}
             <button
-              key={item.id}
               type="button"
               aria-label={item.label}
               onClick={() => onRailSelect(item.defaultLink)}
@@ -48,17 +50,20 @@ export function SidebarRail({
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <div className={`relative flex h-7 w-9 items-center justify-center rounded-md transition-colors ${
-                activeRail === item.id
-                  ? 'bg-foreground text-background'
-                  : 'hover:bg-muted/80'
-              }`}>
-                <item.icon className="h-4 w-4" />
+              <div className={item.progressPercent !== undefined
+                ? 'flex h-8 w-8 items-center justify-center rounded-full p-0.5 text-[9px] font-bold tabular-nums text-foreground'
+                : `relative flex h-7 w-9 items-center justify-center rounded-md transition-colors ${activeRail === item.id ? 'sidebar-rail-active-plate text-background' : 'hover:bg-muted/80'}`
+              } style={item.progressPercent !== undefined ? {
+                background: `conic-gradient(var(--color-emerald-500) ${item.progressPercent}%, var(--muted) 0)`,
+              } : undefined}>
+                {item.progressPercent !== undefined
+                  ? <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f0f0f2] dark:bg-sidebar">{item.progressPercent}%</span>
+                  : <item.icon className="relative z-10 h-4 w-4" />}
                 {item.indicator && (
-                  <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
+                  <span className="absolute -right-0.5 -top-0.5 z-20 h-2 w-2 rounded-full bg-red-500" />
                 )}
                 {!!item.badge && (
-                  <span className="absolute -right-1.5 -top-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
+                  <span className="absolute -right-1.5 -top-1 z-20 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold leading-none text-white">
                     {item.badge > 99 ? '99+' : item.badge}
                   </span>
                 )}
@@ -67,20 +72,27 @@ export function SidebarRail({
                 activeRail === item.id ? 'font-medium' : ''
               }`}>{item.label}</span>
             </button>
+            </Fragment>
           ))}
       </div>
 
       <div className="flex flex-col items-center gap-1.5 pt-2">
-        <button
-          type="button"
-          className="flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
-          onClick={onToggleTheme}
-          aria-label="Toggle theme"
-        >
-          <Sun01Icon className="h-3.5 w-3.5 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
-          <Moon02Icon className="absolute h-3.5 w-3.5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">{theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}</span>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+              onClick={onToggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              <Sun01Icon className="h-3.5 w-3.5 rotate-0 scale-100 transition-transform dark:rotate-90 dark:scale-0" />
+              <Moon02Icon className="absolute h-3.5 w-3.5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          </TooltipContent>
+        </Tooltip>
         <SidebarRunsButton />
         {accountMenu}
       </div>

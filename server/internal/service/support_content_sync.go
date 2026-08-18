@@ -1,13 +1,22 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	htmlstd "html"
+	"io"
 	"log/slog"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ledongthuc/pdf"
 
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/llm"
@@ -21,6 +30,12 @@ type SupportContentSyncWorkflowStarter interface {
 	QueueContentSourceReindex(ctx context.Context, workspaceID, contentSourceID string) error
 }
 
+// SupportContentSyncWorkflowCanceller is implemented by durable workflow
+// starters that can stop an in-flight source sync before its data is deleted.
+type SupportContentSyncWorkflowCanceller interface {
+	CancelContentSourceSync(ctx context.Context, workspaceID, contentSourceID string) error
+}
+
 // SupportContentSyncService keeps crawled web content indexed in pgvector.
 type SupportContentSyncService struct {
 	sourceRepo     *repository.SupportContentSourceRepository
@@ -29,6 +44,7 @@ type SupportContentSyncService struct {
 	embedder       llm.EmbeddingProvider
 	embeddingModel string
 	crawler        crawler.ContentCrawler
+	objectStore    supportContentObjectStore
 	starter        SupportContentSyncWorkflowStarter
 }
 
@@ -41,6 +57,7 @@ func NewSupportContentSyncService(
 	embedder llm.EmbeddingProvider,
 	embeddingModel string,
 	contentCrawler crawler.ContentCrawler,
+	objectStore supportContentObjectStore,
 	starter SupportContentSyncWorkflowStarter,
 ) *SupportContentSyncService {
 	if strings.TrimSpace(embeddingModel) == "" {
@@ -53,6 +70,7 @@ func NewSupportContentSyncService(
 		embedder:       embedder,
 		embeddingModel: strings.TrimSpace(embeddingModel),
 		crawler:        contentCrawler,
+		objectStore:    objectStore,
 		starter:        starter,
 	}
 }
@@ -82,7 +100,13 @@ func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspa
 		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
 	}
-	if s.crawler == nil {
+	if source.SourceType == model.ContentSourceTypeFile {
+		if s.objectStore == nil {
+			msg := "file storage is not configured"
+			_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
+			return nil
+		}
+	} else if s.crawler == nil {
 		msg := "content crawler is not configured"
 		_ = s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
 		return nil
@@ -100,6 +124,19 @@ func (s *SupportContentSyncService) QueueSourceSync(ctx context.Context, workspa
 		return err
 	}
 	return nil
+}
+
+// CancelSourceSync stops the deterministic durable workflow for a content
+// source. A missing starter means no workflow was queued by this service.
+func (s *SupportContentSyncService) CancelSourceSync(ctx context.Context, workspaceID, contentSourceID string) error {
+	if s == nil || s.starter == nil {
+		return nil
+	}
+	canceller, ok := s.starter.(SupportContentSyncWorkflowCanceller)
+	if !ok {
+		return fmt.Errorf("Temporal content sync cancellation is not configured")
+	}
+	return canceller.CancelContentSourceSync(ctx, workspaceID, contentSourceID)
 }
 
 // RunSourceSync performs the full crawl + embedding pipeline for a content source.
@@ -129,6 +166,9 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 	if s.embedder == nil {
 		msg := "OpenAI-compatible embedding provider is not configured"
 		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
+	}
+	if source.SourceType == model.ContentSourceTypeFile {
+		return s.runFileSourceSync(ctx, *source)
 	}
 	if s.crawler == nil {
 		msg := "content crawler is not configured"
@@ -178,7 +218,7 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 			return err
 		}
 
-		chunks := chunkDocumentText(contentText)
+		chunks := chunkStructuredDocument(title, contentText)
 		if len(chunks) == 0 {
 			return s.chunkRepo.ReplacePageChunks(ctx, savedPage.ID, nil)
 		}
@@ -186,7 +226,7 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
 			Provider: "openai",
 			Model:    s.embeddingModel,
-			Inputs:   chunks,
+			Inputs:   structuredChunkSearchInputs(chunks),
 		})
 		if err != nil {
 			slog.WarnContext(ctx, "skipping page: embedding failed", "page_id", savedPage.ID, "url", savedPage.URL, "error", err)
@@ -210,16 +250,23 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 			}
 			safeTitle := strings.ToValidUTF8(savedPage.Title, "")
 			safeURL := strings.ToValidUTF8(savedPage.URL, "")
-			safeChunk := strings.ToValidUTF8(chunk, "")
+			safeChunk := strings.ToValidUTF8(chunk.Content, "")
+			safeSearchContent := strings.ToValidUTF8(chunk.SearchContent, "")
+			previous, next := neighborChunkIndexes(chunkIndex, len(chunks))
 			rows = append(rows, model.SupportContentChunk{
 				WorkspaceID:         source.WorkspaceID,
 				ContentSourceID:     source.ID,
 				PageID:              savedPage.ID,
 				ChunkIndex:          chunkIndex,
+				SectionKey:          chunk.SectionKey,
+				HeadingPath:         chunk.HeadingPath,
 				Title:               safeTitle,
 				URL:                 safeURL,
 				Content:             safeChunk,
-				ContentHash:         hashChunk(safeTitle, safeChunk),
+				SearchContent:       safeSearchContent,
+				PreviousChunkIndex:  previous,
+				NextChunkIndex:      next,
+				ContentHash:         hashChunk(safeTitle, safeSearchContent),
 				Embedding:           formatVector(resp.Vectors[chunkIndex]),
 				EmbeddingProvider:   "openai",
 				EmbeddingModel:      s.embeddingModel,
@@ -311,6 +358,137 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 	return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncReady, 100, indexedPages, indexedChunks, nil, nil, &startedAt, &completedAt)
 }
 
+func (s *SupportContentSyncService) runFileSourceSync(ctx context.Context, source model.SupportContentSource) error {
+	if s.objectStore == nil {
+		msg := "file storage is not configured"
+		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncDisabled, 0, source.IndexedPages, source.IndexedChunks, &msg, nil, nil, nil)
+	}
+	if source.StorageKey == nil || strings.TrimSpace(*source.StorageKey) == "" {
+		err := fmt.Errorf("file source storage key is missing")
+		_ = s.markSourceFailed(ctx, source.ID, err, nil, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+
+	startedAt := time.Now()
+	if err := s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncRunning, 0, source.IndexedPages, source.IndexedChunks, nil, nil, &startedAt, nil); err != nil {
+		return err
+	}
+
+	data, err := s.objectStore.GetObject(ctx, strings.TrimSpace(*source.StorageKey))
+	if err != nil {
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+	fileName := source.Name
+	if source.FileName != nil && strings.TrimSpace(*source.FileName) != "" {
+		fileName = strings.TrimSpace(*source.FileName)
+	}
+	contentType := ""
+	if source.ContentType != nil {
+		contentType = *source.ContentType
+	}
+	contentText, format, err := extractUploadedContentText(data, contentType, fileName)
+	if err != nil {
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+	if strings.TrimSpace(contentText) == "" {
+		err := fmt.Errorf("uploaded file contains no indexable text")
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+
+	pageURL := strings.ToValidUTF8(source.StartURL, "")
+	page := &model.SupportContentPage{
+		WorkspaceID:     source.WorkspaceID,
+		ContentSourceID: source.ID,
+		URL:             pageURL,
+		Title:           fileName,
+		HTTPStatus:      200,
+		ContentFormat:   format,
+		ContentText:     contentText,
+		ContentHash:     hashChunk(fileName+"\n"+pageURL, contentText),
+		Metadata: sanitizeJSONUTF8(mustMarshalJSON(map[string]any{
+			"source_type":  source.SourceType,
+			"file_name":    fileName,
+			"content_type": contentType,
+			"file_size":    source.FileSize,
+		})),
+		LastCrawledAt: time.Now(),
+	}
+	savedPage, err := s.pageRepo.Upsert(ctx, page)
+	if err != nil {
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+
+	chunks := chunkDocumentText(contentText)
+	if len(chunks) == 0 {
+		if err := s.chunkRepo.ReplacePageChunks(ctx, savedPage.ID, nil); err != nil {
+			_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+			return err
+		}
+		completedAt := time.Now()
+		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncReady, 100, 1, 0, nil, nil, &startedAt, &completedAt)
+	}
+
+	resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+		Provider: "openai",
+		Model:    s.embeddingModel,
+		Inputs:   chunks,
+	})
+	if err != nil {
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+	if len(resp.Vectors) != len(chunks) {
+		err := fmt.Errorf("embedding count mismatch: got %d, want %d", len(resp.Vectors), len(chunks))
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+	rows := make([]model.SupportContentChunk, 0, len(chunks))
+	for chunkIndex, chunk := range chunks {
+		if len(resp.Vectors[chunkIndex]) != docsEmbeddingDimensions {
+			err := fmt.Errorf("embedding dimension mismatch: got %d, want %d", len(resp.Vectors[chunkIndex]), docsEmbeddingDimensions)
+			_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+			return err
+		}
+		safeTitle := strings.ToValidUTF8(savedPage.Title, "")
+		safeURL := strings.ToValidUTF8(savedPage.URL, "")
+		safeChunk := strings.ToValidUTF8(chunk, "")
+		rows = append(rows, model.SupportContentChunk{
+			WorkspaceID:         source.WorkspaceID,
+			ContentSourceID:     source.ID,
+			PageID:              savedPage.ID,
+			ChunkIndex:          chunkIndex,
+			Title:               safeTitle,
+			URL:                 safeURL,
+			Content:             safeChunk,
+			ContentHash:         hashChunk(safeTitle, safeChunk),
+			Embedding:           formatVector(resp.Vectors[chunkIndex]),
+			EmbeddingProvider:   "openai",
+			EmbeddingModel:      s.embeddingModel,
+			EmbeddingVersion:    contentChunkEmbeddingVersion,
+			EmbeddingDimensions: docsEmbeddingDimensions,
+		})
+	}
+	if err := s.chunkRepo.ReplacePageChunks(ctx, savedPage.ID, rows); err != nil {
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+	if err := s.chunkRepo.DeleteByContentSourceExceptPages(ctx, source.WorkspaceID, source.ID, []string{savedPage.ID}); err != nil {
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+	if err := s.pageRepo.DeleteByContentSourceExceptURLs(ctx, source.WorkspaceID, source.ID, []string{savedPage.URL}); err != nil {
+		_ = s.markSourceFailed(ctx, source.ID, err, &startedAt, source.IndexedPages, source.IndexedChunks)
+		return err
+	}
+
+	completedAt := time.Now()
+	return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncReady, 100, 1, len(rows), nil, nil, &startedAt, &completedAt)
+}
+
 // QueueSourceReindex queues a re-embedding job that reads existing pages from
 // the database instead of re-crawling the website.
 func (s *SupportContentSyncService) QueueSourceReindex(ctx context.Context, workspaceID, contentSourceID string) error {
@@ -385,7 +563,7 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 			continue
 		}
 
-		chunks := chunkDocumentText(page.ContentText)
+		chunks := chunkStructuredDocument(page.Title, page.ContentText)
 		if len(chunks) == 0 {
 			_ = s.chunkRepo.ReplacePageChunks(ctx, page.ID, nil)
 			continue
@@ -394,7 +572,7 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 		resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
 			Provider: "openai",
 			Model:    s.embeddingModel,
-			Inputs:   chunks,
+			Inputs:   structuredChunkSearchInputs(chunks),
 		})
 		if err != nil {
 			slog.WarnContext(ctx, "skipping page: embedding failed", "page_id", page.ID, "url", page.URL, "error", err)
@@ -415,16 +593,23 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 			}
 			safeTitle := strings.ToValidUTF8(page.Title, "")
 			safeURL := strings.ToValidUTF8(page.URL, "")
-			safeChunk := strings.ToValidUTF8(chunk, "")
+			safeChunk := strings.ToValidUTF8(chunk.Content, "")
+			safeSearchContent := strings.ToValidUTF8(chunk.SearchContent, "")
+			previous, next := neighborChunkIndexes(chunkIndex, len(chunks))
 			rows = append(rows, model.SupportContentChunk{
 				WorkspaceID:         source.WorkspaceID,
 				ContentSourceID:     source.ID,
 				PageID:              page.ID,
 				ChunkIndex:          chunkIndex,
+				SectionKey:          chunk.SectionKey,
+				HeadingPath:         chunk.HeadingPath,
 				Title:               safeTitle,
 				URL:                 safeURL,
 				Content:             safeChunk,
-				ContentHash:         hashChunk(safeTitle, safeChunk),
+				SearchContent:       safeSearchContent,
+				PreviousChunkIndex:  previous,
+				NextChunkIndex:      next,
+				ContentHash:         hashChunk(safeTitle, safeSearchContent),
 				Embedding:           formatVector(resp.Vectors[chunkIndex]),
 				EmbeddingProvider:   "openai",
 				EmbeddingModel:      s.embeddingModel,
@@ -486,6 +671,111 @@ func crawlRecordTitle(record crawler.CrawlRecord) string {
 	return strings.TrimSpace(record.URL)
 }
 
+func extractUploadedContentText(data []byte, contentType, fileName string) (string, string, error) {
+	normalizedType, err := normalizeKnowledgeFileContentType(contentType, fileName)
+	if err != nil {
+		return "", "", err
+	}
+	switch normalizedType {
+	case "text/plain", "text/markdown", "text/x-markdown", "text/csv", "application/json":
+		return normalizeContentText(string(data)), model.ContentSourceFormatMarkdown, nil
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		text, err := extractDOCXText(data)
+		if err != nil {
+			return "", "", err
+		}
+		return normalizeContentText(text), model.ContentSourceFormatMarkdown, nil
+	case "application/pdf":
+		text, err := extractPDFText(data)
+		if err != nil {
+			return "", "", err
+		}
+		return normalizeContentText(text), model.ContentSourceFormatMarkdown, nil
+	default:
+		return "", "", fmt.Errorf("unsupported file type %s", normalizedType)
+	}
+}
+
+func extractDOCXText(data []byte) (string, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return "", fmt.Errorf("open DOCX: %w", err)
+	}
+	for _, file := range reader.File {
+		if file.Name != "word/document.xml" {
+			continue
+		}
+		if file.UncompressedSize64 > 8*1024*1024 {
+			return "", fmt.Errorf("DOCX document text is too large")
+		}
+		stream, err := file.Open()
+		if err != nil {
+			return "", fmt.Errorf("open DOCX document: %w", err)
+		}
+		defer func() { _ = stream.Close() }()
+
+		decoder := xml.NewDecoder(io.LimitReader(stream, 8*1024*1024+1))
+		var text strings.Builder
+		for {
+			token, err := decoder.Token()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return "", fmt.Errorf("decode DOCX document: %w", err)
+			}
+			switch node := token.(type) {
+			case xml.StartElement:
+				if node.Name.Local == "t" {
+					var value string
+					if err := decoder.DecodeElement(&value, &node); err != nil {
+						return "", fmt.Errorf("decode DOCX text: %w", err)
+					}
+					text.WriteString(value)
+				} else if node.Name.Local == "tab" {
+					text.WriteByte('\t')
+				}
+			case xml.EndElement:
+				if node.Name.Local == "p" {
+					text.WriteByte('\n')
+				}
+			}
+		}
+		return strings.TrimSpace(text.String()), nil
+	}
+	return "", fmt.Errorf("DOCX document.xml is missing")
+}
+
+func extractPDFText(data []byte) (string, error) {
+	tmp, err := os.CreateTemp("", "helpin-knowledge-*.pdf")
+	if err != nil {
+		return "", fmt.Errorf("create temporary PDF: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return "", fmt.Errorf("write temporary PDF: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("close temporary PDF: %w", err)
+	}
+	file, reader, err := pdf.Open(tmpPath)
+	if err != nil {
+		return "", fmt.Errorf("open PDF: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	textReader, err := reader.GetPlainText()
+	if err != nil {
+		return "", fmt.Errorf("extract PDF text: %w", err)
+	}
+	payload, err := io.ReadAll(textReader)
+	if err != nil {
+		return "", fmt.Errorf("read PDF text: %w", err)
+	}
+	return string(payload), nil
+}
+
 func mustMarshalJSON(value any) json.RawMessage {
 	if value == nil {
 		return json.RawMessage(`{}`)
@@ -498,7 +788,9 @@ func mustMarshalJSON(value any) json.RawMessage {
 }
 
 var (
-	htmlTagPattern = regexp.MustCompile(`<[^>]+>`)
+	htmlTagPattern          = regexp.MustCompile(`<[^>]+>`)
+	htmlBlockPattern        = regexp.MustCompile(`(?i)</?(?:p|div|li|br|section|article|header|footer|table|tr|ul|ol)[^>]*>`)
+	htmlHeadingBlockPattern = regexp.MustCompile(`(?is)<h([1-6])[^>]*>(.*?)</h[1-6]>`)
 	// Markdown images: ![alt text](url) → keep alt text only.
 	mdImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\([^)]+\)`)
 	// HTML <img> tags (self-closing or not).
@@ -510,9 +802,21 @@ var (
 )
 
 func stripHTML(raw string) string {
-	replaced := htmlTagPattern.ReplaceAllString(raw, " ")
-	replaced = strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&#39;", "'", "&quot;", `"`).Replace(replaced)
-	return replaced
+	withHeadings := htmlHeadingBlockPattern.ReplaceAllStringFunc(raw, func(match string) string {
+		parts := htmlHeadingBlockPattern.FindStringSubmatch(match)
+		if len(parts) != 3 {
+			return match
+		}
+		level, err := strconv.Atoi(parts[1])
+		if err != nil || level < 1 || level > 6 {
+			level = 2
+		}
+		heading := strings.Join(strings.Fields(htmlTagPattern.ReplaceAllString(parts[2], " ")), " ")
+		return "\n" + strings.Repeat("#", level) + " " + heading + "\n"
+	})
+	withBlocks := htmlBlockPattern.ReplaceAllString(withHeadings, "\n")
+	replaced := htmlTagPattern.ReplaceAllString(withBlocks, " ")
+	return htmlstd.UnescapeString(replaced)
 }
 
 func normalizeContentText(value string) string {
@@ -526,7 +830,24 @@ func normalizeContentText(value string) string {
 	cleaned = mdImageLinkPattern.ReplaceAllString(cleaned, "$1")
 	cleaned = mdImagePattern.ReplaceAllString(cleaned, "$1")
 
-	return strings.Join(strings.Fields(strings.TrimSpace(cleaned)), " ")
+	cleaned = strings.ReplaceAll(cleaned, "\r\n", "\n")
+	cleaned = strings.ReplaceAll(cleaned, "\r", "\n")
+	lines := strings.Split(cleaned, "\n")
+	normalized := make([]string, 0, len(lines))
+	lastBlank := true
+	for _, line := range lines {
+		line = strings.Join(strings.Fields(strings.TrimSpace(line)), " ")
+		if line == "" {
+			if !lastBlank {
+				normalized = append(normalized, "")
+				lastBlank = true
+			}
+			continue
+		}
+		normalized = append(normalized, line)
+		lastBlank = false
+	}
+	return strings.TrimSpace(strings.Join(normalized, "\n"))
 }
 
 // sanitizeJSONUTF8 strips invalid UTF-8 byte sequences from a JSON payload.

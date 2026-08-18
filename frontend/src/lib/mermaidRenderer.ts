@@ -92,6 +92,25 @@ async function queuedRender<T>(render: () => Promise<T>): Promise<T> {
   }
 }
 
+function createRenderHost(): HTMLDivElement {
+  const host = document.createElement('div');
+  host.dataset.mermaidRenderHost = '';
+  host.setAttribute('aria-hidden', 'true');
+  Object.assign(host.style, {
+    position: 'fixed',
+    inset: '0 auto auto 0',
+    width: '1024px',
+    height: '1024px',
+    overflow: 'hidden',
+    visibility: 'hidden',
+    pointerEvents: 'none',
+    contain: 'strict',
+    zIndex: '-1',
+  });
+  document.body.appendChild(host);
+  return host;
+}
+
 export async function renderMermaidSvg(
   source: string,
   theme: MermaidExportTheme = 'light',
@@ -105,8 +124,16 @@ export async function renderMermaidSvg(
   return queuedRender(async () => {
     const mermaid = await getMermaid(theme, options);
     const id = `docs-mermaid-${Date.now()}-${renderCounter++}`;
-    const result = await mermaid.render(id, trimmed);
-    return result.svg.replace(/background-color:\s*[^;"}]+;?/gi, 'background-color: transparent;');
+    const renderHost = createRenderHost();
+    try {
+      // Mermaid otherwise appends its temporary measuring SVG directly to
+      // document.body. Large diagrams then toggle the root scrollbar while
+      // they render, shifting the entire application left and right.
+      const result = await mermaid.render(id, trimmed, renderHost);
+      return result.svg.replace(/background-color:\s*[^;"}]+;?/gi, 'background-color: transparent;');
+    } finally {
+      renderHost.remove();
+    }
   });
 }
 

@@ -38,6 +38,7 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
     invocation_mode: 'manual',
     status: 'completed',
     pause_reason: 'none',
+    approval_state: 'not_required',
     title: 'Forge',
     capabilities: {
       can_cancel: true,
@@ -151,6 +152,20 @@ describe('CodingSessionHeader', () => {
     expect(container.textContent).toContain('Tokens');
     expect(container.textContent).not.toContain('Details');
     expect(container.textContent).not.toContain('Hide details');
+  });
+
+  it('normalizes a stale native total without double-counting cached input', () => {
+    renderHeader(buildSession({
+      runtime_kind: 'native_sdk',
+      cached_input_tokens: 478_720,
+      input_tokens: 586_711,
+      output_tokens: 6_077,
+      tokens_used: 1_072_550,
+    }));
+
+    const tokenTrigger = container.querySelector('button[aria-label^="Token usage:"]');
+    expect(tokenTrigger?.textContent).toContain('593k');
+    expect(tokenTrigger?.getAttribute('aria-label')).toBe('Token usage: 587k input (479k cached) / 6.1k output');
   });
 
   it('freezes elapsed time while waiting for approval', () => {

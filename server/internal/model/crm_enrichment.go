@@ -48,6 +48,7 @@ type EnrichCRMContactRequest struct {
 	Fields          []CRMEnrichmentFieldInput `json:"fields"`
 	EvidenceSummary string                    `json:"evidence_summary"`
 	DryRun          bool                      `json:"dry_run"`
+	ActorUserID     string                    `json:"-"`
 }
 
 // EnrichCRMCompanyRequest is the guarded agent-facing company enrichment payload.
@@ -56,6 +57,13 @@ type EnrichCRMCompanyRequest struct {
 	Fields          []CRMEnrichmentFieldInput `json:"fields"`
 	EvidenceSummary string                    `json:"evidence_summary"`
 	DryRun          bool                      `json:"dry_run"`
+	ActorUserID     string                    `json:"-"`
+}
+
+// ApplyCRMEnrichmentSuggestionRequest accepts one protected-value suggestion.
+type ApplyCRMEnrichmentSuggestionRequest struct {
+	Field       string `json:"field"`
+	ActorUserID string `json:"-"`
 }
 
 // EnsureCRMContactCompanyRequest creates or reuses a company and links it to a contact.

@@ -84,7 +84,7 @@ jobs:
           if echo "$CHANGED" | grep -qE '^packages/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
             PACKAGES=true
           fi
-          if echo "$CHANGED" | grep -qE '^help-center/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/ci\.yml$'; then
+          if echo "$CHANGED" | grep -qE '^help-center/|^packages/shared/src/docs-blocks\.css$|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/ci\.yml$'; then
             HELPCENTER=true
           fi
           # Desktop reuses frontend/src via the `@` alias and depends on the
@@ -248,6 +248,8 @@ jobs:
         run: pnpm --dir packages/react run test
       - name: nextjs
         run: pnpm --dir packages/nextjs run test
+      - name: vue
+        run: pnpm --dir packages/vue run test
 
   # ----------------------- Help Center ----------------------
   helpcenter:
@@ -270,6 +272,9 @@ jobs:
       - name: Install
         working-directory: help-center
         run: pnpm install --frozen-lockfile
+      - name: Verify generated icon catalog
+        working-directory: help-center
+        run: pnpm run check:icons
       - name: Vitest
         working-directory: help-center
         run: pnpm run test

@@ -348,6 +348,7 @@ func (h *BillingHandler) handleCheckoutCompleted(r *http.Request, event stripe.E
 		EventID:              event.ID,
 		EventType:            string(event.Type),
 		WorkspaceID:          workspaceID,
+		UserID:               session.Metadata["user_id"],
 		Plan:                 session.Metadata["plan"],
 		Status:               model.BillingStatusActive,
 		StripeCustomerID:     customerID,
@@ -356,6 +357,7 @@ func (h *BillingHandler) handleCheckoutCompleted(r *http.Request, event stripe.E
 		CurrentPeriodStart:   now,
 		CurrentPeriodEnd:     periodEnd,
 		CancelAtPeriodEnd:    false,
+		OccurredAt:           time.Unix(event.Created, 0).UTC(),
 	})
 	return err
 }
@@ -433,6 +435,7 @@ func (h *BillingHandler) handleSubscriptionEvent(r *http.Request, event stripe.E
 		CurrentPeriodEnd:     currentPeriodEnd,
 		CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
 		CanceledAt:           canceledAt,
+		OccurredAt:           time.Unix(event.Created, 0).UTC(),
 	})
 	return err
 }
@@ -456,6 +459,7 @@ func (h *BillingHandler) handleTrialWillEnd(r *http.Request, event stripe.Event)
 		SubscriptionID: subscription.ID,
 		CustomerID:     customerID,
 		TrialEndsAt:    trialEnd,
+		OccurredAt:     time.Unix(event.Created, 0).UTC(),
 	})
 	return err
 }
@@ -487,6 +491,7 @@ func parseStripeInvoiceEvent(event stripe.Event) (service.BillingStripeInvoiceEv
 		SubscriptionID: subscriptionID,
 		CustomerID:     customerID,
 		InvoiceID:      invoice.ID,
+		OccurredAt:     time.Unix(event.Created, 0).UTC(),
 	}, nil
 }
 

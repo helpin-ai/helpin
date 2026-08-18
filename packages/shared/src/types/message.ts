@@ -20,6 +20,7 @@ export const SYSTEM_EVENT_TYPES = [
 ] as const;
 
 export type SystemEventType = (typeof SYSTEM_EVENT_TYPES)[number];
+export type AIReplyKind = 'answer' | 'clarify' | 'conversational' | 'confirmation' | 'greeting';
 
 export interface Message {
   id: string;
@@ -32,9 +33,22 @@ export interface Message {
   systemEventType?: SystemEventType;
   sources?: AiSource[];
   aiConfidence?: number;
+  /** AI-authored classification used to decide which response UI is appropriate. */
+  aiReplyKind?: AIReplyKind;
   linkPreviews?: LinkPreview[];
   attachments?: Attachment[];
   viaChannel?: 'email' | 'widget';
+  emailVisibleText?: string;
+  emailQuotedText?: string;
+  emailHasQuotedContent?: boolean;
+  emailProjectionConfidence?: 'high' | 'medium' | 'none';
+  emailProjectionVersion?: number;
+  /** Transient client-side state while a validated AI reply is being revealed. */
+  isStreaming?: boolean;
+  /** Stable local key retained while an optimistic message is reconciled with the server. */
+  clientId?: string;
+  /** Transient delivery state for an outgoing optimistic message. */
+  deliveryStatus?: 'sending';
   isInternal: boolean;
   createdAt: string;
 }

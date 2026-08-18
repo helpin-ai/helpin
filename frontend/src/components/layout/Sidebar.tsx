@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useTheme } from 'next-themes';
+import { useHelpin } from '@helpin-ai/react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useSetup, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
@@ -11,10 +12,9 @@ import { useArchiveMailbox, useInboxScopes, useSupportBuiltinInboxViews, useSupp
 import { useDeleteSupportInboxView, useSupportInboxViews, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
-import { getInitials } from '@/lib/utils';
+import { cn, getInitials } from '@/lib/utils';
 import { buildSupportInboxSearch } from '@/lib/supportInboxRouting';
 import { supportInboxCountMailboxScope } from '@/lib/supportInboxFilters';
-import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
   Sidebar as ShellSidebar,
@@ -25,18 +25,29 @@ import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 import { TrialBanner } from '@/components/layout/TrialBanner';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
-import { DocsSpacesNav } from './sidebar/DocsSpacesNav';
+import { DocsRailNav } from './sidebar/DocsRailNav';
 import { buildPanelNavGroups, buildRailItems, deriveActiveRail, projectCreateOptions } from './sidebar/config';
 import { isSidebarLinkActive, isTeamSubLinkActive, type SidebarNavigateTarget } from './sidebar/navigation';
 import { ProjectsTeamsNav } from './sidebar/ProjectsTeamsNav';
-import { COLLAPSIBLE_SETTINGS_GROUPS, getCollapsedSettingsGroups, getExpandedTeams, saveCollapsedSettingsGroups, saveExpandedTeams } from './sidebar/state';
+import {
+  COLLAPSIBLE_SETTINGS_GROUPS,
+  getCollapsedSettingsGroups,
+  getExpandedTeams,
+  getLastCRMPath,
+  normalizeCRMSectionPath,
+  saveCollapsedSettingsGroups,
+  saveExpandedTeams,
+  saveLastCRMPath,
+} from './sidebar/state';
 import { SidebarAccountMenu } from './sidebar/SidebarAccountMenu';
 import { SidebarCreateBar } from './sidebar/SidebarCreateBar';
 import { SidebarRail } from './sidebar/SidebarRail';
+import { SetupRailNav } from './sidebar/SetupRailNav';
 import { SettingsRailNav } from './sidebar/SettingsRailNav';
 import { StandardRailNav } from './sidebar/StandardRailNav';
 import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
+import { isSetupSuccessEnabled } from '@/lib/featureFlags';
 import type { SupportInboxView } from '@/lib/pmTypes';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -50,6 +61,7 @@ export function Sidebar() {
   const { currentWorkspace } = useWorkspaceStore();
   const { user, signOut } = useAuthStore();
   const { theme, setTheme } = useTheme();
+  const { show: showHelpin, open: openHelpin } = useHelpin();
   const openCreate = useGlobalCreateStore((state) => state.openCreate);
 
   const wsSlug = currentWorkspace?.slug ?? '';
@@ -58,7 +70,8 @@ export function Sidebar() {
   const initials = getInitials(user?.full_name || user?.email);
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { isAdmin, canManageSettings, canManageTeams, permissionSet, canAccessModule, modules } = usePermissions(access);
+  const { data: setup } = useSetup(isSetupSuccessEnabled() ? workspaceId : undefined);
+  const { isAdmin, canManageSettings, canManageTeams, canEditDocs, permissionSet, canAccessModule, modules } = usePermissions(access);
   const hasSupportModule = canAccessModule('support');
   const {
     navFilter,
@@ -113,26 +126,15 @@ export function Sidebar() {
     setBuiltinViewFilters(builtinViewFilterMap);
   }, [builtinViewFilterMap, setBuiltinViewFilters]);
 
-  const { data: agentRunsData } = useQuery({
-    queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),
+  const { data: agentAttentionCount = 0 } = useQuery({
+    queryKey: queryKeys.automation.runAttentionCount(workspaceId ?? ''),
     queryFn: async () => {
-      const res = await automationService.listWorkspaceRuns(workspaceId!, 1, 100);
-      return {
-        data: Array.isArray(res.data?.data) ? res.data.data : [],
-        total: res.data?.total ?? 0,
-        page: res.data?.page ?? 1,
-        per_page: res.data?.per_page ?? 100,
-        total_pages: res.data?.total_pages ?? 0,
-      };
+      const res = await automationService.getRunAttentionCount(workspaceId!);
+      return res.data?.count ?? 0;
     },
     enabled: !!workspaceId,
     staleTime: 30_000,
   });
-  const agentRuns = Array.isArray(agentRunsData?.data) ? agentRunsData.data : [];
-  const agentAttentionCount = useMemo(
-    () => agentRuns.filter((run) => ACTIVE_RUN_STATUSES.has(run.status) && isPausedAgentRun(run)).length,
-    [agentRuns],
-  );
 
   const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '', hasSupportModule);
   const updateMyPresence = useUpdateMySupportTeammatePresence(workspaceId ?? '');
@@ -157,6 +159,11 @@ export function Sidebar() {
     workspaceId ? getExpandedTeams(workspaceId) : new Set(),
   );
   const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(getCollapsedSettingsGroups);
+  const [activeSetupJourney, setActiveSetupJourney] = useState<string>();
+
+  useEffect(() => {
+    setActiveSetupJourney(setup?.recommended?.journey_key ?? setup?.journeys[0]?.key);
+  }, [setup?.recommended?.journey_key, setup?.journeys[0]?.key, workspaceId]);
 
   useEffect(() => {
     if (!workspaceId) {
@@ -199,11 +206,24 @@ export function Sidebar() {
   };
 
   const panelNavGroups = useMemo(
-    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount),
-    [wsSlug, canManageSettings, permissionSet, agentAttentionCount],
+    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams),
+    [wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams],
   );
   const currentNavGroups = panelNavGroups[activeRail];
-  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread), [wsSlug, totalSupportUnread]);
+  const setupProgress = setup?.total_count ? Math.round((setup.completed_count / setup.total_count) * 100) : 0;
+  const crmDefaultLink = activeRail === 'crm'
+    ? normalizeCRMSectionPath(wsSlug, location.pathname)
+    : getLastCRMPath(workspaceId ?? '', wsSlug);
+  const railItems = useMemo(
+    () => buildRailItems(wsSlug, totalSupportUnread, isSetupSuccessEnabled() ? setupProgress : undefined, crmDefaultLink),
+    [wsSlug, totalSupportUnread, setupProgress, crmDefaultLink],
+  );
+
+  useEffect(() => {
+    if (activeRail === 'crm' && workspaceId) {
+      saveLastCRMPath(workspaceId, wsSlug, location.pathname);
+    }
+  }, [activeRail, location.pathname, workspaceId, wsSlug]);
 
   useEffect(() => {
     if (activeRail !== 'settings') {
@@ -325,12 +345,21 @@ export function Sidebar() {
                 onProfile={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}
                 onSettings={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'general' } })}
                 onWorkspaces={() => handleNavigate('/workspaces')}
+                onGetHelp={() => {
+                  showHelpin();
+                  openHelpin();
+                }}
                 onSignOut={signOut}
               />
             )}
           />
 
-          <div className="min-w-0 flex-1 overflow-y-auto p-2 pb-16">
+          <div
+            className={cn(
+              'flex min-w-0 flex-1 flex-col',
+              activeRail === 'docs' ? 'overflow-hidden p-1 pb-0' : 'overflow-y-auto p-2',
+            )}
+          >
             {activeRail === 'projects' && (
               <SidebarCreateBar
                 primaryLabel={primaryCreate.label}
@@ -341,20 +370,6 @@ export function Sidebar() {
                   icon: option.icon,
                   onSelect: () => openCreate(option.key, activeTeamParam ? { teamId: activeTeamParam } : undefined),
                 }))}
-              />
-            )}
-
-            {activeRail === 'docs' && (
-              <SidebarCreateBar
-                primaryLabel="Document"
-                onPrimaryClick={() => {
-                  const spaceMatch = location.pathname.match(/\/docs\/spaces\/([^/]+)/);
-                  openCreate('docs_document', { spaceId: spaceMatch?.[1] });
-                }}
-                options={[
-                  { key: 'docs_space', label: 'Space', onSelect: () => openCreate('docs_space') },
-                  { key: 'docs_collection', label: 'Collection', onSelect: () => openCreate('docs_collection') },
-                ]}
               />
             )}
 
@@ -374,7 +389,7 @@ export function Sidebar() {
                 onNavigate={(link) => handleNavigate(link)}
                 onNavigateTo={(to) => navigate({ to })}
               />
-            ) : activeRail === 'support' ? null : (
+            ) : activeRail === 'support' || activeRail === 'docs' ? null : (
               <StandardRailNav
                 groups={currentNavGroups}
                 isActive={isActive}
@@ -462,14 +477,24 @@ export function Sidebar() {
             )}
 
             {activeRail === 'docs' && (
-              <DocsSpacesNav
+              <DocsRailNav
                 wsId={workspaceId ?? ''}
                 wsSlug={wsSlug}
-                expandedTeams={expandedTeams}
-                setExpandedTeams={setExpandedTeams}
+                canEditDocs={canEditDocs}
                 isActive={isActive}
                 openCreate={openCreate}
                 onNavigate={handleNavigate}
+              />
+            )}
+
+            {activeRail === 'setup' && setup && (
+              <SetupRailNav
+                journeys={setup.journeys}
+                activeJourneyKey={activeSetupJourney}
+                onSelect={(journeyKey) => {
+                  setActiveSetupJourney(journeyKey);
+                  window.dispatchEvent(new CustomEvent('setup-journey-navigate', { detail: { journeyKey } }));
+                }}
               />
             )}
           </div>

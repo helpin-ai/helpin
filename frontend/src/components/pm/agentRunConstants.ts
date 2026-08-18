@@ -41,6 +41,7 @@ export function getAgentRunDisplayStatus(run: Pick<AgentRun, 'status' | 'pause_r
     const pauseReason = getAgentRunPauseReason(run);
     if (pauseReason === 'human_approval') return 'awaiting_approval';
     if (pauseReason === 'authentication') return 'awaiting_auth';
+    if (pauseReason === 'awaiting_user_message') return 'awaiting_reply';
     return 'awaiting_input';
   }
   return run.status;
@@ -83,4 +84,6 @@ export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   run_plan: 'Execution Plan',
   review_findings: 'Review Findings',
   review_decision: 'Review Decision',
+  browser_screenshot: 'Browser Screenshot',
+  browser_recording: 'Browser Recording',
 };

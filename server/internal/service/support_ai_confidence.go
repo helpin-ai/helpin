@@ -24,39 +24,78 @@ func evaluateConfidence(searchResults []KnowledgeSearchResult, response *AIRespo
 		return (llmConfidence * 0.65) + (canAnswerScore * 0.35)
 	}
 
-	bestVector := 0.0
-	bestLexical := 0.0
-	retrievedDocs := map[string]struct{}{}
-	for _, result := range searchResults {
-		if result.VectorScore > bestVector {
-			bestVector = result.VectorScore
-		}
-		if result.LexicalScore > bestLexical {
-			bestLexical = result.LexicalScore
-		}
-		retrievedDocs[result.ReferenceID] = struct{}{}
+	retrievalQuality := 0.0
+	retrievedPublicDocs := map[string]struct{}{}
+	hasInternalGrounding := false
+	citedEvidence := map[string]struct{}{}
+	for _, docID := range response.SourceDocIDs {
+		citedEvidence[docID] = struct{}{}
 	}
-
-	// ts_rank scores are typically small; normalize them into a 0-1 band.
-	normalizedLexical := clamp01(bestLexical / 0.35)
-	retrievalQuality := maxFloat(bestVector, normalizedLexical)
+	for _, claim := range response.Claims {
+		for _, evidenceID := range claim.EvidenceIDs {
+			citedEvidence[evidenceID] = struct{}{}
+		}
+	}
+	for _, result := range searchResults {
+		_, citesRuntimeID := citedEvidence[result.ID]
+		_, citesReferenceID := citedEvidence[result.ReferenceID]
+		if len(citedEvidence) > 0 && !citesRuntimeID && !citesReferenceID {
+			continue
+		}
+		if quality := supportEvidenceRetrievalQuality(result); quality > retrievalQuality {
+			retrievalQuality = quality
+		}
+		if result.IsInternal {
+			hasInternalGrounding = true
+		} else {
+			// Runtime knowledge tools expose the per-run evidence ID to the
+			// agent, while the older in-process pipeline cites ReferenceID.
+			// Both identify this retrieved public chunk.
+			retrievedPublicDocs[result.ID] = struct{}{}
+			retrievedPublicDocs[result.ReferenceID] = struct{}{}
+		}
+	}
 
 	citedDocs := map[string]struct{}{}
 	for _, docID := range response.SourceDocIDs {
-		if _, ok := retrievedDocs[docID]; ok {
+		if _, ok := retrievedPublicDocs[docID]; ok {
 			citedDocs[docID] = struct{}{}
 		}
 	}
 
+	// Candidate retrieval deliberately includes diverse alternatives. Do not
+	// penalize a grounded answer for declining to cite irrelevant candidates;
+	// claim validation separately verifies that the sources actually support
+	// the rendered answer.
 	sourceCoverage := 0.0
-	if len(retrievedDocs) > 0 {
-		sourceCoverage = clamp01(float64(len(citedDocs)) / float64(minInt(len(retrievedDocs), 3)))
+	if len(citedDocs) > 0 || hasInternalGrounding {
+		sourceCoverage = 1
 	}
 
 	return (retrievalQuality * 0.4) +
 		(sourceCoverage * 0.25) +
 		(llmConfidence * 0.2) +
 		(canAnswerScore * 0.15)
+}
+
+// supportEvidenceRetrievalQuality normalizes the relevance signals used by
+// the reply gate. Canonical pricing chunks that contain an exact currency
+// value receive an authority floor: these chunks may be deliberately promoted
+// from the same pricing page after semantic retrieval, so their own vector
+// score can be absent even though they are the authoritative exact evidence.
+func supportEvidenceRetrievalQuality(result KnowledgeSearchResult) float64 {
+	quality := maxFloat(result.VectorScore, clamp01(result.LexicalScore/0.35))
+	switch {
+	case result.SourceType == knowledgeSourceTypeGuidance:
+		quality = maxFloat(quality, 0.9)
+	case result.SourceType == supportChildSourceOfficialWeb,
+		result.SourceType == supportChildSourceRepository,
+		result.SourceType == supportChildSourceWorkspaceResearch:
+		quality = maxFloat(quality, 0.85)
+	case isCanonicalPricingURL(result.URL) && currencyValuePattern.MatchString(result.Content):
+		quality = maxFloat(quality, 0.85)
+	}
+	return clamp01(quality)
 }
 
 func clamp01(value float64) float64 {
@@ -71,13 +110,6 @@ func clamp01(value float64) float64 {
 
 func maxFloat(a, b float64) float64 {
 	if a > b {
-		return a
-	}
-	return b
-}
-
-func minInt(a, b int) int {
-	if a < b {
 		return a
 	}
 	return b

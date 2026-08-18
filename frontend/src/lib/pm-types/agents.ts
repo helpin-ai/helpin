@@ -1,6 +1,7 @@
 import type { SpecClarification } from './project';
 import type { AgentSkillRef } from './skills';
 import type { AutomationRule } from './automations';
+import type { CodingSessionLiveTurnSegment } from './codingSession';
 
 // ── Agents ──────────────────────────────────────────────────────────
 
@@ -16,15 +17,24 @@ export type AgentPresetKey =
   | 'review_agent'
   | 'command_agent';
 export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
+export type AgentIconKey =
+  | 'violet_star'
+  | 'ocean_orbit'
+  | 'forest_cap'
+  | 'sunset_flame'
+  | 'rose_wave'
+  | 'teal_signal'
+  | 'sky_quill'
+  | 'amber_lens';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
-export type AgentTargetType = 'task' | 'support_conversation' | 'support_coverage_gap' | 'epic' | 'document' | 'crm_deal' | 'repository' | 'workspace';
+export type AgentTargetType = 'task' | 'support_conversation' | 'support_coverage_gap' | 'epic' | 'sprint' | 'objective' | 'document' | 'crm_deal' | 'repository' | 'workspace';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
-export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
+export type AgentApprovalMode = 'preset_default' | 'never' | 'risk_based' | 'mutating_tools' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
-export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication';
+export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message';
 export type CodexAuthStateStatus = 'required' | 'pending' | 'connected' | 'failed' | 'cancelled';
 export type AgentReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 export type AgentServiceTier = 'fast' | 'flex';
@@ -32,6 +42,7 @@ export type AgentServiceTier = 'fast' | 'flex';
 export interface AgentExecutionConfig {
   reasoning_effort?: AgentReasoningEffort;
   service_tier?: AgentServiceTier;
+  max_tool_steps?: number;
 }
 
 export interface Agent {
@@ -39,6 +50,7 @@ export interface Agent {
   workspace_id: string;
   is_system: boolean;
   name: string;
+  icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
   source_template_id?: string;
@@ -159,6 +171,33 @@ export interface AgentRun {
   target_info?: AgentRunTarget;
 }
 
+export interface AgentRunAttentionCountResponse {
+  count: number;
+}
+
+export interface AgentFleetStats {
+  recent_runs: number;
+  recent_completed: number;
+  recent_failed: number;
+  recent_tokens: number;
+  last_run?: AgentRun;
+  attention_run?: AgentRun;
+  attention_count: number;
+  recent_run_items: AgentRun[];
+}
+
+export interface AgentFleetItem {
+  agent: Agent;
+  stats: AgentFleetStats;
+  usage: AgentTriggerUsageSummary;
+}
+
+export interface AgentFleetResponse {
+  generated_at: string;
+  window_started_at: string;
+  agents: AgentFleetItem[];
+}
+
 export interface AgentRunTarget {
   target_type: string;
   target_id: string;
@@ -185,12 +224,24 @@ export interface AgentRunMessage {
   id: string;
   workspace_id: string;
   run_id: string;
+  dock_chat_id?: string;
+  dock_chat_sequence?: number;
+  client_message_id?: string;
+  delivery_status?: 'pending' | 'sent' | 'failed';
+  runtime_message_id?: string;
+  actor_user_id?: string;
   role: string;
   content: string;
   message_type: string;
   content_blocks?: Array<Record<string, unknown>>;
+  turn_segments?: CodingSessionLiveTurnSegment[];
   tool_invocations?: Array<Record<string, unknown>>;
   token_usage?: Record<string, unknown>;
+  dock_work_summary?: {
+    message_id: string;
+    duration_ms: number;
+    activity_count: number;
+  };
   sequence_no: number;
   created_at: string;
 }
@@ -219,7 +270,7 @@ export interface StartAgentRunRequest {
 }
 
 export interface CommandBarPageContext {
-  entity_type: 'task' | 'epic' | 'document' | 'crm_contact' | 'crm_deal' | 'workspace' | 'repository';
+  entity_type: 'task' | 'epic' | 'document' | 'crm_contact' | 'crm_deal' | 'support_conversation' | 'workspace' | 'repository';
   entity_id: string;
   display_title: string;
   related_ids?: Record<string, string[]>;
@@ -257,31 +308,6 @@ export interface CommandBarAgentCandidate {
   allowed_tools: string[];
 }
 
-export interface CommandBarParseRequest {
-  text: string;
-  page_context: CommandBarPageContext;
-}
-
-export interface CommandBarChatTurnRequest {
-  thread_id?: string;
-  text: string;
-  page_context: CommandBarPageContext;
-}
-
-export type CommandBarParseResponse =
-  | {
-      status: 'plan';
-      plan: CommandBarPlan;
-      rationale?: string;
-      candidates?: CommandBarAgentCandidate[];
-    }
-  | {
-      status: 'no_matching_agent';
-      reason: string;
-      suggestions?: string[];
-      candidates?: CommandBarAgentCandidate[];
-    };
-
 export interface CommandBarDispatchRequest {
   text: string;
   page_context: CommandBarPageContext;
@@ -295,76 +321,14 @@ export interface CommandBarDispatchResponse {
   runs: AgentRun[];
 }
 
-export type CommandBarProposalType =
-  | 'inline_answer'
-  | 'run_plan'
-  | 'create_agent'
-  | 'create_agent_and_run'
-  | 'clarification'
-  | 'no_match';
 
-export interface CommandBarProposal {
-  type: CommandBarProposalType;
-  answer?: string;
-  context?: unknown;
-  plan?: CommandBarPlan;
-  draft?: CustomAgentDraft;
-  run_target?: CommandBarPageContext;
-  run_instructions?: string;
-  reasons?: CustomAgentDraftReason[];
-  warnings?: string[];
-  reason?: string;
-  suggestions?: string[];
-  guardrails?: Array<{ type: string; severity: string; message: string }>;
-}
 
-export interface CommandBarThreadSummary {
-  id: string;
-  workspace_id: string;
-  actor_id?: string;
-  title: string;
-  status: 'open' | 'archived';
-  created_at: string;
-  updated_at: string;
-}
 
-export interface CommandBarMessageSummary {
-  id: string;
-  thread_id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  page_context?: CommandBarPageContext;
-  proposal?: CommandBarProposal;
-  created_at: string;
-}
 
-export interface CommandBarChatTurnResponse {
-  thread: CommandBarThreadSummary;
-  user_message: CommandBarMessageSummary;
-  assistant_message: CommandBarMessageSummary;
-  proposal?: CommandBarProposal;
-}
 
-export interface CommandBarThreadDetail {
-  thread: CommandBarThreadSummary;
-  messages: CommandBarMessageSummary[];
-}
 
-export interface CommandBarThreadListResponse {
-  threads: CommandBarThreadDetail[];
-}
 
-export interface ConfirmCommandBarChatProposalRequest {
-  name?: string;
-  description?: string;
-  allowed_tools?: string[];
-  allowed_targets?: string[];
-}
 
-export interface ConfirmCommandBarChatCreateAgentResponse {
-  agent: Agent;
-  run?: AgentRun;
-}
 
 export interface CommandBarPlanSummary {
   id: string;
@@ -443,35 +407,9 @@ export interface PromoteCommandBarRunResponse {
   agent: Agent;
 }
 
-export type CommandBarUnmetIntentStatus = 'open' | 'accepted' | 'rejected' | 'deferred';
 
-export interface CommandBarUnmetIntent {
-  id: string;
-  workspace_id: string;
-  actor_id?: string;
-  /** Full prompt text. Empty unless the request opted in via include_sensitive=true. */
-  prompt?: string;
-  /** Whitespace-collapsed preview of the prompt, capped at ~160 runes. Always present. */
-  prompt_preview: string;
-  /** True when prompt is omitted because the caller did not request sensitive content. */
-  prompt_redacted: boolean;
-  page_context: CommandBarPageContext;
-  candidate_agents: Array<{ id: string; name: string; preset_key?: string; allowed_targets?: string[] }>;
-  reason: string;
-  status: CommandBarUnmetIntentStatus;
-  review_notes?: string;
-  reviewed_at?: string;
-  created_at: string;
-}
 
-export interface CommandBarUnmetIntentListResponse {
-  intents: CommandBarUnmetIntent[];
-}
 
-export interface ReviewCommandBarUnmetIntentRequest {
-  status: CommandBarUnmetIntentStatus;
-  notes?: string;
-}
 
 export interface SendAgentRunMessageRequest {
   content: string;
@@ -592,6 +530,7 @@ export interface AgentRunArtifact {
 export interface CreateAgentRequest {
   workspace_id: string;
   name: string;
+  icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
   role?: string;
@@ -700,6 +639,7 @@ export interface AgentTemplateStarterFlowField {
 
 export interface CreateAgentFromTemplateOverrides {
   role?: string;
+  icon_key?: AgentIconKey;
   runtime_kind?: AgentRuntimeKind;
   skills?: AgentSkillRef[];
   provider?: AgentModelProvider;
@@ -744,6 +684,7 @@ export interface CreateAgentFromTemplateResponse {
 
 export interface UpdateAgentRequest {
   name?: string;
+  icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
   preset_version_key?: string;
   role?: string;
@@ -915,45 +856,12 @@ export interface UpdateWorkspaceAgentPresetVersionRequest {
 export interface AgentModelProviderOption {
   value: AgentModelProvider;
   label: string;
+  default_model: string;
   model_placeholder: string;
   supports_reasoning_effort: boolean;
   supported_reasoning_efforts?: AgentReasoningEffort[];
   supports_service_tier: boolean;
   supported_service_tiers?: AgentServiceTier[];
-}
-
-export interface RunnerHealth {
-  namespace?: string;
-  temporal_configured: boolean;
-  generated_at?: string;
-  queues: RunnerQueueHealth[];
-  active_runs: RunnerActiveRun[];
-}
-
-export interface RunnerQueueHealth {
-  name: string;
-  concurrency: number;
-  queued_runs: number;
-  running_runs: number;
-  awaiting_approval_runs: number;
-  active_runs: number;
-  latest_heartbeat_at?: string;
-}
-
-export interface RunnerActiveRun {
-  id: string;
-  agent_id: string;
-  target_type: string;
-  target_id: string;
-  status: AgentRunStatus;
-  task_queue: string;
-  runner_pool: string;
-  execution_stage?: string;
-  last_heartbeat_at?: string;
-  started_at?: string;
-  created_at: string;
-  workflow_id?: string;
-  stale: boolean;
 }
 
 // ── Support ─────────────────────────────────────────────────────────

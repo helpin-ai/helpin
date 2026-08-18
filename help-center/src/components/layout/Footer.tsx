@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import {
   Globe,
@@ -5,6 +6,13 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { FooterSocialPlatform } from '@/lib/types'
+import helpinIconInk from '@/assets/helpin-icon-ink.svg'
+import helpinIconWhite from '@/assets/helpin-icon-white.svg'
+import {
+  buildAttributionSource,
+  buildHelpinAttributionUrl,
+  HELPIN_ATTRIBUTION_BASE_URL,
+} from '@/lib/helpinAttribution'
 
 const FONT_AWESOME_BRAND_ICON_BASE = 'https://d3gk2c5xim1je2.cloudfront.net/fontawesome/v7.2.0/brands'
 
@@ -69,11 +77,11 @@ export function Footer() {
   const socialLinks = (config.footer_config?.social_links ?? []).filter((link) => link.platform && link.url)
   const showCopyright = config.footer_config?.show_copyright !== false
   const copyrightText = config.footer_config?.copyright_text
-  const attributionSource = [
-    config.subdomain || config.brand_name?.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-    config.workspace_id?.slice(0, 8),
-  ].filter(Boolean).join('-')
-  const attributionUrl = `https://helpin.ai/?utm_campaign=poweredBy&utm_medium=referral&utm_source=${encodeURIComponent(attributionSource || 'help-center')}`
+  const attributionSource = buildAttributionSource(config.subdomain || config.brand_name, config.workspace_id)
+  const attributionUrl = buildHelpinAttributionUrl(attributionSource, 'help_center_footer')
+  const setAttributionHref = useCallback((node: HTMLAnchorElement | null) => {
+    node?.setAttribute('href', attributionUrl)
+  }, [attributionUrl])
 
   return (
     <footer className="mt-28 border-t border-border/70 pt-8 pb-24 text-[12px] text-muted-foreground/60 md:pb-28">
@@ -123,15 +131,30 @@ export function Footer() {
           )}
 
           <a
-            href={attributionUrl}
+            ref={setAttributionHref}
+            href={HELPIN_ATTRIBUTION_BASE_URL}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Powered by Helpin"
-            className="group inline-flex w-fit items-center gap-1 whitespace-nowrap text-muted-foreground/55 transition-colors hover:text-foreground"
+            className="group inline-flex w-fit items-center gap-1 whitespace-nowrap text-muted-foreground/55"
           >
             <span>Powered by</span>
-            <span className="inline-block font-medium text-muted-foreground/80 bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[background-size] duration-200 ease-out group-hover:bg-[length:100%_1px]">
-              Helpin
+            <span data-helpin-brand-lockup className="inline-flex items-center gap-0.5">
+              <img
+                src={helpinIconInk}
+                alt=""
+                aria-hidden="true"
+                className="h-3 w-3 shrink-0 dark:hidden"
+              />
+              <img
+                src={helpinIconWhite}
+                alt=""
+                aria-hidden="true"
+                className="hidden h-3 w-3 shrink-0 dark:block"
+              />
+              <span className="inline-block font-medium text-muted-foreground/80 dark:text-white bg-[linear-gradient(currentColor,currentColor)] bg-[length:0_1px] bg-[position:0_100%] bg-no-repeat transition-[color,background-size] duration-200 ease-out group-hover:text-foreground group-hover:bg-[length:100%_1px]">
+                Helpin
+              </span>
             </span>
           </a>
         </div>

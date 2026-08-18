@@ -2,9 +2,8 @@ import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { PaperclipIcon, SendIcon, XIcon } from './icons';
 import { EmojiPicker } from './EmojiPicker';
+import { BrandAttribution } from './BrandAttribution';
 import type { PendingAttachment } from '../types';
-
-const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
 
 interface ComposeBarProps {
   onSend: (content: string, attachmentIds?: string[]) => void;
@@ -16,6 +15,8 @@ interface ComposeBarProps {
   pendingAttachments?: PendingAttachment[];
   onRemoveAttachment?: (id: string) => void;
   fileUploadsEnabled?: boolean;
+  workspaceId?: string;
+  workspaceName?: string;
 }
 
 function isImageType(type: string): boolean {
@@ -38,6 +39,8 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   pendingAttachments = [],
   onRemoveAttachment,
   fileUploadsEnabled = true,
+  workspaceId,
+  workspaceName,
 }) => {
   const [message, setMessage] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
@@ -226,10 +229,13 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
         )}
       </form>
       {showBranding && (
-        <div className="helpin-compose-footer">
-          We run on{' '}
-          <a href={HELPIN_BRANDING_URL} target="_blank" rel="noopener noreferrer" className="helpin-compose-footer-link">Helpin</a>
-        </div>
+        <BrandAttribution
+          label="We run on"
+          className="helpin-compose-footer"
+          workspaceId={workspaceId}
+          workspaceName={workspaceName}
+          content="chat_widget_composer"
+        />
       )}
     </div>
   );

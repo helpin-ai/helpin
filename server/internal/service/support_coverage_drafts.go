@@ -324,7 +324,7 @@ func (s *SupportCoverageDraftService) generateDraftFromEvidence(ctx context.Cont
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(draftCtx, AIUsageMeteringContext{
 		WorkspaceID:    detail.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleGeneration,
-		IdempotencyKey: aiUsageIdempotencyKey(detail.WorkspaceID, BillingFeatureDocsArticleGeneration, "gap_draft", detail.ID),
+		IdempotencyKey: aiUsageIdempotencyKey(detail.WorkspaceID, BillingFeatureDocsArticleGeneration, "gap_draft", detail.ID, aiUsageStableHash(prompt)),
 		Metadata: map[string]interface{}{
 			"gap_id": detail.ID,
 		},
@@ -369,7 +369,7 @@ func (s *SupportCoverageDraftService) generateUpdateFromEvidence(ctx context.Con
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(updateCtx, AIUsageMeteringContext{
 		WorkspaceID:    detail.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleGeneration,
-		IdempotencyKey: aiUsageIdempotencyKey(detail.WorkspaceID, BillingFeatureDocsArticleGeneration, "gap_update", detail.ID, targetDocumentID),
+		IdempotencyKey: aiUsageIdempotencyKey(detail.WorkspaceID, BillingFeatureDocsArticleGeneration, "gap_update", detail.ID, targetDocumentID, aiUsageStableHash(prompt)),
 		Metadata: map[string]interface{}{
 			"gap_id":             detail.ID,
 			"target_document_id": targetDocumentID,

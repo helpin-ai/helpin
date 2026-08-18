@@ -107,6 +107,20 @@ func (r *DocsHelpcenterRepository) GetConfigByCustomDomain(ctx context.Context, 
 	return &cfg, nil
 }
 
+// CustomDomainRegistered reports whether any help center config claims the
+// domain. It selects nothing but existence so the deny path stays a single
+// hit on the partial unique index idx_docs_hc_config_custom_domain.
+func (r *DocsHelpcenterRepository) CustomDomainRegistered(ctx context.Context, domain string) (bool, error) {
+	var exists bool
+	err := r.db.WithContext(ctx).
+		Raw("SELECT EXISTS(SELECT 1 FROM docs_helpcenter_configs WHERE custom_domain = ?)", domain).
+		Scan(&exists).Error
+	if err != nil {
+		return false, fmt.Errorf("check helpcenter custom domain: %w", err)
+	}
+	return exists, nil
+}
+
 // UpsertConfig creates or updates the help center config.
 func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID string, updates map[string]interface{}) (*model.DocsHelpcenterConfig, error) {
 	existing, err := r.GetConfig(ctx, workspaceID)
@@ -720,6 +734,135 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx
 	return translations, nil
 }
 
+// ListPublicCollectionNavigationArticles returns the minimal published article
+// projection needed by a public collection page. When fallbackLocale is set,
+// the requested locale wins per document and the fallback fills only missing
+// translations. Unlike the full translation query, this deliberately avoids
+// loading article content and other detail-only fields.
+func (r *DocsHelpcenterRepository) ListPublicCollectionNavigationArticles(
+	ctx context.Context,
+	collectionID string,
+	requestedLocale string,
+	fallbackLocale string,
+) ([]model.PublicNavArticle, error) {
+	locales := []string{requestedLocale}
+	if fallbackLocale != "" && fallbackLocale != requestedLocale {
+		locales = append(locales, fallbackLocale)
+	}
+
+	type navigationArticleRow struct {
+		ID          string     `gorm:"column:id"`
+		Locale      string     `gorm:"column:locale"`
+		Title       string     `gorm:"column:title"`
+		Slug        string     `gorm:"column:slug"`
+		PublicID    string     `gorm:"column:public_id"`
+		Position    int        `gorm:"column:position"`
+		SortKey     string     `gorm:"column:sort_key"`
+		PublishedAt *time.Time `gorm:"column:published_at"`
+	}
+
+	var rows []navigationArticleRow
+	if err := r.db.WithContext(ctx).
+		Table("docs_helpcenter_article_translations hat").
+		Select(`
+			d.id,
+			hat.locale,
+			COALESCE(p.title, hat.title) AS title,
+			COALESCE(p.slug, hat.slug) AS slug,
+			ha.public_id,
+			d.position,
+			d.sort_key,
+			hat.published_at
+		`).
+		Joins("JOIN docs_documents d ON d.id = hat.document_id").
+		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
+		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = hat.workspace_id").
+		Joins("LEFT JOIN docs_helpcenter_article_publications p ON p.document_id = hat.document_id AND p.locale = hat.locale").
+		Where(`
+			hat.collection_id = ?
+			AND hat.locale IN ?
+			AND d.deleted_at IS NULL
+			AND d.status = ?
+			AND ha.public_published_at IS NOT NULL
+			AND (
+				(
+					hat.status = ? AND hat.published_at IS NOT NULL
+					AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
+				)
+				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
+			)
+		`, collectionID, locales, model.DocStatusPublished, model.DocsHelpcenterTranslationStatusPublished).
+		Order(r.hcDocOrderBy()).
+		Order("hat.locale ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list public collection navigation articles: %w", err)
+	}
+
+	articlesByDocument := make(map[string]model.PublicNavArticle, len(rows))
+	documentOrder := make([]string, 0, len(rows))
+	selectedLocale := make(map[string]string, len(rows))
+	for _, row := range rows {
+		if strings.TrimSpace(row.Slug) == "" {
+			continue
+		}
+		if _, exists := articlesByDocument[row.ID]; !exists {
+			documentOrder = append(documentOrder, row.ID)
+		}
+		if selectedLocale[row.ID] == requestedLocale && row.Locale != requestedLocale {
+			continue
+		}
+		var publishedAt *string
+		if row.PublishedAt != nil {
+			formatted := row.PublishedAt.Format(time.RFC3339)
+			publishedAt = &formatted
+		}
+		articlesByDocument[row.ID] = model.PublicNavArticle{
+			ID:          row.ID,
+			Title:       row.Title,
+			Slug:        row.Slug,
+			PublicID:    row.PublicID,
+			Position:    row.Position,
+			SortKey:     row.SortKey,
+			PublishedAt: publishedAt,
+		}
+		selectedLocale[row.ID] = row.Locale
+	}
+
+	articles := make([]model.PublicNavArticle, 0, len(articlesByDocument))
+	for _, documentID := range documentOrder {
+		if article, ok := articlesByDocument[documentID]; ok {
+			articles = append(articles, article)
+		}
+	}
+	return articles, nil
+}
+
+// ListPublicCollectionTranslationsByCollection returns every published locale
+// variant for a collection that still belongs to a public docs space.
+func (r *DocsHelpcenterRepository) ListPublicCollectionTranslationsByCollection(
+	ctx context.Context,
+	collectionID string,
+) ([]model.DocsHelpcenterCollectionTranslation, error) {
+	var translations []model.DocsHelpcenterCollectionTranslation
+	if err := r.db.WithContext(ctx).
+		Table("docs_helpcenter_collection_translations ct").
+		Select("ct.*").
+		Joins("JOIN docs_collections c ON c.id = ct.collection_id").
+		Joins("JOIN docs_spaces s ON s.id = ct.space_id").
+		Where(`
+			ct.collection_id = ?
+			AND ct.status = ?
+			AND ct.published_at IS NOT NULL
+			AND c.deleted_at IS NULL
+			AND s.deleted_at IS NULL
+			AND s.type = ?
+		`, collectionID, model.DocsHelpcenterTranslationStatusPublished, model.SpaceTypeExternalCapable).
+		Order("ct.locale ASC").
+		Scan(&translations).Error; err != nil {
+		return nil, fmt.Errorf("list public collection translations by collection: %w", err)
+	}
+	return translations, nil
+}
 func (r *DocsHelpcenterRepository) GetPublicArticleTranslationByCollectionSlug(ctx context.Context, collectionID, locale, slug string) (*model.DocsHelpcenterArticleTranslation, error) {
 	var translations []model.DocsHelpcenterArticleTranslation
 	if err := r.db.WithContext(ctx).

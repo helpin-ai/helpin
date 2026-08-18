@@ -57,6 +57,12 @@ type coverageClusterScoredPair struct {
 	pairKey string
 }
 
+type coverageClusterAcceptedPair struct {
+	left  int
+	right int
+	score float64
+}
+
 type coverageClusterEmbeddingSummary struct {
 	status         string
 	errMessage     string
@@ -188,6 +194,7 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 	})
 	uf := newCoverageClusterUnionFind(len(candidates))
 	members := make(map[int][]int, len(candidates))
+	acceptedPairs := make([]coverageClusterAcceptedPair, 0, len(pairs))
 	for i := range candidates {
 		members[i] = []int{i}
 	}
@@ -206,6 +213,11 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 		uf.parent[rightRoot] = leftRoot
 		members[leftRoot] = append(members[leftRoot], members[rightRoot]...)
 		delete(members, rightRoot)
+		acceptedPairs = append(acceptedPairs, coverageClusterAcceptedPair{
+			left:  pair.left,
+			right: pair.right,
+			score: pair.score,
+		})
 	}
 	groups := map[int][]int{}
 	for i := range candidates {
@@ -225,10 +237,6 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 			}
 			duplicate := candidates[idx].Gap
 			directScore := coverageClusterBestPairScore(primaryIndex, idx, pairs)
-			score := directScore
-			if score == 0 {
-				score = coverageClusterBestGroupScore(idx, group, pairs)
-			}
 			if directScore >= coverageClusterAutoMergeThresholdFor(candidates[primaryIndex], candidates[idx]) && coverageClusterAutoMergeAllowed(primary, duplicate) {
 				if err := s.coverageRepo.MergeGaps(ctx, workspaceID, duplicate.ID, primary.ID); err != nil {
 					result.Skipped++
@@ -236,31 +244,44 @@ func (s *SupportCoverageClusterRebuildService) RebuildWorkspace(ctx context.Cont
 				}
 				merged[duplicate.ID] = true
 				result.AutoMerged++
-				continue
 			}
-			reason := coverageClusterReason(score, primary, duplicate)
-			metadata, _ := json.Marshal(map[string]any{
-				"left_title":  primary.Title,
-				"right_title": duplicate.Title,
-			})
-			created, err := s.coverageRepo.UpsertMergeSuggestion(ctx, &model.SupportCoverageGapMergeSuggestion{
-				WorkspaceID:           workspaceID,
-				RunID:                 &run.ID,
-				SourceGapID:           duplicate.ID,
-				TargetGapID:           primary.ID,
-				Status:                model.SupportCoverageMergeSuggestionStatusPending,
-				SimilarityScore:       score,
-				Reason:                reason,
-				CombinedEvidenceCount: primary.EvidenceCount + duplicate.EvidenceCount,
-				Metadata:              metadata,
-			})
-			if err != nil {
-				result.Skipped++
-				continue
-			}
-			if created {
-				result.SuggestionsCreated++
-			}
+		}
+	}
+
+	// Suggestions must always describe the directly scored pair. The accepted
+	// pairs form a cannot-link-safe spanning forest, so they retain useful
+	// cluster coverage without projecting a neighbor's score onto a transitive
+	// primary/member pair.
+	for _, pair := range acceptedPairs {
+		left := candidates[pair.left].Gap
+		right := candidates[pair.right].Gap
+		if merged[left.ID] || merged[right.ID] {
+			continue
+		}
+		target, source := chooseCoverageClusterPrimary(left, right)
+		reason := coverageClusterReason(pair.score, target, source)
+		metadata, _ := json.Marshal(map[string]any{
+			"left_title":       left.Title,
+			"right_title":      right.Title,
+			"similarity_basis": "direct_pair",
+		})
+		created, err := s.coverageRepo.UpsertMergeSuggestion(ctx, &model.SupportCoverageGapMergeSuggestion{
+			WorkspaceID:           workspaceID,
+			RunID:                 &run.ID,
+			SourceGapID:           source.ID,
+			TargetGapID:           target.ID,
+			Status:                model.SupportCoverageMergeSuggestionStatusPending,
+			SimilarityScore:       pair.score,
+			Reason:                reason,
+			CombinedEvidenceCount: left.EvidenceCount + right.EvidenceCount,
+			Metadata:              metadata,
+		})
+		if err != nil {
+			result.Skipped++
+			continue
+		}
+		if created {
+			result.SuggestionsCreated++
 		}
 	}
 	completedAt := time.Now().UTC()
@@ -400,18 +421,6 @@ func (s *SupportCoverageClusterRebuildService) ensureGapEmbeddings(ctx context.C
 		summary.created++
 	}
 	return summary, nil
-}
-
-func coverageClusterCompatible(a, b model.SupportCoverageGapListItem) bool {
-	if a.RelatedArticleID != nil && b.RelatedArticleID != nil && *a.RelatedArticleID != *b.RelatedArticleID {
-		return false
-	}
-	aObject, aIsNoSearch := coverageNoSearchResultObject(a.Title)
-	bObject, bIsNoSearch := coverageNoSearchResultObject(b.Title)
-	if aIsNoSearch || bIsNoSearch {
-		return aIsNoSearch && bIsNoSearch && coverageSearchObjectsCompatible(aObject, bObject)
-	}
-	return true
 }
 
 func coverageClusterDecisionIsStale(decision model.SupportCoverageGapPairDecision, a, b coverageClusterCandidate, score float64) bool {
@@ -570,19 +579,6 @@ func coverageClusterBestPairScore(a, b int, pairs []coverageClusterScoredPair) f
 			if pair.score > best {
 				best = pair.score
 			}
-		}
-	}
-	return best
-}
-
-func coverageClusterBestGroupScore(index int, group []int, pairs []coverageClusterScoredPair) float64 {
-	best := 0.0
-	for _, other := range group {
-		if other == index {
-			continue
-		}
-		if score := coverageClusterBestPairScore(index, other, pairs); score > best {
-			best = score
 		}
 	}
 	return best

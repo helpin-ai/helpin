@@ -12,6 +12,12 @@ import (
 // Encrypt encrypts plaintext using AES-256-GCM with the given key.
 // The key must be 32 bytes for AES-256.
 func Encrypt(plaintext []byte, key []byte) ([]byte, error) {
+	return EncryptWithAAD(plaintext, key, nil)
+}
+
+// EncryptWithAAD encrypts plaintext using AES-256-GCM and binds the ciphertext
+// to caller-supplied additional authenticated data.
+func EncryptWithAAD(plaintext []byte, key, aad []byte) ([]byte, error) {
 	if len(key) != 32 {
 		return nil, fmt.Errorf("encryption key must be 32 bytes, got %d", len(key))
 	}
@@ -32,12 +38,18 @@ func Encrypt(plaintext []byte, key []byte) ([]byte, error) {
 	}
 
 	// Seal appends the ciphertext to nonce so we can extract it later.
-	ciphertext := aesGCM.Seal(nonce, nonce, plaintext, nil)
+	ciphertext := aesGCM.Seal(nonce, nonce, plaintext, aad)
 	return ciphertext, nil
 }
 
 // Decrypt decrypts ciphertext produced by Encrypt using AES-256-GCM.
 func Decrypt(ciphertext []byte, key []byte) ([]byte, error) {
+	return DecryptWithAAD(ciphertext, key, nil)
+}
+
+// DecryptWithAAD decrypts ciphertext produced by EncryptWithAAD. It fails if
+// the caller supplies different authenticated data.
+func DecryptWithAAD(ciphertext []byte, key, aad []byte) ([]byte, error) {
 	if len(key) != 32 {
 		return nil, fmt.Errorf("encryption key must be 32 bytes, got %d", len(key))
 	}
@@ -58,7 +70,7 @@ func Decrypt(ciphertext []byte, key []byte) ([]byte, error) {
 	}
 
 	nonce, ciphertextBytes := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	plaintext, err := aesGCM.Open(nil, nonce, ciphertextBytes, nil)
+	plaintext, err := aesGCM.Open(nil, nonce, ciphertextBytes, aad)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt: %w", err)
 	}
@@ -75,6 +87,16 @@ func EncryptString(plaintext string, key []byte) (string, error) {
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
+// EncryptStringWithAAD encrypts a string and returns base64 ciphertext bound
+// to additional authenticated data.
+func EncryptStringWithAAD(plaintext string, key, aad []byte) (string, error) {
+	ciphertext, err := EncryptWithAAD([]byte(plaintext), key, aad)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
 // DecryptString decrypts a base64-encoded ciphertext string.
 func DecryptString(ciphertext string, key []byte) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(ciphertext)
@@ -82,6 +104,20 @@ func DecryptString(ciphertext string, key []byte) (string, error) {
 		return "", fmt.Errorf("decode base64: %w", err)
 	}
 	plaintext, err := Decrypt(data, key)
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
+}
+
+// DecryptStringWithAAD decrypts base64 ciphertext produced by
+// EncryptStringWithAAD.
+func DecryptStringWithAAD(ciphertext string, key, aad []byte) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(ciphertext)
+	if err != nil {
+		return "", fmt.Errorf("decode base64: %w", err)
+	}
+	plaintext, err := DecryptWithAAD(data, key, aad)
 	if err != nil {
 		return "", err
 	}

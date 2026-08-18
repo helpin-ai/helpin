@@ -308,7 +308,7 @@ func (r *SupportCoverageRepository) UpsertGapByDedupeKey(ctx context.Context, ga
 	if gap.Metadata == nil {
 		gap.Metadata = []byte("{}")
 	}
-	if err := r.db.WithContext(ctx).Create(gap).Error; err != nil {
+	if err := r.createGap(ctx, gap); err != nil {
 		// Race: check if concurrent writer created it.
 		var raceExisting model.SupportCoverageGap
 		if findErr := r.db.WithContext(ctx).
@@ -363,7 +363,7 @@ func (r *SupportCoverageRepository) UpsertOpenGapByTopic(ctx context.Context, ga
 	if gap.Metadata == nil {
 		gap.Metadata = []byte("{}")
 	}
-	if err := r.db.WithContext(ctx).Create(gap).Error; err != nil {
+	if err := r.createGap(ctx, gap); err != nil {
 		var raceExisting model.SupportCoverageGap
 		if findErr := r.db.WithContext(ctx).
 			Where("workspace_id = ? AND topic_id = ? AND status = ?", gap.WorkspaceID, *gap.TopicID, model.SupportCoverageGapStatusOpen).
@@ -373,6 +373,18 @@ func (r *SupportCoverageRepository) UpsertOpenGapByTopic(ctx context.Context, ga
 		return nil, false, fmt.Errorf("create open topic gap: %w", err)
 	}
 	return gap, true, nil
+}
+
+// createGap inserts a gap row, omitting the pgvector embedding column when it
+// is unset — Go's zero-value "" is not a valid vector literal, and most
+// event-derived gaps are created before any embedding is computed (the
+// enrichment pipeline backfills it later).
+func (r *SupportCoverageRepository) createGap(ctx context.Context, gap *model.SupportCoverageGap) error {
+	tx := r.db.WithContext(ctx)
+	if strings.TrimSpace(gap.Embedding) == "" {
+		tx = tx.Omit("Embedding")
+	}
+	return tx.Create(gap).Error
 }
 
 func (r *SupportCoverageRepository) UpsertOpenGapByDedupeKeyNoBump(ctx context.Context, gap *model.SupportCoverageGap) (*model.SupportCoverageGap, bool, error) {
@@ -419,7 +431,7 @@ func (r *SupportCoverageRepository) UpsertOpenGapByDedupeKeyNoBump(ctx context.C
 	if gap.Metadata == nil {
 		gap.Metadata = []byte("{}")
 	}
-	if err := r.db.WithContext(ctx).Create(gap).Error; err != nil {
+	if err := r.createGap(ctx, gap); err != nil {
 		var raceExisting model.SupportCoverageGap
 		if findErr := r.db.WithContext(ctx).
 			Where("workspace_id = ? AND dedupe_key = ? AND status = ?", gap.WorkspaceID, gap.DedupeKey, model.SupportCoverageGapStatusOpen).

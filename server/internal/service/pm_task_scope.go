@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
@@ -39,6 +40,9 @@ func validateSprintScope(ctx context.Context, sprintRepo *repository.PMSprintRep
 	}
 	if sprint == nil || sprint.Sprint.WorkspaceID != workspaceID {
 		return fmt.Errorf("sprint not found")
+	}
+	if sprint.Sprint.Status == model.PMSprintStatusDone {
+		return fmt.Errorf("completed sprints cannot accept new tasks")
 	}
 	if sprint.Sprint.TeamID == nil || *sprint.Sprint.TeamID == "" {
 		if storyTeamID == nil || *storyTeamID == "" {

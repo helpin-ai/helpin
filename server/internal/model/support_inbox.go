@@ -37,6 +37,7 @@ type SupportConversation struct {
 	Source                         string          `json:"source" gorm:"not null;default:'internal'"` // widget, internal, email, api - kept for backward compat
 	AnonymousID                    *string         `json:"anonymous_id" gorm:"index"`
 	CRMContactID                   *string         `json:"crm_contact_id" gorm:"type:uuid;index"`
+	CRMCompanyID                   *string         `json:"crm_company_id" gorm:"type:uuid;index"`
 	ResolvedAt                     *time.Time      `json:"resolved_at"`
 	ClosedAt                       *time.Time      `json:"closed_at"`
 	TeamLastSeenAt                 *time.Time      `json:"team_last_seen_at" gorm:"type:timestamptz"`
@@ -50,7 +51,11 @@ type SupportConversation struct {
 	AIResolutionType         *string    `json:"ai_resolution_type"` // "confirmed", "assumed", null
 	AITurnCount              int        `json:"ai_turn_count" gorm:"not null;default:0"`
 	CustomerRequestedHumanAt *time.Time `json:"customer_requested_human_at" gorm:"type:timestamptz"`
-	HumanTakeover            *bool      `json:"human_takeover" gorm:"default:false;index"`
+	// AIActiveRunID points at the agent-runtime chat run currently backing
+	// this conversation's AI turns (nil before the first AI turn; repointed
+	// when an idle-expired run gets a successor).
+	AIActiveRunID *string `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
+	HumanTakeover *bool   `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -321,7 +326,12 @@ type SupportMessage struct {
 	HTMLBody string `json:"html_body,omitempty" gorm:"-"`
 	// StrippedText is the markdown-friendly plaintext variant of an inbound
 	// email's body. Same population rules as HTMLBody.
-	StrippedText string `json:"stripped_text,omitempty" gorm:"-"`
+	StrippedText              string `json:"stripped_text,omitempty" gorm:"-"`
+	EmailVisibleText          string `json:"email_visible_text,omitempty" gorm:"-"`
+	EmailQuotedText           string `json:"email_quoted_text,omitempty" gorm:"-"`
+	EmailHasQuotedContent     *bool  `json:"email_has_quoted_content,omitempty" gorm:"-"`
+	EmailProjectionConfidence string `json:"email_projection_confidence,omitempty" gorm:"-"`
+	EmailProjectionVersion    int    `json:"email_projection_version,omitempty" gorm:"-"`
 	// EmailDeliveryStatus mirrors the linked outbound support_email_log's status
 	// ("sent", "delivered", "opened", "bounced", "spam_complaint"). Only set
 	// when an email log exists for the message.
@@ -337,6 +347,13 @@ type SupportMessage struct {
 }
 
 func (SupportMessage) TableName() string { return "support_messages" }
+
+// SupportMessagePage is a cursor-paginated slice of a conversation transcript.
+type SupportMessagePage struct {
+	Data       []SupportMessage `json:"data"`
+	HasMore    bool             `json:"has_more"`
+	NextCursor *string          `json:"next_cursor,omitempty"`
+}
 
 // SupportLinkPreview represents an unfurled link card attached to a support message.
 type SupportLinkPreview struct {
@@ -396,6 +413,7 @@ type SupportWidgetSession struct {
 	CountryName    *string    `json:"country_name,omitempty" gorm:"size:128"`
 	RegionName     *string    `json:"region_name,omitempty" gorm:"size:128"`
 	CityName       *string    `json:"city_name,omitempty" gorm:"size:128"`
+	CRMCompanyID   *string    `json:"crm_company_id" gorm:"type:uuid;index"`
 	LastActiveAt   *time.Time `json:"last_active_at,omitempty" gorm:"type:timestamptz;index"`
 	RevokedAt      *time.Time `json:"-" gorm:"index"`
 	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
@@ -556,18 +574,24 @@ type SupportMailboxMember struct {
 }
 
 type SupportEmailRoute struct {
-	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	MailboxID      *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
-	RouteKey       string     `json:"route_key" gorm:"not null;uniqueIndex"`
-	InboundAddress string     `json:"inbound_address" gorm:"not null;uniqueIndex"`
-	SourceAddress  *string    `json:"source_address,omitempty"`
-	ProviderType   string     `json:"provider_type" gorm:"not null;default:'forwarding'"`
-	Active         bool       `json:"active" gorm:"not null;default:true"`
-	LastInboundAt  *time.Time `json:"last_inbound_at,omitempty"`
-	CreatedByID    string     `json:"created_by_id" gorm:"type:uuid;not null"`
-	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                 string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	MailboxID                   *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
+	RouteKey                    string     `json:"route_key" gorm:"not null;uniqueIndex"`
+	InboundAddress              string     `json:"inbound_address" gorm:"not null;uniqueIndex"`
+	SourceAddress               *string    `json:"source_address,omitempty"`
+	ProviderType                string     `json:"provider_type" gorm:"not null;default:'forwarding'"`
+	Active                      bool       `json:"active" gorm:"not null;default:true"`
+	LastInboundAt               *time.Time `json:"last_inbound_at,omitempty"`
+	ConfirmationReceivedAt      *time.Time `json:"confirmation_received_at,omitempty"`
+	ConfirmationConversationID  *string    `json:"confirmation_conversation_id,omitempty" gorm:"type:uuid;index"`
+	VerificationSentAt          *time.Time `json:"verification_sent_at,omitempty"`
+	ForwardingVerifiedAt        *time.Time `json:"forwarding_verified_at,omitempty"`
+	ForwardingVerificationToken string     `json:"-"`
+	ForwardingLastError         *string    `json:"forwarding_last_error,omitempty"`
+	CreatedByID                 string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt                   time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 
 	MailboxName   *string `json:"mailbox_name,omitempty" gorm:"->"`
 	MailboxHandle *string `json:"mailbox_handle,omitempty" gorm:"->"`
@@ -579,6 +603,11 @@ func (SupportEmailRoute) TableName() string { return "support_email_routes" }
 type CreateSupportEmailRouteRequest struct {
 	MailboxID     *string `json:"mailbox_id"`
 	SourceAddress *string `json:"source_address"`
+}
+
+// SendSupportEmailRouteTestRequest identifies the external inbox Helpin should test.
+type SendSupportEmailRouteTestRequest struct {
+	SourceAddress string `json:"source_address"`
 }
 
 type DisableSupportEmailRouteRequest struct{}
@@ -808,6 +837,7 @@ type CreateConversationWithMessageResponse struct {
 type CreateMessageRequest struct {
 	Content       string   `json:"content"`
 	IsInternal    bool     `json:"is_internal"`
+	AIAssisted    bool     `json:"ai_assisted,omitempty"`
 	MessageType   string   `json:"message_type"` // reply, csat_survey, system
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 	Channels      []string `json:"channels,omitempty"`
@@ -876,6 +906,11 @@ type UpdateConversationCRMContactRequest struct {
 	CRMContactID *string `json:"crm_contact_id"`
 }
 
+// UpdateConversationCRMCompanyRequest sets or clears explicit company context.
+type UpdateConversationCRMCompanyRequest struct {
+	CRMCompanyID *string `json:"crm_company_id"`
+}
+
 // UpdateConversationCustomerNameRequest sets the support conversation customer display name.
 type UpdateConversationCustomerNameRequest struct {
 	CustomerName string `json:"customer_name"`
@@ -927,6 +962,17 @@ type WidgetTranscriptRequest struct {
 type WidgetTranscriptResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
+}
+
+type SendSupportConversationTranscriptRequest struct {
+	Email               string `json:"email"`
+	UpdateCustomerEmail bool   `json:"update_customer_email"`
+}
+
+type SendSupportConversationTranscriptResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Email   string `json:"email"`
 }
 
 // ── WS Message Types ─────────────────────────────────────────────────
@@ -1017,18 +1063,23 @@ type WidgetSessionJoinedPayload struct {
 
 // WidgetMessageReceivedPayload is sent to widget clients for new messages.
 type WidgetMessageReceivedPayload struct {
-	ID              string                     `json:"id"`
-	ConversationID  string                     `json:"conversation_id"`
-	Content         string                     `json:"content"`
-	SenderType      string                     `json:"sender_type"`
-	MessageType     string                     `json:"message_type,omitempty"`
-	SystemEventType *string                    `json:"system_event_type,omitempty"`
-	SenderName      *string                    `json:"sender_name"`
-	SenderAvatar    *string                    `json:"sender_avatar"`
-	Metadata        *string                    `json:"metadata,omitempty"`
-	ViaChannel      string                     `json:"via_channel,omitempty"`
-	Attachments     []SupportAttachmentPayload `json:"attachments,omitempty"`
-	CreatedAt       string                     `json:"created_at"`
+	ID                        string                     `json:"id"`
+	ConversationID            string                     `json:"conversation_id"`
+	Content                   string                     `json:"content"`
+	SenderType                string                     `json:"sender_type"`
+	MessageType               string                     `json:"message_type,omitempty"`
+	SystemEventType           *string                    `json:"system_event_type,omitempty"`
+	SenderName                *string                    `json:"sender_name"`
+	SenderAvatar              *string                    `json:"sender_avatar"`
+	Metadata                  *string                    `json:"metadata,omitempty"`
+	ViaChannel                string                     `json:"via_channel,omitempty"`
+	Attachments               []SupportAttachmentPayload `json:"attachments,omitempty"`
+	EmailVisibleText          string                     `json:"email_visible_text,omitempty"`
+	EmailQuotedText           string                     `json:"email_quoted_text,omitempty"`
+	EmailHasQuotedContent     *bool                      `json:"email_has_quoted_content,omitempty"`
+	EmailProjectionConfidence string                     `json:"email_projection_confidence,omitempty"`
+	EmailProjectionVersion    int                        `json:"email_projection_version,omitempty"`
+	CreatedAt                 string                     `json:"created_at"`
 }
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.
@@ -1062,6 +1113,15 @@ type BusinessHoursDay struct {
 	Enabled bool   `json:"enabled"`
 }
 
+const (
+	// SupportAIPreRouterModeOff is retained for persisted-settings compatibility.
+	SupportAIPreRouterModeOff = "off"
+	// SupportAIPreRouterModeShadow is retained for rollout telemetry compatibility.
+	SupportAIPreRouterModeShadow = "shadow"
+	// SupportAIPreRouterModeEnabled runs the LLM pre-router for every AI-handled message.
+	SupportAIPreRouterModeEnabled = "enabled"
+)
+
 // SupportInboxSettings holds all widget configuration stored as JSONB.
 type SupportInboxSettings struct {
 	// Identity Capture
@@ -1079,6 +1139,7 @@ type SupportInboxSettings struct {
 	AIAgentID             *string `json:"ai_agent_id"`
 	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
 	AIResponseMode        string  `json:"ai_response_mode"`        // "ai_first" | "internal_note" | "off"
+	AIPreRouterMode       string  `json:"ai_pre_router_mode"`      // "off" | "shadow" | "enabled"
 	AIMaxFollowups        int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 5)
 	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
@@ -1182,6 +1243,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIAgentID:                     nil,
 		AIConfidenceThreshold:         0.7,
 		AIResponseMode:                "ai_first",
+		AIPreRouterMode:               SupportAIPreRouterModeEnabled,
 		AIMaxFollowups:                5,
 		AIAutoResolveTimeout:          24,
 		ShowTalkToHuman:               true,
@@ -1219,7 +1281,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		ReplyTimeCustomMinutes:          nil,
 		SpecialNoticeText:               nil,
 		EmailFallbackEnabled:            true,
-		EmailFallbackDelaySecs:          30,
+		EmailFallbackDelaySecs:          10,
 		EmailFallbackFromName:           "",
 		EmailFallbackMaxDeliveryAgeSecs: 600,
 		ForwardedEmailDetectionEnabled:  true,
@@ -1254,6 +1316,7 @@ type UpdateInstallationSettingsRequest struct {
 	AIAgentID                       *string                     `json:"ai_agent_id,omitempty"`
 	AIConfidenceThreshold           *float64                    `json:"ai_confidence_threshold,omitempty"`
 	AIResponseMode                  *string                     `json:"ai_response_mode,omitempty"`
+	AIPreRouterMode                 *string                     `json:"ai_pre_router_mode,omitempty"`
 	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`
 	AIAutoResolveTimeout            *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman                 *bool                       `json:"show_talk_to_human,omitempty"`
@@ -1350,7 +1413,16 @@ type SupportAIPreviewResponse struct {
 }
 
 type SupportAIPreviewQueryPlan struct {
+	Route              string   `json:"route"`
 	Decision           string   `json:"decision"`
+	Intent             string   `json:"intent"`
+	Subject            string   `json:"subject"`
+	Language           string   `json:"language"`
+	Risk               string   `json:"risk"`
+	RequiredEvidence   []string `json:"required_evidence"`
+	EvidenceMode       string   `json:"evidence_mode"`
+	RegistryVersion    int      `json:"registry_version"`
+	ContextAction      string   `json:"context_action"`
 	IssueKey           string   `json:"issue_key"`
 	IssueSummary       string   `json:"issue_summary"`
 	ProgressSignal     string   `json:"progress_signal"`
@@ -1365,10 +1437,13 @@ type SupportAIPreviewQueryPlan struct {
 }
 
 type SupportAIPreviewRetrieval struct {
-	QueryCount  int                            `json:"query_count"`
-	ResultCount int                            `json:"result_count"`
-	Results     []SupportAIPreviewSearchResult `json:"results"`
-	Error       string                         `json:"error,omitempty"`
+	QueryCount      int                            `json:"query_count"`
+	ResultCount     int                            `json:"result_count"`
+	EvidenceFound   map[string][]string            `json:"evidence_found"`
+	EvidenceMissing []string                       `json:"evidence_missing"`
+	TargetedRetry   bool                           `json:"targeted_retry"`
+	Results         []SupportAIPreviewSearchResult `json:"results"`
+	Error           string                         `json:"error,omitempty"`
 }
 
 type SupportAIPreviewSearchResult struct {
@@ -1392,6 +1467,10 @@ type SupportAIPreviewAnswer struct {
 	TokensUsed         int      `json:"tokens_used"`
 	Provider           string   `json:"provider"`
 	Model              string   `json:"model"`
+	ValidationOutcome  string   `json:"validation_outcome"`
+	ValidationReasons  []string `json:"validation_reasons"`
+	MaterialClaims     int      `json:"material_claims"`
+	SupportedClaims    int      `json:"supported_claims"`
 }
 
 // WidgetToken is the token format expected by the events-pipeline rust-capture service.
@@ -1552,15 +1631,48 @@ type VisitorLocation struct {
 
 // VisitorContactData holds CRM contact details for visitor context.
 type VisitorContactData struct {
-	ID               string            `json:"id"`
-	Name             *string           `json:"name"`
-	Email            *string           `json:"email"`
-	Phone            *string           `json:"phone"`
-	JobTitle         *string           `json:"job_title"`
-	LifecycleStage   string            `json:"lifecycle_stage"`
-	LeadStatus       string            `json:"lead_status"`
-	Source           string            `json:"source"`
-	CustomProperties map[string]string `json:"custom_properties,omitempty"`
+	ID               string         `json:"id"`
+	Name             *string        `json:"name"`
+	Email            *string        `json:"email"`
+	Phone            *string        `json:"phone"`
+	JobTitle         *string        `json:"job_title"`
+	LifecycleStage   string         `json:"lifecycle_stage"`
+	LeadStatus       string         `json:"lead_status"`
+	Source           string         `json:"source"`
+	CustomProperties map[string]any `json:"custom_properties,omitempty"`
+}
+
+type VisitorCompanyContextStatus string
+
+const (
+	VisitorCompanyContextOK       VisitorCompanyContextStatus = "ok"
+	VisitorCompanyContextUnlinked VisitorCompanyContextStatus = "unlinked"
+	VisitorCompanyContextError    VisitorCompanyContextStatus = "error"
+)
+
+// VisitorCompanyData is the live CRM company linked directly to a conversation.
+type VisitorCompanyData struct {
+	ID               string         `json:"id"`
+	DisplayID        string         `json:"display_id"`
+	ExternalID       *string        `json:"external_id,omitempty"`
+	Name             string         `json:"name"`
+	Domain           *string        `json:"domain,omitempty"`
+	Industry         *string        `json:"industry,omitempty"`
+	EmployeeCount    *int           `json:"employee_count,omitempty"`
+	AnnualRevenue    *float64       `json:"annual_revenue,omitempty"`
+	Description      *string        `json:"description,omitempty"`
+	LogoURL          *string        `json:"logo_url,omitempty"`
+	CustomProperties map[string]any `json:"custom_properties"`
+	UpdatedAt        string         `json:"updated_at"`
+}
+
+// VisitorCompanyOption is a compact company membership selector option.
+type VisitorCompanyOption struct {
+	ID        string  `json:"id"`
+	DisplayID string  `json:"display_id"`
+	Name      string  `json:"name"`
+	Domain    *string `json:"domain,omitempty"`
+	LogoURL   *string `json:"logo_url,omitempty"`
 }
 
 // VisitorOtherConversation is a compact summary for other conversations in visitor context.
@@ -1574,14 +1686,17 @@ type VisitorOtherConversation struct {
 
 // VisitorContextResponse assembles all visitor intelligence for a conversation.
 type VisitorContextResponse struct {
-	Device             *VisitorDeviceInfo         `json:"device,omitempty"`
-	Location           *VisitorLocation           `json:"location,omitempty"`
-	Contact            *VisitorContactData        `json:"contact,omitempty"`
-	OtherConversations []VisitorOtherConversation `json:"other_conversations"`
-	TotalConversations int                        `json:"total_conversations"`
-	SessionCreatedAt   *string                    `json:"session_created_at,omitempty"`
-	LastActiveAt       *string                    `json:"last_active_at,omitempty"`
-	LastActiveSource   *string                    `json:"last_active_source,omitempty"`
+	Device               *VisitorDeviceInfo          `json:"device,omitempty"`
+	Location             *VisitorLocation            `json:"location,omitempty"`
+	Contact              *VisitorContactData         `json:"contact,omitempty"`
+	Company              *VisitorCompanyData         `json:"company,omitempty"`
+	CompanyOptions       []VisitorCompanyOption      `json:"company_options,omitempty"`
+	CompanyContextStatus VisitorCompanyContextStatus `json:"company_context_status"`
+	OtherConversations   []VisitorOtherConversation  `json:"other_conversations"`
+	TotalConversations   int                         `json:"total_conversations"`
+	SessionCreatedAt     *string                     `json:"session_created_at,omitempty"`
+	LastActiveAt         *string                     `json:"last_active_at,omitempty"`
+	LastActiveSource     *string                     `json:"last_active_source,omitempty"`
 }
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.

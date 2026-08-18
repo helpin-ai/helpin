@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	helpinLightModeLogoURL = "https://assets.helpin.ai/logos/helpin-light-mode-logo.png"
-	helpinDarkModeLogoURL  = "https://assets.helpin.ai/logos/helpin-dark-mode-logo.png"
+	helpinLightModeLogoURL = "https://helpin.ai/brand/helpin-icon-ink-128.png"
+	helpinDarkModeLogoURL  = "https://helpin.ai/brand/helpin-icon-white-128.png"
 )
 
 // BrandHeaderCSS returns CSS used by branded email headers.
@@ -23,7 +23,7 @@ func BrandHeaderCSS() string {
     }
 
     .helpin-logo-dark {
-      display: block !important;
+      display: inline-block !important;
     }
   }
 </style>`
@@ -35,8 +35,14 @@ func BrandHeaderHTML() string {
           <tr>
             <td align="center" style="padding-bottom: 32px;">
               <a href="https://helpin.ai" target="_blank" style="display: inline-block; text-decoration: none;">
-                <img src="%s" alt="Helpin" class="helpin-logo-light" style="display: block; width: 152px; max-width: 100%%; height: auto; border: 0; outline: none; text-decoration: none;" />
-                <img src="%s" alt="Helpin" class="helpin-logo-dark" style="display: none; width: 152px; max-width: 100%%; height: auto; border: 0; outline: none; text-decoration: none;" />
+                <span class="helpin-logo-light" style="display: inline-block; white-space: nowrap;">
+                  <img src="%s" alt="" width="36" height="36" style="display: inline-block; width: 36px; height: 36px; vertical-align: middle; border: 0; outline: none;" />
+                  <span style="display: inline-block; margin-left: 10px; vertical-align: middle; color: #1e1c1a; font-size: 26px; line-height: 36px; font-weight: 700; letter-spacing: -1px;">Helpin</span>
+                </span>
+                <span class="helpin-logo-dark" style="display: none; white-space: nowrap;">
+                  <img src="%s" alt="" width="36" height="36" style="display: inline-block; width: 36px; height: 36px; vertical-align: middle; border: 0; outline: none;" />
+                  <span style="display: inline-block; margin-left: 10px; vertical-align: middle; color: #f7f5f2; font-size: 26px; line-height: 36px; font-weight: 700; letter-spacing: -1px;">Helpin</span>
+                </span>
               </a>
             </td>
           </tr>`,
@@ -55,8 +61,14 @@ func NotificationEmailHeaderHTML(workspaceName string) string {
                       <tr>
                         <td style="text-align: left; vertical-align: middle;">
                           <a href="https://helpin.ai" target="_blank" style="text-decoration: none; display: inline-block;">
-                            <img src="%s" alt="Helpin" class="helpin-logo-light" style="display: inline; width: 100px; height: auto; border: 0; outline: none;" />
-                            <img src="%s" alt="Helpin" class="helpin-logo-dark" style="display: none; width: 100px; height: auto; border: 0; outline: none;" />
+                            <span class="helpin-logo-light" style="display: inline-block; white-space: nowrap;">
+                              <img src="%s" alt="" width="26" height="26" style="display: inline-block; width: 26px; height: 26px; vertical-align: middle; border: 0; outline: none;" />
+                              <span style="display: inline-block; margin-left: 7px; vertical-align: middle; color: #1e1c1a; font-size: 18px; line-height: 26px; font-weight: 700; letter-spacing: -0.5px;">Helpin</span>
+                            </span>
+                            <span class="helpin-logo-dark" style="display: none; white-space: nowrap;">
+                              <img src="%s" alt="" width="26" height="26" style="display: inline-block; width: 26px; height: 26px; vertical-align: middle; border: 0; outline: none;" />
+                              <span style="display: inline-block; margin-left: 7px; vertical-align: middle; color: #f7f5f2; font-size: 18px; line-height: 26px; font-weight: 700; letter-spacing: -0.5px;">Helpin</span>
+                            </span>
                           </a>
                         </td>
                         <td style="text-align: right; vertical-align: middle;">

@@ -83,14 +83,16 @@ function renderPanel(overrides: Partial<{
       {
         value: 'anthropic',
         label: 'Anthropic',
-        model_placeholder: 'claude-sonnet-4-6',
+        default_model: 'claude-opus-4-8',
+        model_placeholder: 'claude-opus-4-8',
         supports_reasoning_effort: false,
         supports_service_tier: false,
       },
       {
         value: 'openai',
         label: 'OpenAI',
-        model_placeholder: 'gpt-5.5',
+        default_model: 'gpt-5.6-terra',
+        model_placeholder: 'gpt-5.6-terra',
         supports_reasoning_effort: true,
         supports_service_tier: true,
       },
@@ -182,7 +184,7 @@ describe('CustomAgentCreatePanel', () => {
 
     expect(container?.textContent).toContain('Agent name');
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
-      approval_mode: 'always',
+      approval_mode: 'mutating_tools',
       runtime_kind: 'codex',
       default_invocation_mode: 'interactive',
     }));
@@ -202,6 +204,26 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).toContain('Advanced settings');
     expect(container?.textContent).not.toContain('Review new agent');
     expect(container?.textContent).not.toContain('AI Provider');
+  });
+
+  it('offers sprint and objective working areas in the blank-agent picker', () => {
+    const onChange = vi.fn();
+    renderPanel({ onChange });
+
+    click('Start blank');
+
+    expect(container?.textContent).toContain('Sprints');
+    expect(container?.textContent).toContain('Objectives');
+
+    click('Sprints');
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      allowed_targets: ['task', 'sprint'],
+    }));
+
+    click('Objectives');
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      allowed_targets: ['task', 'objective'],
+    }));
   });
 
   it('shows run mode by default', () => {
@@ -236,7 +258,7 @@ describe('CustomAgentCreatePanel', () => {
     expect(document.body.textContent).toContain('Autonomous');
   });
 
-  it('keeps model entry simple with auto as the default', () => {
+  it('shows the explicit provider default model', () => {
     renderPanel({
       form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
       advancedOpen: true,
@@ -245,12 +267,34 @@ describe('CustomAgentCreatePanel', () => {
     click('Start blank');
     click('Advanced settings');
 
-    const modelInput = Array.from(container?.querySelectorAll('input') ?? [])
-      .find((input) => input.placeholder === 'Auto');
-    expect(modelInput).toBeTruthy();
-    expect(container?.textContent).not.toContain('claude-sonnet-4-6');
+    expect(container?.textContent).toContain('GPT-5.6 Terra');
+    expect(container?.textContent).toContain('Large');
     expect(container?.textContent).not.toContain('Use suggested');
     expect(container?.textContent).toContain('Coming soon');
+  });
+
+  it('shows a bounded per-agent tool step limit for Native SDK agents', () => {
+    renderPanel({
+      form: {
+        ...createDefaultCustomAgentForm(),
+        name: 'Native planner',
+        runtime_kind: 'native_sdk',
+        provider: 'anthropic',
+        model: 'claude-opus-4-8',
+        max_tool_steps: '640',
+      },
+      advancedOpen: true,
+    });
+
+    click('Start blank');
+
+    expect(container?.textContent).toContain('Tool step limit');
+    expect(container?.textContent).toContain('1–1000 rounds per run.');
+    const input = Array.from(container?.querySelectorAll('input') ?? [])
+      .find((candidate) => candidate.value === '640');
+    expect(input).toBeTruthy();
+    expect(input?.min).toBe('1');
+    expect(input?.max).toBe('1000');
   });
 
   it('supports all-teams and multi-team access', () => {

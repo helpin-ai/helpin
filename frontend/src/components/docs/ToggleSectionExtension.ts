@@ -63,19 +63,23 @@ export const ToggleSectionExtension = Node.create({
     const title = HTMLAttributes.title || HTMLAttributes['data-toggle-title'] || 'Details'
     const icon = HTMLAttributes.icon || HTMLAttributes['data-toggle-icon']
     const badgeText = HTMLAttributes.badgeText || HTMLAttributes['data-toggle-badge']
-    const summary = icon || badgeText || HTMLAttributes.sourceStyle
-      ? [
-          'summary',
-          ...(icon ? [['span', { class: 'docs-toggle-icon' }, icon]] : []),
-          ['span', { class: 'docs-toggle-title' }, title],
-          ...(badgeText ? [['span', { class: 'docs-toggle-badge' }, badgeText]] : []),
-        ]
-      : ['summary', title]
+    const sourceStyle = HTMLAttributes.sourceStyle || HTMLAttributes['data-toggle-style'] || (icon || badgeText ? 'helpScoutCard' : undefined)
+    const summary = [
+      'summary',
+      ...(icon ? [['span', { class: 'docs-toggle-icon' }, icon]] : []),
+      ['span', { class: 'docs-toggle-title' }, title],
+      ...(badgeText ? [['span', { class: 'docs-toggle-badge' }, badgeText]] : []),
+      ['span', { class: 'docs-toggle-chevron', 'aria-hidden': 'true' }],
+    ]
     return [
       'details',
-      mergeAttributes(HTMLAttributes, { 'data-toggle-section': '' }),
+      mergeAttributes(HTMLAttributes, {
+        class: 'docs-toggle-section',
+        'data-toggle-section': '',
+        ...(sourceStyle ? { 'data-toggle-style': sourceStyle } : {}),
+      }),
       summary,
-      ['div', { 'data-toggle-content': '' }, 0],
+      ['div', { class: 'docs-toggle-content', 'data-toggle-content': '' }, 0],
     ]
   },
 

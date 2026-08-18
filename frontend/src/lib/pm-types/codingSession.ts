@@ -1,4 +1,4 @@
-import type { AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind, CodexAuthState } from './agents';
+import type { AgentApprovalState, AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind, CodexAuthState } from './agents';
 
 export type CodingSessionInteractionKind =
   | 'request_user_input'
@@ -120,6 +120,7 @@ export interface CodingSession {
   invocation_mode: AgentInvocationMode;
   status: AgentRunStatus;
   pause_reason: AgentRunPauseReason;
+  approval_state: AgentApprovalState;
   error_message?: string;
   execution_stage?: string;
   last_heartbeat_at?: string;
@@ -145,6 +146,10 @@ export interface CodingSessionActor {
   email: string;
   full_name: string;
   avatar_url?: string;
+  avatar_style?: string;
+  avatar_seed?: string;
+  avatar_background_mode?: string;
+  avatar_background_color?: string;
 }
 
 export interface CodingSessionEvent {
@@ -162,6 +167,7 @@ export interface CodingSessionEvent {
 export interface CodingSessionEventListResponse {
   events: CodingSessionEvent[];
   next_sequence_no: number;
+  stream_state_snapshot?: CodingSessionStreamSnapshot;
 }
 
 export interface CodingSessionTranscriptMessage {
@@ -174,10 +180,18 @@ export interface CodingSessionTranscriptMessage {
   sequence_no: number;
   tool_calls?: CodingSessionLiveToolCall[];
   turn_segments?: CodingSessionLiveTurnSegment[];
+  dock_work_summary?: {
+    message_id: string;
+    duration_ms: number;
+    activity_count: number;
+  };
+  attachments?: Array<{ id: string; file_name: string; file_type: string; file_size: number }>;
   // For review_checkpoint_resolution / approval_request_resolution messages,
   // the workspace user who resolved the interaction (so the UI can render
   // their avatar and name).
   resolver_user_id?: string;
+  /** Workspace user who authored this human message. */
+  actor_user_id?: string;
 }
 
 export interface CodingSessionLiveToolResult {
@@ -234,6 +248,7 @@ export type CodingSessionLiveTurnSegment =
   | CodingSessionLiveToolCallSegment;
 
 export interface CodingSessionStreamSnapshot {
+  through_sequence?: number;
   live_assistant_message?: CodingSessionLiveAssistantMessage;
   live_reasoning_message?: CodingSessionLiveReasoningMessage;
   live_turn_segments?: CodingSessionLiveTurnSegment[];

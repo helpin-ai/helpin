@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { ArrowRight, Folder, Menu } from 'lucide-react'
+import { ArrowRight, Braces, Folder, Menu } from 'lucide-react'
 import { DocsLink } from '@/components/DocsLink'
 import {
   Accordion,
@@ -7,13 +7,17 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion'
-import { useCollection, useSpaceNavigation } from '@/hooks/queries'
+import { useAPIReferences, useCollection, useSpaceNavigation } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
-import { buildCanonicalArticlePath, buildCanonicalCollectionPath } from '@/lib/locale'
+import {
+  buildCanonicalAPIReferencePath,
+  buildCanonicalArticlePath,
+  buildCanonicalCollectionPath,
+} from '@/lib/locale'
 import { LoadingState } from '@/components/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { Sidebar, SidebarSkeleton } from '@/components/layout/Sidebar'
 import { Footer } from '@/components/layout/Footer'
 import { MobileNav } from '@/components/navigation/MobileNav'
 import { Breadcrumbs, type BreadcrumbEntry } from '@/components/navigation/Breadcrumbs'
@@ -39,6 +43,13 @@ export function CollectionRouteView({
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), [])
   const matchingSpace = spaces.find((space) => space.slug === collectionOrSpaceSlug)
+  const { data: apiReferences = [], isLoading: apiReferencesLoading } =
+    useAPIReferences(
+      subdomain,
+      locale,
+      matchingSpace?.slug ?? '',
+      multilingualEnabled,
+    )
   const { data: spaceNavigation = [], isLoading: spaceNavigationLoading } =
     useSpaceNavigation(
       subdomain,
@@ -118,11 +129,12 @@ export function CollectionRouteView({
           />
         )}
 
-        {spaceNavigation.length > 0 && (
+        {matchingSpace && (
           <>
             <div className="fixed left-0 right-0 top-[var(--hc-header-height)] z-20 flex items-center gap-2 border-b border-border bg-background px-4 py-2 lg:hidden">
               <button
                 onClick={() => setMobileNavOpen(true)}
+                disabled={spaceNavigation.length === 0}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 aria-label="Open navigation"
               >
@@ -132,13 +144,21 @@ export function CollectionRouteView({
                 {activeHeading}
               </span>
             </div>
-            <Sidebar locale={locale} navigation={spaceNavigation} />
+            {spaceNavigation.length > 0 || apiReferences.length > 0 ? (
+              <Sidebar
+                locale={locale}
+                navigation={spaceNavigation}
+                spaceSlug={matchingSpace.slug}
+              />
+            ) : spaceNavigationLoading ? (
+              <SidebarSkeleton />
+            ) : null}
           </>
         )}
 
-        <main className="min-w-0 flex-1 pt-[41px] lg:pt-0">
+        <main className="min-w-0 flex-1 pt-[41px] lg:pl-8 lg:pt-0">
           <section
-            className="mx-auto px-5 pb-10 pt-16 lg:px-6"
+            className="mx-auto px-5 pb-10 pt-16 lg:px-8"
             style={{ maxWidth: 'var(--hc-content-max-width)' }}
           >
             <header className="border-b border-border/70 pb-6">
@@ -152,24 +172,66 @@ export function CollectionRouteView({
               )}
             </header>
 
-            {spaceNavigationLoading ? (
+            {spaceNavigationLoading || apiReferencesLoading ? (
               <LoadingState message="Loading space..." />
-            ) : topLevelNodes.length === 0 ? (
+            ) : topLevelNodes.length === 0 && apiReferences.length === 0 ? (
               <ErrorState
                 title="No articles yet"
                 message="This space has no published articles."
               />
             ) : (
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                {topLevelNodes.map((node) => (
-                  <CollectionCard
-                    key={node.item.id}
-                    node={node}
-                    locale={locale}
-                    multilingualEnabled={multilingualEnabled}
-                  />
-                ))}
-              </div>
+              <>
+                {topLevelNodes.length > 0 && (
+                  <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                    {topLevelNodes.map((node) => (
+                      <CollectionCard
+                        key={node.item.id}
+                        node={node}
+                        locale={locale}
+                        multilingualEnabled={multilingualEnabled}
+                      />
+                    ))}
+                  </div>
+                )}
+                {apiReferences.length > 0 && (
+                  <div className="mt-10">
+                    <h2 className="mb-3 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      API Reference
+                    </h2>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {apiReferences.map((reference) => (
+                        <DocsLink
+                          key={reference.id}
+                          to={buildCanonicalAPIReferencePath(
+                            multilingualEnabled,
+                            locale,
+                            matchingSpace.slug,
+                            reference.slug,
+                          )}
+                          className="group flex items-center gap-3 rounded-2xl border border-border/70 px-4 py-4 transition-colors hover:border-primary/30 hover:bg-primary/[0.02]"
+                        >
+                          <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                            <Braces size={18} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-foreground">
+                              {reference.name}
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              {reference.api_version ? `Version ${reference.api_version} · ` : ''}
+                              {reference.operation_count} operations
+                            </div>
+                          </div>
+                          <ArrowRight
+                            size={16}
+                            className="shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                          />
+                        </DocsLink>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             <Footer />
           </section>
@@ -203,10 +265,11 @@ export function CollectionRouteView({
         />
       )}
 
-      {activeNavigation.length > 0 && (
+      {collectionSpaceSlug && (
         <>
           <div className="fixed left-0 right-0 top-[var(--hc-header-height)] z-20 flex items-center gap-2 border-b border-border bg-background px-4 py-2 lg:hidden">
             <button
+              disabled={activeNavigation.length === 0}
               onClick={() => setMobileNavOpen(true)}
               className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               aria-label="Open navigation"
@@ -217,13 +280,21 @@ export function CollectionRouteView({
               {activeHeading}
             </span>
           </div>
-          <Sidebar locale={locale} navigation={activeNavigation} />
+          {activeNavigation.length > 0 ? (
+            <Sidebar
+              locale={locale}
+              navigation={activeNavigation}
+              spaceSlug={collectionSpaceSlug}
+            />
+          ) : (
+            <SidebarSkeleton />
+          )}
         </>
       )}
 
-      <main className="min-w-0 flex-1 pt-[41px] lg:pt-0">
+      <main className="min-w-0 flex-1 pt-[41px] lg:pl-8 lg:pt-0">
         <section
-          className="mx-auto px-5 pb-10 pt-16 lg:px-6"
+          className="mx-auto px-5 pb-10 pt-16 lg:px-8"
           style={{ maxWidth: 'var(--hc-content-max-width)' }}
         >
           <header className="border-b border-border/70 pb-6">

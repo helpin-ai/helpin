@@ -5,6 +5,12 @@ export type NavItem = {
   label: string;
   icon: IconComponent;
   badge?: number;
+  children?: NavSubItem[];
+};
+
+export type NavSubItem = {
+  link: string;
+  label: string;
 };
 
 export type NavGroup = {
@@ -12,7 +18,7 @@ export type NavGroup = {
   items: NavItem[];
 };
 
-export type RailId = 'projects' | 'support' | 'crm' | 'automation' | 'docs' | 'settings';
+export type RailId = 'projects' | 'support' | 'crm' | 'automation' | 'docs' | 'settings' | 'setup';
 
 export type RailItem = {
   id: RailId;
@@ -21,4 +27,6 @@ export type RailItem = {
   defaultLink: string;
   badge?: number;
   indicator?: boolean;
+  progressPercent?: number;
+  separatorBefore?: boolean;
 };

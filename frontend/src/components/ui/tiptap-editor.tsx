@@ -50,6 +50,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
 import { uploadEditorFile, uploadEditorImage } from '@/hooks/useEditorImageUpload';
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types';
+import { cn } from '@/lib/utils';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { ResizableImageExtension } from './resizable-image-extension';
 import { normalizePastedMarkdownText } from './tiptapMarkdownPaste';
@@ -114,6 +115,8 @@ interface TiptapEditorProps {
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
   onEditorReady?: (editor: Editor | null) => void;
+  variant?: 'default' | 'divider';
+  contentVariant?: 'default' | 'pm';
 }
 
 function ToolbarButton({
@@ -149,7 +152,7 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, onUploadReady, teams = [], members = [], onEditorReady }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, onUploadReady, teams = [], members = [], onEditorReady, variant = 'default', contentVariant = 'default' }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
   const onUploadStateChangeRef = useRef(onUploadStateChange);
@@ -344,7 +347,14 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       }),
     ];
     if (uploadConfig) {
-      exts.push(ResizableImageExtension.configure({ enableCaption: false, defaultAlignment: 'left' }) as typeof exts[number]);
+      // workspaceId/uploadConfig are what enable image annotation outside docs (PM comments,
+      // support replies). The memo re-runs when upload support appears, so this stays current.
+      exts.push(ResizableImageExtension.configure({
+        enableCaption: false,
+        defaultAlignment: 'left',
+        workspaceId: uploadConfig.workspaceId,
+        uploadConfig,
+      }) as typeof exts[number]);
     }
     return exts;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -365,7 +375,10 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     content: normalizedContent,
     editorProps: {
       attributes: {
-        class: 'tiptap prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
+        class: cn(
+          'tiptap rich-text-soft prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
+          contentVariant === 'pm' && 'pm-rich-text',
+        ),
       },
       transformPastedText: (text, plain) => (
         plain ? text : normalizePastedMarkdownText(text)
@@ -579,9 +592,21 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
   };
 
   return (
-    <div className={`overflow-hidden rounded-2xl border border-transparent bg-input/50 ${className ?? ''}`}>
+    <div
+      data-variant={variant}
+      className={cn(
+        'overflow-hidden',
+        variant === 'divider'
+          ? 'rounded-none border-0 bg-transparent'
+          : 'rounded-2xl border border-transparent bg-input/50',
+        className,
+      )}
+    >
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 border-b border-border/40 px-2.5 py-2">
+      <div className={cn(
+        'flex flex-wrap items-center gap-1 border-b px-2.5 py-2',
+        variant === 'divider' ? 'border-border/60 px-5 py-1.5' : 'border-border/40',
+      )}>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive('bold')}

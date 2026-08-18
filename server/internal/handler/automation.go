@@ -111,7 +111,7 @@ func (h *AutomationHandler) CreateFlow(w http.ResponseWriter, r *http.Request) {
 		req.WorkspaceID = workspaceID
 	}
 
-	rule, err := h.ruleEngine.CreateRule(r.Context(), workspaceID, req)
+	rule, err := h.ruleEngine.CreateRuleForActor(r.Context(), workspaceID, middleware.GetUserID(r.Context()), req)
 	if err != nil {
 		writeWorkspaceSkillError(w, err)
 		return
@@ -405,7 +405,12 @@ func (h *AutomationHandler) ListTriggerCatalog(w http.ResponseWriter, r *http.Re
 
 // ListToolCatalog handles GET /api/automation/library/tools.
 func (h *AutomationHandler) ListToolCatalog(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.agentService.ListToolCatalog())
+	catalog, err := h.agentService.ListToolCatalogForWorkspace(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
 }
 
 // ListAgentTemplates handles GET /api/automation/agent-templates.
@@ -573,6 +578,22 @@ func (h *AutomationHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, agents)
 }
 
+// GetAgentFleet handles GET /api/automation/agent-fleet.
+func (h *AutomationHandler) GetAgentFleet(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	fleet, err := h.agentService.GetAgentFleet(r.Context(), workspaceID, authorization.GetActor(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, fleet)
+}
+
 // DraftCustomAgent handles POST /api/automation/agents/draft.
 func (h *AutomationHandler) DraftCustomAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -587,17 +608,7 @@ func (h *AutomationHandler) DraftCustomAgent(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	skillCatalog, err := h.agentService.ListSkillCatalog(r.Context(), workspaceID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	result, err := h.agentService.DraftCustomAgentWithCatalog(
-		r.Context(),
-		req,
-		h.agentService.ListToolCatalog().Tools,
-		skillCatalog.Skills,
-	)
+	result, err := h.agentService.DraftCustomAgent(r.Context(), workspaceID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -828,7 +839,7 @@ func (h *AutomationHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pagination := queryPagination(r)
+	pagination := queryAgentRunPagination(r)
 	runs, total, err := h.agentService.ListWorkspaceRuns(r.Context(), workspaceID, pagination)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -848,6 +859,19 @@ func (h *AutomationHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 		Page:       pagination.Page,
 		PerPage:    pagination.PerPage,
 		TotalPages: totalPages,
+	})
+}
+
+// GetRunAttentionCount handles GET /api/automation/runs/attention-count.
+func (h *AutomationHandler) GetRunAttentionCount(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	count, err := h.agentService.CountWorkspaceRunsRequiringAttention(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.AgentRunAttentionCountResponse{
+		Count: count,
 	})
 }
 

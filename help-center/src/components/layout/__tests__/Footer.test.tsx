@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { render, screen, within } from '@testing-library/react'
+import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { DocsProvider } from '@/contexts/DocsContext'
 import { Footer } from '@/components/layout/Footer'
@@ -87,9 +88,46 @@ describe('Footer', () => {
     expect(githubIcon?.style.maskImage).toContain('/brands/github.svg')
     expect(within(socialLinks).getByRole('link', { name: 'GitHub' }).querySelector('svg')).toBeNull()
 
-    expect(screen.getByRole('link', { name: 'Powered by Helpin' }).getAttribute('href')).toBe(
-      'https://helpin.ai/?utm_campaign=poweredBy&utm_medium=referral&utm_source=replug-ws-12345',
+    const attribution = screen.getByRole('link', { name: 'Powered by Helpin' })
+    const attributionUrl = new URL(attribution.getAttribute('href') ?? '')
+    expect(attributionUrl.searchParams.get('utm_source')).toBe('replug-ws-12345')
+    expect(attributionUrl.searchParams.get('utm_medium')).toBe('referral')
+    expect(attributionUrl.searchParams.get('utm_campaign')).toBe('powered_by_helpin')
+    expect(attributionUrl.searchParams.get('utm_content')).toBe('help_center_footer')
+    expect(attribution.getAttribute('href')).not.toContain('amp;')
+    const brandLockup = attribution.querySelector('[data-helpin-brand-lockup]')
+    expect(brandLockup).not.toBeNull()
+    expect(attribution.className).not.toContain('hover:text-foreground')
+    expect(within(attribution).getByText('Powered by').className).not.toContain('group-hover:text-foreground')
+    const helpinText = within(attribution).getByText('Helpin')
+    expect(helpinText.className).toContain('dark:text-white')
+    expect(helpinText.className).toContain('group-hover:text-foreground')
+
+    const brandMarks = Array.from(attribution.querySelectorAll('img'))
+    expect(brandMarks).toHaveLength(2)
+    expect(brandMarks.every((mark) => mark.getAttribute('src')?.startsWith('/brand/') === false)).toBe(true)
+    expect(brandMarks.every((mark) => mark.className.includes('scale-125'))).toBe(false)
+  })
+
+  it('keeps tracked query separators out of server-rendered HTML', () => {
+    const html = renderToString(
+      <DocsProvider
+        basepath=""
+        subdomain="replug"
+        locale="en"
+        defaultLocale="en"
+        enabledLocales={['en']}
+        multilingualEnabled={false}
+        config={baseConfig}
+        spaces={spaces}
+      >
+        <Footer />
+      </DocsProvider>,
     )
+
+    expect(html).toContain('href="https://helpin.ai/"')
+    expect(html).not.toContain('utm_campaign')
+    expect(html).not.toContain('&amp;')
   })
 
   it('shows the default copyright when the visibility flag is omitted', () => {

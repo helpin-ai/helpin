@@ -13,6 +13,13 @@ type scriptedSupportPlannerLLM struct {
 	requests  []llm.ChatRequest
 }
 
+type blockingSupportPlannerLLM struct{}
+
+func (f *blockingSupportPlannerLLM) ChatCompletion(ctx context.Context, _ llm.ChatRequest) (*llm.ChatResponse, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func (f *scriptedSupportPlannerLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	f.requests = append(f.requests, req)
 	if len(f.responses) == 0 {
@@ -61,250 +68,13 @@ func TestBuildConversationMessagesTreatsAIAsAssistant(t *testing.T) {
 	}
 }
 
-func TestPlanSupportQueryResolvesFollowUpFromContext(t *testing.T) {
-	provider := &scriptedSupportPlannerLLM{
-		responses: []llm.ChatResponse{
-			{
-				Content: `{"decision":"answer","issue_key":"publer_vs_contentstudio","issue_summary":"Customer wants a features comparison between Publer and ContentStudio","progress_signal":"same_issue_new_info","standalone_query":"Publer vs ContentStudio features","search_queries":["ContentStudio features vs Publer","Publer ContentStudio feature comparison"],"clarifying_question":"","reason":"resolved_from_context"}`,
-				TokensUsed: llm.TokenUsage{
-					InputTokens:  15,
-					OutputTokens: 9,
-				},
-			},
-		},
-	}
-	svc := &SupportAIService{
-		llmProvider:            provider,
-		queryExpansionModel:    "gpt-5.5",
-		queryExpansionProvider: "openai",
-	}
-
-	history := []model.SupportMessage{
-		{SenderType: "customer", MessageType: "reply", Content: "Publer or ContentStudio?"},
-		{SenderType: "ai", MessageType: "reply", Content: "ContentStudio is stronger for agencies and richer analytics."},
-	}
-
-	plan, tokensUsed, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "features"}, "")
-	if err != nil {
-		t.Fatalf("planSupportQuery() error = %v", err)
-	}
-	if tokensUsed != 24 {
-		t.Fatalf("tokensUsed = %d, want 24", tokensUsed)
-	}
-	if plan.Decision != supportDecisionAnswer {
-		t.Fatalf("decision = %q, want %q", plan.Decision, supportDecisionAnswer)
-	}
-	if plan.StandaloneQuery != "Publer vs ContentStudio features" {
-		t.Fatalf("standalone_query = %q", plan.StandaloneQuery)
-	}
-	if plan.IssueKey != "publer_vs_contentstudio" {
-		t.Fatalf("issue_key = %q", plan.IssueKey)
-	}
-	if plan.ProgressSignal != supportProgressSameNewInfo {
-		t.Fatalf("progress_signal = %q", plan.ProgressSignal)
-	}
-	wantQueries := []string{
-		"Publer vs ContentStudio features",
-		"ContentStudio features vs Publer",
-		"Publer ContentStudio feature comparison",
-	}
-	if len(plan.SearchQueries) != len(wantQueries) {
-		t.Fatalf("search_queries len = %d, want %d: %#v", len(plan.SearchQueries), len(wantQueries), plan.SearchQueries)
-	}
-	for i := range wantQueries {
-		if plan.SearchQueries[i] != wantQueries[i] {
-			t.Fatalf("search_queries[%d] = %q, want %q", i, plan.SearchQueries[i], wantQueries[i])
-		}
-	}
-	if len(provider.requests) != 1 {
-		t.Fatalf("planner calls = %d, want 1", len(provider.requests))
-	}
-}
-
-func TestPlanSupportQueryUsesClarifyInsteadOfHandoffForAmbiguousFollowUp(t *testing.T) {
-	provider := &scriptedSupportPlannerLLM{
-		responses: []llm.ChatResponse{
-			{
-				Content: `{"decision":"clarify","issue_key":"publer_vs_contentstudio","issue_summary":"Customer wants to compare Publer and ContentStudio","progress_signal":"same_issue_unclear","standalone_query":"","search_queries":[],"clarifying_question":"Do you mean Publer features or ContentStudio features?","reason":"needs_clarification"}`,
-				TokensUsed: llm.TokenUsage{
-					InputTokens:  12,
-					OutputTokens: 10,
-				},
-			},
-		},
-	}
-	svc := &SupportAIService{
-		llmProvider:            provider,
-		queryExpansionModel:    "gpt-5.5",
-		queryExpansionProvider: "openai",
-	}
-
-	history := []model.SupportMessage{
-		{SenderType: "customer", MessageType: "reply", Content: "Which one is better?"},
-	}
-
-	plan, _, err := svc.planSupportQuery(context.Background(), history, model.SupportMessage{SenderType: "customer", Content: "pricing"}, "")
-	if err != nil {
-		t.Fatalf("planSupportQuery() error = %v", err)
-	}
-	if plan.Decision != supportDecisionClarify {
-		t.Fatalf("decision = %q, want %q", plan.Decision, supportDecisionClarify)
-	}
-	if plan.ClarifyingQuestion == "" {
-		t.Fatal("expected clarifying question to be populated")
-	}
-	if plan.IssueKey != "publer_vs_contentstudio" {
-		t.Fatalf("issue_key = %q", plan.IssueKey)
-	}
-	if plan.Reason != "needs_clarification" {
-		t.Fatalf("reason = %q, want needs_clarification", plan.Reason)
-	}
-}
-
-func TestPlanSupportQueryIncludesImageContentParts(t *testing.T) {
-	provider := &scriptedSupportPlannerLLM{
-		responses: []llm.ChatResponse{
-			{
-				Content: `{"decision":"answer","issue_key":"screenshot_issue","issue_summary":"Customer reported an issue with a screenshot attachment","progress_signal":"new_issue","standalone_query":"screenshot issue","search_queries":["screenshot issue"],"clarifying_question":"","reason":"resolved_from_context"}`,
-			},
-		},
-	}
-	svc := &SupportAIService{
-		llmProvider:            provider,
-		queryExpansionModel:    "gpt-5.5",
-		queryExpansionProvider: "openai",
-	}
-
-	_, _, err := svc.planSupportQuery(context.Background(), nil, model.SupportMessage{
-		SenderType: "customer",
-		Attachments: []model.SupportAttachmentPayload{
-			{FileName: "Screenshot.png", FileType: "image/png", URL: "https://assets.example.com/screenshot.png"},
-		},
-	}, "")
-	if err != nil {
-		t.Fatalf("planSupportQuery() error = %v", err)
-	}
-	if len(provider.requests) != 1 {
-		t.Fatalf("planner calls = %d, want 1", len(provider.requests))
-	}
-	if len(provider.requests[0].Messages) != 1 {
-		t.Fatalf("planner messages = %#v", provider.requests[0].Messages)
-	}
-	if len(provider.requests[0].Messages[0].ContentParts) < 2 {
-		t.Fatalf("expected planner content parts with image, got %#v", provider.requests[0].Messages[0].ContentParts)
-	}
-	foundImage := false
-	for _, part := range provider.requests[0].Messages[0].ContentParts {
-		if part.Type == "image_url" && part.ImageURL != nil && part.ImageURL.URL == "https://assets.example.com/screenshot.png" {
-			foundImage = true
-			break
-		}
-	}
-	if !foundImage {
-		t.Fatalf("expected image_url content part, got %#v", provider.requests[0].Messages[0].ContentParts)
-	}
-}
-
-func TestNormalizeSupportQueryPlanFallsBackToAnswerWhenClarifyQuestionMissing(t *testing.T) {
-	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
-		Decision:       supportDecisionClarify,
-		IssueKey:       "feature_comparison",
-		IssueSummary:   "Customer wants a feature comparison",
-		ProgressSignal: supportProgressSameUnclear,
-		Reason:         "needs_clarification",
-	}, "features")
-
-	if plan.Decision != supportDecisionAnswer {
-		t.Fatalf("decision = %q, want fallback answer", plan.Decision)
-	}
-	if len(plan.SearchQueries) != 1 || plan.SearchQueries[0] != "features" {
-		t.Fatalf("search_queries = %#v, want raw message fallback", plan.SearchQueries)
-	}
-	if plan.IssueKey != "feature_comparison" {
-		t.Fatalf("issue_key = %q", plan.IssueKey)
-	}
-}
-
-func TestNormalizeSupportQueryPlanGeneratesIssueKeyWhenPlannerOmitsIt(t *testing.T) {
-	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
-		Decision:        supportDecisionAnswer,
-		StandaloneQuery: "How do I reset my password",
-		SearchQueries:   []string{"reset password"},
-	}, "How do I reset my password")
-
-	if plan.IssueKey != "how_reset_password" {
-		t.Fatalf("issue_key = %q", plan.IssueKey)
-	}
-	if plan.ProgressSignal != supportProgressNewIssue {
-		t.Fatalf("progress_signal = %q", plan.ProgressSignal)
-	}
-}
-
-func TestParseSupportQueryPlanStripsCodeFences(t *testing.T) {
-	plan, err := parseSupportQueryPlan("```json\n{\"decision\":\"handoff\",\"standalone_query\":\"\",\"search_queries\":[],\"clarifying_question\":\"\",\"reason\":\"customer_requested_human\"}\n```")
-	if err != nil {
-		t.Fatalf("parseSupportQueryPlan() error = %v", err)
-	}
-	if plan.Decision != supportDecisionHandoff {
-		t.Fatalf("decision = %q, want %q", plan.Decision, supportDecisionHandoff)
-	}
-	if plan.Reason != "customer_requested_human" {
-		t.Fatalf("reason = %q, want customer_requested_human", plan.Reason)
-	}
-}
-
-func TestParseSupportQueryPlanGreetingReply(t *testing.T) {
-	plan, err := parseSupportQueryPlan(`{"decision":"greet","greeting_reply":"Hi! What can I help you with?","reason":"greeting"}`)
-	if err != nil {
-		t.Fatalf("parseSupportQueryPlan() error = %v", err)
-	}
-	if plan.Decision != "greet" || plan.GreetingReply != "Hi! What can I help you with?" {
-		t.Fatalf("plan = %+v, want decision=greet with greeting reply", plan)
-	}
-}
-
-func TestNormalizeSupportQueryPlanPreservesGreet(t *testing.T) {
-	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{
-		Decision:      "greet",
-		GreetingReply: "  ¡Hola! ¿En qué puedo ayudarte hoy?  ",
-		SearchQueries: []string{"hola"},
-		IssueKey:      "greeting",
-	}, "Hola")
-	if plan.Decision != supportDecisionGreet {
-		t.Fatalf("decision = %q, want %q", plan.Decision, supportDecisionGreet)
-	}
-	if plan.GreetingReply != "¡Hola! ¿En qué puedo ayudarte hoy?" {
-		t.Fatalf("greeting reply = %q, want trimmed text", plan.GreetingReply)
-	}
-	if len(plan.SearchQueries) != 0 {
-		t.Fatalf("search queries = %v, want empty", plan.SearchQueries)
-	}
-	if plan.IssueKey != "" || plan.IssueSummary != "" {
-		t.Fatalf("issue key/summary = %q/%q, want empty", plan.IssueKey, plan.IssueSummary)
-	}
-}
-
-func TestNormalizeSupportQueryPlanGreetWithoutReplyFallsBack(t *testing.T) {
-	plan := normalizeSupportQueryPlan(SupportQueryPlanContract{Decision: "greet"}, "hello")
-	if plan.Decision != supportDecisionGreet {
-		t.Fatalf("decision = %q, want greet fallback for pure greeting", plan.Decision)
-	}
-	if plan.GreetingReply == "" {
-		t.Fatal("greeting reply empty, want canned fallback text")
-	}
-	mixed := normalizeSupportQueryPlan(SupportQueryPlanContract{Decision: "greet"}, "hi, how do I reset my password?")
-	if mixed.Decision != supportDecisionAnswer {
-		t.Fatalf("decision = %q, want answer for greeting+question when planner text missing", mixed.Decision)
-	}
-}
-
 func TestDefaultSupportQueryPlanGreeting(t *testing.T) {
 	plan := defaultSupportQueryPlan("Hello!")
-	if plan.Decision != supportDecisionGreet {
-		t.Fatalf("decision = %q, want %q", plan.Decision, supportDecisionGreet)
+	if plan.Decision != supportDecisionAnswer {
+		t.Fatalf("decision = %q, want conservative answer fallback", plan.Decision)
 	}
-	if plan.GreetingReply == "" || len(plan.SearchQueries) != 0 || plan.IssueKey != "" {
-		t.Fatalf("plan = %+v, want canned greeting, no queries, no issue key", plan)
+	if plan.GreetingReply != "" || len(plan.SearchQueries) != 1 {
+		t.Fatalf("plan = %+v, want no deterministic reply and one sufficiency query", plan)
 	}
 	mixed := defaultSupportQueryPlan("hi, how do I reset my password?")
 	if mixed.Decision != supportDecisionAnswer {

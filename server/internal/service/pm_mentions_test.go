@@ -172,6 +172,7 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 	)
 	env.sprintService = NewPMSprintService(
 		repository.NewPMSprintRepository(db),
+		repository.NewPMTaskRepository(db),
 		repository.NewPMLabelRepository(db),
 		repository.NewPMAttachmentRepository(db),
 		env.workspaceRepo,

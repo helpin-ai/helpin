@@ -3,8 +3,8 @@ package service
 import (
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func promptMatchesDefault(presetKey string, prompt *string) bool {
@@ -100,14 +100,24 @@ func legacyPromptIsManaged(presetKey string, prompt *string) bool {
 	case model.AgentPresetCRMOperator:
 		return strings.Contains(normalized, "You are CRM Operator for Helpin.")
 	case model.AgentPresetSupportAgent:
-		return strings.Contains(normalized, "You are Support Agent for Helpin.")
+		if strings.Contains(normalized, "You are Support Agent for Helpin.") {
+			return true
+		}
+		// Echo's first workspace-generic prompt was persisted directly before
+		// managed template-version storage was applied to existing rows. Match
+		// several contract markers so that exact product-managed generation can
+		// migrate to the current nil-prompt/template-version representation
+		// without treating an arbitrary custom support prompt as managed.
+		return strings.Contains(normalized, "You are Echo, the workspace support agent. You are chatting live with a customer") &&
+			strings.Contains(normalized, "Every turn MUST end with exactly one call to send_support_reply") &&
+			strings.Contains(normalized, "For any factual or product question, call search_knowledge FIRST")
 	}
 
 	return false
 }
 
 func defaultSystemPromptForPreset(presetKey string) *string {
-	return worker.BuiltInPresetPrompt(normalizePresetKey(presetKey))
+	return agentcontract.BuiltInPresetPrompt(normalizePresetKey(presetKey))
 }
 
 func mergeLegacyPlanningNotes(prompt, legacyPlanningNotes *string) *string {
@@ -125,7 +135,7 @@ func mergeLegacyPlanningNotes(prompt, legacyPlanningNotes *string) *string {
 
 func syncManagedSystemPromptForPreset(presetKey string, systemPrompt, legacyPlanningNotes *string, instructionTemplateVersion string) (*string, string) {
 	normalizedPresetKey := normalizePresetKey(presetKey)
-	currentVersion := strings.TrimSpace(worker.BuiltInPresetInstructionTemplateVersion(normalizedPresetKey))
+	currentVersion := strings.TrimSpace(agentcontract.BuiltInPresetInstructionTemplateVersion(normalizedPresetKey))
 	if currentVersion == "" {
 		return trimPtr(systemPrompt), strings.TrimSpace(instructionTemplateVersion)
 	}

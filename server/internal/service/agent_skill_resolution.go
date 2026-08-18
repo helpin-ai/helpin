@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/agentskills"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func (s *AgentService) resolveAgentSkills(ctx context.Context, agent *model.Agent) (agentskills.Resolution, error) {
@@ -28,7 +28,7 @@ func (s *AgentService) validateAndMaterializeAgentSkills(ctx context.Context, ag
 		return err
 	}
 	agent.Skills = resolution.Refs
-	profile := worker.ResolveAgentProfile(agent)
+	profile := agentcontract.ResolveAgentProfile(agent)
 	if err := agentskills.ValidateRuntimeAndTools(agent.RuntimeKind, profile.Tools, resolution.Definitions); err != nil {
 		return err
 	}

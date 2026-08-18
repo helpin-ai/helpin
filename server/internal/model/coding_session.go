@@ -18,6 +18,7 @@ type CodingSession struct {
 	InvocationMode      string                       `json:"invocation_mode"`
 	Status              string                       `json:"status"`
 	PauseReason         string                       `json:"pause_reason"`
+	ApprovalState       string                       `json:"approval_state"`
 	ErrorMessage        *string                      `json:"error_message,omitempty"`
 	ExecutionStage      *string                      `json:"execution_stage,omitempty"`
 	LastHeartbeatAt     *time.Time                   `json:"last_heartbeat_at,omitempty"`
@@ -40,10 +41,14 @@ type CodingSession struct {
 
 // CodingSessionActor describes the human user who triggered a coding session run.
 type CodingSessionActor struct {
-	ID        string  `json:"id"`
-	Email     string  `json:"email"`
-	FullName  string  `json:"full_name"`
-	AvatarURL *string `json:"avatar_url,omitempty"`
+	ID                    string  `json:"id"`
+	Email                 string  `json:"email"`
+	FullName              string  `json:"full_name"`
+	AvatarURL             *string `json:"avatar_url,omitempty"`
+	AvatarStyle           *string `json:"avatar_style,omitempty"`
+	AvatarSeed            *string `json:"avatar_seed,omitempty"`
+	AvatarBackgroundMode  *string `json:"avatar_background_mode,omitempty"`
+	AvatarBackgroundColor *string `json:"avatar_background_color,omitempty"`
 }
 
 type CodingSessionCapabilities struct {
@@ -91,8 +96,9 @@ type CodingSessionEvent struct {
 }
 
 type CodingSessionEventListResponse struct {
-	Events         []CodingSessionEvent `json:"events"`
-	NextSequenceNo int                  `json:"next_sequence_no"`
+	Events              []CodingSessionEvent         `json:"events"`
+	NextSequenceNo      int                          `json:"next_sequence_no"`
+	StreamStateSnapshot *CodingSessionStreamSnapshot `json:"stream_state_snapshot,omitempty"`
 }
 
 func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessage) CodingSessionEvent {
@@ -108,6 +114,11 @@ func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessa
 		eventType = "tool.call.completed"
 	}
 
+	messageID := strings.TrimSpace(message.RuntimeMessageID)
+	if messageID == "" {
+		messageID = message.ID
+	}
+
 	return CodingSessionEvent{
 		ID:          "msg:" + message.ID,
 		SessionID:   run.ID,
@@ -117,14 +128,16 @@ func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessa
 		Type:        eventType,
 		RuntimeKind: run.RuntimeKind,
 		Payload: map[string]any{
-			"message_id":       message.ID,
-			"role":             message.Role,
-			"message_type":     message.MessageType,
-			"content":          message.Content,
-			"sequence_no":      message.SequenceNo,
-			"content_blocks":   json.RawMessage(message.ContentBlocks),
-			"turn_segments":    json.RawMessage(message.TurnSegments),
-			"tool_invocations": json.RawMessage(message.ToolInvocations),
+			"message_id":           messageID,
+			"persisted_message_id": message.ID,
+			"role":                 message.Role,
+			"message_type":         message.MessageType,
+			"content":              message.Content,
+			"sequence_no":          message.SequenceNo,
+			"content_blocks":       json.RawMessage(message.ContentBlocks),
+			"turn_segments":        json.RawMessage(message.TurnSegments),
+			"tool_invocations":     json.RawMessage(message.ToolInvocations),
+			"actor_user_id":        message.ActorUserID,
 		},
 		RuntimeMetadata: map[string]any{
 			"source": "agent_run_message",
@@ -187,6 +200,7 @@ type CodingSessionRunPlan struct {
 }
 
 type CodingSessionStreamSnapshot struct {
+	ThroughSequence      int64                              `json:"through_sequence,omitempty"`
 	LiveAssistantMessage *CodingSessionLiveAssistantMessage `json:"live_assistant_message,omitempty"`
 	LiveReasoningMessage *CodingSessionLiveReasoningMessage `json:"live_reasoning_message,omitempty"`
 	LiveTurnSegments     []CodingSessionLiveTurnSegment     `json:"live_turn_segments,omitempty"`

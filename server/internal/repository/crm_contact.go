@@ -23,6 +23,11 @@ func NewCRMContactRepository(db *gorm.DB) *CRMContactRepository {
 	return &CRMContactRepository{db: db}
 }
 
+// DB returns the underlying database for coordinated transactions.
+func (r *CRMContactRepository) DB() *gorm.DB {
+	return r.db
+}
+
 // CountByWorkspace returns the number of contacts in a workspace.
 func (r *CRMContactRepository) CountByWorkspace(ctx context.Context, workspaceID string) (int64, error) {
 	var count int64
@@ -57,7 +62,8 @@ func (r *CRMContactRepository) List(ctx context.Context, workspaceID string, fil
 	if filters.Search != nil && *filters.Search != "" {
 		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
 		query = query.Where(
-			"(LOWER(first_name) LIKE ? OR LOWER(COALESCE(last_name, '')) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ?)",
+			"(LOWER(first_name) LIKE ? OR LOWER(COALESCE(last_name, '')) LIKE ? OR LOWER(COALESCE(email, '')) LIKE ? OR LOWER(COALESCE(job_title, '')) LIKE ?)",
+			search,
 			search,
 			search,
 			search,
@@ -78,6 +84,9 @@ func (r *CRMContactRepository) List(ctx context.Context, workspaceID string, fil
 
 	var contacts []model.CRMContact
 	offset := (pagination.Page - 1) * pagination.PerPage
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	}
 	if err := query.Order("created_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&contacts).Error; err != nil {
 		return nil, 0, fmt.Errorf("list contacts: %w", err)
 	}
@@ -196,10 +205,38 @@ func (r *CRMContactRepository) ListByEmails(ctx context.Context, workspaceID str
 
 // Update updates a contact.
 func (r *CRMContactRepository) Update(ctx context.Context, contact *model.CRMContact) error {
-	if err := r.db.WithContext(ctx).Save(contact).Error; err != nil {
-		return fmt.Errorf("update contact: %w", err)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(contact).Error; err != nil {
+			return fmt.Errorf("update contact: %w", err)
+		}
+
+		name := strings.TrimSpace(strings.Join([]string{contact.FirstName, crmContactStringValue(contact.LastName)}, " "))
+		updates := map[string]any{
+			"customer_name":  name,
+			"customer_email": crmContactNullableStringValue(contact.Email),
+			"customer_phone": crmContactNullableStringValue(contact.Phone),
+		}
+		if err := tx.Model(&model.SupportConversation{}).
+			Where("workspace_id = ? AND crm_contact_id = ?", contact.WorkspaceID, contact.ID).
+			Updates(updates).Error; err != nil {
+			return fmt.Errorf("sync linked support identity: %w", err)
+		}
+		return nil
+	})
+}
+
+func crmContactNullableStringValue(value *string) any {
+	if value == nil {
+		return nil
 	}
-	return nil
+	return *value
+}
+
+func crmContactStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // Delete removes a contact.

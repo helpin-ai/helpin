@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 type stageTestLookup struct {
@@ -39,7 +39,7 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	}
 	destRoot := filepath.Join(t.TempDir(), "skills")
 
-	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{worker.ToolRequestApproval, worker.ToolRequestReviewCheckpoint}, nil, nil, destRoot)
+	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{agentcontract.ToolRequestApproval, agentcontract.ToolRequestReviewCheckpoint}, nil, nil, destRoot)
 	if err != nil {
 		t.Fatalf("stage skills: %v", err)
 	}
@@ -53,10 +53,10 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	if !strings.Contains(string(payload), "prd_task_plan_approval") {
 		t.Fatalf("expected staged skill markdown to contain skill key, got %q", string(payload))
 	}
-	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval)+"`") {
+	if !strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestApproval)+"`") {
 		t.Fatalf("expected staged skill markdown to use runtime approval tool name, got %q", string(payload))
 	}
-	if strings.Contains(string(payload), "`"+worker.ToolRequestApproval+"`") {
+	if strings.Contains(string(payload), "`"+agentcontract.ToolRequestApproval+"`") {
 		t.Fatalf("expected staged skill markdown not to expose bare approval tool name, got %q", string(payload))
 	}
 }
@@ -77,7 +77,7 @@ func TestEffectiveRuntimeRefsFallsBackForBuiltInDefaultVersion(t *testing.T) {
 	}
 }
 
-func TestEffectiveRuntimeRefsFallsBackToCoreSkillsForCoreOnlyBuiltInPreset(t *testing.T) {
+func TestEffectiveRuntimeRefsFallsBackToAllRuntimeSkillsForBuiltInPreset(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:         true,
 		PresetKey:        model.AgentPresetEpicPlanner,
@@ -91,6 +91,83 @@ func TestEffectiveRuntimeRefsFallsBackToCoreSkillsForCoreOnlyBuiltInPreset(t *te
 	if refs[0].Key != "prd_task_plan_approval" {
 		t.Fatalf("expected first fallback skill %q, got %q", "prd_task_plan_approval", refs[0].Key)
 	}
+	if refs[len(refs)-1].Key != "task_plan_publishing" {
+		t.Fatalf("expected Atlas available tool skill in fallback refs, got %#v", refs)
+	}
+}
+
+func TestEffectiveRuntimeRefsMergesAvailableSkillsWithPersistedCoreSelection(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetEpicPlanner,
+		PresetVersionKey: "epic_planner_default",
+		Skills: model.AgentSkillRefs{{
+			Key: "engineering_planner_operating_rules",
+		}},
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 6 {
+		t.Fatalf("expected five Atlas core refs and one available tool ref, got %#v", refs)
+	}
+	if refs[len(refs)-1].Key != "task_plan_publishing" {
+		t.Fatalf("expected available tool skill after core refs, got %#v", refs)
+	}
+}
+
+func TestEffectiveRuntimeRefsMergesMissingCoreSkillsForBuiltInDefaultVersion(t *testing.T) {
+	versionKey := "operating_rules_v1"
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetTaskPlanner,
+		PresetVersionKey: "task_planner_default",
+		Skills: model.AgentSkillRefs{{
+			Key:        "engineering_planner_operating_rules",
+			VersionKey: &versionKey,
+			Config:     model.JSONBlob(`{"strict":true}`),
+		}},
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 3 {
+		t.Fatalf("expected all three required Scribe skills, got %#v", refs)
+	}
+	wantKeys := []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"}
+	for index, wantKey := range wantKeys {
+		if refs[index].Key != wantKey {
+			t.Fatalf("expected skill %d to be %q, got %#v", index, wantKey, refs)
+		}
+	}
+	if refs[2].VersionKey == nil || *refs[2].VersionKey != versionKey {
+		t.Fatalf("expected explicit core skill version to be preserved, got %#v", refs[2])
+	}
+	if string(refs[2].Config) != `{"strict":true}` {
+		t.Fatalf("expected explicit core skill config to be preserved, got %#v", refs[2])
+	}
+}
+
+func TestEffectiveRuntimeRefsDoesNotLetWorkspaceSkillReplaceBuiltInCoreSkill(t *testing.T) {
+	skillID := "skill_workspace_approval"
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetTaskPlanner,
+		PresetVersionKey: "task_planner_default",
+		Skills: model.AgentSkillRefs{{
+			SkillID: &skillID,
+			Key:     "prd_task_plan_approval",
+		}},
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 4 {
+		t.Fatalf("expected three built-in core skills plus the workspace skill, got %#v", refs)
+	}
+	if refs[1].Key != "prd_task_plan_approval" || refs[1].SkillID != nil {
+		t.Fatalf("expected required built-in approval skill, got %#v", refs[1])
+	}
+	if refs[3].SkillID == nil || *refs[3].SkillID != skillID {
+		t.Fatalf("expected explicit workspace skill to remain available, got %#v", refs[3])
+	}
 }
 
 func TestEffectiveRuntimeRefsDoesNotFallbackForWorkspaceVersion(t *testing.T) {
@@ -103,6 +180,22 @@ func TestEffectiveRuntimeRefsDoesNotFallbackForWorkspaceVersion(t *testing.T) {
 	refs := EffectiveRuntimeRefs(agent)
 	if len(refs) != 0 {
 		t.Fatalf("expected workspace version with explicit empty skills to stay empty, got %v", refs)
+	}
+}
+
+func TestEffectiveRuntimeRefsDoesNotMergeCoreSkillsForWorkspaceVersion(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetTaskPlanner,
+		PresetVersionKey: "task_planner_workspace_123",
+		Skills: model.AgentSkillRefs{{
+			Key: "engineering_planner_operating_rules",
+		}},
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 1 || refs[0].Key != "engineering_planner_operating_rules" {
+		t.Fatalf("expected workspace version to retain only its explicit skills, got %#v", refs)
 	}
 }
 
@@ -124,6 +217,7 @@ func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
 		"grep",
 		"run_command",
 		"web_search_exa",
+		"fetch_url",
 		"create_task",
 	}, nil, nil, destRoot)
 	if err != nil {
@@ -177,8 +271,8 @@ func TestStageIntoStagesSecurityTriageBuiltInSkillPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read staged security triage SKILL.md: %v", err)
 	}
-	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt("scan_gitleaks")+"`") ||
-		!strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt("ensure_task_label")+"`") {
+	if !strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt("scan_gitleaks")+"`") ||
+		!strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt("ensure_task_label")+"`") {
 		t.Fatalf("expected staged security triage skill to contain scanner and label tools, got %q", string(payload))
 	}
 	if _, err := os.Stat(filepath.Join(destRoot, "01-security_triage", "semgrep", "helpin-security.yml")); err != nil {
@@ -187,19 +281,19 @@ func TestStageIntoStagesSecurityTriageBuiltInSkillPackage(t *testing.T) {
 }
 
 func TestStageIntoStagesWorkspaceSkillArchive(t *testing.T) {
-	definition := worker.SkillDefinition{
+	definition := agentcontract.SkillDefinition{
 		Key:          "workspace_review",
 		Title:        "Workspace Review",
 		Description:  "Review changes for the workspace.",
 		Instructions: "Inspect the repo, call `update_plan`, and produce a review summary.",
 		SourceKind:   model.WorkspaceSkillSourceWorkspace,
 	}
-	archive, checksum, filename, err := worker.BuildSkillArchive(definition)
+	archive, checksum, filename, err := agentcontract.BuildSkillArchive(definition)
 	if err != nil {
 		t.Fatalf("build archive: %v", err)
 	}
 	skillID := "skill-123"
-	versionKey := worker.SkillVersionForBytes(archive)
+	versionKey := agentcontract.SkillVersionForBytes(archive)
 	objectKey := "workspaces/ws_123/skills/skill-123/" + filename
 	lookup := &stageTestLookup{
 		byID: map[string]*model.WorkspaceSkill{
@@ -239,10 +333,10 @@ func TestStageIntoStagesWorkspaceSkillArchive(t *testing.T) {
 	if !strings.Contains(string(payload), definition.Description) {
 		t.Fatalf("expected staged workspace skill markdown to contain description, got %q", string(payload))
 	}
-	if !strings.Contains(string(payload), "`"+worker.RuntimeToolNameForPrompt(worker.ToolUpdatePlan)+"`") {
+	if !strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolUpdatePlan)+"`") {
 		t.Fatalf("expected staged workspace skill markdown to use runtime update_plan tool name, got %q", string(payload))
 	}
-	if strings.Contains(string(payload), "`"+worker.ToolUpdatePlan+"`") {
+	if strings.Contains(string(payload), "`"+agentcontract.ToolUpdatePlan+"`") {
 		t.Fatalf("expected staged workspace skill markdown not to expose bare update_plan tool name, got %q", string(payload))
 	}
 }

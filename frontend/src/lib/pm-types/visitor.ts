@@ -27,7 +27,30 @@ export interface VisitorContactData {
   lifecycle_stage: string;
   lead_status: string;
   source: string;
-  custom_properties?: Record<string, string>;
+  custom_properties?: Record<string, unknown>;
+}
+
+export interface VisitorCompanyData {
+  id: string;
+  display_id: string;
+  external_id?: string | null;
+  name: string;
+  domain?: string | null;
+  industry?: string | null;
+  employee_count?: number | null;
+  annual_revenue?: number | null;
+  description?: string | null;
+  logo_url?: string | null;
+  custom_properties: Record<string, unknown>;
+  updated_at: string;
+}
+
+export interface VisitorCompanyOption {
+  id: string;
+  display_id: string;
+  name: string;
+  domain?: string | null;
+  logo_url?: string | null;
 }
 
 export interface VisitorOtherConversation {
@@ -42,6 +65,9 @@ export interface VisitorContextResponse {
   device: VisitorDeviceInfo | null;
   location: VisitorLocation | null;
   contact: VisitorContactData | null;
+  company?: VisitorCompanyData | null;
+  company_options?: VisitorCompanyOption[];
+  company_context_status?: 'ok' | 'unlinked' | 'error';
   other_conversations: VisitorOtherConversation[];
   total_conversations: number;
   session_created_at: string | null;

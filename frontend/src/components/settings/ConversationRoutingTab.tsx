@@ -126,17 +126,17 @@ export function getWorkspaceDefaultSender<T extends Pick<SupportEmailSender, 'de
   return senders.find((sender) => sender.active && sender.default_scope === 'workspace') ?? null;
 }
 
-export function getEmailForwardingStatus(route: Pick<SupportEmailRoute, 'active' | 'last_inbound_at'> | null | undefined) {
+export function getEmailForwardingStatus(route: Pick<SupportEmailRoute, 'active' | 'forwarding_verified_at'> | null | undefined) {
   if (!route?.active) return null;
-  if (!route.last_inbound_at) {
+  if (!route.forwarding_verified_at) {
     return {
-      label: 'Awaiting email',
+      label: 'Setup incomplete',
       tone: 'warning' as const,
-      tooltip: 'Forwarding is enabled. Send or forward a test email to finish verification.',
+      tooltip: 'Confirm forwarding in your email provider, then run an end-to-end test.',
     };
   }
   return {
-    label: 'On',
+    label: 'Verified',
     tone: 'success' as const,
     tooltip: null,
   };
@@ -826,9 +826,11 @@ function InboxNameWithDescription({ mailbox }: { mailbox: SupportMailbox }) {
 export function ConversationRoutingTab({
   workspaceId,
   section = 'all',
+  createInbox = false,
 }: {
   workspaceId: string;
   section?: 'all' | 'inboxes' | 'routing';
+  createInbox?: boolean;
 }) {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -920,6 +922,7 @@ export function ConversationRoutingTab({
   const [draft, setDraft] = useState<RoutingSettingsDraft>(DEFAULT_ROUTING_SETTINGS);
   const [editingMailbox, setEditingMailbox] = useState<SupportMailbox | null>(null);
   const [mailboxDialogOpen, setMailboxDialogOpen] = useState(false);
+  const [createInboxHandled, setCreateInboxHandled] = useState(false);
 
   const openCreateMailbox = () => {
     setEditingMailbox(null);
@@ -929,6 +932,16 @@ export function ConversationRoutingTab({
     setEditingMailbox(mailbox);
     setMailboxDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (!createInbox) {
+      setCreateInboxHandled(false);
+      return;
+    }
+    if (createInboxHandled) return;
+    openCreateMailbox();
+    setCreateInboxHandled(true);
+  }, [createInbox, createInboxHandled, openCreateMailbox]);
 
   // Accordion state
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set(DEFAULT_EXPANDED_ROUTING_SECTIONS));
@@ -1070,7 +1083,7 @@ export function ConversationRoutingTab({
                       mailbox={mailbox}
                       mailboxRules={rulesByMailbox.get(mailbox.id) ?? []}
                       emailRoute={emailRouteByMailbox.get(mailbox.id) ?? null}
-                      emailSender={emailSenderByMailbox.get(mailbox.id) ?? null}
+                      emailSender={emailSenderByMailbox.get(mailbox.id) ?? workspaceDefaultSender}
                       onEdit={openEditMailbox}
                       onArchive={handleArchiveMailbox}
                       onRestore={handleRestoreMailbox}
@@ -1085,7 +1098,7 @@ export function ConversationRoutingTab({
                       mailbox={mailbox}
                       mailboxRules={rulesByMailbox.get(mailbox.id) ?? []}
                       emailRoute={emailRouteByMailbox.get(mailbox.id) ?? null}
-                      emailSender={emailSenderByMailbox.get(mailbox.id) ?? null}
+                      emailSender={emailSenderByMailbox.get(mailbox.id) ?? workspaceDefaultSender}
                       onEdit={openEditMailbox}
                       onArchive={handleArchiveMailbox}
                       onRestore={handleRestoreMailbox}

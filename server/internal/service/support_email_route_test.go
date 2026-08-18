@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -12,6 +13,21 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
+
+func TestSupportEmailRoutePersistsForwardingVerificationState(t *testing.T) {
+	routeType := reflect.TypeOf(model.SupportEmailRoute{})
+	for _, fieldName := range []string{
+		"ConfirmationReceivedAt",
+		"VerificationSentAt",
+		"ForwardingVerifiedAt",
+		"ForwardingVerificationToken",
+		"ForwardingLastError",
+	} {
+		if _, ok := routeType.FieldByName(fieldName); !ok {
+			t.Errorf("SupportEmailRoute is missing %s", fieldName)
+		}
+	}
+}
 
 func TestSupportInboxServiceCreateEmailRouteUsesWorkspaceSlugNamespace(t *testing.T) {
 	ctx := context.Background()
@@ -79,6 +95,57 @@ func TestSupportInboxServiceCreateEmailRouteUsesInboxForSharedRoute(t *testing.T
 	}
 	if route.InboundAddress != "inbox@acme.on.helpin.email" {
 		t.Fatalf("expected shared branded route, got %q", route.InboundAddress)
+	}
+}
+
+func TestSupportInboxServiceSendEmailRouteTestStoresPendingTestAndSendsToSource(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	var captured capturedPostmarkRequest
+	emailClient := email.NewClient("postmark-token", "noreply@example.com")
+	emailClient.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if err := json.NewDecoder(req.Body).Decode(&captured); err != nil {
+			t.Fatalf("decode Postmark request: %v", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"MessageID":"pm-test-1"}`)),
+		}, nil
+	})})
+
+	routeRepo := repository.NewSupportEmailRouteRepository(db)
+	svc := NewSupportInboxService(nil, repository.NewSupportMailboxRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailRouteRepository(routeRepo).
+		SetWorkspaceRepo(repository.NewWorkspaceRepository(db)).
+		SetEmailFallbackService(&EmailFallbackService{emailClient: emailClient}).
+		SetRouteDomain("on.helpin.email")
+
+	route, err := svc.CreateEmailRoute(ctx, workspaceID, model.CreateSupportEmailRouteRequest{}, actorID)
+	if err != nil {
+		t.Fatalf("create shared route: %v", err)
+	}
+	updated, err := svc.SendEmailRouteTest(ctx, workspaceID, route.ID, "Help <support@example.com>")
+	if err != nil {
+		t.Fatalf("send forwarding test: %v", err)
+	}
+	if captured.To != "support@example.com" {
+		t.Fatalf("test recipient = %q, want support@example.com", captured.To)
+	}
+	if updated.SourceAddress == nil || *updated.SourceAddress != "support@example.com" {
+		t.Fatalf("source address = %#v", updated.SourceAddress)
+	}
+	if updated.VerificationSentAt == nil || updated.ForwardingVerificationToken == "" {
+		t.Fatalf("expected pending verification state, got %#v", updated)
+	}
+	if !strings.Contains(captured.Subject, updated.ForwardingVerificationToken) {
+		t.Fatalf("subject %q does not contain route verification token", captured.Subject)
 	}
 }
 

@@ -176,6 +176,132 @@ describe('buildCodingSessionStreamState', () => {
     expect(state.activity_events.map((event) => event.type)).toEqual(['interaction.requested']);
   });
 
+  it('appends provider assistant deltas verbatim, preserving spacing and mid-word token splits', () => {
+    // The runtime emits verbatim deltas that already carry their own leading
+    // whitespace; token boundaries fall mid-word. We must not guess spacing.
+    const tokens = ['Bu', 'ffer', "'s", ' change', 'log', ' loaded', ' well', '.'];
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-start',
+        type: 'assistant.message.started',
+        sequence_no: 1,
+        payload: { message_id: 'assistant-live-words' },
+      }),
+      ...tokens.map((token, index) => buildEvent({
+        id: `assistant-delta-${index}`,
+        type: 'assistant.message.delta',
+        sequence_no: index + 2,
+        payload: { message_id: 'assistant-live-words', text: token },
+      })),
+    ]);
+
+    expect(state.live_assistant_message?.content).toBe("Buffer's changelog loaded well.");
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: { content: "Buffer's changelog loaded well." },
+    });
+  });
+
+  it('does not duplicate the message when a completion follows verbatim streamed deltas', () => {
+    const tokens = ['Analy', 'zing', ' the', ' change', 'logs', ' now', '.'];
+    const state = buildCodingSessionStreamState([
+      buildEvent({ id: 'a-start', type: 'assistant.message.started', sequence_no: 1, payload: { message_id: 'm1' } }),
+      ...tokens.map((token, index) => buildEvent({
+        id: `a-delta-${index}`,
+        type: 'assistant.message.delta',
+        sequence_no: index + 2,
+        payload: { message_id: 'm1', text: token },
+      })),
+      buildEvent({
+        id: 'a-completed',
+        type: 'assistant.message.completed',
+        sequence_no: 20,
+        payload: { message_id: 'm1', text: 'Analyzing the changelogs now.' },
+      }),
+    ]);
+
+    // Streamed content is an exact prefix of the completed content, so the
+    // completion marks the single segment complete rather than re-appending.
+    expect(state.live_assistant_message?.content).toBe('Analyzing the changelogs now.');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: { content: 'Analyzing the changelogs now.', status: 'completed' },
+    });
+  });
+
+  it('repairs a jumbled live assistant segment from completed text', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-start',
+        type: 'assistant.message.started',
+        sequence_no: 1,
+        payload: { message_id: 'assistant-live-repair' },
+      }),
+      ...['inspect', 'the', 'Rust', 'crate'].map((token, index) => buildEvent({
+        id: `assistant-delta-${index}`,
+        type: 'assistant.message.delta',
+        sequence_no: index + 2,
+        payload: { message_id: 'assistant-live-repair', text: token },
+      })),
+      buildEvent({
+        id: 'assistant-completed',
+        type: 'assistant.message.completed',
+        sequence_no: 10,
+        payload: {
+          message_id: 'assistant-live-repair',
+          text: 'Inspect the Rust crate first, then build against the new API.',
+        },
+      }),
+    ]);
+
+    expect(state.live_assistant_message?.content).toBe(
+      'Inspect the Rust crate first, then build against the new API.',
+    );
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: {
+        content: 'Inspect the Rust crate first, then build against the new API.',
+        status: 'completed',
+      },
+    });
+  });
+
+  it('replaces duplicated live assistant text with shorter completed text', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-delta-duplicate',
+        type: 'assistant.message.delta',
+        sequence_no: 1,
+        payload: {
+          message_id: 'assistant-live-duplicate',
+          text: 'I found the Docker build arg issue. I found the Docker build arg issue.',
+        },
+      }),
+      buildEvent({
+        id: 'assistant-completed-duplicate',
+        type: 'assistant.message.completed',
+        sequence_no: 2,
+        payload: {
+          message_id: 'assistant-live-duplicate',
+          text: 'I found the Docker build arg issue.',
+        },
+      }),
+    ]);
+
+    expect(state.live_assistant_message?.content).toBe('I found the Docker build arg issue.');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: {
+        content: 'I found the Docker build arg issue.',
+        status: 'completed',
+      },
+    });
+  });
+
   it('attaches persisted tool invocations to finalized assistant turns and drops duplicate live completions', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
@@ -184,7 +310,7 @@ describe('buildCodingSessionStreamState', () => {
         sequence_no: 2,
         runtime_metadata: { source: 'agent_run_message' },
         payload: {
-          message_id: 'assistant-persisted-1',
+          message_id: 'assistant-live-1',
           content: 'Done',
           role: 'assistant',
           tool_invocations: [
@@ -229,7 +355,11 @@ describe('buildCodingSessionStreamState', () => {
     ]);
 
     expect(state.live_assistant_message).toBeNull();
-    expect(state.live_turn_segments).toHaveLength(0);
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: { message_id: 'assistant-live-1', content: 'Done' },
+    });
     expect(state.transcript_messages).toHaveLength(1);
     expect(state.transcript_messages[0]?.tool_calls).toHaveLength(1);
     expect(state.transcript_messages[0]?.tool_calls?.[0]).toMatchObject({
@@ -238,6 +368,130 @@ describe('buildCodingSessionStreamState', () => {
       result: {
         content: 'Updated a.go',
       },
+    });
+  });
+
+  it('preserves failed persisted tool invocations after replay', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-failed-tool',
+        type: 'assistant.message.completed',
+        sequence_no: 2,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-failed-tool-1',
+          content: '',
+          role: 'assistant',
+          tool_invocations: [
+            {
+              tool_call_id: 'tool-failed-1',
+              tool_name: 'read_skill',
+              input: { key: 'missing' },
+              output_summary: 'Skill is unavailable',
+              status: 'failed',
+              error: 'skill is not available to this agent',
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(state.transcript_messages[0]?.tool_calls?.[0]).toMatchObject({
+      tool_call_id: 'tool-failed-1',
+      parent_message_id: 'assistant-failed-tool-1',
+      status: 'failed',
+      result: { error: 'skill is not available to this agent' },
+    });
+  });
+
+  it('keeps earlier Codex text and tool segments when the final message becomes persisted', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'final-persisted',
+        type: 'assistant.message.completed',
+        sequence_no: 1,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'msg-final',
+          content: 'The repository is ready.',
+          role: 'assistant',
+        },
+      }),
+      buildEvent({
+        id: 'preamble-started',
+        type: 'assistant.message.started',
+        sequence_no: 1_700_000_001,
+        payload: { message_id: 'msg-preamble' },
+      }),
+      buildEvent({
+        id: 'preamble-delta',
+        type: 'assistant.message.delta',
+        sequence_no: 1_700_000_002,
+        payload: { message_id: 'msg-preamble', content: 'I will inspect the repository.' },
+      }),
+      buildEvent({
+        id: 'preamble-completed',
+        type: 'assistant.message.completed',
+        sequence_no: 1_700_000_003,
+        payload: { message_id: 'msg-preamble', content: 'I will inspect the repository.' },
+      }),
+      buildEvent({
+        id: 'tool-started',
+        type: 'tool.call.started',
+        sequence_no: 1_700_000_004,
+        payload: {
+          tool_call_id: 'tool-list',
+          tool_name: 'run_command',
+          parent_message_id: 'msg-preamble',
+          args_text: '{"command":"ls"}',
+        },
+      }),
+      buildEvent({
+        id: 'tool-completed',
+        type: 'tool.call.completed',
+        sequence_no: 1_700_000_005,
+        payload: {
+          tool_call_id: 'tool-list',
+          tool_name: 'run_command',
+          parent_message_id: 'msg-preamble',
+          content: 'README.md',
+        },
+      }),
+      buildEvent({
+        id: 'final-started',
+        type: 'assistant.message.started',
+        sequence_no: 1_700_000_006,
+        payload: { message_id: 'msg-final' },
+      }),
+      buildEvent({
+        id: 'final-delta',
+        type: 'assistant.message.delta',
+        sequence_no: 1_700_000_007,
+        payload: { message_id: 'msg-final', content: 'The repository is ready.' },
+      }),
+      buildEvent({
+        id: 'final-completed',
+        type: 'assistant.message.completed',
+        sequence_no: 1_700_000_008,
+        payload: { message_id: 'msg-final', content: 'The repository is ready.' },
+      }),
+    ]);
+
+    expect(state.live_assistant_message).toBeNull();
+    expect(state.live_turn_segments.map((segment) => segment.kind)).toEqual([
+      'assistant_message',
+      'tool_call',
+      'assistant_message',
+    ]);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      assistant_message: {
+        message_id: 'msg-preamble',
+        content: 'I will inspect the repository.',
+      },
+    });
+    expect(state.live_turn_segments[1]).toMatchObject({
+      segment_id: 'tool-list',
+      tool_call: { tool_call_id: 'tool-list', status: 'completed' },
     });
   });
 
@@ -510,18 +764,18 @@ describe('buildCodingSessionStreamState', () => {
     expect(renderedText.match(/Members should be able to create and edit epics\./g)).toHaveLength(1);
   });
 
-  it('does not render the same requested-changes note twice', () => {
+  it('dedupes the generated approval acknowledgment and shows what was approved', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
-        id: 'msg-request-changes',
+        id: 'msg-approval-resume',
         type: 'user.message.completed',
         sequence_no: 12,
         runtime_metadata: { source: 'agent_run_message' },
         payload: {
-          message_id: 'message-request-changes-1',
-          content: 'Members should be able to create and edit epics.',
+          message_id: 'message-approval-resume-1',
+          content: 'Approved. Continue.',
           role: 'user',
-          message_type: 'request_changes',
+          message_type: 'approval',
           sequence_no: 12,
         },
       }),
@@ -533,24 +787,29 @@ describe('buildCodingSessionStreamState', () => {
           interaction_id: 'interaction-approval-1',
           interaction_kind: 'approval_request',
           status: 'resolved',
-          request_schema_version: 'helpin.v1',
+          request_schema_version: 'codex.v1',
+          title: 'Approve tool call',
+          summary: 'Command: rm -rf ./dist\nWorking directory: /repo\nReason: clean build',
           request_payload: {
-            title: 'Task Planning Document: Fix Epic Editing for Team Members',
+            command: 'rm -rf ./dist',
           },
           response_payload: {
-            decision: 'request_changes',
-            message: 'Members should be able to create and edit epics.',
+            decision: 'approve',
           },
         },
         runtime_metadata: { source: 'agent_run_interaction', interaction_kind: 'approval_request' },
       }),
     ]);
 
+    // Only the synthesized resolution survives — no duplicate "Approved. Continue." bubble.
     expect(state.transcript_messages.map((message) => message.message_type)).toEqual([
       'approval_request_resolution',
     ]);
     const renderedText = state.transcript_messages.map((message) => message.content).join('\n');
-    expect(renderedText.match(/Members should be able to create and edit epics\./g)).toHaveLength(1);
+    expect(renderedText).not.toContain('Approved. Continue.');
+    // The surviving message describes WHAT was approved, not a bare "approval request".
+    expect(renderedText).toContain('Command: rm -rf ./dist');
+    expect(renderedText).not.toContain('approval request');
   });
 
   it('falls back to tool_input for persisted historical tool segments', () => {
@@ -903,7 +1162,7 @@ describe('buildCodingSessionStreamState', () => {
     ]);
   });
 
-  it('merges refreshed stream snapshots without dropping queued segments', () => {
+  it('treats a refreshed stream snapshot as authoritative instead of unioning stale generations', () => {
     const current: CodingSessionStreamSnapshot = {
       live_assistant_message: {
         message_id: 'assistant-queued',
@@ -954,10 +1213,153 @@ describe('buildCodingSessionStreamState', () => {
     expect(merged?.live_turn_segments.map((segment) => (
       segment.kind === 'assistant_message' ? segment.assistant_message.content : segment.tool_call.tool_name
     ))).toEqual([
-      'Queued. Preparing workspace.',
       'Starting runtime.',
     ]);
     expect(merged?.live_assistant_message?.message_id).toBe('assistant-running');
+  });
+
+  it.each([null, undefined, {}])('clears stale live content when the refreshed snapshot is empty (%s)', (incoming) => {
+    const current: CodingSessionStreamSnapshot = {
+      live_assistant_message: {
+        message_id: 'assistant-stale',
+        content: 'This turn has already been persisted.',
+        status: 'completed',
+        tool_calls: [],
+      },
+      live_turn_segments: [{
+        segment_id: 'assistant-stale:segment:1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-stale',
+          content: 'This turn has already been persisted.',
+          status: 'completed',
+          tool_calls: [],
+        },
+      }],
+    };
+
+    expect(mergeCodingSessionStreamSnapshotSeed(
+      current,
+      incoming as CodingSessionStreamSnapshot | null | undefined,
+    )).toBeNull();
+  });
+
+  it('retains an unchanged plan without retaining obsolete live turns', () => {
+    const current: CodingSessionStreamSnapshot = {
+      current_plan: {
+        plan: [{ step: 'Research competitors', status: 'in_progress' }],
+      },
+      live_turn_segments: [{
+        segment_id: 'old-segment',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'old-message',
+          content: 'Old snapshot generation.',
+          status: 'completed',
+          tool_calls: [],
+        },
+      }],
+    };
+    const incoming: CodingSessionStreamSnapshot = {
+      live_turn_segments: [{
+        segment_id: 'new-segment',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'new-message',
+          content: 'Current snapshot generation.',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      }],
+    };
+
+    const merged = mergeCodingSessionStreamSnapshotSeed(current, incoming);
+
+    expect(merged?.current_plan).toEqual(current.current_plan);
+    expect(merged?.live_turn_segments).toHaveLength(1);
+    expect(merged?.live_turn_segments[0]).toMatchObject({ segment_id: 'new-segment' });
+  });
+
+  it('does not replay a websocket history that begins midway through snapshot text', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'delta-midword',
+        type: 'assistant.message.delta',
+        sequence_no: 100,
+        payload: { message_id: 'assistant-buffer', content: 'ffer has launched' },
+      }),
+      buildEvent({
+        id: 'delta-tail',
+        type: 'assistant.message.delta',
+        sequence_no: 101,
+        payload: { message_id: 'assistant-buffer', content: ' a new feature.' },
+      }),
+    ], {
+      live_assistant_message: {
+        message_id: 'assistant-buffer',
+        content: 'Buffer has launched a new feature.',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [{
+        segment_id: 'assistant-buffer:segment:1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-buffer',
+          content: 'Buffer has launched a new feature.',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      }],
+    });
+
+    expect(state.live_assistant_message?.content).toBe('Buffer has launched a new feature.');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: { content: 'Buffer has launched a new feature.' },
+    });
+  });
+
+  it('appends genuinely new deltas after consuming a mid-message snapshot overlap', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'delta-overlap',
+        type: 'assistant.message.delta',
+        sequence_no: 100,
+        payload: { message_id: 'assistant-buffer', content: 'ffer' },
+      }),
+      buildEvent({
+        id: 'delta-new',
+        type: 'assistant.message.delta',
+        sequence_no: 101,
+        payload: { message_id: 'assistant-buffer', content: ' is publishing now.' },
+      }),
+    ], {
+      live_assistant_message: {
+        message_id: 'assistant-buffer',
+        content: 'Buffer',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [{
+        segment_id: 'assistant-buffer:segment:1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-buffer',
+          content: 'Buffer',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      }],
+    });
+
+    expect(state.live_assistant_message?.content).toBe('Buffer is publishing now.');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'assistant_message',
+      assistant_message: { content: 'Buffer is publishing now.' },
+    });
   });
 
   it('reconciles task-plan document steps from completed publish and review actions', () => {
@@ -1139,5 +1541,90 @@ describe('buildCodingSessionStreamState', () => {
         { step: 'Refine implementation tasks', status: 'in_progress' },
       ],
     });
+    expect(state.activity_events).toHaveLength(0);
+  });
+
+  it('keeps persisted runtime tool-call events in the transcript stream', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'tool-start',
+        type: 'tool.call.started',
+        sequence_no: 10,
+        payload: {
+          parent_message_id: 'assistant-1',
+          tool_call_id: 'tool-1',
+          tool_name: 'fetch_url',
+          args_text: '{"url":"https://example.com"}',
+        },
+      }),
+      buildEvent({
+        id: 'tool-complete',
+        type: 'tool.call.completed',
+        sequence_no: 11,
+        payload: {
+          parent_message_id: 'assistant-1',
+          tool_call_id: 'tool-1',
+          tool_name: 'fetch_url',
+          output_summary: 'Fetched page',
+          duration_ms: 42,
+        },
+      }),
+    ]);
+
+    const toolSegment = state.live_turn_segments.find((segment) => segment.kind === 'tool_call');
+    expect(toolSegment?.kind).toBe('tool_call');
+    if (toolSegment?.kind !== 'tool_call') return;
+    expect(toolSegment.tool_call).toMatchObject({
+      tool_call_id: 'tool-1',
+      tool_name: 'fetch_url',
+      status: 'completed',
+      result: {
+        output_summary: 'Fetched page',
+      },
+    });
+  });
+
+  it('uses the v2 snapshot watermark instead of replaying covered deltas', () => {
+    const snapshot: CodingSessionStreamSnapshot = {
+      through_sequence: 2,
+      live_assistant_message: {
+        message_id: 'assistant-1',
+        content: 'Hello',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [{
+        segment_id: 'assistant-1',
+        kind: 'assistant_message',
+        assistant_message: {
+          message_id: 'assistant-1',
+          content: 'Hello',
+          status: 'streaming',
+          tool_calls: [],
+        },
+      }],
+    };
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'covered-delta',
+        type: 'assistant.message.delta',
+        sequence_no: 2,
+        runtime_metadata: { source: 'agent-runtime-v2' },
+        payload: { message_id: 'assistant-1', content: 'Hello' },
+      }),
+      buildEvent({
+        id: 'new-delta',
+        type: 'assistant.message.delta',
+        sequence_no: 3,
+        runtime_metadata: { source: 'agent-runtime-v2' },
+        payload: { message_id: 'assistant-1', content: ' world' },
+      }),
+    ], snapshot);
+
+    expect(state.live_assistant_message?.content).toBe('Hello world');
+    expect(state.live_turn_segments).toHaveLength(1);
+    expect(state.live_turn_segments[0]?.kind === 'assistant_message'
+      ? state.live_turn_segments[0].assistant_message.content
+      : '').toBe('Hello world');
   });
 });

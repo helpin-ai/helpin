@@ -1,7 +1,72 @@
-import type { ComponentPropsWithoutRef } from 'react';
-import { Streamdown, defaultRehypePlugins, type Components } from 'streamdown';
+import type { ComponentPropsWithoutRef, MouseEvent } from 'react';
+import { Streamdown, defaultRehypePlugins, defaultRemarkPlugins, type Components, type ExtraProps } from 'streamdown';
+import { toast } from 'sonner';
 
+import { automationService } from '@/lib/services/automationService';
+import {
+  helpinReferenceRoute,
+  parseHelpinReferenceMarker,
+  remarkHelpinReferences,
+} from '@/lib/helpinReferences';
 import { cn } from '@/lib/utils';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+
+function MarkdownLink(props: (ComponentPropsWithoutRef<'a'> | Record<string, unknown>) & ExtraProps) {
+  const { children, href } = props as ComponentPropsWithoutRef<'a'>;
+  const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const reference = parseHelpinReferenceMarker(href);
+  if (!reference) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">
+        {children}
+      </a>
+    );
+  }
+
+  if (reference.type === 'artifacts') {
+    const openArtifact = async (event: MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      if (!workspace?.id) return;
+      const preview = window.open('about:blank', '_blank');
+      if (preview) preview.opener = null;
+      const response = await automationService.getArtifactContentURL(workspace.id, reference.id);
+      if (response.error || !response.data?.url) {
+        preview?.close();
+        toast.error(response.error || 'Unable to open artifact');
+        return;
+      }
+      if (preview) {
+        preview.location.replace(response.data.url);
+      } else {
+        window.open(response.data.url, '_blank', 'noopener,noreferrer');
+      }
+    };
+    return (
+      <a
+        href={href}
+        data-helpin-reference="artifacts"
+        onClick={(event) => void openArtifact(event)}
+        className="text-primary underline underline-offset-2"
+      >
+        {children}
+      </a>
+    );
+  }
+
+  const route = workspace?.slug ? helpinReferenceRoute(reference, workspace.slug) : null;
+  if (!route) return <span className="text-muted-foreground">{children}</span>;
+  return (
+    <a
+      href={route}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-helpin-reference={reference.type}
+      className="text-primary underline underline-offset-2"
+    >
+      {children}
+    </a>
+  );
+}
 
 const markdownComponents: Components = {
   p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
@@ -28,31 +93,15 @@ const markdownComponents: Components = {
       {children}
     </blockquote>
   ),
-  a: ({ children, href }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="text-primary underline underline-offset-2"
-    >
-      {children}
-    </a>
-  ),
-  pre: ({ children }) => (
-    <pre className="mb-3 overflow-x-auto rounded-md bg-zinc-950 px-3 py-2 text-[12px] leading-5 text-zinc-50 last:mb-0">
-      {children}
-    </pre>
-  ),
-  code: ({ className: codeClassName, children, node: _node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => (
-    <code className={cn('text-[12px]', codeClassName)} {...props}>
-      {children}
-    </code>
-  ),
-  inlineCode: ({ children, node: _node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => (
-    <code className="rounded bg-muted px-1 py-0.5 text-[12px]" {...props}>
-      {children}
-    </code>
-  ),
+  a: MarkdownLink,
+  inlineCode: ({ children, node, ...props }: ComponentPropsWithoutRef<'code'> & { node?: unknown }) => {
+    void node;
+    return (
+      <code className="rounded bg-muted px-1 py-0.5 text-[12px]" {...props}>
+        {children}
+      </code>
+    );
+  },
 };
 
 export function MarkdownContent({
@@ -64,20 +113,27 @@ export function MarkdownContent({
   className?: string;
   streaming?: boolean;
 }) {
+  const markdownRemarkPlugins = [
+    ...Object.values(defaultRemarkPlugins),
+    remarkHelpinReferences,
+  ];
   return (
     <div className={cn('text-sm leading-6 text-foreground', className)}>
       <Streamdown
         className="[&>*+*]:!mt-0"
         components={markdownComponents}
-        controls={false}
+        controls={{ code: { copy: true, download: false } }}
+        shikiTheme={['github-light', 'github-dark']}
         lineNumbers={false}
         mode={streaming ? 'streaming' : 'static'}
         isAnimating={streaming}
+        animated={{ animation: 'fadeIn', sep: 'word', duration: 300, stagger: 12 }}
         parseIncompleteMarkdown={streaming}
         rehypePlugins={[
           defaultRehypePlugins.sanitize,
           defaultRehypePlugins.harden,
         ]}
+        remarkPlugins={markdownRemarkPlugins}
       >
         {content}
       </Streamdown>

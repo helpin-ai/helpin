@@ -150,6 +150,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			preset_key TEXT,
 			preset_version_key TEXT,
 			source_preset_key TEXT,
@@ -204,7 +205,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 		activitySvc: NewPMActivityService(repository.NewPMActivityRepository(db)),
 		wsPublisher: nil,
 	}
-	agentService.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	agentService.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
 	defaults := NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, agentService)
 	svc := NewWorkspaceService(wsRepo, attachRepo, nil, defaults)
 
@@ -249,6 +250,37 @@ func TestWorkspaceService_Create(t *testing.T) {
 	}
 	if ws.ID == "" {
 		t.Error("ID should be non-empty")
+	}
+}
+
+type failingWorkspaceSetupInitializer struct{}
+
+func (failingWorkspaceSetupInitializer) InitializeSetupGoals(context.Context, string, string, []string) error {
+	return errors.New("temporary setup persistence failure")
+}
+
+func TestWorkspaceService_CreateDoesNotReportFailureAfterWorkspaceCommit(t *testing.T) {
+	db, svc := newWorkspaceTestHarness(t)
+	if err := db.Exec(`CREATE TABLE setup_intents (workspace_id TEXT PRIMARY KEY, goal_keys TEXT NOT NULL, created_at DATETIME, updated_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create setup intents: %v", err)
+	}
+	svc.SetSetupInitializer(failingWorkspaceSetupInitializer{})
+
+	created, err := svc.Create(context.Background(), model.CreateWorkspaceRequest{
+		Name: "Committed Workspace", Slug: "committed-workspace", WorkspaceKey: "COM", SetupGoals: []string{model.SetupGoalInternalDocs},
+	}, "owner-1")
+	if err != nil {
+		t.Fatalf("Create returned an error after setup initialization failure: %v", err)
+	}
+	if created == nil {
+		t.Fatal("expected committed workspace response")
+	}
+	var count int64
+	if err := db.Model(&model.Workspace{}).Where("id = ?", created.ID).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("committed workspace count = %d, err = %v", count, err)
+	}
+	if err := db.Table("setup_intents").Where("workspace_id = ?", created.ID).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("recoverable setup intent count = %d, err = %v", count, err)
 	}
 }
 

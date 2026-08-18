@@ -12,6 +12,7 @@ export interface CommandBarRunPlan {
   planKind?: CommandBarPlanSummary['plan_kind'];
   status?: CommandBarPlanSummary['status'];
   prompt?: string;
+  errorMessage?: string;
   currentStepIndex?: number;
   createdAt?: string;
   updatedAt?: string;
@@ -26,6 +27,7 @@ export function planSummaryToRunPlan(plan: CommandBarPlanSummary): CommandBarRun
     planKind: plan.plan_kind,
     status: plan.status,
     prompt: plan.prompt,
+    errorMessage: plan.error_message,
     currentStepIndex: plan.current_step_index,
     createdAt: plan.created_at,
     updatedAt: plan.updated_at,

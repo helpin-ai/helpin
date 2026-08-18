@@ -13,11 +13,13 @@ interface EmailBodyRendererProps {
   /** Backend-sanitized HTML. Still re-sanitized here as defense-in-depth. */
   html: string;
   collapsedByDefault?: boolean;
+  constrainHeight?: boolean;
 }
 
 interface EmailBodyFrameProps {
   srcDoc: string;
   collapsedByDefault: boolean;
+  constrainHeight: boolean;
 }
 
 // Minimal iframe baseline. We want author stylesheets to win, so we only
@@ -113,15 +115,15 @@ function hasCollapsibleContent(doc: Document): boolean {
   return doc.querySelector(COLLAPSIBLE_SELECTOR) !== null;
 }
 
-export function EmailBodyRenderer({ html, collapsedByDefault = true }: EmailBodyRendererProps) {
+export function EmailBodyRenderer({ html, collapsedByDefault = true, constrainHeight = true }: EmailBodyRendererProps) {
   const sanitized = useMemo(() => sanitize(html), [html]);
   const srcDoc = useMemo(() => buildSrcDoc(sanitized), [sanitized]);
-  const rendererKey = `${collapsedByDefault ? 'collapsed' : 'expanded'}:${srcDoc}`;
+  const rendererKey = `${collapsedByDefault ? 'collapsed' : 'expanded'}:${constrainHeight ? 'constrained' : 'full'}:${srcDoc}`;
 
-  return <EmailBodyFrame key={rendererKey} srcDoc={srcDoc} collapsedByDefault={collapsedByDefault} />;
+  return <EmailBodyFrame key={rendererKey} srcDoc={srcDoc} collapsedByDefault={collapsedByDefault} constrainHeight={constrainHeight} />;
 }
 
-function EmailBodyFrame({ srcDoc, collapsedByDefault }: EmailBodyFrameProps) {
+function EmailBodyFrame({ srcDoc, collapsedByDefault, constrainHeight }: EmailBodyFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [height, setHeight] = useState(40);
   const [ready, setReady] = useState(false);
@@ -206,11 +208,12 @@ function EmailBodyFrame({ srcDoc, collapsedByDefault }: EmailBodyFrameProps) {
   }, [ready, scheduleMeasure]);
 
   return (
-    <div className="min-w-0 max-h-[60vh] w-full max-w-full overflow-auto">
+    <div className={constrainHeight ? 'min-w-0 max-h-[60vh] w-full max-w-full overflow-auto' : 'min-w-0 w-full max-w-full overflow-visible'}>
       <iframe
         ref={iframeRef}
         srcDoc={srcDoc}
         onLoad={handleLoad}
+        data-collapsed-by-default={collapsedByDefault ? 'true' : 'false'}
         // allow-same-origin lets us manipulate the DOM (link rewrite).
         // allow-popups-to-escape-sandbox lets clicked links open normally.
         // No allow-scripts — author script is neutralized.

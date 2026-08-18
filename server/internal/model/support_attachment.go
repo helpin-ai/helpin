@@ -6,7 +6,7 @@ import "time"
 type SupportAttachment struct {
 	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ConversationID string    `json:"conversation_id" gorm:"type:uuid;not null;index"`
+	ConversationID *string   `json:"conversation_id" gorm:"type:uuid;index"`
 	MessageID      *string   `json:"message_id" gorm:"type:uuid;index"`
 	FileName       string    `json:"file_name" gorm:"not null"`
 	FileSize       int64     `json:"file_size" gorm:"not null"`

@@ -23,20 +23,16 @@ import (
 var _ service.BillingStripeGateway = (*Gateway)(nil)
 
 type Gateway struct {
-	secretKey          string
-	creditBlockPriceID string
+	secretKey string
 }
 
-func New(secretKey, creditBlockPriceID string) *Gateway {
+func New(secretKey string) *Gateway {
 	secretKey = strings.TrimSpace(secretKey)
 	if secretKey == "" {
 		return nil
 	}
 	stripe.Key = secretKey
-	return &Gateway{
-		secretKey:          secretKey,
-		creditBlockPriceID: strings.TrimSpace(creditBlockPriceID),
-	}
+	return &Gateway{secretKey: secretKey}
 }
 
 func (g *Gateway) CreateCheckoutSession(ctx context.Context, input service.BillingCheckoutInput) (string, error) {
@@ -419,35 +415,48 @@ func invoiceLineIsProration(line *stripe.InvoiceLineItem) bool {
 	return false
 }
 
-func (g *Gateway) BillCreditBlock(ctx context.Context, input service.BillingCreditBlockCharge) error {
+// SettleAIUsage creates one exact extra-usage invoice item and, for annual plans, an out-of-cycle invoice.
+func (g *Gateway) SettleAIUsage(ctx context.Context, input service.AIUsageSettlementCharge) (service.StripeSettlementResult, error) {
 	if strings.TrimSpace(input.CustomerID) == "" {
-		return fmt.Errorf("stripe customer ID is required")
+		return service.StripeSettlementResult{}, fmt.Errorf("stripe customer ID is required")
 	}
-	description := fmt.Sprintf("Helpin extra AI usage (%d x 5,000 units)", input.Blocks)
-	params := &stripe.InvoiceItemParams{
-		Params: stripe.Params{
-			Context: ctx,
-		},
-		Customer:     stripe.String(input.CustomerID),
-		Subscription: stripe.String(input.SubscriptionID),
-		Description:  stripe.String(description),
-		Metadata: map[string]string{
-			"workspace_id": input.WorkspaceID,
-			"blocks":       fmt.Sprintf("%d", input.Blocks),
-		},
+	description := fmt.Sprintf("Extra AI usage — %s to %s", input.PeriodStart.Format("Jan 2, 2006"), input.PeriodEnd.Format("Jan 2, 2006"))
+	metadata := map[string]string{
+		"workspace_id": input.WorkspaceID, "ai_usage_period_id": input.PeriodID,
+		"pricing_version": input.PricingVersion, "settlement_version": input.SettlementVersion,
 	}
-	if g.creditBlockPriceID != "" {
-		params.Pricing = &stripe.InvoiceItemPricingParams{Price: stripe.String(g.creditBlockPriceID)}
-		params.Quantity = stripe.Int64(int64(input.Blocks))
-	} else {
-		params.Amount = stripe.Int64(int64(input.AmountCents))
-		params.Currency = stripe.String(string(stripe.CurrencyUSD))
+	itemParams := &stripe.InvoiceItemParams{
+		Params: stripe.Params{Context: ctx}, Customer: stripe.String(input.CustomerID),
+		Amount: stripe.Int64(input.AmountCents), Currency: stripe.String(string(stripe.CurrencyUSD)),
+		Description: stripe.String(description), Metadata: metadata,
 	}
-	params.SetIdempotencyKey(input.IdempotencyKey)
-	if _, err := invoiceitem.New(params); err != nil {
-		return fmt.Errorf("create stripe credit invoice item: %w", err)
+	if input.SubscriptionID != "" {
+		itemParams.Subscription = stripe.String(input.SubscriptionID)
 	}
-	return nil
+	if input.DraftInvoiceID != "" {
+		itemParams.Invoice = stripe.String(input.DraftInvoiceID)
+	}
+	itemParams.SetIdempotencyKey(input.IdempotencyKey + ":item")
+	item, err := invoiceitem.New(itemParams)
+	if err != nil {
+		return service.StripeSettlementResult{}, fmt.Errorf("create Stripe AI usage invoice item: %w", err)
+	}
+	result := service.StripeSettlementResult{InvoiceItemID: item.ID, InvoiceID: input.DraftInvoiceID}
+	if input.BillingInterval != "annual" {
+		return result, nil
+	}
+	invoiceParams := &stripe.InvoiceParams{
+		Params: stripe.Params{Context: ctx}, Customer: stripe.String(input.CustomerID),
+		Description: stripe.String(description), Metadata: metadata,
+		AutoAdvance: stripe.Bool(true), CollectionMethod: stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)),
+	}
+	invoiceParams.SetIdempotencyKey(input.IdempotencyKey + ":invoice")
+	created, err := invoice.New(invoiceParams)
+	if err != nil {
+		return service.StripeSettlementResult{}, fmt.Errorf("create Stripe AI usage invoice: %w", err)
+	}
+	result.InvoiceID = created.ID
+	return result, nil
 }
 
 // EnsureCustomer finds or creates the Stripe customer for an organization.

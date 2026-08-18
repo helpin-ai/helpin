@@ -21,7 +21,7 @@ export const GROWTH_UPGRADE_BENEFITS = [
   'Custom AI agents',
   'Automation flows',
   'Scheduled agents and cron',
-  '25,000 monthly AI usage units',
+  'Larger included AI usage allowance',
   'Unlimited teams',
   'Unlimited CRM contacts',
   'Unlimited documents',
@@ -36,7 +36,7 @@ export const GROWTH_FEATURE_BENEFITS = [
   'Custom AI agents',
   'Automation flows',
   'Scheduled agents and cron',
-  '25,000 monthly AI usage units',
+  'Larger included AI usage allowance',
   'Multilingual help center',
   'Round robin assignment',
   'SLA policies',
@@ -84,7 +84,7 @@ export function getUpgradeRequiredReason(error: unknown): UpgradeRequiredReason 
       kind: 'ai_usage',
       title: 'Upgrade to continue',
       message: 'AI usage for this workspace is exhausted.',
-      primaryBenefit: '25,000 monthly AI usage units',
+      primaryBenefit: 'Larger included AI usage allowance',
     };
   }
   if (normalized.includes('workspace is locked')) {

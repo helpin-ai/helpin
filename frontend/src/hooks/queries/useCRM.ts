@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   crmContactService,
   crmCompanyService,
@@ -68,11 +68,11 @@ export function useContacts(wsId: string, filters?: ContactFilters) {
   })
 }
 
-export function useContact(wsId: string, id: string) {
+export function useContact(wsId: string, id: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.crm.contact(wsId, id),
     queryFn: async () => unwrap(await crmContactService.get(wsId, id)),
-    enabled: !!wsId && !!id,
+    enabled: enabled && !!wsId && !!id,
   })
 }
 
@@ -84,19 +84,19 @@ export function useContactActivities(wsId: string, contactId: string) {
   })
 }
 
-export function useContactAssociations(wsId: string, contactId: string) {
+export function useContactAssociations(wsId: string, contactId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.crm.contactAssociations(wsId, contactId),
     queryFn: async () => unwrap(await crmContactService.listAssociations(wsId, contactId)),
-    enabled: !!wsId && !!contactId,
+    enabled: enabled && !!wsId && !!contactId,
   })
 }
 
-export function useContactSupportConversations(wsId: string, contactId: string) {
+export function useContactSupportConversations(wsId: string, contactId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.crm.contactSupportConversations(wsId, contactId),
     queryFn: async () => unwrap(await crmContactService.listSupportConversations(wsId, contactId)),
-    enabled: !!wsId && !!contactId,
+    enabled: enabled && !!wsId && !!contactId,
   })
 }
 
@@ -118,6 +118,8 @@ export function useUpdateContact(wsId: string) {
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.contacts(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.crm.contact(wsId, id) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.contactActivities(wsId, id) })
+      qc.invalidateQueries({ queryKey: ['support', wsId] })
     },
   })
 }
@@ -497,6 +499,14 @@ export function useEmailAccounts(wsId: string, filters?: { member_id?: string })
     queryKey: [...queryKeys.crm.emailAccounts(wsId), filters ?? {}],
     queryFn: async () => unwrap(await crmEmailService.listAccounts(wsId, filters)),
     enabled: !!wsId,
+    refetchInterval: (query) => {
+      const accounts = query.state.data
+      const hasActiveSync = accounts?.some((account) => {
+        const phase = account.sync_state?.phase
+        return typeof phase === 'string' && ['backfill', 'incremental', 'recovery'].includes(phase)
+      })
+      return hasActiveSync ? 2_500 : false
+    },
   })
 }
 
@@ -524,6 +534,27 @@ export function usePurgeEmailAccount(wsId: string) {
   })
 }
 
+export function useEmailAccountDiagnostics(wsId: string, accountId: string, enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.emailAccounts(wsId), accountId, 'diagnostics'],
+    queryFn: async () => unwrap(await crmEmailService.getAccountDiagnostics(wsId, accountId)),
+    enabled: enabled && !!wsId && !!accountId,
+    refetchInterval: (query) => {
+      const phase = query.state.data?.sync.phase
+      return phase && !['idle', 'error', 'disconnected'].includes(phase) ? 2_500 : false
+    },
+  })
+}
+
+export function useSyncEmailAccount(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, mode }: { id: string; mode: 'incremental' | 'historical' }) =>
+      unwrap(await crmEmailService.syncAccount(wsId, id, mode)),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.emailAccounts(wsId) }) },
+  })
+}
+
 export function useContactEmails(wsId: string, contactId: string) {
   return useQuery({
     queryKey: queryKeys.crm.contactEmails(wsId, contactId),
@@ -536,6 +567,26 @@ export function useDealEmails(wsId: string, dealId: string) {
   return useQuery({
     queryKey: queryKeys.crm.dealEmails(wsId, dealId),
     queryFn: async () => unwrap(await crmEmailService.listByDeal(wsId, dealId)),
+    enabled: !!wsId && !!dealId,
+  })
+}
+
+export function useInfiniteContactEmails(wsId: string, contactId: string) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.crm.contactEmails(wsId, contactId), 'infinite'],
+    queryFn: async ({ pageParam }) => unwrap(await crmEmailService.listByContact(wsId, contactId, pageParam)),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.page * 50 < lastPage.total ? lastPage.page + 1 : undefined,
+    enabled: !!wsId && !!contactId,
+  })
+}
+
+export function useInfiniteDealEmails(wsId: string, dealId: string) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.crm.dealEmails(wsId, dealId), 'infinite'],
+    queryFn: async ({ pageParam }) => unwrap(await crmEmailService.listByDeal(wsId, dealId, pageParam)),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.page * 50 < lastPage.total ? lastPage.page + 1 : undefined,
     enabled: !!wsId && !!dealId,
   })
 }
@@ -596,6 +647,21 @@ export function useCreateEnrichment(wsId: string) {
   return useMutation({
     mutationFn: async (data: CreateCRMEnrichmentRequest) => unwrap(await crmEnrichmentService.create(data)),
     onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.enrichments(wsId) }) },
+  })
+}
+
+export function useApplyEnrichmentSuggestion(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ enrichmentId, field }: { enrichmentId: string; field: string }) =>
+      unwrap(await crmEnrichmentService.applySuggestion(wsId, enrichmentId, field)),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.enrichments(wsId) })
+      qc.invalidateQueries({ queryKey: ['crm', wsId] })
+      if (result.object_type === 'contact') {
+        qc.invalidateQueries({ queryKey: queryKeys.crm.contactActivities(wsId, result.object_id) })
+      }
+    },
   })
 }
 

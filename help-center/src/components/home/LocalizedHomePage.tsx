@@ -8,10 +8,10 @@ import {
   buildCanonicalSpacePath,
 } from '@/lib/locale'
 import { DocsLink } from '@/components/DocsLink'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { Sidebar, SidebarSkeleton } from '@/components/layout/Sidebar'
 import { Footer } from '@/components/layout/Footer'
 import { MobileNav } from '@/components/navigation/MobileNav'
-import { PhIcon } from '@/components/PhIcon'
+import { PublicIcon } from '@/components/PublicIcon'
 import type { HomepageFeaturedCard } from '@/lib/types'
 
 export function LocalizedHomePage() {
@@ -80,10 +80,18 @@ export function LocalizedHomePage() {
       )}
 
       {firstSpace && (
-        <Sidebar locale={locale} navigation={nav} />
+        nav.length > 0 ? (
+          <Sidebar
+            locale={locale}
+            navigation={nav}
+            spaceSlug={firstSpace.slug}
+          />
+        ) : (
+          <SidebarSkeleton />
+        )
       )}
 
-      <main className="min-w-0 flex-1 pt-[41px] lg:pt-0">
+      <main className="min-w-0 flex-1 pt-[41px] lg:pl-8 lg:pt-0">
         <div className="mx-auto w-full max-w-3xl px-8 pb-16 pt-24">
           <div className="text-center">
             <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
@@ -110,7 +118,7 @@ export function LocalizedHomePage() {
             />
           </button>
 
-          {cards.length > 0 && (
+          {cards.length > 0 ? (
             <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2">
               {cards.map((card, i) => (
                 <FeaturedCard
@@ -121,6 +129,16 @@ export function LocalizedHomePage() {
                 />
               ))}
             </div>
+          ) : (
+            <div className="mt-12 rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
+              <p className="text-[15px] font-medium text-foreground">
+                No help spaces configured yet
+              </p>
+              <p className="mt-1.5 text-[13.5px] text-muted-foreground">
+                Content will appear here once spaces are published to this Help
+                Center.
+              </p>
+            </div>
           )}
           <Footer />
         </div>
@@ -130,7 +148,7 @@ export function LocalizedHomePage() {
 }
 
 function CardIcon({ name }: { name: string }) {
-  return <PhIcon name={name} size={36} weight="duotone" />
+  return <PublicIcon name={name} size={36} />
 }
 
 function FeaturedCard({

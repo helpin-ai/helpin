@@ -7,6 +7,8 @@ import { TypingIndicator } from './TypingIndicator';
 import { PreChatForm } from './PreChatForm';
 import { ImageLightbox } from './ImageLightbox';
 import { SpecialNoticeBanner } from './SpecialNoticeBanner';
+import { AIThinkingMark } from './AIThinkingMark';
+import { CsatRating } from './CsatRating';
 import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -21,6 +23,7 @@ interface ConversationViewProps {
   onUploadAttachment?: (file: File, localId: string) => Promise<{ attachmentId: string; url: string } | null>;
   isTyping?: boolean;
   isAIThinking?: boolean;
+  aiProgressLabel?: string;
   typingAgentName?: string;
   typingAgentAvatar?: string;
   onBack: () => void;
@@ -32,9 +35,14 @@ interface ConversationViewProps {
   onRequestTranscript?: (email?: string) => Promise<{ success: boolean; message: string }>;
   showHumanAvailability?: boolean;
   showPreChatForm?: boolean;
+  contactCaptureCompleted?: boolean;
   onPreChatSubmit?: (data: { phone: string; email: string }) => void;
   onImageClick?: (src: string, alt: string) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+  queuedMessageCount?: number;
+  csatSubmitted?: boolean;
+  onCsatSubmit?: (rating: number, feedback?: string) => void;
 }
 
 export const ConversationView: FunctionComponent<ConversationViewProps> = ({
@@ -47,6 +55,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   onUploadAttachment,
   isTyping = false,
   isAIThinking = false,
+  aiProgressLabel = 'Looking into this…',
   typingAgentName,
   typingAgentAvatar,
   onBack,
@@ -58,13 +67,19 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   onRequestTranscript,
   showHumanAvailability = false,
   showPreChatForm = false,
+  contactCaptureCompleted = false,
   onPreChatSubmit,
   onImageClick: externalImageClick,
+  onAnswerFeedback,
   connectionStatus = 'connected',
+  queuedMessageCount = 0,
+  csatSubmitted = false,
+  onCsatSubmit,
 }) => {
   const conversationKey = conversation?.id || '__new__';
   const [introCreatedAt] = useState(() => new Date().toISOString());
   const [preChatDone, setPreChatDone] = useState(false);
+  const [showHumanContactForm, setShowHumanContactForm] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -79,13 +94,14 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
 
   const workspaceName = config.workspaceName || 'Support';
   const logoUrl = config.branding?.logoUrl;
+  const brandColor = config.branding?.primaryColor || '#6366f1';
   const welcomeMessage = config.branding?.welcomeMessage || 'Hi there. How can we help?';
   const availability = config.availability;
   const aiFirst = Boolean(config.features?.aiFirst);
   const hasTeamReply = messages.some((message) => message.role !== 'customer');
   const hasAssistantReply = messages.some((message) => message.role === 'ai' || message.role === 'agent');
   const hasHumanReply = messages.some((message) => message.role === 'agent');
-  const hasCustomerMessage = messages.some((message) => message.role === 'customer');
+  const hasCustomerMessage = messages.some((message) => message.role === 'customer' && message.content.trim().length > 0);
   const escalationMessageCopy = (config.features?.escalationMessage || 'Let me connect you with a team member who can help further.').trim();
   const hasEscalationNotice = messages.some((message) =>
     message.role === 'system' &&
@@ -96,11 +112,11 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
     ),
   );
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
-  const composeDisabled = connectionStatus === 'connecting' || connectionStatus === 'disconnected' || connectionStatus === 'failed';
+  const composeDisabled = connectionStatus === 'connecting';
   const composePlaceholder = connectionStatus === 'failed'
-    ? 'Offline. Reconnecting in the background...'
+    ? 'Write a message — we’ll send it when reconnected'
     : connectionStatus === 'disconnected'
-      ? 'Connection lost. Reconnecting...'
+      ? 'Write a message — we’ll send it when reconnected'
       : connectionStatus === 'connecting'
         ? 'Connecting to support...'
         : 'Ask a question...';
@@ -119,7 +135,11 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const showHumanHandoffState = showHumanAvailability && !hasHumanReply;
   const handoffState = conversation?.handoffState;
   const nobodyAvailable = handoffState === 'busy' || handoffState === 'after_hours';
-  const showEscalationEmailCapture = nobodyAvailable && !transcriptEmail && !hasHumanReply;
+  const showEscalationEmailCapture = nobodyAvailable
+    && !transcriptEmail
+    && !hasHumanReply
+    && !contactCaptureCompleted
+    && !preChatDone;
   const showTalkToHumanButton = Boolean(
     config.features?.showTalkToHuman &&
       onEscalateToHuman &&
@@ -130,7 +150,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       !isTyping,
   );
   const isWaitingForTeammate = Boolean(
-    (hasEscalationNotice ||
+    (showHumanAvailability ||
+      hasEscalationNotice ||
       conversation?.aiState === 'escalated' ||
       conversation?.flowState === 'waiting_for_human' ||
       conversation?.flowState === 'queued_for_human' ||
@@ -141,6 +162,38 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       !isAIThinking,
   );
   const waitingTeammates = (config.availableTeammates || []).slice(0, 3);
+  const showCsat = Boolean(
+    config.features?.csatRating
+      && onCsatSubmit
+      && conversation?.id
+      && (conversation.status === 'resolved' || conversation.status === 'closed' || conversation.flowState === 'resolved_by_human')
+      && hasCustomerMessage
+      && hasAssistantReply
+      && !csatSubmitted
+      && !isTyping
+      && !isAIThinking,
+  );
+  const handoffProgress = useMemo(() => {
+    const detail = availability?.replyTimeText || availability?.outsideHoursMessage || 'We’ll let you know as soon as someone replies.';
+    if (handoffState === 'after_hours' || conversation?.flowState === 'after_hours_queue') {
+      return { title: 'Our team is currently offline', detail };
+    }
+    if (conversation?.flowState === 'assigned_to_human' || activeTeammate?.name) {
+      return {
+        title: activeTeammate?.name ? `${activeTeammate.name} is joining` : 'A teammate is joining',
+        detail: 'They’ll pick up the conversation here shortly.',
+      };
+    }
+    if (
+      conversation?.flowState === 'queued_for_human' ||
+      conversation?.flowState === 'waiting_for_human' ||
+      conversation?.aiState === 'escalated' ||
+      hasEscalationNotice
+    ) {
+      return { title: 'You’re in the support queue', detail };
+    }
+    return { title: 'Finding the right teammate…', detail: 'Your request has been sent to the support team.' };
+  }, [activeTeammate?.name, availability?.outsideHoursMessage, availability?.replyTimeText, conversation?.aiState, conversation?.flowState, handoffState, hasEscalationNotice]);
 
   // Derive the most recent responding agent from messages.
   const activeAgent = useMemo(() => {
@@ -174,8 +227,24 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
 
   useEffect(() => {
     setAutoExpandDismissed(false);
+    setShowHumanContactForm(false);
     autoExpandedConversationRef.current = null;
   }, [conversationKey]);
+
+  const requestHumanSupport = () => {
+    if (showPreChatForm && !preChatDone && onPreChatSubmit) {
+      setShowHumanContactForm(true);
+      return;
+    }
+    onEscalateToHuman?.();
+  };
+
+  const completeHumanSupportRequest = (data: { phone: string; email: string }) => {
+    onPreChatSubmit?.(data);
+    setPreChatDone(true);
+    setShowHumanContactForm(false);
+    onEscalateToHuman?.();
+  };
 
   useEffect(() => {
     if (!menuOpen) {
@@ -373,7 +442,16 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
               )}
             </div>
           ) : logoUrl ? (
-            <img src={logoUrl} alt={workspaceName} className="helpin-conversation-logo" />
+            <div
+              className="helpin-conversation-logo helpin-conversation-logo--brand"
+              style={{ backgroundColor: brandColor }}
+            >
+              <img
+                src={logoUrl}
+                alt={workspaceName}
+                className="helpin-conversation-brand-logo"
+              />
+            </div>
           ) : (
             <div className="helpin-conversation-logo-placeholder">
               <span>{workspaceName.charAt(0).toUpperCase()}</span>
@@ -537,15 +615,12 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           showDateSeparators={true}
           config={config}
           onImageClick={handleImageClick}
+          onAnswerFeedback={onAnswerFeedback}
         />
-        {showPreChatForm && !preChatDone && hasCustomerMessage && hasTeamReply && !isAIThinking && onPreChatSubmit && (
-          <PreChatForm
-            config={config}
-            onSubmit={(data) => {
-              onPreChatSubmit(data);
-              setPreChatDone(true);
-            }}
-          />
+        {showCsat && (
+          <div className="helpin-csat-shell">
+            <CsatRating onSubmit={onCsatSubmit!} />
+          </div>
         )}
       </div>
 
@@ -556,21 +631,30 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         />
       )}
       {isAIThinking && (
-        <div className="helpin-ai-thinking">
-          <div className="helpin-ai-thinking-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22" />
-              <path d="M12 2a4 4 0 0 0-4 4c0 1.95 1.4 3.58 3.25 3.93" />
-            </svg>
-          </div>
-          <span className="helpin-ai-thinking-text">Thinking</span>
-          <span className="helpin-ai-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+        <div className="helpin-ai-thinking" role="status" aria-live="polite">
+          <span className="helpin-ai-thinking-icon" aria-hidden="true">
+            <AIThinkingMark className="helpin-ai-thinking-mark" />
+            <span className="helpin-ai-thinking-status" />
+          </span>
+          <span className="helpin-ai-thinking-copy">
+            <span className="helpin-ai-thinking-label" key={aiProgressLabel}>{aiProgressLabel}</span>
+            <span className="helpin-ai-thinking-shimmer" aria-hidden="true">
+              <span className="helpin-ai-thinking-line helpin-ai-thinking-line--primary" />
+              <span className="helpin-ai-thinking-line helpin-ai-thinking-line--secondary" />
+            </span>
+          </span>
         </div>
       )}
-      {showTalkToHumanButton && (
+      {showHumanContactForm && (
+        <PreChatForm
+          config={config}
+          onSubmit={completeHumanSupportRequest}
+        />
+      )}
+      {showTalkToHumanButton && !showHumanContactForm && (
         <div className="helpin-talk-to-human">
-          <button type="button" className="helpin-talk-to-human-btn" onClick={onEscalateToHuman}>
-            Talk to a human
+          <button type="button" className="helpin-talk-to-human-btn" onClick={requestHumanSupport}>
+            Talk to a person
           </button>
         </div>
       )}
@@ -595,7 +679,22 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
               ))}
             </div>
           )}
-          <span className="helpin-waiting-teammate-label">A team member will reply soon</span>
+          <span className="helpin-waiting-teammate-copy">
+            <span className="helpin-waiting-teammate-label">{handoffProgress.title}</span>
+            <span className="helpin-waiting-teammate-detail">{handoffProgress.detail}</span>
+            {transcriptEmail && (
+              <span className="helpin-contact-confirmation">
+                <span aria-hidden="true">✓</span> Replies will also go to {transcriptEmail}
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+      {queuedMessageCount > 0 && (
+        <div className="helpin-message-queue-status" role="status" aria-live="polite">
+          {connectionStatus === 'connected'
+            ? queuedMessageCount === 1 ? 'Sending message…' : `Sending ${queuedMessageCount} messages…`
+            : `${queuedMessageCount === 1 ? '1 message saved' : `${queuedMessageCount} messages saved`} — sending automatically when reconnected`}
         </div>
       )}
       <ComposeBar
@@ -608,6 +707,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         fileUploadsEnabled={fileUploadsEnabled}
         disabled={composeDisabled}
         placeholder={composePlaceholder}
+        workspaceId={config.workspaceId}
+        workspaceName={config.workspaceName}
       />
 
       {lightboxImage && (

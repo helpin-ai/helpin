@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { billingService } from '@/lib/services/billingService';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
+import { trackWorkspaceBillingEvent } from '@/lib/analytics';
 import type {
   CheckoutRequest,
   ConfirmCheckoutRequest,
@@ -109,7 +110,7 @@ export function useSetOnDemand(orgId?: string) {
   const invalidate = useInvalidateOrgBilling(orgId);
   return useMutation({
     mutationFn: async ({ wsId, enabled }: { wsId: string; enabled: boolean }) => {
-      const res = await billingService.setOnDemand(wsId, enabled);
+      const res = await billingService.setExtraAIUsage(wsId, enabled);
       if (res.error) throw new Error(res.error);
       return res.data;
     },
@@ -130,6 +131,14 @@ export function useBillingCheckout(boundWsId?: string) {
       const wsId = 'wsId' in vars ? vars.wsId : boundWsId!;
       const data = 'data' in vars ? vars.data : vars;
       return unwrap(await billingService.checkout(wsId, data));
+    },
+    onSuccess: (_session, vars) => {
+      const wsId = 'wsId' in vars ? vars.wsId : boundWsId;
+      const data = 'data' in vars ? vars.data : vars;
+      trackWorkspaceBillingEvent('checkout_started', wsId, null, {
+        target_plan: data.plan,
+        target_interval: data.interval,
+      });
     },
   });
 }
@@ -194,7 +203,7 @@ export function useSetBillingOnDemand(wsId?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (enabled: boolean) => {
-      const res = await billingService.setOnDemand(wsId!, enabled);
+      const res = await billingService.setExtraAIUsage(wsId!, enabled);
       if (res.error) throw new Error(res.error);
       return res.data;
     },

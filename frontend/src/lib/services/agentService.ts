@@ -23,7 +23,6 @@ import type {
   SendAgentRunMessageRequest,
   SendAgentRunRequestChangesRequest,
   PaginatedResponse,
-  RunnerHealth,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -54,8 +53,6 @@ export const agentService = {
     api.del<void>(`/pm/agent-preset-versions/${versionId}${qs(workspaceId)}`),
   listModelProviders: (workspaceId: string) =>
     api.get<AgentModelProviderOption[]>(`/pm/agent-model-providers${qs(workspaceId)}`),
-  getRunnerHealth: (workspaceId: string) =>
-    api.get<RunnerHealth>(`/pm/runner-health${qs(workspaceId)}`),
   runTask: (workspaceId: string, taskId: string, payload?: StartAgentRunRequest) =>
     api.post<AgentRun>(`/pm/tasks/${taskId}/run-agent${qs(workspaceId)}`, payload ?? {}),
   runEpic: (workspaceId: string, epicId: string, payload: StartAgentRunRequest) =>
@@ -118,14 +115,26 @@ export const agentService = {
   // Knowledge Sources
   listKnowledgeSources: (workspaceId: string, agentId: string) =>
     api.get<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`),
-  updateKnowledgeSources: (workspaceId: string, agentId: string, spaceIds: string[]) =>
-    api.put<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`, { space_ids: spaceIds }),
+  updateKnowledgeSources: (workspaceId: string, agentId: string, sources: import('../pmTypes').AgentKnowledgeSourceRequest[]) =>
+    api.put<import('../pmTypes').AgentKnowledgeSource[]>(`/pm/agents/${agentId}/knowledge-sources${qs(workspaceId)}`, { sources }),
   reindexKnowledgeSource: (workspaceId: string, agentId: string, spaceId: string) =>
     api.post<{ status: string }>(`/pm/agents/${agentId}/knowledge-sources/${spaceId}/reindex${qs(workspaceId)}`, {}),
+  listCuratedGuidance: (workspaceId: string, agentId: string) =>
+    api.get<import('../pmTypes').CuratedGuidance[]>(`/pm/agents/${agentId}/curated-guidance${qs(workspaceId)}`),
+  createCuratedGuidance: (workspaceId: string, agentId: string, payload: import('../pmTypes').CreateCuratedGuidanceRequest) =>
+    api.post<import('../pmTypes').CuratedGuidance>(`/pm/agents/${agentId}/curated-guidance${qs(workspaceId)}`, payload),
+  updateCuratedGuidance: (workspaceId: string, agentId: string, guidanceId: string, payload: import('../pmTypes').UpdateCuratedGuidanceRequest) =>
+    api.put<import('../pmTypes').CuratedGuidance>(`/pm/agents/${agentId}/curated-guidance/${guidanceId}${qs(workspaceId)}`, payload),
+  deleteCuratedGuidance: (workspaceId: string, agentId: string, guidanceId: string) =>
+    api.del<void>(`/pm/agents/${agentId}/curated-guidance/${guidanceId}${qs(workspaceId)}`),
   listContentSources: (workspaceId: string) =>
     api.get<import('../pmTypes').SupportContentSource[]>(`/pm/content-sources${qs(workspaceId)}`),
   createContentSource: (workspaceId: string, payload: import('../pmTypes').CreateSupportContentSourceRequest) =>
     api.post<import('../pmTypes').SupportContentSource>(`/pm/content-sources${qs(workspaceId)}`, payload),
+  createContentSourceFileUpload: (workspaceId: string, payload: import('../pmTypes').CreateSupportContentSourceFileUploadRequest) =>
+    api.post<import('../pmTypes').CreateSupportContentSourceFileUploadResponse>(`/pm/content-sources/files${qs(workspaceId)}`, payload),
+  confirmContentSourceFileUpload: (workspaceId: string, contentSourceId: string) =>
+    api.patch<import('../pmTypes').SupportContentSource>(`/pm/content-sources/${contentSourceId}/file/confirm${qs(workspaceId)}`),
   updateContentSource: (workspaceId: string, contentSourceId: string, payload: import('../pmTypes').UpdateSupportContentSourceRequest) =>
     api.put<import('../pmTypes').SupportContentSource>(`/pm/content-sources/${contentSourceId}${qs(workspaceId)}`, payload),
   deleteContentSource: (workspaceId: string, contentSourceId: string) =>

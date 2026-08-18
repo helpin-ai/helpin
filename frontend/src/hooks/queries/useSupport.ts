@@ -1,6 +1,7 @@
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
+import { uploadToS3 } from '@/lib/api';
 import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
@@ -18,18 +19,31 @@ import {
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
 } from '@/lib/supportQueryCache';
+import {
+  appendMessageToNewestPage,
+  removeMessageFromPages,
+  replaceMessageInPages,
+  seedSupportMessagePages,
+  type SupportMessagePages,
+} from '@/lib/supportMessagePages';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import type {
   AgentKnowledgeSource,
+  CuratedGuidance,
+  CreateCuratedGuidanceRequest,
+  UpdateCuratedGuidanceRequest,
   SupportContentSource,
   SupportContentPage,
+  AgentKnowledgeSourceRequest,
   CreateSupportContentSourceRequest,
+  CreateSupportContentSourceFileUploadRequest,
   UpdateSupportContentSourceRequest,
   SupportInboxSettings,
   ConversationStatus,
   ConversationListResponse,
   SupportConversation,
+  SupportMessagePage,
   VisitorContextResponse,
   SupportAIRewriteDraftRequest,
   CreateSupportMailboxRequest,
@@ -40,6 +54,7 @@ import type {
   UpdateSupportInboxViewRequest,
   UpdateSupportInboxBuiltinViewRequest,
   CreateSupportEmailRouteRequest,
+  SupportEmailRoute,
   CreateSupportEmailSenderRequest,
   SetSupportEmailSenderDefaultRequest,
   UpdateSupportEmailSenderRequest,
@@ -85,6 +100,7 @@ export type SupportConversationGlobalSearchFilters = SupportConversationSearchPa
 type SendMessagePayload = {
   content: string;
   is_internal?: boolean;
+  ai_assisted?: boolean;
   channels?: Array<'chat' | 'email'>;
   attachment_ids?: string[];
   cc_emails?: string[];
@@ -124,7 +140,7 @@ export function buildOptimisticSupportMessage({
     content: payload.content.trim() || ' ',
     message_type: 'reply',
     is_internal: Boolean(payload.is_internal),
-    via_channel: 'widget',
+    via_channel: payload.channels?.includes('email') ? 'email' : 'widget',
     created_at: now,
     updated_at: now,
   };
@@ -418,9 +434,20 @@ export function useMailboxMembers(workspaceId: string, mailboxId?: string | null
 export function useSupportEmailRoutes(workspaceId: string) {
   return useQuery({
     queryKey: queryKeys.support.emailRoutes(workspaceId),
-    queryFn: async () => unwrap(await supportService.listEmailRoutes(workspaceId)),
+    queryFn: async (): Promise<SupportEmailRoute[]> => unwrap(await supportService.listEmailRoutes(workspaceId)),
     enabled: !!workspaceId,
     staleTime: 15_000,
+    refetchInterval: (query) => {
+      const routes = query.state.data;
+      const waiting = routes?.some((route) => {
+        if (!route.verification_sent_at) return false;
+        const verificationSentAt = new Date(route.verification_sent_at).getTime();
+        if (!Number.isFinite(verificationSentAt) || Date.now() - verificationSentAt > 10 * 60 * 1000) return false;
+        if (!route.forwarding_verified_at) return true;
+        return verificationSentAt > new Date(route.forwarding_verified_at).getTime();
+      });
+      return waiting ? 3_000 : false;
+    },
   });
 }
 
@@ -514,6 +541,20 @@ export function useCreateSupportEmailRoute(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to enable email forwarding', { description: error.message });
+    },
+  });
+}
+
+export function useSendSupportEmailRouteTest(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ routeId, sourceAddress }: { routeId: string; sourceAddress: string }) =>
+      supportService.sendEmailRouteTest(workspaceId, routeId, sourceAddress).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailRoutes(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to send forwarding test', { description: error.message });
     },
   });
 }
@@ -824,11 +865,28 @@ export function useConversationAssignees(workspaceId: string, conversationId: st
 }
 
 export function useConversationMessages(workspaceId: string, conversationId: string | null) {
-  return useQuery({
+  return useInfiniteQuery<SupportMessagePage, Error, SupportMessagePages, QueryKey, string | undefined>({
     queryKey: queryKeys.support.messages(workspaceId, conversationId ?? ''),
-    queryFn: async () => unwrap(await supportService.listConversationMessages(workspaceId, conversationId!)),
+    queryFn: async ({ pageParam }) => unwrap(await supportService.listConversationMessagePage(
+      workspaceId,
+      conversationId!,
+      20,
+      pageParam,
+    )),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!workspaceId && !!conversationId,
-    staleTime: 5_000,
+    staleTime: 60_000,
+  });
+}
+
+export function useSendConversationTranscript(workspaceId: string) {
+  return useMutation({
+    mutationFn: ({ conversationId, email, updateCustomerEmail }: { conversationId: string; email?: string; updateCustomerEmail?: boolean }) =>
+      supportService.sendConversationTranscript(workspaceId, conversationId, {
+        email,
+        update_customer_email: updateCustomerEmail,
+      }).then(unwrap),
   });
 }
 
@@ -867,10 +925,10 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
     mutationFn: (payload: SendMessagePayload) =>
       supportService.createConversationMessage(workspaceId, conversationId!, payload).then(unwrap),
     onMutate: async (payload) => {
-      if (!conversationId) return { previousMessages: undefined as SupportMessage[] | undefined, optimisticId: '' };
+      if (!conversationId) return { previousMessages: undefined as SupportMessagePages | undefined, optimisticId: '' };
       const key = queryKeys.support.messages(workspaceId, conversationId);
       await queryClient.cancelQueries({ queryKey: key });
-      const previousMessages = queryClient.getQueryData<SupportMessage[]>(key);
+      const previousMessages = queryClient.getQueryData<SupportMessagePages>(key);
       const now = new Date().toISOString();
       const optimisticId = `optimistic-${conversationId}-${Date.now()}`;
       const optimistic = buildOptimisticSupportMessage({
@@ -881,18 +939,17 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
         now,
         optimisticId,
       });
-      queryClient.setQueryData<SupportMessage[]>(key, (current) => appendOptimisticSupportMessage(current, optimistic));
+      queryClient.setQueryData<SupportMessagePages>(key, (current) => appendMessageToNewestPage(current, optimistic));
       return { previousMessages, optimisticId };
     },
     onSuccess: (message, _payload, context) => {
       if (conversationId) {
         if (context?.optimisticId) {
-          queryClient.setQueryData<SupportMessage[]>(
+          queryClient.setQueryData<SupportMessagePages>(
             queryKeys.support.messages(workspaceId, conversationId),
-            (current) => reconcileOptimisticSupportMessage(current, context.optimisticId, message),
+            (current) => replaceMessageInPages(current, context.optimisticId, message),
           );
         }
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
@@ -912,13 +969,11 @@ export function useDeleteSupportMessage(workspaceId: string, conversationId: str
     mutationFn: ({ messageId, undo }: { messageId: string; undo?: boolean }) =>
       supportService.deleteConversationMessage(workspaceId, conversationId!, messageId, !!undo).then(unwrap),
     onMutate: async ({ messageId }) => {
-      if (!conversationId) return { previousMessages: undefined as SupportMessage[] | undefined };
+      if (!conversationId) return { previousMessages: undefined as SupportMessagePages | undefined };
       const key = queryKeys.support.messages(workspaceId, conversationId);
       await queryClient.cancelQueries({ queryKey: key });
-      const previousMessages = queryClient.getQueryData<SupportMessage[]>(key);
-      queryClient.setQueryData<SupportMessage[]>(key, (current) =>
-        current?.filter((message) => message.id !== messageId) ?? current,
-      );
+      const previousMessages = queryClient.getQueryData<SupportMessagePages>(key);
+      queryClient.setQueryData<SupportMessagePages>(key, (current) => removeMessageFromPages(current, messageId));
       return { previousMessages };
     },
     onError: (error: Error, _variables, context) => {
@@ -1130,7 +1185,10 @@ export function useCreateConversationWithMessage(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       if (data?.conversation?.id) {
         queryClient.setQueryData(queryKeys.support.conversation(workspaceId, data.conversation.id), data.conversation);
-        queryClient.setQueryData(queryKeys.support.messages(workspaceId, data.conversation.id), [data.message]);
+        queryClient.setQueryData(
+          queryKeys.support.messages(workspaceId, data.conversation.id),
+          seedSupportMessagePages([data.message]),
+        );
       }
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
@@ -1154,7 +1212,7 @@ export function useRunConversationAgent(workspaceId: string) {
 export function useCreateTaskFromConversation(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ conversationId, teamId }: { conversationId: string; teamId?: string }) =>
+    mutationFn: ({ conversationId, teamId }: { conversationId: string; teamId: string }) =>
       supportService.createTaskFromConversation(workspaceId, conversationId, {
         team_id: teamId,
       }).then(unwrap),
@@ -1277,6 +1335,22 @@ export function useUpdateConversationCustomerName(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update customer name', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateConversationCRMCompany(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, companyId }: { conversationId: string; companyId: string | null }) =>
+      supportService.updateConversationCRMCompany(workspaceId, conversationId, { crm_company_id: companyId }).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.visitorContext(workspaceId, variables.conversationId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(workspaceId, variables.conversationId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update company', { description: error.message });
     },
   });
 }
@@ -1477,11 +1551,59 @@ export function useAgentKnowledgeSources(workspaceId: string, agentId?: string) 
   });
 }
 
+export function useCuratedGuidance(workspaceId: string, agentId?: string) {
+  return useQuery({
+    queryKey: queryKeys.agents.curatedGuidance(workspaceId, agentId ?? ''),
+    queryFn: async (): Promise<CuratedGuidance[]> => unwrap(await agentService.listCuratedGuidance(workspaceId, agentId!)),
+    enabled: !!workspaceId && !!agentId,
+    staleTime: 60_000,
+  });
+}
+
+export function useCreateCuratedGuidance(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, payload }: { agentId: string; payload: CreateCuratedGuidanceRequest }) =>
+      agentService.createCuratedGuidance(workspaceId, agentId, payload).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.curatedGuidance(workspaceId, variables.agentId) });
+      toast.success('Answer guidance created');
+    },
+    onError: (error: Error) => toast.error('Failed to create answer guidance', { description: error.message }),
+  });
+}
+
+export function useUpdateCuratedGuidance(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, guidanceId, payload }: { agentId: string; guidanceId: string; payload: UpdateCuratedGuidanceRequest }) =>
+      agentService.updateCuratedGuidance(workspaceId, agentId, guidanceId, payload).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.curatedGuidance(workspaceId, variables.agentId) });
+      toast.success('Answer guidance updated');
+    },
+    onError: (error: Error) => toast.error('Failed to update answer guidance', { description: error.message }),
+  });
+}
+
+export function useDeleteCuratedGuidance(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, guidanceId }: { agentId: string; guidanceId: string }) =>
+      agentService.deleteCuratedGuidance(workspaceId, agentId, guidanceId).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.curatedGuidance(workspaceId, variables.agentId) });
+      toast.success('Answer guidance removed');
+    },
+    onError: (error: Error) => toast.error('Failed to remove answer guidance', { description: error.message }),
+  });
+}
+
 export function useUpdateAgentKnowledgeSources(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ agentId, spaceIds }: { agentId: string; spaceIds: string[] }) =>
-      agentService.updateKnowledgeSources(workspaceId, agentId, spaceIds).then(unwrap),
+    mutationFn: ({ agentId, sources }: { agentId: string; sources: AgentKnowledgeSourceRequest[] }) =>
+      agentService.updateKnowledgeSources(workspaceId, agentId, sources).then(unwrap),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.knowledgeSources(workspaceId, variables.agentId) });
     },
@@ -1560,6 +1682,32 @@ export function useCreateSupportContentSource(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to create content source', { description: error.message });
+    },
+  });
+}
+
+export function useCreateSupportContentSourceFile(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ file, name }: { file: File; name: string }) => {
+      const payload: CreateSupportContentSourceFileUploadRequest = {
+        name,
+        file_name: file.name,
+        file_size: file.size,
+        content_type: file.type || 'application/octet-stream',
+      };
+      const init = await unwrap(await agentService.createContentSourceFileUpload(workspaceId, payload));
+      const upload = await uploadToS3(init.upload_url, file);
+      if (!upload.ok) {
+        throw new Error(upload.error ?? 'Upload failed');
+      }
+      return unwrap(await agentService.confirmContentSourceFileUpload(workspaceId, init.source.id));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.contentSources(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to upload file source', { description: error.message });
     },
   });
 }

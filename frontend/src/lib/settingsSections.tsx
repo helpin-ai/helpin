@@ -14,18 +14,19 @@ import {
   File01Icon,
   RepeatIcon,
   Robot01Icon,
-  Search01Icon,
   GitBranchIcon,
   FileImportIcon,
   HelpCircleIcon,
   LinkForwardIcon,
   FolderKanbanIcon,
   Mail01Icon,
+  Calendar03Icon,
   SlidersHorizontalIcon,
   BubbleChatIcon,
   Route01Icon,
   Shield01Icon,
   Shield02Icon,
+  Globe02Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -53,23 +54,27 @@ const Labels = hi(Tag01Icon);
 const TaskTemplates = hi(File01Icon);
 const RecurringTasks = hi(RepeatIcon);
 const Automations = hi(Robot01Icon);
-const CommandIntents = hi(Search01Icon);
 const Delivery = hi(GitBranchIcon);
 const ImportExport = hi(FileImportIcon);
 const HelpCenter = hi(HelpCircleIcon);
 const Redirects = hi(LinkForwardIcon);
 const Pipelines = hi(FolderKanbanIcon);
 const EmailAccounts = hi(Mail01Icon);
+const Meetings = hi(Calendar03Icon);
 const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
+const MCP = hi(Robot01Icon);
+const ExternalMCP = hi(Globe02Icon);
 
 export type SettingsSection =
   | 'general'
   | 'members'
   | 'teams'
   | 'access'
+  | 'mcp'
+  | 'external-mcp'
   | 'billing'
   | 'repositories'
   | 'knowledge'
@@ -78,13 +83,13 @@ export type SettingsSection =
   | 'task-templates'
   | 'recurring-tasks'
   | 'automations'
-  | 'command-intents'
   | 'delivery'
   | 'import'
   | 'helpcenter'
   | 'redirects'
   | 'crm-pipelines'
   | 'crm-email'
+  | 'crm-meetings'
   | 'crm-autonomy'
   | 'support-ai-assistant'
   | 'chat-general'
@@ -176,6 +181,22 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     requiredPermission: 'module_access.manage',
   },
   {
+    id: 'mcp',
+    label: 'MCP access',
+    description: 'Connect outside MCP clients to Helpin and control their workspace access.',
+    icon: MCP,
+    group: 'Workspace',
+    requiredPermission: 'workspace.read',
+  },
+  {
+    id: 'external-mcp',
+    label: 'External MCP',
+    description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
+    icon: ExternalMCP,
+    group: 'Workspace',
+    requiredPermission: 'settings.read',
+  },
+  {
     id: 'repositories',
     label: 'Repositories',
     description: 'Choose which synced Git repositories are available to this workspace.',
@@ -233,14 +254,6 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'Projects',
   },
   {
-    id: 'command-intents',
-    label: 'Command Intents',
-    description: 'Review prompts the command bar could not match. Use them to add tools, preset coverage, or new presets.',
-    icon: CommandIntents,
-    group: 'Projects',
-    requiresManageSettings: true,
-  },
-  {
     id: 'support-ai-assistant',
     label: 'AI Assistant',
     description: 'Configure how support AI replies, drafts internal notes, and hands conversations to humans.',
@@ -287,6 +300,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     label: 'Email Sync',
     description: 'Connect Gmail to sync conversations and detect buyer signals.',
     icon: EmailAccounts,
+    group: 'CRM',
+  },
+  {
+    id: 'crm-meetings',
+    label: 'Meeting Notes',
+    description: 'Choose how Helpin joins calls, takes notes, and saves recordings.',
+    icon: Meetings,
     group: 'CRM',
   },
   {

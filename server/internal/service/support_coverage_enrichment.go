@@ -135,7 +135,7 @@ func (s *SupportCoverageEnrichmentService) EnrichTopic(ctx context.Context, topi
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    topic.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleGeneration,
-		IdempotencyKey: aiUsageIdempotencyKey(topic.WorkspaceID, BillingFeatureDocsArticleGeneration, "coverage_enrichment", topicID, gap.ID),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(promptBytes, topic.WorkspaceID, BillingFeatureDocsArticleGeneration, "coverage_enrichment", topicID, gap.ID),
 		Metadata: map[string]interface{}{
 			"topic_id": topicID,
 			"gap_id":   gap.ID,

@@ -73,6 +73,7 @@ type DocsHandler struct {
 	translationSvc       *service.DocsHelpcenterTranslationService
 	searchSvc            *service.DocsSearchService
 	importService        *service.DocsImportService
+	imageEditSvc         *service.DocsImageEditService
 	embeddingSvc         *service.DocsEmbeddingService
 	embedResolverSvc     *service.DocsEmbedResolverService
 	entityRefResolverSvc *service.DocsEntityReferenceResolverService
@@ -81,6 +82,19 @@ type DocsHandler struct {
 	jwtManager           *auth.JWTManager
 	supportEventRecorder service.SupportEventRecorder
 	supportWidgetConfig  supportWidgetConfigProvider
+	aiSearchSvc          *service.HelpcenterAISearchService
+	apiReferenceSvc      *service.DocsAPIReferenceService
+}
+
+// SetHelpcenterAISearchService injects the public semantic-search / AI-answer
+// service (nil leaves the endpoints returning 404-equivalent responses).
+func (h *DocsHandler) SetHelpcenterAISearchService(svc *service.HelpcenterAISearchService) {
+	h.aiSearchSvc = svc
+}
+
+// SetAPIReferenceService injects OpenAPI reference management and public rendering support.
+func (h *DocsHandler) SetAPIReferenceService(svc *service.DocsAPIReferenceService) {
+	h.apiReferenceSvc = svc
 }
 
 type supportWidgetConfigProvider interface {
@@ -90,6 +104,12 @@ type supportWidgetConfigProvider interface {
 type publicHelpcenterConfigResponse struct {
 	*model.DocsHelpcenterConfig
 	SupportWidgetKey *string `json:"support_widget_key,omitempty"`
+}
+
+type publicHelpcenterBootstrapResponse struct {
+	Config publicHelpcenterConfigResponse `json:"config"`
+	Locale string                         `json:"locale"`
+	Spaces []model.PublicSpaceResponse    `json:"spaces"`
 }
 
 // NewDocsHandler creates a new DocsHandler.
@@ -137,6 +157,32 @@ func NewDocsHandler(
 		commentService:       commentService,
 		jwtManager:           jwtManager,
 	}
+}
+
+// SetImageEditService injects the reusable document image editing tool.
+func (h *DocsHandler) SetImageEditService(svc *service.DocsImageEditService) { h.imageEditSvc = svc }
+
+// EditImage handles POST /docs/documents/{docId}/images/edit.
+func (h *DocsHandler) EditImage(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "docId")
+	if _, ok := h.requireDocumentInWorkspace(w, r, docID); !ok {
+		return
+	}
+	var req model.EditDocsImageRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if h.imageEditSvc == nil {
+		writeError(w, http.StatusServiceUnavailable, "AI image editing is not configured")
+		return
+	}
+	result, err := h.imageEditSvc.Edit(r.Context(), getWorkspaceID(r), middleware.GetUserID(r.Context()), docID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // SetSupportEventRecorder injects the event recorder for coverage telemetry.
@@ -367,6 +413,7 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	collectionID := ptrIfSet(q.Get("collection_id"))
 	status := ptrIfSet(q.Get("status"))
 	teamID := ptrIfSet(q.Get("team_id"))
+	ownerID := ptrIfSet(q.Get("owner_id"))
 	includeArchived := q.Get("include_archived") == "true"
 
 	role := ""
@@ -386,7 +433,7 @@ func (h *DocsHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 		"raw_query", r.URL.RawQuery,
 	)
 
-	docs, err := h.documentSvc.List(r.Context(), wsID, spaceID, collectionID, status, teamID, userID, role, includeArchived)
+	docs, err := h.documentSvc.ListWithOwner(r.Context(), wsID, spaceID, collectionID, status, teamID, ownerID, userID, role, includeArchived)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -759,6 +806,10 @@ func (h *DocsHandler) SaveContent(w http.ResponseWriter, r *http.Request) {
 	}
 	content, err := h.contentSvc.Save(r.Context(), docID, req.Content, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrDocsInvalidContent) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1808,45 +1859,12 @@ func (h *DocsHandler) resolveRequestedPublicLocale(w http.ResponseWriter, r *htt
 	return "", false
 }
 
-// VerifyDomain checks if a domain is registered for on_demand_tls (Caddy).
-func (h *DocsHandler) VerifyDomain(w http.ResponseWriter, r *http.Request) {
-	domain := r.URL.Query().Get("domain")
-	if domain == "" {
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-	// Allow our own domains always.
-	if domain == "helpcenter.helpin.ai" ||
-		domain == "helpcenter-stage.helpin.ai" ||
-		strings.HasSuffix(domain, ".helpin.center") ||
-		strings.HasSuffix(domain, ".stage.helpin.center") {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	// Check if domain is registered as a custom_domain in our DB.
-	cfg, err := h.helpcenterSvc.GetConfigByCustomDomain(r.Context(), domain)
-	if err != nil || cfg == nil {
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-}
-
 func (h *DocsHandler) PublicGetConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := h.resolveSubdomain(w, r)
 	if cfg == nil {
 		return
 	}
-	resp := publicHelpcenterConfigResponse{DocsHelpcenterConfig: cfg}
-	if cfg.ChatWidgetEnabled && h.supportWidgetConfig != nil {
-		inst, _, err := h.supportWidgetConfig.GetInstallation(r.Context(), cfg.WorkspaceID)
-		if err != nil {
-			slog.WarnContext(r.Context(), "public helpcenter widget config unavailable", "error", err, "workspace_id", cfg.WorkspaceID)
-		} else if inst != nil && inst.Active && strings.TrimSpace(inst.WidgetKey) != "" {
-			widgetKey := inst.WidgetKey
-			resp.SupportWidgetKey = &widgetKey
-		}
-	}
+	resp := h.publicHelpcenterConfigResponse(r, cfg)
 	setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
 	writeJSONWithETag(w, r, http.StatusOK, resp)
 }
@@ -1947,11 +1965,22 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
+		alternatePaths, err := h.helpcenterSvc.GetPublicCollectionAlternatePaths(
+			r.Context(),
+			cfg,
+			coll.ID,
+			coll.PublicID,
+		)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "help center unavailable")
+			return
+		}
 		setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
 		writeJSONWithETag(w, r, http.StatusOK, map[string]interface{}{
-			"collection": coll,
-			"articles":   articles,
-			"space_slug": coll.SpaceSlug,
+			"collection":      coll,
+			"articles":        articles,
+			"space_slug":      coll.SpaceSlug,
+			"alternate_paths": alternatePaths,
 		})
 		return
 	}
@@ -1966,11 +1995,22 @@ func (h *DocsHandler) PublicGetCollectionPage(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "collection not found")
 			return
 		}
+		alternatePaths, err := h.helpcenterSvc.GetPublicCollectionAlternatePaths(
+			r.Context(),
+			cfg,
+			coll.ID,
+			coll.PublicID,
+		)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "help center unavailable")
+			return
+		}
 		setHelpcenterCacheHeader(w, helpcenterCachePublicRead)
 		writeJSONWithETag(w, r, http.StatusOK, map[string]interface{}{
-			"collection": coll,
-			"articles":   articles,
-			"space_slug": coll.SpaceSlug,
+			"collection":      coll,
+			"articles":        articles,
+			"space_slug":      coll.SpaceSlug,
+			"alternate_paths": alternatePaths,
 		})
 		return
 	}
@@ -2074,10 +2114,25 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	results, err := h.searchSvc.PublicSearch(r.Context(), cfg.WorkspaceID, locale, query, spaceSlug, limit)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
+	var results []model.PublicSearchResultResponse
+	var err error
+	if mode == "semantic" && h.aiSearchSvc != nil {
+		// Semantic retrieval over public chunks; empty results or errors fall
+		// back to full-text search so the search box never regresses.
+		results, err = h.aiSearchSvc.SemanticSearch(r.Context(), cfg.WorkspaceID, locale, publicAnswerFallbackLocale(cfg, locale), query, spaceSlug, limit)
+		if err != nil {
+			slog.WarnContext(r.Context(), "helpcenter semantic search failed; falling back to full-text",
+				"error", err, "workspace_id", cfg.WorkspaceID)
+			results = nil
+		}
+	}
+	if len(results) == 0 {
+		results, err = h.searchSvc.PublicSearch(r.Context(), cfg.WorkspaceID, locale, query, spaceSlug, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 
 	searchSourceSignal := model.SupportCoverageSourceSelfService
@@ -2091,7 +2146,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 		Channel:      "widget",
 		SourceSignal: searchSourceSignal,
 		IssueSummary: query,
-		Metadata:     map[string]any{"query": query, "result_count": len(results)},
+		Metadata:     map[string]any{"query": query, "result_count": len(results), "mode": mode},
 	})
 
 	setHelpcenterCacheHeader(w, "public, max-age=60")

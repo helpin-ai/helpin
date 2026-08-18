@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -171,11 +172,207 @@ func TestCoverageMaterializerAttachesHighConfidenceFindingToExistingGap(t *testi
 	}
 }
 
+func TestCoverageMaterializerSkipsIncompatibleNearestGap(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	for _, gap := range []model.SupportCoverageGap{
+		{
+			ID:                  "gap-action",
+			WorkspaceID:         "ws-1",
+			DedupeKey:           "semantic:action",
+			Title:               "Refund action is unavailable",
+			Status:              model.SupportCoverageGapStatusOpen,
+			GapKind:             "action",
+			GapCategory:         model.SupportCoverageGapCategoryAction,
+			EvidenceCount:       10,
+			FirstSeenAt:         now.Add(-2 * time.Hour),
+			LastSeenAt:          now.Add(-2 * time.Hour),
+			Embedding:           "[1,0,0]",
+			EmbeddingProvider:   coverageEmbeddingProviderName,
+			EmbeddingModel:      coverageDefaultEmbeddingModel,
+			EmbeddingVersion:    coverageGapEmbeddingVersion,
+			EmbeddingDimensions: 3,
+			EmbeddingTextHash:   "action-hash",
+			EmbeddingUpdatedAt:  &now,
+		},
+		{
+			ID:                  "gap-content",
+			WorkspaceID:         "ws-1",
+			DedupeKey:           "semantic:content",
+			Title:               "Refund criteria documentation",
+			Status:              model.SupportCoverageGapStatusOpen,
+			GapKind:             "content",
+			GapCategory:         model.SupportCoverageGapCategoryKnowledge,
+			EvidenceCount:       5,
+			FirstSeenAt:         now.Add(-time.Hour),
+			LastSeenAt:          now.Add(-time.Hour),
+			Embedding:           "[0.95,0.3122499,0]",
+			EmbeddingProvider:   coverageEmbeddingProviderName,
+			EmbeddingModel:      coverageDefaultEmbeddingModel,
+			EmbeddingVersion:    coverageGapEmbeddingVersion,
+			EmbeddingDimensions: 3,
+			EmbeddingTextHash:   "content-hash",
+			EmbeddingUpdatedAt:  &now,
+		},
+	} {
+		if _, _, err := coverageRepo.UpsertOpenGapByDedupeKeyNoBump(ctx, &gap); err != nil {
+			t.Fatalf("seed gap %s: %v", gap.ID, err)
+		}
+	}
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need documented refund exception criteria.", "Refund exception criteria", now)
+
+	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	if err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	if result.ExistingGapAttached != 1 || result.NewGapsCreated != 0 {
+		t.Fatalf("result=%+v, want attachment to compatible existing gap", result)
+	}
+	var analysis model.SupportCoverageConversationAnalysis
+	if err := db.First(&analysis, "id = ?", "analysis-1").Error; err != nil {
+		t.Fatalf("load analysis: %v", err)
+	}
+	if analysis.GapID == nil || *analysis.GapID != "gap-content" {
+		t.Fatalf("analysis gap_id=%v, want gap-content", analysis.GapID)
+	}
+}
+
+func TestCoverageMaterializerDoesNotAttachAcrossConflictingTargetDocuments(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{{1, 0, 0}}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	existing, _, err := coverageRepo.UpsertOpenGapByDedupeKeyNoBump(ctx, &model.SupportCoverageGap{
+		ID:                  "gap-existing",
+		WorkspaceID:         "ws-1",
+		DedupeKey:           "semantic:existing-doc",
+		Title:               "Refund exception documentation",
+		Status:              model.SupportCoverageGapStatusOpen,
+		GapKind:             "content",
+		GapCategory:         model.SupportCoverageGapCategoryKnowledge,
+		EvidenceCount:       3,
+		FirstSeenAt:         now.Add(-time.Hour),
+		LastSeenAt:          now.Add(-time.Hour),
+		Embedding:           "[1,0,0]",
+		EmbeddingProvider:   coverageEmbeddingProviderName,
+		EmbeddingModel:      coverageDefaultEmbeddingModel,
+		EmbeddingVersion:    coverageGapEmbeddingVersion,
+		EmbeddingDimensions: 3,
+		EmbeddingTextHash:   "existing-doc-hash",
+		EmbeddingUpdatedAt:  &now,
+	})
+	if err != nil {
+		t.Fatalf("seed existing gap: %v", err)
+	}
+	if err := db.Create(&model.SupportCoverageGapArticle{
+		ID:          "gap-article-a",
+		GapID:       existing.ID,
+		DocumentID:  "doc-a",
+		WorkspaceID: "ws-1",
+		CreatedAt:   now,
+	}).Error; err != nil {
+		t.Fatalf("link existing gap article: %v", err)
+	}
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-1", "run-1", "conversation-1", "Customers need refund exception criteria.", "Refund exception criteria", now)
+	raw, _ := json.Marshal(CoverageConversationAnalysisResult{
+		HasGap:         true,
+		GapKind:        "content",
+		GapCategory:    model.SupportCoverageGapCategoryKnowledge,
+		CanonicalTitle: "Refund exception criteria",
+		CustomerNeed:   "Customers need refund exception criteria.",
+		RecommendedFixes: []CoverageRecommendedFix{{
+			Type:       model.SupportCoverageFixUpdateArticle,
+			TargetType: "docs",
+			TargetID:   "doc-b",
+			Priority:   model.SupportCoverageRecommendationPriorityPrimary,
+		}},
+	})
+	if err := db.Model(&model.SupportCoverageConversationAnalysis{}).
+		Where("id = ?", "analysis-1").
+		Update("raw_output", raw).Error; err != nil {
+		t.Fatalf("update analysis raw output: %v", err)
+	}
+
+	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	if err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	if result.ExistingGapAttached != 0 || result.NewGapsCreated != 1 {
+		t.Fatalf("result=%+v, want a new gap for conflicting target documents", result)
+	}
+	var analysis model.SupportCoverageConversationAnalysis
+	if err := db.First(&analysis, "id = ?", "analysis-1").Error; err != nil {
+		t.Fatalf("load analysis: %v", err)
+	}
+	if analysis.GapID == nil || *analysis.GapID == existing.ID {
+		t.Fatalf("analysis gap_id=%v, want a new gap instead of %s", analysis.GapID, existing.ID)
+	}
+}
+
+func TestCoverageMaterializerCompleteLinkPreventsTransitiveCluster(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetEmbeddingProvider(&fakeCoverageEmbeddingProvider{vectors: [][]float32{
+			{1, 0, 0},
+			{0.9063078, 0.4226183, 0},
+			{0.6427876, 0.7660444, 0},
+		}}, "")
+	ctx := context.Background()
+	now := time.Now()
+
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-a", "run-1", "conversation-a", "Reset password email is missing.", "Reset password email", now)
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-b", "run-1", "conversation-b", "Password login recovery instructions are missing.", "Password login recovery", now.Add(time.Minute))
+	seedMaterializerAnalysis(t, analysisRepo, "analysis-c", "run-1", "conversation-c", "Login access documentation is missing.", "Login access documentation", now.Add(2*time.Minute))
+
+	result, err := analyzer.materializeRunFindings(ctx, "ws-1", "run-1")
+	if err != nil {
+		t.Fatalf("materializeRunFindings: %v", err)
+	}
+	if result.NewGapsCreated != 2 || result.SameRunFindingsMerged != 1 {
+		t.Fatalf("result=%+v, want two complete-link clusters", result)
+	}
+	var gaps []model.SupportCoverageGap
+	if err := db.Order("id ASC").Find(&gaps).Error; err != nil {
+		t.Fatalf("list gaps: %v", err)
+	}
+	if len(gaps) != 2 {
+		t.Fatalf("gaps=%d, want 2", len(gaps))
+	}
+	counts := []int{gaps[0].EvidenceCount, gaps[1].EvidenceCount}
+	sort.Ints(counts)
+	if counts[0] != 1 || counts[1] != 2 {
+		t.Fatalf("evidence counts=%v, want [1 2]", counts)
+	}
+}
+
 func TestCoverageMaterializerReclassifiesStrongKBMatchAsRetrievalFailure(t *testing.T) {
 	db := setupCoverageFindingUpsertTestDB(t)
 	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	coverageRepo := repository.NewSupportCoverageRepository(db)
 	seedMaterializerDocsSpace(t, db, "space-public", "ws-1")
+	if err := db.Exec(`INSERT INTO docs_documents (id, workspace_id, space_id, title, status)
+		VALUES (?, ?, ?, ?, ?)`, "doc-reset", "ws-1", "space-public", "Password reset email troubleshooting", model.DocStatusPublished).Error; err != nil {
+		t.Fatalf("seed docs document: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO docs_helpcenter_articles (document_id, public_published_at)
+		VALUES (?, CURRENT_TIMESTAMP)`, "doc-reset").Error; err != nil {
+		t.Fatalf("seed public docs article: %v", err)
+	}
 	if err := db.Create(&model.DocsChunk{
 		ID:          "doc-chunk-reset",
 		WorkspaceID: "ws-1",
@@ -451,9 +648,14 @@ func seedMaterializerDocsSpace(t *testing.T, db *gorm.DB, id, workspaceID string
 		document_id TEXT NOT NULL,
 		block_id TEXT,
 		chunk_index INTEGER NOT NULL,
+		section_key TEXT NOT NULL DEFAULT '',
+		heading_path TEXT NOT NULL DEFAULT '',
 		block_range TEXT,
 		title TEXT NOT NULL,
 		content TEXT NOT NULL,
+		search_content TEXT NOT NULL DEFAULT '',
+		previous_chunk_index INTEGER,
+		next_chunk_index INTEGER,
 		content_hash TEXT NOT NULL DEFAULT '',
 		embedding TEXT NOT NULL DEFAULT '',
 		embedding_provider TEXT NOT NULL DEFAULT 'openai',
@@ -464,6 +666,22 @@ func seedMaterializerDocsSpace(t *testing.T, db *gorm.DB, id, workspaceID string
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`).Error; err != nil {
 		t.Fatalf("create docs_chunks: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_documents (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		space_id TEXT NOT NULL,
+		title TEXT NOT NULL,
+		status TEXT NOT NULL,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create docs_documents: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_helpcenter_articles (
+		document_id TEXT PRIMARY KEY,
+		public_published_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create docs_helpcenter_articles: %v", err)
 	}
 	if err := db.Create(&model.DocsSpace{
 		ID:          id,

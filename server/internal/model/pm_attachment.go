@@ -26,6 +26,9 @@ type CreateAttachmentRequest struct {
 	FileName    string `json:"file_name"`
 	FileSize    int64  `json:"file_size"`
 	ContentType string `json:"content_type"`
+	// Private keeps the object out of a public bucket even when the workspace
+	// uses public URLs for ordinary editor media.
+	Private bool `json:"private,omitempty"`
 }
 
 // AttachmentResponse is returned after creating or listing attachments.

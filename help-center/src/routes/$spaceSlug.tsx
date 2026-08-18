@@ -1,7 +1,4 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
-import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
-import { LoadingState } from '@/components/LoadingState'
-import { useDocsContext } from '@/contexts/DocsContext'
+import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 import { loadRootRouteData } from '@/lib/rootLoader'
 import { buildCanonicalCollectionPath, buildCanonicalHomePath } from '@/lib/locale'
 
@@ -37,27 +34,9 @@ export const Route = createFileRoute('/$spaceSlug')({
       })
     }
   },
-  component: SpaceOrLegacyRedirect,
+  component: SpaceSlugLayout,
 })
 
-function SpaceOrLegacyRedirect() {
-  const { spaceSlug } = Route.useParams()
-  const { defaultLocale, enabledLocales, spaces } = useDocsContext()
-  const normalizedSlug = spaceSlug.trim().toLowerCase()
-  const isKnownLocaleSlug = enabledLocales.some(
-    (locale) => locale.toLowerCase() === normalizedSlug,
-  )
-  const isSpaceSlug = spaces.some((space) => space.slug.toLowerCase() === normalizedSlug)
-
-  if (!isKnownLocaleSlug && isSpaceSlug) {
-    return (
-      <CollectionRouteView
-        locale={defaultLocale}
-        collectionOrSpaceSlug={spaceSlug}
-        multilingualEnabled={false}
-      />
-    )
-  }
-
-  return <LoadingState message="Redirecting..." />
+function SpaceSlugLayout() {
+  return <Outlet />
 }

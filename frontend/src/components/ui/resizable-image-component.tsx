@@ -1,10 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { NodeViewWrapper } from '@tiptap/react';
 import type { NodeViewProps } from '@tiptap/react';
-import { TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, Maximize01Icon, Download04Icon, Copy01Icon, Link01Icon, Delete01Icon, Cancel01Icon, Tick01Icon, CursorTextIcon } from '@/lib/icons';
+import { TextAlignLeftIcon, TextAlignCenterIcon, TextAlignRightIcon, ExpandIcon, Download04Icon, Copy01Icon, Link01Icon, Delete01Icon, Cancel01Icon, Tick01Icon, CursorTextIcon, MagicWand01Icon, PenTool02Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { LoadingImage } from '@/components/ui/loading-image';
+import { DocsImageEditDialog } from "@/components/docs/DocsImageEditDialog";
+import { parseAnnotationState } from '@/components/docs/annotator/core/annotationTypes';
 import { useImageActions } from '@/hooks/useImageActions';
+import { parseHelpinReference } from '@/lib/helpinReferences';
+import { automationService } from '@/lib/services/automationService';
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import type { EditorUploadConfig } from '@/hooks/useEditorImageUpload';
+import { permanentAnnotationSourceCleanup, selectResizableImageSources } from './resizable-image-sources';
+
+// Lazy so konva never lands in the main bundle — readers of a doc must not pay for the editor.
+const DocsImageAnnotateDialog = lazy(() =>
+  import('@/components/docs/annotator/integration/DocsImageAnnotateDialog').then((module) => ({
+    default: module.DocsImageAnnotateDialog,
+  })),
+);
 
 const MIN_WIDTH = 100;
 
@@ -21,9 +35,80 @@ const ALIGNMENT_OPTIONS = [
 ] as const;
 
 export function ResizableImageComponent({ node, updateAttributes, selected: _selected, deleteNode, editor, extension }: NodeViewProps) {
-  const { src, darkSrc, alt, caption, width, height, aspectRatio: storedAspectRatio, alignment, linkUrl, linkNewTab } = node.attrs;
+  const { src, darkSrc, alt, caption, width, height, aspectRatio: storedAspectRatio, alignment, linkUrl, linkNewTab, artifactId, sourceAttachmentId } = node.attrs;
   const { copyImage, downloadImage, openInNewTab: _openInNewTab } = useImageActions();
   const enableCaption = extension.options.enableCaption ?? true;
+  const workspaceId = extension.options.workspaceId as string | undefined;
+  const documentId = extension.options.documentId as string | undefined;
+  // The editor instance is created once, so an `uploadConfig` that only becomes available after
+  // access resolves would be captured as undefined forever. Fall back to deriving it from the
+  // workspace/document ids, which is exactly what the docs page passes anyway.
+  const configuredUploadConfig = extension.options.uploadConfig as EditorUploadConfig | undefined;
+  const uploadConfig: EditorUploadConfig | undefined =
+    configuredUploadConfig ??
+    (workspaceId && documentId
+      ? { workspaceId, entityType: 'editor_upload', entityId: documentId }
+      : undefined);
+  const annotationState = parseAnnotationState(node.attrs.annotationState);
+  const srcReference = parseHelpinReference(typeof src === 'string' ? src : undefined);
+  const resolvedArtifactId = artifactId || (srcReference?.type === 'artifacts' ? srcReference.id : null);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(resolvedArtifactId ? null : src);
+  const [artifactError, setArtifactError] = useState(false);
+  const [artifactRefresh, setArtifactRefresh] = useState(0);
+
+  const {
+    displaySrc,
+    displayDarkSrc,
+    annotationSourceUrl: rawAnnotationSourceUrl,
+    annotationSourceAttachmentId,
+  } = selectResizableImageSources({
+    src,
+    darkSrc,
+    resolvedSrc,
+    isArtifactBacked: Boolean(resolvedArtifactId),
+    hasAnnotations: Boolean(annotationState),
+    attachmentId: node.attrs.attachmentId,
+    sourceAttachmentId,
+  });
+  const annotationSourceUrl = annotationSourceAttachmentId
+    ? pmAttachmentService.proxiedContentUrl(annotationSourceAttachmentId)
+    : rawAnnotationSourceUrl;
+
+  useEffect(() => {
+    let cancelled = false;
+    let refreshTimer: number | undefined;
+    if (!resolvedArtifactId) {
+      setResolvedSrc(src);
+      setArtifactError(false);
+      return () => { cancelled = true; };
+    }
+    if (!workspaceId) {
+      setResolvedSrc(null);
+      setArtifactError(true);
+      return () => { cancelled = true; };
+    }
+    setResolvedSrc(null);
+    setArtifactError(false);
+    void automationService.getArtifactContentURL(workspaceId, resolvedArtifactId).then((response) => {
+      if (cancelled) return;
+      if (response.error || !response.data?.url) {
+        setArtifactError(true);
+        return;
+      }
+      setResolvedSrc(response.data.url);
+      const expiresAt = Date.parse(response.data.expires_at);
+      if (Number.isFinite(expiresAt)) {
+        refreshTimer = window.setTimeout(
+          () => setArtifactRefresh((value) => value + 1),
+          Math.max(30_000, expiresAt - Date.now() - 60_000),
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
+  }, [artifactRefresh, resolvedArtifactId, src, workspaceId]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -36,6 +121,8 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
   const [showSettings, setShowSettings] = useState(false);
   const [showAlignMenu, setShowAlignMenu] = useState(false);
   const [showAltInput, setShowAltInput] = useState(false);
+  const [showImageEditor, setShowImageEditor] = useState(false);
+  const [showAnnotator, setShowAnnotator] = useState(false);
   const [altText, setAltText] = useState<string>(alt ?? '');
   const [captionText, setCaptionText] = useState<string>(caption ?? '');
   const [linkInput, setLinkInput] = useState<string>(linkUrl ?? '');
@@ -204,22 +291,28 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
           ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
         }}
       >
-        <LoadingImage
-          ref={imageRef}
-          src={src}
-          alt={alt ?? ''}
-          onLoad={handleImageLoad}
-          draggable={false}
-          containerClassName={`${darkSrc ? 'dark:hidden' : 'block'} max-w-full overflow-hidden rounded-md`}
-          className="block max-w-full rounded-md"
-          style={{
-            width: currentWidth,
-            ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
-          }}
-        />
-        {darkSrc && (
+        {displaySrc ? (
           <LoadingImage
-            src={darkSrc}
+            ref={imageRef}
+            src={displaySrc}
+            alt={alt ?? ''}
+            onLoad={handleImageLoad}
+            draggable={false}
+            containerClassName={`${displayDarkSrc ? 'dark:hidden' : 'block'} max-w-full overflow-hidden rounded-md`}
+            className="block max-w-full rounded-md"
+            style={{
+              width: currentWidth,
+              ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
+            }}
+          />
+        ) : (
+          <div className="flex min-h-32 items-center justify-center rounded-md border border-border/60 bg-muted/40 px-4 text-center text-xs text-muted-foreground">
+            {artifactError ? 'Private image is unavailable' : 'Loading private image…'}
+          </div>
+        )}
+        {displayDarkSrc && (
+          <LoadingImage
+            src={displayDarkSrc}
             alt={alt ?? ''}
             draggable={false}
             containerClassName="hidden max-w-full overflow-hidden rounded-md dark:block"
@@ -242,7 +335,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
         {/* Floating toolbar — top-right */}
         {editable && (
           <div
-            className={`absolute top-2 right-2 flex items-center rounded-lg border border-border bg-popover/95 shadow-md backdrop-blur-sm transition-opacity duration-100 ${
+            className={`absolute top-2 right-2 flex items-center gap-0.5 rounded-lg border border-border bg-popover/95 shadow-md backdrop-blur-sm transition-opacity duration-100 ${
               isResizing
                 ? 'pointer-events-none opacity-0'
                 : 'pointer-events-none opacity-0 group-hover/img:pointer-events-auto group-hover/img:opacity-100'
@@ -319,13 +412,13 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
                 onClick={(e) => { e.stopPropagation(); setIsFullscreen(true); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
-                <Maximize01Icon className="h-4 w-4" />
+                <ExpandIcon className="h-4 w-4" />
               </button>
             </QuickTooltip>
             <QuickTooltip label="Download">
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); downloadImage(src, alt); }}
+                onClick={(e) => { e.stopPropagation(); if (displaySrc) downloadImage(displaySrc, alt); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
                 <Download04Icon className="h-4 w-4" />
@@ -334,12 +427,34 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             <QuickTooltip label="Copy image">
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); copyImage(src); }}
+                onClick={(e) => { e.stopPropagation(); if (displaySrc) copyImage(displaySrc); }}
                 className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               >
                 <Copy01Icon className="h-4 w-4" />
               </button>
             </QuickTooltip>
+            {/* Annotation needs a loadable image and somewhere to upload the render — it does
+                NOT need an existing attachment, unlike "Edit with AI" whose endpoint takes a
+                source_attachment_id. Requiring one hid the action on pasted and imported
+                images, which are exactly the screenshots people want to annotate. */}
+            {editable && uploadConfig && annotationSourceUrl && (
+              <QuickTooltip label={annotationState ? 'Edit annotations' : 'Annotate'}>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowAnnotator(true); }}
+                  className={`flex h-8 w-8 items-center justify-center transition-colors ${annotationState ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  <PenTool02Icon className="h-4 w-4" />
+                </button>
+              </QuickTooltip>
+            )}
+            {workspaceId && documentId && node.attrs.attachmentId && resolvedSrc && (
+              <QuickTooltip label="Edit with AI">
+                <button type="button" onClick={(e) => { e.stopPropagation(); setShowImageEditor(true); }} className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground">
+                  <MagicWand01Icon className="h-4 w-4" />
+                </button>
+              </QuickTooltip>
+            )}
             <QuickTooltip label="Add link">
               <button
                 type="button"
@@ -449,7 +564,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
       )}
 
       {/* Fullscreen overlay */}
-      {isFullscreen && (
+      {isFullscreen && displaySrc && (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
           onClick={() => setIsFullscreen(false)}
@@ -464,13 +579,64 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
             </button>
           </QuickTooltip>
           <LoadingImage
-            src={src}
+            src={displaySrc}
             alt={alt ?? ''}
             containerClassName="max-h-[90vh] max-w-[90vw] overflow-hidden rounded-lg"
             className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
+      )}
+      {workspaceId && documentId && node.attrs.attachmentId && resolvedSrc && (
+        <DocsImageEditDialog
+          open={showImageEditor}
+          onOpenChange={setShowImageEditor}
+          workspaceId={workspaceId}
+          documentId={documentId}
+          sourceAttachmentId={node.attrs.attachmentId}
+          sourceUrl={resolvedSrc}
+          onUse={({ attachmentId, url }) => updateAttributes({ src: url, attachmentId })}
+        />
+      )}
+      {showAnnotator && uploadConfig && annotationSourceUrl && (
+        <Suspense fallback={null}>
+          <DocsImageAnnotateDialog
+            open={showAnnotator}
+            onOpenChange={setShowAnnotator}
+            workspaceId={workspaceId ?? uploadConfig.workspaceId}
+            uploadConfig={uploadConfig}
+            // Always annotate the ORIGINAL. Re-opening the rendered image would compound new
+            // annotations onto already-flattened pixels.
+            // Proxied so the canvas stays untainted regardless of bucket CORS. Images that are
+            // not attachments (pasted or imported URLs) fall back to their own src and depend
+            // on that host sending CORS headers.
+            sourceUrl={annotationSourceUrl}
+            sourceAttachmentId={annotationSourceAttachmentId}
+            hasAlternateSource={Boolean(darkSrc || node.attrs.darkAttachmentId)}
+            initialState={annotationState}
+            fileName={alt ?? 'image'}
+            onSave={(result) => {
+              // Dimensions are deliberately preserved: the render is natural size, so letting
+              // the node re-measure would reset a resized image back to full width.
+              updateAttributes({
+                src: result.url,
+                attachmentId: result.attachmentId,
+                sourceAttachmentId: result.sourceAttachmentId,
+                annotationState: result.annotationState,
+                // Never leave an alternate or artifact-backed original available to rendering
+                // after a permanent flatten. The dialog already deleted the attachment source.
+                ...permanentAnnotationSourceCleanup(result.permanent),
+                width: currentWidth,
+                height: currentHeight,
+                aspectRatio,
+              });
+              // The upload is already durable, so persist the matching node attributes now as
+              // well. Relying only on the editor debounce loses the annotation metadata and new
+              // attachment URL when the page is refreshed immediately after the dialog closes.
+              void extension.options.onImmediateSave?.(editor.getJSON());
+            }}
+          />
+        </Suspense>
       )}
     </NodeViewWrapper>
   );

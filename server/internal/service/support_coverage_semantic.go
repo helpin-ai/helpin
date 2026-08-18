@@ -41,6 +41,62 @@ func coverageFindingEmbeddingText(analysis model.SupportCoverageConversationAnal
 	)
 }
 
+func coverageClusterCompatible(a, b model.SupportCoverageGapListItem) bool {
+	if coverageGapSemanticFamily(a.GapKind, a.GapCategory) != coverageGapSemanticFamily(b.GapKind, b.GapCategory) {
+		return false
+	}
+	if a.RelatedArticleID != nil && b.RelatedArticleID != nil && *a.RelatedArticleID != *b.RelatedArticleID {
+		return false
+	}
+	aObject, aIsNoSearch := coverageNoSearchResultObject(a.Title)
+	bObject, bIsNoSearch := coverageNoSearchResultObject(b.Title)
+	if aIsNoSearch || bIsNoSearch {
+		return aIsNoSearch && bIsNoSearch && coverageSearchObjectsCompatible(aObject, bObject)
+	}
+	return true
+}
+
+func coverageGapKindFamily(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "action", "policy":
+		return "action"
+	case "data":
+		return "data"
+	default:
+		return "content"
+	}
+}
+
+func coverageGapCategoryFamily(category string) string {
+	switch strings.TrimSpace(category) {
+	case model.SupportCoverageGapCategoryAction, model.SupportCoverageGapCategoryPolicy, model.SupportCoverageGapCategoryWorkflow:
+		return "action"
+	case model.SupportCoverageGapCategoryContext:
+		return "data"
+	case "", model.SupportCoverageGapCategoryUnknown:
+		return ""
+	default:
+		return "content"
+	}
+}
+
+func coverageGapSemanticFamily(kind, category string) string {
+	kindFamily := coverageGapKindFamily(kind)
+	categoryFamily := coverageGapCategoryFamily(category)
+	if categoryFamily == "" {
+		return kindFamily
+	}
+	if kindFamily == "content" {
+		return categoryFamily
+	}
+	if categoryFamily == "content" || categoryFamily == kindFamily {
+		return kindFamily
+	}
+	// Conflicting non-content classifications should only match another gap
+	// with the same conflict; they are not safe automatic attachments.
+	return kindFamily + ":" + categoryFamily
+}
+
 func coverageJoinEmbeddingParts(parts ...string) string {
 	seen := map[string]bool{}
 	values := make([]string, 0, len(parts))

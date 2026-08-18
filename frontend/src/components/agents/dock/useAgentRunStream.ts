@@ -2,17 +2,46 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { agentService } from '@/lib/services/agentService';
 import {
   latestPendingCodingSessionInteraction,
+  maxPersistedCodingSessionSequence,
+  upsertCodingSessionEvents,
 } from '@/components/pm/CodingSession/codingSessionUtils';
-import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
+import {
+  buildCodingSessionStreamState,
+  mergeCodingSessionStreamSnapshotSeed,
+} from '@/components/pm/CodingSession/codingSessionStream';
 import type {
+  CodingSession,
   CodingSessionEvent,
+  CodingSessionEventListResponse,
   CodingSessionInteraction,
   CodingSessionStreamSnapshot,
   CodingSessionStreamState,
   RunPlanArtifact,
 } from '@/lib/pmTypes';
 
-interface AgentRunStreamState {
+/**
+ * Pluggable snapshot/event fetchers. The default hits the PM-gated
+ * /pm/agent-runs endpoints; the dock chat view supplies chat-scoped fetchers
+ * (/dock/chats/{id}/run*) so users without PM permissions can stream their
+ * own chat.
+ */
+export interface AgentRunStreamFetchers {
+  getSnapshot: (workspaceId: string, runId: string) => Promise<{ data: CodingSession | null; error: string | null }>;
+  listEvents: (
+    workspaceId: string,
+    runId: string,
+    after: number,
+  ) => Promise<{ data: CodingSessionEventListResponse | null; error: string | null }>;
+}
+
+const defaultFetchers: AgentRunStreamFetchers = {
+  getSnapshot: (workspaceId, runId) => agentService.getRunSnapshot(workspaceId, runId),
+  listEvents: (workspaceId, runId, after) => agentService.listRunEvents(workspaceId, runId, after),
+};
+
+export interface AgentRunStreamState {
+  /** Latest authoritative run snapshot, including status and pause reason. */
+  session: CodingSession | null;
   currentPlan: RunPlanArtifact | null;
   pendingInteraction: CodingSessionInteraction | null;
   /**
@@ -34,8 +63,9 @@ interface AgentRunStreamState {
  *
  * Strategy:
  * - On mount (when active): fetch /snapshot + /events.
- * - Refetch when a window-level `agent_run-updated` event fires for this run id
- *   (already dispatched by useRealtimeSync from the WebSocket bridge).
+ * - Apply `coding_session_event-created` payloads immediately, using the host
+ *   run id carried by the websocket parent rather than the event's own id.
+ * - Reconcile snapshots after status changes or sequence gaps.
  * - Light polling fallback every `pollMs` while the run is active, in case a
  *   WS event is dropped. Disabled when `active === false`.
  *
@@ -47,18 +77,35 @@ export function useAgentRunStream(
   runId: string | null | undefined,
   active: boolean,
   pollMs = 5_000,
+  fetchers: AgentRunStreamFetchers = defaultFetchers,
 ): AgentRunStreamState {
   const [currentPlan, setCurrentPlan] = useState<RunPlanArtifact | null>(null);
+  const [session, setSession] = useState<CodingSession | null>(null);
   const [streamState, setStreamState] = useState<CodingSessionStreamState | null>(null);
   const [pendingInteraction, setPendingInteraction] =
     useState<CodingSessionInteraction | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const seqRef = useRef(0);
+  const persistedSeqRef = useRef(0);
+  const runtimeSeqRef = useRef(0);
   const eventsRef = useRef<CodingSessionEvent[]>([]);
+  const pendingRuntimeEventsRef = useRef<Map<number, CodingSessionEvent>>(new Map());
   const snapshotRef = useRef<CodingSessionStreamSnapshot | null>(null);
-  const cancelledRef = useRef(false);
+  const generationRef = useRef(0);
+  const loadingCountRef = useRef(0);
   const clearedInteractionIdsRef = useRef<Set<string>>(new Set());
+
+  const publishStreamState = useCallback(() => {
+    const built = buildCodingSessionStreamState(eventsRef.current, snapshotRef.current);
+    const latestPending = latestPendingCodingSessionInteraction(eventsRef.current);
+    setStreamState(built);
+    setCurrentPlan(built.current_plan);
+    setPendingInteraction(
+      latestPending && clearedInteractionIdsRef.current.has(latestPending.interaction_id)
+        ? null
+        : latestPending,
+    );
+  }, []);
 
   const clearPendingInteraction = useCallback((interactionId: string) => {
     const trimmed = interactionId.trim();
@@ -69,96 +116,195 @@ export function useAgentRunStream(
     );
   }, []);
 
+  const flushContiguousRuntimeEvents = useCallback(() => {
+    const contiguous: CodingSessionEvent[] = [];
+    let nextSequence = runtimeSeqRef.current + 1;
+    while (pendingRuntimeEventsRef.current.has(nextSequence)) {
+      const event = pendingRuntimeEventsRef.current.get(nextSequence);
+      pendingRuntimeEventsRef.current.delete(nextSequence);
+      if (event) contiguous.push(event);
+      runtimeSeqRef.current = nextSequence;
+      nextSequence += 1;
+    }
+    if (contiguous.length > 0) {
+      eventsRef.current = upsertCodingSessionEvents(eventsRef.current, contiguous);
+      persistedSeqRef.current = maxPersistedCodingSessionSequence(eventsRef.current);
+    }
+  }, []);
+
   const refetch = useCallback(async () => {
     if (!workspaceId || !runId) return;
+    const generation = generationRef.current;
+    loadingCountRef.current += 1;
     setLoading(true);
     try {
       const [snap, ev] = await Promise.all([
-        agentService.getRunSnapshot(workspaceId, runId),
-        agentService.listRunEvents(workspaceId, runId, seqRef.current),
+        fetchers.getSnapshot(workspaceId, runId),
+        fetchers.listEvents(workspaceId, runId, persistedSeqRef.current),
       ]);
-      if (cancelledRef.current) return;
-      snapshotRef.current = snap.data?.stream_state_snapshot ?? null;
+      if (generationRef.current !== generation) return;
 
-      if (ev.data?.events?.length) {
-        eventsRef.current = mergeEvents(eventsRef.current, ev.data.events);
-        seqRef.current = Math.max(seqRef.current, ev.data.next_sequence_no ?? 0);
+      // Dock endpoints resolve the chat's active run. A chat can roll over to
+      // a successor while this request is in flight, so never merge a response
+      // that identifies a different host run.
+      if (typeof snap.data?.id === 'string' && snap.data.id !== runId) return;
+      if (snap.data) setSession(snap.data);
+      const acceptedEvents = (ev.data?.events ?? []).filter(
+        (event) => event.session_id === runId && event.run_id === runId,
+      );
+      if (acceptedEvents.length > 0) {
+        eventsRef.current = upsertCodingSessionEvents(eventsRef.current, acceptedEvents);
+        persistedSeqRef.current = maxPersistedCodingSessionSequence(eventsRef.current);
       }
 
-      // Reconcile via the same builder the coding-session drawer uses, so the
-      // plan resolves whether it came through stream_state_snapshot.current_plan
-      // (codex/opencode) or from update_plan tool calls in events (native_sdk).
-      const built = buildCodingSessionStreamState(eventsRef.current, snapshotRef.current);
-      const latestPending = latestPendingCodingSessionInteraction(eventsRef.current);
-      setStreamState(built);
-      setCurrentPlan(built.current_plan);
-      setPendingInteraction(
-        latestPending && clearedInteractionIdsRef.current.has(latestPending.interaction_id)
-          ? null
-          : latestPending,
-      );
-    } finally {
-      if (!cancelledRef.current) setLoading(false);
-    }
-  }, [runId, workspaceId]);
+      // The event-list response does not identify which active dock run it
+      // resolved. Only use the snapshot embedded in the run-identified session
+      // response; otherwise a rollover between these two requests can leak the
+      // successor snapshot into the predecessor stream.
+      const incomingSnapshot = snap.data?.stream_state_snapshot ?? null;
+      const incomingSequence = incomingSnapshot?.through_sequence ?? 0;
+      const terminal = snap.data
+        ? ['completed', 'failed', 'cancelled'].includes(snap.data.status)
+        : false;
+      // A response that started before a websocket delta must not erase that
+      // newer live state. Terminal snapshots remain authoritative so completed
+      // live segments can be cleared.
+      if (
+        terminal
+        || runtimeSeqRef.current === 0
+        || incomingSequence >= runtimeSeqRef.current
+      ) {
+        snapshotRef.current = mergeCodingSessionStreamSnapshotSeed(
+          snapshotRef.current,
+          incomingSnapshot,
+        );
+        runtimeSeqRef.current = Math.max(runtimeSeqRef.current, incomingSequence);
 
-  // Reset on run change.
+        // The snapshot is authoritative through its runtime watermark. Discard
+        // buffered websocket events it already contains, then append only a
+        // contiguous tail. This lets snapshots bridge legitimate gaps caused by
+        // runtime events that are not projected to the browser.
+        if (terminal) {
+          pendingRuntimeEventsRef.current.clear();
+        } else {
+          for (const sequence of pendingRuntimeEventsRef.current.keys()) {
+            if (sequence <= incomingSequence) pendingRuntimeEventsRef.current.delete(sequence);
+          }
+          flushContiguousRuntimeEvents();
+        }
+      }
+
+      publishStreamState();
+    } finally {
+      if (generationRef.current === generation) {
+        loadingCountRef.current = Math.max(0, loadingCountRef.current - 1);
+        setLoading(loadingCountRef.current > 0);
+      }
+    }
+  }, [fetchers, flushContiguousRuntimeEvents, publishStreamState, runId, workspaceId]);
+
+  const ingestRealtimeEvent = useCallback((event: CodingSessionEvent) => {
+    if (!runId || event.session_id !== runId || event.run_id !== runId) return false;
+    const hostRunId = typeof event.payload?.host_run_id === 'string'
+      ? event.payload.host_run_id.trim()
+      : '';
+    if (hostRunId && hostRunId !== runId) return false;
+
+    const source = typeof event.runtime_metadata?.source === 'string'
+      ? event.runtime_metadata.source.trim()
+      : '';
+    const runtimeV2 = source === 'agent-runtime-v2';
+    if (runtimeV2 && event.sequence_no > 0) {
+      if (event.sequence_no > runtimeSeqRef.current + 1) {
+        // Do not expose a later text fragment before its missing predecessor.
+        // Reconciliation will either supply the missing event or replace this
+        // buffer with a snapshot whose watermark covers the gap.
+        pendingRuntimeEventsRef.current.set(event.sequence_no, event);
+        return true;
+      }
+
+      eventsRef.current = upsertCodingSessionEvents(eventsRef.current, [event]);
+      persistedSeqRef.current = maxPersistedCodingSessionSequence(eventsRef.current);
+      if (event.sequence_no === runtimeSeqRef.current + 1) {
+        runtimeSeqRef.current = event.sequence_no;
+        flushContiguousRuntimeEvents();
+      }
+      publishStreamState();
+      return false;
+    }
+
+    eventsRef.current = upsertCodingSessionEvents(eventsRef.current, [event]);
+    persistedSeqRef.current = maxPersistedCodingSessionSequence(eventsRef.current);
+    publishStreamState();
+    return false;
+  }, [flushContiguousRuntimeEvents, publishStreamState, runId]);
+
+  // Reset on workspace, chat fetcher, or run change. The generation token
+  // prevents a predecessor request from committing after the new run mounts.
   useEffect(() => {
-    cancelledRef.current = false;
-    seqRef.current = 0;
+    generationRef.current += 1;
+    loadingCountRef.current = 0;
+    persistedSeqRef.current = 0;
+    runtimeSeqRef.current = 0;
     eventsRef.current = [];
+    pendingRuntimeEventsRef.current = new Map();
     snapshotRef.current = null;
     clearedInteractionIdsRef.current = new Set();
     setCurrentPlan(null);
+    setSession(null);
     setStreamState(null);
     setPendingInteraction(null);
+    setLoading(false);
     return () => {
-      cancelledRef.current = true;
+      generationRef.current += 1;
     };
-  }, [runId]);
+  }, [fetchers, runId, workspaceId]);
 
-  // Initial fetch + WS-driven refresh.
+  // Initial fetch + WS-driven updates.
   useEffect(() => {
     if (!active || !workspaceId || !runId) return;
     void refetch();
-    const handler = (event: Event) => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleReconcile = () => {
+      if (refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void refetch();
+      }, 100);
+    };
+    const onRunUpdated = (event: Event) => {
       const detail = (event as CustomEvent<{ entity_id?: string }>).detail;
       if (detail?.entity_id !== runId) return;
-      void refetch();
+      scheduleReconcile();
     };
-    window.addEventListener('agent_run-updated', handler);
-    window.addEventListener('coding_session-updated', handler);
-    window.addEventListener('coding_session_event-created', handler);
+    const onSessionEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        parent_id?: string;
+        data?: CodingSessionEvent;
+      }>).detail;
+      if (detail?.parent_id !== runId || !detail.data) return;
+      if (ingestRealtimeEvent(detail.data)) scheduleReconcile();
+    };
+    window.addEventListener('agent_run-updated', onRunUpdated);
+    window.addEventListener('coding_session-updated', onRunUpdated);
+    window.addEventListener('coding_session_event-created', onSessionEvent);
     return () => {
-      window.removeEventListener('agent_run-updated', handler);
-      window.removeEventListener('coding_session-updated', handler);
-      window.removeEventListener('coding_session_event-created', handler);
+      if (refreshTimer) clearTimeout(refreshTimer);
+      window.removeEventListener('agent_run-updated', onRunUpdated);
+      window.removeEventListener('coding_session-updated', onRunUpdated);
+      window.removeEventListener('coding_session_event-created', onSessionEvent);
     };
-  }, [active, refetch, runId, workspaceId]);
+  }, [active, ingestRealtimeEvent, refetch, runId, workspaceId]);
 
   // Light polling fallback while active.
   useEffect(() => {
     if (!active || !workspaceId || !runId || pollMs <= 0) return;
+    if (session && ['completed', 'failed', 'cancelled'].includes(session.status)) return;
     const id = setInterval(() => {
       void refetch();
     }, pollMs);
     return () => clearInterval(id);
-  }, [active, pollMs, refetch, runId, workspaceId]);
+  }, [active, pollMs, refetch, runId, session, workspaceId]);
 
-  return { currentPlan, streamState, pendingInteraction, loading, refetch, clearPendingInteraction };
-}
-
-function mergeEvents(
-  prev: CodingSessionEvent[],
-  next: CodingSessionEvent[],
-): CodingSessionEvent[] {
-  if (prev.length === 0) return next;
-  const seen = new Set(prev.map((e) => e.id));
-  const merged = prev.slice();
-  for (const e of next) {
-    if (seen.has(e.id)) continue;
-    merged.push(e);
-    seen.add(e.id);
-  }
-  return merged;
+  return { session, currentPlan, streamState, pendingInteraction, loading, refetch, clearPendingInteraction };
 }

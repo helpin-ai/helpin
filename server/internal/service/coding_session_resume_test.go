@@ -261,8 +261,16 @@ func TestApprovalRequestResumeContentSynthesizesPRDContinuation(t *testing.T) {
 	}
 
 	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve"}`), model.AgentRunResumeIntentApprove)
-	if got != "Approved PRD. Continue to task planning." {
-		t.Fatalf("unexpected synthesized PRD resume content: %q", got)
+	for _, expected := range []string{
+		"Approved PRD.",
+		"Call ensure_epic_spec_doc with {}",
+		"Then call write_document_content with the returned document_id and the full approved markdown.",
+		"Then call approve_epic_spec with {}",
+		"do not continue to task planning, until all three tool calls succeed.",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("expected PRD continuation to contain %q, got %q", expected, got)
+		}
 	}
 }
 
@@ -276,8 +284,67 @@ func TestApprovalRequestResumeContentSynthesizesTaskPlanContinuation(t *testing.
 	}
 
 	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve"}`), model.AgentRunResumeIntentApprove)
-	if got != "Approved task plan. Apply it and create tasks." {
-		t.Fatalf("unexpected synthesized task-plan resume content: %q", got)
+	for _, expected := range []string{
+		"Approved task plan.",
+		"Call create_task_batch with the full approved proposed_tasks array",
+		"Preserve every approved task field and dependency_refs.",
+		"Do not claim the task plan was applied and do not finish until create_task_batch succeeds.",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("expected task-plan continuation to contain %q, got %q", expected, got)
+		}
+	}
+}
+
+func TestApprovalRequestResumeContentPreservesTaskPlanApproveMessageAsNote(t *testing.T) {
+	requestPayload, err := json.Marshal(model.ApprovalRequest{
+		Phase: "tasks",
+		Title: "Approve Task Plan",
+	})
+	if err != nil {
+		t.Fatalf("marshal request payload: %v", err)
+	}
+
+	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve","message":"Keep the five-task ordering."}`), model.AgentRunResumeIntentApprove)
+	if !strings.Contains(got, "Call create_task_batch") || !strings.Contains(got, "Human note: Keep the five-task ordering.") {
+		t.Fatalf("expected task creation instructions and human note, got %q", got)
+	}
+}
+
+func TestApprovalRequestResumeContentSynthesizesTaskDocumentPersistenceTools(t *testing.T) {
+	requestPayload, err := json.Marshal(model.ApprovalRequest{
+		Phase: "task_doc",
+		Title: "Approve Task Planning Document",
+	})
+	if err != nil {
+		t.Fatalf("marshal request payload: %v", err)
+	}
+
+	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve"}`), model.AgentRunResumeIntentApprove)
+	for _, expected := range []string{
+		"Approved task planning document.",
+		"Call ensure_task_plan_doc with {}",
+		"Then call write_document_content with the returned document_id and the full approved markdown.",
+		"Do not claim the document was persisted and do not finish until both tool calls succeed.",
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("expected task-document continuation to contain %q, got %q", expected, got)
+		}
+	}
+}
+
+func TestApprovalRequestResumeContentPreservesTaskDocumentApproveMessageAsNote(t *testing.T) {
+	requestPayload, err := json.Marshal(model.ApprovalRequest{
+		Phase: "task_doc",
+		Title: "Approve Task Planning Document",
+	})
+	if err != nil {
+		t.Fatalf("marshal request payload: %v", err)
+	}
+
+	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve","message":"Use the final wording."}`), model.AgentRunResumeIntentApprove)
+	if !strings.Contains(got, "Call ensure_task_plan_doc with {}") || !strings.Contains(got, "Human note: Use the final wording.") {
+		t.Fatalf("expected persistence instructions and human note, got %q", got)
 	}
 }
 
@@ -291,7 +358,7 @@ func TestApprovalRequestResumeContentPreservesExplicitApproveMessage(t *testing.
 	}
 
 	got := approvalRequestResumeContent(requestPayload, json.RawMessage(`{"decision":"approve","message":"Looks good. Proceed."}`), model.AgentRunResumeIntentApprove)
-	if got != "Looks good. Proceed." {
-		t.Fatalf("expected explicit approval message to win, got %q", got)
+	if !strings.Contains(got, "Call ensure_epic_spec_doc with {}") || !strings.Contains(got, "Human note: Looks good. Proceed.") {
+		t.Fatalf("expected persistence instructions and human note, got %q", got)
 	}
 }

@@ -1,14 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { DocsRouteViewport } from '@/components/docs/DocsRouteViewport'
 import { DocsDocumentList } from '@/pages/docs/DocsDocumentList'
 
 export const Route = createFileRoute('/_authenticated/w/$slug/docs/my')({
   component: () => (
-    <div className="h-full overflow-auto p-4 md:p-6">
+    <DocsRouteViewport>
       <DocsDocumentList
         title="My Documents"
-        description="Documents you own or created."
+        description="All documents you own."
         filterMode="my"
       />
-    </div>
+    </DocsRouteViewport>
   ),
 })

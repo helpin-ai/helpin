@@ -33,6 +33,14 @@ func TestMiraPresetDefinitionUsesNativeHelpinTools(t *testing.T) {
 		"update_plan",
 		"request_user_input",
 		"request_approval",
+		"list_repositories",
+		"checkout_repositories",
+		"list_commits",
+		"read_files",
+		"list_directory",
+		"repository_search",
+		"list_symbols",
+		"search_workspace",
 		"list_documents",
 		"read_document",
 		"create_document",
@@ -45,19 +53,56 @@ func TestMiraPresetDefinitionUsesNativeHelpinTools(t *testing.T) {
 		"list_contacts",
 		"list_buyer_signals",
 		"add_deal_note",
-		"web_search_exa",
+		"web_search",
 		"fetch_url",
 		"crawl_url",
 		"get_release_context",
 		"find_tasks_for_git_changes",
+		"list_workspace_members",
+		"list_pm_labels",
+		"get_task",
+		"list_epics",
+		"get_epic",
+		"list_sprints",
+		"get_sprint",
+		"list_sprint_tasks",
+		"list_objectives",
+		"get_objective",
 	} {
 		if !slices.Contains(preset.AllowedTools, tool) {
 			t.Fatalf("expected tool %q in %v", tool, preset.AllowedTools)
 		}
 	}
-	for _, forbidden := range []string{"web_search_brave", "run_command", "read_file", "write_file", "open_pr"} {
+	for _, forbidden := range []string{
+		"web_search_brave",
+		"web_search_exa",
+		"checkout_repository",
+		"read_file",
+		"read_file_range",
+		"search_files",
+		"ripgrep",
+		"grep",
+		"run_command",
+		"write_file",
+		"edit_file",
+		"apply_patch",
+		"commit_and_push",
+		"open_pr",
+		"update_task",
+		"create_task_checklist_item",
+		"update_task_checklist_item",
+		"add_pm_comment",
+		"create_epic",
+		"update_epic",
+		"create_sprint",
+		"update_sprint",
+		"create_objective",
+		"update_objective",
+		"create_key_result",
+		"update_key_result",
+	} {
 		if slices.Contains(preset.AllowedTools, forbidden) {
-			t.Fatalf("did not expect mutating or broad repo tool %q in Mira tools: %v", forbidden, preset.AllowedTools)
+			t.Fatalf("did not expect mutating or shell/delivery repo tool %q in Mira tools: %v", forbidden, preset.AllowedTools)
 		}
 	}
 }

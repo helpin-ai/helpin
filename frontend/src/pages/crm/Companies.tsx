@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { PlusSignIcon, Search01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useCompanies } from '@/hooks/queries';
+import { useInfiniteCompanies } from '@/hooks/useInfiniteCompanies';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { CompaniesTable } from '@/components/crm/CompaniesTable';
@@ -21,11 +21,23 @@ export function CompaniesPage() {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data, isLoading, refetch } = useCompanies(wsId, { search: search || undefined });
-  const companies = data?.data ?? [];
+  const {
+    data,
+    isLoading,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteCompanies(wsId, { search: search || undefined });
+  const companies = useMemo(
+    () => data?.pages.flatMap((page) => page.data) ?? [],
+    [data],
+  );
+  const deferredCompanies = useDeferredValue(companies);
+  const totalCount = data?.pages[0]?.total ?? 0;
   const normalizedSearch = search.trim();
-  const showCompaniesEmptyState = !isLoading && companies.length === 0 && !normalizedSearch;
-  const showNoResultsState = !isLoading && companies.length === 0 && !!normalizedSearch;
+  const showCompaniesEmptyState = !isLoading && deferredCompanies.length === 0 && totalCount === 0 && !normalizedSearch;
+  const showNoResultsState = !isLoading && deferredCompanies.length === 0 && !!normalizedSearch;
 
   const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
   const ownerNameMap = useMemo(
@@ -61,7 +73,7 @@ export function CompaniesPage() {
       </header>
 
       {/* Content */}
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div className="min-h-0 flex-1 overflow-hidden p-3">
         {showCompaniesEmptyState ? (
           <CRMDataEmptyState
             kind="companies"
@@ -76,11 +88,15 @@ export function CompaniesPage() {
           />
         ) : (
           <CompaniesTable
-            companies={companies}
+            companies={deferredCompanies}
+            totalCount={totalCount}
             workspaceId={wsId}
             assignableMembers={assignableMembers}
             ownerNameMap={ownerNameMap}
             isLoading={isLoading}
+            hasNextPage={!!hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            onFetchNextPage={fetchNextPage}
             onRowClick={(id) => navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug: wsSlug, companyId: id } })}
             onCreateClick={() => setShowCreate(true)}
             onCompanyUpdated={() => refetch()}

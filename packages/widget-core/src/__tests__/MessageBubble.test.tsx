@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/preact';
 import { MessageBubble } from '../components/MessageBubble';
 import type { Message } from '../types';
@@ -18,6 +18,16 @@ describe('MessageBubble', () => {
     const { container } = render(<MessageBubble message={createMessage({ role: 'customer' })} />);
     expect(container.textContent).toContain('Hello world');
     expect(container.querySelector('.helpin-message--customer')).toBeTruthy();
+  });
+
+  it('renders an optimistic customer message with a muted sending state', () => {
+    const { container } = render(<MessageBubble message={createMessage({
+      clientId: 'temp-1',
+      deliveryStatus: 'sending',
+    })} />);
+
+    expect(container.querySelector('.helpin-message--sending')).toBeTruthy();
+    expect(container.querySelector('.helpin-message-row--optimistic')).toBeTruthy();
   });
 
   it('renders agent message', () => {
@@ -51,11 +61,11 @@ describe('MessageBubble', () => {
     expect(container.textContent).toContain('1 source');
     expect(queryByText('Test Doc')).toBeNull();
 
-    fireEvent.click(getByRole('button', { name: '1 source' }));
+    fireEvent.click(getByRole('button', { name: 'Based on 1 source' }));
     expect(queryByText('Test Doc')).toBeTruthy();
   });
 
-  it('displays confidence score', () => {
+  it('uses source attribution instead of exposing an exact confidence score', () => {
     const message = createMessage({
       role: 'ai',
       sources: [
@@ -64,7 +74,8 @@ describe('MessageBubble', () => {
       aiConfidence: 0.85,
     });
     const { container } = render(<MessageBubble message={message} />);
-    expect(container.textContent).toContain('85%');
+    expect(container.textContent).toContain('Based on 1 source');
+    expect(container.textContent).not.toContain('85%');
   });
 
   it('does not display confidence without sources', () => {
@@ -77,6 +88,36 @@ describe('MessageBubble', () => {
     expect(container.querySelector('.helpin-message-confidence')).toBeNull();
   });
 
+  it('collects lightweight feedback on completed AI answers', () => {
+    const onAnswerFeedback = vi.fn();
+    const message = createMessage({ role: 'ai', id: 'answer-1' });
+    const { getByRole, getByText, queryByRole } = render(
+      <MessageBubble message={message} onAnswerFeedback={onAnswerFeedback} />,
+    );
+
+    fireEvent.click(getByRole('button', { name: 'This answer was helpful' }));
+
+    expect(onAnswerFeedback).toHaveBeenCalledWith('answer-1', true);
+    expect(getByText('Thanks for the feedback')).toBeTruthy();
+    expect(queryByRole('button', { name: 'This answer was not helpful' })).toBeNull();
+  });
+
+  it('does not show answer feedback on the static AI welcome message', () => {
+    const onAnswerFeedback = vi.fn();
+    const message = createMessage({
+      id: '__intro__',
+      conversationId: '__intro__',
+      role: 'ai',
+      content: 'Hi there! How can we help you today?',
+    });
+    const { queryByText, queryByRole } = render(
+      <MessageBubble message={message} onAnswerFeedback={onAnswerFeedback} />,
+    );
+
+    expect(queryByText('Helpful?')).toBeNull();
+    expect(queryByRole('button', { name: 'This answer was helpful' })).toBeNull();
+  });
+
   it('displays email channel badge', () => {
     const message = createMessage({
       role: 'agent',
@@ -84,6 +125,68 @@ describe('MessageBubble', () => {
     });
     const { container } = render(<MessageBubble message={message} />);
     expect(container.textContent).toContain('Via email');
+  });
+
+  it('hides quoted email history until the visitor expands it', () => {
+    const message = createMessage({
+      role: 'agent',
+      viaChannel: 'email',
+      content: 'Legacy full email with Old quoted body',
+      emailVisibleText: 'Fresh email reply',
+      emailQuotedText: 'On Tuesday someone wrote:\n\nOld quoted body',
+      emailHasQuotedContent: true,
+      emailProjectionConfidence: 'high',
+      emailProjectionVersion: 1,
+    });
+
+    const { container, getByRole } = render(<MessageBubble message={message} />);
+    expect(container.textContent).toContain('Fresh email reply');
+    expect(container.textContent).not.toContain('Old quoted body');
+
+    fireEvent.click(getByRole('button', { name: 'Show previous messages' }));
+    expect(container.textContent).toContain('Old quoted body');
+    expect(getByRole('button', { name: 'Hide previous messages' })).toBeTruthy();
+  });
+
+  it('does not show a previous-messages toggle for explicit false or missing quote text', () => {
+    const explicitFalse = render(<MessageBubble message={createMessage({
+      viaChannel: 'email',
+      emailVisibleText: 'Only reply',
+      emailHasQuotedContent: false,
+      emailProjectionVersion: 1,
+    })} />);
+    expect(explicitFalse.queryByRole('button', { name: 'Show previous messages' })).toBeNull();
+
+    const missingText = render(<MessageBubble message={createMessage({
+      viaChannel: 'email',
+      emailVisibleText: 'Only reply',
+      emailHasQuotedContent: true,
+      emailQuotedText: '',
+      emailProjectionVersion: 1,
+    })} />);
+    expect(missingText.queryByRole('button', { name: 'Show previous messages' })).toBeNull();
+  });
+
+  it('keeps email attachments visible while quoted history is collapsed or expanded', () => {
+    const message = createMessage({
+      viaChannel: 'email',
+      emailVisibleText: 'See the files below',
+      emailQuotedText: 'Earlier email',
+      emailHasQuotedContent: true,
+      attachments: [
+        { id: 'image-1', fileKey: 'image-1', fileName: 'one.png', fileType: 'image/png', fileSize: 123, url: 'https://cdn.example.com/one.png' },
+        { id: 'image-2', fileKey: 'image-2', fileName: 'two.png', fileType: 'image/png', fileSize: 456, url: 'https://cdn.example.com/two.png' },
+        { id: 'file-1', fileKey: 'file-1', fileName: 'report.pdf', fileType: 'application/pdf', fileSize: 789, url: 'https://cdn.example.com/report.pdf' },
+      ],
+    });
+
+    const rendered = render(<MessageBubble message={message} />);
+    expect(rendered.getAllByRole('img')).toHaveLength(2);
+    expect(rendered.getByRole('link', { name: /report\.pdf/i })).toBeTruthy();
+
+    fireEvent.click(rendered.getByRole('button', { name: 'Show previous messages' }));
+    expect(rendered.getAllByRole('img')).toHaveLength(2);
+    expect(rendered.getByRole('link', { name: /report\.pdf/i })).toBeTruthy();
   });
 
   it('renders link previews for support messages', () => {
@@ -130,5 +233,14 @@ describe('MessageBubble', () => {
 
     const agentRender = render(<MessageBubble message={agentMessage} />);
     expect(agentRender.container.querySelector('.helpin-link-preview--outgoing')).toBeNull();
+  });
+
+  it('renders an empty streaming AI bubble with a live cursor', () => {
+    const message = createMessage({ role: 'ai', content: '', isStreaming: true });
+    const { container } = render(<MessageBubble message={message} />);
+
+    expect(container.querySelector('.helpin-message--streaming')).toBeTruthy();
+    expect(container.querySelector('.helpin-streaming-cursor')).toBeTruthy();
+    expect(container.querySelector('.helpin-message-bubble')).toBeTruthy();
   });
 });

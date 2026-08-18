@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -109,6 +111,7 @@ func (s *DocsChangeProposalService) Create(ctx context.Context, workspaceID stri
 		Revision:        req.Revision,
 		Summary:         summary,
 		ContentMarkdown: contentMarkdown,
+		BaseMarkdown:    s.baseMarkdownForProposal(ctx, workspaceID, documentID, scope, blockID),
 		Content:         append(json.RawMessage(nil), req.Content...),
 		Sources:         append(json.RawMessage(nil), sources...),
 		CreatedBy:       createdBy,
@@ -117,8 +120,60 @@ func (s *DocsChangeProposalService) Create(ctx context.Context, workspaceID stri
 	if err != nil {
 		return nil, err
 	}
+	// A pending AI proposal is a meaningful document activity. Keep the parent
+	// document in the Recent docs ordering even though its published content
+	// has not changed yet.
+	if err := s.docRepo.UpdateFields(ctx, documentID, map[string]interface{}{"updated_at": time.Now().UTC()}); err != nil {
+		slog.WarnContext(ctx, "refresh document recency after change proposal", "error", err, "document_id", documentID)
+	}
 	s.publishProposalEvent("created", created, createdBy)
 	return created, nil
+}
+
+// baseMarkdownForProposal captures the content the proposal replaces, rendered
+// as markdown, so reviewers get a like-for-like diff against the proposed
+// markdown. Failures are non-fatal — the proposal is valid without a base.
+func (s *DocsChangeProposalService) baseMarkdownForProposal(ctx context.Context, workspaceID, documentID, scope string, blockID *string) string {
+	switch scope {
+	case "block":
+		if s.blockSvc == nil || blockID == nil {
+			return ""
+		}
+		blocks, err := s.blockSvc.List(ctx, workspaceID, documentID)
+		if err != nil {
+			return ""
+		}
+		for i := range blocks {
+			if blocks[i].ID != *blockID {
+				continue
+			}
+			return docsMarkdownFromTiptap(json.RawMessage(`{"type":"doc","content":[`+string(blocks[i].Content)+`]}`), blocks[i].ContentText)
+		}
+	case "document":
+		if s.contentSvc == nil {
+			return ""
+		}
+		content, err := s.contentSvc.Get(ctx, documentID)
+		if err != nil || content == nil {
+			return ""
+		}
+		return docsMarkdownFromTiptap(content.Content, content.ContentText)
+	}
+	return ""
+}
+
+// docsMarkdownFromTiptap converts a TipTap document to markdown, falling back
+// to the derived plain text when conversion does not produce markdown.
+func docsMarkdownFromTiptap(content json.RawMessage, fallbackText string) string {
+	raw := strings.TrimSpace(string(content))
+	if raw == "" {
+		return strings.TrimSpace(fallbackText)
+	}
+	markdown := tiptap.RichTextToMarkdown(raw)
+	if markdown == raw {
+		return strings.TrimSpace(fallbackText)
+	}
+	return markdown
 }
 
 func (s *DocsChangeProposalService) ListPending(ctx context.Context, workspaceID, documentID string) ([]model.DocsChangeProposal, error) {

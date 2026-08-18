@@ -91,7 +91,7 @@ export function CommentSideGutter({
 
   const findBlockEl = useCallback(
     (entry: CommentWithAuthor): HTMLElement | null => {
-      if (!editor) return null
+      if (!editor || editor.isDestroyed) return null
       const blockId = entry.comment.block_id
       if (!blockId) return null
       return editor.view.dom.querySelector<HTMLElement>(`[data-block-id="${CSS.escape(blockId)}"]`)
@@ -100,7 +100,7 @@ export function CommentSideGutter({
   )
 
   const recompute = useCallback(() => {
-    if (!editor) return
+    if (!editor || editor.isDestroyed) return
     const wrapper = containerRef.current?.parentElement as HTMLElement | null
     if (!wrapper) return
     const wrapperRect = wrapper.getBoundingClientRect()
@@ -149,7 +149,7 @@ export function CommentSideGutter({
   }, [editor, threads, findBlockEl, composingAnchor])
 
   useEffect(() => {
-    if (!editor) return
+    if (!editor || editor.isDestroyed) return
     let pending = false
     const schedule = () => {
       if (pending) return

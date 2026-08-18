@@ -490,3 +490,44 @@ func TestDocsHelpcenterPublicLocale_SearchOnlyReturnsRequestedLocale(t *testing.
 		t.Fatalf("body = %s, want no English translation results", rec.Body.String())
 	}
 }
+
+func TestDocsHelpcenterPublicBootstrap_ReturnsLocaleConfigAndSpaces(t *testing.T) {
+	t.Parallel()
+
+	db := setupDocsHelpcenterTranslationHandlerTestDB(t)
+	now := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+	seedDocsHelpcenterTranslationHandlerFixture(t, db, now)
+	h := newDocsHelpcenterPublicHandlerForTest(db)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/hc/handler-i18n/bootstrap?path=%2Ffr%2Farticles%2Fbonjour-a1b2c3d4",
+		nil,
+	)
+	req = withWorkspaceAndRoute(req, "ws-handler-i18n", map[string]string{
+		"subdomain": "handler-i18n",
+	})
+	rec := httptest.NewRecorder()
+
+	h.PublicGetBootstrap(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var response publicHelpcenterBootstrapResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal bootstrap: %v, body = %s", err, rec.Body.String())
+	}
+	if response.Locale != "fr" {
+		t.Fatalf("locale = %q, want fr", response.Locale)
+	}
+	if response.Config.DocsHelpcenterConfig == nil {
+		t.Fatal("config is nil")
+	}
+	if len(response.Spaces) == 0 {
+		t.Fatal("spaces are empty")
+	}
+	if cacheControl := rec.Header().Get("Cache-Control"); cacheControl == "" {
+		t.Fatal("Cache-Control header is empty")
+	}
+}

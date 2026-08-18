@@ -120,6 +120,11 @@ describe('CodingInteractionCard', () => {
     expect(findButton('Approve selected')).toBeUndefined();
     expect(findButton('Approve')).toBeTruthy();
     expect(findButton('Approve')?.hasAttribute('disabled')).toBe(true);
+    const shell = container.querySelector<HTMLElement>('[data-coding-session-interaction-shell]');
+    expect(shell?.className).toContain('border-y');
+    expect(shell?.className).not.toContain('rounded-xl');
+    expect(container.querySelector('[data-coding-session-review-overview]')?.className).not.toContain('rounded-lg');
+    expect(container.querySelectorAll('[data-coding-session-review-finding]')).toHaveLength(2);
 
     const checkboxes = Array.from(container.querySelectorAll('[data-slot="checkbox"]'));
     expect(checkboxes).toHaveLength(3);
@@ -322,14 +327,23 @@ describe('CodingInteractionCard', () => {
     expect(container.textContent).toContain('All HTTP 3xx (Recommended)');
     expect(container.textContent).not.toContain('"questions"');
     expect(container.textContent).not.toContain('"metric_scope"');
+    expect(container.textContent).toContain('Needs your input');
+    expect(container.textContent).not.toContain('User input required');
+
+    const question = container.querySelector<HTMLElement>('[data-coding-session-question]');
+    expect(question?.className).not.toContain('rounded-lg');
+    expect(question?.className).not.toContain('bg-muted/25');
 
     const option = Array.from(container.querySelectorAll('button')).find((candidate) => (
       candidate.textContent?.includes('All HTTP 3xx (Recommended)')
     ));
     expect(option).toBeTruthy();
+    expect(option?.hasAttribute('aria-pressed')).toBe(true);
+    expect(option?.className).not.toContain('border');
     act(() => {
       option!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
+    expect(option?.getAttribute('aria-pressed')).toBe('true');
     clickButton('Submit answers');
 
     expect(onResolve).toHaveBeenCalledWith(
@@ -380,7 +394,9 @@ describe('CodingInteractionCard', () => {
       compact: true,
     });
 
-    expect(container.firstElementChild?.className).toContain('border-amber-400/60');
+    expect(container.firstElementChild?.className).toContain('border-amber-400/40');
+    expect(container.firstElementChild?.className).toContain('border-y');
+    expect(container.firstElementChild?.className).not.toContain('rounded-xl');
     expect(container.firstElementChild?.className).not.toContain('border-l-2');
     expect(container.textContent).not.toContain('task_doc approval');
     expect(container.textContent).not.toContain('Review the proposed task document.');
@@ -431,6 +447,51 @@ describe('CodingInteractionCard', () => {
     expect(container.textContent).toContain('Plan summary');
     expect(container.textContent).toContain('Ship faster');
     expect(container.textContent).not.toContain('"proposed_tasks"');
+  });
+
+  it('surfaces the runtime summary (e.g. codex command) on approvals without a preview', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Codex needs approval',
+      summary: 'Command: rm -rf ./dist\nWorking directory: /repo\nReason: clean build output',
+      request_payload: {
+        command: 'rm -rf ./dist',
+        cwd: '/repo',
+      },
+    }));
+
+    // The reviewer must see WHAT is being approved, not just the title.
+    expect(container.textContent).toContain('What the agent wants to do');
+    expect(container.textContent).toContain('Command: rm -rf ./dist');
+    expect(container.textContent).toContain('Working directory: /repo');
+    expect(container.textContent).toContain('Reason: clean build output');
+    const approvalContext = container.querySelector<HTMLElement>('[data-coding-session-approval-context]');
+    expect(approvalContext?.className).toContain('border-y');
+    expect(approvalContext?.className).not.toContain('rounded-lg');
+    expect(approvalContext?.className).not.toContain('bg-muted/25');
+  });
+
+  it('does not duplicate the summary when a document preview already represents the request', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve planning document',
+      summary: 'Review the proposed task document.',
+      request_payload: { phase: 'task_doc', preview_panel_key: 'task_plan_doc', title: 'Approve planning document' },
+    }), {
+      attachedPreview: {
+        panelKey: 'task_plan_doc',
+        title: 'Task Planning Document',
+        format: 'markdown',
+        content: '# Outcome\nShort plan.',
+        replace: true,
+        surroundingText: '',
+      },
+    });
+
+    expect(container.textContent).not.toContain('What the agent wants to do');
+    expect(container.textContent).not.toContain('Review the proposed task document.');
   });
 
   it('labels approve as approve with note and sends the note with an approval decision', () => {

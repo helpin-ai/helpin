@@ -11,18 +11,19 @@ const (
 
 // Workspace represents a row in the workspaces table.
 type Workspace struct {
-	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	Name           string    `json:"name" gorm:"not null"`
-	Slug           string    `json:"slug" gorm:"uniqueIndex;not null"`
-	WorkspaceKey   string    `json:"workspace_key" gorm:"type:varchar(5);uniqueIndex:idx_ws_key_org"`
-	OwnerID        string    `json:"owner_id" gorm:"type:uuid;not null"`
-	OrganizationID *string   `json:"organization_id" gorm:"type:uuid;uniqueIndex:idx_ws_key_org"`
-	Description    *string   `json:"description"`
-	WebsiteURL     *string   `json:"website_url"`
-	LogoURL        *string   `json:"logo_url"`
-	Timezone       string    `json:"timezone" gorm:"not null;default:'UTC'"`
-	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt      time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                    string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	Name                  string    `json:"name" gorm:"not null"`
+	Slug                  string    `json:"slug" gorm:"uniqueIndex;not null"`
+	WorkspaceKey          string    `json:"workspace_key" gorm:"type:varchar(5);uniqueIndex:idx_ws_key_org"`
+	OwnerID               string    `json:"owner_id" gorm:"type:uuid;not null"`
+	OrganizationID        *string   `json:"organization_id" gorm:"type:uuid;uniqueIndex:idx_ws_key_org"`
+	Description           *string   `json:"description"`
+	CompanyProductContext *string   `json:"company_product_context"`
+	WebsiteURL            *string   `json:"website_url"`
+	LogoURL               *string   `json:"logo_url"`
+	Timezone              string    `json:"timezone" gorm:"not null;default:'UTC'"`
+	CreatedAt             time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt             time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (Workspace) TableName() string { return "workspaces" }
@@ -128,23 +129,39 @@ type WorkspaceMFAPolicy struct {
 
 // CreateWorkspaceRequest is the payload for POST /api/workspaces.
 type CreateWorkspaceRequest struct {
-	Name           string  `json:"name"`
-	Slug           string  `json:"slug"`
-	WorkspaceKey   string  `json:"workspace_key"`
-	OrganizationID string  `json:"organization_id"`
-	Description    *string `json:"description"`
-	WebsiteURL     *string `json:"website_url"`
-	Timezone       string  `json:"timezone"`
+	Name                  string   `json:"name"`
+	Slug                  string   `json:"slug"`
+	WorkspaceKey          string   `json:"workspace_key"`
+	OrganizationID        string   `json:"organization_id"`
+	Description           *string  `json:"description"`
+	CompanyProductContext *string  `json:"company_product_context"`
+	WebsiteURL            *string  `json:"website_url"`
+	Timezone              string   `json:"timezone"`
+	SetupGoals            []string `json:"setup_goals,omitempty"`
+}
+
+// GenerateWorkspaceContextDescriptionRequest asks Helpin to draft company/product context.
+type GenerateWorkspaceContextDescriptionRequest struct {
+	WorkspaceName string `json:"workspace_name"`
+	WebsiteURL    string `json:"website_url"`
+	WorkspaceID   string `json:"workspace_id,omitempty"`
+}
+
+// GenerateWorkspaceContextDescriptionResponse returns an editable markdown draft.
+type GenerateWorkspaceContextDescriptionResponse struct {
+	Description           string `json:"description"`
+	CompanyProductContext string `json:"company_product_context"`
 }
 
 // UpdateWorkspaceRequest is the payload for PUT /api/workspaces/{id}.
 type UpdateWorkspaceRequest struct {
-	Name         *string `json:"name"`
-	Description  *string `json:"description"`
-	WebsiteURL   *string `json:"website_url"`
-	LogoURL      *string `json:"logo_url"`
-	Timezone     *string `json:"timezone"`
-	WorkspaceKey *string `json:"workspace_key,omitempty"`
+	Name                  *string `json:"name"`
+	Description           *string `json:"description"`
+	CompanyProductContext *string `json:"company_product_context"`
+	WebsiteURL            *string `json:"website_url"`
+	LogoURL               *string `json:"logo_url"`
+	Timezone              *string `json:"timezone"`
+	WorkspaceKey          *string `json:"workspace_key,omitempty"`
 }
 
 // WorkspaceKeyHistory tracks workspace key changes for alias resolution.

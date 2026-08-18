@@ -6,8 +6,7 @@ import {
   helpCenterConfigQueryOptions,
   spacesQueryOptions,
 } from '@/hooks/queries'
-import { prefetchCollectionRouteData, prefetchHomeRouteData } from '@/lib/routeData'
-import { queryKeys } from '@/lib/queryKeys'
+import { prefetchCollectionRouteData } from '@/lib/routeData'
 import type { RootRouteData } from '@/lib/rootLoader'
 import type { CollectionPage, HelpCenterConfig, NavItem, Space } from '@/lib/types'
 
@@ -189,15 +188,10 @@ describe('hosted help-center mock server integration', () => {
       subdomain: 'replug',
     }
 
-    await prefetchHomeRouteData(queryClient, rootData)
     const collection = await prefetchCollectionRouteData(
       queryClient,
       rootData,
       'brands',
-    )
-
-    const cachedNavigation = queryClient.getQueryData<NavItem[]>(
-      queryKeys.spaces.navigation('replug', 'en', 'help-center'),
     )
 
     expect(config.brand_name).toBe('Replug')
@@ -205,8 +199,6 @@ describe('hosted help-center mock server integration', () => {
       'help-center',
       'developer-api-docs',
     ])
-    expect(cachedNavigation?.[0]?.slug).toBe('brands')
-    expect(cachedNavigation?.[0]?.articles).toHaveLength(2)
     expect(collection?.space_slug).toBe('help-center')
     expect(collection?.articles).toHaveLength(2)
     expect(collection?.articles.map((article) => article.slug)).toEqual([
@@ -217,9 +209,7 @@ describe('hosted help-center mock server integration', () => {
     expect(requests).toEqual([
       '/api/hc/replug/config',
       '/api/hc/replug/spaces',
-      '/api/hc/replug/spaces/help-center/navigation',
       '/api/hc/replug/c/brands',
-      '/api/hc/replug/spaces/help-center/navigation',
     ])
   })
 })

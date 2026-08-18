@@ -5,6 +5,7 @@ metadata:
   title: API Reference Doc Writing
   supported_runtimes:
     - native_sdk
+    - codex
 ---
 
 Use this skill when creating new API documentation.

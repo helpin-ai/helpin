@@ -303,6 +303,9 @@ func GetDefaultBlockedRecordPrefixes() []string {
 
 // ShouldFilterEmail checks whether an email address should be filtered based on sync settings.
 func ShouldFilterEmail(settings *CRMEmailSyncSettings, emailAddr string) bool {
+	if settings == nil {
+		return false
+	}
 	emailAddr = strings.ToLower(strings.TrimSpace(emailAddr))
 	if emailAddr == "" {
 		return false
@@ -320,6 +323,50 @@ func ShouldFilterEmail(settings *CRMEmailSyncSettings, emailAddr string) bool {
 	}
 	// allowlist mode: filter if NOT matched
 	return !matched
+}
+
+// ShouldFilterEmailParticipants applies the configured address filter to all
+// external participants in a conversation. Blocklist mode excludes a message
+// when any external participant matches; allowlist mode includes a message
+// when at least one external participant matches.
+func ShouldFilterEmailParticipants(settings *CRMEmailSyncSettings, accountEmail, fromAddr string, toAddrs, ccAddrs []string) bool {
+	if settings == nil {
+		return false
+	}
+	self := strings.ToLower(strings.TrimSpace(accountEmail))
+	participants := make([]string, 0, 1+len(toAddrs)+len(ccAddrs))
+	participants = append(participants, fromAddr)
+	participants = append(participants, toAddrs...)
+	participants = append(participants, ccAddrs...)
+
+	var patterns []string
+	if err := json.Unmarshal(settings.FilterPatterns, &patterns); err != nil {
+		return false
+	}
+	matched := false
+	seenExternal := false
+	seen := make(map[string]struct{}, len(participants))
+	for _, participant := range participants {
+		emailAddr := strings.ToLower(strings.TrimSpace(participant))
+		if emailAddr == "" || emailAddr == self {
+			continue
+		}
+		if _, exists := seen[emailAddr]; exists {
+			continue
+		}
+		seen[emailAddr] = struct{}{}
+		seenExternal = true
+		if matchesAnyPattern(emailAddr, patterns) {
+			matched = true
+			if settings.FilterMode == "blocklist" {
+				return true
+			}
+		}
+	}
+	if settings.FilterMode == "allowlist" {
+		return !seenExternal || !matched
+	}
+	return false
 }
 
 // matchesAnyPattern checks if an email matches any of the given glob-like patterns.

@@ -73,6 +73,12 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
+	if epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if err := requireTeamAccess(ctx, epic.TeamID); err != nil {
+		return nil, fmt.Errorf("epic not found")
+	}
 	if epic.SpecDocumentID == nil || strings.TrimSpace(*epic.SpecDocumentID) == "" {
 		return nil, fmt.Errorf("epic does not have a product spec document yet")
 	}
@@ -202,6 +208,12 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
+	if epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if err := requireTeamAccess(ctx, epic.TeamID); err != nil {
+		return nil, fmt.Errorf("epic not found")
+	}
 	teamID, err := plannerTaskTeamID(epic)
 	if err != nil {
 		return nil, err
@@ -433,7 +445,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 
 	summary := fmt.Sprintf("Created %d tasks from the approved plan.", len(created))
 	_ = s.saveArtifact(ctx, run, "handoff_note", "markdown", summary, 999998)
-	_ = s.runEngine.SignalApprove(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
+	s.approveRuntimeRunBestEffort(ctx, run, actorID)
 	s.publishRunEvent(run, actorID)
 
 	return created, nil
@@ -460,6 +472,12 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := &epicWithStats.Epic
+	if epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if err := requireTeamAccess(ctx, epic.TeamID); err != nil {
+		return nil, fmt.Errorf("epic not found")
+	}
 	teamID, err := plannerTaskTeamID(epic)
 	if err != nil {
 		return nil, err
@@ -609,6 +627,9 @@ func (s *AgentService) ensureEpicSpecDocument(ctx context.Context, workspaceID s
 			return nil, err
 		}
 		if doc != nil {
+			if err := s.ensureEpicSpecLink(ctx, workspaceID, doc.ID, epic.ID, actorID); err != nil {
+				return nil, err
+			}
 			return doc, nil
 		}
 	}
@@ -823,9 +844,32 @@ func (s *AgentService) approveActiveEpicPlanningRun(ctx context.Context, workspa
 	if err := s.runRepo.Update(ctx, activeRun); err != nil {
 		return err
 	}
-	_ = s.runEngine.SignalApprove(ctx, derefString(activeRun.WorkflowID), derefString(activeRun.WorkflowRunID))
+	s.approveRuntimeRunBestEffort(ctx, activeRun, actorID)
 	s.publishRunEvent(activeRun, actorID)
 	return nil
+}
+
+// approveRuntimeRunBestEffort notifies the agent runtime that a paused
+// delegated run was approved host-side. Best-effort: the run row is already
+// stamped completed locally, and the projection's terminal transition is
+// idempotent over an already-terminal row. Runs without a runtime mapping
+// (legacy local rows) have no executor to notify.
+func (s *AgentService) approveRuntimeRunBestEffort(ctx context.Context, run *model.AgentRun, actorID string) {
+	runtimeRunID, ok := agentRuntimeRunID(run)
+	if !ok || s.agentRuntimeClient == nil {
+		return
+	}
+	if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
+		Intent:          model.AgentRunResumeIntentApprove,
+		ExternalActorID: actorID,
+	}); err != nil {
+		slog.WarnContext(ctx, "agent runtime approve notification failed",
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"runtime_run_id", runtimeRunID,
+			"error", err,
+		)
+	}
 }
 
 func loadPlanningTasksByID(ctx context.Context, taskRepo interface {

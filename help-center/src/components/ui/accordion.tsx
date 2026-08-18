@@ -32,7 +32,7 @@ function AccordionTrigger({
   showChevron?: boolean
 }) {
   return (
-    <AccordionPrimitive.Header className="flex">
+    <AccordionPrimitive.Header className="flex min-w-0">
       <AccordionPrimitive.Trigger
         data-slot="accordion-trigger"
         className={cn(

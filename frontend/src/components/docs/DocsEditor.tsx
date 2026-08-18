@@ -42,6 +42,7 @@ import { BlockIdExtension } from './BlockIdExtension'
 import { SlashMenu } from './SlashMenu'
 import { CalloutExtension } from './CalloutExtension'
 import { VideoEmbedExtension } from './VideoEmbedExtension'
+import { ArtifactVideoExtension } from './ArtifactVideoExtension'
 import { HtmlBlockExtension } from './HtmlBlockExtension'
 import { ExcalidrawExtension } from './ExcalidrawExtension'
 import { CodeBlockExtension } from '@/components/editor/CodeBlockExtension'
@@ -51,6 +52,7 @@ import { EntityEmbedExtension, type DocsEntityEmbedType, type EntityEmbedAttrs }
 import { EntityMentionExtension } from './EntityMentionExtension'
 import { SavedViewEmbedExtension } from './SavedViewEmbedExtension'
 import { CommentAnchorExtension, type DocsCommentDecorationAnchor } from './CommentAnchorExtension'
+import { ProposalAnchorExtension } from './ProposalAnchorExtension'
 import { DocsTaskItemExtension } from './DocsTaskItemExtension'
 import { TaskItemMetadataToolbar } from './TaskItemMetadataToolbar'
 import { ToggleSectionExtension } from './ToggleSectionExtension'
@@ -98,6 +100,7 @@ import { Button } from '@/components/ui/button'
 import { SlugDisplay } from './SlugDisplay'
 import { toast } from 'sonner'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
+import { repairTiptapDocument } from '@/lib/tiptapContentRepair'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 
@@ -802,6 +805,8 @@ interface DocsEditorProps {
   slugHelperText?: string
   initialContent?: JSONContent | null
   onSave: (content: JSONContent) => Promise<void>
+  onRepairInvalidContent?: (content: JSONContent) => Promise<void>
+  repairCreatesRecoveryVersion?: boolean
   autoSaveMs?: number
   readOnly?: boolean
   uploadConfig?: EditorUploadConfig
@@ -829,6 +834,8 @@ export function DocsEditor({
   slug,
   initialContent,
   onSave,
+  onRepairInvalidContent,
+  repairCreatesRecoveryVersion = false,
   autoSaveMs = 2000,
   readOnly = false,
   uploadConfig,
@@ -866,6 +873,14 @@ export function DocsEditor({
     initialContent ? JSON.stringify(initialContent) : null,
   )
   const editorReadyRef = useRef(false)
+  // Set when TipTap cannot parse the stored document into its schema. The
+  // editor then holds a degraded (often empty) doc, so autosaving it would
+  // overwrite the real content with the damage. Saves stay blocked until the
+  // document is reloaded with content that parses.
+  const contentErrorRef = useRef(false)
+  const [contentError, setContentError] = useState<string | null>(null)
+  const [repairingContent, setRepairingContent] = useState(false)
+  const [contentRepairError, setContentRepairError] = useState<string | null>(null)
   const pendingPresenceClearRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const lastEditingPresenceRef = useRef<string | null>(null)
   const editorRef = useRef<ReturnType<typeof useEditor>>(null)
@@ -907,6 +922,7 @@ export function DocsEditor({
 
   const doSave = useCallback(
     async (json: JSONContent) => {
+      if (contentErrorRef.current) return
       const snapshot = JSON.stringify(json)
       if (lastSavedSnapshotRef.current === snapshot) {
         setSaveStatus('idle')
@@ -942,6 +958,7 @@ export function DocsEditor({
 
   const scheduleSave = useCallback(
     (json: JSONContent) => {
+      if (contentErrorRef.current) return
       setSaveStatus('unsaved')
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       saveTimerRef.current = setTimeout(() => doSave(json), autoSaveMs)
@@ -1357,7 +1374,12 @@ export function DocsEditor({
         transformPastedText: true,
         transformCopiedText: false, // Don't force clipboard to markdown — we have explicit "Copy as Markdown"
       }),
-      ResizableImageExtension,
+      ResizableImageExtension.configure({
+        workspaceId,
+        documentId,
+        uploadConfig,
+        onImmediateSave: saveImmediately,
+      }),
       Table.configure({ resizable: true }),
       TableRow,
       TableHeader,
@@ -1372,6 +1394,7 @@ export function DocsEditor({
       SlashMenuExtension,
       CalloutExtension,
       VideoEmbedExtension,
+      ArtifactVideoExtension.configure({ workspaceId }),
       HtmlBlockExtension,
       ExcalidrawExtension.configure({
         onImmediateSave: saveImmediately,
@@ -1384,6 +1407,7 @@ export function DocsEditor({
       CommentAnchorExtension.configure({
         onOpenComment: (commentId) => onOpenCommentRef.current?.(commentId),
       }),
+      ProposalAnchorExtension,
       ToggleSectionExtension,
       FileAttachmentExtension,
       TableOfContentsExtension,
@@ -1523,12 +1547,24 @@ export function DocsEditor({
       // Use requestAnimationFrame to ensure all mount-time updates have settled
       requestAnimationFrame(() => { editorReadyRef.current = true })
     },
+    // Surface unparseable stored content instead of silently loading a
+    // degraded document and letting autosave persist the loss.
+    enableContentCheck: true,
+    onContentError: ({ error }) => {
+      contentErrorRef.current = true
+      setContentRepairError(null)
+      setContentError(error instanceof Error ? error.message : String(error))
+    },
   })
 
   editorRef.current = editor
 
+  // Publish the instance upward, and retract it on unmount. Without the
+  // cleanup the parent keeps a destroyed editor, and anything that remounts
+  // against it (gutters, hover affordances) touches editor.view and throws.
   useEffect(() => {
     onEditorReady?.(editor)
+    return () => onEditorReady?.(null)
   }, [editor, onEditorReady])
 
   useEffect(() => {
@@ -1545,12 +1581,14 @@ export function DocsEditor({
     editor.commands.setCommentAnchors(anchors as DocsCommentDecorationAnchor[])
   }, [commentAnchors, editor])
 
-  // Sync editable state when readOnly prop changes (e.g. after unlock)
+  // Sync editable state when readOnly prop changes (e.g. after unlock).
+  // A content error also locks editing: the loaded document is not what is
+  // stored, so edits on top of it would compound the damage.
   useEffect(() => {
     if (editor) {
-      editor.setEditable(!readOnly)
+      editor.setEditable(!readOnly && !contentError)
     }
-  }, [editor, readOnly])
+  }, [contentError, editor, readOnly])
 
   // Update content if initial content changes AFTER mount (e.g. after revert).
   // Skip the first run — useEditor already sets initial content on mount.
@@ -1564,6 +1602,15 @@ export function DocsEditor({
     const currentJson = JSON.stringify(editor.getJSON())
     const newJson = JSON.stringify(initialContent)
     if (currentJson !== newJson) {
+      // Give the incoming document a clean slate; onContentError re-flags it
+      // if this content does not parse either.
+      contentErrorRef.current = false
+      setContentError(null)
+      // Drop any queued save: it holds the pre-update document, and letting it
+      // land would overwrite the content that just arrived (for example an
+      // applied change proposal) a couple of seconds later.
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      pendingContentRef.current = null
       skipNextSaveRef.current = true
       const { from, to } = editor.state.selection
       const wasFocused = editor.isFocused
@@ -1579,6 +1626,43 @@ export function DocsEditor({
       setSaveStatus('idle')
     }
   }, [editor, initialContent])
+
+  const repairInvalidContent = useCallback(async () => {
+    if (!editor || !initialContent || !onRepairInvalidContent || repairingContent) return
+
+    setRepairingContent(true)
+    setContentRepairError(null)
+    try {
+      const repaired = repairTiptapDocument(initialContent)
+
+      // Validate with the exact schema used by this editor before any network
+      // write. If a future node shape is not covered, keep the original locked
+      // instead of making a lossy guess.
+      const repairedNode = editor.schema.nodeFromJSON(repaired)
+      repairedNode.check()
+
+      await onRepairInvalidContent(repaired)
+
+      editor.commands.setContent(repaired, {
+        emitUpdate: false,
+        errorOnInvalidContent: true,
+      })
+      contentErrorRef.current = false
+      setContentError(null)
+      lastSavedSnapshotRef.current = JSON.stringify(repaired)
+      const savedAt = new Date()
+      setLastSavedAt(savedAt)
+      setSaveStatus('saved')
+    } catch (error) {
+      setContentRepairError(
+        error instanceof Error
+          ? error.message
+          : 'Automatic repair could not safely normalize this document.',
+      )
+    } finally {
+      setRepairingContent(false)
+    }
+  }, [editor, initialContent, onRepairInvalidContent, repairingContent])
 
   const insertImage = useCallback(() => {
     if (!editor) return
@@ -1811,7 +1895,7 @@ img { max-width: 100%; }
       )}
 
       {/* Editor content with title */}
-      <div className={`relative min-h-0 flex-1 docs-editor-wrapper ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'} ${hasSideComments ? 'has-side-comments' : ''}`}>
+      <div className={`relative min-h-0 flex-1 docs-editor-wrapper [overflow-anchor:none] [scrollbar-gutter:stable] ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'} ${hasSideComments ? 'has-side-comments' : ''}`}>
         {generatingOverlay && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground mb-3" />
@@ -1837,6 +1921,42 @@ img { max-width: 100%; }
         )}
 
         {topBanner}
+
+        {contentError && (
+          <div className="border-b border-destructive/30 bg-destructive/10 px-6 py-3 text-sm text-destructive">
+            <p className="font-medium">This document could not be loaded correctly.</p>
+            <p className="mt-1 text-destructive/90">
+              Its stored content is not valid document data, so what you see below is incomplete.
+              Editing and autosave are disabled to protect the original.
+            </p>
+            <p className="mt-1 font-mono text-xs text-destructive/70">{contentError}</p>
+            {contentRepairError && (
+              <p className="mt-2 text-xs text-destructive">Repair failed: {contentRepairError}</p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {onRepairInvalidContent && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-destructive/40 bg-background text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={repairingContent}
+                  onClick={() => void repairInvalidContent()}
+                >
+                  {repairingContent && <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                  {repairingContent ? 'Repairing…' : 'Repair document'}
+                </Button>
+              )}
+              <p className="text-xs text-destructive/80">
+                {onRepairInvalidContent
+                  ? repairCreatesRecoveryVersion
+                    ? 'A recovery version of the original will be saved first.'
+                    : 'Visible text and media will be preserved before the repair is saved.'
+                  : 'Restore an earlier version from the history panel to recover it.'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {sourceView ? (
           /* Source view — full width, fills remaining height */

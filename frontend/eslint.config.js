@@ -20,4 +20,24 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // The annotator core must stay free of Helpin-specific imports so it can be lifted into
+    // `packages/image-annotator` as a directory move when a second consumer appears.
+    // Helpin-specific chrome belongs in `annotator/integration/`.
+    files: ['src/components/docs/annotator/core/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/*'],
+              message:
+                'annotator/core must not import Helpin code — put app-specific pieces in annotator/integration/.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])

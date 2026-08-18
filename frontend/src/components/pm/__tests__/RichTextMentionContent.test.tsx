@@ -1,13 +1,69 @@
 // @vitest-environment jsdom
 import { createRoot } from 'react-dom/client'
-import { act } from 'react'
-import { describe, expect, it } from 'vitest'
+import { act, createElement } from 'react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { RichTextMentionContent } from '../RichTextMentionContent'
+
+vi.mock('@/components/editor/MermaidBlock', () => ({
+  MermaidBlock: ({ source }: { source: string }) => createElement('div', {
+    'data-testid': 'saved-mermaid-diagram',
+    'data-source': source,
+  }),
+}));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('RichTextMentionContent', () => {
+  it('applies the shared compact PM rich-text variant', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <RichTextMentionContent
+          html="<p>Shared typography</p>"
+          variant="pm"
+          className="custom-content-class"
+        />,
+      )
+    })
+
+    const content = container.querySelector('.tiptap')
+    expect(content?.classList.contains('pm-rich-text')).toBe(true)
+    expect(content?.classList.contains('prose')).toBe(true)
+    expect(content?.classList.contains('custom-content-class')).toBe(true)
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('renders a saved Mermaid code block as a diagram', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <RichTextMentionContent
+          html={'<pre><code class="language-mermaid">graph TD\nA--&gt;B</code></pre>'}
+        />,
+      )
+    })
+
+    const diagram = container.querySelector('[data-testid="saved-mermaid-diagram"]')
+    expect(diagram?.getAttribute('data-source')).toBe('graph TD\nA-->B')
+    expect(container.querySelector('pre')).toBeNull()
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
   it('renders team and person mentions inside rich text html without losing markup structure', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

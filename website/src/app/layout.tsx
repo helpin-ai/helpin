@@ -1,8 +1,9 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
 import { Plus_Jakarta_Sans, Instrument_Serif } from 'next/font/google';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
+import { createPageMetadata, PAGE_SEO, SITE_URL } from '@/lib/metadata';
 import './globals.css';
 
 const jakarta = Plus_Jakarta_Sans({
@@ -20,37 +21,26 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: 'Helpin — The AI Operating System for Modern Work',
-  description:
-    'Helpin brings project management, support, sales, and docs into one connected system. AI agents plan, build, triage, and follow up — so your team moves faster without the chaos.',
-  metadataBase: new URL('https://helpin.ai'),
-  openGraph: {
-    title: 'Helpin — The AI Operating System for Modern Work',
-    description:
-      'One connected system for PM, support, sales, and docs. AI agents that actually do the work.',
-    url: 'https://helpin.ai',
-    siteName: 'Helpin',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Helpin — The AI Operating System for Modern Work',
-    description:
-      'One connected system for PM, support, sales, and docs. AI agents that actually do the work.',
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
+  ...createPageMetadata(PAGE_SEO.home),
+  applicationName: 'Helpin',
+  metadataBase: new URL(SITE_URL),
   icons: {
     icon: [
-      { url: '/favicon.ico', sizes: 'any' },
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon-96x96.png', type: 'image/png', sizes: '96x96' },
+      { url: '/favicon.ico?v=20260804-4', sizes: 'any' },
+      { url: '/favicon.svg?v=20260804-4', type: 'image/svg+xml', media: '(prefers-color-scheme: light)' },
+      { url: '/favicon-dark.svg?v=20260804-4', type: 'image/svg+xml', media: '(prefers-color-scheme: dark)' },
+      { url: '/favicon-32x32.png?v=20260804-4', type: 'image/png', sizes: '32x32', media: '(prefers-color-scheme: light)' },
+      { url: '/favicon-32x32-dark.png?v=20260804-4', type: 'image/png', sizes: '32x32', media: '(prefers-color-scheme: dark)' },
+      { url: '/favicon-16x16.png?v=20260804-4', type: 'image/png', sizes: '16x16', media: '(prefers-color-scheme: light)' },
+      { url: '/favicon-16x16-dark.png?v=20260804-4', type: 'image/png', sizes: '16x16', media: '(prefers-color-scheme: dark)' },
     ],
-    apple: '/apple-touch-icon.png',
+    apple: '/apple-touch-icon.png?v=20260804',
   },
-  manifest: '/site.webmanifest',
+  manifest: '/site.webmanifest?v=20260804',
+};
+
+export const viewport: Viewport = {
+  themeColor: '#1E1C1A',
 };
 
 export default function RootLayout({
@@ -80,20 +70,31 @@ export default function RootLayout({
         `}</Script>
 
         {/* Customer.io */}
-        <Script id="cio-init" strategy="afterInteractive">{`
-          var _cio = _cio || [];
-          (function(){
-            var a,b,c;a=function(f){return function(){_cio.push([f].concat(Array.prototype.slice.call(arguments,0)))}};b=["load","identify","sidentify","track","page"];for(c=0;c<b.length;c++){_cio[b[c]]=a(b[c])};
-          })();
+        <Script id="cio-tracker" strategy="afterInteractive">{`
+          !function(){
+            var i,o,a=window.analytics=window.analytics||[];
+            if(!a.initialize)if(a.invoked)window.console&&console.error&&console.error("Customer.io snippet included twice.");
+            else{
+              a.invoked=!0;
+              a.methods=["trackSubmit","trackClick","trackLink","trackForm","pageview","identify","reset","group","track","ready","alias","debug","page","once","off","on","addSourceMiddleware","addIntegrationMiddleware","setAnonymousId","addDestinationMiddleware"];
+              a.factory=function(i){return function(){var o=Array.prototype.slice.call(arguments);return o.unshift(i),a.push(o),a}};
+              for(i=0;i<a.methods.length;i++)o=a.methods[i],a[o]=a.factory(o);
+              a.load=function(i,o){
+                var n,t=document.createElement("script");
+                t.type="text/javascript";
+                t.async=!0;
+                t.src="https://cdp.customer.io/v1/analytics-js/snippet/"+i+"/analytics.min.js";
+                n=document.getElementsByTagName("script")[0];
+                n.parentNode.insertBefore(t,n);
+                a._writeKey=i;
+                a._loadOptions=o;
+              };
+              a.SNIPPET_VERSION="4.15.3";
+              a.load("a3fced22111b6be05726");
+              a.page();
+            }
+          }();
         `}</Script>
-        <Script
-          id="cio-tracker"
-          strategy="afterInteractive"
-          data-site-id="a3fced22111b6be05726"
-          data-use-array-params="true"
-          data-auto-track-page="true"
-          src="https://assets.customer.io/assets/track.js"
-        />
       </body>
     </html>
   );

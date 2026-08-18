@@ -73,7 +73,7 @@ export interface Organization {
 }
 
 export interface OrganizationWithRole extends Organization {
-  role: 'owner' | 'admin' | 'member';
+  role: 'owner' | 'admin' | 'member' | 'viewer';
 }
 
 export interface Workspace {
@@ -85,6 +85,7 @@ export interface Workspace {
   organization_id?: string;
   role?: string;
   description?: string;
+  company_product_context?: string;
   website_url?: string;
   logo_url?: string;
   timezone: string;
@@ -132,6 +133,17 @@ export interface WorkspaceBillingSummary {
   seat_over_limit?: boolean;
   entitlement_warning?: string;
   on_demand_blocks_invoiced: number;
+  ai_usage_allowance_microusd?: number;
+  ai_usage_used_microusd?: number;
+  ai_usage_remaining_microusd?: number;
+  ai_usage_reserved_microusd?: number;
+  ai_usage_overage_microusd?: number;
+  ai_usage_period_start?: string;
+  ai_usage_period_end?: string;
+  ai_usage_unlimited?: boolean;
+  extra_ai_usage_enabled?: boolean;
+  extra_ai_usage_available?: boolean;
+  pricing_version?: string;
   billing_managers?: BillingManagerRef[];
 }
 

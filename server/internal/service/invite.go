@@ -17,6 +17,7 @@ import (
 
 // InviteService handles invitation business logic.
 type InviteService struct {
+	productAnalyticsEmitter
 	invitationRepo   *repository.InvitationRepository
 	workspaceRepo    *repository.WorkspaceRepository
 	organizationRepo *repository.OrganizationRepository
@@ -27,6 +28,7 @@ type InviteService struct {
 	jwtManager       *auth.JWTManager
 	logger           *slog.Logger
 	billingService   *BillingService
+	customerIO       *CustomerIOIdentityService
 }
 
 // NewInviteService creates a new InviteService.
@@ -55,6 +57,10 @@ func NewInviteService(
 
 func (s *InviteService) SetBillingService(billingService *BillingService) {
 	s.billingService = billingService
+}
+
+func (s *InviteService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
+	s.customerIO = identity
 }
 
 func generateToken() (string, error) {
@@ -157,6 +163,12 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 		}
 	}
 
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "invitation:" + created.ID + ":sent", UserID: inviterUserID,
+		WorkspaceID: created.WorkspaceID, Name: "invitation_sent", Source: "api", OccurredAt: created.CreatedAt,
+		Attributes: map[string]any{"invitation_id": created.ID, "invited_role": created.Role},
+	})
+
 	return &model.InvitationResponse{
 		ID:                created.ID,
 		WorkspaceID:       created.WorkspaceID,
@@ -254,6 +266,15 @@ func (s *InviteService) AcceptInvitation(ctx context.Context, token, userID stri
 	if err := s.invitationRepo.UpdateStatus(ctx, inv.ID, "accepted", &now); err != nil {
 		return fmt.Errorf("update invitation status: %w", err)
 	}
+	if s.customerIO != nil {
+		s.customerIO.SyncUserByID(ctx, userID)
+		s.customerIO.SyncWorkspace(ctx, inv.WorkspaceID, "")
+	}
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "invitation:" + inv.ID + ":accepted", UserID: userID,
+		WorkspaceID: inv.WorkspaceID, Name: "invitation_accepted", Source: "api", OccurredAt: now,
+		Attributes: map[string]any{"invitation_id": inv.ID, "invited_role": inv.Role},
+	})
 
 	return nil
 }
@@ -334,6 +355,26 @@ func (s *InviteService) AcceptInvitationWithSignup(ctx context.Context, req mode
 	if err := s.invitationRepo.UpdateStatus(ctx, inv.ID, "accepted", &now); err != nil {
 		return nil, fmt.Errorf("update invitation status: %w", err)
 	}
+	if s.customerIO != nil {
+		s.customerIO.SyncUser(ctx, user)
+		s.customerIO.SyncWorkspace(ctx, inv.WorkspaceID, "")
+	}
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "user:" + user.ID + ":identify", UserID: user.ID,
+		AnonymousID: req.AnonymousID,
+		Name:        "user_identify", Source: "invite_signup", OccurredAt: user.CreatedAt,
+		Attributes: map[string]any{"signup_method": "invitation"},
+	})
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "user:" + user.ID + ":signup_completed", UserID: user.ID,
+		Name: "signup_completed", Source: "invite_signup", OccurredAt: user.CreatedAt,
+		Attributes: map[string]any{"signup_method": "invitation"},
+	})
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "invitation:" + inv.ID + ":accepted", UserID: user.ID,
+		WorkspaceID: inv.WorkspaceID, Name: "invitation_accepted", Source: "invite_signup", OccurredAt: now,
+		Attributes: map[string]any{"invitation_id": inv.ID, "invited_role": inv.Role},
+	})
 
 	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
 	if err != nil {
@@ -494,12 +535,20 @@ func (s *InviteService) RevokeInvitation(ctx context.Context, invitationID, user
 		}
 	}
 	s.cleanupInvitationPreassignments(ctx, invitationID)
+	if s.customerIO != nil {
+		s.customerIO.SyncWorkspace(ctx, inv.WorkspaceID, "")
+	}
 
 	s.logger.InfoContext(ctx, "invitation revoked",
 		"invitation_id", invitationID,
 		"workspace_id", inv.WorkspaceID,
 		"email", inv.Email,
 	)
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "invitation:" + inv.ID + ":revoked", UserID: userID,
+		WorkspaceID: inv.WorkspaceID, Name: "invitation_revoked", Source: "api",
+		Attributes: map[string]any{"invitation_id": inv.ID, "invited_role": inv.Role},
+	})
 
 	return nil
 }
@@ -571,10 +620,10 @@ func (s *InviteService) cleanupInvitationPreassignments(ctx context.Context, inv
 
 func (s *InviteService) ensureOrgMembership(ctx context.Context, workspaceID, userID string) {
 	ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
-	if err != nil || ws == nil || ws.OrganizationID == nil {
+	if err != nil || ws == nil || ws.OrganizationID == nil || s.organizationRepo == nil {
 		return
 	}
-	if _, err := s.organizationRepo.AddMember(ctx, *ws.OrganizationID, userID, "member"); err != nil {
+	if _, err := s.organizationRepo.EnsureMember(ctx, *ws.OrganizationID, userID, model.RoleMember); err != nil {
 		s.logger.ErrorContext(ctx, "failed to add user to organization",
 			"error", err,
 			"organization_id", *ws.OrganizationID,

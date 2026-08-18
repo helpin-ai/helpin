@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -20,9 +22,65 @@ func NewPMObjectiveRepository(db *gorm.DB) *PMObjectiveRepository {
 	return &PMObjectiveRepository{db: db}
 }
 
+// Transaction runs an objective row and its association changes atomically.
+func (r *PMObjectiveRepository) Transaction(ctx context.Context, fn func(*PMObjectiveRepository) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(NewPMObjectiveRepository(tx))
+	})
+}
+
 // List returns objectives in a workspace with optional filters.
 func (r *PMObjectiveRepository) List(ctx context.Context, workspaceID string, filters model.PMObjectiveListFilters) ([]model.PMObjective, error) {
+	query := r.listQuery(ctx, workspaceID, filters)
+	var objectives []model.PMObjective
+	if err := query.Order("position ASC, created_at DESC").Find(&objectives).Error; err != nil {
+		return nil, fmt.Errorf("list objectives: %w", err)
+	}
+	return objectives, nil
+}
+
+// ListPage returns a bounded objective page and the total matching row count.
+func (r *PMObjectiveRepository) ListPage(ctx context.Context, workspaceID string, filters model.PMObjectiveListFilters, pagination model.PMPagination) ([]model.PMObjective, int64, error) {
+	page := pagination.Page
+	if page <= 0 {
+		page = 1
+	}
+	perPage := pagination.PerPage
+	if perPage <= 0 {
+		perPage = 50
+	}
+	var total int64
+	if err := r.listQuery(ctx, workspaceID, filters).Distinct("pm_objectives.id").Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count objectives: %w", err)
+	}
+	if total == 0 {
+		return []model.PMObjective{}, total, nil
+	}
+	var objectives []model.PMObjective
+	offset := 0
+	if pagination.Offset != nil {
+		offset = *pagination.Offset
+	} else {
+		if page-1 > math.MaxInt/perPage {
+			return []model.PMObjective{}, total, nil
+		}
+		offset = (page - 1) * perPage
+	}
+	if int64(offset) >= total {
+		return []model.PMObjective{}, total, nil
+	}
+	if err := r.listQuery(ctx, workspaceID, filters).Distinct("pm_objectives.*").Order("position ASC, created_at DESC").Offset(offset).Limit(perPage).Find(&objectives).Error; err != nil {
+		return nil, 0, fmt.Errorf("list objective page: %w", err)
+	}
+	return objectives, total, nil
+}
+
+func (r *PMObjectiveRepository) listQuery(ctx context.Context, workspaceID string, filters model.PMObjectiveListFilters) *gorm.DB {
 	query := r.db.WithContext(ctx).Model(&model.PMObjective{}).Where("workspace_id = ?", workspaceID)
+	if filters.Search != nil && strings.TrimSpace(*filters.Search) != "" {
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		query = query.Where("(LOWER(pm_objectives.name) LIKE ? OR LOWER(COALESCE(pm_objectives.description, '')) LIKE ?)", search, search)
+	}
 
 	if filters.ObjectiveType != nil && *filters.ObjectiveType != "" {
 		query = query.Where("objective_type = ?", *filters.ObjectiveType)
@@ -50,9 +108,17 @@ func (r *PMObjectiveRepository) List(ctx context.Context, workspaceID string, fi
 		}
 	}
 
+	return query
+}
+
+// ListByIDs returns objectives in the requested workspace for target title enrichment.
+func (r *PMObjectiveRepository) ListByIDs(ctx context.Context, workspaceID string, ids []string) ([]model.PMObjective, error) {
+	if len(ids) == 0 {
+		return []model.PMObjective{}, nil
+	}
 	var objectives []model.PMObjective
-	if err := query.Order("position ASC, created_at DESC").Find(&objectives).Error; err != nil {
-		return nil, fmt.Errorf("list objectives: %w", err)
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id IN ?", workspaceID, ids).Find(&objectives).Error; err != nil {
+		return nil, fmt.Errorf("list objectives by IDs: %w", err)
 	}
 	return objectives, nil
 }

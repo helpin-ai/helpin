@@ -3,13 +3,20 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+// ErrDocsInvalidContent identifies TipTap JSON that cannot be safely loaded by
+// the document editor.
+var ErrDocsInvalidContent = errors.New("invalid document content")
 
 // DocsContentService handles business logic for document content.
 type DocsContentService struct {
@@ -58,6 +65,11 @@ func (s *DocsContentService) Save(ctx context.Context, documentID string, conten
 	}
 
 	content = s.restoreImportedToggleAttrs(ctx, documentID, content)
+	if !isMarkdownSourceEnvelope(content) {
+		if err := tiptap.ValidateDocument(content); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrDocsInvalidContent, err)
+		}
+	}
 
 	saved, err := s.contentRepo.UpsertWithActor(ctx, documentID, content, actorID)
 	if err != nil {
@@ -76,6 +88,15 @@ func (s *DocsContentService) Save(ctx context.Context, documentID string, conten
 		}
 	}
 	return saved, nil
+}
+
+func isMarkdownSourceEnvelope(content json.RawMessage) bool {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(content, &envelope); err != nil {
+		return false
+	}
+	_, ok := envelope["_markdown_source"]
+	return ok
 }
 
 func (s *DocsContentService) emitNewMentionNotifications(ctx context.Context, doc *model.DocsDocument, previousText, currentText, actorID string) {
@@ -195,6 +216,6 @@ func (s *DocsContentService) ListBySpaceWithImportHTML(ctx context.Context, spac
 
 // SetImportProvenance stores the original import HTML and source metadata on a content record.
 // This is a snapshot for reconversion/debugging — not the live source of truth.
-func (s *DocsContentService) SetImportProvenance(ctx context.Context, contentID, sourceHTML, sourceSystem, sourceObjectID string) {
-	s.contentRepo.UpdateImportProvenance(ctx, contentID, sourceHTML, sourceSystem, sourceObjectID)
+func (s *DocsContentService) SetImportProvenance(ctx context.Context, contentID, sourceHTML, sourceSystem, sourceObjectID string) error {
+	return s.contentRepo.UpdateImportProvenance(ctx, contentID, sourceHTML, sourceSystem, sourceObjectID)
 }

@@ -5,6 +5,7 @@ import widgetStyles from '@helpin-ai/widget-core/styles?inline';
 import { isBot } from '../utils/bot-detect';
 import {
   getOrCreateAnonymousId,
+  clearAnonymousId,
   getStoredSession,
   persistSession,
   clearSession,
@@ -26,6 +27,7 @@ export interface WidgetUser {
   first_name?: string;
   last_name?: string;
   userId?: string;
+  company?: Record<string, any>;
   createdAt?: string;
   metadata?: Record<string, unknown>;
 }
@@ -58,6 +60,26 @@ type WidgetConversation = Conversation & {
   aiState?: string;
 };
 
+type AIResponseStreamState = {
+  responseId: string;
+  conversationId: string;
+  lastSequence: number;
+  pendingChunks: string[];
+  displayedContent: string;
+  canonicalPayload?: any;
+  revealTimer: ReturnType<typeof setTimeout> | null;
+};
+
+type PendingOutgoingMessage = {
+  id: string;
+  content: string;
+  attachmentIds?: string[];
+  conversationId?: string;
+  queuedAt: number;
+  lastSentConnection: number;
+  expectsAIReply?: boolean;
+};
+
 const MAX_WS_RETRIES = 10;
 const MAX_WS_INITIAL_RETRIES = 3; // retries before first successful connection (invalid key, server down)
 const WS_BASE_DELAY_MS = 1000;
@@ -66,6 +88,14 @@ const MAX_AUTO_RECONNECT_WINDOW_MS = 25_000;
 const MAX_BACKGROUND_RETRY_DELAY_MS = 120_000;
 const RECEIVED_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
 const SENT_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/submit.mp3';
+const AI_STREAM_REVEAL_INTERVAL_MS = 45;
+const OUTGOING_STATUS_DELAY_MS = 1500;
+const AI_PROGRESS_COPY: Record<string, string> = {
+  looking: 'Looking into this…',
+  checking: 'Checking the details…',
+  composing: 'Preparing your answer…',
+  finalizing: 'Finishing your answer…',
+};
 
 function normalizeWidgetConfig(raw: any): WidgetConfig {
   const teammates = Array.isArray(raw?.availableTeammates)
@@ -109,6 +139,9 @@ export class WidgetManager {
   private widgetKey: string | null = null;
   private anonymousId: string | null = null;
   private connectionStatus: ConnectionStatus = 'idle';
+  private connectionGeneration = 0;
+  private pendingOutgoingMessages: PendingOutgoingMessage[] = [];
+  private pendingStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Preact mount state
   private mountContainer: HTMLElement | null = null;
@@ -121,6 +154,8 @@ export class WidgetManager {
   private articleRequestKey = 0;
   private isTyping = false;
   private isAIThinking = false;
+  private aiProgressLabel: string | undefined;
+  private aiResponseStreams = new Map<string, AIResponseStreamState>();
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
   private activeTeammate: WidgetActiveTeammate | undefined;
@@ -178,6 +213,8 @@ export class WidgetManager {
       widgetKey,
     };
     this.widgetKey = widgetKey;
+    this.pendingOutgoingMessages = this.restorePendingOutgoingMessages();
+    this.schedulePendingStatusRender();
 
     // Restore pre-chat done state from localStorage.
     if (this.widgetKey) {
@@ -215,27 +252,32 @@ export class WidgetManager {
   shutdown(): void {
     this.isShutdown = true;
 
-    // 1. Revoke session — prefer WS, fall back to HTTP
+    // 1. Revoke session over WS and with a keepalive HTTP request. The HTTP
+    // request is intentional even when WS is open: closing the socket directly
+    // after session:revoke is not guaranteed to flush the final frame.
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:revoke', {});
-      this.disconnectWebSocket();
-    } else {
-      if (this.sessionToken && this.host) {
-        const url = this.host.startsWith('http') ? this.host : `https://${this.host}`;
-        fetch(`${url}/widget/session/revoke`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_token: this.sessionToken }),
-        }).catch(() => {}); // best-effort
-      }
     }
+    if (this.sessionToken && this.host) {
+      const url = this.host.startsWith('http') ? this.host : `https://${this.host}`;
+      fetch(`${url}/widget/session/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_token: this.sessionToken }),
+        keepalive: true,
+      }).catch(() => {}); // best-effort
+    }
+    this.disconnectWebSocket();
 
-    // 2. Clear persisted session + identity (but NOT anonymous_id cookie)
+    // 2. Clear persisted session + identity and rotate the browser visitor on
+    // the next boot to prevent history leaking on shared-device logout.
     if (this.widgetKey) {
       clearSession(this.widgetKey);
       clearIdentity(this.widgetKey);
+      clearAnonymousId(this.widgetKey);
       clearConfigCache(this.widgetKey);
       try { localStorage.removeItem(`helpin_prechat_${this.widgetKey}`); } catch { /* ignore */ }
+      try { sessionStorage.removeItem(`helpin_pending_messages_${this.widgetKey}`); } catch { /* ignore */ }
     }
     this.preChatDone = false;
 
@@ -258,6 +300,7 @@ export class WidgetManager {
     this.config = null;
     this.widgetConfig = null;
     this.isVisible = false;
+    this.anonymousId = null;
     this.sessionToken = null;
     this.isOpen = false;
     this.unreadCount = 0;
@@ -265,6 +308,7 @@ export class WidgetManager {
     this.hasBeenOpened = false;
     this.wsRetryCount = 0;
     this.connectionIssueStartedAt = null;
+    this.clearAIResponseStreams(false);
     this.messages = [];
     this.conversations = [];
     this.activeConversationId = null;
@@ -274,6 +318,12 @@ export class WidgetManager {
     this.isTyping = false;
     this.isAIThinking = false;
     this.connectionStatus = 'idle';
+    this.connectionGeneration = 0;
+    this.pendingOutgoingMessages = [];
+    if (this.pendingStatusTimer) {
+      clearTimeout(this.pendingStatusTimer);
+      this.pendingStatusTimer = null;
+    }
     this.activeTeammate = undefined;
     this.currentEmail = null;
     this.isConversationExpanded = false;
@@ -362,11 +412,13 @@ export class WidgetManager {
   }
 
   openMessages(): void {
+    this.openArticleRequest = null;
     this.currentView = 'messages';
     this.open();
   }
 
   openNewMessage(content?: string): void {
+    this.openArticleRequest = null;
     this.resetActiveConversation();
     this.currentView = 'conversation';
 
@@ -384,6 +436,7 @@ export class WidgetManager {
   }
 
   openConversation(conversationId: string): void {
+    this.openArticleRequest = null;
     this.currentView = 'home';
     this.open();
   }
@@ -438,11 +491,11 @@ export class WidgetManager {
     return conversationId || null;
   }
 
-  openArticle(articleId: string, _options?: ShowArticleOptions): void {
+  openArticle(articleKey: string, _options?: ShowArticleOptions): void {
     this.articleRequestKey += 1;
     this.openArticleRequest = {
       key: this.articleRequestKey,
-      articleSlug: articleId,
+      articleSlug: articleKey,
     };
     this.currentView = 'help-article';
     this.open();
@@ -557,9 +610,11 @@ export class WidgetManager {
       onUploadAttachment: (file: File, localId: string) => this.handleUploadAttachment(file, localId),
       onTyping: (content: string) => this.handleTyping(content),
       showPreChatForm: showPreChat,
+      contactCaptureCompleted: this.preChatDone,
       onPreChatSubmit: (data: { phone: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
       isAIThinking: this.isAIThinking,
+      aiProgressLabel: this.aiProgressLabel,
       onEscalateToHuman: () => this.handleEscalateToHuman(),
       typingAgentName: this.typingAgentName,
       typingAgentAvatar: this.typingAgentAvatar,
@@ -584,8 +639,15 @@ export class WidgetManager {
       host: this.host,
       openArticleRequest: this.openArticleRequest || undefined,
       onImageClick: (src: string, alt: string) => this.showImageLightbox(src, alt),
+      onAnswerFeedback: (messageId: string, helpful: boolean) => this.handleAnswerFeedback(messageId, helpful),
+      queuedMessageCount: this.getVisiblePendingMessageCount(),
+      csatSubmitted: this.activeConversationId ? this.hasSubmittedCsat(this.activeConversationId) : false,
+      onCsatSubmit: (rating: number, feedback?: string) => this.handleCsatSubmit(rating, feedback),
       onViewChange: (view: WidgetView) => {
         this.currentView = view;
+        if (view !== 'help-article') {
+          this.openArticleRequest = null;
+        }
         // Refresh conversations list from server when navigating to Messages tab
         if (view === 'messages' && this.wsConnection?.readyState === WebSocket.OPEN) {
           this.wsSend('conversations:list', {});
@@ -830,6 +892,7 @@ export class WidgetManager {
   // ─── Message Handling ──────────────────────────────────────
 
   private resetActiveConversation(): void {
+    this.clearAIResponseStreams();
     this.activeConversationId = null;
     this.activeTeammate = undefined;
     this.messages = [];
@@ -941,6 +1004,19 @@ export class WidgetManager {
       senderAvatar: raw?.sender_avatar_url || raw?.sender_avatar || undefined,
       systemEventType,
       viaChannel: raw?.via_channel || undefined,
+      emailVisibleText: typeof raw?.email_visible_text === 'string' ? raw.email_visible_text : undefined,
+      emailQuotedText: typeof raw?.email_quoted_text === 'string' ? raw.email_quoted_text : undefined,
+      emailHasQuotedContent: typeof raw?.email_has_quoted_content === 'boolean'
+        ? raw.email_has_quoted_content
+        : undefined,
+      emailProjectionConfidence: raw?.email_projection_confidence === 'high'
+        || raw?.email_projection_confidence === 'medium'
+        || raw?.email_projection_confidence === 'none'
+        ? raw.email_projection_confidence
+        : undefined,
+      emailProjectionVersion: typeof raw?.email_projection_version === 'number'
+        ? raw.email_projection_version
+        : undefined,
       isInternal: raw?.is_internal || false,
       attachments: WidgetManager.mapAttachments(raw?.attachments),
       createdAt: raw?.created_at || new Date().toISOString(),
@@ -949,10 +1025,206 @@ export class WidgetManager {
     if (parsedMeta) {
       if (parsedMeta.ai_sources) message.sources = parsedMeta.ai_sources;
       if (parsedMeta.ai_confidence !== undefined) message.aiConfidence = parsedMeta.ai_confidence;
+      if (['answer', 'clarify', 'conversational', 'confirmation', 'greeting'].includes(parsedMeta.ai_reply_kind)) {
+        message.aiReplyKind = parsedMeta.ai_reply_kind;
+      }
       if (Array.isArray(parsedMeta.link_previews)) message.linkPreviews = parsedMeta.link_previews;
     }
 
     return message;
+  }
+
+  private handleReceivedMessage(msg: any): void {
+    if (!msg) return;
+
+    const responseId = typeof msg.id === 'string' ? msg.id : '';
+    const stream = responseId ? this.aiResponseStreams.get(responseId) : undefined;
+    if (stream) {
+      stream.canonicalPayload = msg;
+      this.maybeFinalizeAIResponseStream(stream);
+      return;
+    }
+
+    this.commitReceivedMessage(msg);
+  }
+
+  private commitReceivedMessage(msg: any): void {
+    const newMsg = this.mapSupportMessage(msg);
+    const existingIdx = this.messages.findIndex((message) => message.id === newMsg.id);
+
+    // Replace optimistic customer messages and transient AI stream placeholders.
+    if (msg.sender_type === 'customer') {
+      const pending = this.reconcilePendingOutgoingMessage(msg.content || '');
+      const tempIdx = this.messages.findIndex((message) =>
+        pending
+          ? message.id === pending.id
+          : message.id.startsWith('temp-') && message.content === msg.content,
+      );
+      if (tempIdx >= 0) {
+        newMsg.clientId = this.messages[tempIdx].clientId || this.messages[tempIdx].id;
+        this.messages[tempIdx] = newMsg;
+        this.messages = [...this.messages];
+      } else if (existingIdx >= 0) {
+        this.messages[existingIdx] = newMsg;
+        this.messages = [...this.messages];
+      } else {
+        this.messages = [...this.messages, newMsg];
+      }
+      if (pending?.expectsAIReply && this.wsConnection?.readyState === WebSocket.OPEN) {
+        this.isAIThinking = true;
+        this.aiProgressLabel = AI_PROGRESS_COPY.looking;
+      }
+    } else if (existingIdx >= 0) {
+      this.messages[existingIdx] = newMsg;
+      this.messages = [...this.messages];
+    } else {
+      this.messages = [...this.messages, newMsg];
+    }
+
+    if (msg.sender_type !== 'customer') {
+      this.isTyping = false;
+      this.isAIThinking = false;
+      this.aiProgressLabel = undefined;
+      this.playReceivedMessageSound();
+    }
+
+    // Update conversation in the list (lastMessage preview + unread count + move to top).
+    if (newMsg.conversationId) {
+      const convIdx = this.conversations.findIndex((conversation) => conversation.id === newMsg.conversationId);
+      const isActiveAndOpen = this.isConversationVisibleToUser(newMsg.conversationId);
+      const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
+      if (msg.sender_type !== 'customer' && newMsg.role !== 'system' && !isActiveAndOpen) {
+        this.incrementTitleUnread(newMsg.conversationId);
+      }
+      if (convIdx >= 0) {
+        const prev = this.conversations[convIdx];
+        const updated = {
+          ...prev,
+          lastMessage: newMsg.content,
+          lastMessageAt: newMsg.createdAt,
+          unreadCount: (msg.sender_type !== 'customer' && !isActiveAndOpen)
+            ? (prev.unreadCount ?? 0) + 1
+            : (prev.unreadCount ?? 0),
+        };
+        this.conversations = [updated, ...this.conversations.filter((_, index) => index !== convIdx)];
+      } else {
+        this.conversations = [{
+          id: newMsg.conversationId,
+          subject: newMsg.content || 'Conversation',
+          status: 'open',
+          lastMessage: newMsg.content,
+          lastMessageAt: newMsg.createdAt,
+          unreadCount: nextUnreadCount,
+        }, ...this.conversations];
+      }
+
+      if (this.activeConversationId === newMsg.conversationId && this.conversations.length > 0) {
+        this.activeTeammate = this.conversations.find(
+          (conversation) => conversation.id === newMsg.conversationId,
+        )?.activeTeammate;
+      }
+
+      if (msg.sender_type !== 'customer' && isActiveAndOpen) {
+        this.markConversationRead(newMsg.conversationId);
+      }
+    }
+
+    this.syncUnreadCount();
+    this.triggerCallback('onMessageReceived', msg);
+    this.render();
+  }
+
+  private startAIResponseStream(payload: any): void {
+    const responseId = typeof payload?.response_id === 'string' ? payload.response_id : '';
+    const conversationId = typeof payload?.conversation_id === 'string' ? payload.conversation_id : '';
+    if (!responseId || !conversationId) return;
+    if (this.activeConversationId && this.activeConversationId !== conversationId) return;
+    if (this.messages.some((message) => message.id === responseId && !message.isStreaming)) return;
+
+    const prior = this.aiResponseStreams.get(responseId);
+    if (prior?.revealTimer) clearTimeout(prior.revealTimer);
+
+    const stream: AIResponseStreamState = {
+      responseId,
+      conversationId,
+      lastSequence: 0,
+      pendingChunks: [],
+      displayedContent: '',
+      revealTimer: null,
+    };
+    this.aiResponseStreams.set(responseId, stream);
+
+    const role: Message['role'] = payload.sender_type === 'agent' || payload.sender_type === 'user'
+      ? 'agent'
+      : 'ai';
+    const placeholder: Message = {
+      id: responseId,
+      conversationId,
+      role,
+      content: '',
+      senderName: payload.sender_name || undefined,
+      senderAvatar: payload.sender_avatar || undefined,
+      isStreaming: true,
+      isInternal: false,
+      createdAt: payload.created_at || new Date().toISOString(),
+    };
+    this.messages = [...this.messages.filter((message) => message.id !== responseId), placeholder];
+    this.isTyping = false;
+    this.isAIThinking = false;
+    this.aiProgressLabel = undefined;
+    this.render();
+  }
+
+  private queueAIResponseDelta(payload: any): void {
+    const responseId = typeof payload?.response_id === 'string' ? payload.response_id : '';
+    const sequence = Number(payload?.sequence);
+    const delta = typeof payload?.delta === 'string' ? payload.delta : '';
+    const stream = this.aiResponseStreams.get(responseId);
+    if (!stream || !Number.isInteger(sequence) || sequence <= stream.lastSequence || !delta) return;
+
+    stream.lastSequence = sequence;
+    stream.pendingChunks.push(delta);
+    this.scheduleAIResponseReveal(stream);
+  }
+
+  private scheduleAIResponseReveal(stream: AIResponseStreamState): void {
+    if (stream.revealTimer) return;
+    if (stream.pendingChunks.length === 0) {
+      this.maybeFinalizeAIResponseStream(stream);
+      return;
+    }
+
+    stream.revealTimer = setTimeout(() => {
+      stream.revealTimer = null;
+      if (this.aiResponseStreams.get(stream.responseId) !== stream) return;
+      const nextChunk = stream.pendingChunks.shift();
+      if (nextChunk) {
+        stream.displayedContent += nextChunk;
+        this.messages = this.messages.map((message) => message.id === stream.responseId && message.isStreaming
+          ? { ...message, content: stream.displayedContent }
+          : message);
+        this.render();
+      }
+      this.scheduleAIResponseReveal(stream);
+    }, AI_STREAM_REVEAL_INTERVAL_MS);
+  }
+
+  private maybeFinalizeAIResponseStream(stream: AIResponseStreamState): void {
+    if (!stream.canonicalPayload || stream.pendingChunks.length > 0 || stream.revealTimer) return;
+    this.aiResponseStreams.delete(stream.responseId);
+    this.commitReceivedMessage(stream.canonicalPayload);
+  }
+
+  private clearAIResponseStreams(removePlaceholders = true): void {
+    for (const stream of this.aiResponseStreams.values()) {
+      if (stream.revealTimer) clearTimeout(stream.revealTimer);
+    }
+    this.aiResponseStreams.clear();
+    this.isAIThinking = false;
+    if (removePlaceholders) {
+      this.messages = this.messages.filter((message) => !message.isStreaming);
+    }
+    this.aiProgressLabel = undefined;
   }
 
   private handleSendMessage(content: string, options: { startNewConversation?: boolean; attachmentIds?: string[] } = {}): void {
@@ -962,18 +1234,15 @@ export class WidgetManager {
       this.resetActiveConversation();
     }
 
-    // If no active conversation, tell server to start a new one.
-    // Server responds with conversation:created (real ID) before message:send is processed.
-    if (!this.activeConversationId && this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('conversation:new', {});
-    }
-
     // Optimistic update
+    const pendingId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticMsg: Message = {
-      id: `temp-${Date.now()}`,
+      id: pendingId,
+      clientId: pendingId,
       conversationId: this.activeConversationId || '',
       role: 'customer',
       content,
+      deliveryStatus: 'sending',
       isInternal: false,
       createdAt: new Date().toISOString(),
     };
@@ -995,26 +1264,142 @@ export class WidgetManager {
         activeConversation?.aiState !== 'escalated' &&
         !humanHandledFlowStates.has(activeConversation?.flowState || ''),
     );
-    if (expectsAIReply) {
-      this.isAIThinking = true;
-    }
-    this.render();
     this.playSentMessageSound();
 
     // Stop typing indicator before sending
     this.stopTyping();
 
-    // Send via WS
-    const payload: Record<string, unknown> = { content };
-    if (options.attachmentIds && options.attachmentIds.length > 0) {
-      payload.attachment_ids = options.attachmentIds;
-    }
+    this.pendingOutgoingMessages.push({
+      id: pendingId,
+      content,
+      attachmentIds: options.attachmentIds,
+      conversationId: this.activeConversationId || undefined,
+      queuedAt: Date.now(),
+      lastSentConnection: -1,
+      expectsAIReply,
+    });
+    this.persistPendingOutgoingMessages();
+    this.flushPendingOutgoingMessages();
+    this.schedulePendingStatusRender();
+    this.render();
+  }
 
-    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+  private pendingMessagesStorageKey(): string | null {
+    return this.widgetKey ? `helpin_pending_messages_${this.widgetKey}` : null;
+  }
+
+  private restorePendingOutgoingMessages(): PendingOutgoingMessage[] {
+    const key = this.pendingMessagesStorageKey();
+    if (!key) return [];
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(key) || '[]');
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((item): item is PendingOutgoingMessage =>
+        Boolean(item && typeof item.id === 'string' && typeof item.content === 'string' && typeof item.queuedAt === 'number'),
+      ).map((item) => ({ ...item, lastSentConnection: -1 }));
+    } catch {
+      return [];
+    }
+  }
+
+  private persistPendingOutgoingMessages(): void {
+    const key = this.pendingMessagesStorageKey();
+    if (!key) return;
+    try {
+      if (this.pendingOutgoingMessages.length === 0) {
+        sessionStorage.removeItem(key);
+      } else {
+        sessionStorage.setItem(key, JSON.stringify(this.pendingOutgoingMessages));
+      }
+    } catch { /* storage may be unavailable */ }
+  }
+
+  private flushPendingOutgoingMessages(): void {
+    if (this.wsConnection?.readyState !== WebSocket.OPEN) return;
+
+    let selectedConversationId: string | undefined;
+    let newConversationStarted = false;
+    for (const pending of this.pendingOutgoingMessages) {
+      if (pending.lastSentConnection === this.connectionGeneration) continue;
+
+      if (pending.conversationId && pending.conversationId !== selectedConversationId) {
+        this.wsSend('conversation:select', { conversation_id: pending.conversationId });
+        selectedConversationId = pending.conversationId;
+      } else if (!pending.conversationId && !newConversationStarted) {
+        this.wsSend('conversation:new', {});
+        newConversationStarted = true;
+        selectedConversationId = undefined;
+      }
+
+      const payload: Record<string, unknown> = { content: pending.content };
+      if (pending.attachmentIds && pending.attachmentIds.length > 0) {
+        payload.attachment_ids = pending.attachmentIds;
+      }
       this.wsSend('message:send', payload);
-    } else {
-      // Fallback to HTTP if WS not available
-      this.sendMessageHTTP(content);
+      pending.lastSentConnection = this.connectionGeneration;
+    }
+    this.persistPendingOutgoingMessages();
+  }
+
+  private getVisiblePendingMessageCount(): number {
+    const visibleBefore = Date.now() - OUTGOING_STATUS_DELAY_MS;
+    return this.pendingOutgoingMessages.filter((message) => message.queuedAt <= visibleBefore).length;
+  }
+
+  private schedulePendingStatusRender(): void {
+    if (this.pendingStatusTimer) {
+      clearTimeout(this.pendingStatusTimer);
+      this.pendingStatusTimer = null;
+    }
+    const now = Date.now();
+    const nextVisibleAt = this.pendingOutgoingMessages
+      .map((message) => message.queuedAt + OUTGOING_STATUS_DELAY_MS)
+      .filter((visibleAt) => visibleAt > now)
+      .sort((a, b) => a - b)[0];
+    if (nextVisibleAt === undefined) return;
+    this.pendingStatusTimer = setTimeout(() => {
+      this.pendingStatusTimer = null;
+      this.render();
+      this.schedulePendingStatusRender();
+    }, Math.max(0, nextVisibleAt - now));
+  }
+
+  private reconcilePendingOutgoingMessage(content: string): PendingOutgoingMessage | null {
+    const pendingIndex = this.pendingOutgoingMessages.findIndex((message) => message.content === content);
+    if (pendingIndex < 0) return null;
+    const [pending] = this.pendingOutgoingMessages.splice(pendingIndex, 1);
+    this.persistPendingOutgoingMessages();
+    this.schedulePendingStatusRender();
+    return pending;
+  }
+
+  private reconcilePendingMessagesWithHistory(rawMessages: any[]): void {
+    for (const raw of rawMessages) {
+      if (raw?.sender_type !== 'customer') continue;
+      const createdAt = new Date(raw.created_at || 0).getTime();
+      const pendingIndex = this.pendingOutgoingMessages.findIndex((pending) =>
+        pending.content === (raw.content || '') && (!createdAt || createdAt >= pending.queuedAt - 5 * 60_000),
+      );
+      if (pendingIndex >= 0) this.pendingOutgoingMessages.splice(pendingIndex, 1);
+    }
+    this.persistPendingOutgoingMessages();
+    this.schedulePendingStatusRender();
+  }
+
+  private restorePendingMessagesIntoThread(): void {
+    for (const pending of this.pendingOutgoingMessages) {
+      if (pending.conversationId !== this.activeConversationId) continue;
+      if (this.messages.some((message) => message.id === pending.id)) continue;
+      this.messages.push({
+        id: pending.id,
+        clientId: pending.id,
+        conversationId: pending.conversationId || '',
+        role: 'customer',
+        content: pending.content,
+        deliveryStatus: 'sending',
+        isInternal: false,
+        createdAt: new Date(pending.queuedAt).toISOString(),
+      });
     }
   }
 
@@ -1152,16 +1537,48 @@ export class WidgetManager {
     }
   }
 
-  private async sendMessageHTTP(content: string): Promise<void> {
-    if (!this.sessionToken) return;
-    try {
-      await fetch(`https://${this.host}/widget/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_token: this.sessionToken, content }),
+  private handleAnswerFeedback(messageId: string, helpful: boolean): void {
+    const track = (globalThis as any).helpin?.track;
+    if (typeof track === 'function') {
+      track('support_ai_answer_feedback', {
+        message_id: messageId,
+        conversation_id: this.activeConversationId || undefined,
+        helpful,
       });
-    } catch (error) {
-      console.error('Failed to send message:', error);
+    }
+  }
+
+  private csatStorageKey(conversationId: string): string | null {
+    return this.widgetKey ? `helpin_csat_${this.widgetKey}_${conversationId}` : null;
+  }
+
+  private hasSubmittedCsat(conversationId: string): boolean {
+    const key = this.csatStorageKey(conversationId);
+    if (!key) return false;
+    try {
+      return localStorage.getItem(key) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  private handleCsatSubmit(rating: number, feedback?: string): void {
+    const conversationId = this.activeConversationId;
+    if (!conversationId || rating < 1 || rating > 5) return;
+
+    const key = this.csatStorageKey(conversationId);
+    if (key) {
+      try { localStorage.setItem(key, '1'); } catch { /* storage may be unavailable */ }
+    }
+
+    const track = (globalThis as any).helpin?.track;
+    if (typeof track === 'function') {
+      track('support_conversation_csat', {
+        conversation_id: conversationId,
+        rating,
+        feedback: feedback?.trim() || undefined,
+        handled_by: this.messages.some((message) => message.role === 'agent') ? 'human' : 'ai',
+      });
     }
   }
 
@@ -1184,19 +1601,6 @@ export class WidgetManager {
     // Upgrade session via WS with source=prechat (even if email is empty — server handles skip)
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', { email: data.email || '', phone: data.phone || '', source: 'widget_prechat' });
-    }
-
-    // Inject a confirmation message so the user knows email was recorded + AI is ready
-    if (data.email) {
-      const confirmationMsg: Message = {
-        id: `prechat-confirm-${Date.now()}`,
-        conversationId: this.activeConversationId || '',
-        role: 'ai',
-        content: `Thanks! Our AI assistant is here to help you. If needed, a team member can also follow up with you at **${data.email}**.`,
-        isInternal: false,
-        createdAt: new Date().toISOString(),
-      };
-      this.messages = [...this.messages, confirmationMsg];
     }
 
     // Fire lead tracking event to events pipeline (ClickHouse)
@@ -1301,6 +1705,7 @@ export class WidgetManager {
   // ─── Conversation Switching ─────────────────────────────────
 
   private handleSelectConversation(conversationId: string): void {
+    this.clearAIResponseStreams();
     this.activeConversationId = conversationId;
     this.activeTeammate = this.conversations.find((conversation) => conversation.id === conversationId)?.activeTeammate;
 
@@ -1392,6 +1797,7 @@ export class WidgetManager {
         this.wsHasConnected = true;
         this.connectionIssueStartedAt = null;
         this.connectionStatus = 'connected';
+        this.connectionGeneration++;
         this.render();
 
         // Send session:create or session:restore
@@ -1428,6 +1834,8 @@ export class WidgetManager {
         }
 
         this.connectionStatus = 'disconnected';
+        this.clearAIResponseStreams();
+        this.isAIThinking = false;
         this.render();
 
         // Server rejected before WS upgrade (e.g. invalid widget key → HTTP 400).
@@ -1495,10 +1903,11 @@ export class WidgetManager {
   private handleWSMessage(data: { type: string; data?: any }): void {
     switch (data.type) {
       case 'session:joined': {
+        this.clearAIResponseStreams();
         const payload = data.data;
         this.sessionToken = payload.session_token;
 
-        // Persist session to localStorage
+        // Persist session to a shared root-domain cookie.
         if (this.widgetKey && payload.session_token && payload.expires_at) {
           persistSession(this.widgetKey, payload.session_token, payload.expires_at);
         }
@@ -1521,6 +1930,8 @@ export class WidgetManager {
         if (payload.messages && payload.messages.length > 0) {
           this.messages = payload.messages.map((m: any) => this.mapSupportMessage(m));
         }
+        this.reconcilePendingMessagesWithHistory(payload.messages || []);
+        this.restorePendingMessagesIntoThread();
 
         const hashConversationId = this.getConversationIdFromHash();
         if (hashConversationId && this.conversations.some((c) => c.id === hashConversationId)) {
@@ -1572,10 +1983,13 @@ export class WidgetManager {
               first_name: firstName,
               last_name: lastName,
               source: bootEmail ? 'sdk_identify' : 'stored_identity',
+              company: bootUser?.company,
             });
             this.currentEmail = email;
           }
         }
+
+        this.flushPendingOutgoingMessages();
 
         this.render();
         break;
@@ -1609,73 +2023,7 @@ export class WidgetManager {
         break;
 
       case 'message:received': {
-        const msg = data.data;
-        const newMsg = this.mapSupportMessage(msg);
-
-        // Replace optimistic message if this is an echo
-        if (msg.sender_type === 'customer') {
-          const tempIdx = this.messages.findIndex(
-            (m) => m.id.startsWith('temp-') && m.content === msg.content
-          );
-          if (tempIdx >= 0) {
-            this.messages[tempIdx] = newMsg;
-            this.messages = [...this.messages];
-          } else {
-            this.messages = [...this.messages, newMsg];
-          }
-        } else {
-          this.messages = [...this.messages, newMsg];
-        }
-
-        if (msg.sender_type !== 'customer') {
-          this.isTyping = false;
-          this.isAIThinking = false;
-          this.playReceivedMessageSound();
-        }
-
-        // Update conversation in the list (lastMessage preview + unread count + move to top)
-        if (newMsg.conversationId) {
-          const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
-          const isActiveAndOpen = this.isConversationVisibleToUser(newMsg.conversationId);
-          const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
-          if (msg.sender_type !== 'customer' && newMsg.role !== 'system' && !isActiveAndOpen) {
-            this.incrementTitleUnread(newMsg.conversationId);
-          }
-          if (convIdx >= 0) {
-            const prev = this.conversations[convIdx];
-            const updated = {
-              ...prev,
-              lastMessage: newMsg.content,
-              lastMessageAt: newMsg.createdAt,
-              unreadCount: (msg.sender_type !== 'customer' && !isActiveAndOpen)
-                ? (prev.unreadCount ?? 0) + 1
-                : (prev.unreadCount ?? 0),
-            };
-            this.conversations = [updated, ...this.conversations.filter((_, i) => i !== convIdx)];
-          } else {
-            this.conversations = [{
-              id: newMsg.conversationId,
-              subject: newMsg.content || 'Conversation',
-              status: 'open',
-              lastMessage: newMsg.content,
-              lastMessageAt: newMsg.createdAt,
-              unreadCount: nextUnreadCount,
-            }, ...this.conversations];
-          }
-
-          if (this.activeConversationId === newMsg.conversationId && this.conversations.length > 0) {
-            this.activeTeammate = this.conversations.find((conversation) => conversation.id === newMsg.conversationId)?.activeTeammate;
-          }
-
-          if (msg.sender_type !== 'customer' && isActiveAndOpen) {
-            this.markConversationRead(newMsg.conversationId);
-          }
-        }
-
-        this.syncUnreadCount();
-
-        this.triggerCallback('onMessageReceived', msg);
-        this.render();
+        this.handleReceivedMessage(data.data);
         break;
       }
 
@@ -1702,6 +2050,36 @@ export class WidgetManager {
         break;
       }
 
+      case 'ai:progress': {
+        const stage = typeof data.data?.stage === 'string' ? data.data.stage : '';
+        const conversationId = typeof data.data?.conversation_id === 'string'
+          ? data.data.conversation_id
+          : '';
+        if (conversationId && (!this.activeConversationId || this.activeConversationId === conversationId)) {
+          this.aiProgressLabel = AI_PROGRESS_COPY[stage] || AI_PROGRESS_COPY.looking;
+          this.isAIThinking = true;
+          this.render();
+        }
+        break;
+      }
+
+      case 'ai:response:start':
+        this.startAIResponseStream(data.data);
+        break;
+
+      case 'ai:response:delta':
+        this.queueAIResponseDelta(data.data);
+        break;
+
+      case 'ai:response:complete': {
+        const responseId = typeof data.data?.response_id === 'string' ? data.data.response_id : '';
+        const stream = this.aiResponseStreams.get(responseId);
+        if (stream) {
+          this.maybeFinalizeAIResponseStream(stream);
+        }
+        break;
+      }
+
       case 'typing:start': {
         // Hub already filters out widget's own typing — this is always agent-origin
         this.isTyping = true;
@@ -1723,11 +2101,13 @@ export class WidgetManager {
 
       case 'ai:thinking:start':
         this.isAIThinking = true;
+        this.aiProgressLabel ||= AI_PROGRESS_COPY.looking;
         this.render();
         break;
 
       case 'ai:thinking:stop':
         this.isAIThinking = false;
+        this.aiProgressLabel = undefined;
         this.render();
         break;
 
@@ -1758,6 +2138,7 @@ export class WidgetManager {
       case 'conversation:messages': {
         const msgs = data.data?.messages;
         if (Array.isArray(msgs)) {
+          this.clearAIResponseStreams();
           this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate)
             || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
           this.messages = msgs.map((m: any) => this.mapSupportMessage(m));
@@ -1834,7 +2215,10 @@ export class WidgetManager {
       }
 
       case 'pong':
-        // Server acknowledged keepalive ping — no action needed.
+        // Refresh the cookie expiry when the server extends an active session.
+        if (this.widgetKey && this.sessionToken && data.data?.expires_at) {
+          persistSession(this.widgetKey, this.sessionToken, data.data.expires_at);
+        }
         break;
 
       case 'config:updated': {
@@ -1901,6 +2285,7 @@ export class WidgetManager {
   }
 
   private disconnectWebSocket(): void {
+    this.clearAIResponseStreams();
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
       this.keepaliveTimer = null;

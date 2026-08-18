@@ -8,23 +8,11 @@ import {
 } from '@/hooks/queries'
 import type { RootRouteData } from '@/lib/rootLoader'
 
-export async function prefetchHomeRouteData(
-  queryClient: QueryClient,
-  rootData: RootRouteData,
+export function prefetchHomeRouteData(
+  _queryClient: QueryClient,
+  _rootData: RootRouteData,
 ) {
-  const firstSpace = rootData.spaces[0]
-  if (firstSpace?.slug) {
-    await queryClient
-      .prefetchQuery(
-        spaceNavigationQueryOptions(
-          rootData.subdomain,
-          rootData.activeLocale,
-          firstSpace.slug,
-          rootData.multilingualEnabled,
-        ),
-      )
-      .catch(() => undefined)
-  }
+  return Promise.resolve()
 }
 
 export async function prefetchArticleRouteData(
@@ -43,18 +31,6 @@ export async function prefetchArticleRouteData(
     )
     .catch(() => null)
 
-  if (article?.space_slug) {
-    void queryClient
-      .prefetchQuery(
-        spaceNavigationQueryOptions(
-          rootData.subdomain,
-          rootData.activeLocale,
-          article.space_slug,
-          rootData.multilingualEnabled,
-        ),
-      )
-      .catch(() => undefined)
-  }
 
   return article
 }
@@ -75,18 +51,6 @@ export async function prefetchCollectionRouteData(
     )
     .catch(() => null)
 
-  if (collection?.space_slug) {
-    void queryClient
-      .prefetchQuery(
-        spaceNavigationQueryOptions(
-          rootData.subdomain,
-          rootData.activeLocale,
-          collection.space_slug,
-          rootData.multilingualEnabled,
-        ),
-      )
-      .catch(() => undefined)
-  }
 
   return collection
 }

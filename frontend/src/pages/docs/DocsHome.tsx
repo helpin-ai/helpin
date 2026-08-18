@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { timeAgo } from '@/lib/utils'
-import { COLLECTION_ROW_CLASS, ARTICLE_ROW_CLASS, DOC_ICON_CLASS, STATUS_BADGE_CLASS, UPDATED_TEXT_CLASS, COUNT_BADGE_CLASS, statusColor } from './docsTreeStyles'
+import { COLLECTION_ROW_CLASS, COUNT_BADGE_CLASS } from './docsTreeStyles'
 import {
   ArrowUpDownIcon,
   BookOpen01Icon,
@@ -9,7 +8,6 @@ import {
   Tick01Icon,
   ArrowRight01Icon,
   HelpCircleIcon,
-  File01Icon,
   Folder01Icon,
   GlobeIcon,
   Loading01Icon,
@@ -17,7 +15,7 @@ import {
   PlusSignIcon,
   Search01Icon,
 } from '@/lib/icons'
-import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
+import { StoredIcon } from '@/components/ui/icon-picker'
 import { Collapsible } from 'radix-ui'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
@@ -33,11 +31,13 @@ import {
 } from '@/hooks/queries'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog'
 import { DocsArrangeTree } from '@/components/docs/DocsArrangeTree'
+import { DocsLibraryList, DocsLibraryRow } from '@/components/docs/DocsLibraryList'
+import { buildCollectionPathLabels } from '@/components/docs/docsCollectionTree'
 import type { DocsSpace, DocsCollection, DocsDocument, SpaceType } from '@/lib/docsTypes'
-import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 
 // ── Space templates for quick setup ─────────────────────────────────────────
 
@@ -117,7 +117,6 @@ function DocRow({
   if (editing) {
     return (
       <div className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm">
-        <File01Icon className={DOC_ICON_CLASS} />
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -163,40 +162,29 @@ function DocRow({
   }
 
   return (
-    <div className="group/doc-row flex w-full items-center rounded-md transition-colors hover:bg-muted/60">
-      <button
-        type="button"
-        onClick={() =>
-          navigate({
-            to: '/w/$slug/docs/documents/$docId',
-            params: { slug: wsSlug, docId: doc.id },
-          })
-        }
-        className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left text-sm"
-      >
-        <File01Icon className={DOC_ICON_CLASS} />
-        <span className={`min-w-0 flex-1 truncate ${ARTICLE_ROW_CLASS}`}>{doc.title}</span>
-        <span className={`${STATUS_BADGE_CLASS} ${statusColor(doc.status)}`}>
-          {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-        </span>
-        <span className={UPDATED_TEXT_CLASS}>
-          Updated: {timeAgo(doc.updated_at)}
-        </span>
-      </button>
-      {canRename && (
+    <DocsLibraryRow
+      compact
+      title={doc.title}
+      status={doc.status}
+      updatedAt={doc.updated_at}
+      onOpen={() => navigate({
+        to: '/w/$slug/docs/documents/$docId',
+        params: { slug: wsSlug, docId: doc.id },
+      })}
+      actions={canRename ? (
         <QuickTooltip label="Rename document">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="mr-1 h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover/doc-row:opacity-100 focus:opacity-100"
+            className="h-7 w-7 shrink-0"
             onClick={startEditing}
           >
             <PencilEdit02Icon className="h-3.5 w-3.5" />
           </Button>
         </QuickTooltip>
-      )}
-    </div>
+      ) : undefined}
+    />
   )
 }
 
@@ -236,11 +224,13 @@ function buildCollectionNodeTree(
 // ── Collection section ──────────────────────────────────────────────────────
 
 function CollectionIcon({ name }: { name?: string }) {
-  if (name) {
-    const Icon = ICON_MAP[name]
-    if (Icon) return <Icon className="h-3.5 w-3.5 shrink-0" />
-  }
-  return <Folder01Icon className="h-3.5 w-3.5 shrink-0" />
+  return (
+    <StoredIcon
+      name={name}
+      className="h-3.5 w-3.5 shrink-0"
+      fallback={<Folder01Icon className="h-3.5 w-3.5 shrink-0" />}
+    />
+  )
 }
 
 interface CollectionNode {
@@ -522,6 +512,10 @@ export function DocsHome() {
     () => new Map<string, string>((spaces ?? []).map((s) => [s.id, s.name])),
     [spaces],
   )
+  const collectionPaths = useMemo(
+    () => buildCollectionPathLabels(allCollections ?? []),
+    [allCollections],
+  )
 
   const getTeamNames = (space: DocsSpace): string => {
     if (space.visibility === 'workspace_wide') return 'All teams'
@@ -577,7 +571,7 @@ export function DocsHome() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="space-y-4">
       <header className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
@@ -601,12 +595,13 @@ export function DocsHome() {
         {!arrangeMode && (
           <div className="relative">
             <Search01Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
+            <Input
               type="text"
               placeholder="Search documents..."
+              aria-label="Search all documents"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-border/60 bg-background py-2 pl-9 pr-3 text-sm outline-none placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+              className="pl-9"
             />
           </div>
         )}
@@ -619,7 +614,7 @@ export function DocsHome() {
       )}
 
       {searchResults !== null ? (
-        <div className="rounded-lg border border-border/60 bg-card divide-y divide-border/40">
+        <DocsLibraryList ariaLabel="Search results">
           {searchResults.length === 0 ? (
             <div className="flex flex-col items-center py-8 text-sm text-muted-foreground">
               <Search01Icon className="h-8 w-8 text-muted-foreground/30 mb-2" />
@@ -627,32 +622,23 @@ export function DocsHome() {
             </div>
           ) : (
             searchResults.map((doc) => (
-              <button
+              <DocsLibraryRow
                 key={doc.id}
-                type="button"
-                onClick={() =>
-                  navigate({
-                    to: '/w/$slug/docs/documents/$docId',
-                    params: { slug: wsSlug, docId: doc.id },
-                  })
-                }
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40"
-              >
-                <File01Icon className={DOC_ICON_CLASS} />
-                <span className={`min-w-0 flex-1 truncate ${ARTICLE_ROW_CLASS}`}>{doc.title}</span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">
-                  {spaceNames.get(doc.space_id) ?? ''}
-                  {doc.collection_id && allCollections
-                    ? ` / ${allCollections.find((c) => c.id === doc.collection_id)?.name ?? ''}`
-                    : ''}
-                </span>
-                <span className={`${STATUS_BADGE_CLASS} ${statusColor(doc.status)}`}>
-                  {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-                </span>
-              </button>
+                title={doc.title}
+                status={doc.status}
+                updatedAt={doc.updated_at}
+                location={[
+                  spaceNames.get(doc.space_id),
+                  doc.collection_id ? collectionPaths.get(doc.collection_id) : undefined,
+                ].filter(Boolean).join(' › ')}
+                onOpen={() => navigate({
+                  to: '/w/$slug/docs/documents/$docId',
+                  params: { slug: wsSlug, docId: doc.id },
+                })}
+              />
             ))
           )}
-        </div>
+        </DocsLibraryList>
       ) : isLoading ? (
         <div className="space-y-3 py-4">
           {[1, 2, 3].map((i) => (
@@ -768,7 +754,7 @@ export function DocsHome() {
             {spaces.filter((s) => s.type === 'internal').length > 0 && (
               <div>
                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Team Spaces</h3>
-                <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
+                <div className="divide-y divide-border/45" data-slot="docs-space-library">
                   {spaces.filter((s) => s.type === 'internal').map((space) => (
                     <SpaceSection
                       key={space.id}
@@ -797,7 +783,7 @@ export function DocsHome() {
                     </span>
                   </QuickTooltip>
                 </h3>
-                <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
+                <div className="divide-y divide-border/45" data-slot="docs-space-library">
                   {spaces.filter((s) => s.type === 'external_capable').map((space) => (
                     <SpaceSection
                       key={space.id}

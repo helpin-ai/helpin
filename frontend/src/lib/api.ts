@@ -44,7 +44,7 @@ export async function uploadToS3(
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', presignedUrl, true)
-    xhr.setRequestHeader('Content-Type', file.type)
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
     if (extraHeaders) {
       for (const [key, value] of Object.entries(extraHeaders)) {
         xhr.setRequestHeader(key, value)

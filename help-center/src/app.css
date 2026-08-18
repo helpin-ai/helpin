@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "../../packages/shared/src/docs-blocks.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -68,10 +69,10 @@
   --color-sidebar-active-foreground: var(--sidebar-active-foreground);
 
   /* Help Center layout tokens */
-  --hc-sidebar-width: 280px;
-  --hc-toc-width: 400px;
+  --hc-sidebar-width: 320px;
+  --hc-toc-width: 288px;
   --hc-header-height: 52px;
-  --hc-content-max-width: 720px;
+  --hc-content-max-width: 960px;
 }
 
 /* ─── Dark Mode Overrides ──────────────────────────────────────────────── */

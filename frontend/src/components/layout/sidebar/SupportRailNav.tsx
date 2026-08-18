@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon, FileSearchIcon, Delete01Icon, UserGroupIcon, BotIcon } from '@/lib/icons';
-import { ICON_MAP } from '@/components/ui/icon-picker';
+import { StoredIcon } from '@/components/ui/icon-picker';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -233,7 +233,6 @@ export function SupportRailNav({
         </SidebarGroupLabel>
         <SidebarMenu>
           {mailboxes.map((mailbox) => {
-            const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? InboxIcon) : InboxIcon;
             const isActiveMailbox = !isOnSearch && !isOnCoverage && !activeCustomViewId && selectedMailboxId === mailbox.id;
             const isMenuOpen = openMenuId === mailbox.id;
 
@@ -244,7 +243,11 @@ export function SupportRailNav({
                   className={supportMenuRowClassName}
                   onClick={() => onMailboxSelect(mailbox.id)}
                 >
-                  <MailboxIcon className="h-4 w-4" />
+                  <StoredIcon
+                    name={mailbox.icon}
+                    className="h-4 w-4"
+                    fallback={<InboxIcon className="h-4 w-4" />}
+                  />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate">{mailbox.name}</span>
                     {renderUnreadDot(mailbox.unread_count)}
@@ -396,7 +399,7 @@ export function SupportRailNav({
         </SidebarGroup>
       )}
 
-      <div className="support-bottom-bar fixed inset-x-0 bottom-0 z-10 ml-16 w-[calc(var(--sidebar-width)-4rem)] border-t border-border/70 bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
+      <div className="support-bottom-bar sticky bottom-0 z-10 -mx-2 mt-auto border-t border-border/70 bg-[#fafafa] px-2 py-2 dark:bg-sidebar">
         <div className="flex items-center justify-around">
           <Tooltip>
             <TooltipTrigger asChild>

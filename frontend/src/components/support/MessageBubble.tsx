@@ -1,7 +1,6 @@
-import { Fragment, memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { supportSystemEventDisplayContent, toSupportSystemEventSegments } from './supportSystemEvent';
 import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
@@ -19,6 +18,7 @@ import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffe
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
+import { buildTaskPath } from '@/lib/pmTaskLinks';
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -53,6 +53,10 @@ function containsMarkdownTable(content: string): boolean {
   return /\|(?:[^\n|]+\|){1,}[^\n]*\n\|(?:\s*[-:]+\s*\|){1,}/m.test(content) || /<table[\s>]/i.test(content);
 }
 
+function firstDisplayNamePart(name?: string | null): string {
+  return name?.trim().split(/\s+/)[0] ?? '';
+}
+
 function emailAddressFromHeader(value?: string | null): string {
   const trimmed = value?.trim() ?? '';
   if (!trimmed) return '';
@@ -60,23 +64,115 @@ function emailAddressFromHeader(value?: string | null): string {
   return (match?.[1] ?? trimmed).trim();
 }
 
-// System-event narration + emphasis rules live in the shared, JSX-free
-// supportSystemEvent module (also read in place by the mobile app). Here we map
-// its segments to <strong> markup.
-function renderSupportAuditSystemEventContent(eventType: string | undefined, content: string): ReactNode {
-  const segments = toSupportSystemEventSegments(eventType, content);
-  if (segments.length === 1 && !segments[0].bold) return content;
+function supportSystemEventDisplayContent(eventType: string | undefined, content: string, senderName: string): string {
+  const actor = firstDisplayNamePart(senderName);
+  switch (eventType) {
+    case 'assigned':
+      return content.trim() || (actor ? `${actor} assigned this conversation.` : 'Conversation assigned.');
+    case 'agent_assigned':
+      return actor ? `${actor} assigned this conversation to an AI agent.` : 'Assigned to an AI agent.';
+    case 'unassigned':
+      return actor ? `${actor} moved this conversation to unassigned.` : 'Moved to unassigned.';
+    case 'took':
+      return actor ? `${actor} took this conversation.` : 'A teammate took this conversation.';
+    default:
+      return content;
+  }
+}
+
+function renderAssignedSystemEventContent(content: string): ReactNode {
+  const match = content.match(/^(.*\bassigned this conversation to\s+)([^.]+)(\.)$/);
+  if (!match) return content;
+
+  const [, prefix, targetName, suffix] = match;
   return (
     <>
-      {segments.map((segment, index) =>
-        segment.bold ? (
-          <strong key={index} className="font-semibold text-foreground">{segment.text}</strong>
-        ) : (
-          <Fragment key={index}>{segment.text}</Fragment>
-        ),
-      )}
+      {prefix}
+      <strong className="font-semibold text-foreground">{targetName}</strong>
+      {suffix}
     </>
   );
+}
+
+function boldSupportSystemValue(value: string): ReactNode {
+  return <strong className="font-semibold text-foreground">{value}</strong>;
+}
+
+function renderBoldedSupportMatches(content: string, pattern: RegExp): ReactNode {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  for (const match of content.matchAll(pattern)) {
+    if (match.index === undefined) continue;
+    const [fullMatch, prefix, value, suffix] = match;
+    const valueIndex = match.index + prefix.length;
+    if (valueIndex > lastIndex) {
+      parts.push(content.slice(lastIndex, valueIndex));
+    }
+    parts.push(<strong key={key++} className="font-semibold text-foreground">{value}</strong>);
+    lastIndex = match.index + fullMatch.length - suffix.length;
+  }
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+  return parts.length > 1 ? <>{parts}</> : content;
+}
+
+function supportTaskIDFromMetadata(metadata?: string): string | null {
+  if (!metadata?.trim()) return null;
+  try {
+    const parsed = JSON.parse(metadata) as { task_id?: unknown };
+    return typeof parsed.task_id === 'string' && parsed.task_id.trim() ? parsed.task_id.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderSupportAuditSystemEventContent(
+  eventType: string | undefined,
+  content: string,
+  taskHref?: string | null,
+): ReactNode {
+  if (eventType === 'assigned') {
+    return renderAssignedSystemEventContent(content);
+  }
+
+  if (eventType === 'email_recipients_updated') {
+    return renderBoldedSupportMatches(
+      content,
+      /(\b(?:made|added|removed)\s+)(\S+@\S+?)(\s+(?:the primary recipient|to Cc|from Cc)\.)/g,
+    );
+  }
+
+  if (eventType === 'tag_added' || eventType === 'tag_removed') {
+    return renderBoldedSupportMatches(content, /(\b(?:added|removed) tag\s+)([^.]+)(\.)/g);
+  }
+
+  if (eventType === 'task_created') {
+    const taskMatch = content.match(/^(.*\bcreated task\s+)(#[^:\s]+)(?::\s+(.+))?(\.)$/);
+    if (taskMatch) {
+      const [, prefix, taskKey, taskName, suffix] = taskMatch;
+      return (
+        <span data-task-created-event className="flex min-w-0 max-w-full items-center whitespace-nowrap">
+          <span data-task-created-prefix className="mr-1 shrink-0">{prefix.trimEnd()}</span>
+          {taskHref ? (
+            <a data-task-created-link href={taskHref} title={`${taskKey}${taskName ? `: ${taskName}` : ''}`} className="-mx-1 flex min-w-0 items-center rounded-md px-1 font-semibold text-foreground underline decoration-border underline-offset-2 transition-[color,background-color,text-decoration-color] duration-150 hover:bg-muted hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+              <strong className="shrink-0 font-semibold text-foreground">{taskKey}</strong>
+              {taskName ? <><span className="shrink-0">:&nbsp;</span><strong data-task-created-title className="truncate font-semibold text-foreground">{taskName}</strong></> : null}
+            </a>
+          ) : (
+            <span className="flex min-w-0 items-center">
+              {boldSupportSystemValue(taskKey)}
+              {taskName ? <><span className="shrink-0">:&nbsp;</span><strong data-task-created-title className="truncate font-semibold text-foreground">{taskName}</strong></> : null}
+            </span>
+          )}
+          <span className="shrink-0">{suffix}</span>
+        </span>
+      );
+    }
+  }
+
+  return content;
 }
 
 const markdownComponents = {
@@ -215,9 +311,12 @@ interface MessageBubbleProps {
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
   source?: TicketSource;
-  receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null;
+  receiptStatus?: 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null;
   fallbackAvatarUrl?: string;
   customerDisplayName?: string;
+  customerEmail?: string | null;
+  workspaceSlug?: string;
+  linkedTaskId?: string | null;
 }
 
 export const MessageBubble = memo(function MessageBubble({
@@ -228,6 +327,9 @@ export const MessageBubble = memo(function MessageBubble({
   receiptStatus,
   fallbackAvatarUrl,
   customerDisplayName,
+  customerEmail,
+  workspaceSlug,
+  linkedTaskId,
 }: MessageBubbleProps) {
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
@@ -280,7 +382,10 @@ export const MessageBubble = memo(function MessageBubble({
     if (!hasForwardedHeaderMarker(displayContent)) return '';
     return cleanForwardedDisplayContent(displayContent).trim();
   }, [displayContent, forwardedAttribution]);
-  const visibleContent = forwardedDisplayContent || displayContent;
+  const projectedEmailVisibleContent = message.via_channel === 'email'
+    ? message.email_visible_text?.trim() ?? ''
+    : '';
+  const visibleContent = forwardedDisplayContent || projectedEmailVisibleContent || displayContent;
   const hasTableContent = useMemo(() => containsMarkdownTable(visibleContent), [visibleContent]);
 
   // Highlight @mentions in internal notes
@@ -444,7 +549,11 @@ export const MessageBubble = memo(function MessageBubble({
         ? <BotIcon className="h-3 w-3" />
         : null;
     const systemDisplayContent = escalationLabel ?? supportSystemEventDisplayContent(eventType, message.content, resolvedSenderName);
-    const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent);
+    const taskID = eventType === 'task_created'
+      ? supportTaskIDFromMetadata(message.metadata) ?? linkedTaskId
+      : null;
+    const taskHref = taskID && workspaceSlug ? buildTaskPath(workspaceSlug, taskID) : null;
+    const systemDisplayNode = renderSupportAuditSystemEventContent(eventType, systemDisplayContent, taskHref);
 
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
@@ -507,7 +616,7 @@ export const MessageBubble = memo(function MessageBubble({
         <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className={`flex items-center gap-2 ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
+              <div data-support-system-callout className={`flex min-w-0 items-center gap-2 ${eventType === 'task_created' ? 'max-w-[70%]' : 'max-w-full'} ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
                 {isEscalationEvent ? (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                     {escalationIcon}
@@ -523,7 +632,7 @@ export const MessageBubble = memo(function MessageBubble({
                     {getInitial(resolvedSenderName)}
                   </div>
                 )}
-                <span>{systemDisplayNode}</span>
+                <span className="min-w-0 max-w-full">{systemDisplayNode}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="top">
@@ -538,10 +647,10 @@ export const MessageBubble = memo(function MessageBubble({
       <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className={`flex items-center gap-2.5 ${statePillClass}`}>
+            <div data-support-system-callout className={`flex min-w-0 max-w-full items-center gap-2.5 [overflow-wrap:anywhere] ${statePillClass}`}>
               {statusIcon ?? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0" />}
               {resolvedActorAvatar}
-              <span className={stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}>{systemDisplayNode}</span>
+              <span className={`min-w-0 ${stateEventKind === 'resolved' ? 'font-medium' : 'text-sm font-medium'}`}>{systemDisplayNode}</span>
             </div>
           </TooltipTrigger>
           <TooltipContent side="top">
@@ -619,26 +728,45 @@ export const MessageBubble = memo(function MessageBubble({
   const hasEmailBadge = message.via_channel === 'email';
   const inboundFromEmail = isCustomer ? emailAddressFromHeader(message.email_from) : '';
   const inboundReplyToEmail = isCustomer ? emailAddressFromHeader(message.email_reply_to) : '';
-  const inboundFromMatchesReplyTo = inboundFromEmail !== '' && inboundReplyToEmail !== '' && inboundFromEmail.toLowerCase() === inboundReplyToEmail.toLowerCase();
+  const inboundCustomerEmail = customerEmail?.trim() ?? '';
+  const inboundFromMatchesKnownCustomerEmail = inboundFromEmail !== '' && (
+    (inboundReplyToEmail !== '' && inboundFromEmail.toLowerCase() === inboundReplyToEmail.toLowerCase())
+    || (inboundCustomerEmail !== '' && inboundFromEmail.toLowerCase() === inboundCustomerEmail.toLowerCase())
+  );
   const inboundEmailBadgeLabel = inboundFromEmail
-    ? inboundFromMatchesReplyTo
+    ? inboundFromMatchesKnownCustomerEmail
       ? 'Received by email'
       : `Received by email from ${inboundFromEmail}`
     : 'Received via email';
-  const hasEmailReceiptStatus = receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email';
+  const hasEmailReceiptStatus = receiptStatus === 'sending_email' || receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email';
   const showStandaloneEmailBadge = hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
-  const emailReceiptCanOpenDetails = hasEmailBadge && hasEmailReceiptStatus && !isCustomer;
+  const emailReceiptCanOpenDetails = hasEmailBadge
+    && (receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email')
+    && !isCustomer;
   const hasStatusBelow = !!receiptStatus || !!aiMeta || hasEmailBadge;
   const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
     : hasTableContent
       ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
       : 'min-w-0 max-w-[min(85%,42rem)]';
+  const messageActionsMenu = (
+    <MessageActionsMenu
+      alignSide={isCustomer ? 'right' : 'left'}
+      canEdit={cancellableActive}
+      canDelete={canMutateOwnReply}
+      onEdit={handleUndoOrEdit}
+      onCopy={handleCopy}
+      onReply={handleQuoteReply}
+      onDelete={() => setDeleteDialogOpen(true)}
+      onInfo={() => setInfoOpen(true)}
+      onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}
+    />
+  );
 
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
       {/* Bubble row: avatar + bubble aligned together */}
-      <div className={`flex ${isCustomer ? 'justify-start' : 'justify-end'}`}>
+      <div className={`flex min-w-0 max-w-full ${isCustomer ? 'justify-start' : 'justify-end'}`}>
         {/* Left side: avatar or spacer (customer messages) */}
         {isCustomer && (
           <div className="mr-2 flex w-7 shrink-0 flex-col justify-end">
@@ -658,63 +786,57 @@ export const MessageBubble = memo(function MessageBubble({
         >
         <div
           data-slot="support-message-bubble"
-          className={`${bubbleWidthClass} group/message relative`}
+          className={`${bubbleWidthClass} group/message ${showBubble ? '' : 'relative'}`}
         >
-          <MessageActionsMenu
-            alignSide={isCustomer ? 'right' : 'left'}
-            canEdit={cancellableActive}
-            canDelete={canMutateOwnReply}
-            onEdit={handleUndoOrEdit}
-            onCopy={handleCopy}
-            onReply={handleQuoteReply}
-            onDelete={() => setDeleteDialogOpen(true)}
-            onInfo={() => setInfoOpen(true)}
-            onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}
-          />
-          {showBubble && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div
-                  className={`rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
-                    isCustomer
-                      ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
-                      : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                  } ${hasTableContent || (hasEmailBody && !renderEmailBodyAsForwardedText) ? 'overflow-hidden' : ''}`}
-                >
-                  {hasEmailBody && !renderEmailBodyAsForwardedText ? (
-                    <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                      <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault={!forwardedAttribution} />
-                    </div>
-                  ) : (
-                    visibleContent && (
-                      <div
-                        className="prose-chat"
-                        data-chat-tone={isCustomer ? 'customer' : 'agent'}
-                        data-has-table={hasTableContent ? 'true' : 'false'}
-                      >
-                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+          {showBubble ? (
+            <div data-slot="support-message-bubble-frame" className="relative">
+              {messageActionsMenu}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className={`rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                      isCustomer
+                        ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
+                        : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
+                    } ${hasTableContent || (hasEmailBody && !renderEmailBodyAsForwardedText) ? 'overflow-hidden' : ''}`}
+                  >
+                    {hasEmailBody && !renderEmailBodyAsForwardedText ? (
+                      <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
+                        <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault />
                       </div>
-                    )
-                  )}
-                  {fileAttachments.length > 0 && (
-                    renderFileAttachments('default', visibleContent ? 'mt-2' : '')
-                  )}
-                  {linkPreviews.length > 0 && (
-                    <div className={`${visibleContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
-                      {linkPreviews.map((preview) => (
-                        <LinkPreviewCard
-                          key={`${message.id}:${preview.url}`}
-                          preview={preview}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {tooltipContent}
-              </TooltipContent>
-            </Tooltip>
+                    ) : (
+                      visibleContent && (
+                        <div
+                          className="prose-chat"
+                          data-chat-tone={isCustomer ? 'customer' : 'agent'}
+                          data-has-table={hasTableContent ? 'true' : 'false'}
+                        >
+                          <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
+                        </div>
+                      )
+                    )}
+                    {fileAttachments.length > 0 && (
+                      renderFileAttachments('default', visibleContent ? 'mt-2' : '')
+                    )}
+                    {linkPreviews.length > 0 && (
+                      <div className={`${visibleContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
+                        {linkPreviews.map((preview) => (
+                          <LinkPreviewCard
+                            key={`${message.id}:${preview.url}`}
+                            preview={preview}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {tooltipContent}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          ) : (
+            messageActionsMenu
           )}
 
           {/* Image attachments: outside the bubble, clickable for preview */}
@@ -849,6 +971,11 @@ export const MessageBubble = memo(function MessageBubble({
                         <TickDouble01Icon className="h-3.5 w-3.5" />
                         Delivered via email
                       </>
+                    ) : receiptStatus === 'sending_email' ? (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5" />
+                        Sending email
+                      </>
                     ) : receiptStatus === 'sent_email' ? (
                       <>
                         <TickDouble01Icon className="h-3.5 w-3.5" />
@@ -926,6 +1053,11 @@ export const MessageBubble = memo(function MessageBubble({
                 <>
                   <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-[11px] text-muted-foreground">Delivered via email</span>
+                </>
+              ) : receiptStatus === 'sending_email' ? (
+                <>
+                  <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">Sending email</span>
                 </>
               ) : receiptStatus === 'sent_email' ? (
                 <>

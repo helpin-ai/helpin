@@ -78,7 +78,57 @@ export function useSpaceNavigation(
       spaceSlug,
       multilingualEnabled,
     ),
+    enabled: typeof window !== 'undefined' && !!subdomain && !!locale && !!spaceSlug,
+  })
+}
+
+export function useAPIReferences(
+  subdomain: string,
+  locale: string,
+  spaceSlug: string,
+  multilingualEnabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.spaces.apiReferences(subdomain, locale, spaceSlug),
+    queryFn: async () =>
+      unwrap(
+        await helpCenterService.getAPIReferences(
+          subdomain,
+          locale,
+          spaceSlug,
+          multilingualEnabled,
+        ),
+      ),
     enabled: !!subdomain && !!locale && !!spaceSlug,
+  })
+}
+
+export function useAPIReference(
+  subdomain: string,
+  locale: string,
+  spaceSlug: string,
+  referenceSlug: string,
+  multilingualEnabled: boolean,
+) {
+  return useQuery({
+    queryKey: queryKeys.spaces.apiReference(
+      subdomain,
+      locale,
+      spaceSlug,
+      referenceSlug,
+    ),
+    queryFn: async () =>
+      unwrap(
+        await helpCenterService.getAPIReference(
+          subdomain,
+          locale,
+          spaceSlug,
+          referenceSlug,
+          multilingualEnabled,
+        ),
+      ),
+    enabled: !!subdomain && !!locale && !!spaceSlug && !!referenceSlug,
+    retry: false,
   })
 }
 
@@ -210,5 +260,43 @@ export function useSearchArticles(
       spaceSlug,
     ),
     enabled: !!subdomain && !!locale && query.length >= 2,
+  })
+}
+
+/**
+ * Client-only semantic search: runs alongside the SSR full-text results and
+ * supersedes them when it returns hits. Never part of the route loader so
+ * crawlers and first paint stay on the cheap lexical path.
+ */
+export function useSemanticSearchArticles(
+  subdomain: string,
+  locale: string,
+  query: string,
+  multilingualEnabled: boolean,
+  spaceSlug?: string,
+) {
+  return useQuery({
+    queryKey: [
+      ...queryKeys.articles.search(subdomain, locale, query, spaceSlug),
+      'semantic',
+    ],
+    queryFn: async () =>
+      unwrap(
+        await helpCenterService.search(
+          subdomain,
+          locale,
+          query,
+          multilingualEnabled,
+          spaceSlug,
+          'semantic',
+        ),
+      ),
+    enabled:
+      typeof window !== 'undefined' &&
+      !!subdomain &&
+      !!locale &&
+      query.length >= 2,
+    staleTime: 60_000,
+    retry: 0,
   })
 }

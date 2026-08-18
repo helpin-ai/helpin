@@ -16,6 +16,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateConversationSubject: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateConversationStatus: () => ({ mutate: mockUpdateStatusMutate, isPending: false }),
+  useSendConversationTranscript: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 vi.mock('@/components/ui/confirm-dialog', () => ({

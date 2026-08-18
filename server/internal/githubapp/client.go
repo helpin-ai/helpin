@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/helpin-ai/helpin/server/internal/prcontent"
 )
 
 // Repository is the subset of GitHub repository metadata needed by the product.
@@ -54,6 +55,7 @@ type Release struct {
 type PullRequest struct {
 	Number    int
 	Title     string
+	Body      string
 	HTMLURL   string
 	State     string
 	Merged    bool
@@ -775,7 +777,18 @@ func (c *Client) EnsurePullRequest(ctx context.Context, installationID, owner, r
 		return nil, err
 	}
 	if len(existing) > 0 {
-		return githubPullRequestFromPayload(existing[0]), nil
+		current := existing[0]
+		mergedBody := prcontent.Merge(current.Body, input.Body)
+		if mergedBody == strings.TrimSpace(current.Body) {
+			return githubPullRequestFromPayload(current), nil
+		}
+		var updated githubPullRequestPayload
+		if err := c.doGitHubAppRequest(ctx, token, http.MethodPatch, fmt.Sprintf("%s/repos/%s/%s/pulls/%d", c.apiBaseURL, owner, repo, current.Number), map[string]string{
+			"body": mergedBody,
+		}, &updated); err != nil {
+			return nil, err
+		}
+		return githubPullRequestFromPayload(updated), nil
 	}
 	body := map[string]string{
 		"title": strings.TrimSpace(input.Title),
@@ -796,6 +809,7 @@ func (c *Client) EnsurePullRequest(ctx context.Context, installationID, owner, r
 type githubPullRequestPayload struct {
 	Number    int        `json:"number"`
 	Title     string     `json:"title"`
+	Body      string     `json:"body"`
 	HTMLURL   string     `json:"html_url"`
 	State     string     `json:"state"`
 	Merged    bool       `json:"merged"`
@@ -814,6 +828,7 @@ func githubPullRequestFromPayload(payload githubPullRequestPayload) *PullRequest
 	return &PullRequest{
 		Number:    payload.Number,
 		Title:     strings.TrimSpace(payload.Title),
+		Body:      payload.Body,
 		HTMLURL:   strings.TrimSpace(payload.HTMLURL),
 		State:     strings.TrimSpace(payload.State),
 		Merged:    payload.Merged,
@@ -888,6 +903,7 @@ func (c *Client) GetPullRequest(ctx context.Context, installationID, owner, repo
 	var payload struct {
 		Number    int        `json:"number"`
 		Title     string     `json:"title"`
+		Body      string     `json:"body"`
 		HTMLURL   string     `json:"html_url"`
 		State     string     `json:"state"`
 		Merged    bool       `json:"merged"`
@@ -911,6 +927,7 @@ func (c *Client) GetPullRequest(ctx context.Context, installationID, owner, repo
 	return &PullRequest{
 		Number:    payload.Number,
 		Title:     payload.Title,
+		Body:      payload.Body,
 		HTMLURL:   payload.HTMLURL,
 		State:     payload.State,
 		Merged:    payload.Merged,

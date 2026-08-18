@@ -40,17 +40,6 @@ export const Route = createRootRouteWithContext<HelpCenterContext>()({
     return {
       links: [
         { rel: 'stylesheet', href: appCss },
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
-        {
-          rel: 'preload',
-          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
-          as: 'style',
-        },
-        {
-          rel: 'stylesheet',
-          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
-        },
         ...(rootHead.links ?? []),
       ],
       meta: [
@@ -170,7 +159,7 @@ function RootDocument({
   const clientContextScript = buildClientContextScript(clientContext)
 
   return (
-    <html lang={lang}>
+    <html lang={lang} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         {clientContextScript && (

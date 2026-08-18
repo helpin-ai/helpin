@@ -1059,6 +1059,21 @@ func TestSupportInboxServiceCreateConversationMessageBlocksEmailReplyUntilPrimar
 	if err != nil {
 		t.Fatalf("internal note should not be blocked: %v", err)
 	}
+	if err := db.Model(&model.SupportConversation{}).Where("id = ?", conversation.ID).
+		Update("primary_recipient_state", model.SupportPrimaryRecipientStateConfirmed).Error; err != nil {
+		t.Fatalf("confirm recipient for AI-assisted reply: %v", err)
+	}
+
+	aiAssisted, err := svc.CreateConversationMessage(ctx, workspaceID, conversation.ID, model.CreateMessageRequest{
+		Content:    "Here is the AI-polished response.",
+		AIAssisted: true,
+	}, "user", &actorID, nil, nil)
+	if err != nil {
+		t.Fatalf("AI-assisted reply: %v", err)
+	}
+	if !strings.Contains(aiAssisted.Metadata, `"ai_assisted":true`) {
+		t.Fatalf("AI-assisted reply metadata = %q", aiAssisted.Metadata)
+	}
 }
 
 func TestAgentServiceRunConversationAgentSkipsUnconfirmedPrimaryRecipient(t *testing.T) {
@@ -2152,6 +2167,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 		CustomerName:  strPtr("Casey Customer"),
 		CustomerEmail: strPtr("casey@example.com"),
 		CRMContactID:  strPtr("contact-1"),
+		CRMCompanyID:  strPtr("company-1"),
 	}
 	if err := convRepo.Create(ctx, conversation); err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -2195,13 +2211,6 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 			WorkspaceID:    env.wsID,
 			FromObjectType: model.CRMObjectSupportConversation,
 			FromObjectID:   conversation.ID,
-			ToObjectType:   model.CRMObjectCompany,
-			ToObjectID:     "company-1",
-		},
-		{
-			WorkspaceID:    env.wsID,
-			FromObjectType: model.CRMObjectSupportConversation,
-			FromObjectID:   conversation.ID,
 			ToObjectType:   model.CRMObjectDeal,
 			ToObjectID:     "deal-1",
 		},
@@ -2212,7 +2221,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 		}
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
@@ -2247,6 +2256,13 @@ func TestSupportInboxServiceCreateTaskFromConversation_CreatesLinkedTaskAndCopie
 	}
 	if !strings.Contains(taskEvent.Content, "created task #"+resp.TaskKey+": "+resp.TaskName) {
 		t.Fatalf("task system message = %q", taskEvent.Content)
+	}
+	var taskEventMetadata map[string]string
+	if err := json.Unmarshal([]byte(taskEvent.Metadata), &taskEventMetadata); err != nil {
+		t.Fatalf("decode task system metadata: %v", err)
+	}
+	if taskEventMetadata["task_id"] != resp.TaskID {
+		t.Fatalf("task system metadata task_id = %q, want %q", taskEventMetadata["task_id"], resp.TaskID)
 	}
 	if resp.CopiedDealAssociations != 1 {
 		t.Fatalf("copied_deal_associations = %d, want 1", resp.CopiedDealAssociations)
@@ -2354,7 +2370,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_NormalizesGenericActionTi
 		t.Fatalf("create message: %v", err)
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
@@ -2464,7 +2480,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_DoesNotFallBackSilentlyWh
 		}
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
@@ -2506,11 +2522,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_DoesNotFallBackSilentlyWh
 	}
 }
 
-// Verifies the Eino-backed structured-output path: when a supportTaskDraftLLM
-// is injected, the service uses its schema-forced tool-call output and
-// bypasses the plain ChatCompletion path. Guards the wiring added in the
-// Eino migration.
-func TestSupportInboxServiceCreateTaskFromConversation_UsesInjectedTaskDraftLLM(t *testing.T) {
+func TestSupportInboxServiceCreateTaskFromConversation_UsesStructuredLLMOutput(t *testing.T) {
 	env := newTaskTestEnv(t)
 	ctx := context.Background()
 
@@ -2536,19 +2548,16 @@ func TestSupportInboxServiceCreateTaskFromConversation_UsesInjectedTaskDraftLLM(
 	)
 	svc.SetTaskService(env.svc)
 
-	fake := &fakeSupportTaskDraftLLM{
-		draft: &supportConversationTaskDraft{
-			Title:       "SERP Analyzer token rejected during content generation",
-			Summary:     "The SERP Analyzer integration rejects the stored token, blocking content generation end-to-end.",
-			Description: "## Problem\nSERP token is rejected.\n\n## Impact\nCustomer cannot generate content.\n",
-			TaskType:    "bug",
-			Priority:    "high",
-		},
+	fake := &recordingSupportTaskDraftProvider{
+		response: `{
+			"title":"SERP Analyzer token rejected during content generation",
+			"summary":"The SERP Analyzer integration rejects the stored token, blocking content generation end-to-end.",
+			"description_markdown":"## Problem\nSERP token is rejected.\n\n## Impact\nCustomer cannot generate content.\n",
+			"task_type":"bug",
+			"priority":"high"
+		}`,
 	}
-	// No llmProvider is set — the legacy ChatCompletion path would fail.
-	// If the Eino path is wired correctly, the service must not touch it.
-	aiSvc := &SupportAIService{}
-	aiSvc.SetTaskDraftLLM(fake)
+	aiSvc := &SupportAIService{llmProvider: fake}
 	svc.SetSupportAIService(aiSvc)
 
 	conversation := &model.SupportConversation{
@@ -2575,36 +2584,42 @@ func TestSupportInboxServiceCreateTaskFromConversation_UsesInjectedTaskDraftLLM(
 		t.Fatalf("create message: %v", err)
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
 	if fake.calls != 1 {
-		t.Fatalf("expected taskDraftLLM to be called exactly once, got %d", fake.calls)
+		t.Fatalf("expected LLM provider to be called exactly once, got %d", fake.calls)
 	}
-	if fake.lastModel == "" {
-		t.Errorf("expected taskDraftLLM request to include a resolved model name")
+	if fake.request.Model == "" {
+		t.Error("expected request to include a resolved model name")
+	}
+	if !fake.request.JSONMode || !fake.request.JSONSchemaStrict {
+		t.Fatalf("expected strict structured output request, got %#v", fake.request)
+	}
+	properties, ok := fake.request.JSONSchema["properties"].(map[string]any)
+	if !ok || properties["description_markdown"] == nil {
+		t.Fatalf("expected task draft response schema, got %#v", fake.request.JSONSchema)
 	}
 	if resp.TaskName != "SERP Analyzer token rejected during content generation" {
 		t.Errorf("task_name = %q, want the injected draft title", resp.TaskName)
 	}
 }
 
-type fakeSupportTaskDraftLLM struct {
-	draft     *supportConversationTaskDraft
-	err       error
-	calls     int
-	lastModel string
+type recordingSupportTaskDraftProvider struct {
+	response string
+	err      error
+	calls    int
+	request  llm.ChatRequest
 }
 
-func (f *fakeSupportTaskDraftLLM) GenerateTaskDraft(_ context.Context, req supportTaskDraftRequest) (*supportConversationTaskDraft, error) {
+func (f *recordingSupportTaskDraftProvider) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	f.calls++
-	f.lastModel = req.Model
+	f.request = req
 	if f.err != nil {
 		return nil, f.err
 	}
-	copy := *f.draft
-	return &copy, nil
+	return &llm.ChatResponse{Content: f.response}, nil
 }
 
 func TestSupportInboxServiceCreateTaskFromConversation_FailsWhenContextIsTooWeak(t *testing.T) {
@@ -2658,7 +2673,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_FailsWhenContextIsTooWeak
 		t.Fatalf("create message: %v", err)
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err == nil {
 		t.Fatalf("expected error, got response %#v", resp)
 	}
@@ -2750,7 +2765,7 @@ func TestSupportInboxServiceCreateTaskFromConversation_UsesInternalNotesAsFallba
 		}
 	}
 
-	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{})
+	resp, err := svc.CreateTaskFromConversation(ctx, env.wsID, conversation.ID, env.userID, model.CreateTaskFromConversationRequest{TeamID: &env.teamID})
 	if err != nil {
 		t.Fatalf("CreateTaskFromConversation: %v", err)
 	}
@@ -3090,6 +3105,157 @@ func TestSupportInboxServiceVisitorContextLastActivity(t *testing.T) {
 	}
 	if resp.LastActiveSource == nil || *resp.LastActiveSource != "crm_contact" {
 		t.Fatalf("last_active_source = %v, want crm_contact", resp.LastActiveSource)
+	}
+}
+
+func TestSupportInboxServiceUpdateConversationCRMCompany(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	const workspaceID = "ws-update-conversation-company"
+	seedWorkspace(t, db, workspaceID, "Update Conversation Company", "update-conversation-company", "user-123")
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	companyRepo := repository.NewCRMCompanyRepository(db)
+	assocRepo := repository.NewCRMAssociationRepository(db)
+	contact := &model.CRMContact{WorkspaceID: workspaceID, DisplayID: "CON-1", FirstName: "Ada", LifecycleStage: model.CRMLifecycleLead, LeadStatus: model.CRMLeadStatusNew}
+	if err := contactRepo.Create(ctx, contact); err != nil {
+		t.Fatalf("create contact: %v", err)
+	}
+	company := &model.CRMCompany{WorkspaceID: workspaceID, DisplayID: "COM-1", Name: "Acme"}
+	if err := companyRepo.Create(ctx, company); err != nil {
+		t.Fatalf("create company: %v", err)
+	}
+	conversation := &model.SupportConversation{WorkspaceID: workspaceID, Subject: "Company correction", Status: model.SupportConversationStatusOpen, CRMContactID: &contact.ID}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	svc := NewSupportInboxService(conversationRepo, nil, nil, nil, assocRepo, nil, nil, nil, nil, nil, contactRepo, nil, nil, nil, nil)
+	svc.SetCRMCompanyRepository(companyRepo)
+
+	updated, err := svc.UpdateConversationCRMCompany(ctx, workspaceID, conversation.ID, &company.ID, "user-123")
+	if err != nil {
+		t.Fatalf("UpdateConversationCRMCompany: %v", err)
+	}
+	if updated.CRMCompanyID == nil || *updated.CRMCompanyID != company.ID {
+		t.Fatalf("crm_company_id = %v, want %q", updated.CRMCompanyID, company.ID)
+	}
+	assocs, err := assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contact.ID)
+	if err != nil {
+		t.Fatalf("list contact associations: %v", err)
+	}
+	if len(assocs) != 1 {
+		t.Fatalf("contact company memberships = %d, want 1", len(assocs))
+	}
+	if !isPrimaryCompanyAssociationLabel(assocs[0].AssociationLabel) {
+		t.Fatalf("first company membership label = %v, want primary", assocs[0].AssociationLabel)
+	}
+
+	secondCompany := &model.CRMCompany{WorkspaceID: workspaceID, DisplayID: "COM-2", Name: "Second Account"}
+	if err := companyRepo.Create(ctx, secondCompany); err != nil {
+		t.Fatalf("create second company: %v", err)
+	}
+	if _, err := svc.UpdateConversationCRMCompany(ctx, workspaceID, conversation.ID, &secondCompany.ID, "user-123"); err != nil {
+		t.Fatalf("set second conversation company: %v", err)
+	}
+	assocs, err = assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contact.ID)
+	if err != nil {
+		t.Fatalf("list contact associations after switch: %v", err)
+	}
+	if len(assocs) != 2 {
+		t.Fatalf("contact company memberships after switch = %d, want 2", len(assocs))
+	}
+	primaryID := ""
+	for _, assoc := range assocs {
+		_, associatedCompanyID := otherAssociationSide(assoc, model.CRMObjectContact, contact.ID)
+		if isPrimaryCompanyAssociationLabel(assoc.AssociationLabel) {
+			primaryID = associatedCompanyID
+		}
+	}
+	if primaryID != company.ID {
+		t.Fatalf("primary company after manual switch = %q, want original %q", primaryID, company.ID)
+	}
+
+	const otherWorkspaceID = "ws-update-conversation-company-other"
+	seedWorkspace(t, db, otherWorkspaceID, "Other Company Workspace", "update-conversation-company-other", "user-123")
+	foreignCompany := &model.CRMCompany{WorkspaceID: otherWorkspaceID, DisplayID: "COM-1", Name: "Foreign Company"}
+	if err := companyRepo.Create(ctx, foreignCompany); err != nil {
+		t.Fatalf("create foreign company: %v", err)
+	}
+	if _, err := svc.UpdateConversationCRMCompany(ctx, workspaceID, conversation.ID, &foreignCompany.ID, "user-123"); err == nil {
+		t.Fatal("expected company from another workspace to be rejected")
+	}
+
+	cleared, err := svc.UpdateConversationCRMCompany(ctx, workspaceID, conversation.ID, nil, "user-123")
+	if err != nil {
+		t.Fatalf("clear conversation company: %v", err)
+	}
+	if cleared.CRMCompanyID != nil {
+		t.Fatalf("cleared crm_company_id = %v, want nil", cleared.CRMCompanyID)
+	}
+}
+
+func TestSupportInboxServiceVisitorContextIncludesLiveCompany(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	const workspaceID = "ws-visitor-company"
+	seedWorkspace(t, db, workspaceID, "Visitor Company", "visitor-company", "user-123")
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	companyRepo := repository.NewCRMCompanyRepository(db)
+	assocRepo := repository.NewCRMAssociationRepository(db)
+	contact := &model.CRMContact{
+		WorkspaceID: workspaceID, DisplayID: "CON-1", FirstName: "Ada",
+		LifecycleStage: model.CRMLifecycleCustomer, LeadStatus: model.CRMLeadStatusOpen,
+		CustomProperties: model.JSONB{"score": float64(92), "vip": true},
+	}
+	if err := contactRepo.Create(ctx, contact); err != nil {
+		t.Fatalf("create contact: %v", err)
+	}
+	company := &model.CRMCompany{
+		WorkspaceID: workspaceID, DisplayID: "COM-1", Name: "Acme",
+		CustomProperties: model.JSONB{"plan": "enterprise", "seats_used": float64(12), "priority_support": true},
+	}
+	if err := companyRepo.Create(ctx, company); err != nil {
+		t.Fatalf("create company: %v", err)
+	}
+	if err := assocRepo.Create(ctx, &model.CRMAssociation{WorkspaceID: workspaceID, FromObjectType: model.CRMObjectContact, FromObjectID: contact.ID, ToObjectType: model.CRMObjectCompany, ToObjectID: company.ID}); err != nil {
+		t.Fatalf("create association: %v", err)
+	}
+	conversation := &model.SupportConversation{WorkspaceID: workspaceID, Subject: "Live company", Status: model.SupportConversationStatusOpen, CRMContactID: &contact.ID, CRMCompanyID: &company.ID}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	svc := NewSupportInboxService(conversationRepo, nil, nil, nil, assocRepo, nil, sessionRepo, nil, nil, nil, contactRepo, nil, nil, nil, nil)
+	svc.SetCRMCompanyRepository(companyRepo)
+
+	resp, err := svc.GetVisitorContext(ctx, workspaceID, conversation.ID)
+	if err != nil {
+		t.Fatalf("GetVisitorContext: %v", err)
+	}
+	if resp.CompanyContextStatus != model.VisitorCompanyContextOK || resp.Company == nil {
+		t.Fatalf("company context = %q / %#v, want ok company", resp.CompanyContextStatus, resp.Company)
+	}
+	if resp.Company.ID != company.ID || resp.Company.CustomProperties["seats_used"] != float64(12) {
+		t.Fatalf("company = %#v, want live typed properties", resp.Company)
+	}
+	if len(resp.CompanyOptions) != 1 || resp.CompanyOptions[0].ID != company.ID {
+		t.Fatalf("company options = %#v, want selected membership", resp.CompanyOptions)
+	}
+	if resp.Contact == nil || resp.Contact.CustomProperties["score"] != float64(92) || resp.Contact.CustomProperties["vip"] != true {
+		t.Fatalf("contact custom properties = %#v, want typed scalars", resp.Contact)
+	}
+
+	company.CustomProperties["plan"] = "growth"
+	if err := companyRepo.Update(ctx, company); err != nil {
+		t.Fatalf("update company: %v", err)
+	}
+	resp, err = svc.GetVisitorContext(ctx, workspaceID, conversation.ID)
+	if err != nil {
+		t.Fatalf("GetVisitorContext after update: %v", err)
+	}
+	if resp.Company.CustomProperties["plan"] != "growth" {
+		t.Fatalf("company plan = %#v, want current growth", resp.Company.CustomProperties["plan"])
 	}
 }
 

@@ -76,3 +76,25 @@ func TestPreprocessHelpScoutHTML_PreservesInlineBoundarySpaceInsideHeadingSpans(
 		t.Fatalf("expected meaningful inline boundary space inside heading span to be preserved, got: %s", normalized)
 	}
 }
+
+func TestContainsGIFImage(t *testing.T) {
+	tests := []struct {
+		name string
+		html string
+		want bool
+	}{
+		{name: "gif source", html: `<img src="https://assets.example.com/demo.gif">`, want: true},
+		{name: "uppercase extension and query", html: `<img src="https://assets.example.com/demo.GIF?version=2">`, want: true},
+		{name: "lazy gif", html: `<img src="placeholder.png" data-src="https://assets.example.com/demo.gif">`, want: true},
+		{name: "data gif", html: `<img src="data:image/gif;base64,R0lGODlh">`, want: true},
+		{name: "gif text is not an image", html: `<p>Upload a .gif file</p>`, want: false},
+		{name: "png image", html: `<img src="https://assets.example.com/demo.png">`, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ContainsGIFImage(tt.html); got != tt.want {
+				t.Fatalf("ContainsGIFImage() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

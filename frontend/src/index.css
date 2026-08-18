@@ -2,9 +2,51 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
+@import "../../packages/shared/src/docs-blocks.css";
 @source "../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
+
+/* A visible left-to-right sweep makes the currently active task feel alive. */
+@keyframes agent-streaming-text-sweep {
+  from { background-position: 180% 50%; }
+  to { background-position: -180% 50%; }
+}
+.agent-streaming-text {
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 34%,
+    var(--primary) 48%,
+    var(--foreground) 52%,
+    var(--primary) 56%,
+    var(--muted-foreground) 70%,
+    var(--muted-foreground) 100%
+  );
+  background-position: 180% 50%;
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: agent-streaming-text-sweep 2.2s linear infinite;
+}
+@keyframes agent-paused-dot-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.agent-paused-dot-pulse {
+  animation: agent-paused-dot-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-streaming-text,
+  .agent-paused-dot-pulse {
+    animation: none;
+  }
+  .agent-streaming-text {
+    background: none;
+    color: var(--muted-foreground);
+  }
+}
 
 @theme {
   --background: oklch(1 0 0);
@@ -204,6 +246,321 @@
   }
 }
 
+/* Ask Agent: a persistent product identity whose motion communicates runtime state. */
+.ask-agent-avatar {
+  display: inline-block;
+  flex: none;
+  color: var(--aa-color);
+  line-height: 0;
+}
+.ask-agent-avatar svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ask-agent-plate { fill: var(--aa-plate); }
+.ask-agent-body { fill: currentColor; fill-rule: evenodd; }
+.ask-agent-ink { fill: var(--aa-ink); }
+.ask-agent-spark { fill: currentColor; }
+.ask-agent-stroke {
+  fill: none;
+  stroke: var(--aa-ink);
+  stroke-linecap: round;
+}
+.ask-agent-face,
+.ask-agent-eyes,
+.ask-agent-mouth,
+.ask-agent-mouth-sad,
+.ask-agent-body-group {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.ask-agent-eye-closed,
+.ask-agent-mouth-sad { opacity: 0; }
+.ask-agent-avatar[data-state] .ask-agent-eye-l .ask-agent-eye-open { animation: ask-agent-open-l 6.8s infinite; }
+.ask-agent-avatar[data-state] .ask-agent-eye-l .ask-agent-eye-closed { animation: ask-agent-shut-l 6.8s infinite; }
+.ask-agent-avatar[data-state] .ask-agent-eye-r .ask-agent-eye-open { animation: ask-agent-open-r 6.8s infinite; }
+.ask-agent-avatar[data-state] .ask-agent-eye-r .ask-agent-eye-closed { animation: ask-agent-shut-r 6.8s infinite; }
+.ask-agent-avatar[data-state="thinking"] .ask-agent-eyes { animation: ask-agent-scan 2.6s ease-in-out infinite; }
+.ask-agent-avatar[data-state="thinking"] .ask-agent-body-group { animation: ask-agent-breathe 2.6s ease-in-out infinite; }
+.ask-agent-avatar[data-state="speaking"] .ask-agent-mouth { animation: ask-agent-talk .42s ease-in-out infinite; }
+.ask-agent-avatar[data-state="error"] .ask-agent-mouth { opacity: 0; }
+.ask-agent-avatar[data-state="error"] .ask-agent-mouth-sad { opacity: 1; }
+.ask-agent-avatar[data-state="error"] .ask-agent-face,
+.ask-agent-avatar[data-state="error"] .ask-agent-body-group { animation: ask-agent-shake .34s ease-in-out 2; }
+
+/* Echo the Ask Agent mark's feathered plate for the selected workspace module. */
+.sidebar-rail-active-plate {
+  isolation: isolate;
+}
+.sidebar-rail-active-plate::before {
+  content: "";
+  position: absolute;
+  inset: 2px 3px;
+  z-index: 0;
+  border-radius: 0.45rem;
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--foreground) 82%, var(--background)),
+    var(--foreground)
+  );
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+@keyframes ask-agent-open-l {
+  0%, 25.9% { opacity: 1; } 26%, 28.4% { opacity: 0; }
+  28.5%, 31.9% { opacity: 1; } 32%, 34.4% { opacity: 0; }
+  34.5%, 100% { opacity: 1; }
+}
+@keyframes ask-agent-shut-l {
+  0%, 25.9% { opacity: 0; } 26%, 28.4% { opacity: 1; }
+  28.5%, 31.9% { opacity: 0; } 32%, 34.4% { opacity: 1; }
+  34.5%, 100% { opacity: 0; }
+}
+@keyframes ask-agent-open-r {
+  0%, 25.9% { opacity: 1; } 26%, 28.4% { opacity: 0; }
+  28.5%, 31.9% { opacity: 1; } 32%, 34.4% { opacity: 0; }
+  34.5%, 71.9% { opacity: 1; } 72%, 77.4% { opacity: 0; }
+  77.5%, 100% { opacity: 1; }
+}
+@keyframes ask-agent-shut-r {
+  0%, 25.9% { opacity: 0; } 26%, 28.4% { opacity: 1; }
+  28.5%, 31.9% { opacity: 0; } 32%, 34.4% { opacity: 1; }
+  34.5%, 71.9% { opacity: 0; } 72%, 77.4% { opacity: 1; }
+  77.5%, 100% { opacity: 0; }
+}
+@keyframes ask-agent-scan {
+  0%, 100% { transform: translateX(-1.1px); }
+  50% { transform: translateX(1.5px); }
+}
+@keyframes ask-agent-breathe {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.025) rotate(2.2deg); }
+}
+@keyframes ask-agent-talk {
+  0%, 100% { transform: scaleY(.55) translateY(.6px); }
+  50% { transform: scaleY(1.25); }
+}
+@keyframes ask-agent-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-1.6px); }
+  75% { transform: translateX(1.6px); }
+}
+
+/* Agent dock: a warm, operational presence layer independent of page chrome. */
+@keyframes agent-dock-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes agent-dock-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .35; transform: scale(1.5); }
+}
+@keyframes agent-dock-nudge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+@keyframes agent-dock-chat-running-pulse {
+  0% { opacity: .7; transform: scale(.75); }
+  70%, 100% { opacity: 0; transform: scale(1.9); }
+}
+@keyframes agent-dock-title-word {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.agent-dock-root {
+  pointer-events: none;
+  transition: opacity var(--speed-quick) ease-out;
+}
+.agent-dock-scrim {
+  pointer-events: auto;
+}
+.agent-dock-panel {
+  animation: agent-dock-rise 220ms var(--ease-out-quart) both;
+  color-scheme: light;
+}
+.dark .agent-dock-panel {
+  color-scheme: dark;
+}
+.agent-dock-sparkle {
+  background: linear-gradient(135deg, #f97316, #a855f7);
+}
+.agent-dock-attention-dot {
+  animation: agent-dock-pulse 1.6s ease-in-out infinite;
+}
+.agent-dock-attention-nudge {
+  animation: agent-dock-nudge 300ms var(--ease-out-quart) both;
+}
+.agent-dock-chat-running-pulse {
+  animation: agent-dock-chat-running-pulse 1.65s ease-out infinite;
+}
+.agent-dock-title-word {
+  animation: agent-dock-title-word 150ms var(--ease-out-quart) both;
+}
+
+@media (max-width: 999px) {
+  .agent-dock-panel {
+    width: min(760px, 94vw);
+  }
+  .agent-dock-roster {
+    width: 68px;
+  }
+  .agent-dock-roster-controls {
+    padding-inline: 8px;
+  }
+  .agent-dock-tab-list {
+    flex-direction: column;
+    gap: 4px;
+    padding: 0;
+    background: transparent;
+  }
+  .agent-dock-tab {
+    min-height: 44px;
+    flex: none;
+    padding: 0;
+  }
+  .agent-dock-tab-icon,
+  .agent-dock-new-chat-icon {
+    display: inline-flex !important;
+  }
+  .agent-dock-chat-marker {
+    display: grid !important;
+  }
+  .agent-dock-chat-row-dot {
+    display: none;
+  }
+  .agent-dock-tab-copy {
+    display: none;
+  }
+  .agent-dock-new-chat {
+    min-height: 44px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .agent-dock-new-chat .ask-agent-new-chat-mark {
+    display: none;
+  }
+  .agent-dock-roster-copy,
+  .agent-dock-chat-menu {
+    display: none !important;
+  }
+  .agent-dock-group-header,
+  .agent-dock-roster-row {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .agent-dock-group-header {
+    min-height: 28px;
+  }
+  .agent-dock-roster-row {
+    min-height: 48px;
+  }
+  .agent-dock-roster-row > button {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 719px) {
+  .helpin-query-devtools {
+    display: none;
+  }
+  .agent-dock-anchor {
+    inset: 0;
+    bottom: 0;
+    justify-content: flex-end;
+    gap: 0;
+    padding: 0;
+  }
+  .agent-dock-panel {
+    height: 100dvh;
+    min-height: 0;
+    width: 100vw;
+    border-width: 0;
+    border-radius: 0;
+  }
+  .agent-dock-anchor:has(.agent-dock-panel) .agent-dock-trigger {
+    display: none;
+  }
+  .agent-dock-trigger {
+    margin-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+  .agent-dock-header-action {
+    height: 44px;
+    width: 44px;
+  }
+  .agent-dock-trigger-segment {
+    min-height: 40px;
+  }
+  .agent-dock-stack-item,
+  .agent-dock-stack-more {
+    height: 36px;
+    min-width: 36px;
+    width: 36px;
+  }
+  .agent-dock-attention-badge {
+    height: 36px;
+  }
+  .agent-dock-toggle {
+    height: 40px;
+    width: 32px;
+  }
+  .agent-dock-panel textarea {
+    font-size: 16px;
+  }
+  .agent-dock-panel button,
+  .agent-dock-panel a {
+    touch-action: manipulation;
+  }
+}
+
+@media (max-width: 520px) {
+  .agent-dock-attention-badge {
+    width: 34px;
+    min-width: 34px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .agent-dock-attention-badge .agent-dock-attention-dot {
+    flex: none;
+  }
+  .agent-dock-attention-copy,
+  .agent-dock-shortcut {
+    display: none;
+  }
+  .agent-dock-stack-item:nth-child(n+3) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-agent-avatar * {
+    animation: none !important;
+  }
+  .ask-agent-avatar .ask-agent-eye-closed {
+    opacity: 0 !important;
+  }
+  .ask-agent-avatar .ask-agent-eye-open {
+    opacity: 1 !important;
+  }
+  .agent-dock-panel,
+  .agent-dock-attention-dot,
+  .agent-dock-attention-nudge,
+  .agent-dock-chat-running-pulse,
+  .agent-dock-title-word {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .agent-dock-panel,
+  .agent-dock-trigger,
+  .agent-dock-roster-row[aria-current="true"] {
+    border: 1px solid CanvasText;
+  }
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -330,6 +687,30 @@
 /* Tiptap editor styles */
 .tiptap {
   outline: none;
+}
+
+/* Shared rich-text tone. Explicit semantic colors (links, code, mentions, etc.)
+   continue to override this inherited default. */
+.rich-text-soft,
+.pm-rich-text,
+.docs-editor-prose {
+  --rich-text-soft-foreground: color-mix(in oklab, var(--foreground) 90%, transparent);
+  --tw-prose-body: var(--rich-text-soft-foreground);
+  --tw-prose-headings: var(--rich-text-soft-foreground);
+  --tw-prose-lead: var(--rich-text-soft-foreground);
+  --tw-prose-bold: var(--rich-text-soft-foreground);
+  --tw-prose-quotes: var(--rich-text-soft-foreground);
+  color: var(--rich-text-soft-foreground);
+}
+
+/* Compact PM rich text: text-sm resolves to 13.125px at the app's 93.75%
+   root scale, while 1.25rem resolves to 18.75px. */
+.pm-rich-text {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.pm-rich-text :where(p, ol, ul, li, blockquote, dl) {
+  line-height: inherit;
 }
 /* Show placeholder only on the first empty paragraph of an empty editor. */
 .tiptap.is-editor-empty > p.is-empty:first-child::before,
@@ -557,7 +938,7 @@
 
 /* Docs article rhythm: used by the docs editor and shared read-only documents. */
 .docs-editor-prose {
-  color: var(--foreground);
+  color: var(--rich-text-soft-foreground);
   font-size: 1rem;
   line-height: 1.7;
 }
@@ -667,8 +1048,7 @@
 .docs-editor-prose .docs-image-block,
 .docs-editor-prose .docs-html-block,
 .docs-editor-prose .docs-video-embed,
-.docs-editor-prose .docs-saved-view-embed,
-.docs-editor-prose .docs-toggle-section {
+.docs-editor-prose .docs-saved-view-embed {
   margin-top: 1.5rem;
   margin-bottom: 1.5rem;
 }
@@ -731,6 +1111,21 @@
 .dark .docs-editor-prose [data-docs-stale="true"]::after {
   background: oklch(0.32 0.08 55);
   color: oklch(0.88 0.08 75);
+}
+
+/* Block targeted by a pending change proposal, plus the review card anchored
+   beneath it. The card is React-owned UI injected as a widget decoration. */
+.docs-editor-prose .docs-proposal-target {
+  border-left: 3px solid var(--primary);
+  padding-left: 0.75rem;
+  background: color-mix(in oklch, var(--primary) 6%, transparent);
+}
+.docs-proposal-widget {
+  display: block;
+  user-select: text;
+}
+.docs-proposal-widget .docs-proposal-card {
+  font-family: var(--font-sans);
 }
 
 .tiptap ul[data-type="taskList"] {
@@ -805,8 +1200,10 @@
 
 /* Prose-chat: compact markdown styles for support message bubbles */
 .prose-chat {
+  min-width: 0;
+  max-width: 100%;
   word-wrap: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 .prose-chat p {
   margin: 0 0 0.5em;
@@ -824,12 +1221,16 @@
   padding: 0.1em 0.3em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .prose-chat pre {
   background: oklch(0.145 0 0);
   color: oklch(0.93 0 0);
   border-radius: 0.5rem;
   padding: 0.625rem 0.75rem;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
   margin: 0.4em 0;
 }
@@ -838,6 +1239,8 @@
   padding: 0;
   color: inherit;
   font-size: 0.85em;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .prose-chat ul,
 .prose-chat ol {

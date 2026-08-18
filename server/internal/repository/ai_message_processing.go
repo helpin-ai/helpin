@@ -99,3 +99,77 @@ func (r *AIMessageProcessingRepository) MarkFailedBySourceMessageID(ctx context.
 			"updated_at": time.Now(),
 		}).Error
 }
+
+// LatestProcessingForConversation returns the newest in-flight processing row
+// for a conversation, or nil. The support chat turn currently executing
+// corresponds to this row; support.send_reply/escalate settle it.
+func (r *AIMessageProcessingRepository) LatestProcessingForConversation(ctx context.Context, workspaceID, conversationID string) (*model.AIMessageProcessing, error) {
+	var row model.AIMessageProcessing
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND conversation_id = ? AND status = ?", workspaceID, conversationID, "processing").
+		Order("updated_at DESC").
+		First(&row).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+
+// MarkDeferred parks a visitor message that arrived while a chat turn was
+// executing; the pause hook drains deferred rows into one coalesced resume.
+func (r *AIMessageProcessingRepository) MarkDeferred(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
+		Where("id = ?", id).
+		Update("status", "deferred").Error
+}
+
+// ListDeferredForConversation returns parked messages oldest-first.
+func (r *AIMessageProcessingRepository) ListDeferredForConversation(ctx context.Context, workspaceID, conversationID string) ([]model.AIMessageProcessing, error) {
+	var rows []model.AIMessageProcessing
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND conversation_id = ? AND status = ?", workspaceID, conversationID, "deferred").
+		Order("created_at ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// MarkProcessing reclaims a row for an in-flight turn (used when a deferred
+// batch is drained: the newest row becomes the turn being settled).
+func (r *AIMessageProcessingRepository) MarkProcessing(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
+		Where("id = ?", id).
+		Update("status", "processing").Error
+}
+
+// ListDeferredOlderThan returns parked rows (sweep backstop for missed pause
+// events), oldest first.
+func (r *AIMessageProcessingRepository) ListDeferredOlderThan(ctx context.Context, cutoff time.Time, limit int) ([]model.AIMessageProcessing, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var rows []model.AIMessageProcessing
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND updated_at < ?", "deferred", cutoff).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+// IncrementAttempts bumps a row's attempt counter (used as the once-only
+// nudge marker for unsettled chat turns).
+func (r *AIMessageProcessingRepository) IncrementAttempts(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
+		Where("id = ?", id).
+		Update("attempts", gorm.Expr("attempts + 1")).Error
+}

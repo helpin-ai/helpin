@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -1042,20 +1044,25 @@ func TestEmailFallbackRenderBodiesAddsTrackedPoweredByFooter(t *testing.T) {
 	svc := &EmailFallbackService{}
 
 	htmlBody, textBody := svc.renderBodies(
-		[]model.SupportMessage{{Content: "Thanks."}},
+		[]model.SupportMessage{{WorkspaceID: "7d314f04-d25e-461e-8ce4-49de0527ae32", Content: "Thanks."}},
 		"Alex Agent",
-		"Acme Support",
+		"Replug",
 		"",
 		"",
 	)
+	wantURL := "https://helpin.ai/?utm_source=replug-7d314f04&utm_medium=email&utm_campaign=powered_by_helpin&utm_content=support_email_footer"
+	wantHTMLURL := html.EscapeString(wantURL)
 
 	if !strings.Contains(htmlBody, "<strong>Helpin AI</strong>") {
 		t.Fatalf("html footer should bold Helpin AI, got %q", htmlBody)
 	}
-	if !strings.Contains(htmlBody, emailFallbackPoweredByFooterURL) {
+	if !strings.Contains(htmlBody, wantHTMLURL) {
 		t.Fatalf("html footer missing tracked URL, got %q", htmlBody)
 	}
-	if !strings.Contains(textBody, emailFallbackPoweredByFooterURL) {
+	if strings.Contains(htmlBody, "&amp;amp;") {
+		t.Fatalf("html footer URL should be escaped exactly once, got %q", htmlBody)
+	}
+	if !strings.Contains(textBody, wantURL) || strings.Contains(textBody, "&amp;") {
 		t.Fatalf("text footer missing tracked URL, got %q", textBody)
 	}
 }
@@ -3240,6 +3247,18 @@ Company`,
 	if logs[0].FromEmail != "founder@company.com" {
 		t.Fatalf("log from email = %q, want founder@company.com", logs[0].FromEmail)
 	}
+	if !strings.Contains(logs[0].EmailVisibleText, "I need help with my invoice.") {
+		t.Fatalf("forwarded visible projection lost customer body: %q", logs[0].EmailVisibleText)
+	}
+	if strings.Contains(logs[0].EmailVisibleText, "Forwarded message") || strings.Contains(logs[0].EmailVisibleText, "From: Jane Customer") {
+		t.Fatalf("forwarded visible projection retained attribution headers: %q", logs[0].EmailVisibleText)
+	}
+	if logs[0].EmailHasQuotedContent || logs[0].EmailQuotedText != "" {
+		t.Fatalf("forwarded customer body was incorrectly hidden as history: %#v", logs[0])
+	}
+	if logs[0].EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
+		t.Fatalf("forwarded projection version = %d, want current", logs[0].EmailProjectionVersion)
+	}
 
 	detail, err := env.service.supportInboxService.GetMessageEmailDetail(ctx, workspaceID, messages[0].ID)
 	if err != nil {
@@ -3445,6 +3464,166 @@ func TestEmailFallbackProcessInboundEmailMarksSenderForwardingFailedWithoutSende
 	}
 	if total != 0 {
 		t.Fatalf("failed verification email should not create conversation, got total=%d", total)
+	}
+}
+
+func TestEmailFallbackConsumesReturnedEmailRouteVerificationTest(t *testing.T) {
+	ctx := context.Background()
+	env := setupEmailFallbackInboundTestEnv(t, model.DefaultSupportInboxSettings())
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	sourceAddress := "support@example.com"
+	sentAt := time.Now().UTC().Add(-time.Minute)
+	route := &model.SupportEmailRoute{
+		WorkspaceID:                 workspaceID,
+		RouteKey:                    "route-forward-test",
+		InboundAddress:              "inbox@acme.on.helpin.email",
+		SourceAddress:               &sourceAddress,
+		ProviderType:                "forwarding",
+		Active:                      true,
+		VerificationSentAt:          &sentAt,
+		ForwardingVerificationToken: "test-token",
+		CreatedByID:                 actorID,
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MailboxHash:       route.RouteKey,
+		OriginalRecipient: route.InboundAddress,
+		To:                sourceAddress,
+		FromFull:          model.PostmarkAddress{Email: "noreply@example.com", Name: "Helpin"},
+		Subject:           "Helpin forwarding test [test-token]",
+		MessageID:         "pm-route-test-returned",
+		TextBody:          "No action is required.",
+		Headers:           []model.PostmarkHeader{{Name: "To", Value: sourceAddress}},
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-test-returned"}`); err != nil {
+		t.Fatalf("process returned forwarding test: %v", err)
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-test-returned"}`); err != nil {
+		t.Fatalf("process duplicate returned forwarding test: %v", err)
+	}
+
+	updated, err := env.routeRepo.GetByID(ctx, workspaceID, route.ID)
+	if err != nil {
+		t.Fatalf("reload route: %v", err)
+	}
+	if updated.ForwardingVerifiedAt == nil || updated.ForwardingVerificationToken != "" {
+		t.Fatalf("expected verified route with consumed token, got %#v", updated)
+	}
+	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("forwarding test should not create a conversation, got total=%d", total)
+	}
+}
+
+func TestEmailFallbackKeepsProviderConfirmationPendingAndVisible(t *testing.T) {
+	ctx := context.Background()
+	env := setupEmailFallbackInboundTestEnv(t, model.DefaultSupportInboxSettings())
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sourceAddress := "support@example.com"
+	route := &model.SupportEmailRoute{
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-provider-confirmation",
+		InboundAddress: "inbox@acme.on.helpin.email",
+		SourceAddress:  &sourceAddress,
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MailboxHash:       route.RouteKey,
+		OriginalRecipient: route.InboundAddress,
+		To:                route.InboundAddress,
+		FromFull:          model.PostmarkAddress{Email: "forwarding-noreply@google.com", Name: "Gmail Team"},
+		Subject:           "Gmail Forwarding Confirmation - Receive Mail from support@example.com",
+		MessageID:         "pm-provider-confirmation",
+		TextBody:          "support@example.com requested forwarding. Confirm at https://mail-settings.google.com/mail/vf-token",
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-provider-confirmation"}`); err != nil {
+		t.Fatalf("process provider confirmation: %v", err)
+	}
+
+	updated, err := env.routeRepo.GetByID(ctx, workspaceID, route.ID)
+	if err != nil {
+		t.Fatalf("reload route: %v", err)
+	}
+	if updated.ConfirmationReceivedAt == nil || updated.ForwardingVerifiedAt != nil {
+		t.Fatalf("expected confirmation received but forwarding pending, got %#v", updated)
+	}
+	if updated.ConfirmationConversationID == nil || strings.TrimSpace(*updated.ConfirmationConversationID) == "" {
+		t.Fatalf("expected confirmation conversation to be retained, got %#v", updated)
+	}
+	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("provider confirmation should remain visible as a conversation, got total=%d", total)
+	}
+	conversation, err := env.service.findConversationByID(ctx, *updated.ConfirmationConversationID)
+	if err != nil || conversation == nil {
+		t.Fatalf("find retained confirmation conversation = %#v, %v", conversation, err)
+	}
+}
+
+func TestEmailFallbackQualifyingCustomerMailVerifiesRoute(t *testing.T) {
+	ctx := context.Background()
+	env := setupEmailFallbackInboundTestEnv(t, model.DefaultSupportInboxSettings())
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sourceAddress := "support@example.com"
+	route := &model.SupportEmailRoute{
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-customer-proof",
+		InboundAddress: "inbox@acme.on.helpin.email",
+		SourceAddress:  &sourceAddress,
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MailboxHash:       route.RouteKey,
+		OriginalRecipient: route.InboundAddress,
+		To:                sourceAddress,
+		FromFull:          model.PostmarkAddress{Email: "customer@example.net", Name: "Customer"},
+		Subject:           "Need help",
+		MessageID:         "pm-customer-proof",
+		TextBody:          "Please help with my account.",
+		Headers:           []model.PostmarkHeader{{Name: "To", Value: sourceAddress}},
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-customer-proof"}`); err != nil {
+		t.Fatalf("process customer mail: %v", err)
+	}
+
+	updated, err := env.routeRepo.GetByID(ctx, workspaceID, route.ID)
+	if err != nil {
+		t.Fatalf("reload route: %v", err)
+	}
+	if updated.ForwardingVerifiedAt == nil {
+		t.Fatalf("expected qualifying customer mail to verify route, got %#v", updated)
+	}
+	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("customer mail should create a conversation, got total=%d", total)
 	}
 }
 
@@ -3807,10 +3986,11 @@ func TestEmailFallbackRenderBodiesUsesLinkedChatAndHelpinAttribution(t *testing.
 	if !strings.Contains(htmlBody, `border-top:1px solid #e5e7eb`) {
 		t.Fatalf("expected subtle bordered attribution footer, got %q", htmlBody)
 	}
-	if !strings.Contains(htmlBody, `<a href="`+emailFallbackPoweredByFooterURL+`"`) || !strings.Contains(htmlBody, `<strong>Helpin AI</strong></a>`) {
+	wantURL := "https://helpin.ai/?utm_source=acme-support&utm_medium=email&utm_campaign=powered_by_helpin&utm_content=support_email_footer"
+	if !strings.Contains(htmlBody, `<a href="`+html.EscapeString(wantURL)+`"`) || !strings.Contains(htmlBody, `<strong>Helpin AI</strong></a>`) {
 		t.Fatalf("expected Helpin AI attribution link, got %q", htmlBody)
 	}
-	if !strings.Contains(textBody, "Powered by Helpin AI: "+emailFallbackPoweredByFooterURL) {
+	if !strings.Contains(textBody, "Powered by Helpin AI: "+wantURL) {
 		t.Fatalf("expected plaintext Helpin AI attribution URL, got %q", textBody)
 	}
 }
@@ -3845,6 +4025,23 @@ func TestEmailFallbackInboundPayloadBodiesStripReplyDelimiterFromHTMLMarkdown(t 
 	}
 	if !strings.Contains(content, "Fresh HTML reply.") {
 		t.Fatalf("expected fresh reply, got %q", content)
+	}
+}
+
+func TestInboundPayloadProjectionSeparatesQuotedHistory(t *testing.T) {
+	projection := inboundPayloadProjection(model.PostmarkInboundPayload{
+		HtmlBody: `<p>Fresh customer reply.</p><div class="gmail_quote"><p>Old quoted body.</p></div>`,
+		TextBody: "Fresh customer reply.\n\nOld quoted body.",
+	})
+
+	if projection.VisibleText != "Fresh customer reply." {
+		t.Fatalf("visible text = %q, want fresh reply", projection.VisibleText)
+	}
+	if !projection.HasQuotedContent || !strings.Contains(projection.QuotedText, "Old quoted body.") {
+		t.Fatalf("expected retained quoted history, got %#v", projection)
+	}
+	if projection.Version != inboundhtml.CurrentProjectionVersion {
+		t.Fatalf("projection version = %d, want %d", projection.Version, inboundhtml.CurrentProjectionVersion)
 	}
 }
 

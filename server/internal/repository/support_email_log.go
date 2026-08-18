@@ -41,6 +41,46 @@ func (r *SupportEmailLogRepository) ListByConversation(ctx context.Context, work
 	return logs, nil
 }
 
+// ListByMessageIDs returns only email logs that reference at least one of the
+// requested support messages.
+func (r *SupportEmailLogRepository) ListByMessageIDs(ctx context.Context, workspaceID string, messageIDs []string) ([]model.SupportEmailLog, error) {
+	if workspaceID == "" || len(messageIDs) == 0 {
+		return []model.SupportEmailLog{}, nil
+	}
+	if r.db != nil && r.db.Dialector != nil && r.db.Dialector.Name() == "sqlite" {
+		var logs []model.SupportEmailLog
+		if err := r.db.WithContext(ctx).
+			Where("workspace_id = ?", workspaceID).
+			Order("created_at ASC").
+			Find(&logs).Error; err != nil {
+			return nil, fmt.Errorf("list support email logs by message ids: %w", err)
+		}
+		wanted := make(map[string]struct{}, len(messageIDs))
+		for _, messageID := range messageIDs {
+			wanted[messageID] = struct{}{}
+		}
+		matched := make([]model.SupportEmailLog, 0, len(logs))
+		for i := range logs {
+			for _, messageID := range logs[i].MessageIDs {
+				if _, ok := wanted[messageID]; ok {
+					matched = append(matched, logs[i])
+					break
+				}
+			}
+		}
+		return matched, nil
+	}
+
+	var logs []model.SupportEmailLog
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND message_ids && ?", workspaceID, model.StringArray(messageIDs)).
+		Order("created_at ASC").
+		Find(&logs).Error; err != nil {
+		return nil, fmt.Errorf("list support email logs by message ids: %w", err)
+	}
+	return logs, nil
+}
+
 // ListRecent returns recent support email logs ordered newest-first.
 func (r *SupportEmailLogRepository) ListRecent(ctx context.Context, limit int) ([]model.SupportEmailLog, error) {
 	if limit < 1 || limit > 200 {

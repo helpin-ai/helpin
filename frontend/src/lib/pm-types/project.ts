@@ -155,6 +155,24 @@ export interface CreateEpicResponse {
   agent_run_error?: string;
 }
 
+export interface LinkEpicTasksRequest {
+  task_ids: string[];
+}
+
+export interface LinkEpicTasksResponse {
+  linked_count: number;
+  moved_count: number;
+}
+
+export interface LinkSprintTasksRequest {
+  task_ids: string[];
+}
+
+export interface LinkSprintTasksResponse {
+  linked_count: number;
+  moved_count: number;
+}
+
 export type RoadmapEpic = EpicWithStats;
 
 export interface RoadmapData {
@@ -265,6 +283,7 @@ export interface SprintPlanningTaskPreview {
 export interface SprintPlanningCard {
   sprint: PMSprint;
   stats: PMSprintStats;
+  closeout?: SprintCloseoutListItem;
   preview_tasks: SprintPlanningTaskPreview[];
   task_preview_overflow: number;
 }
@@ -500,6 +519,9 @@ export interface Comment {
   entity_type: 'task' | 'epic' | 'doc';
   entity_id: string;
   author_id: string;
+  agent_id?: string | null;
+  agent_name?: string;
+  agent_run_id?: string | null;
   body: string;
   parent_id?: string;
   block_id?: string;
@@ -557,7 +579,11 @@ export interface ActivityLogEntry {
     id: string;
     email: string;
     full_name: string;
-    avatar_url?: string;
+    avatar_url?: string | null;
+    avatar_style?: string | null;
+    avatar_seed?: string | null;
+    avatar_background_mode?: string | null;
+    avatar_background_color?: string | null;
     created_at: string;
     updated_at: string;
   };
@@ -848,11 +874,11 @@ export interface UpdateTaskTemplateRequest {
 export interface CreateEpicRequest {
   workspace_id: string;
   name: string;
+  team_id: string;
   description?: string;
   attachment_ids?: string[];
   epic_state_id?: string;
   owner_member_id?: string;
-  team_id?: string;
   planned_start_date?: string;
   deadline?: string;
   position?: number;
@@ -917,6 +943,7 @@ export interface SprintPlanningFilters {
 export interface CreateTaskRequest {
   workspace_id: string;
   name: string;
+  team_id: string;
   description?: string;
   attachment_ids?: string[];
   task_type?: TaskType;
@@ -924,7 +951,6 @@ export interface CreateTaskRequest {
   workflow_state_id?: string;
   epic_id?: string;
   sprint_id?: string;
-  team_id?: string;
   owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
@@ -1022,6 +1048,7 @@ export interface ChecklistItem {
   completed: boolean;
   position: number;
   assignee_id?: string;
+  due_date?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1030,6 +1057,7 @@ export interface CreateChecklistItemRequest {
   text: string;
   position?: number;
   assignee_id?: string;
+  due_date?: string | null;
 }
 
 export interface UpdateChecklistItemRequest {
@@ -1037,6 +1065,7 @@ export interface UpdateChecklistItemRequest {
   completed?: boolean;
   position?: number;
   assignee_id?: string;
+  due_date?: string | null;
 }
 
 // ── External Links ──────────────────────────────────────────────────
@@ -1090,6 +1119,7 @@ export interface CreateAttachmentRequest {
   file_name: string;
   file_size: number;
   content_type: string;
+  private?: boolean;
 }
 
 export interface CreateCommentRequest {

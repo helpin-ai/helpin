@@ -15,6 +15,7 @@ type CodingSessionStateSnapshot struct {
 	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_coding_session_state_snapshots_run"`
 	RunID           string          `json:"run_id" gorm:"type:uuid;not null;uniqueIndex:idx_coding_session_state_snapshots_run"`
 	SchemaVersion   string          `json:"schema_version" gorm:"not null;default:'helpin.coding_session.stream.v1'"`
+	ThroughSequence int64           `json:"through_sequence" gorm:"not null;default:0"`
 	SnapshotPayload json.RawMessage `json:"snapshot_payload" gorm:"type:jsonb;not null;default:'{}'"`
 	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt       time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
@@ -77,6 +78,7 @@ func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventT
 		)
 		assistant := ensureCodingSessionAssistantMessage(snapshot.LiveAssistantMessage, messageID, timestamp.UTC())
 		deltaText := firstNonEmptySnapshotRawString(payload["content"], payload["text"])
+		deltaText = codingSessionStreamDelta(assistant.Content, deltaText)
 		assistant.Content += deltaText
 		assistant.Status = "streaming"
 		snapshot.LiveAssistantMessage = assistant
@@ -91,7 +93,7 @@ func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventT
 		assistant := ensureCodingSessionAssistantMessage(snapshot.LiveAssistantMessage, messageID, timestamp.UTC())
 		previousContent := assistant.Content
 		content := firstNonEmptySnapshotRawString(payload["content"], payload["text"])
-		if content != "" && len(content) >= len(assistant.Content) {
+		if content != "" {
 			assistant.Content = content
 		}
 		assistant.Status = "completed"
@@ -114,7 +116,7 @@ func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventT
 			"reasoning:"+timestamp.UTC().Format(time.RFC3339Nano),
 		)
 		reasoning := ensureCodingSessionReasoningMessage(snapshot.LiveReasoningMessage, messageID, timestamp.UTC())
-		reasoning.Content += firstNonEmptySnapshotRawString(payload["content"], payload["text"])
+		reasoning.Content += codingSessionStreamDelta(reasoning.Content, firstNonEmptySnapshotRawString(payload["content"], payload["text"]))
 		if encrypted := trimmedSnapshotString(payload["encrypted_value"]); encrypted != "" {
 			reasoning.EncryptedValue = snapshotStringPtr(encrypted)
 		}
@@ -456,6 +458,14 @@ func appendOrMarkCompletedCodingSessionAssistantSegment(snapshot *CodingSessionS
 		}
 		return
 	}
+	if strings.TrimSpace(fullContent) != "" && fullContent != previousContent {
+		if segment := firstCodingSessionAssistantSegment(snapshot.LiveTurnSegments, messageID); segment != nil {
+			segment.Content = fullContent
+			segment.Status = "completed"
+			segment.CompletedAt = timePtr(timestamp)
+			return
+		}
+	}
 	if segment := latestCodingSessionAssistantSegment(snapshot.LiveTurnSegments, messageID); segment != nil {
 		segment.Status = "completed"
 		segment.CompletedAt = timePtr(timestamp)
@@ -469,6 +479,19 @@ func appendOrMarkCompletedCodingSessionAssistantSegment(snapshot *CodingSessionS
 		segment.Status = "completed"
 		segment.CompletedAt = timePtr(timestamp)
 	}
+}
+
+func firstCodingSessionAssistantSegment(segments []CodingSessionLiveTurnSegment, messageID string) *CodingSessionLiveAssistantMessage {
+	for index := range segments {
+		segment := &segments[index]
+		if segment.Kind != "assistant_message" || segment.AssistantMessage == nil {
+			continue
+		}
+		if segment.AssistantMessage.MessageID == messageID {
+			return segment.AssistantMessage
+		}
+	}
+	return nil
 }
 
 func ensureCodingSessionToolCallSegment(snapshot *CodingSessionStreamSnapshot, payload map[string]any, timestamp time.Time, assistantMessageID string) *CodingSessionLiveToolCall {
@@ -565,6 +588,16 @@ func deriveCodingSessionAssistantSegmentDelta(previousContent, fullContent strin
 		return fullContent[len(previousContent):], true
 	}
 	return "", false
+}
+
+func codingSessionStreamDelta(current, incoming string) string {
+	if incoming == "" {
+		return ""
+	}
+	if current != "" && strings.HasPrefix(incoming, current) {
+		return incoming[len(current):]
+	}
+	return incoming
 }
 
 func latestCodingSessionAssistantSegment(segments []CodingSessionLiveTurnSegment, messageID string) *CodingSessionLiveAssistantMessage {

@@ -86,6 +86,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			owner_id TEXT NOT NULL DEFAULT '',
 			organization_id TEXT,
 			description TEXT,
+			company_product_context TEXT,
 			website_url TEXT,
 			logo_url TEXT,
 			timezone TEXT NOT NULL DEFAULT 'UTC',
@@ -184,12 +185,33 @@ func TestEvaluateEvent_CronTrigger_SkipsStoryLoading(t *testing.T) {
 	}, nil)
 }
 
+func TestCreateRuleForActorAttributesCreator(t *testing.T) {
+	db := setupRuleEngineTestDB(t)
+	ruleRepo := repository.NewAutomationRuleRepository(db)
+	engine := NewAutomationRuleEngine(ruleRepo, nil, nil, nil, nil, nil, nil, nil)
+
+	rule, err := engine.CreateRuleForActor(context.Background(), "ws-1", "user-1", model.CreateAutomationRuleRequest{
+		Name:          "Move approved task",
+		TriggerType:   model.TriggerAgentRunApproved,
+		TriggerConfig: json.RawMessage(`{"state_id":"state-1"}`),
+		ActionType:    model.ActionMoveToState,
+		ActionConfig:  json.RawMessage(`{"target_state_id":"state-2"}`),
+	})
+	if err != nil {
+		t.Fatalf("CreateRuleForActor returned error: %v", err)
+	}
+	if rule.CreatedBy == nil || *rule.CreatedBy != "user-1" {
+		t.Fatalf("CreatedBy = %#v, want user-1", rule.CreatedBy)
+	}
+}
+
 func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	if err := db.Exec(`CREATE TABLE agents (
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		name TEXT NOT NULL DEFAULT '',
+		icon_key TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'idle',
 		runtime_kind TEXT NOT NULL DEFAULT 'native_sdk',
 		source_template_key TEXT NOT NULL DEFAULT '',

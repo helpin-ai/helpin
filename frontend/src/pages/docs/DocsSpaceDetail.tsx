@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useGlobalCreateStore } from '@/stores/globalCreateStore'
-import { buildCollectionTree } from '@/components/docs/docsCollectionTree'
+import { buildCollectionPathLabels, buildCollectionTree } from '@/components/docs/docsCollectionTree'
 import {
   useDocsSpace,
   useDocsCollections,
@@ -16,7 +16,6 @@ import {
   useDeleteDocsDocument,
   useDuplicateDocsDocument,
   usePublishDocsDocument,
-  useAssignableMembers,
   useWorkspaceAccess,
   usePermissions,
 } from '@/hooks/queries'
@@ -33,6 +32,7 @@ import { CollectionCardGrid } from '@/pages/docs/spaceDetail/CollectionCardGrid'
 import { EmptyNodeState } from '@/pages/docs/spaceDetail/EmptyNodeState'
 import { UncategorizedSection } from '@/pages/docs/spaceDetail/UncategorizedSection'
 import { NodeSkeleton } from '@/pages/docs/spaceDetail/NodeSkeleton'
+import { APIReferenceSection } from '@/components/docs/APIReferenceSection'
 import {
   countDirectDocs,
   directChildrenOfView,
@@ -64,7 +64,6 @@ export function DocsSpaceDetail() {
   const { data: collections } = useDocsCollections(wsId, spaceId)
   const docFilters = { space_id: spaceId, include_archived: 'true', ...(filterStatus ? { status: filterStatus } : {}) }
   const { data: documents } = useDocsDocuments(wsId, docFilters)
-  const { data: members = [] } = useAssignableMembers(wsId)
   const archiveDoc = useArchiveDocsDocument(wsId)
   const unarchiveDoc = useUnarchiveDocsDocument(wsId)
   const deleteDoc = useDeleteDocsDocument(wsId)
@@ -77,15 +76,8 @@ export function DocsSpaceDetail() {
 
   useTitle(space?.name ?? 'Space')
 
-  // Collection name lookup — still passed into DocumentsTable's
-  // Collection column when rendered at space root.
-  const collectionNames = useMemo(
-    () => new Map<string, string>((collections ?? []).map((c) => [c.id, c.name])),
-    [collections],
-  )
-
-  const collectionDepths = useMemo(
-    () => new Map<string, number>((collections ?? []).map((c) => [c.id, c.depth])),
+  const collectionPaths = useMemo(
+    () => buildCollectionPathLabels(collections ?? []),
     [collections],
   )
 
@@ -218,7 +210,7 @@ export function DocsSpaceDetail() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="space-y-4">
       <SpaceNodeHeader
         space={space}
         view={view}
@@ -261,6 +253,10 @@ export function DocsSpaceDetail() {
         <NodeSkeleton />
       ) : (
         <>
+          {view.kind === 'space_root' && space.type === 'external_capable' && (
+            <APIReferenceSection wsId={wsId} spaceId={spaceId} canEdit={canEditDocs} />
+          )}
+
           <CollectionCardGrid
             title={view.kind === 'space_root' ? 'Collections' : 'Sub-collections'}
             nodes={childNodes}
@@ -282,9 +278,8 @@ export function DocsSpaceDetail() {
           {scopedDocs.length > 0 ? (
             <DocumentsTable
                 documents={scopedDocs}
-                members={members}
-                collectionDepths={collectionDepths}
-                collectionNames={collectionNames}
+                collectionPaths={collectionPaths}
+                showCollectionPath={view.kind === 'space_root'}
                 hasCollections={(collections ?? []).length > 0}
                 wsSlug={wsSlug}
               filterStatus={filterStatus}

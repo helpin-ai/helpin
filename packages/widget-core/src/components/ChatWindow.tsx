@@ -1,5 +1,5 @@
 import { FunctionComponent } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ActiveTeammate, Message, Conversation, WidgetConfig } from '../types';
 import { BottomNav, type WidgetBaseView, WidgetView } from './BottomNav';
 import { HomeView } from './HomeView';
@@ -14,10 +14,19 @@ import {
 import { HelpArticleView } from './HelpArticleView';
 import { ConversationView } from './ConversationView';
 import { ConversationListView } from './ConversationListView';
+import { BrandAttribution } from './BrandAttribution';
 import { XIcon } from './icons';
 
 type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
-const HELPIN_BRANDING_URL = 'https://helpin.ai/?utm_source=helpin_widget&utm_medium=widget&utm_campaign=powered_by';
+type ResolvedColorScheme = 'light' | 'dark';
+
+const getSystemColorScheme = (): ResolvedColorScheme => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return 'light';
+  }
+
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
 
 interface ChatWindowProps {
   config: WidgetConfig;
@@ -30,9 +39,11 @@ interface ChatWindowProps {
   onQuickReply: (content: string) => void;
   onTyping?: (content: string) => void;
   showPreChatForm: boolean;
+  contactCaptureCompleted?: boolean;
   onPreChatSubmit: (data: { phone: string; email: string }) => void;
   isTyping?: boolean;
   isAIThinking?: boolean;
+  aiProgressLabel?: string;
   typingAgentName?: string;
   typingAgentAvatar?: string;
   activeTeammate?: ActiveTeammate;
@@ -58,6 +69,10 @@ interface ChatWindowProps {
     articleSlug?: string;
   };
   onImageClick?: (src: string, alt: string) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  queuedMessageCount?: number;
+  csatSubmitted?: boolean;
+  onCsatSubmit?: (rating: number, feedback?: string) => void;
 }
 
 export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
@@ -71,9 +86,11 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   onQuickReply,
   onTyping,
   showPreChatForm,
+  contactCaptureCompleted = false,
   onPreChatSubmit,
   isTyping = false,
   isAIThinking = false,
+  aiProgressLabel,
   typingAgentName,
   typingAgentAvatar,
   activeTeammate,
@@ -95,6 +112,10 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   host,
   openArticleRequest,
   onImageClick,
+  onAnswerFeedback,
+  queuedMessageCount = 0,
+  csatSubmitted = false,
+  onCsatSubmit,
 }) => {
   const initialPreviousView: WidgetBaseView =
     initialView === 'messages' || initialView === 'help' || initialView === 'home'
@@ -107,6 +128,8 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const [activeHelpSpaceSlug, setActiveHelpSpaceSlug] = useState<string | null>(null);
   const [activeCollectionSlug, setActiveCollectionSlug] = useState<string | null>(null);
   const [activeArticleKey, setActiveArticleKey] = useState<string | null>(null);
+  const handledArticleRequestKeyRef = useRef<number | null>(null);
+  const onViewChangeRef = useRef(onViewChange);
   // Breadcrumb stack of ancestor collection slugs the user drilled
   // through to reach activeCollectionSlug, oldest-first. Pop on back
   // to walk up the tree one level at a time. Empty when the user is
@@ -116,6 +139,11 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const [shouldRender, setShouldRender] = useState(isOpen);
   const [isVisible, setIsVisible] = useState(isOpen);
   const [humanSupportRequested, setHumanSupportRequested] = useState(false);
+  const configuredColorScheme = config.branding?.colorScheme || 'light';
+  const [systemColorScheme, setSystemColorScheme] = useState<ResolvedColorScheme>(getSystemColorScheme);
+  const colorScheme = configuredColorScheme === 'system'
+    ? systemColorScheme
+    : configuredColorScheme;
 
   // Sync activeView when initialView prop changes (e.g. first-open → conversation)
   useEffect(() => {
@@ -123,21 +151,55 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   }, [initialView]);
 
   useEffect(() => {
+    onViewChangeRef.current = onViewChange;
+  }, [onViewChange]);
+
+  useEffect(() => {
     setHumanSupportRequested(false);
   }, [activeConversation?.id]);
 
   useEffect(() => {
-    const requestedArticleKey = openArticleRequest?.articleKey ?? openArticleRequest?.articleSlug;
-    if (!requestedArticleKey) {
+    if (
+      configuredColorScheme !== 'system'
+      || typeof window === 'undefined'
+      || typeof window.matchMedia !== 'function'
+    ) {
       return;
     }
 
+    const colorSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const syncColorScheme = () => {
+      setSystemColorScheme(colorSchemeQuery.matches ? 'dark' : 'light');
+    };
+
+    syncColorScheme();
+    if (typeof colorSchemeQuery.addEventListener === 'function') {
+      colorSchemeQuery.addEventListener('change', syncColorScheme);
+      return () => colorSchemeQuery.removeEventListener('change', syncColorScheme);
+    }
+
+    colorSchemeQuery.addListener(syncColorScheme);
+    return () => colorSchemeQuery.removeListener(syncColorScheme);
+  }, [configuredColorScheme]);
+
+  useEffect(() => {
+    const requestedArticleKey = openArticleRequest?.articleKey ?? openArticleRequest?.articleSlug;
+    const requestKey = openArticleRequest?.key;
+    if (!requestedArticleKey || requestKey === undefined || handledArticleRequestKeyRef.current === requestKey) {
+      return;
+    }
+
+    // openArticleRequest is a command, not persistent navigation state. The
+    // SDK can rerender the widget with the same request object after a user
+    // clicks Back or Messages; consume each key once so that rerender cannot
+    // force the article back onto the screen.
+    handledArticleRequestKeyRef.current = requestKey;
     setActiveArticleKey(requestedArticleKey);
     setActiveCollectionSlug(null);
     setActiveHelpSpaceSlug(null);
     setActiveView('help-article');
-    onViewChange?.('help-article');
-  }, [onViewChange, openArticleRequest]);
+    onViewChangeRef.current?.('help-article');
+  }, [openArticleRequest?.articleKey, openArticleRequest?.articleSlug, openArticleRequest?.key]);
 
   useEffect(() => {
     let frameId: number | undefined;
@@ -170,7 +232,6 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   const position = config.branding?.widgetPosition || 'bottom-right';
   const brandColor = config.branding?.primaryColor || '#6366f1';
   const showBranding = config.branding?.showBranding ?? true;
-  const colorScheme = config.branding?.colorScheme || 'light';
   const helpSpaces = config.helpSpaces ?? [];
   const activeHelpSpace = helpSpaces.find((space) => space.slug === activeHelpSpaceSlug) || null;
   const homeTeammates = (config.availableTeammates ?? []).slice(0, 4);
@@ -323,7 +384,9 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
       )}
       {connectionStatus === 'disconnected' && (
         <div className="helpin-connection-banner helpin-connection-banner--disconnected">
-          Connection lost. Reconnecting...
+          {queuedMessageCount > 0
+            ? `Reconnecting… ${queuedMessageCount === 1 ? '1 message is saved' : `${queuedMessageCount} messages are saved`}.`
+            : 'Connection lost. Reconnecting…'}
         </div>
       )}
       {connectionStatus === 'failed' && (
@@ -370,6 +433,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             onTyping={onTyping}
             isTyping={isTyping}
             isAIThinking={isAIThinking}
+            aiProgressLabel={aiProgressLabel}
             onEscalateToHuman={onEscalateToHuman ? () => {
               setHumanSupportRequested(true);
               onEscalateToHuman();
@@ -384,9 +448,14 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             transcriptEmail={transcriptEmail}
             onRequestTranscript={onRequestTranscript}
             showPreChatForm={showPreChatForm}
+            contactCaptureCompleted={contactCaptureCompleted}
             onPreChatSubmit={onPreChatSubmit}
             onImageClick={onImageClick}
+            onAnswerFeedback={onAnswerFeedback}
             connectionStatus={connectionStatus}
+            queuedMessageCount={queuedMessageCount}
+            csatSubmitted={csatSubmitted}
+            onCsatSubmit={onCsatSubmit}
           />
         )}
         {activeView === 'messages' && (
@@ -475,15 +544,13 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
 
       {/* Powered by footer */}
       {showBranding && activeView !== 'conversation' && activeView !== 'messages' && (
-        <a
-          href={HELPIN_BRANDING_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <BrandAttribution
+          label="Powered by"
           className="helpin-powered-by"
-        >
-          <span>Powered by</span>
-          <span className="helpin-powered-by-name">Helpin</span>
-        </a>
+          workspaceId={config.workspaceId}
+          workspaceName={config.workspaceName}
+          content="chat_widget_footer"
+        />
       )}
 
       {/* Bottom navigation */}

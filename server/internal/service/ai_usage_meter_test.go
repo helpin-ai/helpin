@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -20,6 +21,18 @@ func TestCalculateAIUsageUnitsUsesSixXOutputAndReasoning(t *testing.T) {
 
 	if units != 8 {
 		t.Fatalf("usage units = %d, want support reply floor 8", units)
+	}
+}
+
+func TestAgentRunAIUsageFeatureLabelsAskAgentAsAskChat(t *testing.T) {
+	agent := &model.Agent{IsSystem: true, PresetKey: model.AgentPresetAskAgent}
+	got := AgentRunAIUsageFeature(agent)
+	if got != BillingFeatureAskChat {
+		t.Fatalf("AgentRunAIUsageFeature() = %q, want %q", got, BillingFeatureAskChat)
+	}
+	feature, ok := AIUsageFeature(got)
+	if !ok || feature.Label != "Ask Chat" {
+		t.Fatalf("Ask Chat feature = %#v, found=%v", feature, ok)
 	}
 }
 
@@ -45,6 +58,25 @@ func TestAIUsageFloorsDoNotExceedOneHundred(t *testing.T) {
 	}
 }
 
+func TestCommandBarAnswerIsNotASeparateUsageFeature(t *testing.T) {
+	if feature, ok := AIUsageFeature("command_bar_answer"); ok {
+		t.Fatalf("command_bar_answer feature = %#v, want command-bar work billed by its agent run", feature)
+	}
+}
+
+func TestAIUsagePayloadIdempotencyKeyTracksSourceSnapshot(t *testing.T) {
+	first := aiUsagePayloadIdempotencyKey([]byte(`{"value":"first"}`), "ws-1", "summary", "contact-1")
+	retry := aiUsagePayloadIdempotencyKey([]byte(`{"value":"first"}`), "ws-1", "summary", "contact-1")
+	changed := aiUsagePayloadIdempotencyKey([]byte(`{"value":"changed"}`), "ws-1", "summary", "contact-1")
+
+	if first != retry {
+		t.Fatalf("same source snapshot produced different keys: %q != %q", first, retry)
+	}
+	if first == changed {
+		t.Fatalf("changed source snapshot reused key %q", first)
+	}
+}
+
 func TestSetupAIUsageFeaturesAreNotChargeable(t *testing.T) {
 	for _, key := range []string{
 		BillingFeatureCustomAgentDraft,
@@ -52,6 +84,7 @@ func TestSetupAIUsageFeaturesAreNotChargeable(t *testing.T) {
 		BillingFeatureFlowSetup,
 		BillingFeatureAgentPromptImprovement,
 		BillingFeatureDataImportSetup,
+		BillingFeatureCompanyProductContext,
 	} {
 		feature, ok := AIUsageFeature(key)
 		if !ok {
@@ -63,6 +96,19 @@ func TestSetupAIUsageFeaturesAreNotChargeable(t *testing.T) {
 		if got := CalculateAIUsageUnits(AIUsageCalculation{FeatureKey: key, InputTokens: 10000, OutputTokens: 10000}); got != 0 {
 			t.Fatalf("feature %s usage units = %d, want 0", key, got)
 		}
+	}
+}
+
+func TestDockChatTitleAIUsageIsNotChargeable(t *testing.T) {
+	feature, ok := AIUsageFeature(BillingFeatureDockChatTitle)
+	if !ok {
+		t.Fatal("missing dock chat title feature")
+	}
+	if feature.Chargeable {
+		t.Fatal("dock chat title feature is chargeable, want product chrome to be free")
+	}
+	if got := CalculateAIUsageUnits(AIUsageCalculation{FeatureKey: BillingFeatureDockChatTitle, InputTokens: 100, OutputTokens: 20}); got != 0 {
+		t.Fatalf("dock chat title usage units = %d, want 0", got)
 	}
 }
 
@@ -129,8 +175,11 @@ func TestMeteredLLMProviderConsumesUsageFromContext(t *testing.T) {
 		response: &llm.ChatResponse{
 			Content: "ok",
 			TokensUsed: llm.TokenUsage{
-				InputTokens:  3000,
-				OutputTokens: 5000,
+				InputTokens:       3000,
+				CachedInputTokens: 1000,
+				CacheWriteTokens:  500,
+				OutputTokens:      5000,
+				ReasoningTokens:   1000,
 			},
 		},
 	}, meter)
@@ -150,14 +199,17 @@ func TestMeteredLLMProviderConsumesUsageFromContext(t *testing.T) {
 	if resp.Content != "ok" {
 		t.Fatalf("content = %q, want ok", resp.Content)
 	}
-	if consumer.input.Credits != 33 {
-		t.Fatalf("credits = %d, want 33", consumer.input.Credits)
+	if consumer.input.Credits != 39 {
+		t.Fatalf("credits = %d, want 39", consumer.input.Credits)
 	}
 	if consumer.input.FeatureKey != BillingFeatureDocsArticleGeneration {
 		t.Fatalf("feature = %q", consumer.input.FeatureKey)
 	}
 	if consumer.input.IdempotencyKey != "feature-1" {
 		t.Fatalf("idempotency key = %q", consumer.input.IdempotencyKey)
+	}
+	if consumer.input.Metadata["cache_write_tokens"] != 500 {
+		t.Fatalf("cache write metadata = %#v, want 500", consumer.input.Metadata["cache_write_tokens"])
 	}
 }
 
@@ -263,6 +315,133 @@ func TestPreflightAgentRunAIUsageUsesAgentFeatureFloor(t *testing.T) {
 	}
 	if consumer.input.WorkspaceID != "" {
 		t.Fatalf("usage was consumed during preflight: %#v", consumer.input)
+	}
+}
+
+func TestPreflightAgentRunAIUsageStoresTokenPricedReservation(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	meter := NewTokenPricedAIUsageMeter(newTestAIUsageService(t, store))
+	provider, modelID := "openrouter-responses", "openai/gpt-5.6-terra"
+	run := &model.AgentRun{ID: "run-token", WorkspaceID: "ws-1", Input: []byte(`{"additional_context":"plan it"}`), OutputSummary: []byte(`{}`)}
+	agent := &model.Agent{ID: "agent-1", PresetKey: model.AgentPresetCodeBuilder, Provider: &provider, Model: &modelID}
+
+	if err := PreflightAgentRunAIUsage(context.Background(), meter, run, agent); err != nil {
+		t.Fatal(err)
+	}
+	context, ok := agentRunMeteringContext(run)
+	if !ok {
+		t.Fatal("expected durable token-priced metering context")
+	}
+	if context.ReservationID != "reservation" || context.Route.Tier != "large" || context.MaxBillableMicrousd <= 0 {
+		t.Fatalf("metering context = %#v", context)
+	}
+	if store.reservation.ExecutionID != run.ID || store.reservation.IdempotencyKey != "ws-1:agent_run:run-token" {
+		t.Fatalf("reservation = %#v", store.reservation)
+	}
+}
+
+func TestAgentRunUsageCheckpointsChargeOnlyCumulativeDelta(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	usageService := newTestAIUsageService(t, store)
+	metering, err := usageService.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws-1", TaskNature: "general", FeatureKey: BillingFeatureBuiltInLightAgentRun,
+		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: "standard",
+		IdempotencyKey: "ws-1:agent_run:run-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metering.ReservationID = "reservation"
+	metering.MaxBillableMicrousd = 1_000_000
+	metering.EnforcementMode = model.AIUsageEnforcementStrict
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", OutputSummary: json.RawMessage(`{}`)}
+	if err := storeAgentRunMeteringContext(run, metering); err != nil {
+		t.Fatal(err)
+	}
+	meter := &AIUsageMeter{usage: usageService}
+	first := agentRuntimeUsagePayload{InputTokens: 100, CachedInputTokens: 20, OutputTokens: 10}
+	if err := meter.checkpointAgentRun(context.Background(), run, first); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 1 || store.checkpoint.Entry.InputTokensTotal != 100 || store.checkpoint.Entry.OutputTokens != 10 {
+		t.Fatalf("first checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
+	}
+	if err := meter.checkpointAgentRun(context.Background(), run, first); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 1 {
+		t.Fatalf("duplicate cumulative checkpoint calls = %d, want 1", store.checkpoints)
+	}
+
+	second := agentRuntimeUsagePayload{InputTokens: 160, CachedInputTokens: 30, OutputTokens: 25}
+	if err := meter.checkpointAgentRun(context.Background(), run, second); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoints != 2 || store.checkpoint.Entry.InputTokensTotal != 60 ||
+		store.checkpoint.Entry.CacheReadTokens != 10 || store.checkpoint.Entry.OutputTokens != 15 {
+		t.Fatalf("second checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
+	}
+	if got := agentRunUsageCheckpointFromSummary(run.OutputSummary); got.Turn != 2 || got.InputTokens != 160 || got.OutputTokens != 25 {
+		t.Fatalf("checkpoint summary = %#v", got)
+	}
+
+	terminal := agentRuntimeUsagePayload{InputTokens: 180, CachedInputTokens: 32, OutputTokens: 30}
+	if err := meter.reconcileAgentRun(context.Background(), run, terminal); err != nil {
+		t.Fatal(err)
+	}
+	if store.reconcile.Entry.InputTokensTotal != 20 || store.reconcile.Entry.CacheReadTokens != 2 || store.reconcile.Entry.OutputTokens != 5 {
+		t.Fatalf("terminal reconciliation = %#v", store.reconcile.Entry)
+	}
+}
+
+func TestAgentRunUsageTerminalAfterCheckpointOnlyReleasesReservation(t *testing.T) {
+	store := &fakeAIUsageStore{}
+	usageService := newTestAIUsageService(t, store)
+	metering, err := usageService.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws-1", TaskNature: "general", FeatureKey: BillingFeatureBuiltInLightAgentRun,
+		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: "standard",
+		IdempotencyKey: "ws-1:agent_run:run-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metering.ReservationID = "reservation"
+	metering.MaxBillableMicrousd = 1_000_000
+	metering.EnforcementMode = model.AIUsageEnforcementStrict
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", OutputSummary: json.RawMessage(`{}`)}
+	if err := storeAgentRunMeteringContext(run, metering); err != nil {
+		t.Fatal(err)
+	}
+	meter := &AIUsageMeter{usage: usageService}
+	usage := agentRuntimeUsagePayload{InputTokens: 100, CachedInputTokens: 20, OutputTokens: 10}
+	if err := meter.checkpointAgentRun(context.Background(), run, usage); err != nil {
+		t.Fatal(err)
+	}
+	if err := meter.reconcileAgentRun(context.Background(), run, usage); err != nil {
+		t.Fatal(err)
+	}
+	if store.releasedID != "reservation" {
+		t.Fatalf("released reservation = %q, want reservation", store.releasedID)
+	}
+	if store.reconcile.Entry.IdempotencyKey != "" {
+		t.Fatalf("unexpected terminal ledger entry: %#v", store.reconcile.Entry)
+	}
+}
+
+func TestTokenPricedAgentRunReconcilesTerminalCumulativeUsage(t *testing.T) {
+	store := &fakeAIUsageStore{mode: model.AIUsageEnforcementExtra}
+	meter := NewTokenPricedAIUsageMeter(newTestAIUsageService(t, store))
+	provider, modelID := "openrouter", "openai/gpt-5.6-terra"
+	run := &model.AgentRun{ID: "run-token", WorkspaceID: "ws-1", OutputSummary: []byte(`{}`)}
+	agent := &model.Agent{PresetKey: model.AgentPresetCodeBuilder, Provider: &provider, Model: &modelID}
+	if err := PreflightAgentRunAIUsage(context.Background(), meter, run, agent); err != nil {
+		t.Fatal(err)
+	}
+	if err := meter.reconcileAgentRun(context.Background(), run, agentRuntimeUsagePayload{InputTokens: 1000, CachedInputTokens: 100, OutputTokens: 200, ReasoningOutputTokens: 50}); err != nil {
+		t.Fatal(err)
+	}
+	if store.reconcile.ReservationID != "reservation" || store.reconcile.Entry.InputTokensTotal != 1000 || store.reconcile.Entry.ReasoningTokens != 50 {
+		t.Fatalf("reconcile = %#v", store.reconcile)
 	}
 }
 

@@ -3,12 +3,17 @@ package service
 import (
 	"context"
 	"fmt"
+	"html"
+	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 const sharedSupportEmailRouteLocalPart = "inbox"
+
+const supportEmailRouteVerificationSubject = "Helpin forwarding test"
 
 const (
 	supportOutboundSenderSourceMailboxDefault   = "mailbox_default_sender"
@@ -103,6 +108,58 @@ func (s *SupportInboxService) DisableEmailRoute(ctx context.Context, workspaceID
 		return fmt.Errorf("email route not found")
 	}
 	return s.emailRouteRepo.Disable(ctx, workspaceID, routeID)
+}
+
+// SendEmailRouteTest sends a tagged message through the customer's source address so
+// Helpin can verify that forwarding works end to end when the message returns.
+func (s *SupportInboxService) SendEmailRouteTest(ctx context.Context, workspaceID, routeID, sourceAddress string) (*model.SupportEmailRoute, error) {
+	if s == nil || s.emailRouteRepo == nil {
+		return nil, fmt.Errorf("support email routes are unavailable")
+	}
+	if s.emailFallbackService == nil || s.emailFallbackService.emailClient == nil {
+		return nil, fmt.Errorf("support email delivery is unavailable")
+	}
+	route, err := s.emailRouteRepo.GetByID(ctx, workspaceID, routeID)
+	if err != nil {
+		return nil, err
+	}
+	if route == nil || !route.Active {
+		return nil, fmt.Errorf("email forwarding route not found")
+	}
+	parsed, err := mail.ParseAddress(strings.TrimSpace(sourceAddress))
+	if err != nil || strings.TrimSpace(parsed.Address) == "" {
+		return nil, fmt.Errorf("enter a valid source email address")
+	}
+	sourceAddress = strings.ToLower(strings.TrimSpace(parsed.Address))
+	if strings.EqualFold(sourceAddress, route.InboundAddress) {
+		return nil, fmt.Errorf("source address must be different from the Helpin forwarding address")
+	}
+
+	token, err := generateSecureToken(12)
+	if err != nil {
+		return nil, fmt.Errorf("generate forwarding test token: %w", err)
+	}
+	now := time.Now().UTC()
+	route.SourceAddress = &sourceAddress
+	route.VerificationSentAt = &now
+	route.ForwardingVerificationToken = token
+	route.ForwardingLastError = nil
+	if err := s.emailRouteRepo.Update(ctx, route); err != nil {
+		return nil, err
+	}
+
+	subject := fmt.Sprintf("%s [%s]", supportEmailRouteVerificationSubject, token)
+	textBody := "This message verifies that email sent to " + sourceAddress + " is forwarded into Helpin. No action is required."
+	htmlBody := "<p>This message verifies that email sent to <strong>" + html.EscapeString(sourceAddress) + "</strong> is forwarded into Helpin.</p><p>No action is required.</p>"
+	if err := s.emailFallbackService.emailClient.SendEmail(sourceAddress, subject, htmlBody, textBody); err != nil {
+		message := err.Error()
+		route.ForwardingLastError = &message
+		if updateErr := s.emailRouteRepo.Update(ctx, route); updateErr != nil {
+			return nil, updateErr
+		}
+		return nil, fmt.Errorf("send forwarding test: %w", err)
+	}
+	return route, nil
 }
 
 func normalizeSupportEmailRouteSource(value *string) *string {

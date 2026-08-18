@@ -4,16 +4,21 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ExecutionStrip } from '../ExecutionStrip';
-import type { AgentRun } from '@/lib/pmTypes';
-import type { CommandBarRunPlan } from '@/stores/commandBarStore';
+import type { AgentRun, CodingSessionInteraction, CodingSessionStreamState } from '@/lib/pmTypes';
+import type { CommandBarRunPlan } from '../planSummary';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+const mocks = vi.hoisted(() => ({
+  pendingInteraction: null as CodingSessionInteraction | null,
+  streamState: null as CodingSessionStreamState | null,
+}));
+
 vi.mock('../useAgentRunStream', () => ({
   useAgentRunStream: () => ({
-    streamState: null,
+    streamState: mocks.streamState,
     currentPlan: null,
-    pendingInteraction: null,
+    pendingInteraction: mocks.pendingInteraction,
     clearPendingInteraction: vi.fn(),
     refetch: vi.fn(),
   }),
@@ -26,6 +31,8 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
+  mocks.pendingInteraction = null;
+  mocks.streamState = null;
 });
 
 afterEach(() => {
@@ -88,6 +95,84 @@ function plan(overrides: Partial<CommandBarRunPlan> = {}): CommandBarRunPlan {
 }
 
 describe('ExecutionStrip actions', () => {
+  it('keeps every child-run assistant segment visible', () => {
+    mocks.streamState = {
+      transcript_messages: [
+        {
+          event_id: 'assistant-1', role: 'assistant', content: 'First child progress update.',
+          timestamp: '2026-05-01T00:00:01Z', sequence_no: 1,
+        },
+        {
+          event_id: 'assistant-2', role: 'assistant', content: 'Second child progress update.',
+          timestamp: '2026-05-01T00:00:02Z', sequence_no: 2,
+        },
+      ],
+      live_assistant_message: null,
+      live_reasoning_message: null,
+      live_turn_segments: [],
+      activity_events: [],
+      current_plan: null,
+      completed_tool_calls: [],
+    };
+
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="run"
+          workspaceId="ws-1"
+          run={run({ status: 'completed' })}
+          defaultOpen
+          onAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('First child progress update.');
+    expect(container.textContent).toContain('Second child progress update.');
+  });
+
+  it('shows the agent, task, status, and stable plan time while collapsed', () => {
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="plan"
+          workspaceId="ws-1"
+          plan={plan({ status: 'failed', runIdsByStep: {} })}
+          runsById={{}}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Writer');
+    expect(container.textContent).toContain('Draft the customer reply');
+    expect(container.textContent).toContain('Failed to start');
+    expect(container.textContent).not.toContain('AGENT');
+    expect(container.querySelector('time')?.getAttribute('dateTime')).toBe('2026-05-01T00:00:00.000Z');
+  });
+
+  it('shows a useful failure when expanded without repeating the collapsed details', () => {
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="plan"
+          workspaceId="ws-1"
+          plan={plan({
+            status: 'failed',
+            runIdsByStep: {},
+            errorMessage: 'Model unavailable under current pricing',
+          })}
+          runsById={{}}
+          defaultOpen
+        />,
+      );
+    });
+
+    expect(container.textContent?.match(/Writer/g)).toHaveLength(1);
+    expect(container.textContent?.match(/Draft the customer reply/g)).toHaveLength(1);
+    expect(container.textContent).toContain('Model unavailable under current pricing');
+    expect(container.textContent).toContain('Failed to start');
+  });
+
   it('renders running actions with Open primary and Cancel low emphasis', () => {
     act(() => {
       root.render(
@@ -217,6 +302,32 @@ describe('ExecutionStrip actions', () => {
 
     expect(buttonNamed('Cancel')).toBeTruthy();
     expect(buttonNamed('Open')).toBeTruthy();
+  });
+
+  it('does not show stale pending approval controls for a completed run', () => {
+    mocks.pendingInteraction = {
+      interaction_id: 'interaction-1',
+      interaction_kind: 'command_execution_approval',
+      status: 'pending',
+      request_schema_version: 'codex.v2',
+      request_payload: { command: 'git push' },
+      title: 'Codex needs approval',
+    };
+
+    act(() => {
+      root.render(
+        <ExecutionStrip
+          kind="run"
+          workspaceId="ws-1"
+          run={run({ status: 'completed' })}
+          defaultOpen
+          onAction={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).not.toContain('Codex needs approval');
+    expect(container.textContent).toContain('Re-run');
   });
 
   it('labels automation flow runs with the flow name while running', () => {

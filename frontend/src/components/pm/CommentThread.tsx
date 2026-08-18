@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { ArrowReloadHorizontalIcon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, AttachmentIcon, PlusSignCircleIcon, MinusSignIcon } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, AttachmentIcon, PlusSignCircleIcon, MinusSignIcon, BotIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -329,8 +329,14 @@ interface CommentThreadProps {
   onCommentsChange: (comments: CommentWithAuthor[]) => void;
   /** Hide the bottom-of-list "Add a comment…" composer (used when this thread is rendered inside an inline side card). */
   hideTopLevelComposer?: boolean;
+  /** Places the entity-level composer before the thread list (used by unified Updates views). */
+  composerPlacement?: 'top' | 'bottom';
   /** Hide all empty-state copy and the empty card itself (used when many threads render side-by-side). */
   hideEmptyState?: boolean;
+  /** Render only the entity-level composer while retaining the current comment collection. */
+  hideThreadList?: boolean;
+  /** Divider-based top-level composer used by task Updates. */
+  composerVariant?: 'default' | 'update';
 }
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -358,8 +364,12 @@ export function CommentThread({
   onCommentAnchorConsumed,
   onCommentsChange,
   hideTopLevelComposer = false,
+  composerPlacement = 'bottom',
   hideEmptyState = false,
+  hideThreadList = false,
+  composerVariant = 'default',
 }: CommentThreadProps) {
+  const usesPmRichText = entityType === 'task' || entityType === 'epic';
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentBody, setEditingCommentBody] = useState('');
@@ -877,7 +887,10 @@ export function CommentThread({
 
   const renderEditForm = (indent: string) => (
     <div className={`mt-1.5 ${indent}`}>
-      <div className="relative rounded-lg border border-border/60">
+      <div className={cn(
+        'relative',
+        composerVariant === 'update' ? '' : 'rounded-lg border border-border/60',
+      )}>
         <QuickTooltip label="Cancel">
           <button
             type="button"
@@ -900,6 +913,8 @@ export function CommentThread({
           uploadedFiles={editPendingAttachments}
           onRemoveUploadedFile={(id) => void removeEditPendingAttachment(id)}
           initialContent={editingCommentBody}
+          variant={composerVariant === 'update' ? 'update' : undefined}
+          contentVariant={usesPmRichText ? 'pm' : 'default'}
           autoFocus
         />
       </div>
@@ -927,7 +942,7 @@ export function CommentThread({
     onSubmit: (body: string) => void | Promise<void>;
     loading: boolean;
     placeholder: string;
-    variant: 'primary' | 'reply';
+    variant: 'primary' | 'reply' | 'update';
     uploadedFiles: PendingFile[];
     onClose?: () => void | Promise<void>;
     showAnchor?: boolean;
@@ -1001,6 +1016,7 @@ export function CommentThread({
           loading={loading}
           placeholder={placeholder}
           variant={variant}
+          contentVariant={usesPmRichText ? 'pm' : 'default'}
           enableEmojiPicker
           teams={teams}
           members={members}
@@ -1027,6 +1043,8 @@ export function CommentThread({
     const groupClass = isReply ? 'group/reply' : 'group';
     const isResolved = Boolean(entry.comment.resolved_at);
     const authorName = entry.author.full_name || entry.author.email;
+    const hasAgentAttribution = Boolean(entry.comment.agent_id || entry.comment.agent_name || entry.comment.agent_run_id);
+    const agentName = entry.comment.agent_name?.trim() || 'AI Agent';
     const replyTargetId = isReply ? entry.comment.parent_id : entry.comment.id;
     const showThreadConnector = Boolean(options.showThreadConnector && !isReply);
 
@@ -1062,13 +1080,23 @@ export function CommentThread({
                 )}
                 <div className="flex items-baseline gap-1.5 text-[13px] leading-tight">
                   <span className="font-semibold text-foreground">{authorName}</span>
+                  {hasAgentAttribution && (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" aria-label="AI agent comment">
+                      <BotIcon className="h-3 w-3 self-center" />
+                      <span>(via {agentName})</span>
+                    </span>
+                  )}
                   <span className="text-[11px] text-muted-foreground">{formatRelativeTimeAgo(entry.comment.created_at)}</span>
                 </div>
-                <div className="mt-0.5 text-[13px] leading-relaxed text-foreground/80">
+                <div className={cn(
+                  'mt-0.5',
+                  usesPmRichText ? 'text-foreground/90' : 'text-[13px] leading-relaxed text-foreground/80',
+                )}>
                   <CommentBody
                     body={entry.comment.body}
                     members={members}
                     teams={teams}
+                    variant={usesPmRichText ? 'pm' : 'default'}
                     className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
                   />
                 </div>
@@ -1185,8 +1213,43 @@ export function CommentThread({
 
   return (
     <div className="space-y-3">
+      {!hideTopLevelComposer && composerPlacement === 'top' && comments.length > 0 && !topComposerOpen && composerVariant !== 'update' && (
+        <button
+          type="button"
+          onClick={openTopComposer}
+          className="group/comment-composer flex w-full items-start gap-2 rounded-md px-3 py-1 text-left transition-colors"
+        >
+          <UserAvatar
+            name={currentMember?.display_name ?? currentMember?.email ?? 'You'}
+            avatarUrl={currentMember?.avatar_url}
+            avatarStyle={currentMember?.avatar_style}
+            avatarSeed={currentMember?.avatar_seed}
+            avatarBackgroundMode={currentMember?.avatar_background_mode}
+            avatarBackgroundColor={currentMember?.avatar_background_color}
+            className="mt-0.5 h-7 w-7 shrink-0 text-[10px]"
+          />
+          <span className="flex min-h-9 flex-1 items-center rounded-md border border-border/70 bg-background px-3 text-sm text-muted-foreground transition-colors group-hover/comment-composer:border-primary/30 group-hover/comment-composer:bg-accent/30 group-hover/comment-composer:text-foreground">
+            Write an update…
+          </span>
+        </button>
+      )}
+      {!hideTopLevelComposer && composerPlacement === 'top' && (comments.length === 0 || topComposerOpen || composerVariant === 'update') && (
+        renderCommentComposer({
+          editorKey: `top-${topComposerKey}`,
+          autoFocus: topComposerKey > 0,
+          onSubmit: addComment,
+          loading: commentLoading,
+          placeholder: 'Write an update…',
+          variant: composerVariant === 'update' ? 'update' : 'primary',
+          uploadedFiles: pendingAttachments,
+          onClose: comments.length > 0 && composerVariant !== 'update' ? closeTopComposer : undefined,
+          showAnchor: true,
+          showAvatar: composerVariant === 'update' || comments.length > 0,
+          className: comments.length > 0 && composerVariant !== 'update' ? 'px-3' : undefined,
+        })
+      )}
       {/* Empty state */}
-      {comments.length === 0 && !hideEmptyState && (
+      {!hideThreadList && comments.length === 0 && !hideEmptyState && (
         <div className="rounded-lg border border-dashed border-border/60 px-4 py-8 text-center">
           <Message01Icon className="mx-auto mb-2 h-6 w-6 text-muted-foreground/40" />
           <p className="text-sm font-medium text-foreground">No comments yet</p>
@@ -1197,7 +1260,7 @@ export function CommentThread({
       )}
 
       {/* Thread list */}
-      {comments.length > 0 && (
+      {!hideThreadList && comments.length > 0 && (
         <div className="space-y-2">
           {comments.map((entry) => {
             const hasReplies = (entry.reply_count ?? 0) > 0;
@@ -1267,7 +1330,7 @@ export function CommentThread({
                           onSubmit: (body) => addReply(entry.comment.id, body),
                           loading: replyLoading,
                           placeholder: 'Reply...',
-                          variant: 'reply',
+                          variant: composerVariant === 'update' ? 'update' : 'reply',
                           uploadedFiles: replyPendingAttachments.get(entry.comment.id) ?? [],
                           onClose: () => cancelReply(entry.comment.id),
                           className: 'pt-1',
@@ -1283,7 +1346,7 @@ export function CommentThread({
       )}
 
       {/* Top-level composer (creates a new doc/entity-scoped comment) */}
-      {!hideTopLevelComposer && comments.length > 0 && !topComposerOpen && (
+      {!hideTopLevelComposer && composerPlacement === 'bottom' && comments.length > 0 && !topComposerOpen && (
         <button
           type="button"
           onClick={openTopComposer}
@@ -1303,7 +1366,7 @@ export function CommentThread({
           </span>
         </button>
       )}
-      {!hideTopLevelComposer && (comments.length === 0 || topComposerOpen) && (
+      {!hideTopLevelComposer && composerPlacement === 'bottom' && (comments.length === 0 || topComposerOpen) && (
         renderCommentComposer({
           editorKey: `top-${topComposerKey}`,
           autoFocus: topComposerKey > 0,

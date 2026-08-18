@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   getOrCreateAnonymousId,
+  clearAnonymousId,
   getStoredSession,
   persistSession,
   clearSession,
@@ -42,38 +43,65 @@ describe('identity', () => {
       expect(id).toBe('existing-uuid');
     });
 
+    it('clears the anonymous ID on logout', () => {
+      mockCookies['helpin_aid_test-key'] = 'existing-uuid';
+
+      clearAnonymousId('test-key');
+
+      expect(mockCookies['helpin_aid_test-key']).toBeUndefined();
+    });
+
   });
 
   describe('session persistence', () => {
-    it('persistSession stores token in localStorage', () => {
+    it('persistSession stores the token in a shared cookie and clears legacy storage', () => {
       persistSession('key1', 'tok123', '2030-01-01T00:00:00Z');
-      expect(localStorage.setItem).toHaveBeenCalledWith(
-        'helpin_ws_key1',
-        JSON.stringify({ session_token: 'tok123', expires_at: '2030-01-01T00:00:00Z' })
+      expect(mockCookies['helpin_session_key1']).toBe(
+        JSON.stringify({ session_token: 'tok123', expires_at: '2030-01-01T00:00:00Z' }),
       );
+      expect(localStorage.removeItem).toHaveBeenCalledWith('helpin_ws_key1');
     });
 
-    it('getStoredSession returns stored session', () => {
+    it('getStoredSession returns the cookie session before legacy storage', () => {
+      mockCookies['helpin_session_key1'] = JSON.stringify({
+        session_token: 'cookie-token',
+        expires_at: '2030-01-01T00:00:00Z',
+      });
       (localStorage.getItem as any).mockImplementation((key: string) => {
         if (key === 'helpin_ws_key1') {
-          return JSON.stringify({ session_token: 'tok123', expires_at: '2030-01-01T00:00:00Z' });
+          return JSON.stringify({ session_token: 'legacy-token', expires_at: '2030-01-01T00:00:00Z' });
         }
         return null;
       });
       const session = getStoredSession('key1');
-      expect(session).toEqual({ session_token: 'tok123', expires_at: '2030-01-01T00:00:00Z' });
+      expect(session).toEqual({ session_token: 'cookie-token', expires_at: '2030-01-01T00:00:00Z' });
+      expect(localStorage.getItem).not.toHaveBeenCalled();
     });
 
-    it('getStoredSession returns null for expired session', () => {
+    it('migrates a legacy localStorage session into the cookie', () => {
       (localStorage.getItem as any).mockImplementation((key: string) => {
         if (key === 'helpin_ws_key1') {
-          return JSON.stringify({ session_token: 'tok123', expires_at: '2020-01-01T00:00:00Z' });
+          return JSON.stringify({ session_token: 'legacy-token', expires_at: '2030-01-01T00:00:00Z' });
         }
         return null;
+      });
+
+      const session = getStoredSession('key1');
+      expect(session).toEqual({ session_token: 'legacy-token', expires_at: '2030-01-01T00:00:00Z' });
+      expect(mockCookies['helpin_session_key1']).toBe(
+        JSON.stringify({ session_token: 'legacy-token', expires_at: '2030-01-01T00:00:00Z' }),
+      );
+      expect(localStorage.removeItem).toHaveBeenCalledWith('helpin_ws_key1');
+    });
+
+    it('getStoredSession clears an expired cookie session', () => {
+      mockCookies['helpin_session_key1'] = JSON.stringify({
+        session_token: 'tok123',
+        expires_at: '2020-01-01T00:00:00Z',
       });
       const session = getStoredSession('key1');
       expect(session).toBeNull();
-      expect(localStorage.removeItem).toHaveBeenCalledWith('helpin_ws_key1');
+      expect(mockCookies['helpin_session_key1']).toBeUndefined();
     });
 
     it('getStoredSession returns null for missing data', () => {
@@ -86,8 +114,10 @@ describe('identity', () => {
       expect(getStoredSession('key1')).toBeNull();
     });
 
-    it('clearSession removes from localStorage', () => {
+    it('clearSession removes the cookie and legacy storage', () => {
+      mockCookies['helpin_session_key1'] = 'stored';
       clearSession('key1');
+      expect(mockCookies['helpin_session_key1']).toBeUndefined();
       expect(localStorage.removeItem).toHaveBeenCalledWith('helpin_ws_key1');
     });
   });

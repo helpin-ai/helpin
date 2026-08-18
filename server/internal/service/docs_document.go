@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/helpin-ai/helpin/server/internal/iconcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/ordering"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -15,7 +16,8 @@ import (
 
 // DocsDocumentService handles business logic for documents.
 type DocsDocumentService struct {
-	docRepo        *repository.DocsDocumentRepository
+	docRepo *repository.DocsDocumentRepository
+	productAnalyticsEmitter
 	spaceRepo      *repository.DocsSpaceRepository
 	deletionDeps   DocsDocumentDeletionDependencies
 	translationSvc *DocsHelpcenterTranslationService
@@ -82,6 +84,11 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 	if space.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("space does not belong to this workspace")
 	}
+	normalizedIcon, err := iconcatalog.NormalizeNew(req.Icon)
+	if err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	}
+	req.Icon = normalizedIcon
 
 	// Sanitize optional UUID fields: treat empty strings as nil.
 	collectionID := req.CollectionID
@@ -128,6 +135,12 @@ func (s *DocsDocumentService) Create(ctx context.Context, workspaceID string, re
 	created, err := s.docRepo.Create(ctx, doc)
 	if err == nil && created != nil {
 		publishWorkspaceEventWithParent(s.wsPublisher, "created", "docs_document", created.ID, workspaceID, userID, "docs_space", created.SpaceID, nil)
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: "document_created:" + created.ID, UserID: userID,
+			WorkspaceID: workspaceID, Name: "document_created", Source: "api",
+			OccurredAt: created.CreatedAt,
+			Attributes: map[string]any{"entity_id": created.ID, "space_id": created.SpaceID, "module": "docs"},
+		})
 	}
 	return created, err
 }
@@ -139,13 +152,22 @@ func (s *DocsDocumentService) Get(ctx context.Context, id string) (*model.DocsDo
 
 // List returns documents with optional filters.
 func (s *DocsDocumentService) List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
+	return s.list(ctx, workspaceID, spaceID, collectionID, status, teamID, nil, userID, role, includeArchived)
+}
+
+// ListWithOwner returns documents with optional filters, including owner.
+func (s *DocsDocumentService) ListWithOwner(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
+	return s.list(ctx, workspaceID, spaceID, collectionID, status, teamID, ownerID, userID, role, includeArchived)
+}
+
+func (s *DocsDocumentService) list(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID, ownerID *string, userID, role string, includeArchived bool) ([]model.DocsDocument, error) {
 	// Admins/owners can see all drafts; others only see their own.
 	isAdminOrOwner := role == "admin" || role == "owner"
 	var draftViewerID string
 	if !isAdminOrOwner {
 		draftViewerID = userID
 	}
-	return s.docRepo.List(ctx, workspaceID, spaceID, collectionID, status, teamID, draftViewerID, includeArchived)
+	return s.docRepo.ListWithOwner(ctx, workspaceID, spaceID, collectionID, status, teamID, ownerID, draftViewerID, includeArchived)
 }
 
 // Update updates a document's metadata.
@@ -199,12 +221,21 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 	if req.TemplateKey != nil {
 		updates["template_key"] = *req.TemplateKey
 	}
-	if req.Excerpt != nil {
+	if req.ClearExcerpt {
+		updates["excerpt"] = nil
+		shouldRefreshTranslations = true
+	} else if req.Excerpt != nil {
 		updates["excerpt"] = *req.Excerpt
 		shouldRefreshTranslations = true
 	}
-	if req.Icon != nil {
-		updates["icon"] = *req.Icon
+	if normalizedIcon, changed, err := iconcatalog.NormalizeUpdate(req.Icon, doc.Icon); err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	} else if changed {
+		if normalizedIcon == nil {
+			updates["icon"] = nil
+		} else {
+			updates["icon"] = *normalizedIcon
+		}
 	}
 	if req.Tags != nil {
 		updates["tags"] = model.DocsStringArray(req.Tags)
@@ -258,6 +289,11 @@ func (s *DocsDocumentService) Publish(ctx context.Context, id string) (*model.Do
 	}
 	updated, err := s.docRepo.GetByID(ctx, id)
 	if err == nil && updated != nil {
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: "document_published:" + updated.ID,
+			WorkspaceID: updated.WorkspaceID, Name: "document_published", Source: "api",
+			Attributes: map[string]any{"entity_id": updated.ID, "space_id": updated.SpaceID, "module": "docs"},
+		})
 		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
 		if s.ruleEngine != nil {
 			event := model.AutomationEvent{

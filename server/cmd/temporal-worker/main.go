@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -20,13 +21,15 @@ import (
 	tworker "go.temporal.io/sdk/worker"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
-	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/meetingcapture"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -35,7 +38,6 @@ import (
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
-	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 const temporalWorkerStopTimeout = 10 * time.Minute
@@ -75,7 +77,17 @@ func main() {
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
 		PreferSimpleProtocol: true,
-	}), &gorm.Config{})
+	}), &gorm.Config{
+		Logger: gormlogger.New(
+			slog.NewLogLogger(slog.Default().Handler(), slog.LevelWarn),
+			gormlogger.Config{
+				SlowThreshold:             time.Second,
+				IgnoreRecordNotFoundError: true,
+				ParameterizedQueries:      true,
+				LogLevel:                  gormlogger.Warn,
+			},
+		),
+	})
 	if err != nil {
 		fatalWithSentry("failed to connect to database", err)
 	}
@@ -91,6 +103,9 @@ func main() {
 	}
 	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS vector`).Error; err != nil {
 		fatalWithSentry("failed to enable vector extension", err)
+	}
+	if err := repository.MigrateAgentKnowledgeSourceSchema(db); err != nil {
+		fatalWithSentry("failed to migrate agent knowledge source schema", err)
 	}
 
 	realtimeInstanceID := ws.ResolveRealtimeInstanceID()
@@ -108,8 +123,6 @@ func main() {
 		fatalWithSentry("failed to connect to Temporal", err)
 	}
 	defer temporalClient.Close()
-	runEngine := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace)
-
 	runRepo := repository.NewAgentRunRepository(db)
 	triggerExecutionRepo := repository.NewAgentTriggerExecutionRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
@@ -118,9 +131,9 @@ func main() {
 	workspaceSkillRepo := repository.NewWorkspaceSkillRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	dockActionProposalRepo := repository.NewDockActionProposalRepository(db)
 	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
-	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	storyRepo := repository.NewPMTaskRepository(db)
 	taskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
@@ -137,11 +150,6 @@ func main() {
 	sprintCloseoutRepo := repository.NewPMSprintCloseoutRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
-	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
-	supportConversationTriageRepo := repository.NewSupportConversationTriageRepository(db)
-	supportConversationTriageEventRepo := repository.NewSupportConversationTriageEventRepository(db)
-	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
-	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	notificationRepo := repository.NewNotificationRepository(db)
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
@@ -158,25 +166,31 @@ func main() {
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsCollectionRepo := repository.NewDocsCollectionRepository(db, cfg.DocsOrderingUseSortKey)
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db, cfg.DocsOrderingUseSortKey)
-	docsDocumentKeyRepo := repository.NewDocsDocumentKeyRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsBlockRepo := repository.NewDocsBlockRepository(db)
-	docsAISectionCandidateRepo := repository.NewDocsAISectionCandidateRepository(db)
 	docsChangeProposalRepo := repository.NewDocsChangeProposalRepository(db)
 	docsContentRepo.SetBlockRepository(docsBlockRepo)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db, false)
+	docsHelpcenterPublicationRepo := repository.NewDocsHelpcenterPublicationRepository(db)
+	docsHelpcenterSearchRepo := repository.NewDocsHelpcenterSearchRepository(db)
+	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
+	docsImportRepo := repository.NewDocsImportRepository(db)
+	billingRepo := repository.NewBillingRepository(db)
+	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
+	if pricingCatalogErr != nil {
+		fatalWithSentry("load AI pricing catalog", pricingCatalogErr)
+	}
+	aiUsageRepo := repository.NewAIUsageRepository(db)
+	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
 	docsAssetReferenceRepo := repository.NewDocsAssetReferenceRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
 	supportContentSourceRepo := repository.NewSupportContentSourceRepository(db)
-	agentContentSourceRepo := repository.NewAgentContentSourceRepository(db)
 	supportContentPageRepo := repository.NewSupportContentPageRepository(db)
 	supportContentChunkRepo := repository.NewSupportContentChunkRepository(db)
-	aiMessageProcessingRepo := repository.NewAIMessageProcessingRepository(db)
-	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
@@ -187,15 +201,10 @@ func main() {
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
+	crmMeetingRepo := repository.NewCRMMeetingRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
 	pmAutomationRepo := repository.NewPMAutomationRepository(db)
-	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
-	billingGateway := billingstripe.New(cfg.StripeSecretKey, cfg.StripeCreditBlockPriceID)
-	billingService := service.NewBillingService(billingRepo, billingGateway, time.Now)
-	billingService.SetWorkspaceRepository(workspaceRepo)
-	aiUsageMeter := service.NewAIUsageMeter(billingService)
 
 	// Gmail OAuth + encryption for email sync.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -208,49 +217,6 @@ func main() {
 		}
 	}
 	gmailSyncClient := syncpkg.NewGmailSyncClient(gmailOAuth, crmEmailRepo, encryptionKey)
-	codexWorkspaceAuthStore := workerpkg.NewCodexWorkspaceAuthStore(codexWorkspaceAuthRepo, resolveCodexAuthEncryptionKey(cfg))
-	if strings.TrimSpace(cfg.CodexOpenAIAuthMode) == "chatgpt_device_code" && codexWorkspaceAuthStore == nil {
-		slog.Warn("Codex workspace auth persistence disabled; set CODEX_AUTH_ENCRYPTION_KEY or a valid CRM_ENCRYPTION_KEY for durable device-code auth")
-	}
-
-	runtimes := workerpkg.NewDefaultRuntimeRegistry(
-		cfg.OpenCodePath,
-		workerpkg.CodexRuntimeConfig{
-			Path:                      cfg.CodexPath,
-			DefaultModel:              cfg.CodexModel,
-			SandboxMode:               cfg.CodexSandboxMode,
-			OpenAIAPIKey:              cfg.OpenAIAPIKey,
-			OpenAIBaseURL:             cfg.OpenAIBaseURL,
-			OpenAIAuthMode:            cfg.CodexOpenAIAuthMode,
-			EnableManagedChatGPTOAuth: cfg.CodexEnableChatGPTOAuth,
-			ChatGPTAccessToken:        cfg.CodexChatGPTAccessToken,
-			ChatGPTAccountID:          cfg.CodexChatGPTAccountID,
-			ChatGPTPlanType:           cfg.CodexChatGPTPlanType,
-			OpenRouterAPIKey:          cfg.OpenRouterAPIKey,
-			OpenRouterBaseURL:         cfg.OpenRouterBaseURL,
-			HelpinAPIBaseURL:          cfg.CodexHelpinAPIBaseURL,
-			HelpinRunToolTokenSecret:  cfg.JWTSecret,
-			HelpinMCPBridgePath:       cfg.CodexHelpinMCPBridgePath,
-		},
-		cfg.AnthropicAPIKey,
-		cfg.AnthropicBaseURL,
-		cfg.OpenAIAPIKey,
-		cfg.OpenAIBaseURL,
-		cfg.OpenRouterAPIKey,
-		cfg.OpenRouterBaseURL,
-		cfg.BraveSearchAPIKey,
-		cfg.ExaSearchAPIKey,
-		cfg.CrawlerProxyURLs,
-		runRepo,
-		artifactRepo,
-		codexWorkspaceAuthStore,
-		func(ctx context.Context, run *model.AgentRun, agent *model.Agent) error {
-			return service.PreflightAgentRunAIUsage(ctx, aiUsageMeter, run, agent)
-		},
-		func(ctx context.Context, run *model.AgentRun, agent *model.Agent) error {
-			return service.RecordAgentRunAIUsage(ctx, aiUsageMeter, run, agent)
-		},
-	)
 	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
 	if err != nil {
 		fatalWithSentry("failed to initialize github app client", err)
@@ -267,8 +233,6 @@ func main() {
 		nil,
 		cfg.AppBaseURL,
 	)
-	var activities *temporalapp.AgentRunActivities
-
 	// Email sync activities (may be nil if Gmail not configured).
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
 
@@ -284,6 +248,7 @@ func main() {
 	default:
 		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
 	}
+	llmProvider = service.NewMeteredLLMProvider(llmProvider, service.NewTokenPricedAIUsageMeter(aiUsageService))
 	supportLLMRouter, supportEmbeddingProvider := llm.NewSupportRouter(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
@@ -291,6 +256,10 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
+	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
+	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
+	billingService.SetWorkspaceRepository(workspaceRepo)
+	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, service.NewTokenPricedAIUsageMeter(aiUsageService))
 	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)
@@ -303,59 +272,12 @@ func main() {
 		}
 		defer redisClient.Close()
 	}
-	// AI Support Agent consumer — runs alongside Temporal workers.
-	supportInboxService := service.NewSupportInboxService(
-		conversationRepo,
-		supportMailboxRepo,
-		supportMessageRepo,
-		nil,
-		nil,
-		supportInstallRepo,
-		nil,
-		nil,
-		nil,
-		nil,
-		crmContactRepo,
-		userRepo,
-		docsSpaceRepo,
-		nil,
-		docsHelpcenterRepo,
-	)
-	supportInboxTriageService := service.NewSupportInboxTriageService(
-		supportInboxService,
-		supportConversationTriageRepo,
-		supportConversationTriageEventRepo,
-		supportTriageRuleRepo,
-		supportInstallRepo,
-		supportMailboxRepo,
-		conversationRepo,
-		supportMessageRepo,
-		supportLLMRouter,
-	)
-	supportInboxService.SetTriageService(supportInboxTriageService)
-
-	supportAIService := service.NewSupportAIService(
-		supportLLMRouter, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel, docsChunkRepo,
-		agentKnowledgeSourceRepo, supportContentChunkRepo, agentContentSourceRepo, aiMessageProcessingRepo,
-		conversationRepo, supportMessageRepo, supportAttachmentRepo,
-		agentRepo, handoffRepo, supportInstallRepo,
-		wsPublisher, jetstream, redisClient, db,
-		cfg.QueryExpansionModel, cfg.QueryExpansionProvider,
-	)
-	supportAIService.SetSupportRoutingDependencies(workspaceRepo, nil, supportTeammateStatusOverrideRepo)
-	supportAIService.SetMailboxRepository(supportMailboxRepo)
-	supportAIService.SetTriageService(supportInboxTriageService)
-	supportAIService.SetLinkPreviewService(service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs))
-	aiConsumerCtx, aiConsumerCancel := context.WithCancel(context.Background())
-	go func() {
-		if err := supportAIService.StartNATSConsumer(aiConsumerCtx); err != nil {
-			log.Printf("support AI consumer stopped: %v", err)
-		}
-	}()
-	_ = aiConsumerCancel // used at shutdown
+	// The support AI visitor-message consumer now runs in the API process
+	// (chat-mode runs need the agent-runtime projection); the worker keeps
+	// only knowledge indexing and coverage analytics.
 
 	gitGraceCleanupCtx, gitGraceCleanupCancel := context.WithCancel(context.Background())
-	go workerpkg.NewGitGraceCleanup(gitIntRepo, gitRepo).Start(gitGraceCleanupCtx)
+	go service.NewGitGraceCleanup(gitIntRepo, gitRepo).Start(gitGraceCleanupCtx)
 	_ = gitGraceCleanupCancel // used at shutdown
 
 	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
@@ -370,12 +292,25 @@ func main() {
 		SetConversationRepositories(conversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
-	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
-	supportAIService.SetSupportAIRetrievalTraceRecorder(supportCoverageTraceService)
-	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService)
+	meetingCaptureScheduler := service.NewTemporalMeetingCaptureScheduler(temporalClient)
+	calendarMeetingPolicyService := service.NewCRMMeetingService(crmMeetingRepo, crmAssociationRepo, nil).
+		SetCaptureProvider(cfg.CRMMeetingCaptureProvider).
+		SetCaptureScheduler(meetingCaptureScheduler).
+		SetCalendarIntegration(crmCalendarRepo, crmEmailRepo)
+	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService).
+		SetMeetingRepository(crmMeetingRepo).
+		SetMeetingCaptureScheduler(meetingCaptureScheduler).
+		SetMeetingPolicyReconciler(calendarMeetingPolicyService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	runRepo.SetTriggerExecutionRepository(triggerExecutionRepo)
+	var agentRuntimeClient *service.AgentRuntimeClient
+	if strings.TrimSpace(cfg.AgentRuntimeBaseURL) != "" {
+		agentRuntimeClient, err = service.NewAgentRuntimeClient(cfg.AgentRuntimeBaseURL, cfg.AgentRuntimeAppID, cfg.AgentRuntimeServiceToken, nil)
+		if err != nil {
+			fatalWithSentry("failed to initialize agent runtime client", err)
+		}
+	}
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmRecurringTemplateService := service.NewPMRecurringTemplateService(
 		recurringRepo,
@@ -461,7 +396,6 @@ func main() {
 		docsContentRepo,
 		docsVersionRepo,
 		docsLinkRepo,
-		runEngine,
 		gitService,
 		pmStoryService,
 		pmActivityService,
@@ -474,10 +408,46 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmDealRepo)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+	if agentRuntimeClient != nil {
+		agentService.SetAgentRuntimeClient(agentRuntimeClient)
+	}
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
+	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
+	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
+	docsHelpcenterService := service.NewDocsHelpcenterService(
+		docsHelpcenterRepo,
+		docsHelpcenterPublicationRepo,
+		docsDocumentRepo,
+		docsContentRepo,
+		docsSpaceRepo,
+		docsCollectionRepo,
+		docsRedirectRepo,
+		s3Client,
+		wsPublisher,
+	)
+	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
+	docsHelpcenterService.SetPublicationArtifactDependencies(artifactRepo, s3Client)
+	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
+	docsImportService := service.NewDocsImportService(
+		docsImportRepo,
+		docsSpaceService,
+		docsCollectionService,
+		docsDocumentService,
+		docsContentService,
+		docsHelpcenterService,
+		docsRedirectRepo,
+		s3Client,
+		supportLLMProvider,
+		service.DocsImportAIConversionConfig{
+			Enabled:      cfg.DocsImportAIConversionEnabled,
+			Provider:     cfg.DocsImportAIConversionProvider,
+			Model:        cfg.DocsImportAIConversionModel,
+			ArticleLimit: cfg.DocsImportAIConversionArticleLimit,
+		},
+	).SetTemporalClient(nil, resolvePMImportEncryptionKey(cfg))
 	docsBlockService := service.NewDocsBlockService(docsBlockRepo, docsContentService, docsDocumentRepo)
 	docsBlockService.SetActivityService(pmActivityService)
 	supportCoverageService.SetDocsBlockService(docsBlockService)
@@ -503,12 +473,13 @@ func main() {
 		cfg.CrawlerProxyURLs,
 		slog.Default(),
 	)
-	docsEmbeddingService := service.NewDocsEmbeddingService(
+	docsEmbeddingService := service.NewDocsEmbeddingServiceWithCollections(
 		docsChunkRepo,
 		docsBlockRepo,
 		agentKnowledgeSourceRepo,
 		docsContentRepo,
 		docsSpaceRepo,
+		docsCollectionRepo,
 		docsHelpcenterRepo,
 		docsDocumentRepo,
 		supportEmbeddingProvider,
@@ -522,11 +493,16 @@ func main() {
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
 		contentCrawler,
+		s3Client,
 		nil,
 	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
+	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
-	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo)
+	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo).
+		SetActivityRepository(crmActivityRepo).
+		SetWebsocketPublisher(wsPublisher)
 	pmLabelService := service.NewPMLabelService(labelRepo, wsPublisher)
 	pmCommentService := service.NewPMCommentService(commentRepo, storyRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo, s3Client)
 	commandService := service.NewInternalCommandService(
@@ -542,57 +518,36 @@ func main() {
 	commandService.SetPMLabelService(pmLabelService)
 	commandService.SetPMCommentService(pmCommentService)
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
+	commandService.SetPMOperationalServices(workspaceRepo, nil, nil, nil, nil, nil)
+	commandService.SetGitService(gitService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
+	commandService.SetDocsOrganizationServices(docsSpaceService, nil)
 	commandService.SetDocsBlockService(docsBlockService)
-	activities = temporalapp.NewAgentRunActivities(
-		runRepo,
-		runMessageRepo,
-		agentRepo,
-		workspaceSkillRepo,
-		s3Client,
-		artifactRepo,
-		interactionRepo,
-		sessionSnapshotRepo,
-		storyRepo,
-		taskLinkRepo,
-		epicRepo,
-		conversationRepo,
-		commentRepo,
-		checklistRepo,
-		workflowRepo,
-		supportMessageRepo,
-		gitIntRepo,
-		gitRepo,
-		gitLinkRepo,
-		deliveryRepo,
-		settingsRepo,
-		workspaceRepo,
-		docsSpaceRepo,
-		docsCollectionRepo,
-		docsDocumentRepo,
-		docsDocumentKeyRepo,
-		docsContentRepo,
-		docsBlockRepo,
-		docsAISectionCandidateRepo,
-		docsChangeProposalRepo,
-		docsVersionRepo,
-		docsLinkRepo,
-		docsSearchRepo,
-		crmDealRepo,
-		crmContactRepo,
-		crmSignalRepo,
-		crmActivityRepo,
-		commandService,
-		notificationService,
-		releaseFactsService,
-		wsPublisher,
-		runtimes,
-		githubAppClient,
-		gitCredentialRepo,
-		resolveGitOAuthEncryptionKey(cfg),
-		runEngine,
-		agentService,
+	commandService.SetSupportDependencies(supportMessageRepo, conversationRepo, wsPublisher)
+	commandService.SetSupportAttachmentRepository(repository.NewSupportAttachmentRepository(db))
+	commandService.SetCRMReadServices(
+		service.NewCRMContactService(crmContactRepo),
+		service.NewCRMSignalService(crmSignalRepo, crmSummaryService),
 	)
+	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)
+	commandService.SetWorkspaceSearchServices(
+		service.NewSearchService(repository.NewSearchRepository(db), workspaceRepo),
+		service.NewCRMSearchService(crmContactRepo, crmCompanyRepo, crmDealRepo),
+		nil,
+	)
+	commandService.SetDocsSearchRepository(docsSearchRepo)
+	commandService.SetDocsChangeProposalService(service.NewDocsChangeProposalService(
+		docsChangeProposalRepo,
+		docsDocumentRepo,
+		docsContentService,
+		docsBlockService,
+		nil,
+		nil,
+	))
+	commandService.SetAgentRunDependencies(runRepo, artifactRepo)
+	commandService.SetSupportCoverageService(supportCoverageService)
+	commandService.SetDockActionProposalRepository(dockActionProposalRepo)
+	commandService.SetReleaseFactsProvider(releaseFactsService)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	ruleEngine := service.NewAutomationRuleEngine(
 		automationRuleRepo,
@@ -608,7 +563,7 @@ func main() {
 	ruleEngine.SetTaskService(pmStoryService)
 	ruleEngine.SetHealthObserver(automationHealthService)
 	ruleEngine.SetTriggerExecutionRepository(triggerExecutionRepo)
-	activities.SetRuleEngine(ruleEngine)
+
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
 	coverageActivities := temporalapp.NewCoverageGapActivities(supportCoverageEnrichmentService, supportCoverageService)
@@ -619,8 +574,38 @@ func main() {
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	dealMgmtActivities := temporalapp.NewDealManagementActivities(dealAutomationService)
-
-	_ = crmCompanyRepo // available for future enrichment activities
+	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
+	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
+	recallMeetingProvider := meetingcapture.NewRecallProvider(meetingcapture.RecallConfig{
+		BaseURL:       cfg.RecallBaseURL,
+		APIKey:        cfg.RecallAPIKey,
+		WebhookSecret: cfg.RecallWebhookSecret,
+		HTTPClient:    meetingProviderHTTPClient,
+	})
+	vexaMeetingProvider := meetingcapture.NewVexaProvider(meetingcapture.VexaConfig{
+		BaseURL:       cfg.VexaBaseURL,
+		APIKey:        cfg.VexaAPIKey,
+		WebhookSecret: cfg.VexaWebhookSecret,
+		HTTPClient:    meetingProviderHTTPClient,
+	})
+	var meetingProcessor *service.CRMMeetingProcessingService
+	if s3Client != nil {
+		meetingProcessor = service.NewCRMMeetingProcessingService(
+			crmMeetingRepo, crmAssociationRepo, supportLLMProvider, s3Client,
+			&http.Client{Timeout: 30 * time.Minute}, recallMeetingProvider, vexaMeetingProvider,
+		)
+	} else {
+		meetingProcessor = service.NewCRMMeetingProcessingService(
+			crmMeetingRepo, crmAssociationRepo, supportLLMProvider, nil,
+			&http.Client{Timeout: 30 * time.Minute}, recallMeetingProvider, vexaMeetingProvider,
+		)
+	}
+	meetingProcessor.SetCRMOutputs(signalDetectionService, crmActivityService, crmSuggestionService)
+	meetingCaptureService := service.NewCRMMeetingService(
+		crmMeetingRepo, nil, nil, recallMeetingProvider, vexaMeetingProvider,
+	).SetCaptureProvider(cfg.CRMMeetingCaptureProvider).
+		SetAIUsageMeter(service.NewTokenPricedAIUsageMeter(aiUsageService))
+	meetingActivities := temporalapp.NewCRMMeetingActivities(meetingProcessor).SetCaptureLauncher(meetingCaptureService)
 
 	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
@@ -631,11 +616,12 @@ func main() {
 	docsAssetCleanupActivities := temporalapp.NewDocsAssetCleanupActivities(docsAssetReferenceRepo, s3Client)
 	contentSourceSyncActivities := temporalapp.NewContentSourceSyncActivities(supportContentSyncService)
 	pmImportActivities := service.NewPMImportActivities(pmImportService)
+	docsImportActivities := service.NewDocsImportActivities(docsImportService)
 
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, emailSyncActivities, signalActivities, summaryActivities, meetingActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities, docsImportActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -650,7 +636,6 @@ func main() {
 	<-stopCh
 
 	log.Println("shutting down temporal workers")
-	aiConsumerCancel() // stop AI support consumer
 	gitGraceCleanupCancel()
 	for _, sharedWorker := range workers {
 		sharedWorker.Stop()
@@ -674,35 +659,23 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, meetingActivities *temporalapp.CRMMeetingActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities, docsImportActivities *service.DocsImportActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
 	}
 	w := tworker.New(client, taskQueue, options)
-	w.RegisterWorkflow(temporalapp.AgentRunWorkflow)
-	w.RegisterWorkflow(temporalapp.CommandBarPlanWorkflow)
-	w.RegisterActivityWithOptions(activities.PrepareRunActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.PrepareRunActivity",
-	})
-	w.RegisterActivityWithOptions(activities.ExecuteRunActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.ExecuteRunActivity",
-	})
-	w.RegisterActivityWithOptions(activities.MarkRunFailedActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.MarkRunFailedActivity",
-	})
-	w.RegisterActivityWithOptions(activities.AdvanceCommandBarPlanActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.AdvanceCommandBarPlanActivity",
-	})
-	w.RegisterActivityWithOptions(activities.StartReadyCommandBarPlanStepsActivity, activity.RegisterOptions{
-		Name: "AgentRunActivities.StartReadyCommandBarPlanStepsActivity",
-	})
+	// Agent Runtime owns agent execution. This worker hosts product background
+	// jobs only.
 
 	// Register email sync workflow and activities.
 	w.RegisterWorkflow(temporalapp.EmailSyncWorkflow)
 	if emailActivities != nil {
 		w.RegisterActivityWithOptions(emailActivities.BackfillEmailsActivity, activity.RegisterOptions{
 			Name: "EmailSyncActivities.BackfillEmailsActivity",
+		})
+		w.RegisterActivityWithOptions(emailActivities.HistoricalBackfillEmailsActivity, activity.RegisterOptions{
+			Name: "EmailSyncActivities.HistoricalBackfillEmailsActivity",
 		})
 		w.RegisterActivityWithOptions(emailActivities.IncrementalSyncActivity, activity.RegisterOptions{
 			Name: "EmailSyncActivities.IncrementalSyncActivity",
@@ -729,6 +702,18 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 		w.RegisterActivityWithOptions(summaryActivities.DailyReconciliationActivity, activity.RegisterOptions{
 			Name: "CRMSummaryActivities.DailyReconciliationActivity",
+		})
+	}
+
+	// Register provider-neutral CRM meeting capture and processing.
+	w.RegisterWorkflow(temporalapp.CRMMeetingCaptureScheduleWorkflow)
+	w.RegisterWorkflow(temporalapp.CRMMeetingProcessingWorkflow)
+	if meetingActivities != nil {
+		w.RegisterActivityWithOptions(meetingActivities.ProcessMeetingActivity, activity.RegisterOptions{
+			Name: "CRMMeetingActivities.ProcessMeetingActivity",
+		})
+		w.RegisterActivityWithOptions(meetingActivities.StartScheduledCaptureActivity, activity.RegisterOptions{
+			Name: temporalapp.CRMMeetingStartScheduledActivityName,
 		})
 	}
 
@@ -820,6 +805,14 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 	}
 
+	// Register durable docs import workflow and activity.
+	w.RegisterWorkflow(temporalapp.DocsImportWorkflow)
+	if docsImportActivities != nil {
+		w.RegisterActivityWithOptions(docsImportActivities.ExecuteHelpScoutImportActivity, activity.RegisterOptions{
+			Name: temporalapp.DocsImportExecuteActivityName,
+		})
+	}
+
 	return w
 }
 
@@ -877,23 +870,6 @@ func fatalMessageWithSentry(message string) {
 	log.Print(message)
 	observability.Flush(2 * time.Second)
 	os.Exit(1)
-}
-
-func resolveCodexAuthEncryptionKey(cfg *config.Config) []byte {
-	if cfg == nil {
-		return nil
-	}
-	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CodexAuthEncryptionKey)); err != nil {
-		slog.Warn("invalid CODEX_AUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
-	} else if len(key) == 32 {
-		return key
-	}
-	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
-		slog.Warn("invalid CRM_ENCRYPTION_KEY for Codex workspace auth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
-	} else if len(key) == 32 {
-		return key
-	}
-	return nil
 }
 
 func resolvePMImportEncryptionKey(cfg *config.Config) []byte {

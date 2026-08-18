@@ -22,8 +22,8 @@ const (
 	supportTriageEventDismissed = "dismissed"
 	supportTriageEventCorrected = "corrected"
 	supportTriageEventAutoMoved = "auto_moved"
-	supportTriageProvider       = "anthropic"
-	supportTriageModel          = "claude-haiku-4-5"
+	supportTriageProvider       = supportSmallTierProvider
+	supportTriageModel          = supportSmallTierModel
 )
 
 type SupportInboxTriageService struct {

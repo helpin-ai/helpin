@@ -67,6 +67,7 @@ export interface HelpCenterConfig {
   fallback_to_default_locale: boolean
   is_published: boolean
   chat_widget_enabled?: boolean
+  ai_answers_enabled?: boolean
   support_widget_key?: string | null
   seo_title: string | null
   seo_description: string | null
@@ -108,6 +109,23 @@ export interface Space {
   slug: string
   icon: string | null
   description: string | null
+}
+
+// API references
+
+export interface APIReferenceSummary {
+  id: string
+  space_id: string
+  name: string
+  slug: string
+  api_version: string
+  operation_count: number
+}
+
+export interface APIReference extends APIReferenceSummary {
+  openapi_version: string
+  specification: Record<string, unknown>
+  published_at?: string
 }
 
 // ─── Collections (Categories) ───────────────────────────────────────────────
@@ -163,6 +181,7 @@ export interface CollectionPage {
   collection: NavItem
   articles: NavArticle[]
   space_slug?: string
+  alternate_paths?: Record<string, string>
 }
 
 export interface PreviewArticleDetail {
@@ -255,4 +274,29 @@ export interface SearchResult {
 
 export interface HelpCenterContext {
   queryClient: QueryClient
+}
+
+export interface AIAnswerCitation {
+  document_id: string
+  title: string
+  slug: string
+  public_id: string
+  space_slug: string
+  collection_slug?: string | null
+  snippet?: string
+}
+
+export interface AIAnswerResponse {
+  answer_id: string
+  status: 'answered' | 'insufficient_evidence'
+  answer?: string
+  citations: AIAnswerCitation[]
+  confidence?: number
+  cached: boolean
+}
+
+export interface HelpCenterBootstrap {
+  config: HelpCenterConfig
+  locale: string
+  spaces: Space[]
 }

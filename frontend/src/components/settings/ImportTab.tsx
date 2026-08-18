@@ -7,7 +7,9 @@ import type { MemberWithUser } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ArrowRight01Icon } from '@/lib/icons';
+import { ArrowRight01Icon, Loading01Icon } from '@/lib/icons';
+import { docsImportService, type ImportStatusResponse } from '@/lib/services/docsImportService';
+import { pmImportService } from '@/lib/services/pmImportService';
 import shortcutIcon from '@/assets/import/shortcut.svg';
 import jiraIcon from '@/assets/import/jira.svg';
 import linearIcon from '@/assets/import/linear.svg';
@@ -41,12 +43,44 @@ const IMPORT_SOURCES = [
 export function ImportTab({ workspaceId, editable = true }: { workspaceId: string; editable?: boolean }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberWithUser[]>([]);
+  const [activeDocsImports, setActiveDocsImports] = useState<ImportStatusResponse[]>([]);
+  const [shortcutRunning, setShortcutRunning] = useState(false);
 
   useEffect(() => {
     workspacesService.listMembers(workspaceId).then(({ data }) => {
       if (data) setMembers(data);
     });
   }, [workspaceId]);
+
+  useEffect(() => {
+    let active = true;
+    const loadRunningImports = async () => {
+      const [docsResult, shortcutResult] = await Promise.all([
+        docsImportService.listJobs(workspaceId),
+        pmImportService.listShortcutStatuses(workspaceId),
+      ]);
+      if (!active) return;
+      setActiveDocsImports(
+        (docsResult.data ?? []).filter(
+          (job) => (job.status === 'pending' || job.status === 'running') && Boolean(job.space_id),
+        ),
+      );
+      setShortcutRunning(
+        (shortcutResult.data ?? []).some(
+          (job) => job.status === 'pending' || job.status === 'scanning' || job.status === 'processing',
+        ),
+      );
+    };
+    void loadRunningImports();
+    const timer = window.setInterval(loadRunningImports, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [workspaceId]);
+
+  const helpScoutActiveImport = activeDocsImports.find((job) => job.source === 'helpscout');
+  const nextraActiveImport = activeDocsImports.find((job) => job.source === 'nextra');
 
   if (selected === 'shortcut') {
     return (
@@ -110,7 +144,12 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
                 <p className="text-sm font-medium">{source.title}</p>
                 <p className="text-sm text-muted-foreground">{source.description}</p>
               </div>
-              {source.comingSoon ? (
+              {source.key === 'shortcut' && shortcutRunning ? (
+                <Badge className="gap-1.5 bg-blue-100 text-blue-700 hover:bg-blue-100">
+                  <Loading01Icon className="h-3 w-3 animate-spin" />
+                  Running
+                </Badge>
+              ) : source.comingSoon ? (
                 <Badge variant="secondary" className="text-xs">Coming Soon</Badge>
               ) : (
                 <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -137,7 +176,16 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
               <p className="text-sm font-medium">HelpScout</p>
               <p className="text-sm text-muted-foreground">Import articles, categories, and images from HelpScout Docs.</p>
             </div>
-            <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            {helpScoutActiveImport ? (
+              <Badge className="gap-1.5 bg-blue-100 text-blue-700 hover:bg-blue-100">
+                <Loading01Icon className="h-3 w-3 animate-spin" />
+                Running
+                {helpScoutActiveImport.total > 0 &&
+                  ` · ${helpScoutActiveImport.completed + helpScoutActiveImport.failed}/${helpScoutActiveImport.total}`}
+              </Badge>
+            ) : (
+              <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            )}
           </button>
           <button
             type="button"
@@ -152,7 +200,16 @@ export function ImportTab({ workspaceId, editable = true }: { workspaceId: strin
               <p className="text-sm font-medium">Nextra</p>
               <p className="text-sm text-muted-foreground">Import MDX docs, navigation, images, and redirects from a Nextra repo zip.</p>
             </div>
-            <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            {nextraActiveImport ? (
+              <Badge className="gap-1.5 bg-blue-100 text-blue-700 hover:bg-blue-100">
+                <Loading01Icon className="h-3 w-3 animate-spin" />
+                Running
+                {nextraActiveImport.total > 0 &&
+                  ` · ${nextraActiveImport.completed + nextraActiveImport.failed}/${nextraActiveImport.total}`}
+              </Badge>
+            ) : (
+              <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            )}
           </button>
         </div>
       </div>

@@ -81,7 +81,7 @@ const DEFAULT_FORM: MailboxFormState = {
   icon: 'inbox',
   description: '',
   routingPrompt: '',
-  triageEligible: true,
+  triageEligible: false,
   linkedTeamId: 'none',
   assignmentMode: 'manual',
   workspaceMemberIds: [],
@@ -218,7 +218,7 @@ export function TeamInboxDialog({
   onOpenChange: (open: boolean) => void;
   mailbox?: SupportMailbox | null;
 }) {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [form, setForm] = useState<MailboxFormState>(DEFAULT_FORM);
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
   const [manualRuleDraft, setManualRuleDraft] = useState<ManualRoutingRuleDraft | null>(null);
@@ -240,6 +240,7 @@ export function TeamInboxDialog({
   const deleteTriageRule = useDeleteSupportTriageRule(workspaceId);
   const supportAccessHref = workspaceSlug ? `/w/${workspaceSlug}/settings/access` : '/workspaces';
   const supportRoutingHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=routing` : '/workspaces';
+  const supportEmailSettingsHref = workspaceSlug ? `/w/${workspaceSlug}/settings/inboxes-routing?tab=email` : '/workspaces';
   const isRoutingOff = chatSettings ? !chatSettings.settings.triage_enabled : false;
 
   useEffect(() => {
@@ -573,6 +574,8 @@ export function TeamInboxDialog({
       const createdMailbox = await createMailbox.mutateAsync(payload);
       await syncManualRules(createdMailbox.id);
       toast.success('Team inbox created');
+      setStep(4);
+      return;
     }
 
     onOpenChange(false);
@@ -581,7 +584,7 @@ export function TeamInboxDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="overflow-hidden p-0 sm:max-w-2xl">
-        <div className="flex items-center gap-0 border-b px-6 pb-4 pt-6">
+        {step !== 4 && <div className="flex items-center gap-0 border-b px-6 pb-4 pt-6">
           <button
             type="button"
             onClick={() => setStep(1)}
@@ -618,7 +621,7 @@ export function TeamInboxDialog({
             </span>
             <span className={step === 3 ? 'text-foreground' : 'text-muted-foreground'}>{DIALOG_STEPS[2].label}</span>
           </button>
-        </div>
+        </div>}
 
         {step === 1 && (
           <div className="px-6 pb-2">
@@ -1097,6 +1100,43 @@ export function TeamInboxDialog({
           </div>
         )}
 
+        {step === 4 && (
+          <div className="space-y-5 px-6 py-6">
+            <DialogHeader>
+              <DialogTitle>Your team inbox is ready</DialogTitle>
+              <DialogDescription>
+                You can start using it now. Set up email when you’re ready.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div className="rounded-lg border p-4">
+                <h3 className="text-sm font-medium">Email forwarding</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Send messages received at your existing email address to this Helpin inbox.
+                </p>
+                <Button asChild variant="link" size="sm" className="mt-2 h-auto px-0">
+                  <a href={supportEmailSettingsHref} target="_blank" rel="noreferrer">
+                    Set up forwarding
+                  </a>
+                </Button>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <h3 className="text-sm font-medium">Sender address</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Choose and verify the email address customers see when your team replies.
+                </p>
+                <Button asChild variant="link" size="sm" className="mt-2 h-auto px-0">
+                  <a href={supportEmailSettingsHref} target="_blank" rel="noreferrer">
+                    Add sender address
+                  </a>
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <DialogFooter className="border-t px-6 py-4">
           {step === 1 && (
             <>
@@ -1140,6 +1180,11 @@ export function TeamInboxDialog({
                 {mailbox ? 'Save Changes' : 'Create Inbox'}
               </Button>
             </>
+          )}
+          {step === 4 && (
+            <Button onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
           )}
         </DialogFooter>
       </DialogContent>

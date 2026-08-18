@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WorkspaceTeam } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
-import { AGENT_RUNTIME_HELP_TEXT, AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { AgentIconPicker } from '@/components/agents/AgentIconPicker';
+import {
+  AGENT_RUNTIME_HELP_TEXT,
+  AGENT_RUNTIME_LABELS,
+  MAX_NATIVE_TOOL_STEPS,
+  MIN_NATIVE_TOOL_STEPS,
+  isValidNativeToolStepLimit,
+} from '@/lib/agentRuntime';
 import { HelpCircleIcon } from '@/lib/icons';
 import {
   Command,
@@ -40,9 +48,11 @@ import type {
   ToolCatalogEntry,
 } from '@/lib/pmTypes';
 import { automationService } from '@/lib/services/automationService';
+import { CuratedModelSelect } from '@/components/automation/CuratedModelSelect';
 import {
   applyCustomAgentDraftToForm,
   createDefaultCustomAgentForm,
+  defaultModelForAgentProvider,
   validateCustomAgentCreateForm,
   type CustomAgentFormData,
 } from './customAgentCreateModel';
@@ -50,6 +60,8 @@ import {
 const TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string }> = [
   { value: 'task', label: 'Tasks' },
   { value: 'epic', label: 'Epics' },
+  { value: 'sprint', label: 'Sprints' },
+  { value: 'objective', label: 'Objectives' },
   { value: 'crm_deal', label: 'CRM deals' },
   { value: 'document', label: 'Docs' },
   { value: 'support_conversation', label: 'Support' },
@@ -283,9 +295,21 @@ export function CustomAgentCreatePanel({
 
   const updateRuntimeKind = (runtimeKind: AgentRuntimeKind) => {
     if (!CUSTOM_RUNTIME_KIND_OPTIONS.includes(runtimeKind)) return;
+    const codexProvider = providerOptions.find((option) => option.value === 'openai' || option.value === 'openrouter')?.value
+      ?? 'openai';
+    const provider = runtimeKind === 'codex' && form.provider === 'anthropic'
+      ? codexProvider
+      : form.provider;
     update({
       runtime_kind: runtimeKind,
       supported_modes: supportedModesForRuntime(runtimeKind),
+      provider,
+      model: provider !== form.provider || !form.model.trim()
+        ? defaultModelForAgentProvider(provider, providerOptions)
+        : form.model,
+      reasoning_effort: runtimeKind === 'codex' ? form.reasoning_effort : '',
+      service_tier: runtimeKind === 'codex' ? form.service_tier : '',
+      max_tool_steps: runtimeKind === 'native_sdk' ? form.max_tool_steps : '',
       default_invocation_mode: normalizeInvocationMode(form.default_invocation_mode, runtimeKind),
     });
   };
@@ -294,6 +318,9 @@ export function CustomAgentCreatePanel({
   const selectedSkillIdentities = new Set(form.skills.map(skillIdentity));
   const availableSkills = skills.filter((skill) => !selectedSkillIdentities.has(skillIdentity(skill)));
   const supportedModes = supportedModesForRuntime(form.runtime_kind);
+  const compatibleProviderOptions = form.runtime_kind === 'codex'
+    ? providerOptions.filter((option) => option.value === 'openai' || option.value === 'openrouter')
+    : providerOptions;
   const selectedSkills = form.skills
     .map((ref) => skills.find((skill) => skillIdentity(skill) === skillIdentity(ref)))
     .filter((skill): skill is SkillCatalogEntry => Boolean(skill));
@@ -322,10 +349,15 @@ export function CustomAgentCreatePanel({
     setToolRemovalMessage('');
     update({ allowed_tools: form.allowed_tools.filter((value) => value !== toolName) });
   };
-  const saveDisabled = saving || missing.length > 0 || canSave === false;
+  const maxToolStepsValid = isValidNativeToolStepLimit(form.runtime_kind, form.max_tool_steps);
+  const saveDisabled = saving || missing.length > 0 || !maxToolStepsValid || canSave === false;
   const primaryLabel = saving ? (isEditMode ? 'Saving...' : 'Creating...') : isEditMode ? 'Save changes' : 'Create agent';
-  const validationStatus = missing.length > 0 ? `Missing: ${missing.join(', ')}` : '';
-  const actionStatus = missing.length > 0 ? '' : statusText;
+  const validationStatus = !maxToolStepsValid
+    ? `Tool step limit must be a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`
+    : missing.length > 0
+      ? `Missing: ${missing.join(', ')}`
+      : '';
+  const actionStatus = validationStatus ? '' : statusText;
   const actionTooltip = saveDisabled && actionStatus ? actionStatus : '';
   const actionControls = started ? (
     <div className="flex flex-wrap items-center justify-end gap-2">
@@ -381,11 +413,14 @@ export function CustomAgentCreatePanel({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">{isEditMode ? (form.name.trim() || 'Custom Agent') : 'Create Custom Agent'}</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {isEditMode ? 'Custom agent' : 'Define a reusable workspace agent'}
-            </p>
+          <div className="flex items-center gap-3">
+            <AgentAvatar iconKey={form.icon_key} className="h-10 w-10 rounded-none border-0 bg-transparent shadow-none" genericBare />
+            <div>
+              <h2 className="text-lg font-semibold">{isEditMode ? (form.name.trim() || 'Custom Agent') : 'Create Custom Agent'}</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {isEditMode ? 'Custom agent' : 'Define a reusable workspace agent'}
+              </p>
+            </div>
           </div>
           {actionControls}
         </div>
@@ -446,6 +481,12 @@ export function CustomAgentCreatePanel({
 
           <section className="space-y-5 rounded-lg border border-border bg-card p-4">
             <div className="space-y-5">
+              <div className="space-y-2">
+                <FieldLabel tooltip="Choose the avatar shown anywhere this custom agent appears.">
+                  Agent icon
+                </FieldLabel>
+                <AgentIconPicker value={form.icon_key} onValueChange={(iconKey) => update({ icon_key: iconKey })} />
+              </div>
               <label className="block space-y-2">
                 <FieldLabel tooltip="This is the name people will see when choosing or running the agent.">
                   Agent name <RequiredMark />
@@ -779,7 +820,7 @@ export function CustomAgentCreatePanel({
             >
               <span>
                 <span className="block text-sm font-semibold">Advanced settings</span>
-                <span className="mt-1 block text-xs text-muted-foreground">Runtime, model, parallel tasks, and token limits.</span>
+                <span className="mt-1 block text-xs text-muted-foreground">Runtime, model, execution limits, and parallel tasks.</span>
               </span>
               <span className="text-xs text-muted-foreground">{advancedOpen ? 'Hide' : 'Show'}</span>
             </button>
@@ -805,12 +846,21 @@ export function CustomAgentCreatePanel({
                     </label>
                     <label className="block space-y-2">
                       <FieldLabel tooltip="The AI service that powers this agent. The list only includes providers configured for this workspace/server.">AI Provider</FieldLabel>
-                      <Select value={form.provider} onValueChange={(value) => update({ provider: value as AgentModelProvider, model: '' })}>
+                      <Select
+                        value={form.provider}
+                        onValueChange={(value) => {
+                          const provider = value as AgentModelProvider;
+                          update({
+                            provider,
+                            model: defaultModelForAgentProvider(provider, providerOptions),
+                          });
+                        }}
+                      >
                         <SelectTrigger className="h-9">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {providerOptions.map((provider) => (
+                          {compatibleProviderOptions.map((provider) => (
                             <SelectItem key={provider.value} value={provider.value}>
                               {provider.label}
                             </SelectItem>
@@ -819,9 +869,42 @@ export function CustomAgentCreatePanel({
                       </Select>
                     </label>
                     <label className="block space-y-2">
-                      <FieldLabel tooltip="Leave blank for Auto. Manual model names are provider-specific and are not validated until the agent is saved or run.">Model</FieldLabel>
-                      <input className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={form.model} onChange={(event) => update({ model: event.target.value })} placeholder="Auto" />
+                      <FieldLabel tooltip="The provider default is selected automatically. Enter a different provider-compatible model only when needed.">Model</FieldLabel>
+                      <CuratedModelSelect
+                        provider={form.provider}
+                        value={form.model}
+                        onValueChange={(model) => update({ model })}
+                      />
                     </label>
+                    {form.runtime_kind === 'native_sdk' ? (
+                      <label className="block space-y-2">
+                        <FieldLabel tooltip="Maximum model and tool-call rounds in one run. Leave empty to use the agent default.">
+                          Tool step limit
+                        </FieldLabel>
+                        <input
+                          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive/30"
+                          type="number"
+                          min={MIN_NATIVE_TOOL_STEPS}
+                          max={MAX_NATIVE_TOOL_STEPS}
+                          step={1}
+                          value={form.max_tool_steps}
+                          onChange={(event) => update({ max_tool_steps: event.target.value })}
+                          placeholder="Use agent default"
+                          aria-invalid={!maxToolStepsValid}
+                          aria-describedby="custom-agent-tool-step-limit-help"
+                        />
+                        <p
+                          id="custom-agent-tool-step-limit-help"
+                          className={maxToolStepsValid
+                            ? 'text-[11px] leading-relaxed text-muted-foreground'
+                            : 'text-[11px] leading-relaxed text-destructive'}
+                        >
+                          {maxToolStepsValid
+                            ? `${MIN_NATIVE_TOOL_STEPS}–${MAX_NATIVE_TOOL_STEPS} rounds per run.`
+                            : `Enter a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`}
+                        </p>
+                      </label>
+                    ) : null}
                     <label className="block space-y-2">
                       <FieldLabel tooltip="Coming soon: this will limit how many runs this agent can work on at the same time. It is saved as 1 today.">Parallel tasks</FieldLabel>
                       <div className="flex items-center gap-2">

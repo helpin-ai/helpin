@@ -31,20 +31,56 @@ func TestBuildAISystemPrompt_IncludesHandoffRepeatGuidance(t *testing.T) {
 	}
 }
 
-func TestBuildSupportPlannerSystemPromptIncludesWelcomeMessage(t *testing.T) {
-	prompt := buildSupportPlannerSystemPrompt("Hi there! How can we help you today?")
-	if !strings.Contains(prompt, "Automatic welcome message already shown to the visitor:\nHi there! How can we help you today?") {
-		t.Fatalf("prompt missing welcome context:\n%s", prompt)
+func TestInternalKnowledgeContextHidesSourceMetadataAndCitations(t *testing.T) {
+	results := []KnowledgeSearchResult{
+		{
+			ReferenceID: "docs:internal-doc",
+			SourceType:  knowledgeSourceTypeDocs,
+			IsInternal:  true,
+			Title:       "Secret enterprise playbook",
+			HeadingPath: "Unannounced 2027 launch",
+			URL:         "https://internal.example/doc",
+			Content:     "Enterprise plans include SAML SSO and audit logs.",
+		},
+		{
+			ReferenceID: "docs:public-doc",
+			SourceType:  knowledgeSourceTypeDocs,
+			Title:       "Enterprise overview",
+			Content:     "Read the public enterprise overview.",
+		},
 	}
-	if !strings.Contains(prompt, `"greet"`) || !strings.Contains(prompt, `"greeting_reply"`) {
-		t.Fatal("prompt missing greet decision or greeting_reply field")
+
+	context := buildKnowledgeContext(results)
+	for _, secret := range []string{"docs:internal-doc", "Secret enterprise playbook", "Unannounced 2027 launch", "https://internal.example/doc"} {
+		if strings.Contains(context, secret) {
+			t.Fatalf("internal knowledge context exposed %q:\n%s", secret, context)
+		}
+	}
+	if !strings.Contains(context, "VISIBILITY: INTERNAL") || !strings.Contains(context, results[0].Content) {
+		t.Fatalf("internal knowledge content missing from context:\n%s", context)
+	}
+
+	filtered := publicSourceDocIDs([]string{"docs:internal-doc", "docs:public-doc"}, results)
+	if len(filtered) != 1 || filtered[0] != "docs:public-doc" {
+		t.Fatalf("publicSourceDocIDs() = %v, want only public source", filtered)
+	}
+
+	sources := buildAISources([]string{"docs:internal-doc", "docs:public-doc"}, results)
+	if len(sources) != 1 || sources[0].DocID != "docs:public-doc" {
+		t.Fatalf("buildAISources() = %+v, want only public source", sources)
 	}
 }
 
-func TestBuildSupportPlannerSystemPromptOmitsEmptyWelcome(t *testing.T) {
-	prompt := buildSupportPlannerSystemPrompt("   ")
-	if strings.Contains(prompt, "Automatic welcome message already shown to the visitor:") {
-		t.Fatal("prompt should omit welcome section when none is configured")
+func TestBuildAISystemPromptProtectsInternalKnowledgeSources(t *testing.T) {
+	prompt := buildAISystemPrompt(&model.Agent{Name: "Support Bot"}, "VISIBILITY: INTERNAL\nCONTENT:\nPrivate guidance")
+
+	for _, guidance := range []string{
+		"never name, cite, link to, or reveal an internal source",
+		"Only include document IDs from PUBLIC knowledge chunks",
+	} {
+		if !strings.Contains(prompt, guidance) {
+			t.Fatalf("prompt missing internal source guidance %q:\n%s", guidance, prompt)
+		}
 	}
 }
 
@@ -62,10 +98,6 @@ func TestHasEscalationMessageInHistoryDetectsSystemEvent(t *testing.T) {
 	if !hasEscalationMessageInHistory(history) {
 		t.Fatal("hasEscalationMessageInHistory() = false, want true for escalation system event")
 	}
-
-	if !hasEscalationSystemEventInHistory(history) {
-		t.Fatal("hasEscalationSystemEventInHistory() = false, want true")
-	}
 }
 
 func TestHasEscalationMessageInHistoryDetectsPriorAIHandoffText(t *testing.T) {
@@ -76,10 +108,6 @@ func TestHasEscalationMessageInHistoryDetectsPriorAIHandoffText(t *testing.T) {
 
 	if !hasEscalationMessageInHistory(history) {
 		t.Fatal("hasEscalationMessageInHistory() = false, want true for AI handoff text")
-	}
-
-	if hasEscalationSystemEventInHistory(history) {
-		t.Fatal("hasEscalationSystemEventInHistory() = true, want false without system event")
 	}
 }
 

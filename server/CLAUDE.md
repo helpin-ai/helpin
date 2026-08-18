@@ -4,7 +4,7 @@
 
 - **Go 1.24** (latest minor)
 - **Router**: go-chi/chi/v5
-- **ORM**: GORM (gorm.io/gorm) with PostgreSQL (Neon) / SQLite for tests
+- **ORM**: GORM (gorm.io/gorm) with PostgreSQL / SQLite for tests
 - **Logging**: log/slog (Go stdlib)
 - **Auth**: golang-jwt/jwt/v5
 - **Config**: Environment variables via joho/godotenv
@@ -81,33 +81,36 @@ Use this taxonomy when changing backend agent or automation behavior:
 - `agent_run` is the durable execution primitive
 - run input now carries explicit `trigger` / `target` / `event` metadata while preserving legacy fields
 
-The backend already behaves as two practical agent categories:
+The backend records two ownership styles. They are not separate execution
+paths:
 
 - `system agents`
   - product-owned
-  - preset-bound
-  - for `native_sdk`, share the same core run machinery as custom agents
-  - differ mainly in preset/default ownership plus some target-aware launch and context-loading paths
+  - usually preset-bound
+  - differ mainly in backend-owned defaults, prompt/skill bundles, allowed tools, and product launch surfaces
 - `custom agents`
-  - generic executors
-  - current product direction is `native_sdk` only
+  - workspace-managed, versioned generic executors
+  - use the same `agent_run` executor path as system agents
   - should gather most context through tools after receiving a minimal trigger payload
+
+Agent Runtime is the only executor. `runtime_kind` selects `native_sdk`,
+`codex`, or `opencode`; it does not select an ownership-specific path.
 
 Current trigger surfaces in code:
 
 - manual run actions
 - agent `trigger_mode`
-- agent `schedule`
-- automation-rule triggers: `story.state_entered`, `agent_run.approved`, `cron`
+- automation-rule event triggers such as `task.state_entered` and `agent_run.approved`
+- automation-rule `cron`
 
 Current limitation:
 
 - execution is generic, but launch paths are still partially target-specific
-- native planning instructions are selected from effective tools plus target
+- active planning/review/support instructions are selected from effective skills, tools, target, and durable run state
 - generic target launching exists for direct runs and automation-rule `start_agent_run`
 - automation-rule `start_agent_run` now uses the generic target contract, with event-target defaulting and explicit targets required for cron
 
-Proposed direction for custom agents:
+Direction for custom agents:
 
 - keep genuine special-case orchestration only for real product exceptions like support flow
 - keep automation rules as the event and cron trigger layer

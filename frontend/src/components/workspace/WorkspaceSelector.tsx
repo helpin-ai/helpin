@@ -8,10 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Favicon } from '@/components/ui/favicon';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useSupportUnreadByWorkspace } from '@/hooks/queries/useSupport';
 import { daysUntil, PLAN_LABEL } from '@/lib/billingUtils';
 import { MoreHorizontalIcon, Settings02Icon, StarIcon, UserGroupIcon } from '@/lib/icons';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 const MAX_VISIBLE_AVATARS = 5;
@@ -69,6 +71,13 @@ function billingBadge(billing?: WorkspaceBillingSummary | null): {
 
 function canManageBilling(ws: Workspace): boolean {
   return ['owner', 'admin', 'manager'].includes((ws.role ?? '').toLowerCase());
+}
+
+export function getWorkspaceBillingBadgeClasses(className: string): string {
+  return cn(
+    'max-w-[12.5rem] min-w-0 shrink-0 truncate px-2.5 py-1 text-[11px] leading-none',
+    className,
+  );
 }
 
 export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
@@ -175,6 +184,14 @@ function WorkspaceCard({
     >
       <CardHeader className="pb-3">
         <div className="flex items-start gap-3">
+          <Favicon
+            src={ws.logo_url}
+            url={ws.website_url}
+            name={ws.name}
+            size={128}
+            className="h-9 w-9 shrink-0 rounded-md"
+            fallbackClassName="text-xs"
+          />
           <div className="min-w-0 flex-1">
             <CardTitle className="truncate text-base">{ws.name}</CardTitle>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
@@ -238,7 +255,7 @@ function WorkspaceCard({
       </CardHeader>
 
       <CardContent className="pt-0">
-        <div className="flex min-h-8 items-center justify-between gap-3">
+        <div className="flex min-h-9 items-center justify-between gap-4">
           <div
             className="flex min-w-0 cursor-default items-center -space-x-1.5"
             onClick={(event) => event.stopPropagation()}
@@ -293,7 +310,7 @@ function WorkspaceCard({
               </Tooltip>
             )}
           </div>
-          <Badge variant="outline" className={`max-w-36 shrink-0 truncate px-2 py-0.5 text-[11px] ${plan.className}`}>
+          <Badge variant="outline" className={getWorkspaceBillingBadgeClasses(plan.className)}>
             {plan.label}
           </Badge>
         </div>

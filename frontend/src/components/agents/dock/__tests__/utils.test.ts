@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AgentRun } from '@/lib/pmTypes';
-import { runDisplayTitle } from '../utils';
+import { displayAgentName } from '@/lib/agentTerminology';
+import { planKindLabel, planUpdatedAt, runDisplayTitle } from '../utils';
+import type { CommandBarRunPlan } from '../planSummary';
 
 function run(overrides: Partial<AgentRun> = {}): AgentRun {
   return {
@@ -28,6 +30,27 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
 }
 
 describe('dock run utilities', () => {
+  it('uses the persisted plan timestamp when no child run was created', () => {
+    const plan: CommandBarRunPlan = {
+      id: 'plan-1',
+      steps: [],
+      runIdsByStep: {},
+      createdAt: '2026-05-01T00:00:00Z',
+      updatedAt: '2026-05-01T00:02:00Z',
+    };
+
+    expect(planUpdatedAt(plan, {})).toBe(Date.parse('2026-05-01T00:02:00Z'));
+  });
+
+  it('labels a single delegated command as a sub-agent', () => {
+    expect(planKindLabel('one_shot_command', 1)).toBe('Sub-agent');
+  });
+
+  it('normalizes historical Command Agent names for display', () => {
+    expect(displayAgentName('Command Agent')).toBe('Sub-agent');
+    expect(displayAgentName('Command Agent (one-shot)')).toBe('Sub-agent');
+  });
+
   it('uses automation flow names for workspace-targeted runs', () => {
     expect(
       runDisplayTitle(run({

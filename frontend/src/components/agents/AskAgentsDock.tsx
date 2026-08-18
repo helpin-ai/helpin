@@ -1,1274 +1,1138 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { AiMagicIcon, BotIcon, Loading01Icon, PauseIcon, Tick01Icon } from '@/lib/icons';
+import { ArrowDown01Icon, Cancel01Icon, CheckmarkCircle02Icon, CollapseIcon, ExpandIcon, GlobeIcon, LinkSquare01Icon, LockIcon, MoreVerticalIcon, UserGroupIcon } from '@/lib/icons';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { AskAgentAvatar, type AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
+import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
-import { usePageContextState } from '@/components/command-bar/pageContext';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { commandBarService } from '@/lib/services/commandBarService';
-import { agentService } from '@/lib/services/agentService';
-import { useCommandBarRunStore, type CommandBarRunPlan } from '@/stores/commandBarStore';
-import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
-import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
-import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
-import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
-import type {
-  AgentRun,
-  CommandBarMessageSummary,
-  CommandBarProposal,
-  CommandBarPlanStep,
-  CommandBarParseResponse,
-  CommandBarPageContext,
-} from '@/lib/pmTypes';
-import { DockHeader } from './dock/DockHeader';
-import { DockInput } from './dock/DockInput';
-import { ExecutionStrip, type StripAction } from './dock/ExecutionStrip';
-import { InlineResultCard } from './dock/InlineResultCard';
-import { RunListView } from './dock/RunListView';
-import { PlanPreview } from './dock/PlanPreview';
-import { outputSummaryText } from './dock/utils';
+import { useAuthStore } from '@/stores/authStore';
+import { useDockStore } from '@/stores/dockStore';
+import { dockChatService } from '@/lib/services/dockChatService';
+import { dockChatModuleForContext, type DockChat, type DockChatVisibility, type DockRunSummary } from '@/lib/dockTypes';
+import type { CommandBarPageContext } from '@/lib/pmTypes';
+import { DockRoster } from './dock/DockRoster';
+import { ChatView } from './dock/ChatView';
+import { DockRunView } from './dock/DockRunView';
+import { useAgentRunStream, type AgentRunStreamFetchers } from './dock/useAgentRunStream';
+import { dockRunContext, dockRunTitle, presentDockRun } from './dock/dockPresentation';
+import { buildCodingSessionPath } from '@/lib/codingSessionSurface';
+import { AnimatedDockChatTitle } from './dock/AnimatedDockChatTitle';
+import { usePageContext } from '@/components/command-bar/pageContext';
 
-const COLLAPSED_KEY = 'helpin:ask-agents-dock-collapsed';
+type AskAgentsEventDetail = { query?: string; mode?: 'compose' | 'runs'; runId?: string; chatId?: string };
+type DockFocusTarget = 'composer' | 'selection' | 'header';
 
-type ThreadMessage = {
-  kind: 'user' | 'assistant';
-  id: string;
-  text: string;
-  ts: number;
-  proposal?: CommandBarProposal;
-};
-
-type AskAgentsEventDetail = {
-  query?: string;
-  mode?: 'compose' | 'runs';
-  runId?: string;
-};
-
-function threadMessageFromSummary(message: CommandBarMessageSummary): ThreadMessage {
-  return {
-    kind: message.role,
-    id: message.id,
-    text: message.content,
-    ts: Date.parse(message.created_at) || Date.now(),
-    proposal: message.proposal,
-  };
+/** Persistent workspace presence layer for chats and user-owned agent runs. */
+interface AskAgentsDockProps {
+  presentation?: 'floating' | 'embedded';
+  requiredPageContext?: CommandBarPageContext | null;
+  associatedSupportConversationId?: string;
+  active?: boolean;
+  hideCollapsedTrigger?: boolean;
+  onClose?: () => void;
 }
 
-function normalizeTranscriptPrompt(text: string | undefined | null): string {
-  return (text ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
-}
-
-function isNearOrAfterMessage(itemTime: string | undefined, messageTs: number): boolean {
-  const ts = itemTime ? Date.parse(itemTime) : 0;
-  if (!ts || !messageTs) return true;
-  const twoMinutes = 2 * 60 * 1000;
-  const oneDay = 24 * 60 * 60 * 1000;
-  return ts >= messageTs - twoMinutes && ts <= messageTs + oneDay;
-}
-
-function planMatchesRestoredThread(plan: CommandBarRunPlan, messages: ThreadMessage[]): boolean {
-  const prompt = normalizeTranscriptPrompt(plan.prompt);
-  if (!prompt) return false;
-  return messages.some(
-    (message) =>
-      message.kind === 'user' &&
-      normalizeTranscriptPrompt(message.text) === prompt &&
-      isNearOrAfterMessage(plan.createdAt, message.ts),
-  );
-}
-
-function runPrompt(run: AgentRun): string {
-  const input = run.input ?? {};
-  for (const key of ['text', 'prompt', 'instructions']) {
-    const value = input[key];
-    if (typeof value === 'string' && value.trim()) return value;
-  }
-  const trigger = input.trigger;
-  if (trigger && typeof trigger === 'object') {
-    const context = (trigger as { context?: unknown }).context;
-    if (context && typeof context === 'object') {
-      const text = (context as { text?: unknown; prompt?: unknown }).text;
-      if (typeof text === 'string' && text.trim()) return text;
-      const prompt = (context as { prompt?: unknown }).prompt;
-      if (typeof prompt === 'string' && prompt.trim()) return prompt;
-    }
-  }
-  return '';
-}
-
-function runMatchesRestoredThread(run: AgentRun, messages: ThreadMessage[]): boolean {
-  const prompt = normalizeTranscriptPrompt(runPrompt(run));
-  if (!prompt) return false;
-  return messages.some(
-    (message) =>
-      message.kind === 'user' &&
-      normalizeTranscriptPrompt(message.text) === prompt &&
-      isNearOrAfterMessage(run.created_at, message.ts),
-  );
-}
-
-function pageContextKey(context: CommandBarPageContext | null | undefined): string {
-  if (!context) return '';
-  return JSON.stringify({
-    entity_type: context.entity_type,
-    entity_id: context.entity_id,
-    metadata: context.metadata ?? null,
-  });
-}
-
-export function AskAgentsDock() {
-  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
-
-  const addPlan = useCommandBarRunStore((s) => s.addPlan);
-  const addRuns = useCommandBarRunStore((s) => s.addRuns);
-  const runIds = useCommandBarRunStore((s) => s.runIds);
-  const runsById = useCommandBarRunStore((s) => s.runsById);
-  const planIds = useCommandBarRunStore((s) => s.planIds);
-  const plansById = useCommandBarRunStore((s) => s.plansById);
-  const hydratePlans = useCommandBarRunStore((s) => s.hydratePlans);
-  const updateRun = useCommandBarRunStore((s) => s.updateRun);
-  const updatePlan = useCommandBarRunStore((s) => s.updatePlan);
-  const viewMode = useCommandBarRunStore((s) => s.viewMode);
-  const setViewMode = useCommandBarRunStore((s) => s.setViewMode);
-  const listFilter = useCommandBarRunStore((s) => s.listFilter);
-  const setListFilter = useCommandBarRunStore((s) => s.setListFilter);
-  const clearRuns = useCommandBarRunStore((s) => s.clear);
-
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    return localStorage.getItem(COLLAPSED_KEY) !== '0';
-  });
+export function AskAgentsDock({
+  presentation = 'floating',
+  requiredPageContext,
+  associatedSupportConversationId,
+  active = true,
+  hideCollapsedTrigger = false,
+  onClose,
+}: AskAgentsDockProps = {}) {
+  const embedded = presentation === 'embedded';
+  const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const pageContext = usePageContext();
+  const creationModule = dockChatModuleForContext(requiredPageContext ?? pageContext);
+  const {
+    collapsed,
+    setCollapsed,
+    tab,
+    setTab,
+    activeChatId,
+    setActiveChatId,
+    activeRunId,
+    setActiveRunId,
+    chats,
+    setChats,
+    drafts,
+    setDraft,
+    clearDraft,
+    lastAttentionIds,
+    setLastAttentionIds,
+    activateWorkspace,
+  } = useDockStore();
+  const workspaceId = workspace?.id;
+  const [runs, setRuns] = useState<DockRunSummary[]>([]);
+  const [runsLoading, setRunsLoading] = useState(true);
+  const [chatsLoading, setChatsLoading] = useState(true);
+  const [runsError, setRunsError] = useState<string | null>(null);
+  const [chatsError, setChatsError] = useState<string | null>(null);
   const [hiddenByModal, setHiddenByModal] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
-  const [value, setValue] = useState('');
-  const [parsing, setParsing] = useState(false);
-  const [dispatching, setDispatching] = useState(false);
-  const [intentResult, setIntentResult] = useState<CommandBarParseResponse | null>(null);
-  const [messages, setMessages] = useState<ThreadMessage[]>([]);
-  const [chatThreadId, setChatThreadId] = useState<string | null>(null);
-  const [sessionPlanIds, setSessionPlanIds] = useState<Set<string>>(() => new Set());
-  const [sessionRunIds, setSessionRunIds] = useState<Set<string>>(() => new Set());
-  const [busyRunId, setBusyRunId] = useState<string | null>(null);
-  const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [clearedContextKey, setClearedContextKey] = useState<string | null>(null);
-  // When the dock first opens with pending approvals, auto-expand the first
-  // one so the user lands on something actionable. Pressing "New" resets this
-  // to false — pending work stays visible as collapsed one-liners above the
-  // input but doesn't dominate the freshly-cleared canvas.
-  const [autoExpandFirstPaused, setAutoExpandFirstPaused] = useState(true);
-  const [promotionRun, setPromotionRun] = useState<{
-    run: AgentRun;
-    step: CommandBarPlanStep | null;
-    planPrompt?: string;
+  const [maximized, setMaximized] = useState(false);
+  const [chatScrollRequest, setChatScrollRequest] = useState(0);
+  const [pendingDraft, setPendingDraft] = useState<string | undefined>();
+  const [attentionNudge, setAttentionNudge] = useState(false);
+  const [nextChatCursor, setNextChatCursor] = useState<string | null>(null);
+  const [loadingMoreChats, setLoadingMoreChats] = useState(false);
+  const [chatPresenceOverride, setChatPresenceOverride] = useState<{
+    chatId: string;
+    state: AskAgentAvatarState;
   } | null>(null);
-
+  const [chatRunOverride, setChatRunOverride] = useState<{
+    chatId: string;
+    runId: string | null;
+  } | null>(null);
+  const [draftChat, setDraftChat] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const responseRef = useRef<HTMLDivElement | null>(null);
-  const planRefetchTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const rawPageContextKey = pageContextKey(pageContext);
-  const dockPageContext = useMemo<CommandBarPageContext | null>(() => {
-    if (!workspace) return null;
-    if (rawPageContextKey && rawPageContextKey === clearedContextKey) {
-      return {
-        entity_type: 'workspace',
-        entity_id: workspace.id,
-        display_title: workspace.name,
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const askTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const focusTargetRef = useRef<DockFocusTarget>('header');
+  const loadingMoreChatsRef = useRef(false);
+  const ensuredSupportConversationRef = useRef<string | null>(null);
+
+  const orderedRuns = useMemo(() => [...runs].sort((left, right) => {
+    const leftPresentation = presentDockRun(left.run.status, left.run.pause_reason, left.attention_kind);
+    const rightPresentation = presentDockRun(right.run.status, right.run.pause_reason, right.attention_kind);
+    const groupOrder = { needs_you: 0, running: 1, recent: 2 } as const;
+    const groupDelta = groupOrder[leftPresentation.group] - groupOrder[rightPresentation.group];
+    return groupDelta || Date.parse(right.last_activity_at) - Date.parse(left.last_activity_at);
+  }), [runs]);
+  const attentionRuns = useMemo(() => orderedRuns.filter((summary) => (
+    presentDockRun(summary.run.status, summary.run.pause_reason, summary.attention_kind).group === 'needs_you'
+  )), [orderedRuns]);
+  // The minimized bar is a live-status surface, not run history. Keep only
+  // queued/running work and paused runs that require the user's attention;
+  // terminal and passively paused runs remain available in the expanded roster.
+  const triggerRuns = useMemo(() => orderedRuns.filter((summary) => {
+    const presentation = presentDockRun(summary.run.status, summary.run.pause_reason, summary.attention_kind);
+    return presentation.group === 'needs_you'
+      || summary.run.status === 'queued'
+      || summary.run.status === 'running';
+  }), [orderedRuns]);
+  const activeRun = orderedRuns.find((summary) => summary.run.id === activeRunId) ?? null;
+  // Earlier versions persisted a general chat as soon as the user clicked
+  // New chat. Keep those abandoned rows out of the roster; Support-linked
+  // chats remain visible because their association is meaningful context.
+  const visibleChats = useMemo(() => chats.filter((chat) => (
+    chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null || chat.support_conversation_id != null
+  )), [activeChatId, chats]);
+  const activeChat = visibleChats.find((chat) => chat.id === activeChatId) ?? null;
+  const selectedChatId = activeChat?.id ?? null;
+  const activeChatRunId = chatRunOverride?.chatId === selectedChatId
+    ? chatRunOverride.runId
+    : activeChat?.active_run_id ?? null;
+  const chatStreamFetchers = useMemo<AgentRunStreamFetchers>(() => ({
+    getSnapshot: (ws) => selectedChatId
+      ? dockChatService.getChatRun(ws, selectedChatId)
+      : Promise.resolve({ data: null, error: null }),
+    listEvents: (ws, _runId, after) => selectedChatId
+      ? dockChatService.listChatRunEvents(ws, selectedChatId, after)
+      : Promise.resolve({ data: null, error: null }),
+  }), [selectedChatId]);
+  const chatStreamController = useAgentRunStream(
+    workspaceId,
+    activeChatRunId,
+    !!activeChatRunId,
+    5_000,
+    chatStreamFetchers,
+  );
+  const askAgentState = chatPresenceOverride?.chatId === selectedChatId
+    ? chatPresenceOverride.state
+    : deriveAskAgentAvatarState({
+    run: chatStreamController.session,
+    stream: chatStreamController.streamState,
+  });
+  const handleChatPresenceChange = useCallback((state: AskAgentAvatarState | null) => {
+    setChatPresenceOverride(state && selectedChatId ? { chatId: selectedChatId, state } : null);
+  }, [selectedChatId]);
+  const handleChatRunIdChange = useCallback((runId: string | null) => {
+    if (selectedChatId) setChatRunOverride({ chatId: selectedChatId, runId });
+  }, [selectedChatId]);
+
+  const refreshRuns = useCallback(async () => {
+    if (!workspaceId) return [];
+    setRunsError(null);
+    const result = await dockChatService.listRuns(workspaceId);
+    if (useWorkspaceStore.getState().currentWorkspace?.id !== workspaceId) return [];
+    if (result.error || !result.data) {
+      setRunsError(result.error ?? 'Unable to load agent runs');
+      setRunsLoading(false);
+      return [];
+    }
+    setRuns(result.data.runs ?? []);
+    setRunsLoading(false);
+    return result.data.runs ?? [];
+  }, [workspaceId]);
+
+  const refreshChats = useCallback(async (preserveLoaded = false) => {
+    if (!workspaceId) return;
+    setChatsError(null);
+    const result = await dockChatService.listChats(workspaceId);
+    if (useWorkspaceStore.getState().currentWorkspace?.id !== workspaceId) return;
+    if (result.error || !result.data) {
+      setChatsError(result.error ?? 'Unable to load conversations');
+      setChatsLoading(false);
+      return;
+    }
+    const firstPage = result.data.chats ?? [];
+    const currentChats = useDockStore.getState().chats;
+    const currentById = new Map(currentChats.map((chat) => [chat.id, chat]));
+    const mergedFirstPage = firstPage.map((chat) => {
+      const current = currentById.get(chat.id);
+      if (!chat.active_run_status && current
+        && current.active_run_id === chat.active_run_id && current.active_run_status) {
+        return { ...chat, active_run_status: current.active_run_status };
+      }
+      return chat;
+    });
+    if (preserveLoaded) {
+      const firstPageIds = new Set(firstPage.map((chat) => chat.id));
+      const existing = currentChats.filter((chat) => !firstPageIds.has(chat.id));
+      setChats([...mergedFirstPage, ...existing]);
+    } else {
+      setChats(mergedFirstPage);
+    }
+    setNextChatCursor(result.data.next_cursor ?? null);
+    setChatsLoading(false);
+  }, [setChats, workspaceId]);
+
+  const updateChatRunStatus = useCallback((runId: string | null, status: DockChat['active_run_status']) => {
+    if (!runId || !status) return;
+    const current = useDockStore.getState().chats;
+    let changed = false;
+    const next = current.map((chat) => {
+      if (chat.active_run_id !== runId || chat.active_run_status === status) return chat;
+      changed = true;
+      return { ...chat, active_run_status: status };
+    });
+    if (changed) setChats(next);
+  }, [setChats]);
+
+  const loadMoreChats = useCallback(async () => {
+    if (!workspaceId || !nextChatCursor || loadingMoreChatsRef.current) return;
+    loadingMoreChatsRef.current = true;
+    setLoadingMoreChats(true);
+    const cursor = nextChatCursor;
+    const result = await dockChatService.listChats(workspaceId, cursor);
+    if (useWorkspaceStore.getState().currentWorkspace?.id === workspaceId) {
+      if (result.error || !result.data) {
+        toast.error(result.error ?? 'Unable to load more conversations');
+      } else {
+        const existing = useDockStore.getState().chats;
+        const knownIds = new Set(existing.map((chat) => chat.id));
+        setChats([...existing, ...(result.data.chats ?? []).filter((chat) => !knownIds.has(chat.id))]);
+        setNextChatCursor(result.data.next_cursor ?? null);
+      }
+    }
+    loadingMoreChatsRef.current = false;
+    setLoadingMoreChats(false);
+  }, [nextChatCursor, setChats, workspaceId]);
+
+  const renameChat = useCallback(async (chatId: string, title: string) => {
+    if (!workspaceId) return false;
+    const result = await dockChatService.updateChat(workspaceId, chatId, { title });
+    if (result.error || !result.data) {
+      toast.error(result.error ?? 'Failed to rename conversation');
+      return false;
+    }
+    setChats(useDockStore.getState().chats.map((chat) => chat.id === chatId ? result.data! : chat));
+    return true;
+  }, [setChats, workspaceId]);
+
+  const archiveChat = useCallback(async (chatId: string) => {
+    if (!workspaceId) return false;
+    const result = await dockChatService.updateChat(workspaceId, chatId, { archived: true });
+    if (result.error || !result.data) {
+      toast.error(result.error ?? 'Failed to archive conversation');
+      return false;
+    }
+    const remaining = useDockStore.getState().chats.filter((chat) => chat.id !== chatId);
+    setChats(remaining);
+    if (useDockStore.getState().activeChatId === chatId) setActiveChatId(remaining[0]?.id ?? null);
+    return true;
+  }, [setActiveChatId, setChats, workspaceId]);
+
+  const updateChatVisibility = useCallback(async (chatId: string, visibility: DockChatVisibility) => {
+    if (!workspaceId) return false;
+    const result = await dockChatService.updateChat(workspaceId, chatId, { visibility });
+    if (result.error || !result.data) {
+      toast.error(result.error ?? 'Failed to update who can see this chat');
+      return false;
+    }
+    setChats(useDockStore.getState().chats.map((chat) => chat.id === chatId ? result.data! : chat));
+    return true;
+  }, [setChats, workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    activateWorkspace(workspaceId);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setRuns([]);
+      setRunsLoading(true);
+      setChatsLoading(true);
+      setNextChatCursor(null);
+      loadingMoreChatsRef.current = false;
+      setLoadingMoreChats(false);
+      void Promise.all([refreshRuns(), refreshChats()]);
+    });
+    return () => { cancelled = true; };
+  }, [activateWorkspace, refreshChats, refreshRuns, workspaceId]);
+
+  useEffect(() => {
+    if (runsLoading) return;
+    const current = useDockStore.getState().activeRunId;
+    if (current && orderedRuns.some((summary) => summary.run.id === current)) return;
+    setActiveRunId(orderedRuns[0]?.run.id ?? null);
+  }, [orderedRuns, runsLoading, setActiveRunId]);
+
+  useEffect(() => {
+    if (chatsLoading || draftChat) return;
+    const current = useDockStore.getState().activeChatId;
+    if (current && visibleChats.some((chat) => chat.id === current)) return;
+    setActiveChatId(visibleChats[0]?.id ?? null);
+  }, [chatsLoading, draftChat, setActiveChatId, visibleChats]);
+
+  useEffect(() => {
+    if (!active || !workspaceId || !associatedSupportConversationId || chatsLoading) return;
+    const associationKey = `${workspaceId}:${associatedSupportConversationId}`;
+    const associatedChat = chats.find(
+      (chat) => chat.support_conversation_id === associatedSupportConversationId,
+    );
+    if (associatedChat) {
+		setDraftChat(false);
+      ensuredSupportConversationRef.current = associationKey;
+      if (useDockStore.getState().activeChatId !== associatedChat.id) {
+        setActiveChatId(associatedChat.id);
+      }
+      setTab('chats');
+      return;
+    }
+    if (ensuredSupportConversationRef.current === associationKey) return;
+    ensuredSupportConversationRef.current = associationKey;
+    void dockChatService.createChat(workspaceId, '', associatedSupportConversationId, 'support').then((result) => {
+      if (result.error || !result.data) {
+        ensuredSupportConversationRef.current = null;
+        toast.error(result.error ?? 'Failed to open the conversation chat');
+        return;
+      }
+      const current = useDockStore.getState().chats;
+      setChats([result.data, ...current.filter((chat) => chat.id !== result.data?.id)]);
+      setDraftChat(false);
+      setActiveChatId(result.data.id);
+      setTab('chats');
+      focusTargetRef.current = 'composer';
+    });
+  }, [active, associatedSupportConversationId, chats, chatsLoading, setActiveChatId, setChats, setTab, workspaceId]);
+
+  useEffect(() => {
+    if (runsLoading) return;
+    const nextIds = attentionRuns.map((summary) => summary.run.id);
+    const hasNew = nextIds.some((id) => !lastAttentionIds.includes(id));
+    if (hasNew && lastAttentionIds.length > 0) {
+      const startTimer = window.setTimeout(() => setAttentionNudge(true), 0);
+      const endTimer = window.setTimeout(() => setAttentionNudge(false), 350);
+      setLastAttentionIds(nextIds);
+      return () => {
+        window.clearTimeout(startTimer);
+        window.clearTimeout(endTimer);
       };
     }
-    return pageContext ?? {
-      entity_type: 'workspace',
-      entity_id: workspace.id,
-      display_title: workspace.name,
+    setLastAttentionIds(nextIds);
+  }, [attentionRuns, lastAttentionIds, runsLoading, setLastAttentionIds]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent<{ entity_id?: string; status?: DockChat['active_run_status'] }>).detail;
+      updateChatRunStatus(detail?.entity_id ?? null, detail?.status ?? null);
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void Promise.all([refreshRuns(), refreshChats(true)]);
+      }, 180);
     };
-  }, [clearedContextKey, pageContext, rawPageContextKey, workspace]);
-  const dockScopeOptions = rawPageContextKey && rawPageContextKey === clearedContextKey ? [] : scopeOptions;
-  const dockActiveScopeKey = rawPageContextKey && rawPageContextKey === clearedContextKey ? null : activeScopeKey;
-
-  const runs = useMemo(
-    () => runIds.map((id) => runsById[id]).filter(Boolean),
-    [runIds, runsById],
-  );
-  const plans = useMemo(
-    () => planIds.map((id) => plansById[id]).filter(Boolean),
-    [planIds, plansById],
-  );
-  const planRunIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const plan of plans) {
-      for (const id of Object.values(plan.runIdsByStep)) ids.add(id);
-    }
-    return ids;
-  }, [plans]);
-  const standaloneRuns = useMemo(
-    () => runs.filter((run) => !planRunIds.has(run.id)),
-    [planRunIds, runs],
-  );
-
-  // Split active runs into truly running (queued/running) vs awaiting human
-  // (paused = awaiting input/approval/auth). Paused runs are not "doing work" —
-  // surfacing them under the same spinner as a running agent misleads the user.
-  const { runningCount, awaitingCount } = useMemo(() => {
-    let running = 0;
-    let awaiting = 0;
-    for (const r of runs) {
-      if (!ACTIVE_RUN_STATUSES.has(r.status)) continue;
-      if (isPausedAgentRun(r)) awaiting += 1;
-      else running += 1;
-    }
-    return { runningCount: running, awaitingCount: awaiting };
-  }, [runs]);
-
-  // Items visible in conversation = items submitted in *this* session, anything
-  // currently active, and completed runs that can be matched back to the
-  // restored chat thread. Other completed runs stay in history/list mode.
-  const visiblePlanIds = useMemo(() => {
-    const ids = new Set(sessionPlanIds);
-    for (const plan of plans) {
-      const hasActive = Object.values(plan.runIdsByStep)
-        .map((id) => runsById[id])
-        .some((r) => r && ACTIVE_RUN_STATUSES.has(r.status));
-      if (hasActive || planMatchesRestoredThread(plan, messages)) ids.add(plan.id);
-    }
-    return ids;
-  }, [messages, plans, runsById, sessionPlanIds]);
-
-  const visibleRunIds = useMemo(() => {
-    const ids = new Set(sessionRunIds);
-    for (const run of standaloneRuns) {
-      if (ACTIVE_RUN_STATUSES.has(run.status) || runMatchesRestoredThread(run, messages)) ids.add(run.id);
-    }
-    return ids;
-  }, [messages, sessionRunIds, standaloneRuns]);
-
-  // Conversation timeline: chat bubbles plus run items that belong to this
-  // transcript, ordered by timestamp. Unrelated hydrated history lives in list
-  // mode.
-  type TimelineItem =
-    | { kind: 'msg'; id: string; ts: number; msg: ThreadMessage }
-    | { kind: 'plan'; id: string; ts: number; plan: CommandBarRunPlan }
-    | { kind: 'run'; id: string; ts: number; run: AgentRun };
-
-  const timeline = useMemo<TimelineItem[]>(() => {
-    const items: TimelineItem[] = [];
-    for (const m of messages) items.push({ kind: 'msg', id: m.id, ts: m.ts, msg: m });
-    for (const plan of plans) {
-      if (!visiblePlanIds.has(plan.id)) continue;
-      const ts = Math.max(
-        ...Object.values(plan.runIdsByStep)
-          .map((id) => runsById[id])
-          .filter(Boolean)
-          .map((r) => Date.parse(r.created_at) || 0),
-        0,
-      );
-      items.push({ kind: 'plan', id: `plan-${plan.id}`, ts, plan });
-    }
-    for (const run of standaloneRuns) {
-      if (!visibleRunIds.has(run.id)) continue;
-      items.push({
-        kind: 'run',
-        id: `run-${run.id}`,
-        ts: Date.parse(run.created_at) || 0,
-        run,
-      });
-    }
-    return items.sort((a, b) => a.ts - b.ts);
-  }, [messages, plans, runsById, standaloneRuns, visiblePlanIds, visibleRunIds]);
-
-  // Every paused run (awaiting approval/input/auth) is collapsible — the
-  // header chevron toggles it. Only the first paused run starts expanded so
-  // the user lands on something actionable; subsequent ones start collapsed.
-  const { compactRunIds, firstPausedRunId } = useMemo(() => {
-    const compact = new Set<string>();
-    let first: string | null = null;
-    for (const item of timeline) {
-      if (item.kind !== 'run') continue;
-      if (!isPausedAgentRun(item.run)) continue;
-      compact.add(item.run.id);
-      if (!first) first = item.run.id;
-    }
-    return { compactRunIds: compact, firstPausedRunId: first };
-  }, [timeline]);
-
-  // Persist collapsed.
-  useEffect(() => {
-    localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0');
-  }, [collapsed]);
-
-  // Drop the current pending plan if the user keeps typing.
-  useEffect(() => {
-    setIntentResult(null);
-  }, [value]);
-
-  useEffect(() => {
-    clearRuns();
-    setClearedContextKey(null);
-    setChatThreadId(null);
-    setMessages([]);
-    setSessionPlanIds(new Set());
-    setSessionRunIds(new Set());
-    setSelectedRunId(null);
-    setIntentResult(null);
-  }, [clearRuns, workspace?.id]);
-
-  // Auto-scroll on new content.
-  useEffect(() => {
-    const el = responseRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [timeline.length, intentResult, parsing]);
-
-  // Initial hydration.
-  useEffect(() => {
-    if (!workspace?.id) return;
-    let cancelled = false;
-    void commandBarService.listPlans(workspace.id, 10).then((res) => {
-      if (cancelled || !res.data?.plans) return;
-      hydratePlans(res.data.plans);
-      // Any plan whose runs include an active one belongs in the conversation —
-      // the user expects to see in-flight work when they reopen the dock.
-      const activePlanIds = res.data.plans
-        .filter((p) =>
-          (p.runs ?? []).some((r) => ACTIVE_RUN_STATUSES.has(r.status)),
-        )
-        .map((p) => p.id);
-      if (activePlanIds.length) {
-        setSessionPlanIds((prev) => {
-          const next = new Set(prev);
-          for (const id of activePlanIds) next.add(id);
-          return next;
-        });
-      }
-    });
-    void agentService.listRecentRuns(workspace.id, 20).then((res) => {
-      if (cancelled || !res.data?.runs?.length) return;
-      addRuns(res.data.runs);
-      const activeRunIds = res.data.runs
-        .filter((r) => ACTIVE_RUN_STATUSES.has(r.status))
-        .map((r) => r.id);
-      if (activeRunIds.length) {
-        setSessionRunIds((prev) => {
-          const next = new Set(prev);
-          for (const id of activeRunIds) next.add(id);
-          return next;
-        });
-      }
-    });
-    void commandBarService.listChatThreads(workspace.id, 1).then((res) => {
-      if (cancelled || !res.data?.threads?.length) return;
-      const [latest] = res.data.threads;
-      setChatThreadId((current) => current ?? latest.thread.id);
-      setMessages((current) => {
-        if (current.length > 0) return current;
-        return latest.messages.map(threadMessageFromSummary);
-      });
-    });
+    window.addEventListener('agent_run-updated', refresh);
+    window.addEventListener('coding_session-updated', refresh);
     return () => {
-      cancelled = true;
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('agent_run-updated', refresh);
+      window.removeEventListener('coding_session-updated', refresh);
     };
-  }, [addRuns, hydratePlans, workspace?.id]);
+  }, [refreshChats, refreshRuns, updateChatRunStatus, workspaceId]);
 
-  const findPlanIdForRun = useCallback(
-    (runId: string): string | null => {
-      for (const plan of plans) {
-        for (const id of Object.values(plan.runIdsByStep)) {
-          if (id === runId) return plan.id;
-        }
-      }
-      return null;
-    },
-    [plans],
-  );
-
-  const schedulePlanRefetch = useCallback(
-    (planId: string) => {
-      if (!workspace?.id) return;
-      const existing = planRefetchTimers.current.get(planId);
-      if (existing) clearTimeout(existing);
-      const timer = setTimeout(() => {
-        planRefetchTimers.current.delete(planId);
-        void commandBarService.getPlan(workspace.id, planId).then((res) => {
-          if (res.data?.plan) updatePlan(res.data.plan, res.data.plan.runs ?? []);
-        });
-      }, 600);
-      planRefetchTimers.current.set(planId, timer);
-    },
-    [updatePlan, workspace?.id],
-  );
-
-  useEffect(() => {
-    const timers = planRefetchTimers.current;
-    return () => {
-      for (const t of timers.values()) clearTimeout(t);
-      timers.clear();
-    };
+  const rememberFocusSource = useCallback((source?: HTMLElement | null) => {
+    const active = document.activeElement;
+    returnFocusRef.current = source ?? (active instanceof HTMLElement ? active : askTriggerRef.current);
   }, []);
 
-  const refreshRun = useCallback(
-    async (runId: string, allowUnknown = false) => {
-      if (!workspace?.id || (!allowUnknown && !runIds.includes(runId))) return;
-      const res = await agentService.getRun(workspace.id, runId);
-      if (!res.data) return;
-      updateRun(res.data);
-      const terminal =
-        res.data.status === 'completed' ||
-        res.data.status === 'failed' ||
-        res.data.status === 'cancelled';
-      if (terminal) {
-        const planId = findPlanIdForRun(res.data.id);
-        if (planId) schedulePlanRefetch(planId);
+  const openDock = useCallback((
+    targetTab?: 'agents' | 'chats',
+    focusTarget: DockFocusTarget = targetTab === 'chats' ? 'composer' : 'selection',
+    source?: HTMLElement | null,
+  ) => {
+    rememberFocusSource(source);
+    focusTargetRef.current = focusTarget;
+    if (targetTab) setTab(targetTab);
+    setCollapsed(false);
+  }, [rememberFocusSource, setCollapsed, setTab]);
+
+  const closeDock = useCallback(() => {
+    if (embedded) {
+      onClose?.();
+      return;
+    }
+    setMaximized(false);
+    setCollapsed(true);
+    window.setTimeout(() => {
+      const target = returnFocusRef.current;
+      if (target?.isConnected) target.focus();
+      else askTriggerRef.current?.focus();
+    }, 0);
+  }, [embedded, onClose, setCollapsed]);
+
+  const newChat = useCallback(() => {
+    setDraftChat(true);
+    setActiveChatId(null);
+    setTab('chats');
+    focusTargetRef.current = 'composer';
+    setCollapsed(false);
+  }, [setActiveChatId, setCollapsed, setTab]);
+
+  const createDraftChat = useCallback(async () => {
+    if (!workspaceId) return null;
+    const result = await dockChatService.createChat(workspaceId, '', undefined, creationModule);
+    if (result.error || !result.data) {
+      toast.error(result.error ?? 'Failed to create chat');
+      return null;
+    }
+    setChats([result.data, ...chats.filter((chat) => chat.id !== result.data?.id)]);
+    setDraftChat(false);
+    setActiveChatId(result.data.id);
+    setTab('chats');
+    return result.data;
+  }, [chats, creationModule, setActiveChatId, setChats, setTab, workspaceId]);
+
+  useLayoutEffect(() => {
+    if (collapsed && !embedded) return;
+    if (!panelRef.current) return;
+    const target = focusTargetRef.current;
+    if (target === 'composer' && textareaRef.current) {
+      textareaRef.current.focus();
+      return;
+    }
+    if (target === 'selection') {
+      const selected = panelRef.current.querySelector<HTMLElement>('[aria-current="true"]');
+      if (selected) {
+        selected.focus();
+        return;
       }
-    },
-    [findPlanIdForRun, runIds, schedulePlanRefetch, updateRun, workspace?.id],
-  );
+    }
+    panelRef.current.querySelector<HTMLElement>('[data-dock-header]')?.focus();
+  }, [activeChatId, activeRunId, collapsed, embedded, tab]);
 
-  // WebSocket-driven refresh.
   useEffect(() => {
-    const createdHandler = (event: Event) => {
-      const detail = (event as CustomEvent<{ entity_id?: string }>).detail;
-      if (detail?.entity_id) void refreshRun(detail.entity_id, true);
-    };
-    const updatedHandler = (event: Event) => {
-      const detail = (event as CustomEvent<{ entity_id?: string }>).detail;
-      if (detail?.entity_id) void refreshRun(detail.entity_id);
-    };
-    window.addEventListener('agent_run-created', createdHandler);
-    window.addEventListener('agent_run-updated', updatedHandler);
-    return () => {
-      window.removeEventListener('agent_run-created', createdHandler);
-      window.removeEventListener('agent_run-updated', updatedHandler);
-    };
-  }, [refreshRun]);
-
-  // "/" opens and focuses the dock when no other input is focused.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== '/') return;
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      const tag = target.tagName?.toLowerCase();
-      const isEditable = tag === 'input' || tag === 'textarea' || target.isContentEditable;
-      if (isEditable) return;
-      e.preventDefault();
-      setCollapsed(false);
-      setViewMode('conversation');
-      requestAnimationFrame(() => textareaRef.current?.focus());
+    if (embedded) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      const editable = target instanceof Element
+        && target.matches('input, textarea, select, [contenteditable="true"]');
+      if (event.key === '/' && !editable && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        openDock('chats', 'composer');
+        if (!useDockStore.getState().activeChatId) void newChat();
+      } else if (event.key.toLowerCase() === 'n' && !collapsed && !editable && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        void newChat();
+      } else if (event.key === 'Escape' && !collapsed) {
+        event.preventDefault();
+        closeDock();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [setViewMode]);
+  }, [closeDock, collapsed, embedded, newChat, openDock]);
 
-  // Auto-collapse to pill when idle.
   useEffect(() => {
-    if (collapsed) return;
-    if (parsing || dispatching) return;
-    if (intentResult) return;
-    if (value.trim().length > 0) return;
-    if (isFocused) return;
-    const IDLE_COLLAPSE_MS = 60_000;
-    const timer = setTimeout(() => setCollapsed(true), IDLE_COLLAPSE_MS);
-    return () => clearTimeout(timer);
-  }, [collapsed, parsing, dispatching, intentResult, value, isFocused]);
-
-  // Hide while modal surfaces are open so the dock does not compete with
-  // dialogs or drawers. Keep it mounted so CSS can animate the exit.
-  useEffect(() => {
-    const update = () => {
-      const open = document.querySelectorAll(
-        '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
-      );
-      let blocking = false;
-      open.forEach((el) => {
-        if (el.closest('[data-helpin-dock]')) return;
-        blocking = true;
-      });
-      setHiddenByModal(blocking);
+    if (embedded || collapsed) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !panelRef.current) return;
+      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => element.offsetParent !== null);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (!(active instanceof Node) || !panelRef.current.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    const obs = new MutationObserver(update);
-    obs.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['data-state', 'role'],
-    });
-    update();
-    return () => obs.disconnect();
-  }, []);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [collapsed, embedded]);
 
-  // External callers: window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail }))
   useEffect(() => {
+    if (embedded || collapsed) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousRootOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousRootOverflow;
+    };
+  }, [collapsed, embedded]);
+
+  useEffect(() => {
+    if (embedded) return;
     const onAsk = (event: Event) => {
-      const detail = (event as CustomEvent<AskAgentsEventDetail>).detail;
-      const next = detail?.query?.trim() ?? '';
-      if (!next && !detail?.mode && !detail?.runId) return;
-      setCollapsed(false);
-      if (detail?.mode === 'runs') {
-        setViewMode('list');
+      const detail = (event as CustomEvent<AskAgentsEventDetail>).detail ?? {};
+      const query = detail.query?.trim();
+      if (detail.runId) {
+        setActiveRunId(detail.runId);
+        openDock('agents', 'selection');
+        return;
       }
-      if (detail?.runId) {
-        // jump straight to that run's conversation context — switch to conversation mode
-        setViewMode('conversation');
+      if (detail.chatId) {
+        setActiveChatId(detail.chatId);
+        openDock('chats', 'composer');
+      } else {
+        openDock(detail.mode === 'runs' ? 'agents' : 'chats', detail.mode === 'runs' ? 'selection' : 'composer');
       }
-      if (next) {
-        setValue(next);
-        setIntentResult(null);
-        requestAnimationFrame(() => textareaRef.current?.focus());
-      }
+      if (query) setPendingDraft(query);
     };
     window.addEventListener('helpin:ask-agents', onAsk);
     return () => window.removeEventListener('helpin:ask-agents', onAsk);
-  }, [setViewMode]);
+  }, [embedded, openDock, setActiveChatId, setActiveRunId]);
 
-  const trimmed = value.trim();
-
-  const submit = useCallback(
-    async (override?: string) => {
-      const text = (override ?? value).trim();
-      if (!workspace?.id || !dockPageContext || !text) return;
-      // List-mode submit: if any rows match, treat as filter; otherwise dispatch a new run.
-      if (viewMode === 'list') {
-        setViewMode('conversation');
-      }
-      setParsing(true);
-      setIntentResult(null);
-      try {
-        const res = await commandBarService.chatTurn(workspace.id, {
-          thread_id: chatThreadId ?? undefined,
-          text,
-          page_context: dockPageContext,
-        });
-        if (res.error || !res.data) {
-          toast.error(res.error ?? 'Failed to ask agents');
-          return;
-        }
-        setChatThreadId(res.data.thread.id);
-        const userTs = Date.parse(res.data.user_message.created_at) || Date.now();
-        const assistantTs = Date.parse(res.data.assistant_message.created_at) || userTs + 1;
-        setMessages((prev) => [
-          ...prev,
-          { kind: 'user', id: res.data!.user_message.id, text, ts: userTs },
-          {
-            kind: 'assistant',
-            id: res.data!.assistant_message.id,
-            text: res.data!.assistant_message.content,
-            ts: assistantTs,
-            proposal: res.data!.proposal ?? res.data!.assistant_message.proposal,
-          },
-        ]);
-        const proposal = res.data.proposal ?? res.data.assistant_message.proposal;
-        if (proposal?.type === 'run_plan' && proposal.plan) {
-          setIntentResult({
-            status: 'plan',
-            plan: proposal.plan,
-            rationale: res.data.assistant_message.content,
-          });
-        } else if (proposal?.type === 'no_match') {
-          setIntentResult({
-            status: 'no_matching_agent',
-            reason: proposal.reason ?? res.data.assistant_message.content,
-            suggestions: proposal.suggestions,
-          });
-        } else {
-          setIntentResult(null);
-        }
-      } finally {
-        setParsing(false);
-      }
-    },
-    [chatThreadId, dockPageContext, value, viewMode, setViewMode, workspace?.id],
-  );
-
-  const confirmPlan = useCallback(async () => {
-    if (!workspace?.id || !dockPageContext || !intentResult || intentResult.status !== 'plan') return;
-    setDispatching(true);
-    try {
-      const res = await commandBarService.dispatchPlan(workspace.id, {
-        text: trimmed,
-        page_context: dockPageContext,
-        steps: intentResult.plan.steps,
-      });
-      if (res.error || !res.data) {
-        toast.error(res.error ?? 'Failed to start command run');
-        return;
-      }
-      const steps = res.data.steps ?? intentResult.plan.steps;
-      if (res.data.plan_id) {
-        addPlan(
-          {
-            id: res.data.plan_id,
-            steps,
-            runIdsByStep: Object.fromEntries(res.data.runs.map((run, index) => [index, run.id])),
-            planKind: intentResult.plan.plan_kind,
-            status: 'running',
-            prompt: trimmed,
-            currentStepIndex: 0,
-            createdAt: res.data.runs[0]?.created_at,
-            updatedAt: res.data.runs[0]?.updated_at ?? res.data.runs[0]?.created_at,
-          },
-          res.data.runs,
-        );
-        setSessionPlanIds((prev) => {
-          const next = new Set(prev);
-          next.add(res.data!.plan_id!);
-          return next;
-        });
-      } else {
-        addRuns(res.data.runs);
-        setSessionRunIds((prev) => {
-          const next = new Set(prev);
-          for (const r of res.data!.runs) next.add(r.id);
-          return next;
-        });
-      }
-      setValue('');
-      setIntentResult(null);
-    } finally {
-      setDispatching(false);
-    }
-  }, [addPlan, addRuns, dockPageContext, intentResult, trimmed, workspace?.id]);
-
-  // ⌘↵ confirms a pending plan from anywhere in the dock.
   useEffect(() => {
-    if (intentResult?.status !== 'plan') return;
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        void confirmPlan();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [intentResult, confirmPlan]);
-
-  const cancelPlan = useCallback(
-    async (planId: string) => {
-      if (!workspace?.id) return;
-      setBusyPlanId(planId);
-      try {
-        const res = await commandBarService.cancelPlan(workspace.id, planId);
-        if (res.error || !res.data) {
-          toast.error(res.error ?? 'Failed to cancel plan');
-          return;
-        }
-        updatePlan(res.data.plan, res.data.runs ?? []);
-        toast.success('Command plan cancelled');
-      } finally {
-        setBusyPlanId(null);
-      }
-    },
-    [updatePlan, workspace?.id],
-  );
-
-  const resumePlan = useCallback(
-    async (plan: CommandBarRunPlan) => {
-      if (!workspace?.id) return;
-      setBusyPlanId(plan.id);
-      try {
-        const res = await commandBarService.resumePlan(workspace.id, plan.id);
-        if (res.error || !res.data) {
-          toast.error(res.error ?? 'Failed to resume plan');
-          return;
-        }
-        const resumedRuns = res.data.runs ?? (res.data.run ? [res.data.run] : []);
-        updatePlan(res.data.plan, resumedRuns);
-      } finally {
-        setBusyPlanId(null);
-      }
-    },
-    [updatePlan, workspace?.id],
-  );
-
-  const retryPlan = useCallback(
-    async (plan: CommandBarRunPlan) => {
-      if (!workspace?.id) return;
-      const failedIndex = plan.steps.findIndex((_, i) => {
-        const runId = plan.runIdsByStep[i];
-        const run = runId ? runsById[runId] : null;
-        return run && (run.status === 'failed' || run.status === 'cancelled');
+    const compute = () => {
+      const dialogs = document.querySelectorAll('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]');
+      let hidden = false;
+      dialogs.forEach((dialog) => {
+        const dockOwned = dialog.closest('[data-helpin-dock], [data-helpin-dock-overlay]');
+        if (!dockOwned) hidden = true;
       });
-      const stepIndex = failedIndex >= 0 ? failedIndex : 0;
-      setBusyPlanId(plan.id);
-      try {
-        const res = await commandBarService.retryPlan(workspace.id, plan.id, stepIndex);
-        if (res.error || !res.data) {
-          toast.error(res.error ?? 'Failed to retry plan');
-          return;
-        }
-        const retryRuns = res.data.runs ?? (res.data.run ? [res.data.run] : []);
-        updatePlan(res.data.plan, retryRuns);
-      } finally {
-        setBusyPlanId(null);
-      }
-    },
-    [runsById, updatePlan, workspace?.id],
-  );
-
-  const retryRun = useCallback(
-    (run: AgentRun) => {
-      // Standalone runs are usually recoverable by re-issuing the original prompt.
-      const text = (run.input as { text?: string } | null)?.text;
-      if (text) {
-        setCollapsed(false);
-        setViewMode('conversation');
-        setValue(text);
-        void submit(text);
-      } else {
-        toast.error('Cannot retry: original prompt unavailable.');
-      }
-    },
-    [submit, setViewMode],
-  );
-
-  const runApprove = useCallback(
-    async (run: AgentRun) => {
-      if (!workspace?.id) return;
-      setBusyRunId(run.id);
-      try {
-        const res = await agentService.approveRun(workspace.id, run.id);
-        if (res.error || !res.data) {
-          toast.error(res.error ?? 'Failed to approve run');
-          return;
-        }
-        updateRun(res.data);
-      } finally {
-        setBusyRunId(null);
-      }
-    },
-    [updateRun, workspace?.id],
-  );
-
-  const runCancel = useCallback(
-    async (run: AgentRun) => {
-      if (!workspace?.id) return;
-      setBusyRunId(run.id);
-      try {
-        const res = await agentService.cancelRun(workspace.id, run.id);
-        if (res.error || !res.data) {
-          toast.error(res.error ?? 'Failed to cancel run');
-          return;
-        }
-        updateRun(res.data);
-      } finally {
-        setBusyRunId(null);
-      }
-    },
-    [updateRun, workspace?.id],
-  );
-
-  const findRunStep = useCallback(
-    (run: AgentRun): { step: CommandBarPlanStep | null; planPrompt?: string } => {
-      for (const plan of plans) {
-        for (const [indexStr, runId] of Object.entries(plan.runIdsByStep)) {
-          if (runId !== run.id) continue;
-          const step = plan.steps[Number(indexStr)] ?? null;
-          return { step, planPrompt: plan.prompt };
-        }
-      }
-      return { step: null };
-    },
-    [plans],
-  );
-
-  const openRunDrawer = useCallback((runId: string) => {
-    setSelectedRunId(runId);
+      setHiddenByModal(hidden);
+    };
+    compute();
+    const observer = new MutationObserver(compute);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-state'] });
+    return () => observer.disconnect();
   }, []);
 
-  const handleStripAction = useCallback(
-    (
-      action: StripAction,
-      target: { kind: 'plan'; plan: CommandBarRunPlan } | { kind: 'run'; run: AgentRun },
-    ) => {
-      if (action === 'open') {
-        const runId = target.kind === 'plan'
-          ? Object.values(target.plan.runIdsByStep)[0]
-          : target.run.id;
-        if (runId) openRunDrawer(runId);
-        return;
-      }
-      if (action === 'rerun') {
-        if (target.kind === 'plan') {
-          if (target.plan.prompt) {
-            setValue(target.plan.prompt);
-            void submit(target.plan.prompt);
-          }
-        } else {
-          const display = target.run.approval_state === 'approved' ? null : target.run;
-          if (display) void runApprove(target.run);
-        }
-        return;
-      }
-      if (action === 'save_as_agent') {
-        if (target.kind === 'run') {
-          const { step, planPrompt } = findRunStep(target.run);
-          if (!step) {
-            toast.error('Cannot save: this run is missing its plan context.');
-            return;
-          }
-          setPromotionRun({ run: target.run, step, planPrompt });
-        } else {
-          // Plan: promote the first/only completed run.
-          const firstRunId = Object.values(target.plan.runIdsByStep)[0];
-          const run = firstRunId ? runsById[firstRunId] : null;
-          if (run) {
-            const { step, planPrompt } = findRunStep(run);
-            if (step) setPromotionRun({ run, step, planPrompt: planPrompt ?? target.plan.prompt });
-          }
-        }
-        return;
-      }
-      if (action === 'retry') {
-        if (target.kind === 'plan') void retryPlan(target.plan);
-        else retryRun(target.run);
-        return;
-      }
-      if (action === 'resume') {
-        if (target.kind === 'plan') void resumePlan(target.plan);
-        return;
-      }
-      if (action === 'cancel') {
-        if (target.kind === 'plan') void cancelPlan(target.plan.id);
-        else void runCancel(target.run);
-      }
-    },
-    [
-      cancelPlan,
-      findRunStep,
-      openRunDrawer,
-      resumePlan,
-      retryPlan,
-      retryRun,
-      runApprove,
-      runCancel,
-      runsById,
-      submit,
-    ],
-  );
+  if (!workspaceId || typeof document === 'undefined') return null;
 
-  const onNew = useCallback(() => {
-    setMessages([]);
-    setChatThreadId(null);
-    setSessionPlanIds(new Set());
-    setSessionRunIds(new Set());
-    setIntentResult(null);
-    setValue('');
-    setViewMode('conversation');
-    setAutoExpandFirstPaused(false);
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [setViewMode]);
-
-  const onListSelect = useCallback(
-    (item: { kind: 'plan'; plan: CommandBarRunPlan } | { kind: 'run'; run: AgentRun }) => {
-      const runId =
-        item.kind === 'plan' ? Object.values(item.plan.runIdsByStep)[0] : item.run.id;
-      if (runId) openRunDrawer(runId);
-    },
-    [openRunDrawer],
-  );
-
-  if (!workspace) return null;
-  const dockVisibilityClass = hiddenByModal
-    ? 'translate-y-4 opacity-0'
-    : 'translate-y-0 opacity-100';
-  const dockInteractionClass = hiddenByModal ? 'pointer-events-none' : 'pointer-events-auto';
-
-  if (collapsed) {
-    if (typeof document === 'undefined') return null;
-    return createPortal(
+  if (embedded) {
+    return (
       <div
+        ref={panelRef}
+        id="support-agent-sidebar"
         data-helpin-dock="true"
-        aria-hidden={hiddenByModal}
-        className={cn(
-          'pointer-events-none fixed inset-x-0 bottom-8 z-[60] flex justify-center transition-[opacity,transform] duration-200 ease-out',
-          dockVisibilityClass,
-        )}
+        data-helpin-dock-presentation="embedded"
+        className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#fffefa] dark:bg-[#242320]"
       >
-        <button
-          type="button"
-          onClick={() => setCollapsed(false)}
-          className={cn(
-            'group inline-flex items-center gap-2.5 rounded-full border border-border/70 bg-background/95 px-4 py-2.5 text-sm font-medium text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_24px_-8px_rgba(15,23,42,0.22)] backdrop-blur transition hover:border-foreground/30 hover:bg-background hover:text-foreground',
-            dockInteractionClass,
-          )}
-        >
-          <AiMagicIcon className="h-4 w-4" />
-          Ask agents
-          {runningCount > 0 ? (
-            <span
-              className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300"
-              title={`${runningCount} running`}
-            >
-              <Loading01Icon className="h-3 w-3 animate-spin" />
-              {runningCount}
-            </span>
-          ) : null}
-          {awaitingCount > 0 ? (
-            <span
-              className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
-              title={`${awaitingCount} waiting on you`}
-            >
-              <PauseIcon className="h-3 w-3" />
-              {awaitingCount}
-            </span>
-          ) : null}
-          <kbd className="ml-1 rounded border bg-muted px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground">
-            /
-          </kbd>
-        </button>
-      </div>,
-      document.body,
+        <DockPaneHeader
+          key={`embedded:${activeChat?.id ?? 'empty'}`}
+          tab="chats"
+          run={null}
+          chat={activeChat}
+          workspaceSlug={workspace.slug}
+          workspaceName={workspace.name}
+          currentUserId={currentUserId}
+          askAgentState={askAgentState}
+          onClose={closeDock}
+          closeLabel="Back to details"
+          maximized={false}
+          onToggleMaximized={() => {}}
+          allowMaximize={false}
+          onRenameChat={renameChat}
+          onArchiveChat={archiveChat}
+          onUpdateVisibility={updateChatVisibility}
+        />
+        {activeChat || draftChat ? (
+          <ChatView
+            key={activeChat?.id ?? 'draft'}
+            workspaceId={workspaceId}
+            chatId={activeChat?.id}
+            onCreateChat={createDraftChat}
+            textareaRef={textareaRef}
+            draftValue={drafts[`chat:${activeChat?.id ?? 'draft'}`] ?? ''}
+            onDraftChange={(value) => setDraft(`chat:${activeChat?.id ?? 'draft'}`, value)}
+            onChatChanged={() => void refreshChats(true)}
+            onRunStatusChange={updateChatRunStatus}
+            streamController={chatStreamController}
+            onPresenceChange={handleChatPresenceChange}
+            onRunIdChange={handleChatRunIdChange}
+            requiredPageContext={requiredPageContext}
+            showComposerShortcutHint={requiredPageContext?.entity_type !== 'support_conversation'}
+            scrollToLatestRequest={chatScrollRequest}
+          />
+        ) : (
+          <EmptyChatPane onNewChat={() => void newChat()} />
+        )}
+      </div>
     );
   }
 
-  const plan = intentResult?.status === 'plan' ? intentResult.plan : null;
-  const noMatch = intentResult?.status === 'no_matching_agent' ? intentResult : null;
-  const hasResponseArea = timeline.length > 0 || !!plan || !!noMatch;
-
-  if (typeof document === 'undefined') return null;
   return createPortal(
     <div
       data-helpin-dock="true"
-      aria-hidden={hiddenByModal}
-      className={cn(
-        'pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4 transition-[opacity,transform] duration-200 ease-out',
-        dockVisibilityClass,
-      )}
+      aria-hidden={hiddenByModal || undefined}
+      className={cn('agent-dock-root fixed inset-0 z-[60]', hiddenByModal && 'pointer-events-none opacity-0')}
     >
-      <div
-        className={cn(
-          'flex w-full max-w-2xl flex-col rounded-2xl border border-border/70 bg-background/95 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_-12px_rgba(15,23,42,0.18),0_24px_64px_-28px_rgba(15,23,42,0.28)] ring-1 ring-black/[0.02] backdrop-blur transition-shadow focus-within:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_32px_-12px_rgba(15,23,42,0.22),0_32px_80px_-32px_rgba(15,23,42,0.34)] dark:ring-white/[0.04] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200 ease-out',
-          dockInteractionClass,
-        )}
-      >
-        <div className="border-b border-border/60">
-          <DockHeader
-            mode={viewMode}
-            runningCount={runningCount}
-            awaitingCount={awaitingCount}
-            onSwapMode={() => setViewMode(viewMode === 'list' ? 'conversation' : 'list')}
-            onNew={onNew}
-            onClose={() => setCollapsed(true)}
-          />
-        </div>
+      {!collapsed ? (
+        <button type="button" aria-label="Close agent dock" tabIndex={-1} onClick={closeDock} className="agent-dock-scrim absolute inset-0 bg-[rgba(28,27,25,.10)] backdrop-blur-[1.5px] dark:bg-black/35" />
+      ) : null}
 
-        {viewMode === 'list' ? (
+      <div className={cn(
+        'agent-dock-anchor pointer-events-none absolute inset-0 flex flex-col items-center justify-end motion-safe:transition-[padding] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]',
+        maximized
+          ? 'gap-0 p-0'
+          : 'gap-2.5 px-3 pb-[calc(22px+env(safe-area-inset-bottom))]',
+      )}>
+        {!collapsed ? (
           <div
-            // Keyed on viewMode so the cross-fade fires when the user toggles
-            // between the list and the conversation. Tailwind's animate-in
-            // utilities give us a quick, contained motion.
-            key="list-view"
-            ref={responseRef}
-            className="max-h-[60vh] overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150 ease-out"
+            ref={panelRef}
+            id="agent-dock-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Agent runs and chats"
+            data-maximized={maximized || undefined}
+            tabIndex={-1}
+            className={cn(
+              'agent-dock-panel pointer-events-auto flex origin-bottom overflow-hidden bg-[#fffefa] will-change-[width,height] motion-safe:transition-[width,height,min-height,border-radius,box-shadow] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:bg-[#242320]',
+              maximized
+                ? 'h-full w-full min-h-0'
+                : 'h-[min(600px,calc(100dvh-104px))] w-[min(900px,92vw)] min-h-[360px] rounded-[18px] border border-[#e6e3dd] shadow-[0_30px_70px_-26px_rgba(28,27,25,.5)] dark:border-[#37352f]',
+            )}
           >
-            <RunListView
-              plans={plans}
-              standaloneRuns={standaloneRuns}
-              runsById={runsById}
-              filter={listFilter}
-              busyPlanId={busyPlanId}
-              busyRunId={busyRunId}
-              onSelect={onListSelect}
-              onResumePlan={(p) => void resumePlan(p)}
-              onCancelPlan={(p) => void cancelPlan(p.id)}
-              onRetryPlan={(p) => void retryPlan(p)}
-              onRetryRun={retryRun}
+            <DockRoster
+              workspaceId={workspaceId}
+              tab={tab}
+              runs={orderedRuns}
+              chats={visibleChats}
+              selectedRunId={activeRunId}
+              selectedChatId={activeChatId}
+              loadingRuns={runsLoading}
+              loadingChats={chatsLoading}
+              runsError={runsError}
+              chatsError={chatsError}
+              onTabChange={(next) => {
+                focusTargetRef.current = 'selection';
+                setTab(next);
+                if (next === 'agents' && !activeRunId) setActiveRunId(orderedRuns[0]?.run.id ?? null);
+                if (next === 'chats') {
+                  if (!activeChatId) setActiveChatId(visibleChats[0]?.id ?? null);
+                  setChatScrollRequest((request) => request + 1);
+                }
+              }}
+              onSelectRun={(runId) => { focusTargetRef.current = 'selection'; setActiveRunId(runId); setTab('agents'); }}
+              onSelectChat={(chatId) => {
+                focusTargetRef.current = 'selection';
+                setDraftChat(false);
+                setActiveChatId(chatId);
+                setTab('chats');
+                setChatScrollRequest((request) => request + 1);
+              }}
+              onNewChat={() => void newChat()}
+              onRenameChat={renameChat}
+              onArchiveChat={archiveChat}
+              hasMoreChats={!!nextChatCursor}
+              loadingMoreChats={loadingMoreChats}
+              onLoadMoreChats={() => void loadMoreChats()}
+              onRetryRuns={() => void refreshRuns()}
+              onRetryChats={() => void refreshChats()}
             />
-          </div>
-        ) : hasResponseArea ? (
-          <div
-            key="conversation-view"
-            ref={responseRef}
-            className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-3.5 py-3 animate-in fade-in slide-in-from-bottom-1 duration-150 ease-out"
-          >
-            {timeline.map((item) => {
-              if (item.kind === 'msg') {
-                return item.msg.kind === 'user' ? (
-                  <div key={item.id} className="flex justify-end">
-                    <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary/10 px-3 py-1.5 text-sm text-foreground">
-                      {item.msg.text}
-                    </div>
-                  </div>
-                ) : (
-                  <AssistantMessageBlock
-                    key={item.id}
-                    message={item.msg}
-                    busy={busyRunId === item.msg.id}
-                    onCreateAgent={async (message, mode) => {
-                      setBusyRunId(message.id);
-                      try {
-                        const res = await commandBarService.confirmChatCreateAgent(workspace.id, message.id);
-                        if (res.error || !res.data) {
-                          toast.error(res.error ?? 'Failed to create agent');
-                          return;
-                        }
-                        toast.success(mode === 'create_agent_and_run' ? 'Agent created and run started' : 'Agent created');
-                        if (res.data.run) {
-                          addRuns([res.data.run]);
-                          setSessionRunIds((prev) => {
-                            const next = new Set(prev);
-                            next.add(res.data!.run!.id);
-                            return next;
-                          });
-                        }
-                      } finally {
-                        setBusyRunId(null);
-                      }
+            <section className="flex min-w-0 flex-1 flex-col bg-[#fffefa] dark:bg-[#242320]">
+              <DockPaneHeader
+                key={tab === 'agents' ? `agents:${activeRun?.run.id ?? 'empty'}` : `chats:${activeChat?.id ?? 'empty'}`}
+                tab={tab}
+                run={activeRun}
+                chat={activeChat}
+                workspaceSlug={workspace.slug}
+                workspaceName={workspace.name}
+                currentUserId={currentUserId}
+                askAgentState={askAgentState}
+                maximized={maximized}
+                onToggleMaximized={() => setMaximized((value) => !value)}
+                onClose={closeDock}
+                onRenameChat={renameChat}
+                onArchiveChat={archiveChat}
+                onUpdateVisibility={updateChatVisibility}
+              />
+              {tab === 'agents' ? (
+                activeRun ? (
+                  <DockRunView
+                    key={activeRun.run.id}
+                    workspaceId={workspaceId}
+                    summary={activeRun}
+                    draft={drafts[`run:${activeRun.run.id}`] ?? ''}
+                    onDraftChange={(value) => setDraft(`run:${activeRun.run.id}`, value)}
+                    onRunChanged={() => void refreshRuns()}
+                    onRunContinued={(runId) => {
+                      clearDraft(`run:${activeRun.run.id}`);
+                      void refreshRuns().then((nextRuns) => {
+                        if (nextRuns.some((summary) => summary.run.id === runId)) setActiveRunId(runId);
+                      });
                     }}
                   />
-                );
-              }
-              if (item.kind === 'plan') {
-                const onlyRunId = Object.values(item.plan.runIdsByStep)[0];
-                const onlyRun = onlyRunId ? runsById[onlyRunId] : null;
-                const summary =
-                  item.plan.steps.length === 1 && onlyRun ? outputSummaryText(onlyRun) : '';
-                return (
-                  <ExecutionStrip
-                    key={item.id}
-                    kind="plan"
-                    workspaceId={workspace.id}
-                    plan={item.plan}
-                    runsById={runsById}
-                    busyPlanId={busyPlanId}
-                    // One-shot / single-agent plans start expanded so the agent's
-                    // output renders inline in the bar instead of behind a sheet.
-                    defaultOpen={item.plan.steps.length === 1}
-                    onAction={(a) => handleStripAction(a, { kind: 'plan', plan: item.plan })}
-                    onOpenRun={openRunDrawer}
-                    resultSlot={summary ? <InlineResultCard>{summary}</InlineResultCard> : null}
-                  />
-                );
-              }
-              const summary = outputSummaryText(item.run);
-              const isCompact = compactRunIds.has(item.run.id);
-              const shouldAutoOpen =
-                isCompact && item.run.id === firstPausedRunId && autoExpandFirstPaused;
-              // Bake the auto-open intent into the key so flipping
-              // `autoExpandFirstPaused` (via "New") remounts the card with
-              // the new defaultOpen — `useState(initialOpen)` only reads its
-              // seed once. The cost is one websocket reconnect on the first
-              // paused run, only on "New".
-              const key = isCompact
-                ? `${item.id}-${shouldAutoOpen ? 'auto-open' : 'auto-closed'}`
-                : item.id;
-              return (
-                <ExecutionStrip
-                  key={key}
-                  kind="run"
-                  workspaceId={workspace.id}
-                  run={item.run}
-                  busy={busyRunId === item.run.id}
-                  compact={isCompact}
-                  defaultOpen={shouldAutoOpen}
-                  onAction={(a) => handleStripAction(a, { kind: 'run', run: item.run })}
-                  resultSlot={summary ? <InlineResultCard>{summary}</InlineResultCard> : null}
+                ) : (
+                  <EmptyRunPane onNewChat={() => void newChat()} />
+                )
+              ) : activeChat || draftChat ? (
+                <ChatView
+                  key={activeChat?.id ?? 'draft'}
+                  workspaceId={workspaceId}
+                  chatId={activeChat?.id}
+                  onCreateChat={createDraftChat}
+                  scrollToLatestRequest={chatScrollRequest}
+                  textareaRef={textareaRef}
+                  initialDraft={pendingDraft}
+                  onDraftConsumed={() => setPendingDraft(undefined)}
+                  draftValue={drafts[`chat:${activeChat?.id ?? 'draft'}`] ?? ''}
+                  onDraftChange={(value) => setDraft(`chat:${activeChat?.id ?? 'draft'}`, value)}
+                  onChatChanged={() => void refreshChats(true)}
+                  onRunStatusChange={updateChatRunStatus}
+                  streamController={chatStreamController}
+                  onPresenceChange={handleChatPresenceChange}
+                  onRunIdChange={handleChatRunIdChange}
                 />
-              );
-            })}
-
-            {plan ? (
-              <PlanPreview
-                plan={plan}
-                rationale={
-                  intentResult?.status === 'plan' ? intentResult.rationale ?? null : null
-                }
-                dispatching={dispatching}
-                onConfirm={() => void confirmPlan()}
-                onEdit={() => {
-                  setIntentResult(null);
-                  requestAnimationFrame(() => textareaRef.current?.focus());
-                }}
-                onDiscard={() => setIntentResult(null)}
-              />
-            ) : null}
-
-            {noMatch ? (
-              <NoMatchBlock
-                reason={noMatch.reason}
-                suggestions={noMatch.suggestions}
-                onPick={(s) => {
-                  setValue(s);
-                  void submit(s);
-                }}
-                onDismiss={() => setIntentResult(null)}
-              />
-            ) : null}
+              ) : (
+                <EmptyChatPane onNewChat={() => void newChat()} />
+              )}
+            </section>
           </div>
         ) : null}
 
-        <div className={cn(hasResponseArea && viewMode === 'conversation' ? 'border-t border-border/60' : viewMode === 'list' ? 'border-t border-border/60' : null)}>
-          <DockInput
-            mode={viewMode}
-            value={viewMode === 'list' ? listFilter : value}
-            onChange={(v) => (viewMode === 'list' ? setListFilter(v) : setValue(v))}
-            onSubmit={() => {
-              if (viewMode === 'list') {
-                const text = listFilter.trim();
-                if (!text) return;
-                setListFilter('');
-                setValue(text);
-                void submit(text);
-              } else {
-                void submit();
-              }
-            }}
-            onFocusChange={setIsFocused}
-            pageContext={dockPageContext}
-            contextOptions={dockScopeOptions}
-            activeContextKey={dockActiveScopeKey}
-            onContextKeyChange={setActiveScopeKey}
-            onClearContext={() => setClearedContextKey(rawPageContextKey)}
-            busy={parsing || dispatching}
-            textareaRef={textareaRef}
-          />
-        </div>
+        {!maximized && !(hideCollapsedTrigger && collapsed) ? <DockTrigger
+          askTriggerRef={askTriggerRef}
+          open={!collapsed}
+          runs={triggerRuns}
+          attentionCount={attentionRuns.length}
+          nudge={attentionNudge}
+          askAgentState={askAgentState}
+          onAsk={(source) => openDock('chats', 'composer', source)}
+          onRun={(runId, source) => {
+            setActiveRunId(runId);
+            openDock('agents', 'selection', source);
+          }}
+          onAttention={(source) => {
+            const firstAttention = attentionRuns[0] ?? orderedRuns[0];
+            if (firstAttention) setActiveRunId(firstAttention.run.id);
+            openDock('agents', 'selection', source);
+          }}
+          onToggle={(source) => {
+            if (collapsed) openDock(tab, tab === 'chats' ? 'composer' : 'selection', source);
+            else closeDock();
+          }}
+        /> : null}
       </div>
-      <PromotionDialog
-        open={!!promotionRun}
-        onOpenChange={(open) => {
-          if (!open) setPromotionRun(null);
-        }}
-        workspaceId={workspace.id}
-        run={promotionRun?.run ?? null}
-        step={promotionRun?.step ?? null}
-        planPrompt={promotionRun?.planPrompt}
-      />
-      <CodingSessionDrawer
-        sessionId={selectedRunId}
-        open={!!selectedRunId}
-        onOpenChange={(open) => {
-          if (!open) setSelectedRunId(null);
-        }}
-      />
+      <div className="sr-only" aria-live="polite">{attentionRuns.length > 0 ? `${attentionRuns.length} agent${attentionRuns.length === 1 ? '' : 's'} need your attention` : ''}</div>
     </div>,
     document.body,
   );
 }
 
-
-function AssistantMessageBlock({
-  message,
-  busy,
-  onCreateAgent,
+function DockPaneHeader({
+  tab,
+  run,
+  chat,
+  workspaceSlug,
+  workspaceName,
+  currentUserId,
+  askAgentState,
+  maximized,
+  onToggleMaximized,
+  onClose,
+  onRenameChat,
+  onArchiveChat,
+  onUpdateVisibility,
+  closeLabel = 'Minimize',
+  allowMaximize = true,
 }: {
-  message: ThreadMessage;
-  busy: boolean;
-  onCreateAgent: (message: ThreadMessage, mode: 'create_agent' | 'create_agent_and_run') => Promise<void>;
+  tab: 'agents' | 'chats';
+  run: DockRunSummary | null;
+  chat: DockChat | null;
+  workspaceSlug?: string;
+  workspaceName: string;
+  currentUserId?: string;
+  askAgentState: AskAgentAvatarState;
+  maximized: boolean;
+  onToggleMaximized: () => void;
+  onClose: () => void;
+  onRenameChat: (chatId: string, title: string) => Promise<boolean>;
+  onArchiveChat: (chatId: string) => Promise<boolean>;
+  onUpdateVisibility: (chatId: string, visibility: DockChatVisibility) => Promise<boolean>;
+  closeLabel?: string;
+  allowMaximize?: boolean;
 }) {
-  const proposal = message.proposal;
-  const showText = message.text && proposal?.type !== 'run_plan';
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [title, setTitle] = useState(chat?.title ?? '');
+  const headerRun = tab === 'agents' ? run : null;
+  const presentation = headerRun ? presentDockRun(headerRun.run.status, headerRun.run.pause_reason, headerRun.attention_kind) : null;
+  const fullPath = headerRun ? buildCodingSessionPath(workspaceSlug, headerRun.run.id) : null;
+
+  const commitTitle = async () => {
+    if (!chat) return;
+    const nextTitle = title.trim();
+    setEditingTitle(false);
+    if (!nextTitle || nextTitle === chat.title) return;
+    const updated = await onRenameChat(chat.id, nextTitle);
+    if (!updated) setTitle(chat.title);
+  };
+
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[86%] rounded-2xl rounded-tl-sm border border-border/60 bg-muted/35 px-3 py-2 text-sm text-foreground">
-        {showText ? <MarkdownContent content={message.text} className="text-sm leading-relaxed" /> : null}
-        {proposal?.type === 'create_agent' || proposal?.type === 'create_agent_and_run' ? (
-          <AgentDraftProposalCard
-            proposal={proposal}
-            busy={busy}
-            onConfirm={() => {
-              const mode = proposal.type === 'create_agent_and_run' ? 'create_agent_and_run' : 'create_agent';
-              void onCreateAgent(message, mode);
+    <header data-dock-header tabIndex={-1} className="flex min-h-[51px] items-center gap-2.5 border-b border-[#f1efea] px-3.5 py-2.5 outline-none dark:border-[#302f2b]">
+      {run && tab === 'agents' ? (
+        <AgentAvatar name={run.agent.name} presetKey={run.agent.preset_key} iconKey={run.agent.icon_key} className="h-[26px] w-[26px] rounded-[8px] border-0 shadow-none" />
+      ) : (
+        <AskAgentAvatar state={askAgentState} plateStyle="feather" className="h-[34px] w-[34px]" />
+      )}
+      <span className="min-w-0 flex-1">
+        {editingTitle && chat ? (
+          <input
+            autoFocus
+            aria-label="Conversation title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            onBlur={() => void commitTitle()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void commitTitle();
+              if (event.key === 'Escape') { setTitle(chat.title); setEditingTitle(false); }
             }}
+            maxLength={120}
+            className="block w-full rounded-md border border-[#d8d3c9] bg-[#fffefa] px-1.5 py-1 text-[13.5px] font-semibold text-[#1c1b19] outline-none focus:border-[#a5a29b] dark:bg-[#242320] dark:text-[#eeeae1]"
+          />
+        ) : (
+          <span className="block truncate text-[13.5px] font-semibold text-[#1c1b19] dark:text-[#eeeae1]">
+            {tab === 'agents'
+              ? (run ? dockRunTitle(run) : 'Agent runs')
+              : <AnimatedDockChatTitle title={chat?.title.trim() || 'New chat'} />}
+          </span>
+        )}
+        {tab === 'agents' && run ? (
+          <span className="block truncate font-mono text-[10.5px] text-[#a5a29b]">{dockRunContext(run)}</span>
+        ) : chat ? (
+          <DockChatVisibilityControl
+            chat={chat}
+            workspaceName={workspaceName}
+            editable={chat.user_id === currentUserId}
+            onChange={(visibility) => onUpdateVisibility(chat.id, visibility)}
+          />
+        ) : (
+          <span className="block truncate text-[10.5px] text-[#a5a29b]">Only you can see this</span>
+        )}
+      </span>
+      {presentation ? (
+        <span className="shrink-0 rounded-full px-2 py-[3px] text-[11px] font-semibold" style={{ backgroundColor: presentation.chipBackground, color: presentation.chipForeground }}>
+          {presentation.label}
+        </span>
+      ) : null}
+      <div data-dock-actions className="flex items-center gap-0.5">
+      {fullPath ? (
+        <a href={fullPath} aria-label="Open full agent session" title="Open full session" className="grid h-8 w-8 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
+          <LinkSquare01Icon className="h-3.5 w-3.5" />
+        </a>
+      ) : null}
+      {tab === 'chats' && chat && chat.user_id === currentUserId ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" aria-label="Conversation actions" className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
+              <MoreVerticalIcon className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="z-[70]">
+            <DropdownMenuItem onSelect={() => { setTitle(chat.title); setEditingTitle(true); }}>Rename</DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive" onSelect={() => void onArchiveChat(chat.id)}>Archive</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+      {allowMaximize ? <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onToggleMaximized}
+            aria-label={maximized ? 'Restore agent dock' : 'Maximize agent dock'}
+            className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]"
+          >
+            {maximized
+              ? <CollapseIcon className="h-3.5 w-3.5" />
+              : <ExpandIcon className="h-3.5 w-3.5" />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="z-[70]">{maximized ? 'Restore' : 'Maximize'}</TooltipContent>
+      </Tooltip> : null}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" onClick={onClose} aria-label={closeLabel} className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
+            <Cancel01Icon className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="z-[70]">{closeLabel}</TooltipContent>
+      </Tooltip>
+      </div>
+    </header>
+  );
+}
+
+const DOCK_CHAT_MODULE_LABELS: Record<NonNullable<DockChat['module_id']>, string> = {
+  support: 'Support',
+  crm: 'CRM',
+  pm: 'Projects',
+  docs: 'Docs',
+};
+
+function DockChatVisibilityControl({
+  chat,
+  workspaceName,
+  editable,
+  onChange,
+}: {
+  chat: DockChat;
+  workspaceName: string;
+  editable: boolean;
+  onChange: (visibility: DockChatVisibility) => Promise<boolean>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const confirm = useConfirm();
+  const visibility = chat.visibility || 'private';
+  const moduleLabel = chat.module_id ? DOCK_CHAT_MODULE_LABELS[chat.module_id] : null;
+  const label = visibility === 'workspace'
+    ? `Visible to everyone at ${workspaceName || 'this workspace'}`
+    : visibility === 'module' && moduleLabel
+      ? `Visible to teammates in ${moduleLabel}`
+      : 'Only you can see this';
+  const Icon = visibility === 'workspace' ? GlobeIcon : visibility === 'module' ? UserGroupIcon : LockIcon;
+
+  if (!editable) {
+    return (
+      <span className="flex min-w-0 items-center gap-1 text-[10.5px] text-[#8a8781]" title={label}>
+        <Icon className="h-3 w-3 shrink-0" />
+        <span className="truncate">{label}</span>
+      </span>
+    );
+  }
+
+  const selectVisibility = async (next: DockChatVisibility) => {
+    if (next === visibility || saving) return;
+    if (next === 'private' && visibility !== 'private') {
+      const confirmed = await confirm({
+        title: 'Make this chat private?',
+        description: 'Teammates who can see it now will lose access to the complete chat history.',
+        confirmText: 'Make private',
+        variant: 'destructive',
+      });
+      if (!confirmed) return;
+    }
+    setSaving(true);
+    await onChange(next);
+    setSaving(false);
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={saving}
+          className="flex max-w-full items-center gap-1 text-[10.5px] text-[#8a8781] transition hover:text-[#4b4945] disabled:opacity-60 dark:hover:text-[#d4d0c7]"
+          aria-label={`${label}. Change who can see this chat`}
+        >
+          <Icon className="h-3 w-3 shrink-0" />
+          <span className="truncate">{saving ? 'Updating visibility…' : label}</span>
+          <ArrowDown01Icon className="h-3 w-3 shrink-0" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="z-[70] w-[290px] p-1.5">
+        <div className="px-2 pb-2 pt-1">
+          <p className="text-xs font-semibold">Who can see this chat?</p>
+        </div>
+        <DockChatVisibilityItem
+          icon={<LockIcon className="h-4 w-4" />}
+          label="Only me"
+          description="Keep this chat personal."
+          selected={visibility === 'private'}
+          onSelect={() => void selectVisibility('private')}
+        />
+        {moduleLabel ? (
+          <DockChatVisibilityItem
+            icon={<UserGroupIcon className="h-4 w-4" />}
+            label={`Teammates in ${moduleLabel}`}
+            description={`Anyone with access to ${moduleLabel} can open this chat.`}
+            selected={visibility === 'module'}
+            onSelect={() => void selectVisibility('module')}
           />
         ) : null}
-      </div>
-    </div>
+        <DockChatVisibilityItem
+          icon={<GlobeIcon className="h-4 w-4" />}
+          label={`Everyone at ${workspaceName || 'this workspace'}`}
+          description="All workspace members can open this chat."
+          selected={visibility === 'workspace'}
+          onSelect={() => void selectVisibility('workspace')}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-function AgentDraftProposalCard({
-  proposal,
-  busy,
-  onConfirm,
+function DockChatVisibilityItem({
+  icon,
+  label,
+  description,
+  selected,
+  onSelect,
 }: {
-  proposal: CommandBarProposal;
-  busy: boolean;
-  onConfirm: () => void;
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+  selected: boolean;
+  onSelect: () => void;
 }) {
-  const draft = proposal.draft;
-  if (!draft) return null;
-  const targets = draft.allowed_targets?.length ? draft.allowed_targets.join(', ') : 'tasks';
-  const tools = draft.allowed_tools?.length ?? 0;
-  const action = proposal.type === 'create_agent_and_run' ? 'Create agent & run' : 'Create agent';
   return (
-    <div className="mt-2 rounded-md border border-border/70 bg-background/80 p-2.5">
-      <div className="flex items-center gap-2">
-        <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="truncate text-sm font-medium">{draft.name || 'Custom Agent'}</span>
-      </div>
-      {draft.role ? (
-        <p className="mt-1 line-clamp-3 text-xs leading-snug text-muted-foreground">{draft.role}</p>
-      ) : null}
-      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-        <span className="rounded border border-border/70 px-1.5 py-0.5">{targets}</span>
-        <span className="rounded border border-border/70 px-1.5 py-0.5">{tools} tools</span>
-        <span className="rounded border border-border/70 px-1.5 py-0.5">{draft.default_invocation_mode}</span>
-      </div>
-      {proposal.warnings?.length ? (
-        <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
-          {proposal.warnings[0]}
-        </p>
-      ) : null}
-      <div className="mt-2 flex justify-end">
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={busy}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition',
-            busy ? 'cursor-not-allowed bg-muted text-muted-foreground' : 'bg-orange-500 text-white hover:bg-orange-500/90',
-          )}
-        >
-          {busy ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <Tick01Icon className="h-3 w-3" />}
-          {busy ? 'Creating...' : action}
-        </button>
-      </div>
-    </div>
+    <DropdownMenuItem onSelect={onSelect} className="items-start gap-2.5 rounded-lg px-2 py-2">
+      <span className="mt-0.5 text-[#8a8781]">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs font-medium">{label}</span>
+        <span className="block text-[10px] leading-4 text-[#8a8781]">{description}</span>
+      </span>
+      {selected ? <CheckmarkCircle02Icon className="mt-0.5 h-4 w-4 shrink-0" /> : null}
+    </DropdownMenuItem>
   );
 }
 
-function NoMatchBlock({
-  reason,
-  suggestions,
-  onPick,
-  onDismiss,
+function DockTrigger({
+  askTriggerRef,
+  open,
+  runs,
+  attentionCount,
+  nudge,
+  askAgentState,
+  onAsk,
+  onRun,
+  onAttention,
+  onToggle,
 }: {
-  reason: string;
-  suggestions?: string[];
-  onPick: (s: string) => void;
-  onDismiss: () => void;
+  askTriggerRef: React.RefObject<HTMLButtonElement | null>;
+  open: boolean;
+  runs: DockRunSummary[];
+  attentionCount: number;
+  nudge: boolean;
+  askAgentState: AskAgentAvatarState;
+  onAsk: (source: HTMLButtonElement) => void;
+  onRun: (runId: string, source: HTMLButtonElement) => void;
+  onAttention: (source: HTMLButtonElement) => void;
+  onToggle: (source: HTMLButtonElement) => void;
 }) {
+  const visible = runs.slice(0, 4);
   return (
-    <div>
-      <div className="flex items-start gap-2">
-        <BotIcon className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
-        <div className="min-w-0 text-sm">
-          <p className="font-medium">No available agent can do that yet.</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{reason}</p>
-          {suggestions?.length ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {suggestions.map((s) => (
+    <div
+      role="group"
+      aria-label="Agent dock"
+      className={cn(
+        'agent-dock-trigger pointer-events-auto flex min-h-[42px] max-w-[calc(100vw-24px)] items-center rounded-[26px] border border-[#e6e3dd] bg-[#fffefa] py-[4px] pe-1 ps-1 text-[#1c1b19] shadow-[0_12px_30px_-14px_rgba(28,27,25,.45)] transition-[transform,border-color] duration-200 hover:border-[#d2cec5] dark:border-[#37352f] dark:bg-[#242320] dark:text-[#eeeae1]',
+        nudge && 'agent-dock-attention-nudge',
+      )}
+    >
+      <button
+        ref={askTriggerRef}
+        type="button"
+        aria-expanded={open}
+        aria-controls="agent-dock-panel"
+        aria-label="Ask Agent"
+        onClick={(event) => onAsk(event.currentTarget)}
+        className="agent-dock-trigger-segment flex min-h-8 min-w-0 items-center gap-2 rounded-full px-3 outline-none transition hover:bg-[#f4f2ee] focus-visible:ring-2 focus-visible:ring-[#a855f7]/45 dark:hover:bg-[#302f2b]"
+      >
+        <AskAgentAvatar state={askAgentState} plateStyle="feather" className="h-8 w-8" />
+        <span className="truncate text-[13.5px] font-medium">Ask Agent</span>
+        <kbd className="agent-dock-shortcut rounded-[5px] border border-[#eae7e0] px-[5px] py-px font-mono text-[11px] text-[#a5a29b] dark:border-[#3a3832]">/</kbd>
+      </button>
+      {runs.length > 0 ? (
+        <>
+          <span className="mx-1 h-[22px] w-px shrink-0 bg-[#eeece7] dark:bg-[#3a3832]" />
+          <span className="flex shrink-0 items-center">
+            {visible.map((summary) => {
+              const presentation = presentDockRun(summary.run.status, summary.run.pause_reason, summary.attention_kind);
+              return (
                 <button
+                  key={summary.run.id}
                   type="button"
-                  key={s}
-                  onClick={() => onPick(s)}
-                  className="rounded border border-border/70 bg-background/80 px-2 py-0.5 text-[11px] text-foreground transition hover:border-foreground/30 hover:bg-muted/60"
+                  aria-label={`Open ${dockRunTitle(summary)}, ${presentation.label}`}
+                  title={`${dockRunTitle(summary)} — ${presentation.label}`}
+                  onClick={(event) => onRun(summary.run.id, event.currentTarget)}
+                  className="agent-dock-stack-item relative -ms-1.5 flex h-8 w-8 items-center justify-center rounded-[10px] leading-none outline-none first:ms-0 hover:z-[1] focus-visible:z-[2] focus-visible:ring-2 focus-visible:ring-[#a855f7]/45"
                 >
-                  {s}
+                  <span className="relative flex h-[26px] w-[26px] shrink-0 leading-none">
+                    <AgentAvatar name={summary.agent.name} presetKey={summary.agent.preset_key} iconKey={summary.agent.icon_key} className="h-[26px] w-[26px] rounded-[9px] border-0 shadow-[0_0_0_2px_#fffefa] dark:shadow-[0_0_0_2px_#242320]" />
+                    <span
+                      className="absolute -bottom-0.5 -end-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#fffefa] dark:border-[#242320]"
+                      style={{ backgroundColor: presentation.dot }}
+                      data-agent-dock-trigger-status-dot
+                    />
+                  </span>
                 </button>
-              ))}
-            </div>
+              );
+            })}
+            {runs.length > 4 ? (
+              <button type="button" aria-label={`Open agents, ${runs.length - 4} more`} onClick={(event) => onRun(runs[4].run.id, event.currentTarget)} className="agent-dock-stack-more -ms-1.5 grid h-8 min-w-8 place-items-center rounded-[10px] bg-[#f0eee9] px-1 text-[10px] font-semibold text-[#6b6862] shadow-[0_0_0_2px_#fffefa] outline-none hover:z-[1] focus-visible:z-[2] focus-visible:ring-2 focus-visible:ring-[#a855f7]/45 dark:bg-[#37352f] dark:text-[#c4c0b7] dark:shadow-[0_0_0_2px_#242320]">+{runs.length - 4}</button>
+            ) : null}
+          </span>
+          {attentionCount > 0 ? (
+            <button type="button" aria-label={`${attentionCount} agent${attentionCount === 1 ? '' : 's'} need your attention`} onClick={(event) => onAttention(event.currentTarget)} className="agent-dock-attention-badge ms-1 flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#f5dcb3] bg-[#fff7ea] pe-[11px] ps-[9px] text-[12px] font-semibold text-[#b45309] outline-none hover:bg-[#fff0d7] focus-visible:ring-2 focus-visible:ring-amber-500/45 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+              <span className="agent-dock-attention-dot h-1.5 w-1.5 rounded-full bg-[#d97706]" />
+              <span className="agent-dock-attention-copy">{attentionCount} need you</span>
+            </button>
           ) : null}
-        </div>
+        </>
+      ) : null}
+      <button type="button" aria-label={open ? 'Close agent dock' : 'Open agent dock'} aria-expanded={open} aria-controls="agent-dock-panel" onClick={(event) => onToggle(event.currentTarget)} className="agent-dock-toggle grid h-8 w-7 shrink-0 place-items-center rounded-full text-[12px] text-[#a5a29b] outline-none hover:bg-[#f4f2ee] focus-visible:ring-2 focus-visible:ring-[#a855f7]/45 dark:hover:bg-[#302f2b]">
+        <span aria-hidden>{open ? '⌄' : '⌃'}</span>
+      </button>
+    </div>
+  );
+}
+
+function EmptyRunPane({ onNewChat }: { onNewChat: () => void }) {
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
+      <div>
+        <p className="text-[13px] text-[#8a8781]">No agents running. Describe a task in a new chat.</p>
+        <button type="button" onClick={onNewChat} className="mt-3 rounded-[9px] bg-[#1c1b19] px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-[#34322e] dark:bg-[#eeeae1] dark:text-[#1c1b19]">New chat or task</button>
       </div>
-      <div className="mt-2 flex justify-end">
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
-        >
-          Dismiss
-        </button>
+    </div>
+  );
+}
+
+function EmptyChatPane({ onNewChat }: { onNewChat: () => void }) {
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
+      <div>
+        <AskAgentAvatar plateStyle="feather" className="mx-auto mb-2 h-[72px] w-[72px]" />
+        <p className="text-[13px] text-[#8a8781]">No conversations yet.</p>
+        <button type="button" onClick={onNewChat} className="mt-3 rounded-[9px] bg-[#1c1b19] px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-[#34322e] dark:bg-[#eeeae1] dark:text-[#1c1b19]">Start a conversation</button>
       </div>
     </div>
   );

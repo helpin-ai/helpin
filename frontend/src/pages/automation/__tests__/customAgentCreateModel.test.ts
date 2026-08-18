@@ -3,26 +3,31 @@ import {
   applyCustomAgentDraftToForm,
   buildCustomAgentCreatePayload,
   createDefaultCustomAgentForm,
+  defaultModelForAgentProvider,
   summarizeCustomAgentCreate,
   validateCustomAgentCreateForm,
 } from '../customAgentCreateModel';
 
 describe('custom agent create model', () => {
-  it('keeps current blank custom-agent defaults', () => {
+  it('uses explicit OpenAI custom-agent defaults', () => {
     const form = createDefaultCustomAgentForm();
 
     expect(form.name).toBe('');
+    expect(form.icon_key).toBe('violet_star');
     expect(form.runtime_kind).toBe('codex');
     expect(form.default_invocation_mode).toBe('interactive');
     expect(form.supported_modes).toEqual(['autonomous', 'interactive']);
     expect(form.allowed_targets).toEqual(['task']);
     expect(form.allowed_tools).toEqual([]);
-    expect(form.approval_mode).toBe('always');
+    expect(form.approval_mode).toBe('mutating_tools');
     expect(form.max_concurrent_runs).toBe('1');
     expect(form.preset_key).toBe('code_builder');
     expect(form.preset_version_key).toBe('code_builder_default');
+    expect(form.provider).toBe('openai');
+    expect(form.model).toBe('gpt-5.6-terra');
     expect(form.instruction_preamble).toBe('');
     expect(form.instruction_skills).toEqual([]);
+    expect(form.max_tool_steps).toBe('');
   });
 
   it('applies a validated backend draft to the custom form', () => {
@@ -34,7 +39,7 @@ describe('custom agent create model', () => {
       allowed_targets: ['support_conversation'],
       allowed_tools: ['search_documents'],
       skills: [{ key: 'support_style' }],
-      approval_mode: 'always',
+      approval_mode: 'mutating_tools',
       runtime_kind: 'native_sdk',
       provider: 'anthropic',
       model: '',
@@ -48,9 +53,10 @@ describe('custom agent create model', () => {
       allowed_targets: ['support_conversation'],
       allowed_tools: ['search_documents'],
       skills: [{ key: 'support_style' }],
-      approval_mode: 'always',
+      approval_mode: 'mutating_tools',
       runtime_kind: 'native_sdk',
       provider: 'anthropic',
+      model: 'claude-opus-4-8',
       default_invocation_mode: 'interactive',
       max_concurrent_runs: '1',
     });
@@ -71,12 +77,14 @@ describe('custom agent create model', () => {
     expect(payload).toMatchObject({
       workspace_id: 'workspace-1',
       name: 'Support Helper',
+      icon_key: 'violet_star',
       provider: 'openai',
+      model: 'gpt-5.6-terra',
       system_prompt: 'Help triage support conversations.',
       trigger_mode: 'manual',
       team_ids: ['team-1', 'team-2'],
       allowed_targets: ['support_conversation'],
-      approval_mode: 'always',
+      approval_mode: 'mutating_tools',
       max_concurrent_runs: 1,
       default_invocation_mode: 'interactive',
     });
@@ -89,6 +97,20 @@ describe('custom agent create model', () => {
     expect(payload).not.toHaveProperty('create_flow');
     expect(payload).not.toHaveProperty('flow');
     expect(payload).not.toHaveProperty('overrides');
+  });
+
+  it('uses explicit provider defaults for model routing', () => {
+    expect(defaultModelForAgentProvider('openai')).toBe('gpt-5.6-terra');
+    expect(defaultModelForAgentProvider('openrouter')).toBe('openai/gpt-5.6-terra');
+    expect(defaultModelForAgentProvider('anthropic')).toBe('claude-opus-4-8');
+    expect(defaultModelForAgentProvider('openai', [{
+      value: 'openai',
+      label: 'OpenAI',
+      default_model: 'gpt-server-default',
+      model_placeholder: 'gpt-server-default',
+      supports_reasoning_effort: true,
+      supports_service_tier: true,
+    }])).toBe('gpt-server-default');
   });
 
   it('pins current optional field behavior for empty team and skills', () => {
@@ -111,6 +133,25 @@ describe('custom agent create model', () => {
     expect(buildCustomAgentCreatePayload('workspace-1', { ...base, max_concurrent_runs: '0' }, false).max_concurrent_runs).toBe(1);
     expect(buildCustomAgentCreatePayload('workspace-1', { ...base, max_concurrent_runs: 'abc' }, false).max_concurrent_runs).toBe(1);
     expect(buildCustomAgentCreatePayload('workspace-1', { ...base, max_concurrent_runs: '3' }, false).max_concurrent_runs).toBe(3);
+  });
+
+  it('includes a per-agent tool step limit only for the Native SDK runtime', () => {
+    const nativeForm = {
+      ...createDefaultCustomAgentForm(),
+      name: 'Native agent',
+      runtime_kind: 'native_sdk' as const,
+      max_tool_steps: '640',
+    };
+
+    expect(buildCustomAgentCreatePayload('workspace-1', nativeForm, true).execution_config).toEqual({
+      max_tool_steps: 640,
+    });
+
+    const codexForm = {
+      ...nativeForm,
+      runtime_kind: 'codex' as const,
+    };
+    expect(buildCustomAgentCreatePayload('workspace-1', codexForm, true).execution_config).toBeUndefined();
   });
 
   it('preserves advancedOpen payload semantics for runtime and leaves token limit unwired', () => {
@@ -168,5 +209,15 @@ describe('custom agent create model', () => {
     expect(summary).not.toContain('manual');
     expect(summary).not.toContain('opencode');
     expect(summary).not.toContain('Anthropic');
+  });
+
+  it('summarizes sprint and objective working areas', () => {
+    const form = {
+      ...createDefaultCustomAgentForm(),
+      name: 'Outcome Planner',
+      allowed_targets: ['sprint', 'objective'] as const,
+    };
+
+    expect(summarizeCustomAgentCreate(form)).toContain('sprints and objectives');
   });
 });

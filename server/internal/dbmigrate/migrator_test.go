@@ -64,3 +64,173 @@ func TestCreateKeepsLegacySequentialVersionsAsExistingVersions(t *testing.T) {
 		t.Fatalf("migration filename = %q, want timestamp prefix", filepath.Base(path))
 	}
 }
+
+func TestTieredAIUsageCutoverMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202608130002" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected tiered AI usage cutover migration 202608130002")
+	}
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"create table if not exists billing_ai_usage_periods",
+		"create table if not exists billing_ai_usage_ledger",
+		"create table if not exists billing_ai_usage_reservations",
+		"create table if not exists billing_ai_usage_settlements",
+		"create table if not exists billing_ai_usage_task_estimates",
+		"create table if not exists billing_ai_usage_pricing_state",
+		"insert into billing_ai_usage_periods",
+		"'2026-08-13'",
+		"rename to billing_credit_ledger_legacy",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("migration missing behavior %q", clause)
+		}
+	}
+	for _, destructive := range []string{
+		"rename column on_demand_enabled", "drop column if exists included_credits",
+		"drop column if exists credits_used", "drop column if exists on_demand_blocks_invoiced",
+	} {
+		if strings.Contains(sql, destructive) {
+			t.Errorf("activation migration contains premature contract change %q", destructive)
+		}
+	}
+}
+
+func TestSupportConversationCompanyContextMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202608050001" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected support conversation company context migration 202608050001 to be registered")
+	}
+	if migration.Name != "support_conversation_company_context" {
+		t.Fatalf("migration name = %q, want %q", migration.Name, "support_conversation_company_context")
+	}
+
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"alter table support_conversations add column if not exists crm_company_id uuid",
+		"alter table support_widget_sessions add column if not exists crm_company_id uuid",
+		"create index if not exists idx_support_conversations_crm_company_id on support_conversations (crm_company_id)",
+		"create index if not exists idx_support_widget_sessions_crm_company_id on support_widget_sessions (crm_company_id)",
+		"foreign key (crm_company_id) references crm_companies(id) on delete set null",
+		"where from_object_type = 'contact' and to_object_type = 'company'",
+		"where from_object_type = 'company' and to_object_type = 'contact'",
+		"having count(distinct company_id) = 1",
+		"conversation.crm_company_id is null",
+		"conversation.crm_contact_id = association.contact_id",
+		"conversation.workspace_id = association.workspace_id",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("migration SQL missing contract clause %q", clause)
+		}
+	}
+
+	if got := strings.Count(sql, "foreign key (crm_company_id) references crm_companies(id) on delete set null"); got != 2 {
+		t.Errorf("company foreign key count = %d, want 2", got)
+	}
+	if got := strings.Count(sql, "if not exists ( select 1 from pg_constraint"); got != 2 {
+		t.Errorf("idempotent foreign-key guard count = %d, want 2", got)
+	}
+	if strings.Contains(sql, "update support_widget_sessions") {
+		t.Error("migration must not infer company context for existing widget sessions")
+	}
+}
+
+func TestCustomerIOLifecycleOutboxMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202608100002" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected Customer.io lifecycle outbox migration 202608100002 to be registered")
+	}
+	if migration.Name != "customer_io_lifecycle_outbox" {
+		t.Fatalf("migration name = %q, want %q", migration.Name, "customer_io_lifecycle_outbox")
+	}
+
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"attributes jsonb not null default '{}'::jsonb",
+		"recipient_snapshot jsonb not null default '[]'::jsonb",
+		"check (status in ('pending', 'processing', 'delivered', 'failed'))",
+		"check (attempts >= 0)",
+		"unique (semantic_key)",
+		"workspace_id uuid null references workspaces(id) on delete set null",
+		"create index if not exists idx_customer_io_outbox_due_work on customer_io_outbox (status, next_attempt_at, lease_expires_at)",
+		"where status in ('pending', 'processing')",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("migration SQL missing contract clause %q", clause)
+		}
+	}
+
+	if !strings.Contains(sql, "create table if not exists customer_io_outbox") {
+		t.Error("migration must create the outbox table idempotently")
+	}
+}
+
+func TestSupportEmailRouteVerificationBackfillMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202608110004" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected support email route verification backfill migration 202608110004 to be registered")
+	}
+	if migration.Name != "backfill_support_email_route_verification" {
+		t.Fatalf("migration name = %q, want %q", migration.Name, "backfill_support_email_route_verification")
+	}
+
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"update support_email_routes as route",
+		"set forwarding_verified_at = evidence.verified_at",
+		"from support_email_logs as email_log",
+		"email_log.direction = 'inbound'",
+		"email_log.email_route_id is not null",
+		"forwarding-noreply@google.com",
+		"mail-settings.google.com/mail/vf-",
+		"zoho",
+		"route.forwarding_verified_at is null",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("migration SQL missing contract clause %q", clause)
+		}
+	}
+}

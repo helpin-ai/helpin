@@ -1,5 +1,5 @@
 import { memo, useEffect, useState, type JSX, type ReactNode, type SVGProps } from 'react';
-import { format, formatDistance } from 'date-fns';
+import { formatDistance } from 'date-fns';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -13,7 +13,8 @@ import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { findAssignableMember, formatAssignableMemberName } from '@/lib/assignableMembers';
 import { SidebarAssociations } from './SidebarAssociations';
-import { SidebarVisitorContext } from './SidebarVisitorContext';
+import { SidebarOtherConversations, SidebarVisitorContext } from './SidebarVisitorContext';
+import { SidebarCompanyDetails } from './SidebarCompanyDetails';
 import { SupportTagPicker } from './SupportTagPicker';
 import { CustomerProfileDrawer } from './CustomerProfileDrawer';
 import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser, useUpdateConversationCustomerName, useUpdateConversationEmailRecipients } from '@/hooks/queries/useSupport';
@@ -39,6 +40,8 @@ interface ConversationDetailSidebarProps {
   workspaceId: string;
   conversationId: string | null;
 }
+
+export const conversationDetailSidebarRootClassName = 'flex h-full min-h-0 w-[300px] flex-col bg-muted/30';
 
 function normalizeCountryCode(code?: string | null): keyof typeof Flags | null {
   const normalized = code?.trim().toUpperCase().replace(/-/g, '_');
@@ -81,15 +84,14 @@ export function shouldShowLastActiveIndicator(isVisitorOnline: boolean, lastActi
   return !isVisitorOnline && Boolean(lastActiveAt);
 }
 
-export function getLastActiveTooltipLabel(lastActiveAt: string, source?: LastActiveSource, now = new Date()): string {
+export function getLastActiveTooltipLabel(lastActiveAt: string, _source?: LastActiveSource, now = new Date()): string {
   const date = new Date(lastActiveAt);
   if (Number.isNaN(date.getTime())) {
     return 'Last active time unavailable';
   }
 
   const relative = formatDistance(date, now, { addSuffix: true });
-  const scope = source === 'crm_contact' ? ' across this contact' : '';
-  return `Last active ${relative}${scope} · ${format(date, 'PPp')}`;
+  return `Last active ${relative}`;
 }
 
 function VisitorLastActiveDot({
@@ -278,7 +280,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
 
   if (detailSidebarCollapsed) {
     return (
-      <div className="flex w-10 flex-col items-center border-l bg-muted/30 pt-2">
+      <div className="flex h-full min-h-0 w-10 flex-col items-center bg-muted/30 pt-2">
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={toggleDetailSidebar}>
           <ArrowLeft01Icon className="h-4 w-4" />
         </Button>
@@ -373,7 +375,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
   };
 
   return (
-    <div className="flex w-[300px] flex-col border-l bg-muted/30">
+    <div className={conversationDetailSidebarRootClassName}>
       {/* Header */}
       <div className="flex items-center justify-between border-b px-3 py-2">
         <h3 className="text-sm font-semibold">Details</h3>
@@ -665,10 +667,21 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
             conversationId={conversation.id}
           />
 
+          <SidebarCompanyDetails
+            workspaceId={workspaceId}
+            conversationId={conversation.id}
+          />
+
+          <SidebarOtherConversations
+            workspaceId={workspaceId}
+            conversationId={conversation.id}
+          />
+
           {/* ── Links / Associations ─────────────────────── */}
           <SidebarAssociations
             workspaceId={workspaceId}
             conversationId={conversation.id}
+            excludeCRMCompanyId={visitorContext?.company?.id}
           />
         </div>
         )}

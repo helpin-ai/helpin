@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	workerpkg "github.com/helpin-ai/helpin/server/internal/worker"
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 )
 
 func TestBuildClaudeMessageRequestUsesToolChoiceForJSONMode(t *testing.T) {
@@ -114,8 +114,8 @@ func TestExtractClaudeResponseContentUsesToolInputForJSONMode(t *testing.T) {
 		t.Fatalf("marshal payload: %v", err)
 	}
 
-	resp := &workerpkg.CreateMessageResponse{
-		Content: []workerpkg.ContentBlock{
+	resp := &agentcontract.CreateMessageResponse{
+		Content: []agentcontract.ContentBlock{
 			{Type: "text", Text: "ignored"},
 			{Type: "tool_use", Name: claudeJSONToolName, Input: payload},
 		},
@@ -128,8 +128,8 @@ func TestExtractClaudeResponseContentUsesToolInputForJSONMode(t *testing.T) {
 }
 
 func TestExtractClaudeResponseContentFallsBackToTextWhenToolInputMissing(t *testing.T) {
-	resp := &workerpkg.CreateMessageResponse{
-		Content: []workerpkg.ContentBlock{
+	resp := &agentcontract.CreateMessageResponse{
+		Content: []agentcontract.ContentBlock{
 			{Type: "text", Text: "Hello "},
 			{Type: "text", Text: "world"},
 		},
@@ -138,6 +138,25 @@ func TestExtractClaudeResponseContentFallsBackToTextWhenToolInputMissing(t *test
 	got := extractClaudeResponseContent(resp, true)
 	if got != "Hello world" {
 		t.Fatalf("expected text fallback, got %q", got)
+	}
+}
+
+func TestTokenUsageFromClaudeNormalizesSeparateCacheCounters(t *testing.T) {
+	usage := tokenUsageFromClaude(agentcontract.Usage{
+		InputTokens:              200,
+		CacheCreationInputTokens: 300,
+		CacheReadInputTokens:     700,
+		OutputTokens:             100,
+	})
+
+	if usage.InputTokens != 1200 {
+		t.Fatalf("total input tokens = %d, want 1200", usage.InputTokens)
+	}
+	if usage.CachedInputTokens != 700 || usage.CacheWriteTokens != 300 {
+		t.Fatalf("cache usage = %#v", usage)
+	}
+	if usage.InputTokensTotal != 1200 || usage.CacheReadTokens != 700 || usage.CompletionTokensTotal != 100 || usage.CompletionIncludesReasoning {
+		t.Fatalf("exact metering usage = %#v", usage)
 	}
 }
 
@@ -150,7 +169,7 @@ func TestBuildClaudeMessageContentUsesImageBlocks(t *testing.T) {
 		},
 	})
 
-	blocks, ok := content.([]workerpkg.ContentBlock)
+	blocks, ok := content.([]agentcontract.ContentBlock)
 	if !ok {
 		t.Fatalf("expected content blocks, got %#v", content)
 	}

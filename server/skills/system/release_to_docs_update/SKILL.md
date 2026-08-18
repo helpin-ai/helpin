@@ -5,6 +5,7 @@ metadata:
   title: Post-release Docs Update
   supported_runtimes:
     - native_sdk
+    - codex
 ---
 
 Use this skill when a release, feature, task, epic, or changelog requires documentation updates.

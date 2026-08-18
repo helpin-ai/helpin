@@ -20,6 +20,11 @@ func NewCRMActivityRepository(db *gorm.DB) *CRMActivityRepository {
 	return &CRMActivityRepository{db: db}
 }
 
+// WithTx returns a repository backed by tx.
+func (r *CRMActivityRepository) WithTx(tx *gorm.DB) *CRMActivityRepository {
+	return &CRMActivityRepository{db: tx}
+}
+
 // List returns activities in a workspace with optional filters.
 func (r *CRMActivityRepository) List(ctx context.Context, workspaceID string, filters model.CRMActivityListFilters, pagination model.PMPagination) ([]model.CRMActivity, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.CRMActivity{}).Where("workspace_id = ?", workspaceID)
@@ -80,6 +85,13 @@ func (r *CRMActivityRepository) Update(ctx context.Context, activity *model.CRMA
 
 // Delete removes an activity.
 func (r *CRMActivityRepository) Delete(ctx context.Context, id string) error {
+	activity, err := r.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if activity != nil && activity.Metadata != nil && activity.Metadata["immutable"] == true {
+		return fmt.Errorf("delete activity: system activity is immutable")
+	}
 	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.CRMActivity{}).Error; err != nil {
 		return fmt.Errorf("delete activity: %w", err)
 	}

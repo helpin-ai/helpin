@@ -1,8 +1,10 @@
 import type {
   AgentApprovalMode,
   AgentExecutionConfig,
+  AgentIconKey,
   AgentInvocationMode,
   AgentModelProvider,
+  AgentModelProviderOption,
   AgentPresetKey,
   AgentReasoningEffort,
   AgentRuntimeKind,
@@ -12,9 +14,25 @@ import type {
   CreateAgentRequest,
   CustomAgentDraft,
 } from '@/lib/pmTypes';
+import { parseNativeToolStepLimit } from '@/lib/agentRuntime';
+
+const FALLBACK_DEFAULT_MODELS: Record<AgentModelProvider, string> = {
+  anthropic: 'claude-opus-4-8',
+  openai: 'gpt-5.6-terra',
+  openrouter: 'openai/gpt-5.6-terra',
+};
+
+export function defaultModelForAgentProvider(
+  provider: AgentModelProvider,
+  providerOptions: AgentModelProviderOption[] = [],
+): string {
+  return providerOptions.find((option) => option.value === provider)?.default_model?.trim()
+    || FALLBACK_DEFAULT_MODELS[provider];
+}
 
 export interface CustomAgentFormData {
   name: string;
+  icon_key: AgentIconKey;
   preset_key: AgentPresetKey;
   preset_version_key: string;
   runtime_kind: AgentRuntimeKind;
@@ -23,6 +41,7 @@ export interface CustomAgentFormData {
   model: string;
   reasoning_effort: AgentReasoningEffort | '';
   service_tier: AgentServiceTier | '';
+  max_tool_steps: string;
   system_prompt: string;
   instruction_preamble: string;
   instruction_skills: string[];
@@ -42,14 +61,16 @@ export interface CustomAgentFormData {
 export function createDefaultCustomAgentForm(): CustomAgentFormData {
   return {
     name: '',
+    icon_key: 'violet_star',
     preset_key: 'code_builder',
     preset_version_key: 'code_builder_default',
     runtime_kind: 'codex',
     supported_modes: ['autonomous', 'interactive'],
     provider: 'openai',
-    model: '',
+    model: defaultModelForAgentProvider('openai'),
     reasoning_effort: '',
     service_tier: '',
+    max_tool_steps: '',
     system_prompt: '',
     instruction_preamble: '',
     instruction_skills: [],
@@ -61,7 +82,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     allowed_targets: ['task'],
     allowed_tools: [],
     skills: [],
-    approval_mode: 'always',
+    approval_mode: 'mutating_tools',
     max_concurrent_runs: '1',
     default_invocation_mode: 'interactive',
   };
@@ -79,7 +100,7 @@ export function applyCustomAgentDraftToForm(
       ? ['autonomous', 'interactive']
       : ['autonomous'],
     provider: draft.provider,
-    model: draft.model ?? '',
+    model: draft.model?.trim() || defaultModelForAgentProvider(draft.provider),
     system_prompt: draft.system_prompt,
     allowed_targets: [...draft.allowed_targets],
     allowed_tools: [...draft.allowed_tools],
@@ -91,13 +112,20 @@ export function applyCustomAgentDraftToForm(
 }
 
 function buildExecutionConfigPayload(form: CustomAgentFormData): AgentExecutionConfig | undefined {
-  if (form.runtime_kind !== 'codex') return undefined;
   const config: AgentExecutionConfig = {};
-  if (form.reasoning_effort) {
-    config.reasoning_effort = form.reasoning_effort;
+  if (form.runtime_kind === 'codex') {
+    if (form.reasoning_effort) {
+      config.reasoning_effort = form.reasoning_effort;
+    }
+    if (form.provider === 'openai' && form.service_tier) {
+      config.service_tier = form.service_tier;
+    }
   }
-  if (form.provider === 'openai' && form.service_tier) {
-    config.service_tier = form.service_tier;
+  if (form.runtime_kind === 'native_sdk') {
+    const maxToolSteps = parseNativeToolStepLimit(form.max_tool_steps);
+    if (maxToolSteps !== undefined) {
+      config.max_tool_steps = maxToolSteps;
+    }
   }
   return Object.keys(config).length > 0 ? config : undefined;
 }
@@ -121,8 +149,9 @@ export function buildCustomAgentCreatePayload(
   return {
     workspace_id: workspaceId,
     name: form.name.trim(),
+    icon_key: form.icon_key,
     provider: form.provider,
-    model: form.model.trim() || undefined,
+    model: form.model.trim() || defaultModelForAgentProvider(form.provider),
     execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
     trigger_mode: 'manual',
@@ -166,6 +195,8 @@ export function validateCustomAgentCreateForm(form: CustomAgentFormData): string
 const TARGET_LABELS: Record<AgentTargetType, string> = {
   task: 'tasks',
   epic: 'epics',
+  sprint: 'sprints',
+  objective: 'objectives',
   repository: 'repositories',
   workspace: 'the workspace',
   crm_deal: 'CRM deals',

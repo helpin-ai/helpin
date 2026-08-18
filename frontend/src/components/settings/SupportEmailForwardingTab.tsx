@@ -1,5 +1,6 @@
-import { type ReactNode, useCallback } from 'react';
-import { Copy01Icon, InboxIcon, MailAdd01Icon, Delete01Icon } from '@/lib/icons';
+import { type ReactNode, useCallback, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
+import { Copy01Icon, InboxIcon, LinkSquare01Icon, MailAdd01Icon, Delete01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -9,10 +10,12 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ICON_MAP } from '@/components/ui/icon-picker';
+import { StoredIcon } from '@/components/ui/icon-picker';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import {
   useCreateSupportEmailRoute,
   useDisableSupportEmailRoute,
+  useSendSupportEmailRouteTest,
   useChatSettings,
   useSupportEmailRoutes,
   useSupportMailboxes,
@@ -21,11 +24,14 @@ import {
 import type { SupportEmailRoute, SupportMailbox } from '@/lib/pmTypes';
 
 export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string }) {
+  const navigate = useNavigate();
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
   const { data: mailboxes = [], isLoading: mailboxesLoading } = useSupportMailboxes(workspaceId);
   const { data: routes = [], isLoading: routesLoading } = useSupportEmailRoutes(workspaceId);
   const activeMailboxes = mailboxes.filter((mailbox) => mailbox.active);
   const createRoute = useCreateSupportEmailRoute(workspaceId);
   const disableRoute = useDisableSupportEmailRoute(workspaceId);
+  const sendRouteTest = useSendSupportEmailRouteTest(workspaceId);
 
   const sharedRoute = routes.find((route) => !route.mailbox_id) ?? null;
   const routeByMailboxId = new Map(routes.filter((route) => route.mailbox_id).map((route) => [route.mailbox_id as string, route]));
@@ -59,7 +65,21 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
   }, [confirm, disableRoute]);
 
   const isLoading = mailboxesLoading || routesLoading;
-  const busy = createRoute.isPending || disableRoute.isPending;
+  const busy = createRoute.isPending || disableRoute.isPending || sendRouteTest.isPending;
+
+  const handleSendTest = async (routeId: string, sourceAddress: string) => {
+    await sendRouteTest.mutateAsync({ routeId, sourceAddress });
+    toast.success('Forwarding test sent. Waiting for it to return to Helpin.');
+  };
+
+  const openCreateTeamInbox = () => {
+    if (!workspaceSlug) return;
+    void navigate({
+      to: '/w/$slug/settings/inboxes-routing',
+      params: { slug: workspaceSlug },
+      search: { tab: 'inboxes', create_inbox: true },
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -69,15 +89,19 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
           <ol className="mt-3 space-y-2 text-sm text-muted-foreground">
             <li className="flex items-start gap-2.5">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">1</span>
-              <span>Enable forwarding for Shared Inbox or a Team Inbox.</span>
+              <span>Add the Helpin address in your email provider.</span>
             </li>
             <li className="flex items-start gap-2.5">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">2</span>
-              <span>Copy the Helpin address into your email provider as the forwarding address.</span>
+              <span>Approve the provider confirmation in Helpin.</span>
             </li>
             <li className="flex items-start gap-2.5">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">3</span>
-              <span>If your provider asks for confirmation, open the email in this inbox and use the code or link there.</span>
+              <span>Enable forwarding in your provider and save the change.</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">4</span>
+              <span>Let Helpin test delivery automatically.</span>
             </li>
           </ol>
         </CardHeader>
@@ -102,6 +126,7 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
                     onEnable={() => enableRoute(null)}
                     onDisable={() => sharedRoute ? disableExistingRoute(sharedRoute) : Promise.resolve()}
                     onCopy={handleCopy}
+                    onSendTest={handleSendTest}
                   />
                 </div>
               </div>
@@ -110,15 +135,13 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
 
               {/* Team Inboxes section */}
               <div>
-                <div className="flex items-center justify-between pb-2">
+                <div className="flex items-center justify-between gap-3 pb-2">
                   <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Team Inboxes
+                    Team inboxes ({activeMailboxes.length})
                   </span>
-                  {activeMailboxes.length > 0 && (
-                    <span className="text-[11px] text-muted-foreground">
-                      {activeMailboxes.length} inbox{activeMailboxes.length !== 1 ? 'es' : ''}
-                    </span>
-                  )}
+                  <Button size="sm" variant="outline" onClick={openCreateTeamInbox} disabled={!workspaceSlug}>
+                    Create team inbox
+                  </Button>
                 </div>
 
                 {activeMailboxes.length === 0 ? (
@@ -136,6 +159,7 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
                         onEnable={() => enableRoute(mailbox.id)}
                         onDisable={(route) => disableExistingRoute(route)}
                         onCopy={handleCopy}
+                        onSendTest={handleSendTest}
                       />
                     ))}
                   </div>
@@ -220,6 +244,7 @@ function MailboxEmailRouteRow({
   onEnable,
   onDisable,
   onCopy,
+  onSendTest,
 }: {
   mailbox: SupportMailbox;
   route: SupportEmailRoute | null;
@@ -227,18 +252,25 @@ function MailboxEmailRouteRow({
   onEnable: () => void | Promise<void>;
   onDisable: (route: SupportEmailRoute) => void | Promise<void>;
   onCopy: (address: string) => void | Promise<void>;
+  onSendTest: (routeId: string, sourceAddress: string) => void | Promise<void>;
 }) {
-  const MailboxIcon = ICON_MAP[mailbox.icon] ?? ICON_MAP.inbox;
   return (
     <EmailRouteRow
       title={mailbox.name}
       description={mailbox.linked_team_name ? `Linked to ${mailbox.linked_team_name}` : 'Team inbox'}
-      icon={MailboxIcon ? <MailboxIcon className="h-4 w-4 text-muted-foreground" /> : <InboxIcon className="h-4 w-4 text-muted-foreground" />}
+      icon={
+        <StoredIcon
+          name={mailbox.icon}
+          className="h-4 w-4 text-muted-foreground"
+          fallback={<InboxIcon className="h-4 w-4 text-muted-foreground" />}
+        />
+      }
       route={route}
       busy={busy}
       onEnable={onEnable}
       onDisable={() => route ? onDisable(route) : Promise.resolve()}
       onCopy={onCopy}
+      onSendTest={onSendTest}
     />
   );
 }
@@ -252,6 +284,7 @@ function EmailRouteRow({
   onEnable,
   onDisable,
   onCopy,
+  onSendTest,
 }: {
   title: string;
   description: string;
@@ -261,14 +294,24 @@ function EmailRouteRow({
   onEnable: () => void | Promise<void>;
   onDisable: () => void | Promise<void>;
   onCopy: (address: string) => void | Promise<void>;
+  onSendTest: (routeId: string, sourceAddress: string) => void | Promise<void>;
 }) {
   const lastInbound = route?.last_inbound_at ? new Date(route.last_inbound_at).toLocaleString() : null;
+  const verifiedAt = route?.forwarding_verified_at ? new Date(route.forwarding_verified_at).toLocaleString() : null;
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
+  const [sourceAddress, setSourceAddress] = useState(route?.source_address ?? '');
+  const confirmationHref = route?.confirmation_conversation_id && workspaceSlug
+    ? `/w/${workspaceSlug}/support/${route.confirmation_conversation_id}`
+    : null;
+  const inboxHref = route?.mailbox_id && workspaceSlug
+    ? `/w/${workspaceSlug}/support?mailbox_ids=${encodeURIComponent(route.mailbox_id)}`
+    : workspaceSlug ? `/w/${workspaceSlug}/support` : null;
 
   return (
     <div className="py-3 px-1">
       <div className="flex items-center gap-3">
         {/* Status dot */}
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${route ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${verifiedAt ? 'bg-emerald-500' : route ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
 
         {/* Icon */}
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">{icon}</div>
@@ -287,15 +330,15 @@ function EmailRouteRow({
         )}
 
         {/* Status label */}
-        {route && !lastInbound && (
+        {route && !verifiedAt && (
           <span className="hidden shrink-0 items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 sm:inline-flex">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-            Awaiting first email
+            Setup incomplete
           </span>
         )}
-        {route && lastInbound && (
+        {route && verifiedAt && (
           <span className="hidden shrink-0 text-xs text-muted-foreground lg:inline">
-            Last: {lastInbound}
+            Verified: {verifiedAt}
           </span>
         )}
 
@@ -323,11 +366,98 @@ function EmailRouteRow({
           ) : (
             <Button size="sm" className="gap-1.5" onClick={() => onEnable()} disabled={busy}>
               <MailAdd01Icon className="h-3.5 w-3.5" />
-              Enable
+              Enable forwarding
             </Button>
           )}
         </div>
       </div>
+      {route && !verifiedAt && (
+        <div className="ml-11 mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+          <p className="text-sm font-medium text-amber-950 dark:text-amber-100">Complete forwarding setup</p>
+          <div className="mt-3 space-y-2 text-sm">
+            <ForwardingStep complete={Boolean(route.confirmation_received_at)} label="Add the Helpin address">
+              <p>Copy <span className="font-medium text-foreground">{route.inbound_address}</span> and add it as a forwarding destination in the mailbox that receives customer email.</p>
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                <SetupLink href="https://support.google.com/mail/answer/10957?hl=en">Gmail setup</SetupLink>
+                <SetupLink href="https://support.microsoft.com/en-us/outlook/mail/turn-automatic-forwarding-on-or-off-in-outlook">Outlook setup</SetupLink>
+              </div>
+            </ForwardingStep>
+            <ForwardingStep complete={false} label="Approve the confirmation">
+              {confirmationHref ? (
+                <>
+                  <p>Confirmation email received. Open it in Helpin and approve the provider’s forwarding request.</p>
+                  <div className="mt-2"><SetupLink href={confirmationHref}>Open confirmation email</SetupLink></div>
+                </>
+              ) : (
+                <>
+                  <p>Your provider may send a confirmation email to Helpin. We’ll detect it automatically when it arrives.</p>
+                  {inboxHref && <div className="mt-2"><SetupLink href={inboxHref}>Open {route.mailbox_id ? 'Team Inbox' : 'Shared Inbox'}</SetupLink></div>}
+                </>
+              )}
+            </ForwardingStep>
+            <ForwardingStep complete={false} label="Enable forwarding in your provider">
+              <p>Return to the source mailbox, select the Helpin address as the forwarding destination, enable forwarding, and save the change.</p>
+            </ForwardingStep>
+            <ForwardingStep complete={false} label="Test delivery">
+              <p>Enter the source mailbox address, then confirm that forwarding is enabled. Helpin will send the test and verify this inbox when it returns.</p>
+            </ForwardingStep>
+          </div>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="min-w-0 flex-1">
+              <Label htmlFor={`forwarding-source-${route.id}`} className="text-xs">Email address forwarding into Helpin</Label>
+              <Input
+                id={`forwarding-source-${route.id}`}
+                type="email"
+                value={sourceAddress}
+                onChange={(event) => setSourceAddress(event.target.value)}
+                placeholder="support@company.com"
+                className="mt-1"
+                disabled={busy}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onSendTest(route.id, sourceAddress.trim())}
+              disabled={busy || !sourceAddress.trim()}
+            >
+              I&apos;ve enabled forwarding
+            </Button>
+          </div>
+          {route.verification_sent_at && (
+            <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+              Test sent {new Date(route.verification_sent_at).toLocaleString()}. Waiting for it to return.
+            </p>
+          )}
+          {route.forwarding_last_error && <p className="mt-2 text-xs text-destructive">{route.forwarding_last_error}</p>}
+        </div>
+      )}
+      {route && verifiedAt && lastInbound && (
+        <p className="ml-11 mt-2 text-xs text-muted-foreground">Last email received: {lastInbound}</p>
+      )}
     </div>
+  );
+}
+
+function ForwardingStep({ complete, label, children }: { complete: boolean; label: string; children?: ReactNode }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className={complete ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-300'}>
+        {complete ? '✓' : '○'}
+      </span>
+      <div className="min-w-0">
+        <p className={complete ? 'font-medium text-foreground' : 'font-medium text-muted-foreground'}>{label}</p>
+        {children && <div className="mt-0.5 text-muted-foreground">{children}</div>}
+      </div>
+    </div>
+  );
+}
+
+function SetupLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
+      {children}
+      <LinkSquare01Icon className="h-3 w-3" />
+    </a>
   );
 }

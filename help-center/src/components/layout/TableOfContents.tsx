@@ -18,7 +18,7 @@ export function TableOfContents({ items, activeId }: TableOfContentsProps) {
         height: 'calc(100vh - var(--hc-header-height))',
       }}
     >
-      <div className="pt-10 pb-6 pr-4 pl-1">
+      <div className="-translate-x-2 pt-10 pb-6 pr-4 pl-1">
         <h4 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold text-muted-foreground">
           <TocIcon size={14} />
           On this page
@@ -30,10 +30,10 @@ export function TableOfContents({ items, activeId }: TableOfContentsProps) {
                 href={`#${item.id}`}
                 onClick={(e) => {
                   e.preventDefault()
-                  document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' })
+                  document.getElementById(item.id)?.scrollIntoView({ behavior: 'auto', block: 'start' })
                 }}
                 className={cn(
-                  'block text-[13px] py-1 transition-colors border-l-2',
+                  'block min-w-0 break-words border-l-2 py-1 text-[13px] leading-snug transition-colors',
                   item.level === 3 ? 'pl-5' : 'pl-3',
                   activeId === item.id
                     ? 'border-primary text-primary font-medium'

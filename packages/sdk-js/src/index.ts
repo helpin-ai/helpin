@@ -173,7 +173,7 @@ function initializeNamespacedClient(
     if (method === 'id') {
       const userData = args[1];
       if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
-        widgetManager.shutdown();
+        client.shutdown();
       }
     }
 
@@ -184,7 +184,7 @@ function initializeNamespacedClient(
     // Widget methods
     const widgetMethods: Record<string, Function> = {
       boot: (settings: WidgetSettings) => widgetManager.boot(settings),
-      shutdown: () => widgetManager.shutdown(),
+      shutdown: () => client.shutdown(),
       show: () => widgetManager.show(),
       hide: () => widgetManager.hide(),
       open: () => widgetManager.open(),
@@ -193,7 +193,7 @@ function initializeNamespacedClient(
       openMessages: () => widgetManager.openMessages(),
       openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
       openConversation: (id: string) => widgetManager.openConversation(id),
-      openArticle: (id: string, options?: ShowArticleOptions) => widgetManager.openArticle(id, options),
+      openArticle: (articleKey: string, options?: ShowArticleOptions) => widgetManager.openArticle(articleKey, options),
       onOpen: (cb: (...args: any[]) => void) => widgetManager.onOpen(cb),
       onClose: (cb: (...args: any[]) => void) => widgetManager.onClose(cb),
       onUnreadCountChange: (cb: (...args: any[]) => void) => widgetManager.onUnreadCountChange(cb),
@@ -366,7 +366,7 @@ if (isWindowAvailable()) {
         // Widget methods
         const widgetMethods: Record<string, Function> = {
           boot: (settings: WidgetSettings) => widgetManager.boot(settings),
-          shutdown: () => widgetManager.shutdown(),
+          shutdown: () => analyticsClient ? analyticsClient.shutdown() : widgetManager.shutdown(),
           show: () => widgetManager.show(),
           hide: () => widgetManager.hide(),
           open: () => widgetManager.open(),
@@ -375,7 +375,7 @@ if (isWindowAvailable()) {
           openMessages: () => widgetManager.openMessages(),
           openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
           openConversation: (id: string) => widgetManager.openConversation(id),
-          openArticle: (id: string, options?: ShowArticleOptions) => widgetManager.openArticle(id, options),
+          openArticle: (articleKey: string, options?: ShowArticleOptions) => widgetManager.openArticle(articleKey, options),
           onOpen: (cb: (...a: any[]) => void) => widgetManager.onOpen(cb),
           onClose: (cb: (...a: any[]) => void) => widgetManager.onClose(cb),
           onUnreadCountChange: (cb: (...a: any[]) => void) => widgetManager.onUnreadCountChange(cb),
@@ -396,7 +396,7 @@ if (isWindowAvailable()) {
           if (method === 'id') {
             const userData = args[1];
             if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
-              widgetManager.shutdown();
+              analyticsClient.shutdown();
             }
           }
           return (analyticsClient as any)[method].apply(analyticsClient, args.slice(1));
@@ -470,3 +470,4 @@ export {
   LogLevel,
   ClientProperties,
 };
+export type { ShowArticleOptions } from './core/widget';

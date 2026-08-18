@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +32,7 @@ func newEpicTestEnvWithDB(t *testing.T) (svc *PMEpicService, db *gorm.DB, wsID, 
 	seedUser(t, db, userID, "epicadmin@test.com", "Epic Admin", "hash")
 	seedWorkspace(t, db, wsID, "Epic Workspace", "epic-ws", userID)
 	seedWorkspaceMember(t, db, memberID, wsID, userID, "epicadmin@test.com", "Epic Admin", model.RoleAdmin)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, "team-epic-001", wsID, "Epic Team", time.Now(), time.Now())
 
 	epicRepo := repository.NewPMEpicRepository(db)
 	storyRepo := repository.NewPMTaskRepository(db)
@@ -40,15 +43,18 @@ func newEpicTestEnvWithDB(t *testing.T) (svc *PMEpicService, db *gorm.DB, wsID, 
 	activityService := NewPMActivityService(activityRepo)
 
 	svc = NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, repository.NewPMAttachmentRepository(db), workspaceRepo, activityService, nil, nil)
+	svc.SetWorkflowRepository(repository.NewPMWorkflowRepository(db))
 	return svc, db, wsID, userID
 }
 
 // helper to create a basic epic for reuse across tests.
 func createTestEpic(t *testing.T, svc *PMEpicService, wsID, userID, name string) *model.EpicWithStats {
 	t.Helper()
+	teamID := "team-epic-001"
 	epic, err := svc.Create(context.Background(), model.CreateEpicRequest{
 		WorkspaceID: wsID,
 		Name:        name,
+		TeamID:      &teamID,
 	}, userID)
 	if err != nil {
 		t.Fatalf("createTestEpic(%q): %v", name, err)
@@ -56,15 +62,127 @@ func createTestEpic(t *testing.T, svc *PMEpicService, wsID, userID, name string)
 	return epic
 }
 
+func seedEpicTaskLinkFixture(t *testing.T, db *gorm.DB, workspaceID string) {
+	t.Helper()
+	now := time.Now().UTC()
+	for _, team := range []struct{ id, name string }{{"team-link-a", "Alpha"}, {"team-link-b", "Beta"}} {
+		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, team.id, workspaceID, team.name, now, now)
+	}
+	for _, workflow := range []struct{ id, teamID, stateID string }{{"wf-link-a", "team-link-a", "state-link-a"}, {"wf-link-b", "team-link-b", "state-link-b"}} {
+		mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, workflow.id, workspaceID, workflow.id, workflow.teamID, workflow.stateID, now, now)
+		mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, workflow.stateID, workflow.id, "Todo", model.PMStateTypeUnstarted, 0, true, now, now)
+	}
+	mustExec(t, db, `INSERT INTO pm_epics (id, workspace_id, name, team_id, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, "epic-link-target", workspaceID, "Target epic", "team-link-a", false, now, now)
+	mustExec(t, db, `INSERT INTO pm_epics (id, workspace_id, name, team_id, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, "epic-link-old", workspaceID, "Old epic", "team-link-a", false, now, now)
+	mustExec(t, db, `INSERT INTO pm_epics (id, workspace_id, name, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, "epic-link-no-team", workspaceID, "Legacy epic", false, now, now)
+	seedPMCommandTask(t, db, "task-link-new", workspaceID, "team-link-a", "wf-link-a", "state-link-a", "", "", 101)
+	seedPMCommandTask(t, db, "task-link-move", workspaceID, "team-link-a", "wf-link-a", "state-link-a", "epic-link-old", "", 102)
+	seedPMCommandTask(t, db, "task-link-other-team", workspaceID, "team-link-b", "wf-link-b", "state-link-b", "", "", 103)
+	seedPMCommandTask(t, db, "task-link-archived", workspaceID, "team-link-a", "wf-link-a", "state-link-a", "", "", 104)
+	mustExec(t, db, `UPDATE pm_tasks SET archived = TRUE WHERE id = ?`, "task-link-archived")
+}
+
+func TestPMEpicServiceLinkTasksLinksAndMovesSameTeamTasks(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	result, err := svc.LinkTasks(context.Background(), wsID, "epic-link-target", []string{"task-link-new", "task-link-move", "task-link-new"}, userID)
+	if err != nil {
+		t.Fatalf("LinkTasks: %v", err)
+	}
+	if result.LinkedCount != 2 || result.MovedCount != 1 {
+		t.Fatalf("result = %#v, want linked=2 moved=1", result)
+	}
+	for _, taskID := range []string{"task-link-new", "task-link-move"} {
+		var epicID *string
+		if err := db.Model(&model.PMTask{}).Select("epic_id").Where("id = ?", taskID).Scan(&epicID).Error; err != nil {
+			t.Fatalf("load %s: %v", taskID, err)
+		}
+		if epicID == nil || *epicID != "epic-link-target" {
+			t.Fatalf("%s epic_id = %v, want epic-link-target", taskID, epicID)
+		}
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsMixedTeamsAtomically(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	_, err := svc.LinkTasks(context.Background(), wsID, "epic-link-target", []string{"task-link-new", "task-link-other-team"}, userID)
+	if err == nil || !strings.Contains(err.Error(), "same team") {
+		t.Fatalf("error = %v, want same-team validation", err)
+	}
+	var epicID *string
+	if err := db.Model(&model.PMTask{}).Select("epic_id").Where("id = ?", "task-link-new").Scan(&epicID).Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if epicID != nil {
+		t.Fatalf("task-link-new mutated after rejected batch: %v", *epicID)
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsEpicWithoutTeam(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	_, err := svc.LinkTasks(context.Background(), wsID, "epic-link-no-team", []string{"task-link-new"}, userID)
+	if err == nil || !strings.Contains(err.Error(), "assign the epic to a team") {
+		t.Fatalf("error = %v, want team assignment guidance", err)
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsArchivedTask(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	_, err := svc.LinkTasks(context.Background(), wsID, "epic-link-target", []string{"task-link-archived"}, userID)
+	if err == nil || !strings.Contains(err.Error(), "archived") {
+		t.Fatalf("error = %v, want archived-task validation", err)
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsMissingTaskAtomically(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+
+	_, err := svc.LinkTasks(context.Background(), wsID, "epic-link-target", []string{"task-link-new", "task-link-missing"}, userID)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error = %v, want missing-task validation", err)
+	}
+	var epicID *string
+	if err := db.Model(&model.PMTask{}).Select("epic_id").Where("id = ?", "task-link-new").Scan(&epicID).Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if epicID != nil {
+		t.Fatalf("task-link-new mutated after rejected batch: %v", *epicID)
+	}
+}
+
+func TestPMEpicServiceLinkTasksRejectsActorOutsideEpicTeam(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	seedEpicTaskLinkFixture(t, db, wsID)
+	ctx := authorization.WithActor(context.Background(), &authorization.Actor{
+		UserID: userID, WorkspaceID: wsID, Role: model.RoleMember,
+		TeamMemberships: []authorization.TeamRole{{TeamID: "team-link-b", Role: model.RoleMember}},
+	})
+
+	_, err := svc.LinkTasks(ctx, wsID, "epic-link-target", []string{"task-link-new"}, userID)
+	if err == nil {
+		t.Fatal("expected team access error")
+	}
+}
+
 func TestPMEpicService_Create(t *testing.T) {
 	t.Parallel()
 	svc, wsID, userID := newEpicTestEnv(t)
 	ctx := context.Background()
+	teamID := "team-epic-001"
 
 	t.Run("basic create", func(t *testing.T) {
 		epic, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID: wsID,
 			Name:        "My Epic",
+			TeamID:      &teamID,
 		}, userID)
 		if err != nil {
 			t.Fatalf("Create: %v", err)
@@ -93,6 +211,7 @@ func TestPMEpicService_Create(t *testing.T) {
 		epic, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID: wsID,
 			Name:        "  Padded Name  ",
+			TeamID:      &teamID,
 		}, userID)
 		if err != nil {
 			t.Fatalf("Create: %v", err)
@@ -107,6 +226,7 @@ func TestPMEpicService_Create(t *testing.T) {
 		epic, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID:     wsID,
 			Name:            "Agent-backed Epic",
+			TeamID:          &teamID,
 			AssignedAgentID: &agentID,
 		}, userID)
 		if err != nil {
@@ -123,6 +243,7 @@ func TestPMEpicService_Create(t *testing.T) {
 		epic, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID: wsID,
 			Name:        "Colored Epic",
+			TeamID:      &teamID,
 			Description: &desc,
 			Color:       &color,
 		}, userID)
@@ -142,6 +263,7 @@ func TestPMEpicService_Create(t *testing.T) {
 		epic, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID: wsID,
 			Name:        "At Risk Epic",
+			TeamID:      &teamID,
 			Health:      &health,
 		}, userID)
 		if err != nil {
@@ -157,6 +279,7 @@ func TestPMEpicService_Create(t *testing.T) {
 		epic, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID: wsID,
 			Name:        "Positioned Epic",
+			TeamID:      &teamID,
 			Position:    &pos,
 		}, userID)
 		if err != nil {
@@ -174,6 +297,7 @@ func TestPMEpicService_Create(t *testing.T) {
 		epic, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID:   wsID,
 			Name:          "Epic With Image",
+			TeamID:        &teamID,
 			AttachmentIDs: []string{"attachment-epic-1"},
 		}, userID)
 		if err != nil {
@@ -200,6 +324,7 @@ func TestPMEpicService_Create(t *testing.T) {
 		epic, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID: wsID,
 			Name:        "Created By Epic",
+			TeamID:      &teamID,
 		}, userID)
 		if err != nil {
 			t.Fatalf("Create: %v", err)
@@ -222,9 +347,17 @@ func TestPMEpicService_Create(t *testing.T) {
 		_, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID: wsID,
 			Name:        "   ",
+			TeamID:      &teamID,
 		}, userID)
 		if err == nil {
 			t.Fatal("expected error for empty name")
+		}
+	})
+
+	t.Run("error on missing team_id", func(t *testing.T) {
+		_, err := svc.Create(ctx, model.CreateEpicRequest{WorkspaceID: wsID, Name: "No Team"}, userID)
+		if err == nil || !strings.Contains(err.Error(), "team_id is required") {
+			t.Fatalf("missing team error = %v", err)
 		}
 	})
 
@@ -233,12 +366,38 @@ func TestPMEpicService_Create(t *testing.T) {
 		_, err := svc.Create(ctx, model.CreateEpicRequest{
 			WorkspaceID: wsID,
 			Name:        "Bad Health Epic",
+			TeamID:      &teamID,
 			Health:      &badHealth,
 		}, userID)
 		if err == nil {
 			t.Fatal("expected error for invalid health value")
 		}
 	})
+}
+
+func TestPMEpicServiceCreateAndUpdateReturnSuggestedHealth(t *testing.T) {
+	svc, wsID, userID := newEpicTestEnv(t)
+	teamID := "team-epic-001"
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Suggested Health Epic",
+		TeamID:      &teamID,
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.SuggestedHealth != model.PMEpicHealthNone {
+		t.Fatalf("create suggested_health = %q, want %q", created.SuggestedHealth, model.PMEpicHealthNone)
+	}
+
+	name := "Suggested Health Epic Updated"
+	updated, err := svc.Update(context.Background(), created.Epic.ID, model.UpdateEpicRequest{Name: &name}, userID)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.SuggestedHealth != model.PMEpicHealthNone {
+		t.Fatalf("update suggested_health = %q, want %q", updated.SuggestedHealth, model.PMEpicHealthNone)
+	}
 }
 
 func TestPMEpicServiceListTasksReturnsTableEnrichment(t *testing.T) {
@@ -323,6 +482,8 @@ func TestPMEpicService_Create_Forbidden(t *testing.T) {
 	seedUser(t, db, userID, "viewer@test.com", "Viewer", "hash")
 	seedWorkspace(t, db, wsID, "Forbidden WS", "forbid-ws", "some-owner")
 	seedWorkspaceMember(t, db, memberID, wsID, userID, "viewer@test.com", "Viewer", model.RoleMember)
+	teamID := "team-epic-forbid"
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, teamID, wsID, "Forbidden Team", time.Now(), time.Now())
 
 	epicRepo := repository.NewPMEpicRepository(db)
 	storyRepo := repository.NewPMTaskRepository(db)
@@ -343,6 +504,7 @@ func TestPMEpicService_Create_Forbidden(t *testing.T) {
 	_, err := svc.Create(ctx, model.CreateEpicRequest{
 		WorkspaceID: wsID,
 		Name:        "Should Fail",
+		TeamID:      &teamID,
 	}, userID)
 	if err == nil {
 		t.Fatal("expected forbidden error for member role")
@@ -548,6 +710,325 @@ func TestPMEpicService_Update(t *testing.T) {
 			t.Fatal("expected error for nonexistent epic")
 		}
 	})
+}
+
+func TestPMEpicServiceUpdateClearsExplicitlySuppliedNullableFields(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	teamID := "team-epic-clear"
+	stateID := "state-epic-clear"
+	repoID := "repo-epic-clear"
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		teamID, wsID, "Clear Team", now, now)
+	mustExec(t, db, `INSERT INTO pm_epic_workflow_states (id, workspace_id, name, state_type, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		stateID, wsID, "To Do", model.PMStateTypeUnstarted, 0, now, now)
+	if err := db.Create(&model.GitRepository{
+		ID: repoID, WorkspaceID: wsID, IntegrationID: "integration-clear", Provider: "github",
+		ExternalID: "repo-clear", FullName: "helpin/clear", Permissions: json.RawMessage(`{}`),
+		Active: true, Selected: true,
+	}).Error; err != nil {
+		t.Fatalf("create git repository: %v", err)
+	}
+
+	start := time.Date(2026, time.August, 5, 0, 0, 0, 0, time.UTC)
+	deadline := time.Date(2026, time.August, 20, 0, 0, 0, 0, time.UTC)
+	created, err := svc.Create(ctx, model.CreateEpicRequest{
+		WorkspaceID:          wsID,
+		Name:                 "Clearable Epic",
+		TeamID:               &teamID,
+		EpicStateID:          &stateID,
+		OwnerMemberID:        stringPtr("member-epic-001"),
+		PlannedStartDate:     &start,
+		Deadline:             &deadline,
+		PlanningRepositoryID: &repoID,
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	updated, err := svc.Update(ctx, created.Epic.ID, model.UpdateEpicRequest{
+		EpicStateIDSet:          true,
+		OwnerSet:                true,
+		TeamIDSet:               true,
+		PlannedStartDateSet:     true,
+		DeadlineSet:             true,
+		PlanningRepositoryIDSet: true,
+	}, userID)
+	if err != nil {
+		t.Fatalf("Update clears: %v", err)
+	}
+	if updated.Epic.EpicStateID != nil || updated.Epic.OwnerID != nil || updated.Epic.OwnerMemberID != nil ||
+		updated.Epic.TeamID != nil || updated.Epic.PlannedStartDate != nil || updated.Epic.Deadline != nil ||
+		updated.Epic.PlanningRepositoryID != nil {
+		t.Fatalf("nullable fields were not cleared: %#v", updated.Epic)
+	}
+}
+
+func TestPMEpicServiceUpdateRejectsDestinationTeamOutsideActorScope(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID, adminUserID := newEpicTestEnvWithDB(t)
+	now := time.Now().UTC()
+	teamA := "team-epic-destination-a"
+	teamB := "team-epic-destination-b"
+	memberUserID := "user-epic-destination-member"
+	memberID := "member-epic-destination-member"
+
+	seedUser(t, db, memberUserID, "destination@test.com", "Destination Member", "hash")
+	seedWorkspaceMember(t, db, memberID, wsID, memberUserID, "destination@test.com", "Destination Member", model.RoleMember)
+	for _, team := range []struct{ id, name string }{{teamA, "Team A"}, {teamB, "Team B"}} {
+		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, team.id, wsID, team.name, now, now)
+	}
+	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"membership-epic-destination", teamA, memberID, "member", now, now)
+
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{WorkspaceID: wsID, Name: "Scoped Epic", TeamID: &teamA}, adminUserID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	memberCtx := authorization.WithActor(context.Background(), &authorization.Actor{
+		UserID: memberUserID, WorkspaceID: wsID, WorkspaceMemberID: memberID, Role: model.RoleMember,
+		TeamMemberships: []authorization.TeamRole{{TeamID: teamA, Role: "member"}},
+	})
+
+	_, err = svc.Update(memberCtx, created.Epic.ID, model.UpdateEpicRequest{TeamID: &teamB}, memberUserID)
+	if err == nil {
+		t.Fatal("expected update to an inaccessible destination team to fail")
+	}
+	reloaded, loadErr := svc.GetByID(context.Background(), created.Epic.ID)
+	if loadErr != nil {
+		t.Fatalf("GetByID: %v", loadErr)
+	}
+	if reloaded.Epic.TeamID == nil || *reloaded.Epic.TeamID != teamA {
+		t.Fatalf("team_id = %v, want %s", reloaded.Epic.TeamID, teamA)
+	}
+}
+
+func TestPMEpicServiceUpdateRejectsTeamMoveIncompatibleWithAssignedAgent(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	now := time.Now().UTC()
+	teamA := "team-epic-agent-a"
+	teamB := "team-epic-agent-b"
+	agentID := "agent-epic-team-a"
+	for _, team := range []struct{ id, name string }{{teamA, "Agent Team A"}, {teamB, "Agent Team B"}} {
+		mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, team.id, wsID, team.name, now, now)
+	}
+	seedTeamScopedEpicAgent(t, db, svc, wsID, agentID, teamA)
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID, Name: "Agent Scoped Epic", TeamID: &teamA, AssignedAgentID: &agentID,
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	_, err = svc.Update(context.Background(), created.Epic.ID, model.UpdateEpicRequest{TeamID: &teamB}, userID)
+	if err == nil || !strings.Contains(err.Error(), "restricted to team") {
+		t.Fatalf("team move error = %v, want assigned-agent team restriction", err)
+	}
+	reloaded, err := svc.GetByID(context.Background(), created.Epic.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if reloaded.Epic.TeamID == nil || *reloaded.Epic.TeamID != teamA || reloaded.Epic.AssignedAgentID == nil || *reloaded.Epic.AssignedAgentID != agentID {
+		t.Fatalf("epic mutated after rejected team move: %#v", reloaded.Epic)
+	}
+}
+
+func seedTeamScopedEpicAgent(t *testing.T, db *gorm.DB, svc *PMEpicService, workspaceID, agentID, teamID string) {
+	t.Helper()
+	mustExec(t, db, `CREATE TABLE agents (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0,
+		name TEXT NOT NULL, preset_key TEXT, preset_version_key TEXT, status TEXT,
+		runtime_kind TEXT, skills TEXT, allowed_tools TEXT, allowed_commands TEXT,
+		allowed_targets TEXT, approval_mode TEXT, default_invocation_mode TEXT, team_id TEXT
+	)`)
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, preset_version_key, status,
+		runtime_kind, skills, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, default_invocation_mode, team_id
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		agentID, workspaceID, true, "Team A Epic Planner", model.AgentPresetEpicPlanner, "epic_planner_default", "idle",
+		"native_sdk", `[]`, []byte(`[]`), []byte(`[]`), []byte(`["epic"]`), "never", "autonomous", teamID)
+	svc.SetAgentService(&AgentService{agentRepo: repository.NewAgentRepository(db)})
+}
+
+func TestPMEpicServiceCreateValidatesLabelsBeforePersisting(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	foreignWorkspaceID := "ws-epic-label-foreign"
+	seedWorkspace(t, db, foreignWorkspaceID, "Foreign", "foreign-epic-label", userID)
+	if err := db.Create(&model.PMLabel{ID: "label-epic-foreign", WorkspaceID: foreignWorkspaceID, Name: "Foreign"}).Error; err != nil {
+		t.Fatalf("create foreign label: %v", err)
+	}
+	teamID := "team-epic-001"
+
+	_, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Must Not Persist",
+		TeamID:      &teamID,
+		LabelIDs:    []string{"label-epic-foreign"},
+	}, userID)
+	if err == nil {
+		t.Fatal("expected foreign label validation error")
+	}
+	var count int64
+	if err := db.Model(&model.PMEpic{}).Where("workspace_id = ? AND name = ?", wsID, "Must Not Persist").Count(&count).Error; err != nil {
+		t.Fatalf("count epics: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("persisted epics = %d, want 0", count)
+	}
+}
+
+func TestPMEpicServiceCreatePreservesArchivedLabelCompatibility(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	teamID := "team-epic-001"
+	labelID := "label-epic-archived-compatible"
+	if err := db.Create(&model.PMLabel{ID: labelID, WorkspaceID: wsID, Name: "Archived Compatible", Archived: true}).Error; err != nil {
+		t.Fatalf("create archived label: %v", err)
+	}
+
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Archived Label Compatibility",
+		TeamID:      &teamID,
+		LabelIDs:    []string{labelID},
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create with archived label: %v", err)
+	}
+	if len(created.Labels) != 1 || created.Labels[0].ID != labelID {
+		t.Fatalf("created labels = %#v, want archived label %s", created.Labels, labelID)
+	}
+}
+
+func TestPMEpicServiceCreateRollsBackWhenLabelInsertFails(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	ctx := context.Background()
+	labelID := "label-epic-create-failure"
+	attachmentID := "attachment-epic-create-failure"
+	teamID := "team-epic-001"
+	if err := db.Create(&model.PMLabel{ID: labelID, WorkspaceID: wsID, Name: "Fails on insert"}).Error; err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+	seedTemporaryAttachment(t, db, attachmentID, wsID, wsID, userID)
+	mustExec(t, db, `CREATE TRIGGER fail_epic_label_create
+		BEFORE INSERT ON pm_epic_labels
+		WHEN NEW.label_id = 'label-epic-create-failure'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced epic label insert failure');
+		END`)
+
+	_, err := svc.Create(ctx, model.CreateEpicRequest{
+		WorkspaceID:   wsID,
+		Name:          "Rolled Back Epic",
+		TeamID:        &teamID,
+		LabelIDs:      []string{labelID},
+		AttachmentIDs: []string{attachmentID},
+	}, userID)
+	if err == nil {
+		t.Fatal("expected label insert failure")
+	}
+
+	var epicCount int64
+	if err := db.Model(&model.PMEpic{}).
+		Where("workspace_id = ? AND name = ?", wsID, "Rolled Back Epic").
+		Count(&epicCount).Error; err != nil {
+		t.Fatalf("count epics: %v", err)
+	}
+	if epicCount != 0 {
+		t.Fatalf("persisted epics = %d, want 0", epicCount)
+	}
+	attachment, err := repository.NewPMAttachmentRepository(db).GetByID(ctx, attachmentID)
+	if err != nil {
+		t.Fatalf("get attachment: %v", err)
+	}
+	if attachment == nil || attachment.EntityType != "temporary" || attachment.EntityID != wsID {
+		t.Fatalf("attachment was reassigned before epic commit: %#v", attachment)
+	}
+}
+
+func TestPMEpicServiceUpdateRollsBackScalarAndLabelsWhenLabelInsertFails(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	ctx := context.Background()
+	originalLabelID := "label-epic-update-original"
+	failingLabelID := "label-epic-update-failure"
+	teamID := "team-epic-001"
+	for _, label := range []model.PMLabel{
+		{ID: originalLabelID, WorkspaceID: wsID, Name: "Original"},
+		{ID: failingLabelID, WorkspaceID: wsID, Name: "Fails on insert"},
+	} {
+		if err := db.Create(&label).Error; err != nil {
+			t.Fatalf("create label %s: %v", label.ID, err)
+		}
+	}
+	created, err := svc.Create(ctx, model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Original Epic Name",
+		TeamID:      &teamID,
+		LabelIDs:    []string{originalLabelID},
+	}, userID)
+	if err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	mustExec(t, db, `CREATE TRIGGER fail_epic_label_update
+		BEFORE INSERT ON pm_epic_labels
+		WHEN NEW.label_id = 'label-epic-update-failure'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced epic label insert failure');
+		END`)
+
+	updatedName := "Must Roll Back"
+	_, err = svc.Update(ctx, created.Epic.ID, model.UpdateEpicRequest{
+		Name:     &updatedName,
+		LabelIDs: []string{failingLabelID},
+	}, userID)
+	if err == nil {
+		t.Fatal("expected label insert failure")
+	}
+
+	var epic model.PMEpic
+	if err := db.Where("id = ?", created.Epic.ID).First(&epic).Error; err != nil {
+		t.Fatalf("reload epic: %v", err)
+	}
+	if epic.Name != "Original Epic Name" {
+		t.Fatalf("epic name = %q, want original value", epic.Name)
+	}
+	var links []model.PMEpicLabel
+	if err := db.Where("epic_id = ?", created.Epic.ID).Find(&links).Error; err != nil {
+		t.Fatalf("reload epic labels: %v", err)
+	}
+	if len(links) != 1 || links[0].LabelID != originalLabelID {
+		t.Fatalf("epic labels = %#v, want only original label", links)
+	}
+}
+
+func TestPMEpicServiceCreateDeduplicatesLabelIDs(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	teamID := "team-epic-001"
+	labelID := "label-epic-duplicate"
+	if err := db.Create(&model.PMLabel{ID: labelID, WorkspaceID: wsID, Name: "Duplicate"}).Error; err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+
+	created, err := svc.Create(context.Background(), model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Deduplicated Labels",
+		TeamID:      &teamID,
+		LabelIDs:    []string{labelID, " " + labelID + " ", labelID},
+	}, userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var linkCount int64
+	if err := db.Model(&model.PMEpicLabel{}).Where("epic_id = ?", created.Epic.ID).Count(&linkCount).Error; err != nil {
+		t.Fatalf("count epic labels: %v", err)
+	}
+	if linkCount != 1 {
+		t.Fatalf("epic label links = %d, want 1", linkCount)
+	}
 }
 
 func TestPMEpicService_Delete(t *testing.T) {

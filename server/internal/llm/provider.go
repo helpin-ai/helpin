@@ -3,7 +3,14 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
+
+// ErrInsufficientCredits indicates the upstream LLM provider rejected the
+// request for billing reasons (HTTP 402 — insufficient credits or exhausted
+// quota). Callers use errors.Is to degrade with a clear, actionable message
+// instead of a generic failure.
+var ErrInsufficientCredits = errors.New("llm: insufficient credits")
 
 // Provider defines a model-agnostic LLM interface.
 type Provider interface {
@@ -17,15 +24,25 @@ type EmbeddingProvider interface {
 
 // ChatRequest is a model-agnostic chat request.
 type ChatRequest struct {
-	SystemPrompt    string
-	Messages        []Message
-	Provider        string
-	Model           string
-	Temperature     float64
-	MaxTokens       int
-	JSONMode        bool
-	JSONSchema      map[string]any
-	ProviderOptions json.RawMessage
+	SystemPrompt     string
+	Messages         []Message
+	Provider         string
+	Model            string
+	Temperature      float64
+	MaxTokens        int
+	JSONMode         bool
+	JSONSchema       map[string]any
+	JSONSchemaStrict bool
+	Reasoning        *ReasoningConfig
+	ProviderOptions  json.RawMessage
+}
+
+// ReasoningConfig controls provider reasoning budgets for compatible models.
+type ReasoningConfig struct {
+	Effort    string `json:"effort,omitempty"`
+	MaxTokens int    `json:"max_tokens,omitempty"`
+	Enabled   *bool  `json:"enabled,omitempty"`
+	Exclude   bool   `json:"exclude,omitempty"`
 }
 
 // Message represents a conversation message.
@@ -50,8 +67,21 @@ type ImageURLPart struct {
 
 // ChatResponse is a model-agnostic chat response.
 type ChatResponse struct {
-	Content    string
-	TokensUsed TokenUsage
+	Content                string
+	TokensUsed             TokenUsage
+	Provider, Model, Route string
+	ServiceTier            string
+	FinishReason           string
+}
+
+// ChatPricingIdentity is the exact route selected before a provider call.
+type ChatPricingIdentity struct {
+	Provider, Model, Route, ServiceTier string
+}
+
+// PricingIdentityResolver exposes a provider's exact request route for preflight pricing.
+type PricingIdentityResolver interface {
+	ResolvePricingIdentity(ChatRequest) (ChatPricingIdentity, error)
 }
 
 // EmbeddingRequest is a model-agnostic embedding request.
@@ -68,6 +98,10 @@ type EmbeddingResponse struct {
 
 // TokenUsage tracks token consumption.
 type TokenUsage struct {
-	InputTokens  int
-	OutputTokens int
+	InputTokens, InputTokensTotal       int
+	CachedInputTokens, CacheReadTokens  int
+	CacheWriteTokens                    int
+	OutputTokens, CompletionTokensTotal int
+	ReasoningTokens                     int
+	CompletionIncludesReasoning         bool
 }

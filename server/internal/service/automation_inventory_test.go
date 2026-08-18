@@ -83,6 +83,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			preset_key TEXT,
 			preset_version_key TEXT,
 			source_preset_key TEXT,
@@ -129,12 +130,15 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			target_id TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,
 			parent_run_id TEXT,
+			dock_chat_id TEXT,
 			handoff_state TEXT,
 			approval_state TEXT NOT NULL,
 			triggered_by_user_id TEXT,
 			status TEXT NOT NULL,
 			workflow_id TEXT,
 			workflow_run_id TEXT,
+			external_runtime TEXT,
+			external_runtime_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
 			agent_version_id TEXT,
@@ -285,7 +289,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		Name:          "Hourly Repo Sweep",
 		Enabled:       true,
 		TriggerType:   model.TriggerCron,
-		TriggerConfig: json.RawMessage(`{}`),
+		TriggerConfig: json.RawMessage(`{"schedule":"0 * * * *"}`),
 		ActionType:    model.ActionStartAgentRun,
 		ActionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"repository","target_id":"repo-1"}`),
 	}).Error; err != nil {
@@ -318,7 +322,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		TriggerType:   testStringPtr(model.TriggerCron),
 		ReferenceID:   testStringPtr("rule-cron-1"),
 		ReferenceType: testStringPtr("automation_rule"),
-		Status:        model.AgentTriggerExecutionStatusCompleted,
+		Status:        model.AgentTriggerExecutionStatusFailed,
 		FiredAt:       now.Add(-25 * time.Hour),
 		CompletedAt:   &previousCompletedAt,
 	}).Error; err != nil {
@@ -406,6 +410,12 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	if got := ruleItem.Health.Metrics["total_runs"]; got != float64(2) && got != int64(2) && got != 2 {
 		t.Fatalf("expected automation rule total_runs 2, got %#v", got)
 	}
+	if got := ruleItem.Health.Metrics["error_runs"]; got != float64(1) && got != int64(1) && got != 1 {
+		t.Fatalf("expected automation rule error_runs 1, got %#v", got)
+	}
+	if got, ok := ruleItem.Health.Metrics["next_run_at"].(string); !ok || got == "" {
+		t.Fatalf("expected automation rule next_run_at, got %#v", ruleItem.Health.Metrics["next_run_at"])
+	}
 	if got := ruleItem.Health.Metrics["last_execution_id"]; got != "exec-rule-cron-1" {
 		t.Fatalf("expected automation rule last_execution_id exec-rule-cron-1, got %#v", got)
 	}
@@ -442,6 +452,7 @@ func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			preset_key TEXT,
 			source_template_key TEXT NOT NULL DEFAULT '',
 			template_key TEXT,
@@ -474,6 +485,7 @@ func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
 			runtime_kind TEXT NOT NULL,
 			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
 			parent_run_id TEXT,
+			dock_chat_id TEXT,
 			handoff_state TEXT,
 			approval_state TEXT NOT NULL DEFAULT 'not_required',
 			pause_reason TEXT NOT NULL DEFAULT 'none',
@@ -481,6 +493,8 @@ func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
 			status TEXT NOT NULL,
 			workflow_id TEXT,
 			workflow_run_id TEXT,
+			external_runtime TEXT,
+			external_runtime_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
 			agent_version_id TEXT,
@@ -640,6 +654,7 @@ func TestAutomationActivityResolvesTargetDisplayInfo(t *testing.T) {
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL,
 			runtime_kind TEXT,
 			created_at DATETIME,
@@ -751,13 +766,22 @@ func TestAutomationActivityResolvesTargetDisplayInfo(t *testing.T) {
 		`CREATE TABLE users (
 			id TEXT PRIMARY KEY,
 			email TEXT,
+			password_hash TEXT,
 			full_name TEXT,
+			email_verified_at DATETIME,
+			google_subject TEXT,
+			default_workspace_id TEXT,
+			totp_secret_encrypted TEXT,
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
+			recovery_codes_encrypted TEXT,
+			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
 			avatar_url TEXT,
 			avatar_style TEXT,
 			avatar_seed TEXT,
 			avatar_background_mode TEXT,
-			avatar_background_color TEXT
+			avatar_background_color TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
 		)`,
 		`CREATE TABLE workspace_members (
 			id TEXT PRIMARY KEY,

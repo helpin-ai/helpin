@@ -7,16 +7,17 @@ import { useTitle } from '@/hooks/useTitle';
 import { SprintPlanningFilters, type SprintStatusFilter } from '@/components/pm/sprints/SprintPlanningFilters';
 import { SprintPlanningWorkspace } from '@/components/pm/sprints/SprintPlanningWorkspace';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import { useDeleteSprint, useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useDeleteSprint, useInfiniteSprintBacklogTasks, useSprintCloseouts, useSprintPlanningWorkspace, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { queryKeys } from '@/lib/queryKeys';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
-import type { SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningTaskPreview } from '@/lib/pmTypes';
+import type { LinkSprintTasksResponse, PaginatedResponse, SprintPlanningWorkspace as SprintPlanningWorkspaceData, SprintPlanningTaskPreview } from '@/lib/pmTypes';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { unwrap } from '@/lib/queryUtils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { formatSprintDateOnly } from '@/lib/pmSprintOptions';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -26,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { LinkTasksToSprintDialog } from '@/components/pm/sprints/LinkTasksToSprintDialog';
 import {
   ArrowUpRight01Icon,
   Copy01Icon,
@@ -41,10 +43,18 @@ interface SprintsPageProps {
   teamId?: string;
 }
 
+interface SprintLinkTarget {
+  id: string;
+  name: string;
+  teamId: string;
+  teamName: string;
+}
+
 interface ArchivedSprintRowProps {
   card: {
     sprint: { id: string; name: string; start_date: string | null; end_date: string | null };
     stats: { task_count: number; done_task_count: number };
+    closeout?: { committed_count: number; completed_count: number; rolled_over_count: number; committed_points: number; completed_points: number };
   };
   workspaceId: string;
   workspaceSlug: string;
@@ -59,7 +69,7 @@ function ArchivedSprintRow({ card, workspaceId, workspaceSlug, canEdit, onOpen }
   const fullUrl = typeof window !== 'undefined' ? `${window.location.origin}${sprintPath}` : sprintPath;
 
   const dateLabel = card.sprint.start_date && card.sprint.end_date
-    ? `${new Date(card.sprint.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${new Date(card.sprint.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+    ? `${formatSprintDateOnly(card.sprint.start_date)} – ${formatSprintDateOnly(card.sprint.end_date)}`
     : 'No dates set';
 
   const handleCopyLink = () => {
@@ -81,6 +91,9 @@ function ArchivedSprintRow({ card, workspaceId, workspaceSlug, canEdit, onOpen }
     });
   };
 
+  const committedTasks = card.closeout?.committed_count ?? card.stats.task_count;
+  const completedTasks = card.closeout?.completed_count ?? card.stats.done_task_count;
+  const rolledOverTasks = card.closeout?.rolled_over_count ?? 0;
   return (
     <div
       role="button"
@@ -100,7 +113,8 @@ function ArchivedSprintRow({ card, workspaceId, workspaceSlug, canEdit, onOpen }
       </div>
       <div className="flex shrink-0 items-center gap-3">
         <span className="text-xs text-muted-foreground">
-          {card.stats.done_task_count}/{card.stats.task_count} tasks
+          {completedTasks}/{committedTasks} tasks {card.closeout ? 'completed' : 'done'}
+          {card.closeout && rolledOverTasks > 0 ? ` · ${rolledOverTasks} rolled over` : ''}
         </span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -242,6 +256,10 @@ function applyTaskAssignment(
   const movingTask = found ?? task;
   if (sourceSprintId === targetSprintId) return workspace;
 
+  if (!found && !task.sprint_id && targetSprintId) {
+    next.backlog_total = Math.max(0, next.backlog_total - 1);
+  }
+
   if (!targetSprintId) {
     addTaskToBacklog(next, movingTask);
     return next;
@@ -256,6 +274,33 @@ function applyTaskAssignment(
     }
   }
   return workspace;
+}
+
+type SprintBacklogInfiniteData = InfiniteData<PaginatedResponse<SprintPlanningTaskPreview[]>>;
+
+function applyBacklogTaskAssignment(
+  data: SprintBacklogInfiniteData | undefined,
+  task: SprintPlanningTaskPreview,
+  targetSprintId: string | null,
+) {
+  if (!data) return data;
+  const wasBacklog = !task.sprint_id;
+  const willBeBacklog = !targetSprintId;
+  if (wasBacklog === willBeBacklog) return data;
+
+  const pages = data.pages.map((page) => ({
+    ...page,
+    data: page.data.filter((item) => item.id !== task.id),
+  }));
+  if (willBeBacklog && pages[0]) {
+    pages[0].data = [{ ...task, sprint_id: undefined }, ...pages[0].data];
+  }
+  const nextTotal = Math.max(0, (pages[0]?.total ?? 0) + (willBeBacklog ? 1 : -1));
+  for (const page of pages) {
+    page.total = nextTotal;
+    page.total_pages = nextTotal > 0 ? Math.ceil(nextTotal / page.per_page) : 0;
+  }
+  return { ...data, pages };
 }
 
 function normalizeSearchText(value: string | number | null | undefined) {
@@ -324,6 +369,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const [backlogOpen, setBacklogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<SprintStatusFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [linkTarget, setLinkTarget] = useState<SprintLinkTarget | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
 
@@ -342,6 +388,22 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   );
 
   const planningQuery = useSprintPlanningWorkspace(workspaceId, filters);
+  const backlogQuery = useInfiniteSprintBacklogTasks(
+    workspaceId,
+    teamId,
+    BACKLOG_LIMIT,
+  );
+  const backlogQueryKey = useMemo(() => queryKeys.pm.sprintBacklogTasks(workspaceId, teamId), [teamId, workspaceId]);
+  const backlogTasks = useMemo(
+    () => backlogQuery.data?.pages.flatMap((page) => page.data) ?? planningQuery.data?.backlog_tasks ?? [],
+    [backlogQuery.data?.pages, planningQuery.data?.backlog_tasks],
+  );
+  const backlogTotal = backlogQuery.data?.pages[0]?.total ?? planningQuery.data?.backlog_total ?? 0;
+  const closeoutsQuery = useSprintCloseouts(workspaceId, { team_id: teamId || undefined });
+  const closeoutBySprintId = useMemo(
+    () => new Map((closeoutsQuery.data?.items ?? []).map((item) => [item.sprint_id, item] as const)),
+    [closeoutsQuery.data?.items],
+  );
   const planningQueryKey = useMemo(
     () => queryKeys.pm.sprintPlanning(workspaceId, filters as Record<string, unknown> | undefined),
     [workspaceId, filters],
@@ -363,42 +425,58 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const filteredWorkspace = useMemo(() => {
     if (!planningQuery.data || isArchived) return planningQuery.data ?? null;
 
+    const workspaceWithCloseouts: SprintPlanningWorkspaceData = {
+      ...planningQuery.data,
+      buckets: (planningQuery.data.buckets ?? []).map((bucket) => ({
+        ...bucket,
+        sprints: (bucket.sprints ?? []).map((card) => ({
+          ...card,
+          closeout: closeoutBySprintId.get(card.sprint.id),
+        })),
+      })),
+    };
+
     const bucketKey = statusFilter === 'upcoming' ? 'upcoming' : statusFilter === 'active' ? 'active' : 'completed';
     const statusBuckets = statusFilter === 'all'
-      ? planningQuery.data.buckets
-      : planningQuery.data.buckets.filter((b) => b.key === bucketKey);
+      ? workspaceWithCloseouts.buckets
+      : workspaceWithCloseouts.buckets.filter((b) => b.key === bucketKey);
 
     if (!normalizedSearchQuery) {
       return statusFilter === 'all'
-        ? planningQuery.data
+        ? workspaceWithCloseouts
         : {
-            ...planningQuery.data,
+            ...workspaceWithCloseouts,
             buckets: statusBuckets,
           };
     }
 
     return {
-      ...planningQuery.data,
+      ...workspaceWithCloseouts,
       buckets: statusBuckets.map((bucket) => ({
         ...bucket,
         sprints: (bucket.sprints ?? []).filter((card) => sprintMatchesSearch(card, normalizedSearchQuery)),
       })),
     };
-  }, [planningQuery.data, statusFilter, isArchived, normalizedSearchQuery]);
+  }, [planningQuery.data, closeoutBySprintId, statusFilter, isArchived, normalizedSearchQuery]);
 
   const filteredArchivedSprints = useMemo(() => {
-    const archivedSprints = archivedQuery.data ?? [];
+    const archivedSprints = (archivedQuery.data ?? []).map((card) => ({
+      ...card,
+      closeout: closeoutBySprintId.get(card.sprint.id),
+    }));
     if (!normalizedSearchQuery) return archivedSprints;
     return archivedSprints.filter((card) => sprintMatchesSearch(card, normalizedSearchQuery));
-  }, [archivedQuery.data, normalizedSearchQuery]);
+  }, [archivedQuery.data, closeoutBySprintId, normalizedSearchQuery]);
 
   const handleAssignTask = async (task: SprintPlanningTaskPreview, sprintId: string | null) => {
     if (!planningQuery.data || !canEdit) return;
     const previous = queryClient.getQueryData<SprintPlanningWorkspaceData>(planningQueryKey) ?? planningQuery.data;
+    const previousBacklog = queryClient.getQueryData<SprintBacklogInfiniteData>(backlogQueryKey);
     const optimistic = applyTaskAssignment(previous, task, sprintId);
     if (optimistic === previous) return;
 
     queryClient.setQueryData(planningQueryKey, optimistic);
+    queryClient.setQueryData<SprintBacklogInfiniteData>(backlogQueryKey, (current) => applyBacklogTaskAssignment(current, task, sprintId));
     syncPreviewQueryCaches(queryClient, workspaceId, optimistic);
     try {
       const { data, error } = await pmTaskService.update(workspaceId, task.id, { sprint_id: sprintId ?? '' });
@@ -410,14 +488,17 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintBacklogTasksRoot(workspaceId) });
       queryClient.invalidateQueries({ queryKey: planningQueryKey });
     } catch (error) {
       queryClient.setQueryData(planningQueryKey, previous);
+      queryClient.setQueryData(backlogQueryKey, previousBacklog);
       syncPreviewQueryCaches(queryClient, workspaceId, previous);
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.task(workspaceId, task.id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintBacklogTasksRoot(workspaceId) });
       queryClient.invalidateQueries({ queryKey: planningQueryKey });
       toast.error(error instanceof Error ? error.message : 'Failed to update task sprint');
     }
@@ -431,9 +512,41 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     });
   };
 
+  const handleOpenLinkTasks = (sprintId: string) => {
+    const card = (planningQuery.data?.buckets ?? [])
+      .flatMap((bucket) => bucket.sprints ?? [])
+      .find((entry) => entry.sprint.id === sprintId);
+    const sprintTeamId = card?.sprint.team_id ?? '';
+    if (!card || !sprintTeamId) {
+      toast.error('Assign this sprint to a team before linking tasks.');
+      return;
+    }
+    setLinkTarget({
+      id: card.sprint.id,
+      name: card.sprint.name,
+      teamId: sprintTeamId,
+      teamName: teams.find((team) => team.id === sprintTeamId)?.name ?? 'this team',
+    });
+  };
+
+  const handleTasksLinked = (result: LinkSprintTasksResponse) => {
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: planningQueryKey }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) }),
+    ]);
+    const linkedLabel = `${result.linked_count} task${result.linked_count === 1 ? '' : 's'}`;
+    if (result.moved_count > 0) {
+      toast.success(`Linked ${linkedLabel}; ${result.moved_count} moved from another sprint.`);
+      return;
+    }
+    toast.success(`Linked ${linkedLabel} to this sprint.`);
+  };
+
   // Check unfiltered data for any sprints (to distinguish "no sprints ever" from "no sprints matching filter")
-  const hasAnySprintUnfiltered = Boolean(planningQuery.data?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
-  const hasAnySprintFiltered = Boolean(filteredWorkspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
+  const hasAnySprintUnfiltered = Boolean(planningQuery.data?.buckets?.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
+  const hasAnySprintFiltered = Boolean(filteredWorkspace?.buckets?.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
   const isSearchFiltered = normalizedSearchQuery.length > 0;
   const isFiltered = statusFilter !== 'all' || isSearchFiltered;
 
@@ -466,6 +579,10 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
         archivedQuery.isLoading ? (
           <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-sm text-muted-foreground">
             Loading archived sprints…
+          </div>
+        ) : archivedQuery.error ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {archivedQuery.error instanceof Error ? archivedQuery.error.message : 'Failed to load archived sprints'}
           </div>
         ) : filteredArchivedSprints.length > 0 ? (
           <div className="space-y-2">
@@ -511,13 +628,32 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           canEdit={canEdit}
           canCreateSprint={canCreateSprint}
           members={members}
+          backlogTasks={backlogTasks}
+          backlogTotal={backlogTotal}
+          backlogHasMore={Boolean(backlogQuery.hasNextPage)}
+          backlogLoadingMore={backlogQuery.isFetchingNextPage}
+          onLoadMoreBacklog={() => void backlogQuery.fetchNextPage()}
           onOpenSprint={(sprintId) => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId } })}
           onOpenTask={handleOpenTask}
           onCreateSprint={() => openCreate('sprint', { teamId: teamId || undefined })}
+          onLinkTasks={handleOpenLinkTasks}
           onCreateTask={handleCreateTask}
           onAssignTask={handleAssignTask}
         />
       )}
+
+      {linkTarget ? (
+        <LinkTasksToSprintDialog
+          open
+          onOpenChange={(open) => { if (!open) setLinkTarget(null); }}
+          workspaceId={workspaceId}
+          sprintId={linkTarget.id}
+          sprintName={linkTarget.name}
+          teamId={linkTarget.teamId}
+          teamName={linkTarget.teamName}
+          onLinked={handleTasksLinked}
+        />
+      ) : null}
     </div>
   );
 }

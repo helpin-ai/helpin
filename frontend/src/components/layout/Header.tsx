@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   PlusSignIcon,
@@ -13,6 +13,7 @@ import { useSupportInboxStore } from "@/stores/supportInboxStore";
 import { usePageHeaderStore } from "@/stores/pageHeaderStore";
 import { buildSettingsRoutePath, SETTINGS_SECTION_LABELS } from "@/lib/settingsSections";
 import { isWorkspaceSupportRoute } from "@/lib/workspaceRoutes";
+import { useSearchCommandStore } from "@/stores/searchCommandStore";
 
 type Crumb = {
   label: string;
@@ -23,7 +24,8 @@ export function Header() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
-  const [searchOpen, setSearchOpen] = useState(false);
+  const searchOpen = useSearchCommandStore((s) => s.open);
+  const setSearchOpen = useSearchCommandStore((s) => s.setOpen);
   const setCreateDialogOpen = useSupportInboxStore((s) => s.setCreateDialogOpen);
   const openGlobalCreate = useGlobalCreateStore((s) => s.openCreate);
   const titleOverride = usePageHeaderStore((s) => s.titleOverride);
@@ -41,7 +43,7 @@ export function Header() {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [setSearchOpen]);
 
   const handleSearchOpenChange = (open: boolean) => {
     setSearchOpen(open);
@@ -94,6 +96,12 @@ export function Header() {
       companies: "Companies",
       deals: "Deals",
       insights: "Insights",
+    };
+
+    const crmDetailLabelMap: Record<string, string> = {
+      contacts: "Contact Detail",
+      companies: "Company Detail",
+      deals: "Deal Detail",
     };
 
     const pmSubMap: Record<string, string> = {
@@ -153,7 +161,7 @@ export function Header() {
         const crmLabel = crmSubMap[crmSub] ?? formatLabel(crmSub);
         if (subRoute[2]) {
           crumbs.push({ label: crmLabel, to: `/w/${slug}/crm/${crmSub}` });
-          crumbs.push({ label: `${crmLabel.replace(/s$/, "")} Detail` });
+          crumbs.push({ label: crmDetailLabelMap[crmSub] ?? `${crmLabel.replace(/s$/, "")} Detail` });
         } else {
           crumbs.push({ label: crmLabel });
         }
@@ -174,7 +182,7 @@ export function Header() {
 
     crumbs.push({ label: sectionMap[section] ?? formatLabel(section) });
     return crumbs;
-  }, [location.pathname, currentWorkspace?.name]);
+  }, [location.pathname]);
 
   return (
     <header className="relative flex h-14 items-center gap-3 bg-card/95 px-3 dark:bg-sidebar after:absolute after:right-3 after:bottom-0 after:left-3 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)] dark:after:bg-sidebar-border">

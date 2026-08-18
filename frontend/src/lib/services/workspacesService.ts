@@ -11,8 +11,10 @@ import type {
 export const workspacesService = {
   list: (organizationId?: string) =>
     api.get<Workspace[]>(organizationId ? `/workspaces?organization_id=${organizationId}` : '/workspaces'),
-  create: (data: { name: string; slug: string; workspace_key: string; organization_id: string; description?: string; website_url?: string; timezone?: string }) =>
+  create: (data: { name: string; slug: string; workspace_key: string; organization_id: string; description?: string; company_product_context?: string; website_url?: string; timezone?: string; setup_goals?: string[] }) =>
     api.post<Workspace>('/workspaces', data),
+  generateCompanyProductDescription: (data: { workspace_name: string; website_url: string; workspace_id?: string }) =>
+    api.post<{ description: string; company_product_context: string }>('/workspaces/context/generate-description', data),
   getBySlug: (slug: string) => api.get<Workspace>(`/workspaces/by-slug/${slug}`),
   update: (id: string, data: Partial<Workspace>) =>
     api.put<Workspace>(`/workspaces/${id}`, data),

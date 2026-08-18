@@ -15,6 +15,7 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
     invocation_mode: 'interactive',
     status: 'running',
     pause_reason: 'none',
+    approval_state: 'not_required',
     title: 'Docs Operator',
     capabilities: {
       live_text_streaming: true,
@@ -77,6 +78,17 @@ describe('resolveCodingSessionComposerState', () => {
       enabled: true,
       mode: 'answer',
       placeholder: 'Answer the agent...',
+    });
+  });
+
+  it('enables chat replies when the runtime is waiting for a user message', () => {
+    const state = resolveCodingSessionComposerState(buildSession({ status: 'paused', pause_reason: 'awaiting_user_message' }));
+
+    expect(state).toMatchObject({
+      visible: true,
+      enabled: true,
+      mode: 'answer',
+      placeholder: 'Reply to continue this chat...',
     });
   });
 

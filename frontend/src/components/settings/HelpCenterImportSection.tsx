@@ -53,11 +53,13 @@ export function HelpCenterImportSection({
   const [jobId, setJobId] = useState('');
   const [jobStatus, setJobStatus] = useState<ImportStatusResponse | null>(null);
   const [starting, setStarting] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: spaces } = useDocsSpaces(workspaceId);
-  const isFinished = jobStatus?.status === 'done' || jobStatus?.status === 'failed';
+  const isFinished =
+    jobStatus?.status === 'done' || jobStatus?.status === 'failed' || jobStatus?.status === 'interrupted';
 
   const startPolling = useCallback((id: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -65,7 +67,7 @@ export function HelpCenterImportSection({
       const { data } = await docsImportService.getStatus(workspaceId, id);
       if (data) {
         setJobStatus(data);
-        if (data.status === 'done' || data.status === 'failed') {
+        if (data.status === 'done' || data.status === 'failed' || data.status === 'interrupted') {
           if (pollRef.current) clearInterval(pollRef.current);
           pollRef.current = null;
         }
@@ -73,26 +75,42 @@ export function HelpCenterImportSection({
     }, 2000);
   }, [workspaceId]);
 
-  // Resume active import job on mount
+  // Resume the newest active server job, including imports started in another browser.
   useEffect(() => {
-    const savedJobId = localStorage.getItem(STORAGE_KEY);
-    if (savedJobId) {
-      docsImportService.getStatus(workspaceId, savedJobId).then(({ data }) => {
-        if (data && (data.status === 'running' || data.status === 'pending')) {
-          setJobId(savedJobId);
-          setJobStatus(data);
-          setStep(2);
-          startPolling(savedJobId);
-        } else if (data && (data.status === 'done' || data.status === 'failed')) {
-          setJobId(savedJobId);
-          setJobStatus(data);
-          setStep(2);
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
-        }
-      });
-    }
+    let active = true;
+    const showJob = (job: ImportStatusResponse) => {
+      if (!active) return;
+      setJobId(job.id);
+      setJobStatus(job);
+      setStep(2);
+      localStorage.setItem(STORAGE_KEY, job.id);
+      if (job.status === 'running' || job.status === 'pending') startPolling(job.id);
+    };
+    const resumeImport = async () => {
+      const { data: jobs } = await docsImportService.listJobs(workspaceId);
+      const runningJob = (jobs ?? []).find(
+        (job) =>
+          job.source === 'helpscout' &&
+          Boolean(job.space_id) &&
+          (job.status === 'running' || job.status === 'pending'),
+      );
+      if (runningJob) {
+        showJob(runningJob);
+        return;
+      }
+
+      const savedJobId = localStorage.getItem(STORAGE_KEY);
+      if (!savedJobId) return;
+      const { data: savedJob } = await docsImportService.getStatus(workspaceId, savedJobId);
+      if (savedJob?.source === 'helpscout') {
+        showJob(savedJob);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    };
+    void resumeImport();
     return () => {
+      active = false;
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [STORAGE_KEY, startPolling, workspaceId]);
@@ -197,6 +215,22 @@ export function HelpCenterImportSection({
     setImportStatus('match_source');
     setJobId('');
     setJobStatus(null);
+  };
+
+  const handleCancel = async () => {
+    if (!jobId) return;
+    setCanceling(true);
+    const { error } = await docsImportService.cancel(workspaceId, jobId);
+    setCanceling(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
+    const { data } = await docsImportService.getStatus(workspaceId, jobId);
+    if (data) setJobStatus(data);
+    toast.success('Import canceled');
   };
 
   const progressPercent = jobStatus && jobStatus.total > 0
@@ -365,8 +399,10 @@ export function HelpCenterImportSection({
             )}
             <Progress value={progressPercent} className="h-2" />
             <p className="text-sm text-muted-foreground text-center">
-              {isFinished
-                ? 'Import complete'
+              {jobStatus?.status === 'interrupted'
+                ? 'Import canceled'
+                : isFinished
+                  ? 'Import complete'
                 : `Importing... ${jobStatus ? jobStatus.completed + jobStatus.failed : 0} of ${jobStatus?.total ?? '...'} articles`}
             </p>
             {!isFinished && jobStatus && jobStatus.completed > 0 && jobStatus.started_at && (() => {
@@ -384,9 +420,14 @@ export function HelpCenterImportSection({
               );
             })()}
             {!isFinished && (
-              <p className="text-xs text-muted-foreground/50 text-center">
-                You can continue using the app. Come back here later to see the progress.
-              </p>
+              <div className="space-y-3 text-center">
+                <p className="text-xs text-muted-foreground/50">
+                  You can continue using the app. Come back here later to see the progress.
+                </p>
+                <Button size="sm" variant="outline" disabled={canceling} onClick={handleCancel}>
+                  {canceling ? 'Canceling...' : 'Cancel Import'}
+                </Button>
+              </div>
             )}
           </div>
 
@@ -450,4 +491,3 @@ export function HelpCenterImportSection({
     </div>
   );
 }
-

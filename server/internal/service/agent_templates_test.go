@@ -82,11 +82,14 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	if competitiveIntel.SystemPrompt == nil || !strings.Contains(*competitiveIntel.SystemPrompt, "{{target_company}}") || !strings.Contains(*competitiveIntel.SystemPrompt, "{{raw_configuration_json}}") {
 		t.Fatalf("expected competitive template prompt placeholders, got %+v", competitiveIntel.SystemPrompt)
 	}
+	if !strings.Contains(*competitiveIntel.SystemPrompt, "runtime's built-in web search") || !strings.Contains(*competitiveIntel.SystemPrompt, "not evidence that a competitor has no public changelog") {
+		t.Fatalf("competitive template must preserve runtime search fallback semantics, got %+v", competitiveIntel.SystemPrompt)
+	}
 	var competitiveAllowedTools []string
 	if err := json.Unmarshal(competitiveIntel.AllowedTools, &competitiveAllowedTools); err != nil {
 		t.Fatalf("unmarshal competitive allowed tools: %v", err)
 	}
-	for _, tool := range []string{"web_search_exa", "fetch_url", "crawl_url", "create_task"} {
+	for _, tool := range []string{"web_search", "fetch_url", "crawl_url", "create_task"} {
 		if !slices.Contains(competitiveAllowedTools, tool) {
 			t.Fatalf("expected competitive template allowed tools to include %q, got %v", tool, competitiveAllowedTools)
 		}
@@ -128,6 +131,13 @@ func TestListAgentTemplatesSeedsSystemTemplates(t *testing.T) {
 	}
 	if dependencyAuditor.SystemPrompt == nil || !strings.Contains(*dependencyAuditor.SystemPrompt, "{{ecosystems}}") || !strings.Contains(*dependencyAuditor.SystemPrompt, "{{raw_configuration_json}}") {
 		t.Fatalf("expected dependency template prompt placeholders, got %+v", dependencyAuditor.SystemPrompt)
+	}
+	var dependencyAllowedTools []string
+	if err := json.Unmarshal(dependencyAuditor.AllowedTools, &dependencyAllowedTools); err != nil {
+		t.Fatalf("unmarshal dependency allowed tools: %v", err)
+	}
+	if !slices.Contains(dependencyAllowedTools, "fetch_url") {
+		t.Fatalf("expected dependency template allowed tools to include fetch_url, got %v", dependencyAllowedTools)
 	}
 	var dependencyTargets []string
 	if err := json.Unmarshal(dependencyAuditor.AllowedTargets, &dependencyTargets); err != nil {
@@ -375,6 +385,9 @@ func TestCreateAgentFromCompetitiveIntelTemplateCreatesCronStarterFlow(t *testin
 	}
 	if result.Agent.SourceTemplateKey != model.AgentTemplateTypeCompetitiveIntel {
 		t.Fatalf("expected source_template_key %q, got %q", model.AgentTemplateTypeCompetitiveIntel, result.Agent.SourceTemplateKey)
+	}
+	if result.Agent.ApprovalMode != "never" {
+		t.Fatalf("expected never approval mode, got %q", result.Agent.ApprovalMode)
 	}
 	if result.Agent.SystemPrompt == nil || !strings.Contains(*result.Agent.SystemPrompt, "You are a competitors changelog tracking agent for Usermaven") || !strings.Contains(*result.Agent.SystemPrompt, "Do not plan or perform discovery of configuration variables") || !strings.Contains(*result.Agent.SystemPrompt, `- competitors: jasper.ai, writesonic.ai`) || !strings.Contains(*result.Agent.SystemPrompt, `"target_company": "Usermaven"`) || !strings.Contains(*result.Agent.SystemPrompt, `"schedule_preset": "daily"`) || !strings.Contains(*result.Agent.SystemPrompt, `"destination_team_id": "team-marketing"`) || strings.Contains(*result.Agent.SystemPrompt, "{{target_company}}") {
 		t.Fatalf("expected configured system prompt, got %+v", result.Agent.SystemPrompt)

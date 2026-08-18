@@ -7,6 +7,9 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const hmrHost = env.VITE_HMR_HOST?.trim()
+  const hmrClientPort = Number(env.VITE_HMR_CLIENT_PORT) || undefined
+
   return {
   plugins: [
     TanStackRouterVite({ autoCodeSplitting: true }),
@@ -30,12 +33,18 @@ export default defineConfig(({ mode }) => {
     headers: {
       'Cache-Control': 'no-store',
     },
-    allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai"],
+    allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai", "azhar.dev.helpin.ai"],
+    ...(hmrHost ? {
+      hmr: { host: hmrHost, protocol: "wss", clientPort: hmrClientPort ?? 443 },
+    } : {}),
   },
   resolve: {
     dedupe: ['react', 'react-dom', '@tanstack/react-query', 'zustand'],
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // The published package declares lib/index.js as its main entry but only
+      // ships the ESM build. Resolve that shipped entry explicitly for Vite.
+      "@helpin-ai/react": path.resolve(__dirname, "./node_modules/@helpin-ai/react/lib/index.es.js"),
       "@helpin-ai/shared": path.resolve(__dirname, "../packages/shared/src/index.ts"),
       "@helpin-ai/support-core": path.resolve(__dirname, "../packages/support-core/src/index.ts"),
       "@helpin-ai/widget-core/styles": path.resolve(__dirname, "../packages/widget-core/src/styles/widget.css"),

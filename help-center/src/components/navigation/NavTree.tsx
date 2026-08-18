@@ -1,6 +1,6 @@
 import { useRouterState } from '@tanstack/react-router'
 import { DocsLink } from '@/components/DocsLink'
-import { PhIcon } from '@/components/PhIcon'
+import { PublicIcon } from '@/components/PublicIcon'
 import {
   Accordion,
   AccordionContent,
@@ -60,21 +60,30 @@ export function NavTree({
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const multilingualEnabled = isMultilingualEnabled(enabledLocales)
   const tree = buildNavTree(navigation)
+  const defaultOpenRoots = tree
+    .filter((node, index) => index === 0 || nodeContainsActivePath(node, {
+      locale,
+      multilingualEnabled,
+      pathname,
+    }))
+    .map((node) => node.item.id)
 
   return (
-    <nav key={pathname} className="px-3 py-4">
-      {tree.map((node, idx) => (
-        <CollectionGroup
-          key={node.item.id}
-          locale={locale}
-          node={node}
-          multilingualEnabled={multilingualEnabled}
-          pathname={pathname}
-          onArticleClick={onArticleClick}
-          isFirst={idx === 0}
-          level={0}
-        />
-      ))}
+    <nav key={pathname} className="py-4 pl-3 pr-5">
+      <Accordion type="multiple" defaultValue={defaultOpenRoots}>
+        {tree.map((node, idx) => (
+          <CollectionGroup
+            key={node.item.id}
+            locale={locale}
+            node={node}
+            multilingualEnabled={multilingualEnabled}
+            pathname={pathname}
+            onArticleClick={onArticleClick}
+            isFirst={idx === 0}
+            level={0}
+          />
+        ))}
+      </Accordion>
     </nav>
   )
 }
@@ -108,44 +117,71 @@ function CollectionGroup({
     node.item.public_id,
   )
   const isActiveCollection = pathname === collectionHref
+  const children = buildMergedChildren(node)
+  const hasExpandableContent = children.length > 0
+  const label = (
+    <span className="flex min-w-0 flex-1 items-start gap-2">
+      {node.item.icon && level === 0 ? (
+        <PublicIcon
+          name={node.item.icon}
+          size={16}
+          className={cn(
+            'mt-0.5 shrink-0',
+            isActiveCollection
+              ? 'text-sidebar-active-foreground'
+              : 'text-muted-foreground',
+          )}
+        />
+      ) : null}
+      <span className="min-w-0 flex-1 whitespace-normal break-words text-left leading-5">
+        {node.item.name}
+      </span>
+    </span>
+  )
 
-  return (
-    <div className={cn(spacing)}>
+  if (!hasExpandableContent) {
+    return (
       <div
         className={cn(
           'flex items-center gap-2 rounded-lg py-[7px]',
+          spacing,
           indent,
           headingClass,
           isActiveCollection && 'bg-sidebar-active text-sidebar-active-foreground',
         )}
       >
-        {node.item.icon && level === 0 ? (
-          <PhIcon
-            name={node.item.icon}
-            size={16}
-            weight="regular"
-            className={cn(
-              'shrink-0',
-              isActiveCollection
-                ? 'text-sidebar-active-foreground'
-                : 'text-muted-foreground',
-            )}
-          />
-        ) : null}
-        <span className="truncate">{node.item.name}</span>
+        {label}
       </div>
+    )
+  }
 
-      <div className="mt-0.5">
-        <MergedChildren
-          children={buildMergedChildren(node)}
-          locale={locale}
-          multilingualEnabled={multilingualEnabled}
-          pathname={pathname}
-          onArticleClick={onArticleClick}
-          level={level}
-        />
-      </div>
-    </div>
+  return (
+    <AccordionItem value={node.item.id} className={cn('border-none', spacing)}>
+      <AccordionTrigger
+        className={cn(
+          indent,
+          'w-full min-w-0 cursor-pointer items-start rounded-lg py-[7px] pr-4 hover:no-underline [&>svg]:mt-0.5',
+          headingClass,
+          isActiveCollection
+            ? 'bg-sidebar-active text-sidebar-active-foreground'
+            : 'hover:bg-muted/50',
+        )}
+      >
+        {label}
+      </AccordionTrigger>
+      <AccordionContent className="pb-0">
+        <div className="mt-0.5">
+          <MergedChildren
+            children={children}
+            locale={locale}
+            multilingualEnabled={multilingualEnabled}
+            pathname={pathname}
+            onArticleClick={onArticleClick}
+            level={level}
+          />
+        </div>
+      </AccordionContent>
+    </AccordionItem>
   )
 }
 
@@ -249,7 +285,7 @@ function NestedCollectionItem({
         to={collectionHref}
         onClick={onArticleClick}
         className={cn(
-          'block rounded-lg py-[7px] text-[13px] transition-colors',
+          'block break-words rounded-lg py-[7px] text-[13px] leading-5 transition-colors',
           spacing,
           indent,
           isActiveCollection
@@ -266,14 +302,16 @@ function NestedCollectionItem({
     <AccordionItem value={node.item.id} className={cn('border-none', spacing)}>
       <AccordionTrigger
         className={cn(
-          'cursor-pointer py-[7px] text-[13px] font-medium hover:no-underline',
           indent,
+          'w-full min-w-0 cursor-pointer items-start py-[7px] pr-4 text-[13px] font-medium hover:no-underline [&>svg]:mt-0.5',
           isActiveCollection
             ? 'bg-sidebar-active text-sidebar-active-foreground'
             : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
         )}
       >
-        <span className="truncate">{node.item.name}</span>
+        <span className="min-w-0 flex-1 whitespace-normal break-words text-left leading-5">
+          {node.item.name}
+        </span>
       </AccordionTrigger>
 
       <AccordionContent className="pb-0">
@@ -325,7 +363,7 @@ function ArticleLink({
       to={href}
       onClick={onArticleClick}
       className={cn(
-        'block rounded-lg py-[7px] text-[13px] transition-colors',
+        'block break-words rounded-lg py-[7px] text-[13px] leading-5 transition-colors',
         indent,
         isActive
           ? 'bg-sidebar-active font-medium text-sidebar-active-foreground'

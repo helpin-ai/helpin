@@ -259,6 +259,147 @@ func docsRedirectStringPtr(value string) *string {
 	return &value
 }
 
+func TestDocsRedirectRepository_UpsertImported(t *testing.T) {
+	t.Run("refreshes destination for the same imported source", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		oldSlug := "setup"
+		oldPath := "/articles/setup-oldpublic"
+		created, err := repo.UpsertImported(ctx, &model.DocsRedirect{
+			ID:                   "redirect-old",
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/article/1-setup",
+			TargetCollectionSlug: "guides",
+			TargetArticleSlug:    &oldSlug,
+			TargetPath:           &oldPath,
+			Type:                 model.RedirectTypeImported,
+			SourceSystem:         docsRedirectStringPtr("helpscout"),
+			SourceObjectType:     docsRedirectStringPtr("article"),
+			SourceObjectID:       docsRedirectStringPtr("source-1"),
+		})
+		if err != nil || !created {
+			t.Fatalf("initial upsert: created=%v err=%v", created, err)
+		}
+
+		newSlug := "setup-updated"
+		newPath := "/articles/setup-updated-newpublic"
+		created, err = repo.UpsertImported(ctx, &model.DocsRedirect{
+			ID:                   "redirect-new",
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/article/1-setup",
+			TargetCollectionSlug: "new-guides",
+			TargetArticleSlug:    &newSlug,
+			TargetPath:           &newPath,
+			Type:                 model.RedirectTypeImported,
+			SourceSystem:         docsRedirectStringPtr("HelpScout"),
+			SourceObjectType:     docsRedirectStringPtr("article"),
+			SourceObjectID:       docsRedirectStringPtr("source-1"),
+		})
+		if err != nil || created {
+			t.Fatalf("refresh upsert: created=%v err=%v", created, err)
+		}
+
+		got, err := repo.GetBySourcePath(ctx, "ws-1", "/article/1-setup")
+		if err != nil {
+			t.Fatalf("get refreshed redirect: %v", err)
+		}
+		if got == nil || got.ID != "redirect-old" || got.TargetPath == nil || *got.TargetPath != newPath {
+			t.Fatalf("redirect destination was not refreshed: %+v", got)
+		}
+		if got.TargetCollectionSlug != "new-guides" || got.TargetArticleSlug == nil || *got.TargetArticleSlug != newSlug {
+			t.Fatalf("redirect slugs were not refreshed: %+v", got)
+		}
+	})
+
+	t.Run("preserves a manual redirect at the same source path", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		manualPath := "/articles/custom-target"
+		manual := model.DocsRedirect{
+			ID:                   "manual-1",
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/article/1-setup",
+			TargetCollectionSlug: "custom",
+			TargetPath:           &manualPath,
+			Type:                 model.RedirectTypeManual,
+		}
+		if err := db.Create(&manual).Error; err != nil {
+			t.Fatalf("seed manual redirect: %v", err)
+		}
+
+		importPath := "/articles/setup-imported"
+		created, err := repo.UpsertImported(ctx, &model.DocsRedirect{
+			ID:                   "imported-1",
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/article/1-setup",
+			TargetCollectionSlug: "guides",
+			TargetPath:           &importPath,
+			Type:                 model.RedirectTypeImported,
+			SourceSystem:         docsRedirectStringPtr("helpscout"),
+			SourceObjectID:       docsRedirectStringPtr("source-1"),
+		})
+		if err != nil || created {
+			t.Fatalf("upsert over manual: created=%v err=%v", created, err)
+		}
+
+		got, err := repo.GetBySourcePath(ctx, "ws-1", "/article/1-setup")
+		if err != nil {
+			t.Fatalf("get manual redirect: %v", err)
+		}
+		if got == nil || got.Type != model.RedirectTypeManual || got.TargetPath == nil || *got.TargetPath != manualPath {
+			t.Fatalf("manual redirect was changed: %+v", got)
+		}
+	})
+
+	t.Run("preserves an imported redirect owned by another source object", func(t *testing.T) {
+		db := setupDocsRedirectTestDB(t)
+		repo := NewDocsRedirectRepository(db)
+		ctx := context.Background()
+
+		originalPath := "/articles/original"
+		original := model.DocsRedirect{
+			ID:                   "imported-original",
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/shared-route",
+			TargetCollectionSlug: "original",
+			TargetPath:           &originalPath,
+			Type:                 model.RedirectTypeImported,
+			SourceSystem:         docsRedirectStringPtr("nextra"),
+			SourceObjectID:       docsRedirectStringPtr("page-1"),
+		}
+		if err := db.Create(&original).Error; err != nil {
+			t.Fatalf("seed imported redirect: %v", err)
+		}
+
+		newPath := "/articles/replacement"
+		created, err := repo.UpsertImported(ctx, &model.DocsRedirect{
+			ID:                   "imported-replacement",
+			WorkspaceID:          "ws-1",
+			SourcePath:           "/shared-route",
+			TargetCollectionSlug: "replacement",
+			TargetPath:           &newPath,
+			Type:                 model.RedirectTypeImported,
+			SourceSystem:         docsRedirectStringPtr("helpscout"),
+			SourceObjectID:       docsRedirectStringPtr("article-1"),
+		})
+		if err != nil || created {
+			t.Fatalf("upsert over other import: created=%v err=%v", created, err)
+		}
+
+		got, err := repo.GetBySourcePath(ctx, "ws-1", "/shared-route")
+		if err != nil {
+			t.Fatalf("get imported redirect: %v", err)
+		}
+		if got == nil || got.ID != original.ID || got.TargetPath == nil || *got.TargetPath != originalPath {
+			t.Fatalf("unrelated imported redirect was changed: %+v", got)
+		}
+	})
+}
+
 // TestDocsRedirectRepository_UpsertWithReconciliation verifies the new
 // Task 7 helper: it upserts on (workspace_id, source_path), breaks any
 // chain where the new target was itself a redirect source, and is a

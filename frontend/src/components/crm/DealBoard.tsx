@@ -11,7 +11,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Maximize01Icon, Minimize01Icon, PlusSignIcon, KanbanIcon } from '@/lib/icons';
+import { CollapseIcon, ExpandIcon, PlusSignIcon, KanbanIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { StageTypeIcon } from '@/lib/crmConstants';
@@ -67,7 +67,7 @@ function Column({
           className="flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-4 transition-colors hover:bg-muted/50"
           onClick={() => onToggleCollapse(stage.id)}
         >
-          <Maximize01Icon className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <ExpandIcon className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <StageTypeIcon stageType={stage.stage_type} className="mb-2 h-4 w-4 shrink-0" />
           <span className="text-xs font-medium text-muted-foreground">{deals.length}</span>
           <div className="mt-3 flex flex-1 items-start">
@@ -106,7 +106,7 @@ function Column({
               className="h-7 w-7"
               onClick={() => onToggleCollapse(stage.id)}
             >
-              <Minimize01Icon className="h-3.5 w-3.5" />
+              <CollapseIcon className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
           {onCreateClick && (

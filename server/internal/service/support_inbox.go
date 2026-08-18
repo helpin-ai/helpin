@@ -21,6 +21,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/email"
+	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -31,7 +32,8 @@ import (
 
 // SupportInboxService contains support business logic.
 type SupportInboxService struct {
-	conversationRepo        *repository.SupportConversationRepository
+	conversationRepo *repository.SupportConversationRepository
+	productAnalyticsEmitter
 	mailboxRepo             *repository.SupportMailboxRepository
 	emailRouteRepo          *repository.SupportEmailRouteRepository
 	emailSenderRepo         *repository.SupportEmailSenderRepository
@@ -46,6 +48,7 @@ type SupportInboxService struct {
 	activitySvc             *PMActivityService
 	wsPublisher             *websocket.Publisher
 	contactRepo             *repository.CRMContactRepository
+	companyRepo             *repository.CRMCompanyRepository
 	userRepo                *repository.UserRepository
 	docsSpaceRepo           *repository.DocsSpaceRepository
 	docsCollectionRepo      *repository.DocsCollectionRepository
@@ -75,6 +78,11 @@ type SupportInboxService struct {
 
 func (s *SupportInboxService) SetDocsSearchRepository(docsSearchRepo *repository.DocsSearchRepository) {
 	s.docsSearchRepo = docsSearchRepo
+}
+
+func (s *SupportInboxService) SetCRMCompanyRepository(companyRepo *repository.CRMCompanyRepository) *SupportInboxService {
+	s.companyRepo = companyRepo
+	return s
 }
 
 var ErrInvalidSupportSearch = errors.New("invalid support search")
@@ -1030,6 +1038,12 @@ func (s *SupportInboxService) SearchConversations(ctx context.Context, params Su
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
 func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, params SupportConversationListParams) (*model.ConversationListResponse, error) {
+	startedAt := time.Now()
+	defer func() {
+		slog.InfoContext(ctx, "listed support inbox conversations",
+			"workspace_id", params.WorkspaceID,
+			"duration_ms", time.Since(startedAt).Milliseconds())
+	}()
 	if params.WorkspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -1589,6 +1603,12 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 		}
 	}
 
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "support_ticket_created:" + ticket.ID, UserID: actorID,
+		WorkspaceID: ticket.WorkspaceID, Name: "support_ticket_created", Source: ticket.Source,
+		OccurredAt: ticket.CreatedAt,
+		Attributes: map[string]any{"entity_id": ticket.ID, "mailbox_id": ticket.MailboxID, "priority": ticket.Priority, "channel": ticket.Channel, "module": "support"},
+	})
 	return ticket, nil
 }
 
@@ -1796,6 +1816,14 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 
 	s.wsPublisher.Publish(buildSupportConversationStatusEvent(ticket, oldStatus, actorID))
 
+	if oldStatus != status && status == model.SupportConversationStatusResolved {
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: fmt.Sprintf("support_ticket_resolved:%s:%d", ticket.ID, ticket.UpdatedAt.UnixNano()),
+			UserID:      actorID, WorkspaceID: workspaceID,
+			Name: "support_ticket_resolved", Source: "api", OccurredAt: ticket.UpdatedAt,
+			Attributes: map[string]any{"entity_id": ticket.ID, "mailbox_id": ticket.MailboxID, "flow_state": ticket.FlowState, "ai_turn_count": ticket.AITurnCount, "module": "support"},
+		})
+	}
 	return ticket, nil
 }
 
@@ -1888,7 +1916,10 @@ func hydrateEmailBodies(
 	if len(logs) == 0 {
 		return
 	}
+	hydrateEmailBodiesFromLogs(messages, logs)
+}
 
+func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.SupportEmailLog) {
 	byMessageID := make(map[string]*model.SupportEmailLog, len(logs))
 	for i := range logs {
 		for _, mid := range logs[i].MessageIDs {
@@ -1909,8 +1940,36 @@ func hydrateEmailBodies(
 			continue
 		}
 		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
-			messages[i].HTMLBody = log.HTMLBody
+			projection := inboundhtml.ProcessedContent{
+				HTML:                 log.HTMLBody,
+				Markdown:             log.EmailVisibleText,
+				QuotedMarkdown:       log.EmailQuotedText,
+				HasQuotedContent:     log.EmailHasQuotedContent,
+				ProjectionConfidence: log.EmailProjectionConfidence,
+				ProjectionVersion:    log.EmailProjectionVersion,
+			}
+			if log.EmailProjectionVersion != inboundhtml.CurrentProjectionVersion {
+				projection = inboundhtml.Project(inboundhtml.ProjectionInput{
+					HTML:              log.HTMLBody,
+					TextBody:          log.StrippedText,
+					StrippedTextReply: log.StrippedText,
+				})
+				var metadata map[string]any
+				if json.Unmarshal([]byte(messages[i].Metadata), &metadata) == nil && forwardedAttributionFromMetadata(metadata) != nil {
+					projection.Markdown = messages[i].Content
+					projection.QuotedMarkdown = ""
+					projection.HasQuotedContent = false
+					projection.ProjectionConfidence = inboundhtml.ProjectionConfidenceNone
+				}
+			}
+
+			messages[i].HTMLBody = projection.HTML
 			messages[i].StrippedText = log.StrippedText
+			messages[i].EmailVisibleText = projection.Markdown
+			messages[i].EmailQuotedText = projection.QuotedMarkdown
+			messages[i].EmailHasQuotedContent = boolPtr(projection.HasQuotedContent)
+			messages[i].EmailProjectionConfidence = projection.ProjectionConfidence
+			messages[i].EmailProjectionVersion = projection.ProjectionVersion
 			messages[i].EmailFrom = log.FromEmail
 			messages[i].EmailTo = log.ToEmail
 			messages[i].EmailReplyTo = log.ReplyTo
@@ -2007,11 +2066,16 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
 	}
-	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
-	if s.linkPreviewService != nil {
-		s.linkPreviewService.EnrichMessage(ctx, msg)
+	if req.AIAssisted {
+		metadata := map[string]any{}
+		if strings.TrimSpace(msg.Metadata) != "" {
+			_ = json.Unmarshal([]byte(msg.Metadata), &metadata)
+		}
+		metadata["ai_assisted"] = true
+		metaJSON, _ := json.Marshal(metadata)
+		msg.Metadata = string(metaJSON)
 	}
-
+	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
 	// Before persisting a teammate's first public reply, emit a widget-visible
 	// "{name} joined the conversation" system message so the customer sees a
 	// centered pill immediately ahead of the reply — Intercom's pattern.
@@ -2036,6 +2100,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, derefString(senderUserID)))
+	s.enrichSupportMessageLinksAsync(msg, derefString(senderUserID))
 
 	// Emit mention notifications after message creation.
 	if len(mentionedUserIDs) > 0 {
@@ -2158,11 +2223,61 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" {
+		source := "api"
+		if msg.SenderType == "agent" {
+			source = "agent"
+		}
+		s.trackProductEvent(ctx, ProductAnalyticsEvent{
+			SemanticKey: "support_reply_sent:" + msg.ID, UserID: derefString(senderUserID),
+			WorkspaceID: workspaceID, Name: "support_reply_sent", Source: source, OccurredAt: msg.CreatedAt,
+			Attributes: map[string]any{"entity_id": msg.ID, "conversation_id": ticketID, "sender_type": msg.SenderType, "ai_assisted": req.AIAssisted, "channels": req.Channels, "module": "support"},
+		})
+	}
 	return msg, nil
+}
+
+// enrichSupportMessageLinksAsync enriches a persisted message without making
+// the reply request wait on arbitrary external websites. A later update event
+// lets inbox clients refresh the message and render the preview when ready.
+func (s *SupportInboxService) enrichSupportMessageLinksAsync(msg *model.SupportMessage, actorID string) {
+	if s.linkPreviewService == nil || s.messageRepo == nil || msg == nil {
+		return
+	}
+	message := *msg
+	go func() {
+		previewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		before := message.Metadata
+		s.linkPreviewService.EnrichMessage(previewCtx, &message)
+		if message.Metadata == before {
+			return
+		}
+		if err := s.messageRepo.UpdateMetadata(previewCtx, message.ID, message.Metadata); err != nil {
+			slog.WarnContext(previewCtx, "persist support link preview metadata failed", "message_id", message.ID, "error", err)
+			return
+		}
+		if s.wsPublisher != nil {
+			s.wsPublisher.Publish(websocket.SupportMessageUpdatedEvent(message.WorkspaceID, &message, actorID))
+		}
+	}()
 }
 
 // LinkConversationStory links a conversation to a task.
 func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspaceID, ticketID, storyID, actorID string) error {
+	trimmed := strings.TrimSpace(storyID)
+	if trimmed == "" {
+		return fmt.Errorf("task_id is required")
+	}
+	return s.UpdateConversationLinkedTask(ctx, workspaceID, ticketID, &trimmed, actorID)
+}
+
+// UpdateConversationLinkedTask sets or clears the PM task associated with a
+// support conversation and keeps the generic association table synchronized.
+func (s *SupportInboxService) UpdateConversationLinkedTask(ctx context.Context, workspaceID, ticketID string, storyID *string, actorID string) error {
+	if s.assocRepo == nil {
+		return fmt.Errorf("CRM association repository is unavailable")
+	}
 	ticket, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
 	if err != nil {
 		return err
@@ -2171,24 +2286,43 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 		return fmt.Errorf("ticket not found")
 	}
 
-	ticket.LinkedTaskID = &storyID
+	var normalizedTaskID *string
+	if storyID != nil && strings.TrimSpace(*storyID) != "" {
+		trimmed := strings.TrimSpace(*storyID)
+		if s.taskService != nil {
+			task, err := s.taskService.GetByID(ctx, trimmed)
+			if err != nil || task == nil || task.Task.WorkspaceID != workspaceID {
+				return fmt.Errorf("task not found")
+			}
+		}
+		normalizedTaskID = &trimmed
+	}
+
+	ticket.LinkedTaskID = normalizedTaskID
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
 	}
-
-	assoc := &model.CRMAssociation{
-		WorkspaceID:    workspaceID,
-		FromObjectType: model.CRMObjectSupportConversation,
-		FromObjectID:   ticketID,
-		ToObjectType:   model.CRMObjectTask,
-		ToObjectID:     storyID,
-	}
-	if err := s.assocRepo.Create(ctx, assoc); err != nil {
+	existing, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectSupportConversation, ticketID)
+	if err != nil {
 		return err
+	}
+	for _, assoc := range existing {
+		otherType, otherID := otherAssociationSide(assoc, model.CRMObjectSupportConversation, ticketID)
+		if otherType == model.CRMObjectTask && (normalizedTaskID == nil || otherID != *normalizedTaskID) {
+			if err := s.assocRepo.Delete(ctx, assoc.ID); err != nil {
+				return err
+			}
+		}
+	}
+	if normalizedTaskID != nil {
+		assoc := &model.CRMAssociation{WorkspaceID: workspaceID, FromObjectType: model.CRMObjectSupportConversation, FromObjectID: ticketID, ToObjectType: model.CRMObjectTask, ToObjectID: *normalizedTaskID}
+		if err := s.assocRepo.Create(ctx, assoc); err != nil {
+			return err
+		}
 	}
 
 	if s.activitySvc != nil {
-		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_task_id"), nil, &storyID, nil)
+		_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", ticketID, &actorID, "updated", strPtr("linked_task_id"), nil, normalizedTaskID, nil)
 	}
 
 	s.wsPublisher.Publish(websocket.Event{
@@ -2210,6 +2344,10 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 ) (*model.CreateTaskFromConversationResponse, error) {
 	if s == nil || s.taskService == nil {
 		return nil, fmt.Errorf("task service is unavailable")
+	}
+	teamID := trimOptionalPtr(req.TeamID)
+	if teamID == nil {
+		return nil, fmt.Errorf("team_id is required")
 	}
 
 	conversation, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
@@ -2258,7 +2396,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		WorkflowStateID:   trimPtrValue(req.WorkflowStateID),
 		EpicID:            trimOptionalPtr(req.EpicID),
 		SprintID:          trimOptionalPtr(req.SprintID),
-		TeamID:            trimOptionalPtr(req.TeamID),
+		TeamID:            teamID,
 		OwnerMemberIDs:    optionalTrimmedStringSlice(req.OwnerMemberID),
 		RequesterID:       nil,
 		RequesterMemberID: requesterMemberID,
@@ -2298,7 +2436,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	if err != nil {
 		return nil, err
 	}
-	s.emitTaskCreatedSystemMessage(ctx, workspaceID, conversationID, actorID, detail.Task.TaskKey, detail.Task.Name)
+	s.emitTaskCreatedSystemMessage(ctx, workspaceID, conversationID, actorID, taskID, detail.Task.TaskKey, detail.Task.Name)
 
 	slog.InfoContext(ctx, "created task from support conversation",
 		"workspace_id", workspaceID,
@@ -2380,6 +2518,9 @@ func (s *SupportInboxService) copyConversationAssociationsToTask(
 
 	if conversation.CRMContactID != nil && strings.TrimSpace(*conversation.CRMContactID) != "" {
 		contactIDs[strings.TrimSpace(*conversation.CRMContactID)] = struct{}{}
+	}
+	if conversation.CRMCompanyID != nil && strings.TrimSpace(*conversation.CRMCompanyID) != "" {
+		companyIDs[strings.TrimSpace(*conversation.CRMCompanyID)] = struct{}{}
 	}
 
 	assocs, err := s.assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectSupportConversation, conversation.ID)
@@ -3066,6 +3207,56 @@ func (s *SupportInboxService) UpdateConversationCRMContact(ctx context.Context, 
 	return s.updateConversationCRMContact(ctx, workspaceID, conversationID, contactID, &actorID)
 }
 
+// UpdateConversationCRMCompany sets or clears stable company context.
+func (s *SupportInboxService) UpdateConversationCRMCompany(ctx context.Context, workspaceID, conversationID string, companyID *string, actorID string) (*model.SupportConversation, error) {
+	ticket, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if ticket == nil {
+		return nil, fmt.Errorf("conversation not found")
+	}
+
+	var normalizedCompanyID *string
+	if companyID != nil && strings.TrimSpace(*companyID) != "" {
+		if s.companyRepo == nil {
+			return nil, fmt.Errorf("company repository unavailable")
+		}
+		trimmed := strings.TrimSpace(*companyID)
+		company, err := s.companyRepo.GetByID(ctx, trimmed)
+		if err != nil {
+			return nil, err
+		}
+		if company == nil || company.WorkspaceID != workspaceID {
+			return nil, fmt.Errorf("company not found")
+		}
+		normalizedCompanyID = &trimmed
+		if ticket.CRMContactID != nil && strings.TrimSpace(*ticket.CRMContactID) != "" && s.assocRepo != nil {
+			if err := s.ensureContactCompanyMembershipTx(ctx, s.assocRepo, workspaceID, *ticket.CRMContactID, trimmed); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	oldCompanyID := ticket.CRMCompanyID
+	now := time.Now().UTC()
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+		"crm_company_id": normalizedCompanyID,
+		"updated_at":     now,
+	}); err != nil {
+		return nil, err
+	}
+	ticket.CRMCompanyID = normalizedCompanyID
+	ticket.UpdatedAt = now
+	if s.activitySvc != nil {
+		if err := s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversationID, &actorID, "updated", strPtr("crm_company_id"), oldCompanyID, normalizedCompanyID, nil); err != nil {
+			slog.ErrorContext(ctx, "failed to log support conversation company update", "error", err, "workspace_id", workspaceID, "conversation_id", conversationID)
+		}
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: conversationID, WorkspaceID: workspaceID, ActorID: actorID})
+	return ticket, nil
+}
+
 // ListContactConversations returns support conversations linked to a CRM contact.
 func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
 	conversations, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
@@ -3192,18 +3383,19 @@ func (s *SupportInboxService) matchOrCreateCRMCompanyIdentityTx(ctx context.Cont
 	var company *model.CRMCompany
 	var err error
 	if resolved.externalID != "" {
+		if err := companyRepo.LockExternalID(ctx, workspaceID, resolved.externalID); err != nil {
+			return nil, err
+		}
 		company, err = companyRepo.GetByExternalID(ctx, workspaceID, resolved.externalID)
 		if err != nil {
 			return nil, err
 		}
-	}
-	if company == nil && resolved.domain != "" {
+	} else if resolved.domain != "" {
 		company, err = companyRepo.GetByDomain(ctx, workspaceID, resolved.domain)
 		if err != nil {
 			return nil, err
 		}
-	}
-	if company == nil && resolved.name != "" {
+	} else if resolved.name != "" {
 		company, err = companyRepo.GetByName(ctx, workspaceID, resolved.name)
 		if err != nil {
 			return nil, err
@@ -3301,43 +3493,15 @@ func syncCRMCompanyIdentity(company *model.CRMCompany, identity resolvedWidgetCo
 	return updated
 }
 
-func (s *SupportInboxService) ensurePrimaryContactCompanyAssociationTx(ctx context.Context, assocRepo *repository.CRMAssociationRepository, workspaceID, contactID, companyID string) error {
-	assoc := &model.CRMAssociation{
-		WorkspaceID:      workspaceID,
-		FromObjectType:   model.CRMObjectContact,
-		FromObjectID:     contactID,
-		ToObjectType:     model.CRMObjectCompany,
-		ToObjectID:       companyID,
-		AssociationLabel: crmAssociationStringPtr(primaryCompanyAssociationLabel),
-	}
-	if err := assocRepo.Create(ctx, assoc); err != nil {
-		return err
-	}
-
-	assocs, err := assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contactID)
-	if err != nil {
-		return err
-	}
-	for _, existing := range assocs {
-		otherType, otherID := otherAssociationSide(existing, model.CRMObjectContact, contactID)
-		if otherType != model.CRMObjectCompany {
-			continue
-		}
-		if existing.ID == assoc.ID || otherID == companyID {
-			if !isPrimaryCompanyAssociationLabel(existing.AssociationLabel) {
-				if err := assocRepo.UpdateLabel(ctx, existing.ID, crmAssociationStringPtr(primaryCompanyAssociationLabel)); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		if isPrimaryCompanyAssociationLabel(existing.AssociationLabel) {
-			if err := assocRepo.UpdateLabel(ctx, existing.ID, nil); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+func (s *SupportInboxService) ensureContactCompanyMembershipTx(ctx context.Context, assocRepo *repository.CRMAssociationRepository, workspaceID, contactID, companyID string) error {
+	_, err := NewCRMAssociationService(assocRepo).Create(ctx, model.CreateCRMAssociationRequest{
+		WorkspaceID:    workspaceID,
+		FromObjectType: model.CRMObjectContact,
+		FromObjectID:   contactID,
+		ToObjectType:   model.CRMObjectCompany,
+		ToObjectID:     companyID,
+	})
+	return err
 }
 
 func resolveWidgetCompanyPayload(payload model.JSONB) *resolvedWidgetCompany {
@@ -3403,6 +3567,10 @@ func mergeCRMCustomProperties(existing, incoming model.JSONB) model.JSONB {
 		merged[key] = value
 	}
 	for key, value := range incoming {
+		if value == nil {
+			delete(merged, key)
+			continue
+		}
 		merged[key] = value
 	}
 	return merged
@@ -3913,6 +4081,7 @@ func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, 
 	}
 
 	var normalizedContactID *string
+	var linkedContact *model.CRMContact
 	if contactID != nil {
 		trimmed := strings.TrimSpace(*contactID)
 		if trimmed != "" {
@@ -3923,6 +4092,7 @@ func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, 
 			if contact == nil || contact.WorkspaceID != workspaceID {
 				return nil, fmt.Errorf("contact not found")
 			}
+			linkedContact = contact
 			normalizedContactID = &trimmed
 		}
 	}
@@ -3935,6 +4105,17 @@ func (s *SupportInboxService) updateConversationCRMContact(ctx context.Context, 
 	fields := map[string]any{
 		"crm_contact_id": normalizedContactID,
 		"updated_at":     time.Now().UTC(),
+	}
+	if linkedContact != nil {
+		contactName := strings.TrimSpace(strings.Join(
+			[]string{linkedContact.FirstName, derefString(linkedContact.LastName)}, " ",
+		))
+		fields["customer_name"] = contactName
+		fields["customer_email"] = linkedContact.Email
+		fields["customer_phone"] = linkedContact.Phone
+		ticket.CustomerName = &contactName
+		ticket.CustomerEmail = linkedContact.Email
+		ticket.CustomerPhone = linkedContact.Phone
 	}
 	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
 		return nil, err
@@ -4118,7 +4299,7 @@ func (s *SupportInboxService) emitEmailRecipientsUpdatedSystemMessage(ctx contex
 	}
 }
 
-func (s *SupportInboxService) emitTaskCreatedSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, taskKey, taskName string) {
+func (s *SupportInboxService) emitTaskCreatedSystemMessage(ctx context.Context, workspaceID, conversationID, actorUserID, taskID, taskKey, taskName string) {
 	if s.messageRepo == nil {
 		return
 	}
@@ -4161,6 +4342,9 @@ func (s *SupportInboxService) emitTaskCreatedSystemMessage(ctx context.Context, 
 		IsInternal:        true,
 		MessageType:       "system",
 		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventTaskCreated),
+	}
+	if metadata, err := json.Marshal(map[string]string{"task_id": strings.TrimSpace(taskID)}); err == nil {
+		msg.Metadata = string(metadata)
 	}
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create support task created system message", "workspace_id", workspaceID, "conversation_id", conversationID, "error", err)

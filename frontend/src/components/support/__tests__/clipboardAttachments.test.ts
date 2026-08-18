@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getClipboardImageFiles } from '../clipboardAttachments';
+import { getClipboardImageFiles } from '@/lib/clipboardAttachments';
 
 describe('getClipboardImageFiles', () => {
   it('returns only image files from clipboard data', () => {

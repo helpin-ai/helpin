@@ -60,6 +60,7 @@ func TestPMSprintService_GetCloseout_IncludesCloseoutAndInboundRollover(t *testi
 
 	svc := NewPMSprintService(
 		repository.NewPMSprintRepository(db),
+		repository.NewPMTaskRepository(db),
 		repository.NewPMLabelRepository(db),
 		repository.NewPMAttachmentRepository(db),
 		repository.NewWorkspaceRepository(db),
@@ -165,6 +166,7 @@ func TestPMSprintService_ListCloseouts_FiltersByAccessibleTeams(t *testing.T) {
 
 	svc := NewPMSprintService(
 		repository.NewPMSprintRepository(db),
+		repository.NewPMTaskRepository(db),
 		repository.NewPMLabelRepository(db),
 		repository.NewPMAttachmentRepository(db),
 		repository.NewWorkspaceRepository(db),

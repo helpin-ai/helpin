@@ -1,11 +1,44 @@
 package service
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestOrderedModelTiersUsesCustomerFacingOrder(t *testing.T) {
+	input := map[string]struct{}{"flagship": {}, "small": {}, "large": {}}
+	want := []string{"small", "large", "flagship"}
+	if got := orderedModelTiers(input); !reflect.DeepEqual(got, want) {
+		t.Fatalf("orderedModelTiers() = %#v, want %#v", got, want)
+	}
+	if len(input) != 3 {
+		t.Fatal("orderedModelTiers mutated its input")
+	}
+}
+
+func TestAIUsageAllowancePercentage(t *testing.T) {
+	tests := []struct {
+		name      string
+		charged   int64
+		allowance int64
+		want      float64
+	}{
+		{name: "part of allowance", charged: 25, allowance: 1_000, want: 2.5},
+		{name: "above allowance", charged: 1_125, allowance: 1_000, want: 112.5},
+		{name: "no allowance", charged: 25, allowance: 0, want: 0},
+		{name: "no charge", charged: 0, allowance: 1_000, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := aiUsageAllowancePercentage(tt.charged, tt.allowance); got != tt.want {
+				t.Fatalf("aiUsageAllowancePercentage(%d, %d) = %v, want %v", tt.charged, tt.allowance, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestPriceCentsForPlan(t *testing.T) {
 	tests := []struct {
@@ -132,44 +165,5 @@ func TestParseUsageWindow(t *testing.T) {
 				t.Errorf("end = %s, want %s", end, tt.wantEnd)
 			}
 		})
-	}
-}
-
-// TestBuildUsageFeatures verifies the per-feature aggregation, cost lookup, and
-// percentage math that GetWorkspaceUsage applies to grouped ledger rows.
-func TestBuildUsageFeatures(t *testing.T) {
-	featureCredits := map[string]int{
-		BillingFeatureCodingRun:      300,
-		BillingFeatureSupportAIReply: 100,
-	}
-	featureUsage := map[string]int{
-		BillingFeatureCodingRun:      3,
-		BillingFeatureSupportAIReply: 20,
-	}
-	total := 400
-
-	features := buildUsageFeatures(featureCredits, featureUsage, total)
-
-	if len(features) != 2 {
-		t.Fatalf("expected 2 features, got %d", len(features))
-	}
-	// Sorted by credits desc: coding run first.
-	if features[0].FeatureKey != BillingFeatureCodingRun {
-		t.Fatalf("expected coding_run first, got %s", features[0].FeatureKey)
-	}
-	if features[0].Cost != 100 {
-		t.Errorf("coding cost = %d, want 100", features[0].Cost)
-	}
-	if features[0].Usage != 3 {
-		t.Errorf("coding usage = %d, want 3", features[0].Usage)
-	}
-	if features[0].Pct != 75 {
-		t.Errorf("coding pct = %v, want 75", features[0].Pct)
-	}
-	if features[1].FeatureKey != BillingFeatureSupportAIReply {
-		t.Errorf("expected support reply second, got %s", features[1].FeatureKey)
-	}
-	if features[1].Pct != 25 {
-		t.Errorf("support pct = %v, want 25", features[1].Pct)
 	}
 }

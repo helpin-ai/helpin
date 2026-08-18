@@ -4,6 +4,7 @@ import { planSummaryToRunPlan, type CommandBarRunPlan } from '@/components/agent
 import { commandBarService } from '@/lib/services/commandBarService';
 import type { AgentRun, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { buildRunsById, pickLatestDeliveryPlan, planRunIdSet } from './epicDeliveryDag';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 
 export interface EpicDeliveryPlanState {
   plan: CommandBarRunPlan | null;
@@ -42,6 +43,7 @@ export function useEpicDeliveryPlan(workspaceId: string, epicId: string): EpicDe
     if (!plan) return;
     const runIds = planRunIdSet(plan);
     const handler = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event)) return;
       const detail = (event as CustomEvent<{ entity_id?: string }>).detail;
       const runId = detail?.entity_id;
       if (runIds.has(runId ?? '') || (plan.status === 'running' && runIds.size === 0)) {

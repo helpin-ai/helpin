@@ -23,6 +23,7 @@ interface AgentPickerCardProps {
   runDisabled?: boolean;
   running?: boolean;
   className?: string;
+  variant?: 'card' | 'inline';
 }
 
 const DEFAULT_PRESET: Record<RunnableTarget, AgentPresetKey> = {
@@ -74,6 +75,7 @@ export function AgentPickerCard({
   runDisabled = false,
   running = false,
   className,
+  variant = 'card',
 }: AgentPickerCardProps) {
   const { data: agents = [], isLoading } = useAgents(workspaceId);
 
@@ -110,7 +112,12 @@ export function AgentPickerCard({
   }, [autoSelectDefault, defaultAgent, disabled, onChange, value]);
 
   return (
-    <section className={cn('rounded-lg border border-border/60 bg-background px-3 py-2.5', className)}>
+    <section className={cn(
+      variant === 'inline'
+        ? 'border-t border-border/60 bg-transparent px-6 py-4'
+        : 'rounded-lg border border-border/60 bg-background px-3 py-2.5',
+      className,
+    )}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-start">
           <div className="min-w-0">
@@ -124,7 +131,7 @@ export function AgentPickerCard({
           </div>
         </div>
 
-        <div className="flex min-w-0 items-center gap-2 sm:w-[260px] sm:shrink-0">
+        <div className={cn('flex min-w-0 items-center gap-2 sm:shrink-0', variant === 'inline' ? 'sm:w-[250px]' : 'sm:w-[260px]')}>
           <SidebarPopoverSelect
             value={selectedValue}
             options={options}
@@ -133,7 +140,13 @@ export function AgentPickerCard({
             searchPlaceholder="Search agents..."
             disabled={disabled || isLoading}
             showChevron
-            triggerClassName="h-9 flex-1 justify-start border border-input bg-background px-2 text-xs hover:bg-accent"
+            triggerVariant={variant === 'inline' ? 'underline' : undefined}
+            triggerClassName={cn(
+              'flex-1 justify-start text-xs',
+              variant === 'inline'
+                ? 'h-8 px-0 hover:bg-transparent'
+                : 'h-9 border-input bg-background px-2 hover:bg-accent',
+            )}
             emptyContent={<div className="px-2 py-3 text-xs text-muted-foreground">No runnable agents found.</div>}
             renderTrigger={() => (
               <>

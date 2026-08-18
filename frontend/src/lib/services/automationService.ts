@@ -7,10 +7,12 @@ import type {
 } from '../types';
 import type {
   Agent,
+  AgentFleetResponse,
   AgentAnalyticsResponse,
   AgentTemplate,
   AgentVersion,
   AgentRun,
+  AgentRunAttentionCountResponse,
   AgentRunArtifact,
   AgentRunMessage,
   AgentTriggerUsageSummary,
@@ -145,6 +147,9 @@ export const automationService = {
   listAgents: (workspaceId: string) =>
     api.get<Agent[]>(`/automation/agents${qs(workspaceId)}`),
 
+  getAgentFleet: (workspaceId: string, signal?: AbortSignal) =>
+    api.get<AgentFleetResponse>(`/automation/agent-fleet${qs(workspaceId)}`, { signal }),
+
   listAgentTemplates: (workspaceId: string) =>
     api.get<AgentTemplate[]>(`/automation/agent-templates${qs(workspaceId)}`),
 
@@ -196,6 +201,9 @@ export const automationService = {
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>
     api.get<PaginatedResponse<AgentRun[]>>(`/automation/runs${qs(workspaceId)}&page=${page}&per_page=${perPage}`),
 
+  getRunAttentionCount: (workspaceId: string) =>
+    api.get<AgentRunAttentionCountResponse>(`/automation/runs/attention-count${qs(workspaceId)}`),
+
   listTargetRuns: (workspaceId: string, targetType: string, targetId: string) =>
     api.get<AgentRun[]>(`/automation/runs${qs(workspaceId)}&target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}`),
 
@@ -210,6 +218,9 @@ export const automationService = {
 
   listRunArtifacts: (workspaceId: string, runId: string) =>
     api.get<AgentRunArtifact[]>(`/automation/runs/${runId}/artifacts${qs(workspaceId)}`),
+
+  getArtifactContentURL: (workspaceId: string, artifactId: string) =>
+    api.get<{ url: string; expires_at: string }>(`/agent-artifacts/${encodeURIComponent(artifactId)}/content-url${qs(workspaceId)}`),
 
   resumeRun: (workspaceId: string, runId: string, payload: ResumeAgentRunRequest) =>
     api.post<AgentRun>(`/automation/runs/${runId}/resume${qs(workspaceId)}`, payload),

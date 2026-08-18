@@ -64,7 +64,7 @@ Examples:
 
 - `create_document`: product mutation, so command-backed is appropriate
 - `list_collections`: product read/query, so runtime-tool-only is appropriate unless a broader shared backend contract emerges
-- `web_search_exa`: external search capability, so runtime-tool-only is appropriate
+- `web_search`: external search capability, so runtime-tool-only is appropriate
 
 ### Agent-Facing Runtime Tools
 
@@ -131,6 +131,62 @@ The main tool families in the app are:
 - PM, Docs, CRM, Workspace, and Support tools
 
 Some mutation tools use shared internal-command backing for consistency. That should continue for new reusable business mutations, but it does not change the tool contract itself.
+
+### Tool risk and Dock execution
+
+Every mutating tool has a runtime risk classification: `routine_mutation`,
+`sensitive_mutation`, or `destructive_mutation`; reads resolve to `read`.
+Unclassified mutations default to sensitive. Risk belongs to canonical tool
+metadata, not an individual agent prompt or a list of Ask-Agent exceptions.
+
+The `ask_agent` preset uses `approval_mode=risk_based`. Reads and routine,
+reversible product mutations execute directly. Sensitive and destructive calls
+are intercepted by Agent Runtime before execution, persisted with their exact
+input, and executed once after approval. The Helpin command bridge continues to
+enforce authentication, actor permissions, workspace/target scope, and domain
+invariants, but does not ask for a second approval when the runtime owns the
+configured policy.
+
+`prepare_dock_execution` remains as a backward-compatible and explicit grouped
+approval mechanism. Agents using `approval_mode=never` retain the legacy host
+proposal guard. Repository writes, delivery/release actions, outbound support,
+publishing, deletion, and force or bulk destructive operations must remain
+sensitive or destructive. Read-only repository checkout, file/search/symbol,
+and commit-history tools can be exposed to the Dock directly.
+
+The Dock's delegation decision is capability-driven. `get_my_capabilities`
+reads the current run's actual immutable `allowed_tools` input and groups it
+into repository reads, product reads/mutations, skills, interactions/web, and
+agent orchestration. Prompts should tell the Dock to complete all covered
+steps itself and delegate only the smallest step needing an unavailable or
+intentionally isolated capability. Paused Dock runs are rotated when their
+stored tool set differs from the current scoped preset, so this introspection
+does not remain stale across tool or permission changes.
+
+Legacy Dock runs without runtime-owned approval still receive structured
+`dock_execution_approval_required` recovery errors. New risk-based runs must
+not use that failure-first flow: runtime approval happens before tool execution.
+
+Long-lived Dock runs keep `target_type=workspace` even when the user selects a
+document, task, or CRM record as page context. Product tools that expose an
+explicit `*_id` field must accept the workspace run target when safe, treat the
+explicit ID as canonical, and verify that entity belongs to the command
+workspace. Page selection must not require recreating or retargeting the run.
+
+### Optional skill access
+
+Each agent version owns one complete `system_prompt`. Product prompt modules
+may be used internally to generate a default version, but they are not exposed
+as attached skills and are not runtime dependencies. Approval and completion
+requirements are carried separately as structured runtime policy. Optional
+skills use these runtime-owned tools on both
+`native_sdk` and Codex:
+
+- `find_skills {"query"?: string, "limit"?: integer}` lists or searches metadata for the current agent's optional skills.
+- `read_skill {"key"?: string, "skill_id"?: string, "path"?: string, "max_bytes"?: integer}` reads one selected package. Exactly one of `key` or `skill_id` is required; `path` defaults to `SKILL.md` and must remain inside the package.
+
+Runtime-local staged skill package tools remain namespaced and separate from
+the canonical optional-skill catalog tools above.
 
 Do not interpret "business tool" to mean "must be command-backed". The key question is whether the tool is a reusable mutation with product invariants, not whether it merely touches product data or reads from product tables.
 
@@ -315,7 +371,7 @@ If a field does not fit one of those patterns, document why it needs to exist.
 
 Use `snake_case` action names for canonical aliases:
 
-- `read_file`
+- `read_files`
 - `list_documents`
 - `update_task_state`
 - `request_user_input`

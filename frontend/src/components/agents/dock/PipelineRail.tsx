@@ -1,6 +1,7 @@
 import type { AgentRun } from '@/lib/pmTypes';
-import type { CommandBarRunPlan } from '@/stores/commandBarStore';
+import type { CommandBarRunPlan } from './planSummary';
 import { cn } from '@/lib/utils';
+import { displayAgentName } from '@/lib/agentTerminology';
 import { StatusDot } from './StatusDot';
 import { stepDotState } from './utils';
 
@@ -15,14 +16,15 @@ export function PipelineRail({ plan, runsById }: PipelineRailProps) {
     <div className="flex items-center gap-1 pt-1.5">
       {plan.steps.map((step, i) => {
         const state = stepDotState(plan, i, runsById);
+        const agentName = displayAgentName(step.agent_name);
         return (
           <div key={`${step.agent_id}-${i}`} className="flex flex-1 items-center gap-1">
             <StatusDot state={state} />
             <span
               className="truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
-              title={step.agent_name}
+              title={agentName}
             >
-              {step.agent_name}
+              {agentName}
             </span>
             {i < plan.steps.length - 1 ? (
               <span

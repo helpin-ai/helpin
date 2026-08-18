@@ -14,7 +14,7 @@ Adapted from the MIT-licensed `competitor-profiling`, `competitors`, and `sales-
 ## Research Process
 
 - Start with configured or user-provided competitors.
-- Use `web_search_exa` for official websites, pricing pages, docs, changelogs, reviews, and comparison pages.
+- Use `web_search` for official websites, pricing pages, docs, changelogs, reviews, and comparison pages.
 - Use `fetch_url` before citing facts.
 - Use `crawl_url` on official domains when key pages are hard to find.
 - Cross-check public claims against Helpin CRM objections and buyer-signal mentions when available.

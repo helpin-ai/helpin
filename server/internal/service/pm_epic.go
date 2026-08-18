@@ -14,16 +14,19 @@ import (
 
 // PMEpicService contains epic business logic.
 type PMEpicService struct {
-	epicRepo            *repository.PMEpicRepository
+	epicRepo *repository.PMEpicRepository
+	productAnalyticsEmitter
 	taskRepo            *repository.PMTaskRepository
 	labelRepo           *repository.PMLabelRepository
 	gitRepo             *repository.GitRepositoryRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	workspaceRepo       *repository.WorkspaceRepository
+	workflowRepo        *repository.PMWorkflowRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
 	agentService        *AgentService
+	gitService          *GitService
 	logger              *slog.Logger
 }
 
@@ -48,6 +51,16 @@ func (s *PMEpicService) SetAgentService(svc *AgentService) {
 	s.agentService = svc
 }
 
+// SetGitService enables task delivery-target inheritance after epic linking.
+func (s *PMEpicService) SetGitService(svc *GitService) {
+	s.gitService = svc
+}
+
+// SetWorkflowRepository enables human-readable epic state activity metadata.
+func (s *PMEpicService) SetWorkflowRepository(repo *repository.PMWorkflowRepository) {
+	s.workflowRepo = repo
+}
+
 // requireAdmin checks that the actor has owner or admin role.
 func (s *PMEpicService) requireAdmin(ctx context.Context, workspaceID, actorID string) error {
 	if workspaceID == "" || actorID == "" {
@@ -68,7 +81,7 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	filters.AccessibleTeamIDs = accessibleTeamIDs(ctx)
+	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
 	epics, err := s.epicRepo.List(ctx, workspaceID, filters)
 	if err != nil {
 		return nil, err
@@ -102,9 +115,53 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 	return result, nil
 }
 
+// ListPage returns a repository-bounded epic page with batch-loaded enrichment.
+func (s *PMEpicService) ListPage(ctx context.Context, workspaceID string, filters model.PMEpicListFilters, pagination model.PMPagination) ([]model.EpicWithStats, int64, error) {
+	if workspaceID == "" {
+		return nil, 0, fmt.Errorf("workspace_id is required")
+	}
+	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
+	epics, total, err := s.epicRepo.ListPage(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(epics) == 0 {
+		return []model.EpicWithStats{}, total, nil
+	}
+	epicIDs := make([]string, 0, len(epics))
+	for _, epic := range epics {
+		epicIDs = append(epicIDs, epic.ID)
+	}
+	labelsByEpic, err := s.epicRepo.ListLabelsBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	objectivesByEpic, err := s.epicRepo.ListObjectivesBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+	statsByEpic, err := s.epicRepo.ComputeStatsBatch(ctx, epicIDs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]model.EpicWithStats, 0, len(epics))
+	for _, epic := range epics {
+		item := model.EpicWithStats{
+			Epic:       epic,
+			Labels:     labelsByEpic[epic.ID],
+			Objectives: objectivesByEpic[epic.ID],
+			Stats:      statsByEpic[epic.ID],
+		}
+		enrichEpicSuggestedHealth(&item)
+		result = append(result, item)
+	}
+	return result, total, nil
+}
+
 // GetByID returns one epic with stats.
 func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWithStats, error) {
-	epic, err := s.epicRepo.GetWithStats(ctx, id)
+	epic, err := s.getWithSuggestedHealth(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +170,14 @@ func (s *PMEpicService) GetByID(ctx context.Context, id string) (*model.EpicWith
 	}
 	if err := requireTeamAccess(ctx, epic.Epic.TeamID); err != nil {
 		return nil, fmt.Errorf("epic not found")
+	}
+	return epic, nil
+}
+
+func (s *PMEpicService) getWithSuggestedHealth(ctx context.Context, id string) (*model.EpicWithStats, error) {
+	epic, err := s.epicRepo.GetWithStats(ctx, id)
+	if err != nil || epic == nil {
+		return epic, err
 	}
 	enrichEpicSuggestedHealth(epic)
 	return epic, nil
@@ -123,6 +188,11 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
+	if req.TeamID == nil || strings.TrimSpace(*req.TeamID) == "" {
+		return nil, fmt.Errorf("team_id is required")
+	}
+	teamID := strings.TrimSpace(*req.TeamID)
+	req.TeamID = &teamID
 	if err := requireCanEditTeamEpics(ctx, req.TeamID); err != nil {
 		return nil, err
 	}
@@ -168,8 +238,14 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if actorID != "" {
 		epic.CreatedBy = &actorID
 	}
+	labelIDs := dedupeIDs(req.LabelIDs)
+	if len(labelIDs) > 0 {
+		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, labelIDs, allowedTeamIDs(req.TeamID)); err != nil {
+			return nil, err
+		}
+	}
 
-	if err := s.epicRepo.Create(ctx, epic); err != nil {
+	if err := s.epicRepo.CreateWithLabels(ctx, epic, labelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to create epic", "error", err, "workspace_id", req.WorkspaceID)
 		return nil, err
 	}
@@ -178,15 +254,6 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 			s.logger.ErrorContext(ctx, "failed to reassign attachments to epic", "error", err, "epic_id", epic.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
-	if len(req.LabelIDs) > 0 {
-		if err := validateLabelScope(ctx, s.labelRepo, req.WorkspaceID, req.LabelIDs, allowedTeamIDs(req.TeamID)); err != nil {
-			return nil, err
-		}
-		if err := s.epicRepo.ReplaceLabels(ctx, epic.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
-	}
-
 	if err := s.syncProgress(ctx, epic.ID); err != nil {
 		return nil, err
 	}
@@ -230,7 +297,13 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 		}
 	}
 
-	return s.epicRepo.GetWithStats(ctx, epic.ID)
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "epic_created:" + epic.ID, UserID: actorID,
+		WorkspaceID: epic.WorkspaceID, Name: "epic_created", Source: "api",
+		OccurredAt: epic.CreatedAt,
+		Attributes: map[string]any{"entity_id": epic.ID, "team_id": epic.TeamID, "health": epic.Health, "module": "pm"},
+	})
+	return s.getWithSuggestedHealth(ctx, epic.ID)
 }
 
 // CreateWithAgentRun creates an epic and optionally starts the assigned agent.
@@ -275,6 +348,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := current.Epic
+	teamChanged := false
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -286,10 +360,10 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if req.Description != nil {
 		epic.Description = req.Description
 	}
-	if req.EpicStateID != nil {
-		epic.EpicStateID = req.EpicStateID
+	if req.EpicStateID != nil || req.EpicStateIDSet {
+		epic.EpicStateID = nullableString(req.EpicStateID)
 	}
-	if req.OwnerID != nil || req.OwnerMemberID != nil {
+	if req.OwnerID != nil || req.OwnerMemberID != nil || req.OwnerSet {
 		ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.Epic.WorkspaceID, req.OwnerMemberID, req.OwnerID)
 		if err != nil {
 			return nil, err
@@ -297,13 +371,18 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		epic.OwnerID = memberUserIDPtr(ownerMember)
 		epic.OwnerMemberID = memberIDPtr(ownerMember)
 	}
-	if req.TeamID != nil {
-		epic.TeamID = req.TeamID
+	if req.TeamID != nil || req.TeamIDSet {
+		nextTeamID := nullableString(req.TeamID)
+		if err := requireCanEditTeamEpics(ctx, nextTeamID); err != nil {
+			return nil, err
+		}
+		teamChanged = !nullableStringsEqual(epic.TeamID, nextTeamID)
+		epic.TeamID = nextTeamID
 	}
-	if req.PlannedStartDate != nil {
+	if req.PlannedStartDate != nil || req.PlannedStartDateSet {
 		epic.PlannedStartDate = req.PlannedStartDate
 	}
-	if req.Deadline != nil {
+	if req.Deadline != nil || req.DeadlineSet {
 		epic.Deadline = req.Deadline
 	}
 	if req.Position != nil {
@@ -324,11 +403,11 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if req.HealthComment != nil {
 		epic.HealthComment = req.HealthComment
 	}
-	if req.PlanningRepositoryID != nil {
+	if req.PlanningRepositoryID != nil || req.PlanningRepositoryIDSet {
 		if err := s.validatePlanningRepository(ctx, epic.WorkspaceID, req.PlanningRepositoryID); err != nil {
 			return nil, err
 		}
-		epic.PlanningRepositoryID = req.PlanningRepositoryID
+		epic.PlanningRepositoryID = nullableString(req.PlanningRepositoryID)
 	}
 	if req.AssignedAgentID != nil {
 		nextAgentID := nullableString(req.AssignedAgentID)
@@ -338,28 +417,39 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 			}
 		}
 		epic.AssignedAgentID = nextAgentID
+	} else if teamChanged && epic.AssignedAgentID != nil {
+		if s.agentService == nil {
+			return nil, fmt.Errorf("cannot change epic team while assigned agent validation is unavailable")
+		}
+		if err := s.agentService.ValidateRunnableTargetAgent(ctx, epic.WorkspaceID, *epic.AssignedAgentID, "epic", epic.TeamID); err != nil {
+			return nil, err
+		}
 	}
 
-	if err := s.epicRepo.Update(ctx, &epic); err != nil {
+	labelIDs := req.LabelIDs
+	if req.LabelIDs != nil {
+		labelIDs = dedupeIDs(req.LabelIDs)
+		if err := validateLabelScope(ctx, s.labelRepo, epic.WorkspaceID, labelIDs, allowedTeamIDs(epic.TeamID)); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.epicRepo.UpdateWithLabels(ctx, &epic, labelIDs); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update epic", "error", err, "epic_id", id)
 		return nil, err
-	}
-	if req.LabelIDs != nil {
-		if err := validateLabelScope(ctx, s.labelRepo, epic.WorkspaceID, req.LabelIDs, allowedTeamIDs(epic.TeamID)); err != nil {
-			return nil, err
-		}
-		if err := s.epicRepo.ReplaceLabels(ctx, epic.ID, req.LabelIDs); err != nil {
-			return nil, err
-		}
 	}
 
 	if err := s.syncProgress(ctx, epic.ID); err != nil {
 		return nil, err
 	}
-	s.logger.InfoContext(ctx, "epic updated", "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
-	if err := s.activityService.Log(ctx, epic.WorkspaceID, "epic", epic.ID, optionalActor(actorID), "updated", nil, nil, nil, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log epic updated activity", "error", err, "epic_id", epic.ID)
+	updatedEpic, err := s.getWithSuggestedHealth(ctx, epic.ID)
+	if err != nil {
+		return nil, err
 	}
+	if updatedEpic == nil {
+		return nil, fmt.Errorf("epic not found")
+	}
+	s.logger.InfoContext(ctx, "epic updated", "epic_id", epic.ID, "workspace_id", epic.WorkspaceID)
+	s.logEpicUpdateActivity(ctx, current, updatedEpic, actorID)
 	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "epic", EntityID: epic.ID, WorkspaceID: epic.WorkspaceID, ActorID: actorID})
 
 	if s.notificationService != nil {
@@ -396,7 +486,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 		}
 	}
 
-	return s.epicRepo.GetWithStats(ctx, epic.ID)
+	return updatedEpic, nil
 }
 
 func (s *PMEpicService) validatePlanningRepository(ctx context.Context, workspaceID string, repositoryID *string) error {
@@ -481,9 +571,11 @@ func (s *PMEpicService) UpdateHealth(ctx context.Context, id string, req model.U
 		s.logger.ErrorContext(ctx, "failed to update epic health", "error", err, "epic_id", id)
 		return err
 	}
-	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", id, optionalActor(actorID), "health_updated", stringPtr("health"), nil, &req.Health, nil); err != nil {
-		s.logger.ErrorContext(ctx, "failed to log epic health_updated activity", "error", err, "epic_id", id)
-	}
+	after := *epic
+	after.Epic = epic.Epic
+	after.Epic.Health = req.Health
+	after.Epic.HealthComment = req.Comment
+	s.logEpicUpdateActivity(ctx, epic, &after, actorID)
 	return nil
 }
 
@@ -505,7 +597,11 @@ func (s *PMEpicService) AddLabel(ctx context.Context, epicID, labelID, actorID s
 	if err := s.epicRepo.AddLabel(ctx, epicID, labelID); err != nil {
 		return err
 	}
-	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, nil); err != nil {
+	metadata := map[string]interface{}{}
+	if label, labelErr := s.labelRepo.GetByID(ctx, labelID); labelErr == nil && label != nil {
+		metadata["new_label"] = label.Name
+	}
+	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_added", stringPtr("label"), nil, &labelID, metadata); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log epic label_added activity", "error", err, "epic_id", epicID)
 	}
 	return nil
@@ -526,7 +622,11 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 	if err := s.epicRepo.RemoveLabel(ctx, epicID, labelID); err != nil {
 		return err
 	}
-	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil); err != nil {
+	metadata := map[string]interface{}{}
+	if label, labelErr := s.labelRepo.GetByID(ctx, labelID); labelErr == nil && label != nil {
+		metadata["old_label"] = label.Name
+	}
+	if err := s.activityService.Log(ctx, epic.Epic.WorkspaceID, "epic", epicID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, metadata); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log epic label_removed activity", "error", err, "epic_id", epicID)
 	}
 	return nil
@@ -550,6 +650,119 @@ func (s *PMEpicService) ListTasks(ctx context.Context, epicID string) ([]model.B
 		tasks[i].PMTask.TaskKey = tasks[i].TaskKey
 	}
 	return tasks, nil
+}
+
+// LinkTasks atomically links or moves existing same-team tasks into an epic.
+func (s *PMEpicService) LinkTasks(ctx context.Context, workspaceID, epicID string, taskIDs []string, actorID string) (*model.LinkEpicTasksResponse, error) {
+	ids := dedupeIDs(taskIDs)
+	if workspaceID == "" || strings.TrimSpace(epicID) == "" {
+		return nil, fmt.Errorf("workspace_id and epic_id are required")
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("at least one task_id is required")
+	}
+	if len(ids) > 100 {
+		return nil, fmt.Errorf("at most 100 task_ids are allowed")
+	}
+
+	epic, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, err
+	}
+	if epic == nil || epic.Epic.WorkspaceID != workspaceID || epic.Epic.Archived {
+		return nil, fmt.Errorf("epic not found")
+	}
+	if epic.Epic.TeamID == nil || strings.TrimSpace(*epic.Epic.TeamID) == "" {
+		return nil, fmt.Errorf("assign the epic to a team before linking tasks")
+	}
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
+		return nil, err
+	}
+
+	var changed []model.PMTask
+	previousEpicIDs := make(map[string]string)
+	result := &model.LinkEpicTasksResponse{}
+	if err := s.taskRepo.WithMutationTransaction(ctx, func(tasks *repository.PMTaskRepository, _ *repository.PMChecklistItemRepository) error {
+		selected, err := tasks.ListByIDs(ctx, workspaceID, ids)
+		if err != nil {
+			return err
+		}
+		if len(selected) != len(ids) {
+			return fmt.Errorf("one or more tasks were not found")
+		}
+		for index := range selected {
+			task := &selected[index]
+			if task.Archived {
+				return fmt.Errorf("archived tasks cannot be linked")
+			}
+			if task.TeamID == nil || strings.TrimSpace(*task.TeamID) != strings.TrimSpace(*epic.Epic.TeamID) {
+				return fmt.Errorf("all tasks must belong to the same team as the epic")
+			}
+			if err := requireTeamAccess(ctx, task.TeamID); err != nil {
+				return err
+			}
+			previousEpicID := stringValue(task.EpicID)
+			if previousEpicID == epicID {
+				continue
+			}
+			if previousEpicID != "" {
+				result.MovedCount++
+				previousEpicIDs[task.ID] = previousEpicID
+			}
+			task.EpicID = stringPtr(epicID)
+			if err := tasks.Update(ctx, task); err != nil {
+				return err
+			}
+			changed = append(changed, *task)
+			result.LinkedCount++
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	oldNames := make(map[string]string)
+	if len(previousEpicIDs) > 0 {
+		oldIDs := make([]string, 0, len(previousEpicIDs))
+		seen := make(map[string]struct{}, len(previousEpicIDs))
+		for _, oldID := range previousEpicIDs {
+			if _, ok := seen[oldID]; ok {
+				continue
+			}
+			seen[oldID] = struct{}{}
+			oldIDs = append(oldIDs, oldID)
+		}
+		if oldEpics, listErr := s.epicRepo.ListByIDs(ctx, workspaceID, oldIDs); listErr == nil {
+			for _, oldEpic := range oldEpics {
+				oldNames[oldEpic.ID] = oldEpic.Name
+			}
+		}
+	}
+	workspaceKey := ""
+	if workspace, workspaceErr := s.workspaceRepo.GetByID(ctx, workspaceID); workspaceErr == nil && workspace != nil {
+		workspaceKey = workspace.WorkspaceKey
+	}
+	for index := range changed {
+		task := &changed[index]
+		if s.gitService != nil {
+			if _, _, syncErr := s.gitService.SyncTaskDeliveryTargetToEpic(ctx, workspaceID, task.ID, epicID, actorID, false); syncErr != nil {
+				s.logger.WarnContext(ctx, "failed to inherit epic delivery target after task link", "error", syncErr, "workspace_id", workspaceID, "task_id", task.ID, "epic_id", epicID)
+			}
+		}
+		oldName := oldNames[previousEpicIDs[task.ID]]
+		action := planningLinkActivityAction("epic", oldName, epic.Epic.Name)
+		if action != "" && s.activityService != nil {
+			if logErr := s.activityService.Log(ctx, workspaceID, "task", task.ID, optionalActor(actorID), action, nil, nil, nil, nil); logErr != nil {
+				s.logger.ErrorContext(ctx, "failed to log task epic link", "error", logErr, "task_id", task.ID, "epic_id", epicID)
+			}
+		}
+		if s.wsPublisher != nil {
+			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: task.ID, WorkspaceID: workspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(workspaceKey, task.DisplayID)})
+		}
+	}
+
+	s.logger.InfoContext(ctx, "tasks linked to epic", "workspace_id", workspaceID, "epic_id", epicID, "linked_count", result.LinkedCount, "moved_count", result.MovedCount, "actor_id", actorID)
+	return result, nil
 }
 
 // ListActivity returns epic activity entries.
@@ -617,6 +830,13 @@ func optionalActor(actorID string) *string {
 		return nil
 	}
 	return &actorID
+}
+
+func nullableStringsEqual(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return strings.TrimSpace(*left) == strings.TrimSpace(*right)
 }
 
 func stringPtr(value string) *string { return &value }

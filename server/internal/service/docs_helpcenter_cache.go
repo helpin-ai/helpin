@@ -15,6 +15,7 @@ import (
 // Help-center cache TTLs. Short enough that stale content stays bounded;
 // long enough that a hot space amortizes its DB cost across many readers.
 const (
+	hcCacheNamespace     = "hc-icons-v2"
 	hcConfigCacheTTL     = 5 * time.Minute
 	hcNavCacheTTL        = 5 * time.Minute
 	hcSpacesCacheTTL     = 5 * time.Minute
@@ -208,6 +209,65 @@ func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspa
 	return collection, articles, spaceSlug, nil
 }
 
+// GetPublicCollectionAlternatePaths returns canonical localized paths for the
+// published collection translations used to emit SSR hreflang links without
+// loading every locale's full space navigation.
+func (s *DocsHelpcenterService) GetPublicCollectionAlternatePaths(
+	ctx context.Context,
+	cfg *model.DocsHelpcenterConfig,
+	collectionID string,
+	publicID string,
+) (map[string]string, error) {
+	if cfg == nil || !docsHelpcenterMultilingualEnabled(cfg) {
+		return map[string]string{}, nil
+	}
+
+	key := hcCacheKey("hc", "collection", "alternate-paths", cfg.WorkspaceID, collectionID)
+	if s.hcCache != nil {
+		var cached map[string]string
+		if s.getHelpcenterCachedJSON(ctx, key, &cached) {
+			return cached, nil
+		}
+	}
+
+	translations, err := s.hcRepo.ListPublicCollectionTranslationsByCollection(ctx, collectionID)
+	if err != nil {
+		return nil, err
+	}
+
+	enabledLocales := make(map[string]struct{}, len(cfg.EnabledLocales))
+	for _, locale := range cfg.EnabledLocales {
+		normalized := strings.ToLower(strings.TrimSpace(locale))
+		if normalized != "" {
+			enabledLocales[normalized] = struct{}{}
+		}
+	}
+
+	paths := make(map[string]string, len(translations))
+	for _, translation := range translations {
+		locale := strings.ToLower(strings.TrimSpace(translation.Locale))
+		if _, enabled := enabledLocales[locale]; !enabled {
+			continue
+		}
+		slug := stringValue(translation.Slug)
+		if slug == "" {
+			continue
+		}
+		paths[locale] = buildDocsHelpcenterCollectionCanonicalPath(cfg, locale, slug, publicID)
+	}
+
+	if s.hcCache != nil {
+		s.setHelpcenterCachedJSON(
+			ctx,
+			key,
+			paths,
+			hcCollectionCacheTTL,
+			HelpcenterCacheTagWorkspace(cfg.WorkspaceID),
+		)
+	}
+	return paths, nil
+}
+
 // ResolvePublicPath resolves a legacy or imported URL path to a redirect target.
 func (s *DocsHelpcenterService) ResolvePublicPath(ctx context.Context, workspaceID, path string) (string, error) {
 	if s.hcCache == nil {
@@ -238,7 +298,26 @@ func (s *DocsHelpcenterService) InvalidateHelpcenterCacheForWorkspace(ctx contex
 	if s.hcCache == nil || workspaceID == "" {
 		return
 	}
-	if err := s.hcCache.InvalidateTags(ctx, HelpcenterCacheTagWorkspace(workspaceID)); err != nil {
+
+	tags := []string{HelpcenterCacheTagWorkspace(workspaceID)}
+	cfg, err := s.hcRepo.GetConfig(ctx, workspaceID)
+	if err != nil {
+		slog.WarnContext(
+			ctx,
+			"hc cache: resolve identifiers for invalidation failed",
+			"error", err,
+			"workspace_id", workspaceID,
+		)
+	} else if cfg != nil {
+		if cfg.Subdomain != "" {
+			tags = append(tags, HelpcenterCacheTagIdentifier(cfg.Subdomain))
+		}
+		if cfg.CustomDomain != nil && strings.TrimSpace(*cfg.CustomDomain) != "" {
+			tags = append(tags, HelpcenterCacheTagIdentifier(*cfg.CustomDomain))
+		}
+	}
+
+	if err := s.hcCache.InvalidateTags(ctx, tags...); err != nil {
 		slog.WarnContext(ctx, "hc cache: invalidate failed", "error", err, "workspace_id", workspaceID)
 	}
 }
@@ -303,9 +382,16 @@ func (s *DocsHelpcenterService) setHelpcenterCachedJSON(ctx context.Context, key
 }
 
 func hcCacheKey(parts ...string) string {
-	encoded := make([]string, 0, len(parts))
+	encoded := make([]string, 0, len(parts)+1)
+	encoded = append(encoded, base64.RawURLEncoding.EncodeToString([]byte(hcCacheNamespace)))
 	for _, part := range parts {
 		encoded = append(encoded, base64.RawURLEncoding.EncodeToString([]byte(part)))
 	}
 	return strings.Join(encoded, ":")
+}
+
+// HelpcenterCacheTagIdentifier returns the cache tag for a hosted subdomain or
+// custom-domain identifier used by the public renderer.
+func HelpcenterCacheTagIdentifier(identifier string) string {
+	return "hc:host:" + strings.ToLower(strings.TrimSpace(identifier))
 }

@@ -346,6 +346,7 @@ type DocsChangeProposal struct {
 	Revision        int             `json:"revision,omitempty" gorm:"not null;default:0"`
 	Summary         string          `json:"summary" gorm:"type:text;not null"`
 	ContentMarkdown string          `json:"content_markdown" gorm:"type:text;not null"`
+	BaseMarkdown    string          `json:"base_markdown,omitempty" gorm:"type:text"`
 	Content         json.RawMessage `json:"content" gorm:"type:jsonb;not null"`
 	Sources         json.RawMessage `json:"sources,omitempty" gorm:"type:jsonb;not null;default:'[]'"`
 	CreatedBy       string          `json:"created_by" gorm:"not null"`
@@ -579,6 +580,7 @@ type DocsHelpcenterConfig struct {
 	FallbackToDefaultLocale bool            `json:"fallback_to_default_locale" gorm:"not null;default:true"`
 	IsPublished             bool            `json:"is_published" gorm:"not null;default:false"`
 	ChatWidgetEnabled       bool            `json:"chat_widget_enabled" gorm:"not null;default:true"`
+	AIAnswersEnabled        bool            `json:"ai_answers_enabled" gorm:"not null;default:true"`
 	SEOTitle                *string         `json:"seo_title"`
 	SEODescription          *string         `json:"seo_description"`
 	OGTitle                 *string         `json:"og_title"`
@@ -741,6 +743,7 @@ type DocsSpaceDeleteImpact struct {
 	ArchivedDocumentCount  int    `json:"archived_document_count"`
 	PublishedDocumentCount int    `json:"published_document_count"`
 	PublicDocumentCount    int    `json:"public_document_count"`
+	APIReferenceCount      int    `json:"api_reference_count"`
 }
 
 // CreateDocsDocumentRequest is the payload for creating a document.
@@ -827,6 +830,7 @@ type UpdateDocsDocumentRequest struct {
 	OwnerID      *string  `json:"owner_id"`
 	TemplateKey  *string  `json:"template_key"`
 	Excerpt      *string  `json:"excerpt"`
+	ClearExcerpt bool     `json:"clear_excerpt"`
 	Icon         *string  `json:"icon"`
 	Tags         []string `json:"tags"`
 	IsPinned     *bool    `json:"is_pinned"`
@@ -887,6 +891,18 @@ type ImportDocsExternalImageResponse struct {
 	URL string `json:"url"`
 }
 
+// EditDocsImageRequest describes an AI edit to a document image attachment.
+type EditDocsImageRequest struct {
+	SourceAttachmentID string `json:"source_attachment_id"`
+	Prompt             string `json:"prompt"`
+	AnnotationDataURL  string `json:"annotation_data_url,omitempty"`
+}
+
+// EditDocsImageResponse identifies the stored output image.
+type EditDocsImageResponse struct {
+	AttachmentID string `json:"attachment_id"`
+}
+
 // CreateDocsVersionRequest is the payload for manually creating a version snapshot.
 type CreateDocsVersionRequest struct {
 	SnapshotLabel *string `json:"snapshot_label"`
@@ -930,6 +946,7 @@ type UpdateDocsHelpcenterConfigRequest struct {
 	FallbackToDefaultLocale *bool           `json:"fallback_to_default_locale"`
 	IsPublished             *bool           `json:"is_published"`
 	ChatWidgetEnabled       *bool           `json:"chat_widget_enabled"`
+	AIAnswersEnabled        *bool           `json:"ai_answers_enabled"`
 	SEOTitle                *string         `json:"seo_title"`
 	SEODescription          *string         `json:"seo_description"`
 	OGTitle                 *string         `json:"og_title"`

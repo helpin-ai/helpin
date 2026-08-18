@@ -65,6 +65,9 @@ func TestEnrichContactProtectsExistingEmailAndFillsEmptyFields(t *testing.T) {
 	if updated.JobTitle == nil || *updated.JobTitle != "VP Sales" {
 		t.Fatalf("job_title = %v, want VP Sales", updated.JobTitle)
 	}
+	if updated.LinkedInURL == nil || *updated.LinkedInURL != "https://www.linkedin.com/in/jane-example" {
+		t.Fatalf("linkedin_url = %v, want first-class CRM value", updated.LinkedInURL)
+	}
 	if updated.CustomProperties["manual_key"] != "keep" {
 		t.Fatalf("manual custom property was not preserved: %#v", updated.CustomProperties)
 	}
@@ -82,6 +85,46 @@ func TestEnrichContactProtectsExistingEmailAndFillsEmptyFields(t *testing.T) {
 	}
 	if count != 1 || result.EnrichmentResultID == "" {
 		t.Fatalf("audit count/id = %d/%q, want one audit row with id", count, result.EnrichmentResultID)
+	}
+	if err := db.Model(&model.CRMActivity{}).Count(&count).Error; err != nil {
+		t.Fatalf("count activities: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("activity count = %d, want one enrichment timeline entry", count)
+	}
+}
+
+func TestApplyEnrichmentSuggestionReplacesProtectedValue(t *testing.T) {
+	db := setupGuardedCRMEnrichmentTestDB(t)
+	svc := setupGuardedCRMEnrichmentService(db)
+	existingEmail := "owner@example.com"
+	contact := model.CRMContact{ID: "contact-1", WorkspaceID: "ws-1", DisplayID: "CON-1", FirstName: "Jane", Email: &existingEmail, LifecycleStage: model.CRMLifecycleLead, LeadStatus: model.CRMLeadStatusOpen, CustomProperties: model.JSONB{}}
+	if err := db.Create(&contact).Error; err != nil {
+		t.Fatalf("seed contact: %v", err)
+	}
+
+	result, err := svc.EnrichContact(context.Background(), "ws-1", model.EnrichCRMContactRequest{ContactID: contact.ID, Fields: []model.CRMEnrichmentFieldInput{crmEnrichmentTestField("email", "verified@example.com")}})
+	if err != nil {
+		t.Fatalf("enrich contact: %v", err)
+	}
+	if len(result.Skipped) != 1 {
+		t.Fatalf("skipped = %#v, want protected suggestion", result.Skipped)
+	}
+
+	audit, err := svc.ApplySuggestion(context.Background(), "ws-1", result.EnrichmentResultID, model.ApplyCRMEnrichmentSuggestionRequest{Field: "email", ActorUserID: "user-1"})
+	if err != nil {
+		t.Fatalf("apply suggestion: %v", err)
+	}
+	var updated model.CRMContact
+	if err := db.First(&updated, "id = ?", contact.ID).Error; err != nil {
+		t.Fatalf("reload contact: %v", err)
+	}
+	if updated.Email == nil || *updated.Email != "verified@example.com" {
+		t.Fatalf("email = %v, want accepted suggestion", updated.Email)
+	}
+	accepted, err := enrichmentFieldResults(audit.Data["accepted_suggestions"])
+	if err != nil || len(accepted) != 1 || accepted[0].Reason != "accepted_suggestion" {
+		t.Fatalf("accepted suggestions = %#v, err = %v", accepted, err)
 	}
 }
 
@@ -134,12 +177,14 @@ func TestEnrichCompanyProtectsNameAndExistingDomain(t *testing.T) {
 		Fields: []model.CRMEnrichmentFieldInput{
 			crmEnrichmentTestField("domain", "new.example.com"),
 			crmEnrichmentTestField("industry", "Product Analytics"),
+			crmEnrichmentTestField("linkedin_url", "https://linkedin.com/company/example"),
+			crmEnrichmentTestField("headquarters", "San Francisco, CA"),
 		},
 	})
 	if err != nil {
 		t.Fatalf("EnrichCompany returned error: %v", err)
 	}
-	if result.Status != "partial" || len(result.Applied) != 1 || len(result.Skipped) != 1 {
+	if result.Status != "partial" || len(result.Applied) != 3 || len(result.Skipped) != 1 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	if result.Skipped[0].Field != "domain" || result.Skipped[0].Reason != "existing_value_protected" {
@@ -158,6 +203,12 @@ func TestEnrichCompanyProtectsNameAndExistingDomain(t *testing.T) {
 	}
 	if updated.Industry == nil || *updated.Industry != "Product Analytics" {
 		t.Fatalf("industry = %v, want filled", updated.Industry)
+	}
+	if updated.LinkedInURL == nil || *updated.LinkedInURL != "https://linkedin.com/company/example" {
+		t.Fatalf("linkedin_url = %v, want first-class value", updated.LinkedInURL)
+	}
+	if updated.Headquarters == nil || *updated.Headquarters != "San Francisco, CA" {
+		t.Fatalf("headquarters = %v, want first-class value", updated.Headquarters)
 	}
 }
 
@@ -356,6 +407,23 @@ func setupGuardedCRMEnrichmentTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create crm_enrichment_results: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE crm_activities (
+		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+		workspace_id TEXT NOT NULL,
+		activity_type TEXT NOT NULL DEFAULT 'note',
+		contact_id TEXT,
+		company_id TEXT,
+		deal_id TEXT,
+		owner_member_id TEXT,
+		subject TEXT,
+		body TEXT,
+		occurred_at DATETIME NOT NULL,
+		metadata TEXT NOT NULL DEFAULT '{}',
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create crm_activities: %v", err)
+	}
 	return db
 }
 
@@ -365,7 +433,7 @@ func setupGuardedCRMEnrichmentService(db *gorm.DB) *CRMEnrichmentService {
 		repository.NewCRMContactRepository(db),
 		repository.NewCRMCompanyRepository(db),
 		repository.NewCRMAssociationRepository(db),
-	)
+	).SetActivityRepository(repository.NewCRMActivityRepository(db))
 }
 
 func crmEnrichmentTestField(field string, value interface{}) model.CRMEnrichmentFieldInput {

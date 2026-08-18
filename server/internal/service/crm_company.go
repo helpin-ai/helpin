@@ -12,6 +12,7 @@ import (
 // CRMCompanyService contains CRM company business logic.
 type CRMCompanyService struct {
 	companyRepo *repository.CRMCompanyRepository
+	productAnalyticsEmitter
 }
 
 // NewCRMCompanyService creates a new CRMCompanyService.
@@ -61,6 +62,8 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 		AnnualRevenue:    req.AnnualRevenue,
 		Description:      req.Description,
 		LogoURL:          req.LogoURL,
+		LinkedInURL:      req.LinkedInURL,
+		Headquarters:     req.Headquarters,
 		OwnerMemberID:    req.OwnerMemberID,
 		CustomProperties: model.JSONB(req.CustomProperties),
 	}
@@ -68,6 +71,12 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 	if err := s.companyRepo.Create(ctx, company); err != nil {
 		return nil, err
 	}
+	s.trackProductEvent(ctx, ProductAnalyticsEvent{
+		SemanticKey: "crm_company_created:" + company.ID,
+		WorkspaceID: company.WorkspaceID, Name: "crm_company_created", Source: "api",
+		OccurredAt: company.CreatedAt,
+		Attributes: map[string]any{"entity_id": company.ID, "industry": company.Industry, "module": "crm"},
+	})
 	return company, nil
 }
 
@@ -109,7 +118,15 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 	if req.LogoURL != nil {
 		company.LogoURL = req.LogoURL
 	}
-	if req.OwnerMemberID != nil {
+	if req.LinkedInURL != nil {
+		company.LinkedInURL = req.LinkedInURL
+	}
+	if req.Headquarters != nil {
+		company.Headquarters = req.Headquarters
+	}
+	if req.ClearOwner {
+		company.OwnerMemberID = nil
+	} else if req.OwnerMemberID != nil {
 		company.OwnerMemberID = req.OwnerMemberID
 	}
 	if req.CustomProperties != nil {

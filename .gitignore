@@ -1,5 +1,6 @@
 # Go
 server/api
+server/api.out
 server/migrate
 server/bin/
 server/tmp/
@@ -11,6 +12,8 @@ server/migrate
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+help-center/public/assets/helpin-icons/
+frontend/public/assets/helpin-icons/
 
 # IDE
 .idea/

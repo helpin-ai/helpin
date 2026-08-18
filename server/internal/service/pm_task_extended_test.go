@@ -18,6 +18,7 @@ type taskTestEnv struct {
 	db           *gorm.DB
 	wsID         string
 	userID       string
+	teamID       string
 	wfID         string
 	stTodo       string // default "unstarted" state
 	stInProgress string
@@ -37,6 +38,7 @@ func newTaskTestEnv(t *testing.T) taskTestEnv {
 	stTodo := "state-todo-001"
 	stInProgress := "state-inprogress-001"
 	stDone := "state-done-001"
+	teamID := "team-story-001"
 
 	// Seed additional tables needed by dependency queries (gracefully ignored if missing).
 	db.Exec(`CREATE TABLE IF NOT EXISTS pm_task_links (
@@ -63,6 +65,7 @@ func newTaskTestEnv(t *testing.T) taskTestEnv {
 	seedUser(t, db, userID, "storyadmin@test.com", "Story Admin", "hash")
 	seedWorkspace(t, db, wsID, "Story Workspace", "story-ws", userID)
 	seedWorkspaceMember(t, db, memberID, wsID, userID, "storyadmin@test.com", "Story Admin", model.RoleAdmin)
+	seedTaskTeam(t, taskTestEnv{db: db, wsID: wsID}, teamID, "Story Team")
 
 	// Seed workflow with three states: To Do (unstarted), In Progress (started), Done (done).
 	now := time.Now()
@@ -105,6 +108,7 @@ func newTaskTestEnv(t *testing.T) taskTestEnv {
 		db:           db,
 		wsID:         wsID,
 		userID:       userID,
+		teamID:       teamID,
 		wfID:         wfID,
 		stTodo:       stTodo,
 		stInProgress: stInProgress,
@@ -548,6 +552,7 @@ func createTestTask(t *testing.T, env taskTestEnv, name string) *model.TaskDetai
 	story, err := env.svc.Create(context.Background(), model.CreateTaskRequest{
 		WorkspaceID:     env.wsID,
 		Name:            name,
+		TeamID:          &env.teamID,
 		WorkflowID:      env.wfID,
 		WorkflowStateID: env.stTodo,
 	}, env.userID)
@@ -610,6 +615,7 @@ func TestPMTaskService_Create(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "My Story",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 		}, env.userID)
@@ -652,6 +658,7 @@ func TestPMTaskService_Create(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "System-created story",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 		}, "agent-system-001")
@@ -668,6 +675,7 @@ func TestPMTaskService_Create(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Agent-backed Story",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 			AssignedAgentID: &agentID,
@@ -684,6 +692,7 @@ func TestPMTaskService_Create(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Bug Report",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 			TaskType:        model.PMTaskTypeBug,
@@ -744,6 +753,7 @@ func TestPMTaskService_Create(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Important Bug",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 			Priority:        &prio,
@@ -766,6 +776,7 @@ func TestPMTaskService_Create(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Story With Image",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 			AttachmentIDs:   []string{"attachment-story-1"},
@@ -815,6 +826,7 @@ func TestPMTaskService_Create(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Story From Template",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 			TemplateID:      &templateID,
@@ -871,6 +883,7 @@ func TestPMTaskService_Create(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Create Position C",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 		}, env.userID)
@@ -888,6 +901,7 @@ func TestPMTaskService_Create(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID: env.wsID,
 			Name:        "Auto Workflow Story",
+			TeamID:      &env.teamID,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Create without workflow: %v", err)
@@ -914,6 +928,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 		}, env.userID)
@@ -926,6 +941,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "   ",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 		}, env.userID)
@@ -938,6 +954,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     "",
 			Name:            "No WS",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 		}, env.userID)
@@ -946,10 +963,21 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("missing team_id", func(t *testing.T) {
+		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
+			WorkspaceID: env.wsID,
+			Name:        "No Team",
+		}, env.userID)
+		if err == nil || !strings.Contains(err.Error(), "team_id is required") {
+			t.Fatalf("missing team error = %v", err)
+		}
+	})
+
 	t.Run("invalid story_type", func(t *testing.T) {
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Bad Type",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 			TaskType:        "invalid_type",
@@ -964,6 +992,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Bad Prio",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 			Priority:        &badPrio,
@@ -978,6 +1007,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Bad Sev",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 			Severity:        &badSev,
@@ -991,6 +1021,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Wrong State",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: "nonexistent-state",
 		}, env.userID)
@@ -1007,6 +1038,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Viewer Attempt",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 		}, viewerID)
@@ -1489,7 +1521,7 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 	epicID := "epic-activity-001"
 	seedTaskEpic(t, env, epicID, "", "Launch")
 	sprintID := "sprint-activity-001"
-	seedStorySprint(t, env, sprintID, "", "Sprint 8")
+	seedStorySprint(t, env, sprintID, env.teamID, "Sprint 8")
 
 	ownerUserID := "user-owner-activity-001"
 	ownerMemberID := "member-owner-activity-001"
@@ -1509,7 +1541,7 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Update team: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "assigned this story to team Growth" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "moved this story from team Story Team to Growth" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
@@ -2212,6 +2244,7 @@ func TestPMTaskService_Estimate(t *testing.T) {
 	story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 		WorkspaceID:     env.wsID,
 		Name:            "Estimated Story",
+		TeamID:          &env.teamID,
 		WorkflowID:      env.wfID,
 		WorkflowStateID: env.stTodo,
 		Estimate:        &est,
@@ -2275,6 +2308,7 @@ func TestPMTaskService_ManagerPermissions(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Manager Created",
+			TeamID:          &env.teamID,
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
 		}, managerID)

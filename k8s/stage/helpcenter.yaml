@@ -27,12 +27,17 @@ spec:
           type: RuntimeDefault
       containers:
         - name: helpcenter
-          image: ghcr.io/helpin-ai/helpin/helpcenter:helpcenter-v0.95.85-rc.1
+          image: ghcr.io/helpin-ai/helpin/helpcenter:helpcenter-v0.95.118-rc.1
           env:
             - name: INTERNAL_API_URL
               value: http://helpin-server-svc:8080/api
             - name: PORT
               value: "3000"
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-secrets
+                  key: REDIS_URL
           ports:
             - containerPort: 3000
           securityContext:

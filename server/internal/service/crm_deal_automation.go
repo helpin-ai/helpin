@@ -206,16 +206,19 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 
 			// Create accepted suggestion for audit trail
 			objectType := "deal"
+			executedAt := time.Now().UTC()
 			suggestion := &model.CRMSuggestion{
-				WorkspaceID:    workspaceID,
-				SuggestionType: model.CRMSuggestionDealCreate,
-				ObjectType:     &objectType,
-				ObjectID:       &deal.ID,
-				Title:          "Auto-created deal: " + inference.DealName,
-				Description:    &inference.Reasoning,
-				Context:        model.JSONB(dealContext),
-				Status:         model.CRMSuggestionStatusAccepted,
-				Confidence:     inference.Confidence,
+				WorkspaceID:     workspaceID,
+				SuggestionType:  model.CRMSuggestionDealCreate,
+				ObjectType:      &objectType,
+				ObjectID:        &deal.ID,
+				Title:           "Auto-created deal: " + inference.DealName,
+				Description:     &inference.Reasoning,
+				Context:         model.JSONB(dealContext),
+				Status:          model.CRMSuggestionStatusAccepted,
+				ExecutionStatus: model.CRMSuggestionExecutionSucceeded,
+				ExecutedAt:      &executedAt,
+				Confidence:      inference.Confidence,
 			}
 			if err := s.suggestionRepo.Create(ctx, suggestion); err != nil {
 				slog.Error("failed to create suggestion audit trail", "error", err)
@@ -341,16 +344,19 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 				continue
 			}
 
+			executedAt := time.Now().UTC()
 			suggestion := &model.CRMSuggestion{
-				WorkspaceID:    workspaceID,
-				SuggestionType: model.CRMSuggestionDealAdvance,
-				ObjectType:     &objectType,
-				ObjectID:       &deal.ID,
-				Title:          fmt.Sprintf("Auto-advanced '%s' to %s", deal.Name, inference.RecommendedStage),
-				Description:    &inference.Reasoning,
-				Context:        model.JSONB(progressionContext),
-				Status:         model.CRMSuggestionStatusAccepted,
-				Confidence:     inference.Confidence,
+				WorkspaceID:     workspaceID,
+				SuggestionType:  model.CRMSuggestionDealAdvance,
+				ObjectType:      &objectType,
+				ObjectID:        &deal.ID,
+				Title:           fmt.Sprintf("Auto-advanced '%s' to %s", deal.Name, inference.RecommendedStage),
+				Description:     &inference.Reasoning,
+				Context:         model.JSONB(progressionContext),
+				Status:          model.CRMSuggestionStatusAccepted,
+				ExecutionStatus: model.CRMSuggestionExecutionSucceeded,
+				ExecutedAt:      &executedAt,
+				Confidence:      inference.Confidence,
 			}
 			if err := s.suggestionRepo.Create(ctx, suggestion); err != nil {
 				slog.Error("failed to create progression audit trail", "error", err)
@@ -481,7 +487,7 @@ func (s *DealAutomationService) inferDealCreation(ctx context.Context, contact *
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    contact.WorkspaceID,
 		FeatureKey:     BillingFeatureDealAutomationInference,
-		IdempotencyKey: aiUsageIdempotencyKey(contact.WorkspaceID, BillingFeatureDealAutomationInference, "create_deal", contact.ID),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, contact.WorkspaceID, BillingFeatureDealAutomationInference, "create_deal", contact.ID),
 		Metadata: map[string]interface{}{
 			"action":     "create_deal",
 			"contact_id": contact.ID,
@@ -539,7 +545,7 @@ func (s *DealAutomationService) inferDealProgression(ctx context.Context, deal *
 	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
 		WorkspaceID:    deal.WorkspaceID,
 		FeatureKey:     BillingFeatureDealAutomationInference,
-		IdempotencyKey: aiUsageIdempotencyKey(deal.WorkspaceID, BillingFeatureDealAutomationInference, "progress_deal", deal.ID),
+		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, deal.WorkspaceID, BillingFeatureDealAutomationInference, "progress_deal", deal.ID),
 		Metadata: map[string]interface{}{
 			"action":  "progress_deal",
 			"deal_id": deal.ID,

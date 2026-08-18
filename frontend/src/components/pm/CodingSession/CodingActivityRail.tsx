@@ -15,12 +15,13 @@ import {
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
+import { isPublishedPreviewToolName } from '@/components/pm/runPreviews';
 import { cn } from '@/lib/utils';
 import { canonicalToolName, isToolName } from '@/lib/toolNames';
 import type { CodingSessionEvent, CodingSessionLiveToolCall, RunPlanArtifact } from '@/lib/pmTypes';
 import { codingSessionEventContent, formatCodingSessionRelative, prettyCodingSessionEventType } from './codingSessionUtils';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
-import { describeToolCall } from './toolCallPresentation';
+import { describeToolCall, readFilesContentForToolCall } from './toolCallPresentation';
 
 type TimelineItem =
   | { kind: 'event'; event: CodingSessionEvent }
@@ -183,12 +184,18 @@ function ToolCallTimelineItem({ toolCall, isLast }: { toolCall: CodingSessionLiv
   const { icon, iconClass } = toolChrome(toolCall.tool_name, isFailed);
   const argsText = toolCall.args_text.trim();
   const resultText = toolCall.result?.output_summary?.trim() || toolCall.result?.content?.trim() || '';
-  const readOutputText = !isFailed && (isToolName(toolCall.tool_name, 'read_file') || isToolName(toolCall.tool_name, 'read_file_range'))
+  // read_symbol returns the same numbered-line output as the other read tools,
+  // so it gets the same source preview rather than a raw result blob.
+  const readOutputText = !isFailed && isToolName(toolCall.tool_name, 'read_files')
+    ? readFilesContentForToolCall(toolCall) ?? ''
+    : !isFailed && (isToolName(toolCall.tool_name, 'read_file')
+    || isToolName(toolCall.tool_name, 'read_file_range')
+    || isToolName(toolCall.tool_name, 'read_symbol'))
     ? toolCall.result?.content?.trim() || ''
     : '';
   const readLineCount = readOutputText ? readOutputText.split('\n').length : null;
   const readLineChip = readLineCount ? `${readLineCount} line${readLineCount === 1 ? '' : 's'}` : null;
-  const publishedPreviewCard = !isFailed && argsText ? (
+  const publishedPreviewCard = !isFailed && argsText && isPublishedPreviewToolName(toolCall.tool_name) ? (
     <PublishedToolPreviewCard toolName={toolCall.tool_name} argsText={argsText} resultText={resultText} compact />
   ) : null;
   const presentation = describeToolCall(toolCall);

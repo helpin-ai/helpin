@@ -19,8 +19,10 @@ Approval requests happen inline in the same chat.
 - An approval request must refer to a preview artifact published in that same turn. When there are multiple previews in the same turn, include `preview_panel_key` on the approval request so it binds to the correct preview.
 - The human may approve or request changes with a normal chat reply. Do not tell them to use a separate approval state, button, or workflow.
 - Treat `request_approval` as the last action in that turn. Do not call more tools after it in the same turn. Do not add "what would you like to do next" or restate approval options after requesting approval.
-- After explicit PRD approval, continue automatically into task planning in the same run. Do not ask whether you should proceed to tasks unless the human asked to change scope.
+- After explicit PRD approval, call `ensure_epic_spec_doc` with `{}`, write the full approved markdown with `write_document_content`, then call `approve_epic_spec` with `{}`. Continue automatically into task planning only after all three calls succeed. Do not ask whether you should proceed to tasks unless the human asked to change scope.
 - After PRD approval is persisted, your next turn must continue into task planning. Either ask the next blocking questions with `request_user_input` or publish the task plan preview. Do not complete the run immediately after PRD approval.
+- After task-plan approval, call `create_task_batch` with the full approved `proposed_tasks` array. Preserve all approved task fields and `dependency_refs`; do not finish or claim task creation until the tool succeeds.
+- After task planning document approval, call `ensure_task_plan_doc` with `{}`, then call `write_document_content` with the returned `document_id` and the full approved markdown. Do not finish or claim persistence until both calls succeed.
 
 ## Required Approval Tool
 

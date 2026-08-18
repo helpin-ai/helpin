@@ -8,14 +8,12 @@ import (
 	"testing"
 	"time"
 
-	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/temporalapp"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func seedApprovalArtifacts(t *testing.T, artifactRepo *repository.AgentRunArtifactRepository, workspaceID, runID string, assistantSequenceNo int, now time.Time, previewContent string) {
@@ -26,7 +24,7 @@ func seedApprovalArtifacts(t *testing.T, artifactRepo *repository.AgentRunArtifa
 		ID:            fmt.Sprintf("artifact-run-preview-%s-%d", runID, assistantSequenceNo),
 		WorkspaceID:   workspaceID,
 		RunID:         runID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -92,19 +90,21 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-1",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonHumanInput,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-1",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_reply_approve"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonHumanInput,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -117,11 +117,11 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
 			},
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
 			},
 		}),
@@ -132,11 +132,11 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	seedApprovalArtifacts(t, artifactRepo, "ws-1", run.ID, 1, now, "# Problem\n\nDraft body")
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	message, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -149,12 +149,26 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 		t.Fatalf("expected user_reply message type, got %q", message.MessageType)
 	}
 
+	runtimeClient := svc.agentRuntimeClient.(*fakeAgentRuntimeSignalClient)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	resumeCall := runtimeClient.resumeCalls[0]
+	if resumeCall.runID != "run_rt_reply_approve" {
+		t.Fatalf("expected runtime run id run_rt_reply_approve, got %q", resumeCall.runID)
+	}
+	if resumeCall.req.Intent != model.AgentRunResumeIntentReply || resumeCall.req.Content != "good to go" {
+		t.Fatalf("expected reply resume request, got %#v", resumeCall.req)
+	}
+
 	updated, err := runRepo.GetByID(context.Background(), "ws-1", run.ID)
 	if err != nil {
 		t.Fatalf("get run: %v", err)
 	}
-	if updated.Status != model.AgentRunStatusRunning {
-		t.Fatalf("expected run status %q, got %q", model.AgentRunStatusRunning, updated.Status)
+	// Status stays paused locally: the runtime event projection owns the
+	// status/pause flip for delegated runs.
+	if updated.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected run status %q, got %q", model.AgentRunStatusPaused, updated.Status)
 	}
 	if updated.ApprovalState != "not_required" {
 		t.Fatalf("expected approval_state not_required, got %q", updated.ApprovalState)
@@ -184,7 +198,7 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
 		t.Fatalf("unmarshal approved preview artifact: %v", err)
 	}
-	if approved.Phase != "prd" || approved.PanelKey != "prd_draft" || approved.Format != worker.PreviewFormatMarkdown {
+	if approved.Phase != "prd" || approved.PanelKey != "prd_draft" || approved.Format != agentcontract.PreviewFormatMarkdown {
 		t.Fatalf("unexpected approved preview payload: %#v", approved)
 	}
 }
@@ -198,19 +212,21 @@ func TestSendRunMessageResolvesLatestPendingCodexInputInteraction(t *testing.T) 
 
 	now := time.Now().UTC()
 	run := &model.AgentRun{
-		ID:              "run-codex-input",
-		WorkspaceID:     "ws-1",
-		AgentID:         "agent-1",
-		TargetType:      "story",
-		TargetID:        "story-1",
-		RuntimeKind:     "codex",
-		InvocationMode:  model.InvocationModeInteractive,
-		ApprovalState:   "not_required",
-		PauseReason:     model.AgentRunPauseReasonHumanInput,
-		Status:          model.AgentRunStatusPaused,
-		LastHeartbeatAt: &now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                "run-codex-input",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_codex_input"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "story",
+		TargetID:          "story-1",
+		RuntimeKind:       "codex",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonHumanInput,
+		Status:            model.AgentRunStatusPaused,
+		LastHeartbeatAt:   &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -247,10 +263,12 @@ func TestSendRunMessageResolvesLatestPendingCodexInputInteraction(t *testing.T) 
 	}
 
 	svc := &AgentService{
-		runRepo:         runRepo,
-		runMessageRepo:  runMessageRepo,
-		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
+		agentRepo:          repository.NewAgentRepository(db),
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		interactionRepo:    interactionRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	message, err := svc.SendRunMessage(context.Background(), run.WorkspaceID, run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -300,26 +318,37 @@ func TestSendRunMessageResolvesLatestPendingCodexInputInteraction(t *testing.T) 
 
 func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
 
 	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-1", "ws-1", false, "Code Builder", model.AgentPresetCodeBuilder, "Builder", "idle", "codex",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeInteractive, now, now,
+	)
 	run := &model.AgentRun{
-		ID:              "run-codex-approval",
-		WorkspaceID:     "ws-1",
-		AgentID:         "agent-1",
-		TargetType:      "story",
-		TargetID:        "story-1",
-		RuntimeKind:     "codex",
-		InvocationMode:  model.InvocationModeInteractive,
-		ApprovalState:   "pending",
-		PauseReason:     model.AgentRunPauseReasonHumanApproval,
-		Status:          model.AgentRunStatusPaused,
-		LastHeartbeatAt: &now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                "run-codex-approval",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_codex_approval"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "story",
+		TargetID:          "story-1",
+		RuntimeKind:       "codex",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		LastHeartbeatAt:   &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -359,11 +388,14 @@ func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *t
 		t.Fatalf("create interaction: %v", err)
 	}
 
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		runRepo:         runRepo,
-		runMessageRepo:  runMessageRepo,
-		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		interactionRepo:    interactionRepo,
+		agentRuntimeClient: runtimeClient,
 	}
 
 	responsePayload := json.RawMessage(`{"decision":"acceptForSession"}`)
@@ -382,6 +414,12 @@ func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *t
 	if got := string(interaction.ResponsePayload); got != string(responsePayload) {
 		t.Fatalf("expected native response payload to be preserved, got %s", got)
 	}
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	if got := string(runtimeClient.resumeCalls[0].req.ResponsePayload); got != string(responsePayload) {
+		t.Fatalf("expected native response payload on runtime resume, got %s", got)
+	}
 	if interaction.ResolvedBy == nil || *interaction.ResolvedBy != "user-1" {
 		t.Fatalf("expected resolved_by to be set, got %#v", interaction.ResolvedBy)
 	}
@@ -391,7 +429,7 @@ func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *t
 		t.Fatalf("get run: %v", err)
 	}
 	if updatedRun.Status != model.AgentRunStatusPaused || updatedRun.PauseReason != model.AgentRunPauseReasonHumanApproval {
-		t.Fatalf("expected live codex run to remain paused until the worker resumes, got %#v", updatedRun)
+		t.Fatalf("expected codex run to remain paused until runtime projection resumes it, got %#v", updatedRun)
 	}
 
 	messages, err := runMessageRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
@@ -421,20 +459,22 @@ func TestResolveCodingSessionInteractionSignalsNativeCodexApprovalPayloadForStal
 
 	staleHeartbeat := now.Add(-10 * time.Minute)
 	run := &model.AgentRun{
-		ID:              "run-codex-stale-resume",
-		WorkspaceID:     "ws-1",
-		AgentID:         "agent-1",
-		TargetType:      "story",
-		TargetID:        "story-1",
-		RuntimeKind:     "codex",
-		InvocationMode:  model.InvocationModeInteractive,
-		ApprovalState:   "pending",
-		PauseReason:     model.AgentRunPauseReasonHumanApproval,
-		Status:          model.AgentRunStatusPaused,
-		WorkflowID:      strPtr("workflow-run-codex-stale"),
-		LastHeartbeatAt: &staleHeartbeat,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                "run-codex-stale-resume",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_stale_resume"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "story",
+		TargetID:          "story-1",
+		RuntimeKind:       "codex",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		WorkflowID:        strPtr("workflow-run-codex-stale"),
+		LastHeartbeatAt:   &staleHeartbeat,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -468,12 +508,12 @@ func TestResolveCodingSessionInteractionSignalsNativeCodexApprovalPayloadForStal
 		t.Fatalf("create interaction: %v", err)
 	}
 
-	temporalClient := &capturingTemporalClient{}
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		agentRepo:       agentRepo,
-		runRepo:         runRepo,
-		interactionRepo: interactionRepo,
-		runEngine:       temporalapp.NewRunEngine(temporalClient, "test"),
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		interactionRepo:    interactionRepo,
+		agentRuntimeClient: runtimeClient,
 	}
 
 	responsePayload := json.RawMessage(`{"permissions":{"network":{"enabled":true}},"scope":"session"}`)
@@ -486,17 +526,21 @@ func TestResolveCodingSessionInteractionSignalsNativeCodexApprovalPayloadForStal
 	if interaction == nil || interaction.Status != model.AgentRunInteractionStatusResolved {
 		t.Fatalf("expected resolved interaction, got %#v", interaction)
 	}
-	if temporalClient.signalName != temporalapp.WorkflowSignalResume {
-		t.Fatalf("expected resume workflow signal, got %q", temporalClient.signalName)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
 	}
-	if temporalClient.resumeSignal.Intent != model.AgentRunResumeIntentApprove {
-		t.Fatalf("expected approve intent, got %#v", temporalClient.resumeSignal)
+	resumeCall := runtimeClient.resumeCalls[0]
+	if resumeCall.runID != "run_rt_stale_resume" {
+		t.Fatalf("expected runtime run id run_rt_stale_resume, got %q", resumeCall.runID)
 	}
-	if got := string(temporalClient.resumeSignal.ResponsePayload); got != string(responsePayload) {
-		t.Fatalf("expected exact native response payload on resume signal, got %s", got)
+	if resumeCall.req.Intent != model.AgentRunResumeIntentApprove {
+		t.Fatalf("expected approve intent, got %#v", resumeCall.req)
 	}
-	if temporalClient.resumeSignal.Content != "approve" {
-		t.Fatalf("expected default approval content, got %#v", temporalClient.resumeSignal)
+	if got := string(resumeCall.req.ResponsePayload); got != string(responsePayload) {
+		t.Fatalf("expected exact native response payload on runtime resume, got %s", got)
+	}
+	if resumeCall.req.Content != "" {
+		t.Fatalf("expected empty content for approve without message, got %#v", resumeCall.req)
 	}
 }
 
@@ -519,20 +563,22 @@ func TestResolveCodingSessionInteractionReviewCheckpointResumesEvenWhenLiveCodex
 	)
 
 	run := &model.AgentRun{
-		ID:              "run-codex-review-checkpoint",
-		WorkspaceID:     "ws-1",
-		AgentID:         "agent-1",
-		TargetType:      "epic",
-		TargetID:        "epic-1",
-		RuntimeKind:     "codex",
-		InvocationMode:  model.InvocationModeInteractive,
-		ApprovalState:   "pending",
-		PauseReason:     model.AgentRunPauseReasonHumanApproval,
-		Status:          model.AgentRunStatusPaused,
-		WorkflowID:      strPtr("workflow-run-codex-review"),
-		LastHeartbeatAt: &now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                "run-codex-review-checkpoint",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_review_checkpoint"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "codex",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		WorkflowID:        strPtr("workflow-run-codex-review"),
+		LastHeartbeatAt:   &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -568,14 +614,14 @@ func TestResolveCodingSessionInteractionReviewCheckpointResumesEvenWhenLiveCodex
 		t.Fatalf("create interaction: %v", err)
 	}
 
-	temporalClient := &capturingTemporalClient{}
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentService{
-		agentRepo:       agentRepo,
-		runRepo:         runRepo,
-		runMessageRepo:  runMessageRepo,
-		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
-		runEngine:       temporalapp.NewRunEngine(temporalClient, "test"),
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		interactionRepo:    interactionRepo,
+		agentRuntimeClient: runtimeClient,
 	}
 
 	responsePayload := json.RawMessage(`{"decision":"approve"}`)
@@ -588,8 +634,11 @@ func TestResolveCodingSessionInteractionReviewCheckpointResumesEvenWhenLiveCodex
 	if interaction == nil || interaction.Status != model.AgentRunInteractionStatusResolved {
 		t.Fatalf("expected resolved interaction, got %#v", interaction)
 	}
-	if temporalClient.signalName != "" {
-		t.Fatalf("expected live codex path to avoid a workflow resume signal, got %q", temporalClient.signalName)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected review checkpoint to resume via the agent runtime even with a live codex pause, got %#v", runtimeClient.resumeCalls)
+	}
+	if runtimeClient.resumeCalls[0].req.Intent != model.AgentRunResumeIntentApprove {
+		t.Fatalf("expected approve intent on runtime resume, got %#v", runtimeClient.resumeCalls[0].req)
 	}
 
 	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
@@ -630,20 +679,22 @@ func TestResolveCodingSessionInteractionReviewCheckpointPersistsDecisionForClean
 	)
 
 	run := &model.AgentRun{
-		ID:              "run-codex-review-clean",
-		WorkspaceID:     "ws-1",
-		AgentID:         "agent-1",
-		TargetType:      "epic",
-		TargetID:        "epic-1",
-		RuntimeKind:     "codex",
-		InvocationMode:  model.InvocationModeInteractive,
-		ApprovalState:   "pending",
-		PauseReason:     model.AgentRunPauseReasonHumanApproval,
-		Status:          model.AgentRunStatusPaused,
-		WorkflowID:      strPtr("workflow-run-codex-review-clean"),
-		LastHeartbeatAt: &now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                "run-codex-review-clean",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_review_clean"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "codex",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		WorkflowID:        strPtr("workflow-run-codex-review-clean"),
+		LastHeartbeatAt:   &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -676,14 +727,13 @@ func TestResolveCodingSessionInteractionReviewCheckpointPersistsDecisionForClean
 		t.Fatalf("create interaction: %v", err)
 	}
 
-	temporalClient := &capturingTemporalClient{}
 	svc := &AgentService{
-		agentRepo:       agentRepo,
-		runRepo:         runRepo,
-		runMessageRepo:  runMessageRepo,
-		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
-		runEngine:       temporalapp.NewRunEngine(temporalClient, "test"),
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		interactionRepo:    interactionRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	responsePayload := json.RawMessage(`{"decision":"approve","message":"Looks good."}`)
@@ -744,20 +794,22 @@ func TestResolveCodingSessionInteractionReviewCheckpointPersistsOnlySelectedFind
 	)
 
 	run := &model.AgentRun{
-		ID:              "run-codex-review-selected",
-		WorkspaceID:     "ws-1",
-		AgentID:         "agent-1",
-		TargetType:      "epic",
-		TargetID:        "epic-1",
-		RuntimeKind:     "codex",
-		InvocationMode:  model.InvocationModeInteractive,
-		ApprovalState:   "pending",
-		PauseReason:     model.AgentRunPauseReasonHumanApproval,
-		Status:          model.AgentRunStatusPaused,
-		WorkflowID:      strPtr("workflow-run-codex-review-selected"),
-		LastHeartbeatAt: &now,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                "run-codex-review-selected",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_review_selected"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "codex",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		WorkflowID:        strPtr("workflow-run-codex-review-selected"),
+		LastHeartbeatAt:   &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -791,14 +843,13 @@ func TestResolveCodingSessionInteractionReviewCheckpointPersistsOnlySelectedFind
 		t.Fatalf("create interaction: %v", err)
 	}
 
-	temporalClient := &capturingTemporalClient{}
 	svc := &AgentService{
-		agentRepo:       agentRepo,
-		runRepo:         runRepo,
-		runMessageRepo:  runMessageRepo,
-		artifactRepo:    artifactRepo,
-		interactionRepo: interactionRepo,
-		runEngine:       temporalapp.NewRunEngine(temporalClient, "test"),
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		interactionRepo:    interactionRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	responsePayload := json.RawMessage(`{
@@ -860,19 +911,21 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-long-approve",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonHumanInput,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-long-approve",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_long_approve"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonHumanInput,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -885,11 +938,11 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
 			},
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
 			},
 		}),
@@ -900,11 +953,11 @@ func TestSendRunMessageTreatsLongApprovalPhraseAsNormalUserReply(t *testing.T) {
 	seedApprovalArtifacts(t, artifactRepo, "ws-1", run.ID, 1, now, "# Problem\n\nDraft body")
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	message, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -951,19 +1004,21 @@ func TestSendRunMessageApprovalPrefersAssistantLinkedPreviewArtifact(t *testing.
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-artifact-preferred",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonHumanInput,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-artifact-preferred",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_artifact_preferred"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonHumanInput,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -976,11 +1031,11 @@ func TestSendRunMessageApprovalPrefersAssistantLinkedPreviewArtifact(t *testing.
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nStale invocation draft"}`),
 			},
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
 			},
 		}),
@@ -994,7 +1049,7 @@ func TestSendRunMessageApprovalPrefersAssistantLinkedPreviewArtifact(t *testing.
 		ID:            "artifact-run-preview-linked",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1021,11 +1076,11 @@ func TestSendRunMessageApprovalPrefersAssistantLinkedPreviewArtifact(t *testing.
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	if _, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -1079,19 +1134,21 @@ func TestSendRunMessageApprovalUsesApprovalArtifactWithoutToolInvocations(t *tes
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-approval-artifact-only",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonHumanInput,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-approval-artifact-only",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_approval_artifact_only"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonHumanInput,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -1112,7 +1169,7 @@ func TestSendRunMessageApprovalUsesApprovalArtifactWithoutToolInvocations(t *tes
 		ID:            "artifact-run-preview-linked-2",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1140,11 +1197,11 @@ func TestSendRunMessageApprovalUsesApprovalArtifactWithoutToolInvocations(t *tes
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	if _, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -1210,7 +1267,7 @@ func TestMaybePersistApprovedInteractivePreviewWithoutAssistantMessageRow(t *tes
 		ID:            "artifact-run-preview-tool-only",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1238,11 +1295,11 @@ func TestMaybePersistApprovedInteractivePreviewWithoutAssistantMessageRow(t *tes
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	if err := svc.maybePersistApprovedInteractivePreview(context.Background(), run, "user-1", "approve"); err != nil {
@@ -1293,19 +1350,21 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-2",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonHumanInput,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-2",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_feedback"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonHumanInput,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -1318,11 +1377,11 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
 			},
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review the current draft"}`),
 			},
 		}),
@@ -1333,11 +1392,11 @@ func TestSendRunMessageKeepsInteractiveRunResumingOnFeedback(t *testing.T) {
 	seedApprovalArtifacts(t, artifactRepo, "ws-1", run.ID, 1, now, "# Problem\n\nDraft body")
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	message, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -1390,30 +1449,32 @@ func TestSendRunMessageAllowsAwaitingApprovalRuns(t *testing.T) {
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-awaiting-approval-message",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "pending",
-		PauseReason:    model.AgentRunPauseReasonHumanApproval,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-awaiting-approval-message",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_awaiting_approval"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	message, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -1430,11 +1491,21 @@ func TestSendRunMessageAllowsAwaitingApprovalRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get run: %v", err)
 	}
-	if updated.Status != model.AgentRunStatusRunning {
-		t.Fatalf("expected run status %q, got %q", model.AgentRunStatusRunning, updated.Status)
+	// Status stays paused locally: the runtime event projection owns the
+	// status/pause flip for delegated runs.
+	if updated.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected run status %q, got %q", model.AgentRunStatusPaused, updated.Status)
 	}
 	if updated.ApprovalState != "rejected" {
 		t.Fatalf("expected approval_state rejected for feedback reply, got %q", updated.ApprovalState)
+	}
+
+	runtimeClient := svc.agentRuntimeClient.(*fakeAgentRuntimeSignalClient)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	if runtimeClient.resumeCalls[0].req.Intent != model.AgentRunResumeIntentRequestChanges {
+		t.Fatalf("expected request_changes intent for feedback reply, got %#v", runtimeClient.resumeCalls[0].req)
 	}
 }
 
@@ -1455,29 +1526,31 @@ func TestResumeRunAllowsPausedApprovalRuns(t *testing.T) {
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-paused-approval",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "pending",
-		PauseReason:    model.AgentRunPauseReasonHumanApproval,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-paused-approval",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_paused_approval"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	updated, err := svc.ResumeRun(context.Background(), "ws-1", run.ID, "user-1", model.ResumeAgentRunRequest{
@@ -1487,14 +1560,28 @@ func TestResumeRunAllowsPausedApprovalRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResumeRun returned error: %v", err)
 	}
-	if updated.Status != model.AgentRunStatusRunning {
-		t.Fatalf("expected run status running, got %q", updated.Status)
+	// Status and pause reason stay untouched locally: the runtime event
+	// projection owns the status/pause flip for delegated runs.
+	if updated.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected run status paused, got %q", updated.Status)
 	}
-	if updated.PauseReason != model.AgentRunPauseReasonNone {
-		t.Fatalf("expected pause_reason none after resume, got %q", updated.PauseReason)
+	if updated.PauseReason != model.AgentRunPauseReasonHumanApproval {
+		t.Fatalf("expected pause_reason human_approval until projection resumes, got %q", updated.PauseReason)
 	}
 	if updated.ApprovalState != "rejected" {
 		t.Fatalf("expected approval_state rejected, got %q", updated.ApprovalState)
+	}
+
+	runtimeClient := svc.agentRuntimeClient.(*fakeAgentRuntimeSignalClient)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	resumeCall := runtimeClient.resumeCalls[0]
+	if resumeCall.runID != "run_rt_paused_approval" {
+		t.Fatalf("expected runtime run id run_rt_paused_approval, got %q", resumeCall.runID)
+	}
+	if resumeCall.req.Intent != model.AgentRunResumeIntentRequestChanges || resumeCall.req.Content != "Please tighten the requirements section." {
+		t.Fatalf("expected request_changes resume request, got %#v", resumeCall.req)
 	}
 }
 
@@ -1566,29 +1653,31 @@ func TestResumeRunApproveCreatesApprovalMessageAndApprovesRun(t *testing.T) {
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-resume-approve",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "pending",
-		PauseReason:    model.AgentRunPauseReasonHumanApproval,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-resume-approve",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_resume_approve"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	updated, err := svc.ResumeRun(context.Background(), "ws-1", run.ID, "user-1", model.ResumeAgentRunRequest{
@@ -1601,8 +1690,22 @@ func TestResumeRunApproveCreatesApprovalMessageAndApprovesRun(t *testing.T) {
 	if updated.ApprovalState != "approved" {
 		t.Fatalf("expected approval_state approved, got %q", updated.ApprovalState)
 	}
-	if updated.Status != model.AgentRunStatusRunning {
-		t.Fatalf("expected run status running, got %q", updated.Status)
+	// Status stays paused locally: the runtime event projection owns the
+	// status/pause flip for delegated runs.
+	if updated.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected run status paused, got %q", updated.Status)
+	}
+
+	runtimeClient := svc.agentRuntimeClient.(*fakeAgentRuntimeSignalClient)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	resumeCall := runtimeClient.resumeCalls[0]
+	if resumeCall.runID != "run_rt_resume_approve" {
+		t.Fatalf("expected runtime run id run_rt_resume_approve, got %q", resumeCall.runID)
+	}
+	if resumeCall.req.Intent != model.AgentRunResumeIntentApprove || resumeCall.req.Content != "approve" {
+		t.Fatalf("expected approve resume request with default content, got %#v", resumeCall.req)
 	}
 
 	messages, err := runMessageRepo.ListByRun(context.Background(), "ws-1", run.ID)
@@ -1635,19 +1738,21 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-split-tools",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonHumanInput,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-split-tools",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_split_tools"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonHumanInput,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -1661,7 +1766,7 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishPreview,
+				ToolName: agentcontract.ToolPublishPreview,
 				Input:    json.RawMessage(`{"panel_key":"prd_draft","title":"PRD Draft","format":"markdown","content":"# Problem\n\nDraft body"}`),
 			},
 		}),
@@ -1678,7 +1783,7 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"prd","title":"Approve PRD","summary":"Review draft"}`),
 			},
 		}),
@@ -1692,7 +1797,7 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 		ID:            "artifact-run-preview",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1719,11 +1824,11 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	if _, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -1750,7 +1855,7 @@ func TestSendRunMessagePersistsApprovedPreviewFromRunArtifactWhenToolsSplitAcros
 	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
 		t.Fatalf("unmarshal approved preview: %v", err)
 	}
-	if approved.PanelKey != "prd_draft" || approved.Format != worker.PreviewFormatMarkdown {
+	if approved.PanelKey != "prd_draft" || approved.Format != agentcontract.PreviewFormatMarkdown {
 		t.Fatalf("unexpected approved preview payload: %#v", approved)
 	}
 }
@@ -1773,19 +1878,21 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesPublishTool
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-task-doc-tool-key",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-task-doc",
-		TargetType:     "task",
-		TargetID:       "task-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "pending",
-		PauseReason:    model.AgentRunPauseReasonHumanApproval,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-task-doc-tool-key",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_task_doc_tool_key"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-task-doc",
+		TargetType:        "task",
+		TargetID:          "task-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -1800,11 +1907,11 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesPublishTool
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolPublishTaskPlanDoc,
+				ToolName: agentcontract.ToolPublishTaskPlanDoc,
 				Input:    json.RawMessage(`{"content":"# Plan\n\nInstrument Kafka producer metrics."}`),
 			},
 			{
-				ToolName: worker.ToolRequestApproval,
+				ToolName: agentcontract.ToolRequestApproval,
 				Input:    json.RawMessage(`{"phase":"task_doc","preview_panel_key":"publish_task_plan_doc","title":"Approve task planning document","summary":"Review it"}`),
 			},
 		}),
@@ -1818,7 +1925,7 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesPublishTool
 		ID:            "artifact-task-doc-preview",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1845,11 +1952,11 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesPublishTool
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	if _, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -1876,7 +1983,7 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesPublishTool
 	if err := json.Unmarshal([]byte(derefString(approvedArtifact.InlineContent)), &approved); err != nil {
 		t.Fatalf("unmarshal approved preview: %v", err)
 	}
-	if approved.Phase != "task_doc" || approved.PanelKey != "task_plan_doc" || approved.Format != worker.PreviewFormatMarkdown {
+	if approved.Phase != "task_doc" || approved.PanelKey != "task_plan_doc" || approved.Format != agentcontract.PreviewFormatMarkdown {
 		t.Fatalf("unexpected approved preview payload: %#v", approved)
 	}
 	if string(approved.Content) != `"# Plan\n\nInstrument Kafka producer metrics."` {
@@ -1902,19 +2009,21 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesUnknownPane
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-task-doc-uuid-key",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-task-doc-uuid",
-		TargetType:     "task",
-		TargetID:       "task-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "pending",
-		PauseReason:    model.AgentRunPauseReasonHumanApproval,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-task-doc-uuid-key",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_task_doc_uuid_key"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-task-doc-uuid",
+		TargetType:        "task",
+		TargetID:          "task-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -1925,7 +2034,7 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesUnknownPane
 		ID:            "artifact-task-doc-uuid-preview",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -1952,11 +2061,11 @@ func TestSendRunMessagePersistsApprovedTaskDocPreviewWhenApprovalUsesUnknownPane
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	if _, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -2004,28 +2113,30 @@ func TestApproveRunRecoversAwaitingApprovalWithStaleApprovalState(t *testing.T) 
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-awaiting-approve",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonHumanApproval,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-awaiting-approve",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_awaiting_approve"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
 	}
 
 	svc := &AgentService{
-		agentRepo: agentRepo,
-		runRepo:   runRepo,
-		runEngine: &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	updated, err := svc.ApproveRun(context.Background(), "ws-1", run.ID, "user-1", model.ApproveAgentRunRequest{})
@@ -2035,11 +2146,22 @@ func TestApproveRunRecoversAwaitingApprovalWithStaleApprovalState(t *testing.T) 
 	if updated.ApprovalState != "approved" {
 		t.Fatalf("expected approval_state approved, got %q", updated.ApprovalState)
 	}
-	if updated.Status != model.AgentRunStatusRunning {
-		t.Fatalf("expected run status running, got %q", updated.Status)
+	// Status stays paused locally: the runtime event projection owns the
+	// status/pause flip for delegated runs.
+	if updated.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected run status paused, got %q", updated.Status)
 	}
 	if updated.ExecutionStage == nil || *updated.ExecutionStage != "approved" {
 		t.Fatalf("expected execution stage approved, got %#v", updated.ExecutionStage)
+	}
+
+	runtimeClient := svc.agentRuntimeClient.(*fakeAgentRuntimeSignalClient)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	resumeCall := runtimeClient.resumeCalls[0]
+	if resumeCall.req.Intent != model.AgentRunResumeIntentApprove || resumeCall.req.Content != "" {
+		t.Fatalf("expected approve resume request with empty content, got %#v", resumeCall.req)
 	}
 }
 
@@ -2061,20 +2183,22 @@ func TestApproveRunKeepsPausedStateForLiveCodexSession(t *testing.T) {
 	)
 
 	run := &model.AgentRun{
-		ID:              "run-live-codex-approve",
-		WorkspaceID:     "ws-1",
-		AgentID:         "agent-codex",
-		TargetType:      "story",
-		TargetID:        "story-1",
-		RuntimeKind:     "codex",
-		InvocationMode:  model.InvocationModeInteractive,
-		ApprovalState:   "pending",
-		PauseReason:     model.AgentRunPauseReasonHumanApproval,
-		Status:          model.AgentRunStatusPaused,
-		LastHeartbeatAt: &now,
-		OutputSummary:   []byte(`{"status":"waiting_approval"}`),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                "run-live-codex-approve",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_live_codex_approve"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-codex",
+		TargetType:        "story",
+		TargetID:          "story-1",
+		RuntimeKind:       "codex",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		LastHeartbeatAt:   &now,
+		OutputSummary:     []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -2082,11 +2206,11 @@ func TestApproveRunKeepsPausedStateForLiveCodexSession(t *testing.T) {
 	seedCodexPendingSessionState(t, artifactRepo, "ws-1", run.ID, now)
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	updated, err := svc.ApproveRun(context.Background(), "ws-1", run.ID, "user-1", model.ApproveAgentRunRequest{SendMessage: true})
@@ -2110,6 +2234,14 @@ func TestApproveRunKeepsPausedStateForLiveCodexSession(t *testing.T) {
 	if len(messages) != 1 || messages[0].MessageType != "approval" {
 		t.Fatalf("expected one persisted approval message, got %#v", messages)
 	}
+
+	runtimeClient := svc.agentRuntimeClient.(*fakeAgentRuntimeSignalClient)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	if runtimeClient.resumeCalls[0].req.Intent != model.AgentRunResumeIntentApprove {
+		t.Fatalf("expected approve intent, got %#v", runtimeClient.resumeCalls[0].req)
+	}
 }
 
 func TestApproveRunPersistsProvidedApprovalContent(t *testing.T) {
@@ -2129,29 +2261,31 @@ func TestApproveRunPersistsProvidedApprovalContent(t *testing.T) {
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-approve-content",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "pending",
-		PauseReason:    model.AgentRunPauseReasonHumanApproval,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-approve-content",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_approve_content"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	updated, err := svc.ApproveRun(context.Background(), "ws-1", run.ID, "user-1", model.ApproveAgentRunRequest{
@@ -2195,19 +2329,21 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-approve-story-plan",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "pending",
-		PauseReason:    model.AgentRunPauseReasonHumanApproval,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-approve-story-plan",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_approve_story_plan"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -2220,7 +2356,7 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 		MessageType: "assistant_turn",
 		ToolInvocations: mustMarshalTestJSON(t, []model.ToolInvocation{
 			{
-				ToolName: worker.ToolRequestHumanApproval,
+				ToolName: agentcontract.ToolRequestHumanApproval,
 				Input:    json.RawMessage(`{"phase":"tasks","title":"Approve task plan","summary":"Review the current breakdown"}`),
 			},
 		}),
@@ -2240,7 +2376,7 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 		ID:            "artifact-run-preview-story-plan",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
-		ArtifactType:  worker.RunPreviewArtifactType,
+		ArtifactType:  agentcontract.RunPreviewArtifactType,
 		Format:        "json",
 		StorageMode:   "inline",
 		InlineContent: &runPreviewContent,
@@ -2267,11 +2403,11 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	if _, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
@@ -2327,29 +2463,31 @@ func TestRequestRunChangesRecoversAwaitingApprovalWithStaleApprovalState(t *test
 	)
 
 	run := &model.AgentRun{
-		ID:             "run-awaiting-changes",
-		WorkspaceID:    "ws-1",
-		AgentID:        "agent-1",
-		TargetType:     "epic",
-		TargetID:       "epic-1",
-		RuntimeKind:    "native_sdk",
-		InvocationMode: model.InvocationModeInteractive,
-		ApprovalState:  "not_required",
-		PauseReason:    model.AgentRunPauseReasonHumanApproval,
-		Status:         model.AgentRunStatusPaused,
-		OutputSummary:  []byte(`{"status":"waiting_approval"}`),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                "run-awaiting-changes",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_awaiting_changes"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-1",
+		TargetType:        "epic",
+		TargetID:          "epic-1",
+		RuntimeKind:       "native_sdk",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		OutputSummary:     []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
 	}
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	updated, err := svc.RequestRunChanges(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunRequestChangesRequest{
@@ -2361,8 +2499,18 @@ func TestRequestRunChangesRecoversAwaitingApprovalWithStaleApprovalState(t *test
 	if updated.ApprovalState != "rejected" {
 		t.Fatalf("expected approval_state rejected, got %q", updated.ApprovalState)
 	}
-	if updated.Status != model.AgentRunStatusRunning {
-		t.Fatalf("expected run status running, got %q", updated.Status)
+	// Status stays paused locally: the runtime event projection owns the
+	// status/pause flip for delegated runs.
+	if updated.Status != model.AgentRunStatusPaused {
+		t.Fatalf("expected run status paused, got %q", updated.Status)
+	}
+
+	runtimeClient := svc.agentRuntimeClient.(*fakeAgentRuntimeSignalClient)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	if runtimeClient.resumeCalls[0].req.Intent != model.AgentRunResumeIntentRequestChanges {
+		t.Fatalf("expected request_changes intent, got %#v", runtimeClient.resumeCalls[0].req)
 	}
 }
 
@@ -2384,20 +2532,22 @@ func TestRequestRunChangesKeepsPausedStateForLiveCodexSession(t *testing.T) {
 	)
 
 	run := &model.AgentRun{
-		ID:              "run-live-codex-feedback",
-		WorkspaceID:     "ws-1",
-		AgentID:         "agent-codex",
-		TargetType:      "story",
-		TargetID:        "story-1",
-		RuntimeKind:     "codex",
-		InvocationMode:  model.InvocationModeInteractive,
-		ApprovalState:   "pending",
-		PauseReason:     model.AgentRunPauseReasonHumanApproval,
-		Status:          model.AgentRunStatusPaused,
-		LastHeartbeatAt: &now,
-		OutputSummary:   []byte(`{"status":"waiting_approval"}`),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:                "run-live-codex-feedback",
+		ExternalRuntime:   strPtr("agent-runtime"),
+		ExternalRuntimeID: strPtr("run_rt_live_codex_feedback"),
+		WorkspaceID:       "ws-1",
+		AgentID:           "agent-codex",
+		TargetType:        "story",
+		TargetID:          "story-1",
+		RuntimeKind:       "codex",
+		InvocationMode:    model.InvocationModeInteractive,
+		ApprovalState:     "pending",
+		PauseReason:       model.AgentRunPauseReasonHumanApproval,
+		Status:            model.AgentRunStatusPaused,
+		LastHeartbeatAt:   &now,
+		OutputSummary:     []byte(`{"status":"waiting_approval"}`),
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
@@ -2405,11 +2555,11 @@ func TestRequestRunChangesKeepsPausedStateForLiveCodexSession(t *testing.T) {
 	seedCodexPendingSessionState(t, artifactRepo, "ws-1", run.ID, now)
 
 	svc := &AgentService{
-		agentRepo:      agentRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		artifactRepo:   artifactRepo,
-		runEngine:      &temporalapp.RunEngine{},
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     runMessageRepo,
+		artifactRepo:       artifactRepo,
+		agentRuntimeClient: &fakeAgentRuntimeSignalClient{},
 	}
 
 	updated, err := svc.RequestRunChanges(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunRequestChangesRequest{
@@ -2426,6 +2576,14 @@ func TestRequestRunChangesKeepsPausedStateForLiveCodexSession(t *testing.T) {
 	}
 	if updated.PauseReason != model.AgentRunPauseReasonHumanApproval {
 		t.Fatalf("expected pause reason human_approval, got %q", updated.PauseReason)
+	}
+
+	runtimeClient := svc.agentRuntimeClient.(*fakeAgentRuntimeSignalClient)
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one agent runtime resume call, got %#v", runtimeClient.resumeCalls)
+	}
+	if runtimeClient.resumeCalls[0].req.Intent != model.AgentRunResumeIntentRequestChanges {
+		t.Fatalf("expected request_changes intent, got %#v", runtimeClient.resumeCalls[0].req)
 	}
 }
 
@@ -2445,6 +2603,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
+			icon_key TEXT NOT NULL DEFAULT '',
 			preset_key TEXT,
 			preset_version_key TEXT,
 			source_preset_key TEXT,
@@ -2494,6 +2653,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			runtime_kind TEXT NOT NULL,
 			invocation_mode TEXT NOT NULL,
 			parent_run_id TEXT,
+			dock_chat_id TEXT,
 			handoff_state TEXT,
 			approval_state TEXT NOT NULL,
 			pause_reason TEXT NOT NULL DEFAULT 'none',
@@ -2501,6 +2661,8 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			status TEXT NOT NULL,
 			workflow_id TEXT,
 			workflow_run_id TEXT,
+			external_runtime TEXT,
+			external_runtime_id TEXT,
 			task_queue TEXT,
 			runner_pool TEXT,
 			agent_version_id TEXT,
@@ -2527,6 +2689,8 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			run_id TEXT NOT NULL,
+			actor_user_id TEXT,
+			runtime_message_id TEXT,
 			role TEXT NOT NULL,
 			content TEXT NOT NULL,
 			message_type TEXT NOT NULL,
@@ -2580,6 +2744,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			run_id TEXT NOT NULL,
 			schema_version TEXT NOT NULL,
+			through_sequence INTEGER NOT NULL DEFAULT 0,
 			snapshot_payload BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -2603,24 +2768,4 @@ func mustMarshalTestJSON(t *testing.T, value any) []byte {
 		t.Fatalf("marshal json: %v", err)
 	}
 	return payload
-}
-
-type capturingTemporalClient struct {
-	tclient.Client
-	signalName    string
-	workflowID    string
-	workflowRunID string
-	resumeSignal  temporalapp.RunResumeSignal
-}
-
-func (c *capturingTemporalClient) SignalWorkflow(_ context.Context, workflowID, workflowRunID, signalName string, arg interface{}) error {
-	c.workflowID = workflowID
-	c.workflowRunID = workflowRunID
-	c.signalName = signalName
-	payload, ok := arg.(temporalapp.RunResumeSignal)
-	if !ok {
-		return fmt.Errorf("unexpected workflow signal payload type %T", arg)
-	}
-	c.resumeSignal = payload
-	return nil
 }

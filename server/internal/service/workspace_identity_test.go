@@ -450,6 +450,7 @@ func TestPMEpicServiceCreateSupportsWorkspaceMemberOwners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add pending epic owner: %v", err)
 	}
+	teamID := "team-epic-identity"
 
 	svc := NewPMEpicService(
 		epicRepo,
@@ -466,6 +467,7 @@ func TestPMEpicServiceCreateSupportsWorkspaceMemberOwners(t *testing.T) {
 	epic, err := svc.Create(ctx, model.CreateEpicRequest{
 		WorkspaceID:   "ws-1",
 		Name:          "Epic with pending owner",
+		TeamID:        &teamID,
 		OwnerMemberID: &pendingOwner.ID,
 	}, actor.ID)
 	if err != nil {
@@ -712,6 +714,8 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			email TEXT NOT NULL,
 			password_hash TEXT NOT NULL,
 			full_name TEXT NOT NULL,
+			email_verified_at DATETIME,
+			google_subject TEXT,
 			avatar_url TEXT,
 			avatar_style TEXT,
 			avatar_seed TEXT,
@@ -733,6 +737,7 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			owner_id TEXT NOT NULL,
 			organization_id TEXT,
 			description TEXT,
+			company_product_context TEXT,
 			website_url TEXT,
 			logo_url TEXT,
 			timezone TEXT NOT NULL,

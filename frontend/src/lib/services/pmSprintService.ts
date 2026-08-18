@@ -1,6 +1,8 @@
 import { api } from '../api';
 import type {
   CreateSprintRequest,
+  LinkSprintTasksRequest,
+  LinkSprintTasksResponse,
   PaginatedResponse,
   SprintCloseoutListResponse,
   SprintCloseoutResponse,
@@ -62,6 +64,8 @@ export const pmSprintService = {
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/sprints/${id}${qs(workspaceId)}`),
   listTasks: (workspaceId: string, id: string) => api.get<Task[]>(`/pm/sprints/${id}/tasks${qs(workspaceId)}`),
+  linkTasks: (workspaceId: string, id: string, payload: LinkSprintTasksRequest) =>
+    api.post<LinkSprintTasksResponse>(`/pm/sprints/${id}/tasks/link${qs(workspaceId)}`, payload),
   getCloseout: (workspaceId: string, id: string) =>
     api.get<SprintCloseoutResponse>(`/pm/sprints/${id}/closeout${qs(workspaceId)}`),
   listCloseouts: (
@@ -76,5 +80,11 @@ export const pmSprintService = {
     pagination?: { page?: number; per_page?: number },
   ) => api.get<PaginatedResponse<SprintPlanningTaskPreview[]>>(
     `/pm/sprints/${id}/preview-tasks${qs(workspaceId)}${filterQuery(pagination ?? {})}`,
+  ),
+  listBacklogTasks: (
+    workspaceId: string,
+    filters?: { team_id?: string; page?: number; per_page?: number },
+  ) => api.get<PaginatedResponse<SprintPlanningTaskPreview[]>>(
+    `/pm/sprints/backlog-tasks${qs(workspaceId)}${filterQuery(filters ?? {})}`,
   ),
 };

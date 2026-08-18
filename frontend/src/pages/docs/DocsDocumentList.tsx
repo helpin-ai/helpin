@@ -1,14 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { timeAgo } from '@/lib/utils'
 import {
   ArchiveIcon,
-  ArrowDown02Icon,
-  ArrowUp02Icon,
   Tick01Icon,
   Clock01Icon,
   Copy01Icon,
-  File01Icon,
   FilterHorizontalIcon,
   ArrowDown01Icon,
   MoreHorizontalIcon,
@@ -22,7 +18,6 @@ import {
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { useAuthStore } from '@/stores/authStore'
 import {
   useDocsDocuments,
   useArchiveDocsDocument,
@@ -30,7 +25,8 @@ import {
   useDeleteDocsDocument,
   useDuplicateDocsDocument,
   usePublishDocsDocument,
-  useAssignableMembers,
+  useDocsSpaces,
+  useAllDocsCollections,
   useWorkspaceAccess,
   usePermissions,
 } from '@/hooks/queries'
@@ -41,23 +37,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { UserAvatar } from '@/components/pm/UserAvatar'
-import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
+import { Button } from '@/components/ui/button'
 import type { DocsDocument, DocStatus } from '@/lib/docsTypes'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
-
-function statusColor(status: string): string {
-  switch (status) {
-    case 'published':
-      return 'text-emerald-600 dark:text-emerald-400'
-    case 'archived':
-      return 'text-muted-foreground/60'
-    default:
-      return 'text-amber-600 dark:text-amber-400'
-  }
-}
+import {
+  DocsLibraryList,
+  DocsLibraryRow,
+  DocsLibrarySortMenu,
+  type DocsLibrarySortField,
+} from '@/components/docs/DocsLibraryList'
+import { buildCollectionPathLabels } from '@/components/docs/docsCollectionTree'
 
 interface DocsDocumentListProps {
   title: string
@@ -69,15 +60,15 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
   useTitle(title)
   const navigate = useNavigate()
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
-  const user = useAuthStore((s) => s.user)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
 
-  const { data: access } = useWorkspaceAccess(wsId)
+  const { data: access, isLoading: isAccessLoading } = useWorkspaceAccess(wsId)
   const { canEditDocs } = usePermissions(access)
+  const membershipId = access?.membership.id
 
   const [filterStatus, setFilterStatus] = useState<DocStatus | null>(null)
-  const [sortField, setSortField] = useState<'updated_at' | 'title' | 'status'>('updated_at')
+  const [sortField, setSortField] = useState<DocsLibrarySortField>('updated_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [duplicatingDocId, setDuplicatingDocId] = useState<string | null>(null)
   const [movingDoc, setMovingDoc] = useState<DocsDocument | null>(null)
@@ -85,17 +76,37 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
 
   const filters = useMemo(() => {
     if (filterMode === 'drafts') return { status: 'draft' }
-    if (filterMode === 'my' && user?.id) return { owner_id: user.id }
+    if (filterMode === 'my' && membershipId) {
+      return { owner_id: membershipId, include_archived: 'true' }
+    }
     return {}
-  }, [filterMode, user?.id])
+  }, [filterMode, membershipId])
 
-  const { data: rawDocuments, isLoading } = useDocsDocuments(wsId, filters)
-  const { data: members = [] } = useAssignableMembers(wsId)
+  const { data: rawDocuments, isLoading } = useDocsDocuments(wsId, filters, {
+    enabled: filterMode !== 'my' || !!membershipId,
+  })
+  const { data: spaces = [] } = useDocsSpaces(wsId)
+  const { data: collections = [] } = useAllDocsCollections(wsId)
   const archiveDoc = useArchiveDocsDocument(wsId)
   const unarchiveDoc = useUnarchiveDocsDocument(wsId)
   const deleteDoc = useDeleteDocsDocument(wsId)
   const duplicateDoc = useDuplicateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
+
+  const spaceNames = useMemo(
+    () => new Map(spaces.map((space) => [space.id, space.name])),
+    [spaces],
+  )
+  const collectionPaths = useMemo(
+    () => buildCollectionPathLabels(collections),
+    [collections],
+  )
+
+  const locationFor = (doc: DocsDocument) => {
+    const spaceName = spaceNames.get(doc.space_id)
+    const collectionPath = doc.collection_id ? collectionPaths.get(doc.collection_id) : undefined
+    return [spaceName, collectionPath].filter(Boolean).join(' › ')
+  }
 
   // For recent, sort by updated_at descending and limit
   const documents = useMemo(() => {
@@ -117,9 +128,6 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
       switch (sortField) {
         case 'title':
           cmp = (a.title ?? '').localeCompare(b.title ?? '')
-          break
-        case 'status':
-          cmp = (a.status ?? '').localeCompare(b.status ?? '')
           break
         case 'updated_at':
         default:
@@ -161,13 +169,13 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4">
+    <div className="space-y-4">
       <header>
         <h2 className="text-xl font-semibold">{title}</h2>
         <p className="text-sm text-muted-foreground">{description}</p>
       </header>
 
-      {isLoading ? (
+      {isLoading || (filterMode === 'my' && isAccessLoading) ? (
         <div className="space-y-2 py-4">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-10 animate-pulse rounded-md bg-muted/60" />
@@ -216,22 +224,19 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
         )
       ) : (
         <>
-          {/* Filters row */}
           <div className="flex items-center justify-end gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button
+                <Button
                   type="button"
-                  className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                    filterStatus
-                      ? 'border-primary/30 bg-primary/5 text-foreground'
-                      : 'border-border/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground'
-                  }`}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs text-muted-foreground"
                 >
                   <FilterHorizontalIcon className="h-3 w-3" />
                   {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
                   <ArrowDown01Icon className="h-3 w-3 opacity-50" />
-                </button>
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
                 <DropdownMenuItem
@@ -253,144 +258,91 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+            <DocsLibrarySortMenu
+              value={{ field: sortField, direction: sortDir }}
+              onChange={(next) => {
+                setSortField(next.field)
+                setSortDir(next.direction)
+              }}
+            />
           </div>
 
-          <div className="rounded-lg border border-border/60 bg-card divide-y divide-border/40">
-            {/* Table header */}
-            <div className="flex items-center gap-3 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <button type="button" onClick={() => { if (sortField === 'title') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('title'); setSortDir('asc') } }} className="min-w-0 flex-1 flex items-center gap-1 hover:text-foreground transition-colors text-left">
-                Title
-                {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
-              </button>
-              <span className="w-36 shrink-0">Owner</span>
-              <button type="button" onClick={() => { if (sortField === 'status') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('status'); setSortDir('asc') } }} className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors">
-                Status
-                {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
-              </button>
-              <button type="button" onClick={() => { if (sortField === 'updated_at') { setSortDir(d => d === 'asc' ? 'desc' : 'asc') } else { setSortField('updated_at'); setSortDir('desc') } }} className="w-20 shrink-0 flex items-center gap-1 justify-end hover:text-foreground transition-colors">
-                Updated
-                {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
-              </button>
-              {canEditDocs && <span className="w-8 shrink-0" />}
-            </div>
-            {displayDocs.map((doc: DocsDocument) => {
-              const owner = members.find((m) => m.id === doc.owner_id)
-              return (
-                <div
-                  key={doc.id}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40 group/row"
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      navigate({
-                        to: '/w/$slug/docs/documents/$docId',
-                        params: { slug: wsSlug, docId: doc.id },
-                      })
-                    }
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left justify-start"
-                  >
-                    <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 truncate font-medium">{doc.title}</span>
-                  </button>
-                  <span className="w-36 shrink-0 truncate text-xs text-muted-foreground">
-                    {owner ? (
-                      <span className="flex items-center gap-1">
-                        <UserAvatar
-                          name={owner.display_name || owner.email}
-                          avatarUrl={owner.avatar_url}
-                          className="h-4 w-4"
-                          fallbackClassName="text-[7px]"
-                        />
-                        <span className="truncate">{formatAssignableMemberName(owner)}</span>
-                      </span>
-                    ) : '—'}
-                  </span>
-                  <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
-                    {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-                  </span>
-                  <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">
-                    {timeAgo(doc.updated_at)}
-                  </span>
-                  {canEditDocs && (
-                    <span className="w-8 shrink-0">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="rounded p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <MoreHorizontalIcon className="h-4 w-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem
-                            disabled={duplicatingDocId === doc.id}
-                            onClick={() => void handleDuplicateDoc(doc)}
-                          >
-                            <Copy01Icon className="h-3.5 w-3.5" />
-                            {duplicatingDocId === doc.id ? 'Duplicating...' : 'Duplicate'}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setMovingDoc(doc)}>
-                            <FolderInputIcon className="h-3.5 w-3.5" />
-                            Move to...
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {doc.status === 'draft' && (
-                            <DropdownMenuItem
-                              onClick={() => {
-                                publishDoc.mutate({ id: doc.id }, {
-                                  onSuccess: () => toast.success('Document published'),
-                                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish'),
-                                })
-                              }}
-                            >
-                              <SentIcon className="h-3.5 w-3.5" />
-                              Publish
-                            </DropdownMenuItem>
-                          )}
-                          {doc.status === 'archived' ? (
-                            <DropdownMenuItem
-                              onClick={() => {
-                                unarchiveDoc.mutate(doc.id, {
-                                  onSuccess: () => toast.success('Document unarchived'),
-                                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unarchive'),
-                                })
-                              }}
-                            >
-                              <ArchiveRestoreIcon className="h-3.5 w-3.5" />
-                              Unarchive
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem
-                              onClick={() => {
-                                archiveDoc.mutate(doc.id, {
-                                  onSuccess: () => toast.success('Document archived'),
-                                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to archive'),
-                                })
-                              }}
-                            >
-                              <ArchiveIcon className="h-3.5 w-3.5" />
-                              Archive
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => setDeleteConfirmDoc(doc)}
-                          >
-                            <Delete01Icon className="h-3.5 w-3.5" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </span>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+          <DocsLibraryList ariaLabel={title}>
+            {displayDocs.map((doc: DocsDocument) => (
+              <DocsLibraryRow
+                key={doc.id}
+                title={doc.title}
+                status={doc.status}
+                updatedAt={doc.updated_at}
+                location={locationFor(doc)}
+                onOpen={() => navigate({
+                  to: '/w/$slug/docs/documents/$docId',
+                  params: { slug: wsSlug, docId: doc.id },
+                })}
+                actions={canEditDocs ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="rounded p-1.5 text-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label={`More options for ${doc.title}`}
+                      >
+                        <MoreHorizontalIcon className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                      <DropdownMenuItem
+                        disabled={duplicatingDocId === doc.id}
+                        onClick={() => void handleDuplicateDoc(doc)}
+                      >
+                        <Copy01Icon className="h-3.5 w-3.5" />
+                        {duplicatingDocId === doc.id ? 'Duplicating...' : 'Duplicate'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setMovingDoc(doc)}>
+                        <FolderInputIcon className="h-3.5 w-3.5" />
+                        Move to...
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {doc.status === 'draft' && (
+                        <DropdownMenuItem onClick={() => publishDoc.mutate({ id: doc.id }, {
+                          onSuccess: () => toast.success('Document published'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish'),
+                        })}>
+                          <SentIcon className="h-3.5 w-3.5" />
+                          Publish
+                        </DropdownMenuItem>
+                      )}
+                      {doc.status === 'archived' ? (
+                        <DropdownMenuItem onClick={() => unarchiveDoc.mutate(doc.id, {
+                          onSuccess: () => toast.success('Document unarchived'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to unarchive'),
+                        })}>
+                          <ArchiveRestoreIcon className="h-3.5 w-3.5" />
+                          Unarchive
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem onClick={() => archiveDoc.mutate(doc.id, {
+                          onSuccess: () => toast.success('Document archived'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to archive'),
+                        })}>
+                          <ArchiveIcon className="h-3.5 w-3.5" />
+                          Archive
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setDeleteConfirmDoc(doc)}
+                      >
+                        <Delete01Icon className="h-3.5 w-3.5" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : undefined}
+              />
+            ))}
+          </DocsLibraryList>
         </>
       )}
 

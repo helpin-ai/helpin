@@ -1066,6 +1066,13 @@ func (e *AutomationRuleEngine) ExecuteManualRule(ctx context.Context, workspaceI
 
 // CreateRule creates a new automation rule with validation.
 func (e *AutomationRuleEngine) CreateRule(ctx context.Context, workspaceID string, req model.CreateAutomationRuleRequest) (*model.AutomationRule, error) {
+	return e.CreateRuleForActor(ctx, workspaceID, "", req)
+}
+
+// CreateRuleForActor creates a rule and attributes it to the authenticated
+// actor. The actor is supplied by trusted server code and is never accepted
+// from the public request payload.
+func (e *AutomationRuleEngine) CreateRuleForActor(ctx context.Context, workspaceID, actorID string, req model.CreateAutomationRuleRequest) (*model.AutomationRule, error) {
 	if e.entitlementSvc != nil {
 		if err := e.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAutomationFlows); err != nil {
 			return nil, err
@@ -1091,6 +1098,7 @@ func (e *AutomationRuleEngine) CreateRule(ctx context.Context, workspaceID strin
 		TriggerConfig: req.TriggerConfig,
 		ActionType:    req.ActionType,
 		ActionConfig:  req.ActionConfig,
+		CreatedBy:     nilIfEmpty(actorID),
 	}
 	if req.Position != nil {
 		rule.Position = *req.Position

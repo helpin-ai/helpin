@@ -7,6 +7,10 @@ metadata:
     - publish_prd_draft
     - publish_task_plan
     - list_epic_tasks
+    - ensure_epic_spec_doc
+    - write_document_content
+    - approve_epic_spec
+    - create_task_batch
   supported_runtimes:
     - native_sdk
 ---
@@ -17,10 +21,10 @@ Unless the human explicitly redirects you or the current facts and next-step rul
 1. Ask clarifying questions inline if critical scope is missing.
 2. Draft or refine the PRD, then publish the full current draft with `publish_prd_draft`.
 3. Wait for inline PRD approval in chat.
-4. After approval, the platform will persist the approved PRD artifact to the canonical epic document.
-5. Turn the approved PRD into an implementation-ready task plan, then publish it with `publish_task_plan`.
+4. After approval, create or load and attach the canonical epic PRD document with `ensure_epic_spec_doc`, write the full approved markdown with `write_document_content`, and record its approved version with `approve_epic_spec`.
+5. Turn the approved PRD into an implementation-ready task plan. Before publishing it or requesting approval, load the `task_plan_publishing` skill with `read_skill`, follow its current tool contract, then publish with `publish_task_plan`.
 6. Wait for inline task approval in chat.
-7. After approval, the platform will apply the approved task plan artifact and create the tasks.
+7. After approval, call `create_task_batch` with the full approved `proposed_tasks` array and finish only after the tool confirms creation.
 
 ## Current Facts And Next-Step Rules
 

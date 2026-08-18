@@ -7,6 +7,34 @@ import { cn } from '@/lib/utils';
 import type { DocsSpace } from '@/lib/docsTypes';
 import type { AgentKnowledgeSource } from '@/lib/pmTypes';
 
+type KnowledgeSourceKind = 'help_center' | 'internal';
+
+const SOURCE_COPY: Record<KnowledgeSourceKind, {
+  badge: string;
+  emptyTitle: string;
+  emptyDescription: string;
+  selectDescription: string;
+  unattachedDescription: string;
+  reindexTitle: string;
+}> = {
+  help_center: {
+    badge: 'Help Center',
+    emptyTitle: 'No public docs spaces yet',
+    emptyDescription: 'Create a Help Center docs space, publish articles, then return here to make them searchable by AI.',
+    selectDescription: 'Select to index published public docs and make this space searchable by the support agent.',
+    unattachedDescription: 'Published help center space. Select a support agent in AI Assistant to attach it to support AI.',
+    reindexTitle: 'Reindex help center docs',
+  },
+  internal: {
+    badge: 'Internal',
+    emptyTitle: 'No internal docs spaces yet',
+    emptyDescription: 'Create an Internal docs space, publish documents, then return here to use them as private AI guidance.',
+    selectDescription: 'Select to index published internal docs. They can guide answers, but are never shown as customer citations.',
+    unattachedDescription: 'Published internal space. Select a support agent in AI Assistant to attach it to support AI.',
+    reindexTitle: 'Reindex internal docs',
+  },
+};
+
 const STATUS_META: Record<string, { label: string; className: string }> = {
   queued: { label: 'Queued', className: 'border-amber-500/40 bg-amber-500/10 text-amber-700' },
   running: { label: 'Indexing', className: 'border-sky-500/40 bg-sky-500/10 text-sky-700' },
@@ -25,6 +53,7 @@ export function SupportKnowledgeSourcesField({
   reindexingSpaceId,
   disabled = false,
   onOpenDocs,
+  kind = 'help_center',
 }: {
   agentId?: string;
   spaces: DocsSpace[];
@@ -34,16 +63,19 @@ export function SupportKnowledgeSourcesField({
   reindexingSpaceId?: string;
   disabled?: boolean;
   onOpenDocs?: () => void;
+  kind?: KnowledgeSourceKind;
 }) {
+  const copy = SOURCE_COPY[kind];
+
   if (spaces.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 px-4 py-8 text-center">
         <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <BookOpen01Icon className="h-5 w-5" />
         </div>
-        <p className="text-sm font-medium">No public docs spaces yet</p>
+        <p className="text-sm font-medium">{copy.emptyTitle}</p>
         <p className="mx-auto mt-1 max-w-lg text-sm leading-6 text-muted-foreground">
-          Create a Help Center docs space, publish articles, then return here to make them searchable by AI.
+          {copy.emptyDescription}
         </p>
         {onOpenDocs ? (
           <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onOpenDocs}>
@@ -84,7 +116,7 @@ export function SupportKnowledgeSourcesField({
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium">{space.name}</span>
-                  <Badge variant="outline">Help Center</Badge>
+                  <Badge variant="outline">{copy.badge}</Badge>
                   {selected && statusMeta && (
                     <Badge variant="outline" className={statusMeta.className}>
                       {statusMeta.label}
@@ -102,7 +134,7 @@ export function SupportKnowledgeSourcesField({
                         event.stopPropagation();
                         onReindex(space.id);
                       }}
-                      title="Reindex help center docs"
+                      title={copy.reindexTitle}
                     >
                       <ArrowReloadHorizontalIcon className={cn('h-3.5 w-3.5', reindexingSpaceId === space.id && 'animate-spin')} />
                     </Button>
@@ -113,8 +145,8 @@ export function SupportKnowledgeSourcesField({
                   {selected
                     ? indexedSummary(source)
                     : agentId
-                      ? 'Select to chunk published public docs, generate embeddings, and make this space searchable by the support agent.'
-                      : 'Published help center space. Select a support agent in AI Assistant to attach it to support AI.'}
+                      ? copy.selectDescription
+                      : copy.unattachedDescription}
                 </p>
               </div>
             </div>

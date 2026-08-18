@@ -76,7 +76,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
           )}
 
           {!isLoading && !isError && data && (
-            <div className="flex min-h-0 flex-col px-8 py-8">
+            <div data-testid="email-detail-scroll" className="flex min-h-0 flex-1 flex-col overflow-y-auto px-8 py-8">
               <h2 className="pr-10 text-[17px] font-semibold leading-snug tracking-tight">{subject}</h2>
 
               <dl className="mt-5 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
@@ -178,7 +178,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
               <div className="mt-6 min-h-0 border-t border-border/60 pt-6">
                 <div data-testid="email-body-scroll" className="max-h-[46vh] min-h-0 overflow-y-auto pb-8 pr-1">
                   {htmlBody ? (
-                    <EmailBodyRenderer html={htmlBody} collapsedByDefault={false} />
+                    <EmailBodyRenderer html={htmlBody} collapsedByDefault={false} constrainHeight={false} />
                   ) : textBody ? (
                     <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
                       {textBody}

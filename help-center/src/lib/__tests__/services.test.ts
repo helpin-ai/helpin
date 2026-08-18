@@ -46,6 +46,32 @@ describe('helpCenterService', () => {
     )
   })
 
+  it('uses localized API-reference endpoints in multilingual help centers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await helpCenterService.getAPIReferences('contentpen', 'fr', 'developpeurs', true)
+    await helpCenterService.getAPIReference(
+      'contentpen',
+      'fr',
+      'developpeurs',
+      'product-api',
+      true,
+    )
+
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(
+      /\/api\/hc\/contentpen\/fr\/spaces\/developpeurs\/api-references$/,
+    )
+    expect(fetchMock.mock.calls[1]?.[0]).toMatch(
+      /\/api\/hc\/contentpen\/fr\/spaces\/developpeurs\/api-references\/product-api$/,
+    )
+  })
+
   it('uses canonical single-locale endpoints when multilingual mode is disabled', async () => {
     const fetchMock = vi
       .fn()

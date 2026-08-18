@@ -1,4 +1,4 @@
-import { SparklesIcon } from '@/lib/icons';
+import { AskAgentAvatar } from '@/components/agents/AskAgentAvatar';
 import { Button } from '@/components/ui/button';
 import { useEnrichments } from '@/hooks/queries/useCRM';
 import type { CRMEnrichmentResult, CRMObjectType } from '@/lib/crmTypes';
@@ -21,17 +21,17 @@ export function EnrichmentRailCard({ workspaceId, objectType, objectId }: Enrich
     }));
   };
 
-  const buttonLabel = objectType === 'contact' ? 'Enrich contact' : 'Enrich record';
+  const buttonLabel = objectType === 'contact' ? 'Enrich contact' : objectType === 'company' ? 'Enrich company' : 'Enrich record';
 
   if (results.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border/70 px-4 py-5 text-center">
         <p className="text-sm font-semibold">Pull from the web</p>
         <p className="text-xs text-muted-foreground">
-          Use Command Agent to research and update safe CRM fields.
+          Research trusted public sources and fill missing CRM details with source links.
         </p>
         <Button size="sm" className="mt-1 gap-1.5" onClick={handleEnrich}>
-          <SparklesIcon className="h-3.5 w-3.5" />
+          <AskAgentAvatar plateStyle="feather" className="h-6 w-6" />
           {buttonLabel}
         </Button>
       </div>
@@ -39,16 +39,25 @@ export function EnrichmentRailCard({ workspaceId, objectType, objectId }: Enrich
   }
 
   return (
-    <EnrichmentHistoryList results={results} compact />
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-muted-foreground">Sourced CRM data</span>
+        <Button type="button" variant="outline" size="sm" className="h-7 gap-1 px-2 text-[11px]" onClick={handleEnrich}>
+          <AskAgentAvatar plateStyle="feather" className="h-5 w-5" />
+          Refresh
+        </Button>
+      </div>
+      <EnrichmentHistoryList results={results} compact workspaceId={workspaceId} />
+    </div>
   );
 }
 
 function enrichmentPromptFor(objectType: CRMObjectType) {
   switch (objectType) {
     case 'contact':
-      return 'find info about this contact and update contact and company';
+      return 'Enrich this contact from reliable public sources. Fill missing CRM fields, keep existing values unless I approve a suggested replacement, include source links, and enrich or link the company when confidently identified.';
     case 'company':
-      return 'find info about this company and update company';
+      return 'Enrich this company from reliable public sources. Fill missing CRM fields, keep existing values unless I approve a suggested replacement, and include source links for every field.';
     case 'deal':
       return 'find info about this deal and update CRM context';
     default:

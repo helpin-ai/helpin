@@ -1,0 +1,11 @@
+interface:
+  display_name: "Support to Product"
+  short_description: "Turn support evidence into bounded product work"
+  default_prompt: "Use $helpin-support-to-product to investigate this support issue and prepare linked Helpin follow-up work."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "helpin"
+      description: "Workspace-bound Helpin product tools and agent delegation"
+      transport: "streamable_http"
+      url: "https://mcp.helpin.ai/mcp"

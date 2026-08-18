@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -19,11 +19,8 @@ const (
 	BillingFeaturePlanningRun    = "planning_run"
 	BillingFeatureCodingRun      = "coding_run"
 
-	billingTrialDays           = 14
-	billingFounderCredits      = 100000
-	billingCreditBlockSize     = 5000
-	billingCreditBlockCost     = 5000
-	billingStripeChargeTimeout = 5 * time.Second
+	billingTrialDays      = 14
+	billingFounderCredits = 100000
 )
 
 type BillingStripeGateway interface {
@@ -35,7 +32,6 @@ type BillingStripeGateway interface {
 	CancelSubscriptionAtPeriodEnd(ctx context.Context, input BillingSubscriptionCancelInput) error
 	CancelSubscriptionImmediately(ctx context.Context, input BillingSubscriptionCancelInput) error
 	ResumeSubscription(ctx context.Context, input BillingSubscriptionCancelInput) error
-	BillCreditBlock(ctx context.Context, input BillingCreditBlockCharge) error
 	EnsureCustomer(ctx context.Context, orgID, email string) (string, error)
 	ListPaymentMethods(ctx context.Context, customerID string) ([]StripePaymentMethod, error)
 	DetachPaymentMethod(ctx context.Context, paymentMethodID string) error
@@ -121,6 +117,7 @@ type BillingPlanChangeRequest struct {
 type BillingStripeSubscriptionUpdate struct {
 	EventID              string
 	EventType            string
+	UserID               string
 	WorkspaceID          string
 	Plan                 string
 	Status               string
@@ -131,7 +128,16 @@ type BillingStripeSubscriptionUpdate struct {
 	CurrentPeriodStart   time.Time
 	CurrentPeriodEnd     time.Time
 	CancelAtPeriodEnd    bool
+	OccurredAt           time.Time
 	CanceledAt           *time.Time
+}
+
+type billingAnalyticsState struct {
+	Plan              string
+	Interval          string
+	Status            string
+	SubscriptionID    string
+	CancelAtPeriodEnd bool
 }
 
 type BillingStripeInvoiceEvent struct {
@@ -140,6 +146,7 @@ type BillingStripeInvoiceEvent struct {
 	SubscriptionID string
 	CustomerID     string
 	InvoiceID      string
+	OccurredAt     time.Time
 }
 
 type BillingStripeTrialWillEndEvent struct {
@@ -148,6 +155,7 @@ type BillingStripeTrialWillEndEvent struct {
 	SubscriptionID string
 	CustomerID     string
 	TrialEndsAt    time.Time
+	OccurredAt     time.Time
 }
 
 type BillingSubscriptionChangeInput struct {
@@ -214,21 +222,13 @@ type BillingSubscriptionCancelInput struct {
 	SubscriptionID string
 }
 
-type BillingCreditBlockCharge struct {
-	WorkspaceID    string
-	CustomerID     string
-	SubscriptionID string
-	Blocks         int
-	AmountCents    int
-	IdempotencyKey string
-}
-
 type BillingCreditConsumption struct {
 	WorkspaceID    string
 	FeatureKey     string
 	Credits        int
 	IdempotencyKey string
 	Metadata       map[string]any
+	AllowOverage   bool
 }
 
 type BillingCreditPreflight struct {
@@ -248,52 +248,66 @@ type BillingManagerRef struct {
 }
 
 type BillingSummary struct {
-	WorkspaceID            string     `json:"workspace_id"`
-	Plan                   string     `json:"plan"`
-	Status                 string     `json:"status"`
-	BillingInterval        string     `json:"billing_interval"`
-	Trialing               bool       `json:"trialing"`
-	TrialEndsAt            *time.Time `json:"trial_ends_at,omitempty"`
-	CurrentPeriodStart     time.Time  `json:"current_period_start"`
-	CurrentPeriodEnd       time.Time  `json:"current_period_end"`
-	IncludedCredits        int        `json:"included_credits"`
-	CreditsUsed            int        `json:"credits_used"`
-	CreditsRemaining       int        `json:"credits_remaining"`
-	NextChargeCents        int        `json:"next_charge_cents"`
-	OnDemandEnabled        bool       `json:"on_demand_enabled"`
-	OnDemandAvailable      bool       `json:"on_demand_available"`
-	StripeCustomerID       *string    `json:"stripe_customer_id,omitempty"`
-	StripeSubscriptionID   *string    `json:"stripe_subscription_id,omitempty"`
-	PendingPlan            *string    `json:"pending_plan,omitempty"`
-	PendingBillingInterval *string    `json:"pending_billing_interval,omitempty"`
-	PendingChangeAt        *time.Time `json:"pending_change_at,omitempty"`
-	CancelAtPeriodEnd      bool       `json:"cancel_at_period_end"`
-	CanceledAt             *time.Time `json:"canceled_at,omitempty"`
-	Locked                 bool       `json:"locked"`
-	BillingNoticeType      string     `json:"billing_notice_type,omitempty"`
-	BillingNoticeMessage   string     `json:"billing_notice_message,omitempty"`
-	BillingNoticeAt        *time.Time `json:"billing_notice_at,omitempty"`
-	PaymentFailedAt        *time.Time `json:"payment_failed_at,omitempty"`
-	TrialWillEndAt         *time.Time `json:"trial_will_end_at,omitempty"`
-	ManageBillingEnabled   bool       `json:"manage_billing_enabled"`
-	Warning                string     `json:"warning,omitempty"`
-	SeatLimit              int        `json:"seat_limit,omitempty"`
-	SeatUsage              int        `json:"seat_usage,omitempty"`
-	SeatOverLimit          bool       `json:"seat_over_limit,omitempty"`
-	EntitlementWarning     string     `json:"entitlement_warning,omitempty"`
-	OnDemandBlocksInvoiced int        `json:"on_demand_blocks_invoiced"`
+	WorkspaceID              string     `json:"workspace_id"`
+	Plan                     string     `json:"plan"`
+	Status                   string     `json:"status"`
+	BillingInterval          string     `json:"billing_interval"`
+	Trialing                 bool       `json:"trialing"`
+	TrialEndsAt              *time.Time `json:"trial_ends_at,omitempty"`
+	CurrentPeriodStart       time.Time  `json:"current_period_start"`
+	CurrentPeriodEnd         time.Time  `json:"current_period_end"`
+	IncludedCredits          int        `json:"included_credits"`
+	CreditsUsed              int        `json:"credits_used"`
+	CreditsRemaining         int        `json:"credits_remaining"`
+	NextChargeCents          int        `json:"next_charge_cents"`
+	OnDemandEnabled          bool       `json:"on_demand_enabled"`
+	OnDemandAvailable        bool       `json:"on_demand_available"`
+	StripeCustomerID         *string    `json:"stripe_customer_id,omitempty"`
+	StripeSubscriptionID     *string    `json:"stripe_subscription_id,omitempty"`
+	PendingPlan              *string    `json:"pending_plan,omitempty"`
+	PendingBillingInterval   *string    `json:"pending_billing_interval,omitempty"`
+	PendingChangeAt          *time.Time `json:"pending_change_at,omitempty"`
+	CancelAtPeriodEnd        bool       `json:"cancel_at_period_end"`
+	CanceledAt               *time.Time `json:"canceled_at,omitempty"`
+	Locked                   bool       `json:"locked"`
+	BillingNoticeType        string     `json:"billing_notice_type,omitempty"`
+	BillingNoticeMessage     string     `json:"billing_notice_message,omitempty"`
+	BillingNoticeAt          *time.Time `json:"billing_notice_at,omitempty"`
+	PaymentFailedAt          *time.Time `json:"payment_failed_at,omitempty"`
+	TrialWillEndAt           *time.Time `json:"trial_will_end_at,omitempty"`
+	ManageBillingEnabled     bool       `json:"manage_billing_enabled"`
+	Warning                  string     `json:"warning,omitempty"`
+	SeatLimit                int        `json:"seat_limit,omitempty"`
+	SeatUsage                int        `json:"seat_usage,omitempty"`
+	SeatOverLimit            bool       `json:"seat_over_limit,omitempty"`
+	EntitlementWarning       string     `json:"entitlement_warning,omitempty"`
+	OnDemandBlocksInvoiced   int        `json:"on_demand_blocks_invoiced"`
+	AIUsageAllowanceMicrousd int64      `json:"ai_usage_allowance_microusd"`
+	AIUsageUsedMicrousd      int64      `json:"ai_usage_used_microusd"`
+	AIUsageRemainingMicrousd int64      `json:"ai_usage_remaining_microusd"`
+	AIUsageReservedMicrousd  int64      `json:"ai_usage_reserved_microusd"`
+	AIUsageOverageMicrousd   int64      `json:"ai_usage_overage_microusd"`
+	AIUsagePeriodStart       time.Time  `json:"ai_usage_period_start"`
+	AIUsagePeriodEnd         time.Time  `json:"ai_usage_period_end"`
+	AIUsageUnlimited         bool       `json:"ai_usage_unlimited"`
+	ExtraAIUsageEnabled      bool       `json:"extra_ai_usage_enabled"`
+	ExtraAIUsageAvailable    bool       `json:"extra_ai_usage_available"`
+	PricingVersion           string     `json:"pricing_version"`
 	// BillingManagers lists the workspace owner(s) and org owner who can manage
 	// billing. Populated only on the workspace billing page, not hot paths.
 	BillingManagers []BillingManagerRef `json:"billing_managers,omitempty"`
 }
 
 type BillingService struct {
-	repo          *repository.BillingRepository
-	gateway       BillingStripeGateway
-	now           func() time.Time
-	priceConf     BillingPriceConfig
-	orgRoles      orgBillingRoleResolver
-	workspaceRepo *repository.WorkspaceRepository
+	repo             *repository.BillingRepository
+	gateway          BillingStripeGateway
+	now              func() time.Time
+	priceConf        BillingPriceConfig
+	orgRoles         orgBillingRoleResolver
+	workspaceRepo    *repository.WorkspaceRepository
+	customerIO       *CustomerIOIdentityService
+	customerIOOutbox *repository.CustomerIOLifecycleOutboxRepository
+	productAnalytics *ProductAnalyticsService
 }
 
 func NewBillingService(repo *repository.BillingRepository, gateway BillingStripeGateway, now func() time.Time) *BillingService {
@@ -309,6 +323,27 @@ func (s *BillingService) SetPriceConfig(config BillingPriceConfig) {
 
 func (s *BillingService) SetWorkspaceRepository(repo *repository.WorkspaceRepository) {
 	s.workspaceRepo = repo
+}
+
+func (s *BillingService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
+	s.customerIO = identity
+}
+
+// SetCustomerIOLifecycleOutboxRepository enables durable lifecycle delivery.
+func (s *BillingService) SetCustomerIOLifecycleOutboxRepository(repo *repository.CustomerIOLifecycleOutboxRepository) {
+	s.customerIOOutbox = repo
+}
+
+// SetProductAnalyticsService enables canonical backend product events.
+func (s *BillingService) SetProductAnalyticsService(analytics *ProductAnalyticsService) {
+	s.productAnalytics = analytics
+}
+
+func (s *BillingService) lifecycleEvent(input repository.CustomerIOLifecycleEventInput) *repository.CustomerIOLifecycleEventInput {
+	if s.customerIOOutbox == nil {
+		return nil
+	}
+	return &input
 }
 
 func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceID string) (*BillingSummary, error) {
@@ -342,9 +377,13 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 			return nil, err
 		}
 		summary := s.summary(billing)
+		if err := s.addAIUsage(ctx, summary); err != nil {
+			return nil, err
+		}
 		if err := s.addSeatEntitlements(ctx, summary); err != nil {
 			return nil, err
 		}
+		s.syncCustomerIOWorkspace(ctx, workspaceID)
 		return summary, nil
 	}
 
@@ -361,10 +400,31 @@ func (s *BillingService) EnsureTrialForWorkspace(ctx context.Context, workspaceI
 		CurrentPeriodEnd:   trialEnds,
 		TrialEndsAt:        &trialEnds,
 	}
-	if err := s.repo.UpsertWorkspaceBilling(ctx, billing); err != nil {
+	if s.customerIOOutbox != nil {
+		persisted, _, err := s.repo.CreateTrialWithLifecycleEvent(ctx, billing, repository.CustomerIOLifecycleEventInput{
+			SemanticKey: fmt.Sprintf("trial_started:%s:%d", workspaceID, trialEnds.Unix()),
+			WorkspaceID: workspaceID,
+			EventName:   "trial_started",
+			OccurredAt:  now,
+			Attributes:  map[string]any{"trial_ends_at": trialEnds},
+		})
+		if err != nil {
+			return nil, err
+		}
+		billing = persisted
+	} else if err := s.repo.UpsertWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
+	s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+		SemanticKey: fmt.Sprintf("trial_started:%s:%d", workspaceID, trialEnds.Unix()),
+		WorkspaceID: workspaceID,
+		Name:        "trial_started", Source: "system", OccurredAt: now,
+		Attributes: map[string]any{"trial_ends_at": trialEnds, "plan": billing.Plan},
+	})
 	summary := s.summary(billing)
+	if err := s.addAIUsage(ctx, summary); err != nil {
+		return nil, err
+	}
 	if err := s.addSeatEntitlements(ctx, summary); err != nil {
 		return nil, err
 	}
@@ -382,13 +442,59 @@ func (s *BillingService) GetWorkspaceBilling(ctx context.Context, workspaceID st
 	return s.summarizeAndNormalize(ctx, billing)
 }
 
+// NextAIUsagePeriodSchedule derives the next renewal-anniversary allowance from subscription state.
+func (s *BillingService) NextAIUsagePeriodSchedule(ctx context.Context, workspaceID string, start time.Time) (repository.AIUsagePeriodSchedule, error) {
+	billing, err := s.repo.GetByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		return repository.AIUsagePeriodSchedule{}, err
+	}
+	if billing == nil {
+		return repository.AIUsagePeriodSchedule{}, fmt.Errorf("workspace billing is missing")
+	}
+	mode := model.AIUsageEnforcementStrict
+	if billing.Plan == model.BillingPlanFounder {
+		mode = model.AIUsageEnforcementSoft
+	} else if billing.OnDemandEnabled {
+		mode = model.AIUsageEnforcementExtra
+	}
+	allowance := aiUsageAllowanceMicrousd(billing.Plan, billing.BillingInterval, billing.Status)
+	end := NextAIUsageBoundary(billing.CurrentPeriodStart, start)
+	if billing.Status == model.BillingStatusTrialing && billing.TrialEndsAt != nil && billing.TrialEndsAt.After(start) {
+		end = *billing.TrialEndsAt
+	}
+	return repository.AIUsagePeriodSchedule{
+		WorkspaceID: workspaceID, Plan: billing.Plan, BillingInterval: billing.BillingInterval,
+		PricingVersion: "2026-08-13", EnforcementMode: mode, Anchor: billing.CurrentPeriodStart,
+		Start: start, End: end, AllowanceMicrousd: allowance,
+	}, nil
+}
+
+func aiUsageAllowanceMicrousd(plan, interval, status string) int64 {
+	if plan == model.BillingPlanFounder {
+		return 150_000_000
+	}
+	if status == model.BillingStatusTrialing {
+		return 140_000_000
+	}
+	if plan == model.BillingPlanStarter {
+		if interval == "annual" {
+			return 79_000_000
+		}
+		return 99_000_000
+	}
+	if interval == "annual" {
+		return 239_000_000
+	}
+	return 299_000_000
+}
+
 func (s *BillingService) CanReserveWorkspaceSeat(ctx context.Context, workspaceID string) error {
 	billing, err := s.repo.GetByWorkspaceID(ctx, workspaceID)
 	if err != nil {
 		return err
 	}
 	if billing != nil && billingStatusLocked(billing.Status) {
-		return fmt.Errorf("workspace is locked; choose a plan to reactivate it")
+		return model.ErrBillingWorkspaceLocked
 	}
 	return nil
 }
@@ -405,14 +511,14 @@ func (s *BillingService) PreflightCredits(ctx context.Context, input BillingCred
 		return err
 	}
 	if summary.Locked {
-		return errors.New("workspace is locked; choose a plan to reactivate it")
+		return model.ErrBillingWorkspaceLocked
 	}
 	nextUsed := summary.CreditsUsed + input.Credits
 	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled {
-		return errors.New("AI usage exhausted")
+		return model.ErrAIUsageExhausted
 	}
 	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable {
-		return errors.New("extra AI usage is not available")
+		return model.ErrExtraAIUsageUnavailable
 	}
 	return nil
 }
@@ -431,11 +537,23 @@ func (s *BillingService) SetOnDemandEnabled(ctx context.Context, workspaceID str
 	if enabled && !billingCanUseOnDemand(billing) {
 		return nil, fmt.Errorf("extra AI usage is available only on active paid workspaces")
 	}
+	changed := billing.OnDemandEnabled != enabled
 	billing.OnDemandEnabled = enabled
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
+	s.syncCustomerIOWorkspace(ctx, workspaceID)
+	if changed {
+		s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+			SemanticKey: fmt.Sprintf("on_demand_billing_changed:%s:%d", workspaceID, s.now().UTC().UnixNano()),
+			WorkspaceID: workspaceID, Name: "on_demand_billing_changed", Source: "api",
+			Attributes: map[string]any{"on_demand_enabled": enabled, "plan": billing.Plan},
+		})
+	}
 	summary := s.summary(billing)
+	if err := s.addAIUsage(ctx, summary); err != nil {
+		return nil, err
+	}
 	if err := s.addSeatEntitlements(ctx, summary); err != nil {
 		return nil, err
 	}
@@ -508,14 +626,16 @@ func (s *BillingService) ConfirmCheckoutSession(ctx context.Context, workspaceID
 		return nil, fmt.Errorf("checkout session price is not configured for Helpin billing")
 	}
 	periodEnd := session.CurrentPeriodEnd
+	if session.CurrentPeriodStart.IsZero() {
+		session.CurrentPeriodStart = s.now().UTC()
+	}
 	if periodEnd.IsZero() {
-		now := s.now()
+		now := session.CurrentPeriodStart
 		if interval == "annual" {
 			periodEnd = now.AddDate(1, 0, 0)
 		} else {
 			periodEnd = now.AddDate(0, 1, 0)
 		}
-		session.CurrentPeriodStart = now
 	}
 	return s.ApplyStripeSubscriptionUpdate(ctx, BillingStripeSubscriptionUpdate{
 		EventID:              "checkout.session.sync:" + session.ID,
@@ -531,6 +651,44 @@ func (s *BillingService) ConfirmCheckoutSession(ctx context.Context, workspaceID
 		CurrentPeriodEnd:     periodEnd,
 		CancelAtPeriodEnd:    session.CancelAtPeriodEnd,
 	})
+}
+
+func (s *BillingService) ExpireOverdueTrials(ctx context.Context) (int64, error) {
+	if s.repo == nil {
+		return 0, nil
+	}
+	now := s.now().UTC()
+	if s.customerIOOutbox != nil {
+		return s.repo.ExpireOverdueTrialsWithLifecycleEvents(ctx, now)
+	}
+	workspaceIDs, err := s.repo.ListOverdueTrialWorkspaceIDs(ctx, now)
+	if err != nil {
+		return 0, err
+	}
+	if len(workspaceIDs) == 0 {
+		return 0, nil
+	}
+
+	expired, err := s.repo.ExpireOverdueTrials(ctx, now)
+	if err != nil {
+		return 0, err
+	}
+	for _, workspaceID := range workspaceIDs {
+		billing, getErr := s.repo.GetByWorkspaceID(ctx, workspaceID)
+		if getErr != nil {
+			slog.ErrorContext(ctx, "failed to load expired workspace billing for Customer.io", "error", getErr, "workspace_id", workspaceID)
+			continue
+		}
+		attributes := map[string]any{"expired_at": now}
+		if billing != nil {
+			attributes["plan"] = billing.Plan
+			if billing.TrialEndsAt != nil {
+				attributes["trial_ends_at"] = billing.TrialEndsAt
+			}
+		}
+		s.trackCustomerIOWorkspaceEvent(ctx, workspaceID, "trial_expired", now, attributes)
+	}
+	return expired, nil
 }
 
 func (s *BillingService) PreviewWorkspacePlanChange(ctx context.Context, input BillingPlanChangeRequest) (*BillingPlanChangePreview, error) {
@@ -693,6 +851,7 @@ func (s *BillingService) ChangeWorkspacePlan(ctx context.Context, input BillingP
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
+	s.syncCustomerIOWorkspace(ctx, input.WorkspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -736,6 +895,7 @@ func (s *BillingService) ResumeWorkspaceSubscription(ctx context.Context, worksp
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return nil, err
 	}
+	s.syncCustomerIOWorkspace(ctx, workspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
@@ -798,6 +958,7 @@ func (s *BillingService) CancelWorkspaceSubscriptionImmediately(ctx context.Cont
 	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
 		return err
 	}
+	s.syncCustomerIOWorkspace(ctx, workspaceID)
 	return nil
 }
 
@@ -829,6 +990,13 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 			}
 		}
 		return s.summaryWithEntitlements(ctx, billing)
+	}
+	previousState := billingAnalyticsState{
+		Plan: billing.Plan, Interval: billing.BillingInterval, Status: billing.Status,
+		CancelAtPeriodEnd: billing.CancelAtPeriodEnd,
+	}
+	if billing.StripeSubscriptionID != nil {
+		previousState.SubscriptionID = *billing.StripeSubscriptionID
 	}
 	previousPeriodStart := billing.CurrentPeriodStart
 	if update.Plan == "" || update.BillingInterval == "" {
@@ -900,148 +1068,158 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 			return nil, err
 		}
 	}
+	s.trackStripeSubscriptionEvents(ctx, previousState, update, billing)
+	s.syncCustomerIOWorkspace(ctx, update.WorkspaceID)
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
 func (s *BillingService) ApplyStripeInvoicePaymentFailed(ctx context.Context, event BillingStripeInvoiceEvent) (*BillingSummary, error) {
-	if event.EventID != "" {
-		isNew, err := s.repo.InsertStripeWebhookEvent(ctx, event.EventID, event.EventType)
-		if err != nil {
-			return nil, err
-		}
-		if !isNew {
-			return nil, nil
-		}
+	occurredAt := event.OccurredAt.UTC()
+	if occurredAt.IsZero() {
+		occurredAt = s.now().UTC()
 	}
-	billing, err := s.billingForStripeInvoiceEvent(ctx, event)
-	if err != nil {
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+		billing, err := billingForStripeInvoiceEvent(ctx, repo, event)
+		if err != nil || billing == nil {
+			return billing, nil, err
+		}
+		billing.Status = model.BillingStatusPastDue
+		billing.BillingNoticeType = optionalBillingString("payment_failed")
+		billing.BillingNoticeMessage = optionalBillingString("Payment failed. Update your payment method to keep this workspace active.")
+		billing.BillingNoticeAt, billing.PaymentFailedAt = &occurredAt, &occurredAt
+		if event.CustomerID != "" {
+			billing.StripeCustomerID = optionalBillingString(event.CustomerID)
+		}
+		if event.SubscriptionID != "" {
+			billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
+		}
+		if err := repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
+			return nil, nil, err
+		}
+		return billing, s.lifecycleEvent(repository.CustomerIOLifecycleEventInput{SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID, EventName: "payment_failed", OccurredAt: occurredAt, Attributes: map[string]any{"payment_failed_at": occurredAt}}), nil
+	})
+	if err != nil || !processed || billing == nil {
 		return nil, err
 	}
-	if billing == nil {
-		return nil, nil
-	}
-	now := s.now().UTC()
-	billing.Status = model.BillingStatusPastDue
-	billing.BillingNoticeType = optionalBillingString("payment_failed")
-	billing.BillingNoticeMessage = optionalBillingString("Payment failed. Update your payment method to keep this workspace active.")
-	billing.BillingNoticeAt = &now
-	billing.PaymentFailedAt = &now
-	if event.CustomerID != "" {
-		billing.StripeCustomerID = optionalBillingString(event.CustomerID)
-	}
-	if event.SubscriptionID != "" {
-		billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
-	}
-	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
-		return nil, err
-	}
-	if event.EventID != "" {
-		if err := s.repo.MarkStripeWebhookProcessed(ctx, event.EventID); err != nil {
-			return nil, err
-		}
-	}
+	s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+		SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID,
+		Name: "payment_failed", Source: "stripe", OccurredAt: occurredAt,
+		Attributes: map[string]any{"invoice_id": event.InvoiceID, "subscription_id": event.SubscriptionID},
+	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
 func (s *BillingService) ApplyStripeInvoicePaymentSucceeded(ctx context.Context, event BillingStripeInvoiceEvent) (*BillingSummary, error) {
-	if event.EventID != "" {
-		isNew, err := s.repo.InsertStripeWebhookEvent(ctx, event.EventID, event.EventType)
-		if err != nil {
-			return nil, err
-		}
-		if !isNew {
-			return nil, nil
-		}
+	occurredAt := event.OccurredAt.UTC()
+	if occurredAt.IsZero() {
+		occurredAt = s.now().UTC()
 	}
-	billing, err := s.billingForStripeInvoiceEvent(ctx, event)
-	if err != nil {
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+		billing, err := billingForStripeInvoiceEvent(ctx, repo, event)
+		if err != nil || billing == nil {
+			return billing, nil, err
+		}
+		if billing.Status == model.BillingStatusPastDue {
+			billing.Status = model.BillingStatusActive
+		}
+		billing.BillingNoticeType, billing.BillingNoticeMessage, billing.BillingNoticeAt, billing.PaymentFailedAt = nil, nil, nil, nil
+		if event.CustomerID != "" {
+			billing.StripeCustomerID = optionalBillingString(event.CustomerID)
+		}
+		if event.SubscriptionID != "" {
+			billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
+		}
+		if err := repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
+			return nil, nil, err
+		}
+		return billing, s.lifecycleEvent(repository.CustomerIOLifecycleEventInput{SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID, EventName: "payment_succeeded", OccurredAt: occurredAt}), nil
+	})
+	if err != nil || !processed || billing == nil {
 		return nil, err
 	}
-	if billing == nil {
-		return nil, nil
-	}
-	if billing.Status == model.BillingStatusPastDue {
-		billing.Status = model.BillingStatusActive
-	}
-	billing.BillingNoticeType = nil
-	billing.BillingNoticeMessage = nil
-	billing.BillingNoticeAt = nil
-	billing.PaymentFailedAt = nil
-	if event.CustomerID != "" {
-		billing.StripeCustomerID = optionalBillingString(event.CustomerID)
-	}
-	if event.SubscriptionID != "" {
-		billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
-	}
-	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
-		return nil, err
-	}
-	if event.EventID != "" {
-		if err := s.repo.MarkStripeWebhookProcessed(ctx, event.EventID); err != nil {
-			return nil, err
-		}
-	}
+	s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+		SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID,
+		Name: "payment_succeeded", Source: "stripe", OccurredAt: occurredAt,
+		Attributes: map[string]any{"invoice_id": event.InvoiceID, "subscription_id": event.SubscriptionID},
+	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
 func (s *BillingService) ApplyStripeTrialWillEnd(ctx context.Context, event BillingStripeTrialWillEndEvent) (*BillingSummary, error) {
-	if event.EventID != "" {
-		isNew, err := s.repo.InsertStripeWebhookEvent(ctx, event.EventID, event.EventType)
-		if err != nil {
-			return nil, err
-		}
-		if !isNew {
-			return nil, nil
-		}
+	occurredAt := event.OccurredAt.UTC()
+	if occurredAt.IsZero() {
+		occurredAt = s.now().UTC()
 	}
-	billing, err := s.billingForStripeInvoiceEvent(ctx, BillingStripeInvoiceEvent{
-		SubscriptionID: event.SubscriptionID,
-		CustomerID:     event.CustomerID,
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+		billing, err := billingForStripeInvoiceEvent(ctx, repo, BillingStripeInvoiceEvent{SubscriptionID: event.SubscriptionID, CustomerID: event.CustomerID})
+		if err != nil || billing == nil {
+			return billing, nil, err
+		}
+		trialEnd := event.TrialEndsAt
+		if trialEnd.IsZero() && billing.TrialEndsAt != nil {
+			trialEnd = *billing.TrialEndsAt
+		}
+		billing.BillingNoticeType = optionalBillingString("trial_will_end")
+		billing.BillingNoticeMessage = optionalBillingString("Your trial is ending soon. Choose a plan to keep paid features active.")
+		billing.BillingNoticeAt = &occurredAt
+		if !trialEnd.IsZero() {
+			billing.TrialWillEndAt, billing.TrialEndsAt = &trialEnd, &trialEnd
+		}
+		if event.CustomerID != "" {
+			billing.StripeCustomerID = optionalBillingString(event.CustomerID)
+		}
+		if event.SubscriptionID != "" {
+			billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
+		}
+		if err := repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
+			return nil, nil, err
+		}
+		return billing, s.lifecycleEvent(repository.CustomerIOLifecycleEventInput{SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID, EventName: "trial_will_end", OccurredAt: occurredAt, Attributes: map[string]any{"trial_ends_at": trialEnd}}), nil
 	})
-	if err != nil {
+	if err != nil || !processed || billing == nil {
 		return nil, err
 	}
-	if billing == nil {
-		return nil, nil
-	}
-	now := s.now().UTC()
-	trialEnd := event.TrialEndsAt
-	if trialEnd.IsZero() && billing.TrialEndsAt != nil {
-		trialEnd = *billing.TrialEndsAt
-	}
-	billing.BillingNoticeType = optionalBillingString("trial_will_end")
-	billing.BillingNoticeMessage = optionalBillingString("Your trial is ending soon. Choose a plan to keep paid features active.")
-	billing.BillingNoticeAt = &now
-	if !trialEnd.IsZero() {
-		billing.TrialWillEndAt = &trialEnd
-		billing.TrialEndsAt = &trialEnd
-	}
-	if event.CustomerID != "" {
-		billing.StripeCustomerID = optionalBillingString(event.CustomerID)
-	}
-	if event.SubscriptionID != "" {
-		billing.StripeSubscriptionID = optionalBillingString(event.SubscriptionID)
-	}
-	if err := s.repo.UpdateWorkspaceBilling(ctx, billing); err != nil {
-		return nil, err
-	}
-	if event.EventID != "" {
-		if err := s.repo.MarkStripeWebhookProcessed(ctx, event.EventID); err != nil {
-			return nil, err
-		}
-	}
+	s.trackProductAnalytics(ctx, ProductAnalyticsEvent{
+		SemanticKey: "stripe:" + event.EventID, WorkspaceID: billing.WorkspaceID,
+		Name: "trial_will_end", Source: "stripe", OccurredAt: occurredAt,
+		Attributes: map[string]any{"trial_ends_at": event.TrialEndsAt, "subscription_id": event.SubscriptionID},
+	})
 	return s.summaryWithEntitlements(ctx, billing)
 }
 
+func (s *BillingService) trackProductAnalytics(ctx context.Context, event ProductAnalyticsEvent) {
+	if s.productAnalytics != nil {
+		s.productAnalytics.Track(ctx, event)
+	}
+}
+
+func (s *BillingService) syncCustomerIOWorkspace(ctx context.Context, workspaceID string) {
+	if s.customerIO == nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	s.customerIO.SyncWorkspace(ctx, workspaceID, "")
+}
+
+func (s *BillingService) trackCustomerIOWorkspaceEvent(ctx context.Context, workspaceID, name string, occurredAt time.Time, attributes map[string]any) {
+	if s.customerIO == nil || strings.TrimSpace(workspaceID) == "" {
+		return
+	}
+	s.customerIO.TrackWorkspaceEvent(ctx, workspaceID, name, occurredAt, attributes)
+}
+
 func (s *BillingService) billingForStripeInvoiceEvent(ctx context.Context, event BillingStripeInvoiceEvent) (*model.WorkspaceBilling, error) {
+	return billingForStripeInvoiceEvent(ctx, s.repo, event)
+}
+
+func billingForStripeInvoiceEvent(ctx context.Context, repo *repository.BillingRepository, event BillingStripeInvoiceEvent) (*model.WorkspaceBilling, error) {
 	if event.SubscriptionID != "" {
-		billing, err := s.repo.GetByStripeSubscriptionID(ctx, event.SubscriptionID)
+		billing, err := repo.GetByStripeSubscriptionID(ctx, event.SubscriptionID)
 		if err != nil || billing != nil {
 			return billing, err
 		}
 	}
 	if event.CustomerID != "" {
-		return s.repo.GetByStripeCustomerID(ctx, event.CustomerID)
+		return repo.GetByStripeCustomerID(ctx, event.CustomerID)
 	}
 	return nil, nil
 }
@@ -1105,14 +1283,14 @@ func (s *BillingService) ConsumeCredits(ctx context.Context, input BillingCredit
 		return nil, err
 	}
 	if summary.Locked {
-		return nil, errors.New("workspace is locked; choose a plan to reactivate it")
+		return nil, model.ErrBillingWorkspaceLocked
 	}
 	nextUsed := summary.CreditsUsed + input.Credits
-	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled {
-		return nil, errors.New("AI usage exhausted")
+	if nextUsed > summary.IncludedCredits && !summary.OnDemandEnabled && !input.AllowOverage {
+		return nil, model.ErrAIUsageExhausted
 	}
-	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable {
-		return nil, errors.New("extra AI usage is not available")
+	if nextUsed > summary.IncludedCredits && !summary.OnDemandAvailable && !input.AllowOverage {
+		return nil, model.ErrExtraAIUsageUnavailable
 	}
 
 	metadata, err := json.Marshal(input.Metadata)
@@ -1127,9 +1305,10 @@ func (s *BillingService) ConsumeCredits(ctx context.Context, input BillingCredit
 		IdempotencyKey: input.IdempotencyKey,
 		Metadata:       model.JSONBlob(metadata),
 	}
-	result, err := s.repo.ConsumeCredits(ctx, input.WorkspaceID, input.Credits, entry, func(billing *model.WorkspaceBilling, requiredBlocks, newBlocks int) error {
-		return s.chargeOnDemandBlocks(ctx, billing, input.IdempotencyKey, requiredBlocks, newBlocks)
-	})
+	// The credit ledger is retained only for pre-cutover compatibility. It must
+	// never create a legacy fixed-block Stripe charge; active AI usage settles
+	// exact overage through AIUsageSettlementWorker.
+	result, err := s.repo.ConsumeCredits(ctx, input.WorkspaceID, input.Credits, entry, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1137,37 +1316,28 @@ func (s *BillingService) ConsumeCredits(ctx context.Context, input BillingCredit
 	return s.summaryWithEntitlements(ctx, result.Billing)
 }
 
-func (s *BillingService) chargeOnDemandBlocks(ctx context.Context, billing *model.WorkspaceBilling, idempotencyKey string, requiredBlocks, newBlocks int) error {
-	if billing == nil || newBlocks <= 0 {
-		return nil
-	}
-	if billing.StripeCustomerID == nil || billing.StripeSubscriptionID == nil {
-		return errors.New("stripe customer and subscription are required for extra AI usage")
-	}
-	if s.gateway == nil {
-		return errors.New("billing gateway is not configured")
-	}
-	chargeCtx, cancel := context.WithTimeout(ctx, billingStripeChargeTimeout)
-	defer cancel()
-	return s.gateway.BillCreditBlock(chargeCtx, BillingCreditBlockCharge{
-		WorkspaceID:    billing.WorkspaceID,
-		CustomerID:     *billing.StripeCustomerID,
-		SubscriptionID: *billing.StripeSubscriptionID,
-		Blocks:         newBlocks,
-		AmountCents:    newBlocks * billingCreditBlockCost,
-		IdempotencyKey: fmt.Sprintf("%s:on_demand:%d", idempotencyKey, requiredBlocks),
-	})
-}
-
 func (s *BillingService) summarizeAndNormalize(ctx context.Context, billing *model.WorkspaceBilling) (*BillingSummary, error) {
 	now := s.now().UTC()
 	changed := false
 	if billing.Status == model.BillingStatusTrialing && billing.TrialEndsAt != nil && !billing.TrialEndsAt.After(now) && billing.StripeSubscriptionID == nil {
-		billing.Status = model.BillingStatusTrialExpired
-		billing.IncludedCredits = includedCreditsForPlan(billing.Plan)
-		billing.OnDemandEnabled = false
-		billing.OnDemandBlocksInvoiced = 0
-		changed = true
+		if s.customerIOOutbox != nil {
+			if _, err := s.repo.ExpireOverdueTrialsWithLifecycleEvents(ctx, now); err != nil {
+				return nil, err
+			}
+			reloaded, err := s.repo.GetByWorkspaceID(ctx, billing.WorkspaceID)
+			if err != nil {
+				return nil, err
+			}
+			if reloaded != nil {
+				billing = reloaded
+			}
+		} else {
+			billing.Status = model.BillingStatusTrialExpired
+			billing.IncludedCredits = includedCreditsForPlan(billing.Plan)
+			billing.OnDemandEnabled = false
+			billing.OnDemandBlocksInvoiced = 0
+			changed = true
+		}
 	}
 	if billing.Plan == model.BillingPlanFounder && billing.Status == model.BillingStatusActive && !billing.CurrentPeriodEnd.After(now) {
 		billing.CurrentPeriodStart = now
@@ -1199,6 +1369,9 @@ func (s *BillingService) summarizeAndNormalize(ctx context.Context, billing *mod
 		}
 	}
 	summary := s.summary(billing)
+	if err := s.addAIUsage(ctx, summary); err != nil {
+		return nil, err
+	}
 	if err := s.addSeatEntitlements(ctx, summary); err != nil {
 		return nil, err
 	}
@@ -1246,10 +1419,59 @@ func (s *BillingService) summary(billing *model.WorkspaceBilling) *BillingSummar
 
 func (s *BillingService) summaryWithEntitlements(ctx context.Context, billing *model.WorkspaceBilling) (*BillingSummary, error) {
 	summary := s.summary(billing)
+	if err := s.addAIUsage(ctx, summary); err != nil {
+		return nil, err
+	}
 	if err := s.addSeatEntitlements(ctx, summary); err != nil {
 		return nil, err
 	}
 	return summary, nil
+}
+
+func (s *BillingService) addAIUsage(ctx context.Context, summary *BillingSummary) error {
+	if summary == nil || s.repo == nil {
+		return nil
+	}
+	period, err := s.repo.GetOpenAIUsagePeriod(ctx, summary.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if period == nil {
+		schedule, scheduleErr := s.NextAIUsagePeriodSchedule(ctx, summary.WorkspaceID, s.now().UTC())
+		if scheduleErr != nil {
+			return scheduleErr
+		}
+		period, err = s.repo.EnsureOpenAIUsagePeriod(ctx, schedule)
+		if err != nil || period == nil {
+			return err
+		}
+	}
+	desiredMode := model.AIUsageEnforcementStrict
+	if summary.Plan == model.BillingPlanFounder {
+		desiredMode = model.AIUsageEnforcementSoft
+	} else if summary.OnDemandEnabled {
+		desiredMode = model.AIUsageEnforcementExtra
+	}
+	desiredAllowance := aiUsageAllowanceMicrousd(summary.Plan, summary.BillingInterval, summary.Status)
+	if err := s.repo.UpdateOpenAIUsageControls(ctx, period, desiredAllowance, desiredMode); err != nil {
+		return err
+	}
+	remaining := period.AllowanceMicrousd - period.UsedMicrousd - period.ReservedMicrousd
+	if remaining < 0 {
+		remaining = 0
+	}
+	summary.AIUsageAllowanceMicrousd = period.AllowanceMicrousd
+	summary.AIUsageUsedMicrousd = period.UsedMicrousd
+	summary.AIUsageRemainingMicrousd = remaining
+	summary.AIUsageReservedMicrousd = period.ReservedMicrousd
+	summary.AIUsageOverageMicrousd = period.OverageMicrousd
+	summary.AIUsagePeriodStart = period.PeriodStart
+	summary.AIUsagePeriodEnd = period.PeriodEnd
+	summary.AIUsageUnlimited = period.EnforcementMode == model.AIUsageEnforcementSoft
+	summary.ExtraAIUsageEnabled = period.EnforcementMode == model.AIUsageEnforcementExtra
+	summary.ExtraAIUsageAvailable = summary.OnDemandAvailable
+	summary.PricingVersion = period.PricingVersion
+	return nil
 }
 
 func (s *BillingService) addSeatEntitlements(ctx context.Context, summary *BillingSummary) error {

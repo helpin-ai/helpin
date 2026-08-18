@@ -65,7 +65,7 @@ func TestValidateCustomAgentDraftDropsUnknownCatalogValuesAndAddsRequiredSkillTo
 	if len(draft.Skills) != 1 || draft.Skills[0].Key != "support_style" {
 		t.Fatalf("expected valid skill only, got %#v", draft.Skills)
 	}
-	if draft.ApprovalMode != "always" {
+	if draft.ApprovalMode != "mutating_tools" {
 		t.Fatalf("expected safe approval default, got %q", draft.ApprovalMode)
 	}
 	if draft.RuntimeKind != "codex" {
@@ -91,11 +91,26 @@ func TestValidateCustomAgentDraftDropsUnknownCatalogValuesAndAddsRequiredSkillTo
 	}
 }
 
+func TestValidateCustomAgentDraftRetainsPMTargets(t *testing.T) {
+	raw := model.CustomAgentDraft{
+		AllowedTargets: []string{"sprint", "objective"},
+	}
+
+	draft, warnings := validateCustomAgentDraft(raw, nil, nil)
+
+	if !slices.Equal(draft.AllowedTargets, []string{"sprint", "objective"}) {
+		t.Fatalf("expected sprint and objective targets to be retained, got %v", draft.AllowedTargets)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no target normalization warnings, got %v", warnings)
+	}
+}
+
 func TestDraftCustomAgentRejectsShortDescriptionBeforeCallingLLM(t *testing.T) {
 	llmClient := &fakeAgentDraftLLM{content: `{}`}
 	svc := (&AgentService{}).SetAgentDraftLLM(llmClient)
 
-	_, err := svc.DraftCustomAgent(context.Background(), model.CustomAgentDraftRequest{Description: "hi"})
+	_, err := svc.DraftCustomAgent(context.Background(), "ws-1", model.CustomAgentDraftRequest{Description: "hi"})
 
 	if err == nil {
 		t.Fatal("expected validation error")
@@ -129,6 +144,7 @@ func TestDraftCustomAgentReturnsValidatedDraftWithoutCreatingAgent(t *testing.T)
 
 	result, err := svc.DraftCustomAgentWithCatalog(
 		context.Background(),
+		"ws-1",
 		model.CustomAgentDraftRequest{Description: "Create an agent that answers questions from docs."},
 		[]model.ToolCatalogEntry{{Name: "search_documents", Description: "Search docs"}},
 		nil,

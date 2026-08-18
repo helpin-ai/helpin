@@ -12,6 +12,8 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
+	"gorm.io/gorm"
 )
 
 const (
@@ -25,6 +27,20 @@ type CRMEnrichmentService struct {
 	contactRepo    *repository.CRMContactRepository
 	companyRepo    *repository.CRMCompanyRepository
 	assocRepo      *repository.CRMAssociationRepository
+	activityRepo   *repository.CRMActivityRepository
+	wsPublisher    websocket.EventPublisher
+}
+
+// SetActivityRepository enables immutable CRM timeline entries for enrichment changes.
+func (s *CRMEnrichmentService) SetActivityRepository(repo *repository.CRMActivityRepository) *CRMEnrichmentService {
+	s.activityRepo = repo
+	return s
+}
+
+// SetWebsocketPublisher enables immediate CRM cache refreshes after enrichment.
+func (s *CRMEnrichmentService) SetWebsocketPublisher(publisher websocket.EventPublisher) *CRMEnrichmentService {
+	s.wsPublisher = publisher
+	return s
 }
 
 // NewCRMEnrichmentService creates a new CRMEnrichmentService.
@@ -73,6 +89,133 @@ func (s *CRMEnrichmentService) Create(ctx context.Context, req model.CreateCRMEn
 // Delete removes an enrichment result.
 func (s *CRMEnrichmentService) Delete(ctx context.Context, id string) error {
 	return s.enrichmentRepo.Delete(ctx, id)
+}
+
+// ApplySuggestion accepts one protected-value suggestion from an enrichment audit.
+func (s *CRMEnrichmentService) ApplySuggestion(ctx context.Context, workspaceID, enrichmentID string, req model.ApplyCRMEnrichmentSuggestionRequest) (*model.CRMEnrichmentResult, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	enrichmentID = strings.TrimSpace(enrichmentID)
+	fieldName := strings.TrimSpace(strings.ToLower(req.Field))
+	if workspaceID == "" || enrichmentID == "" || fieldName == "" {
+		return nil, fmt.Errorf("workspace_id, enrichment_id, and field are required")
+	}
+	audit, err := s.enrichmentRepo.GetByID(ctx, enrichmentID)
+	if err != nil {
+		return nil, err
+	}
+	if audit == nil || audit.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("enrichment not found")
+	}
+
+	skipped, err := enrichmentFieldResults(audit.Data["skipped"])
+	if err != nil {
+		return nil, err
+	}
+	var suggestion *model.CRMEnrichmentFieldResult
+	for i := range skipped {
+		if skipped[i].Field == fieldName && skipped[i].Reason == "existing_value_protected" {
+			suggestion = &skipped[i]
+			break
+		}
+	}
+	if suggestion == nil {
+		return nil, fmt.Errorf("reviewable suggestion not found")
+	}
+	requested, err := enrichmentFieldInputs(audit.Data["requested_fields"])
+	if err != nil {
+		return nil, err
+	}
+	var proposed model.CRMEnrichmentFieldInput
+	for _, candidate := range requested {
+		if strings.EqualFold(candidate.Field, fieldName) {
+			proposed = candidate
+			proposed.Value = suggestion.ProposedValue
+			break
+		}
+	}
+	if proposed.Field == "" {
+		return nil, fmt.Errorf("suggestion source data is missing")
+	}
+	proposed, err = normalizeCRMEnrichmentField(proposed)
+	if err != nil {
+		return nil, err
+	}
+
+	accepted := model.CRMEnrichmentFieldResult{Field: fieldName, OldValue: suggestion.OldValue, NewValue: proposed.Value, SourceURL: proposed.SourceURL, Confidence: proposed.Confidence, Reason: "accepted_suggestion"}
+	err = s.enrichmentRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		switch audit.ObjectType {
+		case "contact":
+			contact, getErr := s.contactRepo.WithTx(tx).GetByID(ctx, audit.ObjectID)
+			if getErr != nil || contact == nil || contact.WorkspaceID != workspaceID {
+				if getErr != nil {
+					return getErr
+				}
+				return fmt.Errorf("contact not found")
+			}
+			if err := applyContactEnrichmentValue(contact, proposed); err != nil {
+				return err
+			}
+			props := cloneJSONB(contact.CustomProperties)
+			recordEnrichmentProvenance(props, proposed)
+			contact.CustomProperties = props
+			if err := s.contactRepo.WithTx(tx).Update(ctx, contact); err != nil {
+				return err
+			}
+		case "company":
+			company, getErr := s.companyRepo.WithTx(tx).GetByID(ctx, audit.ObjectID)
+			if getErr != nil || company == nil || company.WorkspaceID != workspaceID {
+				if getErr != nil {
+					return getErr
+				}
+				return fmt.Errorf("company not found")
+			}
+			if err := applyCompanyEnrichmentValue(company, proposed); err != nil {
+				return err
+			}
+			props := cloneJSONB(company.CustomProperties)
+			recordEnrichmentProvenance(props, proposed)
+			company.CustomProperties = props
+			if err := s.companyRepo.WithTx(tx).Update(ctx, company); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("enrichment suggestions are unsupported for %s", audit.ObjectType)
+		}
+		if s.activityRepo != nil {
+			if err := s.activityRepo.WithTx(tx).Create(ctx, enrichmentActivity(workspaceID, audit.ObjectType, audit.ObjectID, req.ActorUserID, []model.CRMEnrichmentFieldResult{accepted})); err != nil {
+				return err
+			}
+		}
+		for i := range skipped {
+			if skipped[i].Field == fieldName && skipped[i].Reason == "existing_value_protected" {
+				skipped[i].Reason = "accepted_suggestion"
+				skipped[i].NewValue = proposed.Value
+			}
+		}
+		audit.Data["skipped"] = skipped
+		hasPendingSuggestion := false
+		for _, item := range skipped {
+			if item.Reason == "existing_value_protected" {
+				hasPendingSuggestion = true
+				break
+			}
+		}
+		if !hasPendingSuggestion {
+			audit.Data["status"] = "applied"
+		}
+		acceptedList, _ := enrichmentFieldResults(audit.Data["accepted_suggestions"])
+		audit.Data["accepted_suggestions"] = append(acceptedList, accepted)
+		return s.enrichmentRepo.WithTx(tx).Update(ctx, audit)
+	})
+	if err != nil {
+		return nil, err
+	}
+	entity := "crm_contact"
+	if audit.ObjectType == "company" {
+		entity = "crm_company"
+	}
+	s.publishCRMEnrichment(entity, workspaceID, audit.ObjectID, req.ActorUserID)
+	return audit, nil
 }
 
 // EnrichContact applies guarded, fill-only agent enrichment to a CRM contact.
@@ -131,8 +274,17 @@ func (s *CRMEnrichmentService) EnrichContact(ctx context.Context, workspaceID st
 				contact.AvatarURL = stringPtr(result.NewValue.(string))
 			}
 			appendCRMFieldResult(result, ok, &applied, &skipped)
-		case "linkedin_url", "location":
-			result, ok := upsertAgentEnrichmentProperty(props, normalized)
+		case "linkedin_url":
+			result, ok := fillStringField(normalized, contact.LinkedInURL)
+			if ok && !req.DryRun {
+				contact.LinkedInURL = stringPtr(result.NewValue.(string))
+			}
+			appendCRMFieldResult(result, ok, &applied, &skipped)
+		case "location":
+			result, ok := fillStringField(normalized, contact.PrimaryLocation)
+			if ok && !req.DryRun {
+				contact.PrimaryLocation = stringPtr(result.NewValue.(string))
+			}
 			appendCRMFieldResult(result, ok, &applied, &skipped)
 		case "enrichment_note":
 			result := appendAgentEnrichmentNote(props, normalized)
@@ -141,23 +293,32 @@ func (s *CRMEnrichmentService) EnrichContact(ctx context.Context, workspaceID st
 			return nil, fmt.Errorf("field %q is not allowed for contact enrichment", normalized.Field)
 		}
 	}
-
-	if !req.DryRun && len(applied) > 0 {
-		contact.CustomProperties = props
-		if err := s.contactRepo.Update(ctx, contact); err != nil {
-			return nil, err
-		}
-	}
+	recordAppliedEnrichmentProvenance(props, req.Fields, applied)
 
 	result := crmEnrichmentApplyResult("contact", contact.ID, applied, skipped, req.DryRun)
 	if req.DryRun {
 		return result, nil
 	}
-	enrichment, err := s.createGuardedEnrichmentAudit(ctx, workspaceID, "contact", contact.ID, req.EvidenceSummary, req.Fields, result)
+	contact.CustomProperties = props
+	enrichment := guardedEnrichmentAudit(workspaceID, "contact", contact.ID, req.EvidenceSummary, req.Fields, result)
+	err = s.enrichmentRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(applied) > 0 {
+			if err := s.contactRepo.WithTx(tx).Update(ctx, contact); err != nil {
+				return err
+			}
+			if s.activityRepo != nil {
+				if err := s.activityRepo.WithTx(tx).Create(ctx, enrichmentActivity(workspaceID, "contact", contact.ID, req.ActorUserID, applied)); err != nil {
+					return err
+				}
+			}
+		}
+		return s.enrichmentRepo.WithTx(tx).Create(ctx, enrichment)
+	})
 	if err != nil {
 		return nil, err
 	}
 	result.EnrichmentResultID = enrichment.ID
+	s.publishCRMEnrichment("crm_contact", workspaceID, contact.ID, req.ActorUserID)
 	return result, nil
 }
 
@@ -239,8 +400,17 @@ func (s *CRMEnrichmentService) EnrichCompany(ctx context.Context, workspaceID st
 				company.LogoURL = stringPtr(result.NewValue.(string))
 			}
 			appendCRMFieldResult(result, ok, &applied, &skipped)
-		case "linkedin_url", "headquarters":
-			result, ok := upsertAgentEnrichmentProperty(props, normalized)
+		case "linkedin_url":
+			result, ok := fillStringField(normalized, company.LinkedInURL)
+			if ok && !req.DryRun {
+				company.LinkedInURL = stringPtr(result.NewValue.(string))
+			}
+			appendCRMFieldResult(result, ok, &applied, &skipped)
+		case "headquarters":
+			result, ok := fillStringField(normalized, company.Headquarters)
+			if ok && !req.DryRun {
+				company.Headquarters = stringPtr(result.NewValue.(string))
+			}
 			appendCRMFieldResult(result, ok, &applied, &skipped)
 		case "enrichment_note":
 			result := appendAgentEnrichmentNote(props, normalized)
@@ -249,23 +419,32 @@ func (s *CRMEnrichmentService) EnrichCompany(ctx context.Context, workspaceID st
 			return nil, fmt.Errorf("field %q is not allowed for company enrichment", normalized.Field)
 		}
 	}
-
-	if !req.DryRun && len(applied) > 0 {
-		company.CustomProperties = props
-		if err := s.companyRepo.Update(ctx, company); err != nil {
-			return nil, err
-		}
-	}
+	recordAppliedEnrichmentProvenance(props, req.Fields, applied)
 
 	result := crmEnrichmentApplyResult("company", company.ID, applied, skipped, req.DryRun)
 	if req.DryRun {
 		return result, nil
 	}
-	enrichment, err := s.createGuardedEnrichmentAudit(ctx, workspaceID, "company", company.ID, req.EvidenceSummary, req.Fields, result)
+	company.CustomProperties = props
+	enrichment := guardedEnrichmentAudit(workspaceID, "company", company.ID, req.EvidenceSummary, req.Fields, result)
+	err = s.enrichmentRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if len(applied) > 0 {
+			if err := s.companyRepo.WithTx(tx).Update(ctx, company); err != nil {
+				return err
+			}
+			if s.activityRepo != nil {
+				if err := s.activityRepo.WithTx(tx).Create(ctx, enrichmentActivity(workspaceID, "company", company.ID, req.ActorUserID, applied)); err != nil {
+					return err
+				}
+			}
+		}
+		return s.enrichmentRepo.WithTx(tx).Create(ctx, enrichment)
+	})
 	if err != nil {
 		return nil, err
 	}
 	result.EnrichmentResultID = enrichment.ID
+	s.publishCRMEnrichment("crm_company", workspaceID, company.ID, req.ActorUserID)
 	return result, nil
 }
 
@@ -549,6 +728,79 @@ func normalizeCRMEnrichmentField(field model.CRMEnrichmentFieldInput) (model.CRM
 	return field, nil
 }
 
+func enrichmentFieldResults(value interface{}) ([]model.CRMEnrichmentFieldResult, error) {
+	if value == nil {
+		return []model.CRMEnrichmentFieldResult{}, nil
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode enrichment fields: %w", err)
+	}
+	var results []model.CRMEnrichmentFieldResult
+	if err := json.Unmarshal(payload, &results); err != nil {
+		return nil, fmt.Errorf("decode enrichment fields: %w", err)
+	}
+	return results, nil
+}
+
+func enrichmentFieldInputs(value interface{}) ([]model.CRMEnrichmentFieldInput, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode requested enrichment fields: %w", err)
+	}
+	var results []model.CRMEnrichmentFieldInput
+	if err := json.Unmarshal(payload, &results); err != nil {
+		return nil, fmt.Errorf("decode requested enrichment fields: %w", err)
+	}
+	return results, nil
+}
+
+func applyContactEnrichmentValue(contact *model.CRMContact, field model.CRMEnrichmentFieldInput) error {
+	switch field.Field {
+	case "email":
+		contact.Email = stringPtr(field.Value.(string))
+	case "phone":
+		contact.Phone = stringPtr(field.Value.(string))
+	case "job_title":
+		contact.JobTitle = stringPtr(field.Value.(string))
+	case "avatar_url":
+		contact.AvatarURL = stringPtr(field.Value.(string))
+	case "linkedin_url":
+		contact.LinkedInURL = stringPtr(field.Value.(string))
+	case "location":
+		contact.PrimaryLocation = stringPtr(field.Value.(string))
+	default:
+		return fmt.Errorf("field %q cannot be applied to a contact", field.Field)
+	}
+	return nil
+}
+
+func applyCompanyEnrichmentValue(company *model.CRMCompany, field model.CRMEnrichmentFieldInput) error {
+	switch field.Field {
+	case "domain":
+		company.Domain = stringPtr(field.Value.(string))
+	case "industry":
+		company.Industry = stringPtr(field.Value.(string))
+	case "employee_count":
+		value := field.Value.(int)
+		company.EmployeeCount = &value
+	case "annual_revenue":
+		value := field.Value.(float64)
+		company.AnnualRevenue = &value
+	case "description":
+		company.Description = stringPtr(field.Value.(string))
+	case "logo_url":
+		company.LogoURL = stringPtr(field.Value.(string))
+	case "linkedin_url":
+		company.LinkedInURL = stringPtr(field.Value.(string))
+	case "headquarters":
+		company.Headquarters = stringPtr(field.Value.(string))
+	default:
+		return fmt.Errorf("field %q cannot be applied to a company", field.Field)
+	}
+	return nil
+}
+
 func crmStringValue(value interface{}) (string, error) {
 	switch v := value.(type) {
 	case string:
@@ -694,27 +946,32 @@ func cloneJSONB(input model.JSONB) model.JSONB {
 	return out
 }
 
-func upsertAgentEnrichmentProperty(props model.JSONB, field model.CRMEnrichmentFieldInput) (model.CRMEnrichmentFieldResult, bool) {
+func recordEnrichmentProvenance(props model.JSONB, field model.CRMEnrichmentFieldInput) {
 	bucket := agentEnrichmentBucket(props)
-	next := map[string]interface{}{
+	bucket[field.Field] = map[string]interface{}{
 		"value":      field.Value,
 		"source_url": field.SourceURL,
+		"evidence":   field.Evidence,
 		"confidence": field.Confidence,
 		"updated_at": time.Now().UTC().Format(time.RFC3339),
 	}
-	result := model.CRMEnrichmentFieldResult{Field: field.Field, NewValue: field.Value, SourceURL: field.SourceURL, Confidence: field.Confidence}
-	if existing, ok := bucket[field.Field].(map[string]interface{}); ok {
-		result.OldValue = existing["value"]
-		if fmt.Sprint(existing["value"]) == fmt.Sprint(field.Value) {
-			result.Reason = "same_value"
-			result.CurrentValuePresent = true
-			result.ProposedValue = field.Value
-			return result, false
+	props["agent_enrichment"] = bucket
+}
+
+func recordAppliedEnrichmentProvenance(props model.JSONB, requested []model.CRMEnrichmentFieldInput, applied []model.CRMEnrichmentFieldResult) {
+	appliedFields := make(map[string]model.CRMEnrichmentFieldResult, len(applied))
+	for _, result := range applied {
+		if result.Field != "enrichment_note" {
+			appliedFields[result.Field] = result
 		}
 	}
-	bucket[field.Field] = next
-	props["agent_enrichment"] = bucket
-	return result, true
+	for _, field := range requested {
+		field.Field = strings.TrimSpace(strings.ToLower(field.Field))
+		if result, ok := appliedFields[field.Field]; ok {
+			field.Value = result.NewValue
+			recordEnrichmentProvenance(props, field)
+		}
+	}
 }
 
 func appendAgentEnrichmentNote(props model.JSONB, field model.CRMEnrichmentFieldInput) model.CRMEnrichmentFieldResult {
@@ -763,7 +1020,7 @@ func crmEnrichmentApplyResult(objectType, objectID string, applied, skipped []mo
 	}
 }
 
-func (s *CRMEnrichmentService) createGuardedEnrichmentAudit(ctx context.Context, workspaceID, objectType, objectID, evidenceSummary string, fields []model.CRMEnrichmentFieldInput, result *model.CRMEnrichmentApplyResult) (*model.CRMEnrichmentResult, error) {
+func guardedEnrichmentAudit(workspaceID, objectType, objectID, evidenceSummary string, fields []model.CRMEnrichmentFieldInput, result *model.CRMEnrichmentApplyResult) *model.CRMEnrichmentResult {
 	data := map[string]interface{}{
 		"evidence_summary": strings.TrimSpace(evidenceSummary),
 		"requested_fields": fields,
@@ -773,14 +1030,59 @@ func (s *CRMEnrichmentService) createGuardedEnrichmentAudit(ctx context.Context,
 		"dry_run":          result.DryRun,
 	}
 	confidence := averageCRMFieldConfidence(fields)
-	return s.Create(ctx, model.CreateCRMEnrichmentRequest{
+	return &model.CRMEnrichmentResult{
 		WorkspaceID: workspaceID,
 		ObjectType:  objectType,
 		ObjectID:    objectID,
 		Source:      model.CRMEnrichmentSourceAI,
-		Data:        data,
-		Confidence:  &confidence,
-	})
+		Data:        model.JSONB(data),
+		Confidence:  confidence,
+	}
+}
+
+func enrichmentActivity(workspaceID, objectType, objectID, actorUserID string, applied []model.CRMEnrichmentFieldResult) *model.CRMActivity {
+	subject := "AI enrichment updated CRM fields"
+	changes := make([]string, 0, len(applied))
+	for _, field := range applied {
+		if field.Field != "enrichment_note" {
+			name := strings.ReplaceAll(field.Field, "_", " ")
+			if field.OldValue != nil {
+				changes = append(changes, fmt.Sprintf("%s: %v → %v", name, field.OldValue, field.NewValue))
+			} else {
+				changes = append(changes, fmt.Sprintf("%s: added %v", name, field.NewValue))
+			}
+		}
+	}
+	body := strings.Join(changes, "\n")
+	if body == "" {
+		body = "Added enrichment research notes"
+	}
+	activity := &model.CRMActivity{
+		WorkspaceID:  workspaceID,
+		ActivityType: model.CRMActivityNote,
+		Subject:      &subject,
+		Body:         &body,
+		OccurredAt:   time.Now().UTC(),
+		Metadata: model.JSONB{
+			"event_type":    "crm_enrichment_applied",
+			"actor_user_id": actorUserID,
+			"changes":       applied,
+			"immutable":     true,
+		},
+	}
+	if objectType == "contact" {
+		activity.ContactID = &objectID
+	} else if objectType == "company" {
+		activity.CompanyID = &objectID
+	}
+	return activity
+}
+
+func (s *CRMEnrichmentService) publishCRMEnrichment(entity, workspaceID, objectID, actorUserID string) {
+	if s.wsPublisher == nil {
+		return
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: entity, EntityID: objectID, WorkspaceID: workspaceID, ActorID: actorUserID})
 }
 
 func (s *CRMEnrichmentService) createEnsureCompanyAudit(ctx context.Context, workspaceID string, req model.EnsureCRMContactCompanyRequest, result *model.EnsureCRMContactCompanyResult) (*model.CRMEnrichmentResult, error) {

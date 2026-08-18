@@ -158,7 +158,9 @@ The shared dataset was also cleaned up:
 
 ## Agents and Automation
 
-The canonical doc for the current backend model and near-term proposal is [docs/AGENTS_AND_AUTOMATION.md](docs/AGENTS_AND_AUTOMATION.md).
+The canonical doc for the current backend ownership and execution model is [docs/AGENTS_AND_AUTOMATION.md](docs/AGENTS_AND_AUTOMATION.md).
+
+Workspace-owned outbound MCP servers for agents are documented in [docs/EXTERNAL_MCP_SERVERS.md](docs/EXTERNAL_MCP_SERVERS.md). Public inbound MCP for outside AI clients remains documented separately in [docs/HELPIN_PUBLIC_MCP.md](docs/HELPIN_PUBLIC_MCP.md).
 
 Current truth:
 
@@ -167,22 +169,30 @@ Current truth:
 - built-in automations remain product-owned backend behavior
 - run input now carries explicit `trigger` / `target` / `event` metadata while preserving legacy fields
 - generic target launching now exists for direct runs and automation-rule `start_agent_run`
-- the backend already behaves as two agent categories:
-  - system agents as product-owned preset/default wrappers
-  - custom agents as user-defined wrappers
-- for `native_sdk`, both categories share the same core run machinery
+- the backend records two ownership styles, not two executor types:
+  - system agents are product-owned, usually preset-backed configurations
+  - custom agents are workspace-owned, versioned configurations
+- system agents, custom agents, and one-shot command agents all execute through
+  Agent Runtime using the same `agent_run` lifecycle
+- `runtime_kind` selects the `native_sdk`, `codex`, or `opencode` adapter; it
+  does not select a system-agent or custom-agent execution path
+- Helpin owns workspace tenancy, agent configuration, access policy, triggers,
+  and product launch surfaces; Agent Runtime owns generic execution mechanics
 
 Current trigger surfaces:
 
 - manual run actions
 - agent `trigger_mode`
-- agent `schedule`
-- automation-rule triggers: `story.state_entered`, `agent_run.approved`, `cron`
+- automation-rule triggers: events such as `task.state_entered` and
+  `agent_run.approved`, plus `cron`
 
-Proposed custom-agent direction:
+Custom-agent rules:
 
 - keep system agents product-owned defaults
-- make custom agents generic `native_sdk` executors
+- keep custom agents generic and workspace-managed
 - trigger custom agents via `manual`, automation-rule `event`, and automation-rule `cron`
 - pass a minimal trigger payload into `agent_run.input`
 - let custom agents gather additional context with tools
+- do not give custom agents `preset_key`; reproduce preset-like behavior with
+  prompts, skills, allowed tools, allowed targets, runtime configuration, and
+  approval policy

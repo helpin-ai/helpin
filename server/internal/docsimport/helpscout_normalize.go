@@ -73,13 +73,17 @@ func isHelpScoutCallout(n *html.Node) (variant string, ok bool) {
 var videoProviders = map[string]struct {
 	provider   string
 	pathPrefix string
+	embedHost  string
 }{
-	"www.youtube.com":       {provider: "youtube", pathPrefix: "/embed/"},
-	"youtube.com":           {provider: "youtube", pathPrefix: "/embed/"},
-	"www.youtube-nocookie.com": {provider: "youtube", pathPrefix: "/embed/"},
-	"player.vimeo.com":      {provider: "vimeo", pathPrefix: "/video/"},
-	"www.loom.com":          {provider: "loom", pathPrefix: "/embed/"},
-	"fast.wistia.net":       {provider: "wistia", pathPrefix: "/embed/iframe/"},
+	"www.youtube.com":          {provider: "youtube", pathPrefix: "/embed/", embedHost: "www.youtube.com"},
+	"youtube.com":              {provider: "youtube", pathPrefix: "/embed/", embedHost: "www.youtube.com"},
+	"www.youtube-nocookie.com": {provider: "youtube", pathPrefix: "/embed/", embedHost: "www.youtube.com"},
+	"player.vimeo.com":         {provider: "vimeo", pathPrefix: "/video/", embedHost: "player.vimeo.com"},
+	"www.loom.com":             {provider: "loom", pathPrefix: "/embed/", embedHost: "www.loom.com"},
+	"loom.com":                 {provider: "loom", pathPrefix: "/embed/", embedHost: "www.loom.com"},
+	"www.useloom.com":          {provider: "loom", pathPrefix: "/embed/", embedHost: "www.loom.com"},
+	"useloom.com":              {provider: "loom", pathPrefix: "/embed/", embedHost: "www.loom.com"},
+	"fast.wistia.net":          {provider: "wistia", pathPrefix: "/embed/iframe/", embedHost: "fast.wistia.net"},
 }
 
 // parseVideoIframe checks if an iframe src is a supported video provider.
@@ -106,7 +110,7 @@ func parseVideoIframe(src string) (provider, sourceUrl, embedUrl string, ok bool
 	for host, info := range videoProviders {
 		if u.Host == host && strings.HasPrefix(u.Path, info.pathPrefix) {
 			// Normalize to https
-			embedURL := "https://" + host + u.Path
+			embedURL := "https://" + info.embedHost + u.Path
 			if u.RawQuery != "" {
 				embedURL += "?" + u.RawQuery
 			}
@@ -114,6 +118,74 @@ func parseVideoIframe(src string) (provider, sourceUrl, embedUrl string, ok bool
 		}
 	}
 	return "", "", "", false
+}
+
+// ContainsSupportedVideoEmbed reports whether source HTML contains an iframe
+// or Help Scout wrapper that can be represented as a native videoEmbed node.
+func ContainsSupportedVideoEmbed(rawHTML string) bool {
+	doc, err := html.Parse(strings.NewReader(rawHTML))
+	if err != nil {
+		return false
+	}
+	return containsSupportedVideoEmbedNode(doc)
+}
+
+func containsSupportedVideoEmbedNode(root *html.Node) bool {
+	var walk func(*html.Node) bool
+	walk = func(node *html.Node) bool {
+		if node.Type == html.ElementNode {
+			if node.DataAtom == atom.Iframe {
+				if _, _, _, ok := parseVideoIframe(getAttr(node, "src")); ok {
+					return true
+				}
+			}
+			if _, ok := parseWistiaEmbedContainer(node); ok {
+				return true
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if walk(child) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(root)
+}
+
+// ContainsGIFImage reports whether source HTML contains an animated GIF image.
+// GIFs must bypass the Markdown/AI conversion path because an omitted Markdown
+// image silently removes the animation from the imported article.
+func ContainsGIFImage(rawHTML string) bool {
+	doc, err := html.Parse(strings.NewReader(rawHTML))
+	if err != nil {
+		return false
+	}
+	found := false
+	walkElements(findBody(doc), func(node *html.Node) {
+		if found || node.Type != html.ElementNode || node.DataAtom != atom.Img {
+			return
+		}
+		found = isGIFImageSource(getAttr(node, "src")) ||
+			isGIFImageSource(getAttr(node, "data-src"))
+	})
+	return found
+}
+
+func isGIFImageSource(source string) bool {
+	value := strings.TrimSpace(source)
+	if value == "" {
+		return false
+	}
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "data:image/gif;") {
+		return true
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(parsed.Path), ".gif")
 }
 
 // getAttr returns the value of an attribute on an HTML node.

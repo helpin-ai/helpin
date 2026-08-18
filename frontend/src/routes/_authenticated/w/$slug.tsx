@@ -2,7 +2,7 @@ import { memo, useEffect, type CSSProperties } from 'react'
 import { createFileRoute, Link, Navigate, Outlet, useLocation } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, CircleAlert } from 'lucide-react'
-import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
+import { useWorkspaceBySlug, useWorkspaces } from '@/hooks/queries/useWorkspaces'
 import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
 import { useWorkspaceBilling } from '@/hooks/queries/useBilling'
@@ -23,7 +23,12 @@ import { Button } from '@/components/ui/button'
 import { MFARequiredGate } from '@/components/auth/MFARequiredGate'
 import { queryKeys } from '@/lib/queryKeys'
 import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes'
+import { BILLING_CHOOSE_PLAN_SEARCH, BILLING_OVERVIEW_SEARCH } from '@/lib/billingNavigation'
+import { WORKSPACE_AUTH_VIEWPORT_CLASS_NAME } from '@/lib/authenticatedLayout'
+import { identifyAnalyticsOrganization, identifyAnalyticsWorkspace } from '@/lib/analytics'
+import { cn } from '@/lib/utils'
 import type { WorkspaceBillingSummary } from '@/lib/types'
+import { useAuthStore } from '@/stores/authStore'
 
 export const Route = createFileRoute('/_authenticated/w/$slug')({
   component: WorkspaceLayout,
@@ -46,6 +51,9 @@ function WorkspaceLayout() {
   const queryClient = useQueryClient()
   const location = useLocation()
   const isOwner = access?.membership?.role === 'owner'
+  const user = useAuthStore((s) => s.user)
+  const currentOrganization = orgs?.find((org) => org.id === workspace?.organization_id) ?? null
+  const { data: organizationWorkspaces = [] } = useWorkspaces(currentOrganization?.id)
 
   // Selection stores (Zustand) — sync from query data
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
@@ -57,12 +65,17 @@ function WorkspaceLayout() {
     if (workspace) useWorkspaceStore.getState().setCurrentWorkspace(workspace)
   }, [workspace])
 
+  useEffect(() => {
+    if (!workspace) return
+    identifyAnalyticsWorkspace({ ...workspace, billing: billing ?? workspace.billing }, access, currentOrganization)
+    identifyAnalyticsOrganization(currentOrganization, user, undefined, organizationWorkspaces)
+  }, [access, billing, currentOrganization, organizationWorkspaces, user, workspace])
+
+
   // Sync organization selection
   useEffect(() => {
-    if (!orgs?.length || !workspace?.organization_id) return
-    const org = orgs.find(o => o.id === workspace.organization_id)
-    if (org) useOrganizationStore.getState().setCurrentOrganization(org)
-  }, [orgs, workspace?.organization_id])
+    if (currentOrganization) useOrganizationStore.getState().setCurrentOrganization(currentOrganization)
+  }, [currentOrganization])
 
   const loading = wsLoading || orgsLoading
     || (!!wsId && (sessionLoading || accessLoading || settingsLoading))
@@ -71,8 +84,8 @@ function WorkspaceLayout() {
 
   if (loading) {
     return (
-      <div className="min-h-svh bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.9)_45%,rgba(187,210,229,0.55)_100%)]">
-        <div className="h-svh w-full overflow-hidden border border-border/70 bg-background/90 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
+      <div className={cn(WORKSPACE_AUTH_VIEWPORT_CLASS_NAME, 'bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.9)_45%,rgba(187,210,229,0.55)_100%)]')}>
+        <div className="h-full w-full overflow-hidden border border-border/70 bg-background/90 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
           <div className="flex h-full">
             <div className="w-72 border-r p-4 space-y-4">
               <Skeleton className="h-7 w-48" />
@@ -120,12 +133,12 @@ function WorkspaceLayout() {
   }
 
   if (billing?.locked && !location.pathname.endsWith('/settings/billing')) {
-    return <Navigate to="/w/$slug/settings/billing" params={{ slug }} replace />
+    return <Navigate to="/w/$slug/settings/billing" params={{ slug }} search={BILLING_OVERVIEW_SEARCH} replace />
   }
 
   return (
-    <div className="min-h-svh bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.92)_45%,rgba(187,210,229,0.55)_100%)]">
-      <div className="h-svh w-full overflow-hidden bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
+    <div className={cn(WORKSPACE_AUTH_VIEWPORT_CLASS_NAME, 'bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.92)_45%,rgba(187,210,229,0.55)_100%)]')}>
+      <div className="h-full w-full overflow-hidden bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
         <SidebarProvider
           className="!min-h-0 h-full"
           style={{ '--sidebar-width-icon': '3rem' } as CSSProperties}
@@ -190,7 +203,11 @@ function WorkspaceBillingNotice({
         </div>
         {isOwner ? (
           <Button asChild size="sm" variant="destructive" className="h-7 shrink-0 px-3 text-xs">
-            <Link to="/w/$slug/settings/billing" params={{ slug }}>
+            <Link
+              to="/w/$slug/settings/billing"
+              params={{ slug }}
+              search={isPaymentIssue ? BILLING_OVERVIEW_SEARCH : BILLING_CHOOSE_PLAN_SEARCH}
+            >
               {ownerCTA}
             </Link>
           </Button>
@@ -211,11 +228,9 @@ function RouteAwareHeader() {
   return <Header />
 }
 
-/** Hide the Ask Agents dock on support routes — support has its own assistant flow. */
 function RouteAwareAskAgentsDock() {
   const location = useLocation()
-  if (isWorkspaceSupportRoute(location.pathname)) return null
-  return <AskAgentsDock />
+  return <AskAgentsDock hideCollapsedTrigger={isWorkspaceSupportRoute(location.pathname)} />
 }
 
 const MemoizedGlobalCreateModals = memo(GlobalCreateModals)

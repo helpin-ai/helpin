@@ -6,6 +6,9 @@ import (
 )
 
 const (
+	ContentSourceTypeWebsite = "website"
+	ContentSourceTypeFile    = "file"
+
 	ContentSourceFormatHTML     = "html"
 	ContentSourceFormatMarkdown = "markdown"
 	ContentSourceFormatJSON     = "json"
@@ -24,7 +27,12 @@ type SupportContentSource struct {
 	ID                   string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID          string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_support_content_sources_ws_name,priority:1"`
 	Name                 string          `json:"name" gorm:"not null;index:idx_support_content_sources_ws_name,priority:2"`
+	SourceType           string          `json:"source_type" gorm:"not null;default:'website';index"`
 	StartURL             string          `json:"start_url" gorm:"type:text;not null"`
+	FileName             *string         `json:"file_name,omitempty"`
+	FileSize             int64           `json:"file_size" gorm:"not null;default:0"`
+	ContentType          *string         `json:"content_type,omitempty"`
+	StorageKey           *string         `json:"storage_key,omitempty"`
 	CrawlLimit           int             `json:"crawl_limit" gorm:"not null;default:100"`
 	CrawlDepth           int             `json:"crawl_depth" gorm:"not null;default:2"`
 	CrawlSource          string          `json:"crawl_source" gorm:"not null;default:'all'"`
@@ -92,9 +100,14 @@ type SupportContentChunk struct {
 	ContentSourceID     string    `json:"content_source_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:2;index"`
 	PageID              string    `json:"page_id" gorm:"type:uuid;not null;index:idx_support_content_chunk_ws_source_page,priority:3;uniqueIndex:idx_support_content_chunk_page_order,priority:1"`
 	ChunkIndex          int       `json:"chunk_index" gorm:"not null;uniqueIndex:idx_support_content_chunk_page_order,priority:2"`
+	SectionKey          string    `json:"section_key" gorm:"size:64;not null;default:'';index"`
+	HeadingPath         string    `json:"heading_path" gorm:"type:text;not null;default:''"`
 	Title               string    `json:"title" gorm:"not null"`
 	URL                 string    `json:"url" gorm:"type:text;not null"`
 	Content             string    `json:"content" gorm:"type:text;not null"`
+	SearchContent       string    `json:"search_content" gorm:"type:text;not null;default:''"`
+	PreviousChunkIndex  *int      `json:"previous_chunk_index,omitempty"`
+	NextChunkIndex      *int      `json:"next_chunk_index,omitempty"`
 	ContentHash         string    `json:"content_hash" gorm:"size:64;not null;index"`
 	Embedding           string    `json:"-" gorm:"type:vector(1536);not null"`
 	EmbeddingProvider   string    `json:"embedding_provider" gorm:"not null;default:'openai'"`
@@ -124,6 +137,19 @@ type CreateSupportContentSourceRequest struct {
 	ModifiedSince        *time.Time      `json:"modified_since"`
 	JSONPrompt           *string         `json:"json_prompt"`
 	JSONResponseFormat   json.RawMessage `json:"json_response_format"`
+}
+
+type CreateSupportContentSourceFileUploadRequest struct {
+	Name        string `json:"name"`
+	FileName    string `json:"file_name"`
+	FileSize    int64  `json:"file_size"`
+	ContentType string `json:"content_type"`
+	StorageKey  string `json:"-"`
+}
+
+type CreateSupportContentSourceFileUploadResponse struct {
+	Source    SupportContentSource `json:"source"`
+	UploadURL string               `json:"upload_url"`
 }
 
 type UpdateSupportContentSourceRequest struct {

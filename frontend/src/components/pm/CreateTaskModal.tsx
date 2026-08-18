@@ -30,7 +30,6 @@ import {
 } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { TiptapEditor } from "@/components/ui/tiptap-editor";
 import {
@@ -96,6 +95,18 @@ import { normalizeTeamType } from "@/lib/teamPresets";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { getOptionalSectionActionClass } from "@/components/pm/optionalSectionActionPill";
 import { AgentPickerCard } from "@/components/pm/AgentPickerCard";
+import {
+  CreateEntityDialogContent,
+  CreateEntityMetadataGrid,
+  CreateEntityMetadataRow as MetadataRow,
+  CreateEntityModalBody,
+  CreateEntityModalFooter,
+  CreateEntityModalFrame,
+  CreateEntityModalHeader,
+  CreateEntityModalMain,
+  CreateEntityModalSidebar,
+  CreateEntityTitleInput,
+} from '@/components/pm/CreateEntityModalLayout';
 import { UpgradeRequiredDialog } from "@/components/billing/UpgradeRequiredDialog";
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from "@/lib/upgradeRequired";
 
@@ -272,35 +283,7 @@ export function isCreateTaskModalDirty({
   return form.name.trim() !== '' || stripHtmlForCompare(currentDescription) !== stripHtmlForCompare(baselineDescription);
 }
 
-// ── Metadata Row ───────────────────────────────────────────────────
-
 const CODE_REPO_TOOLTIP = "Gives agents code context for planning and execution.";
-
-function MetadataRow({
-  icon: Icon,
-  label,
-  tooltip,
-  children,
-}: {
-  icon: React.ElementType;
-  label: string;
-  tooltip?: string;
-  children: React.ReactNode;
-}) {
-  const labelNode = <span className="text-xs text-muted-foreground self-center">{label}</span>;
-
-  return (
-    <>
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      {tooltip ? (
-        <QuickTooltip label={tooltip} side="left">
-          {labelNode}
-        </QuickTooltip>
-      ) : labelNode}
-      <div className="min-w-0 self-center">{children}</div>
-    </>
-  );
-}
 
 function GroupedSidebarPopoverSelect<T extends string>({
   value,
@@ -326,7 +309,7 @@ function GroupedSidebarPopoverSelect<T extends string>({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         >
           {renderTrigger()}
         </button>
@@ -991,7 +974,7 @@ export function CreateTaskModal({
           priority: form.priority !== 'none' ? form.priority : undefined,
           severity: form.severity !== 'none' ? form.severity : undefined,
           estimate: form.estimate ? Number(form.estimate) : undefined,
-          team_id: form.team_id || undefined,
+          team_id: form.team_id,
           label_ids: labelIds,
           owner_member_id: form.owner_member_ids[0] || undefined,
           owner_member_ids: form.owner_member_ids.length > 0 ? JSON.stringify(form.owner_member_ids) : undefined,
@@ -1032,7 +1015,7 @@ export function CreateTaskModal({
           estimate: form.estimate ? Number(form.estimate) : undefined,
           epic_id: form.epic_id || undefined,
           sprint_id: form.sprint_id || undefined,
-          team_id: form.team_id || undefined,
+          team_id: form.team_id,
           owner_member_ids: form.owner_member_ids.length > 0 ? form.owner_member_ids : undefined,
           requester_member_id: form.requester_member_id || undefined,
           deadline: form.deadline || undefined,
@@ -1214,23 +1197,19 @@ export function CreateTaskModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        className="max-w-6xl sm:max-w-6xl gap-0 overflow-visible p-0"
-        showCloseButton={false}
-      >
+      <CreateEntityDialogContent>
         {stackedOverDrawer ? (
           <div
             aria-hidden="true"
             className="pointer-events-none absolute -left-2 top-3 h-14 w-2 rounded-l-md border-y border-l border-border/70 bg-background shadow-sm"
           />
         ) : null}
-        <div className="flex h-[85vh] max-h-[960px] flex-col">
+        <CreateEntityModalFrame>
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="text-lg font-semibold">
-                {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
-              </span>
+          <CreateEntityModalHeader
+            title={isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
+            onClose={() => handleOpenChange(false)}
+          >
               {!isTemplateMode && (
                 <SidebarPopoverSelect
                   value={selectedTemplateId}
@@ -1261,44 +1240,40 @@ export function CreateTaskModal({
                     ) : null
                   }
                   showChevron
-                  triggerClassName="border border-border/60 bg-muted/20 px-2.5 py-1 text-xs"
+                  triggerVariant="ghost"
+                  triggerClassName="px-2.5 py-1 text-xs"
                 />
               )}
-            </div>
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleOpenChange(false)}>
-              <Cancel01Icon className="h-4 w-4" />
-            </Button>
-          </div>
+          </CreateEntityModalHeader>
 
           {/* Two-column grid */}
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
+          <CreateEntityModalBody>
             {/* Left column — title + description */}
-            <div className="min-h-0 overflow-y-auto px-6 py-3">
+            <CreateEntityModalMain>
 
               {/* Title */}
-              <Input
-                id="task-title"
-                autoFocus
-                placeholder="Title..."
-                className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
-                value={form.name}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, name: event.target.value }))
-                }
-                onKeyDown={(e) => {
-                  if (e.key === 'Tab' && !e.shiftKey) {
-                    e.preventDefault();
-                    const editor = e.currentTarget.closest('.flex')?.querySelector<HTMLElement>('.tiptap.ProseMirror');
-                    editor?.focus();
+              <CreateEntityTitleInput
+                  id="task-title"
+                  autoFocus
+                  placeholder="Title..."
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, name: event.target.value }))
                   }
-                }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Tab' && !e.shiftKey) {
+                      e.preventDefault();
+                      const editor = e.currentTarget.closest('.flex')?.querySelector<HTMLElement>('.tiptap.ProseMirror');
+                      editor?.focus();
+                    }
+                  }}
               />
 
               {/* Description — Tiptap rich text editor */}
-              <div className="relative mt-4 min-h-[320px]">
+              <div className="relative min-h-[320px]">
                 {descriptionMode === 'markdown' ? (
-                  <div className="flex min-h-[320px] flex-col rounded-2xl border border-transparent bg-input/50">
-                    <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
+                  <div className="flex min-h-[320px] flex-col bg-transparent">
+                    <div className="flex items-center justify-between border-b border-border/60 px-5 py-1.5">
                       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Markdown Source
                       </span>
@@ -1327,7 +1302,7 @@ export function CreateTaskModal({
                     <textarea
                       value={sourceMarkdown}
                       onChange={(event) => setSourceMarkdown(event.target.value)}
-                      className="min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+                      className="min-h-0 flex-1 resize-none border-0 bg-transparent px-6 py-4 font-mono text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
                       placeholder="## Write the task in Markdown"
                       spellCheck={false}
                     />
@@ -1340,7 +1315,9 @@ export function CreateTaskModal({
                       setForm((prev) => ({ ...prev, description: html }))
                     }
                     placeholder="Add a description..."
-                    className="min-h-[320px]"
+                    variant="divider"
+                    contentVariant="pm"
+                    className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:px-6 [&_.tiptap]:py-4"
                     uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                     onUploadStateChange={setDescriptionPendingUploads}
                     teams={mentionTeams}
@@ -1353,15 +1330,15 @@ export function CreateTaskModal({
               </div>
 
               {/* ── Action bar — toggle pills ─────────────────────── */}
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-6 py-2.5">
+                <div className="flex flex-wrap items-center gap-[18px]">
                   <button
                     type="button"
-                    className={getOptionalSectionActionClass(form.checklist_items.length > 0 ? 'locked' : showChecklist ? 'open' : 'available')}
+                    className={getOptionalSectionActionClass(form.checklist_items.length > 0 ? 'locked' : showChecklist ? 'open' : 'available', 'borderless')}
                     disabled={form.checklist_items.length > 0}
                     onClick={() => setShowChecklist((v) => !v)}
                   >
-                    <CheckListIcon className="h-3 w-3" />
+                    <CheckListIcon className="h-[15px] w-[15px]" />
                     Checklist
                     {form.checklist_items.length > 0 && (
                       <span className="text-[10px] opacity-70">({form.checklist_items.length})</span>
@@ -1369,11 +1346,11 @@ export function CreateTaskModal({
                   </button>
                   <button
                     type="button"
-                    className={getOptionalSectionActionClass(form.external_links.length > 0 ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                    className={getOptionalSectionActionClass(form.external_links.length > 0 ? 'locked' : showExternalLinks ? 'open' : 'available', 'borderless')}
                     disabled={form.external_links.length > 0}
                     onClick={() => setShowExternalLinks((v) => !v)}
                   >
-                    <Link01Icon className="h-3 w-3" />
+                    <Link01Icon className="h-[15px] w-[15px]" />
                     External Links
                     {form.external_links.length > 0 && (
                       <span className="text-[10px] opacity-70">({form.external_links.length})</span>
@@ -1381,23 +1358,23 @@ export function CreateTaskModal({
                   </button>
                   <button
                     type="button"
-                    className={getOptionalSectionActionClass((pendingFiles.length + templateAttachments.length) > 0 ? 'locked' : showAttachments ? 'open' : 'available')}
+                    className={getOptionalSectionActionClass((pendingFiles.length + templateAttachments.length) > 0 ? 'locked' : showAttachments ? 'open' : 'available', 'borderless')}
                     disabled={(pendingFiles.length + templateAttachments.length) > 0}
                     onClick={() => setShowAttachments((v) => !v)}
                   >
-                    <AttachmentIcon className="h-3 w-3" />
+                    <AttachmentIcon className="h-[15px] w-[15px]" />
                     Attach Files
                     {(pendingFiles.length + templateAttachments.length) > 0 && (
                       <span className="text-[10px] opacity-70">({pendingFiles.length + templateAttachments.length})</span>
                     )}
                   </button>
                 </div>
-                <div className="ml-auto inline-flex rounded-md border border-border/60 bg-muted/20 p-0.5">
+                <div className="ml-auto inline-flex rounded-md bg-muted/50 p-0.5">
                   <button
                     type="button"
                     className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
                       descriptionMode === 'rich'
-                        ? 'bg-background text-foreground shadow-sm'
+                        ? 'bg-background text-foreground'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={() => {
@@ -1413,7 +1390,7 @@ export function CreateTaskModal({
                     type="button"
                     className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
                       descriptionMode === 'markdown'
-                        ? 'bg-background text-foreground shadow-sm'
+                        ? 'bg-background text-foreground'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                     onClick={openMarkdownMode}
@@ -1426,8 +1403,8 @@ export function CreateTaskModal({
 
               {/* Checklist */}
               {showChecklist && (
-                <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
-                  <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+                <div className="shrink-0 border-t border-border/60 bg-transparent">
+                  <div className="flex items-center justify-between border-b border-border/40 px-6 py-2.5">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <CheckListIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       Checklist
@@ -1436,7 +1413,7 @@ export function CreateTaskModal({
                       )}
                     </div>
                   </div>
-                  <div className="px-4 py-2 space-y-1">
+                  <div className="space-y-1 px-6 py-3">
                     {form.checklist_items.map((item, idx) => (
                       <div key={idx} className="group flex items-center gap-2">
                         <DragDropVerticalIcon className="h-3 w-3 text-muted-foreground/40 shrink-0" />
@@ -1483,8 +1460,8 @@ export function CreateTaskModal({
 
               {/* External Links */}
               {showExternalLinks && (
-                <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
-                  <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+                <div className="shrink-0 border-t border-border/60 bg-transparent">
+                  <div className="flex items-center justify-between border-b border-border/40 px-6 py-2.5">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                       External Links
@@ -1493,7 +1470,7 @@ export function CreateTaskModal({
                       )}
                     </div>
                   </div>
-                  <div className="px-4 py-2 space-y-1">
+                  <div className="space-y-1 px-6 py-3">
                     {form.external_links.map((link, idx) => (
                       <div key={idx} className="group flex items-center gap-2">
                         <ExternalLinkIcon className="h-3 w-3 text-muted-foreground/40 shrink-0" />
@@ -1539,8 +1516,8 @@ export function CreateTaskModal({
               )}
 
               {showAttachments && (
-                <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
-                  <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+                <div className="shrink-0 border-t border-border/60 bg-transparent">
+                  <div className="flex items-center justify-between border-b border-border/40 px-6 py-2.5">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       Attachments
@@ -1549,7 +1526,7 @@ export function CreateTaskModal({
                       )}
                     </div>
                   </div>
-                  <div className="px-4 py-2 space-y-2">
+                  <div className="space-y-2 px-6 py-3">
                     {(pendingFiles.length > 0 || templateAttachments.length > 0) && (
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                         {templateAttachments.map((attachmentResponse) => {
@@ -1640,7 +1617,7 @@ export function CreateTaskModal({
               )}
 
               {!isTemplateMode && (
-                <div className="mt-3">
+                <div>
                   <AgentPickerCard
                     workspaceId={workspaceId}
                     runnableTarget="task"
@@ -1648,16 +1625,17 @@ export function CreateTaskModal({
                     value={assignedAgentId}
                     onChange={setAssignedAgentId}
                     hasRepoContext={!showPlanningRepository || Boolean(teamRepoDefault?.repository_id)}
+                    variant="inline"
                   />
                 </div>
               )}
 
-              {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            </div>
+              {error ? <p className="border-t border-border/60 px-6 py-3 text-sm text-destructive">{error}</p> : null}
+            </CreateEntityModalMain>
 
             {/* Right sidebar — metadata */}
-            <aside className="min-h-0 overflow-y-auto border-l border-border/50 px-5 py-4">
-              <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-3 gap-y-3">
+            <CreateEntityModalSidebar>
+              <CreateEntityMetadataGrid>
                 {/* Team */}
                 {teams.length > 0 && (
                   <MetadataRow icon={UserGroupIcon} label="Team *">
@@ -1851,6 +1829,7 @@ export function CreateTaskModal({
                     selectedLabelIds={form.label_ids}
                     onLabelsChange={setLabels}
                     onChange={(ids) => setForm((prev) => ({ ...prev, label_ids: ids }))}
+                    className="[&>span]:text-ui"
                   />
                 </MetadataRow>
                 )}
@@ -1877,7 +1856,7 @@ export function CreateTaskModal({
 
                 {fieldVis.epic && selectedEpicDeliveryTarget?.repository_id && selectedEpicDeliveryTarget.epic_branch && (
                 <MetadataRow icon={SourceCodeIcon} label="Delivery">
-                  <span className="min-w-0 truncate font-mono text-xs">
+                  <span className="min-w-0 truncate font-mono text-ui">
                     {selectedEpicDeliveryTarget.epic_branch}
                   </span>
                 </MetadataRow>
@@ -1950,7 +1929,7 @@ export function CreateTaskModal({
                     disablePast
                     hideIcon
                     urgencyColor
-                    className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
+                    className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-ui shadow-none hover:bg-accent"
                   />
                 </MetadataRow>
                 )}
@@ -1964,19 +1943,19 @@ export function CreateTaskModal({
                         className="inline-flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
                         onClick={() => setRecurringDialogOpen(true)}
                       >
-                        {recurringDraft ? <RecurringTemplateBadge compact /> : null}
+                        {recurringDraft ? <RecurringTemplateBadge compact className="text-ui" /> : null}
                         <span className="truncate">{recurringDraftSummary}</span>
                       </button>
                     </MetadataRow>
                   </>
                 )}
 
-              </div>
-            </aside>
-          </div>
+              </CreateEntityMetadataGrid>
+            </CreateEntityModalSidebar>
+          </CreateEntityModalBody>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
+          <CreateEntityModalFooter>
             {!isTemplateMode && (
               <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2">
                 <div className="flex items-center gap-2">
@@ -1992,7 +1971,7 @@ export function CreateTaskModal({
             {!isTemplateMode && (
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 onClick={() => submit(true)}
                 disabled={!canSubmit || submitting}
               >
@@ -2007,8 +1986,8 @@ export function CreateTaskModal({
               {submitting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : null}
               {submitting ? "Saving..." : assignedAgentId && !isTemplateMode ? "Save & run agent" : "Save"}
             </Button>
-          </div>
-        </div>
+          </CreateEntityModalFooter>
+        </CreateEntityModalFrame>
 
         <UpgradeRequiredDialog
           open={upgradeDialogReason !== null}
@@ -2056,7 +2035,7 @@ export function CreateTaskModal({
             </DialogContent>
           </Dialog>
         )}
-      </DialogContent>
+      </CreateEntityDialogContent>
     </Dialog>
   );
 }

@@ -64,16 +64,22 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
           cachedMemberships = data.memberships;
           cachedUserMemberships = data.user_memberships;
         }
-      })();
+      })().catch(() => {
+        // A transient API outage must not leave a rejected promise cached for
+        // every teams consumer. The next mount or invalidation can retry.
+      });
     }
 
-    await fetchPromise;
-    fetchPromise = null;
-    setTeams(cachedTeams);
-    setPeople(cachedPeople);
-    setMemberships(cachedMemberships);
-    setUserMemberships(cachedUserMemberships);
-    setLoading(false);
+    try {
+      await fetchPromise;
+      setTeams(cachedTeams);
+      setPeople(cachedPeople);
+      setMemberships(cachedMemberships);
+      setUserMemberships(cachedUserMemberships);
+    } finally {
+      fetchPromise = null;
+      setLoading(false);
+    }
   }, [workspaceId]);
 
   useEffect(() => {

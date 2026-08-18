@@ -1,4 +1,4 @@
-import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { Cancel01Icon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -58,6 +58,7 @@ type EmailChipInputProps = {
   className?: string;
   disabled?: boolean;
   autoComplete?: string;
+  autoFocus?: boolean;
 };
 
 export function EmailChipInput({
@@ -69,9 +70,16 @@ export function EmailChipInput({
   className,
   disabled = false,
   autoComplete = 'off',
+  autoFocus = false,
 }: EmailChipInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [invalidEntries, setInvalidEntries] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (autoFocus && !disabled) {
+      inputRef.current?.focus();
+    }
+  }, [autoFocus, disabled]);
 
   const commitInput = (raw = inputValue) => {
     const trimmed = raw.trim();

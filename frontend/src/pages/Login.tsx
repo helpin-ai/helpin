@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
 import { consumeRedirectAfterLogin, loginRedirectFromSearch } from '@/lib/authRedirect';
@@ -167,6 +168,12 @@ export default function Login() {
     }
   };
 
+  const passkeyButton = (
+    <Button type="button" variant="outline" className="w-full" disabled={loading || !passkeySupported} onClick={() => void handlePasskeyLogin()}>
+      Sign in with passkey
+    </Button>
+  );
+
   return (
     <PublicPageShell>
       <Card className="w-full">
@@ -267,13 +274,15 @@ export default function Login() {
             </Button>
             {!twoFaToken && (
               <>
-                <Button type="button" variant="outline" className="w-full" disabled={loading || !passkeySupported} onClick={() => void handlePasskeyLogin()}>
-                  Sign in with passkey
-                </Button>
-                {!passkeySupported && (
-                  <p className="text-xs text-muted-foreground text-center">
-                    This browser does not support passkeys.
-                  </p>
+                {passkeySupported ? passkeyButton : (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="w-full cursor-not-allowed" tabIndex={0}>
+                        {passkeyButton}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>This browser does not support passkeys.</TooltipContent>
+                  </Tooltip>
                 )}
               </>
             )}

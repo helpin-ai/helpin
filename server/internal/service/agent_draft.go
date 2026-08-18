@@ -20,16 +20,21 @@ func (s *AgentService) SetAgentDraftLLM(client agentDraftLLM) *AgentService {
 	return s
 }
 
-func (s *AgentService) DraftCustomAgent(ctx context.Context, req model.CustomAgentDraftRequest) (*model.CustomAgentDraftResponse, error) {
-	skillCatalog, err := s.ListSkillCatalog(ctx, "")
+func (s *AgentService) DraftCustomAgent(ctx context.Context, workspaceID string, req model.CustomAgentDraftRequest) (*model.CustomAgentDraftResponse, error) {
+	skillCatalog, err := s.ListSkillCatalog(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	return s.DraftCustomAgentWithCatalog(ctx, req, s.ListToolCatalog().Tools, skillCatalog.Skills)
+	toolCatalog, err := s.ListToolCatalogForWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return s.DraftCustomAgentWithCatalog(ctx, workspaceID, req, toolCatalog.Tools, skillCatalog.Skills)
 }
 
 func (s *AgentService) DraftCustomAgentWithCatalog(
 	ctx context.Context,
+	workspaceID string,
 	req model.CustomAgentDraftRequest,
 	tools []model.ToolCatalogEntry,
 	skills []model.SkillCatalogEntry,
@@ -42,7 +47,17 @@ func (s *AgentService) DraftCustomAgentWithCatalog(
 		return nil, fmt.Errorf("agent draft LLM is not configured")
 	}
 
-	resp, err := s.agentDraftLLM.ChatCompletion(ctx, llm.ChatRequest{
+	// Drafting is non-chargeable, but the metered LLM provider rejects calls
+	// without a metering context.
+	callCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureCustomAgentDraft,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCustomAgentDraft, "draft", aiUsageStableHash(description)),
+		Metadata: map[string]interface{}{
+			"action": "custom_agent_draft",
+		},
+	})
+	resp, err := s.agentDraftLLM.ChatCompletion(callCtx, llm.ChatRequest{
 		SystemPrompt: customAgentDraftSystemPrompt(tools, skills),
 		Messages: []llm.Message{{
 			Role:    "user",
@@ -195,10 +210,10 @@ func validateCustomAgentDraft(
 
 func normalizeDraftApprovalMode(value string) string {
 	switch strings.TrimSpace(value) {
-	case "never", "preset_default":
+	case "never", "risk_based", "mutating_tools", "preset_default":
 		return strings.TrimSpace(value)
 	default:
-		return "always"
+		return "mutating_tools"
 	}
 }
 
@@ -231,7 +246,7 @@ func normalizeDraftInvocationMode(value string) string {
 
 func isSupportedCustomAgentTarget(target string) bool {
 	switch target {
-	case "task", "epic", "repository", "workspace", "crm_deal", "document", "support_conversation":
+	case "task", "epic", "sprint", "objective", "repository", "workspace", "crm_deal", "document", "support_conversation":
 		return true
 	default:
 		return false
@@ -287,6 +302,8 @@ Return JSON only. The user will review and edit the draft before anything is cre
 Choose only from these target types:
 - task
 - epic
+- sprint
+- objective
 - repository
 - workspace
 - crm_deal
@@ -301,7 +318,7 @@ Choose only these skills:
 
 Defaults:
 - role: Custom Agent
-- approval_mode: always unless the user explicitly asks for immediate autonomous execution
+- approval_mode: mutating_tools unless the user explicitly asks to approve before any work or to execute writes without approval
 - runtime_kind: native_sdk
 - provider: anthropic
 - model: empty string unless the user explicitly names a model

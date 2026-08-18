@@ -79,17 +79,20 @@ func TestCreateConversationMessageStoresLinkPreviewMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConversationMessage: %v", err)
 	}
-	if !strings.Contains(message.Metadata, `"link_previews"`) {
-		t.Fatalf("expected link preview metadata on created message, got %q", message.Metadata)
+	// Link enrichment runs after creation so the reply endpoint is not blocked
+	// by external page fetches. The persisted metadata arrives asynchronously.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		stored, getErr := msgRepo.GetByID(ctx, message.ID)
+		if getErr != nil {
+			t.Fatalf("GetByID: %v", getErr)
+		}
+		if stored != nil && strings.Contains(stored.Metadata, `"link_previews"`) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-
-	stored, err := msgRepo.GetByID(ctx, message.ID)
-	if err != nil {
-		t.Fatalf("GetByID: %v", err)
-	}
-	if stored == nil || !strings.Contains(stored.Metadata, `"link_previews"`) {
-		t.Fatalf("expected stored message metadata to include link preview, got %#v", stored)
-	}
+	t.Fatalf("expected stored message metadata to include link preview")
 }
 
 func TestWidgetCreateMessageStoresLinkPreviewMetadata(t *testing.T) {
@@ -148,7 +151,16 @@ func TestWidgetCreateMessageStoresLinkPreviewMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WidgetCreateMessage: %v", err)
 	}
-	if !strings.Contains(message.Metadata, `"link_previews"`) {
-		t.Fatalf("expected widget message metadata to include link preview, got %q", message.Metadata)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		stored, getErr := msgRepo.GetByID(ctx, message.ID)
+		if getErr != nil {
+			t.Fatalf("GetByID: %v", getErr)
+		}
+		if stored != nil && strings.Contains(stored.Metadata, `"link_previews"`) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
+	t.Fatalf("expected widget message metadata to include link preview")
 }

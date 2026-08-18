@@ -22,6 +22,7 @@ import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
 import { cn } from '@/lib/utils';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus } from './agentRunConstants';
 import {
   HISTORY_VISIBLE_ROW_LIMIT,
@@ -338,6 +339,7 @@ export function EpicPlannerPanel({
 
   useEffect(() => {
     const handler = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event)) return;
       const detail = (event as CustomEvent).detail as {
         parent_type?: string;
         parent_id?: string;
@@ -499,8 +501,8 @@ export function EpicPlannerPanel({
       : null;
 
   return (
-    <div className="overflow-hidden rounded-md border border-border/60 bg-card">
-      <div className="flex items-center gap-2 px-3 py-2">
+    <div className="overflow-hidden">
+      <div className="flex items-center gap-2 pb-3">
         <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
           Agent runs
@@ -513,7 +515,7 @@ export function EpicPlannerPanel({
       </div>
 
       {canEdit ? (
-        <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
+        <div className="flex items-center justify-between gap-2 border-t border-border/60 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="shrink-0 text-xs text-muted-foreground">Agent</span>
             <Select
@@ -558,19 +560,19 @@ export function EpicPlannerPanel({
           </Button>
         </div>
       ) : (
-        <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
+        <p className="border-t border-border/60 py-3 text-xs text-muted-foreground">
           You do not have permission to start or reply to epic planner runs.
         </p>
       )}
 
       {canEdit && selectedPlanner && !selectedPlanner.system_prompt ? (
-        <p className="border-t border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
+        <p className="border-t border-border/60 py-3 text-[11px] text-muted-foreground">
           This agent is missing system instructions.
         </p>
       ) : null}
 
       {canEdit && !activeRun ? (
-        <div className="space-y-2 border-t border-border/60 px-3 py-2">
+        <div className="space-y-2 border-t border-border/60 py-3">
           <button
             type="button"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -600,7 +602,7 @@ export function EpicPlannerPanel({
         </div>
       ) : null}
 
-      <div className="space-y-2 border-t border-border/60 px-3 py-2.5">
+      <div className="space-y-2 border-t border-border/60 py-3">
         {showVisibleRunsLoading ? (
           <p className="inline-flex items-center gap-1.5 py-1 text-xs text-muted-foreground">
             <Loading01Icon className="h-3 w-3 animate-spin" />

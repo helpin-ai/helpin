@@ -35,7 +35,7 @@ export function ArticleShell({
 }: ArticleShellProps) {
   return (
     <article
-      className="mx-auto pt-16 pb-8 px-5 lg:px-6"
+      className="mx-auto px-5 pb-8 pt-16 lg:px-8"
       style={{ maxWidth: 'var(--hc-content-max-width)' }}
     >
       {collectionName && (

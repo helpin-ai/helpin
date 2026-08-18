@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,18 +24,31 @@ func NewWorkspaceRepository(db *gorm.DB) *WorkspaceRepository {
 }
 
 // Create inserts a new workspace.
-func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, workspaceKey, ownerID string, organizationID *string, description, websiteURL *string, timezone string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Create(ctx context.Context, name, slug, workspaceKey, ownerID string, organizationID *string, description, companyProductContext, websiteURL *string, timezone string, setupGoals []string) (*model.Workspace, error) {
+	setupGoalKeys, _ := json.Marshal(setupGoals)
 	ws := &model.Workspace{
-		Name:           name,
-		Slug:           slug,
-		WorkspaceKey:   workspaceKey,
-		OwnerID:        ownerID,
-		OrganizationID: organizationID,
-		Description:    description,
-		WebsiteURL:     websiteURL,
-		Timezone:       timezone,
+		Name:                  name,
+		Slug:                  slug,
+		WorkspaceKey:          workspaceKey,
+		OwnerID:               ownerID,
+		OrganizationID:        organizationID,
+		Description:           description,
+		CompanyProductContext: companyProductContext,
+		WebsiteURL:            websiteURL,
+		Timezone:              timezone,
 	}
-	if err := r.db.WithContext(ctx).Create(ws).Error; err != nil {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(ws).Error; err != nil {
+			return err
+		}
+		if len(setupGoals) > 0 {
+			intent := model.SetupIntent{WorkspaceID: ws.ID, GoalKeys: string(setupGoalKeys)}
+			if err := tx.Create(&intent).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
 	}
 	return ws, nil
@@ -326,13 +340,16 @@ func (r *WorkspaceRepository) ListTeams(ctx context.Context, workspaceID string)
 }
 
 // Update modifies workspace fields.
-func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
+func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, companyProductContext, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}
 	if name != nil {
 		updates["name"] = *name
 	}
 	if description != nil {
 		updates["description"] = *description
+	}
+	if companyProductContext != nil {
+		updates["company_product_context"] = *companyProductContext
 	}
 	if websiteURL != nil {
 		if *websiteURL == "" {
@@ -1180,6 +1197,29 @@ func (r *WorkspaceRepository) ListActiveTeamUserIDs(ctx context.Context, workspa
 		return nil, fmt.Errorf("list active team user ids: %w", err)
 	}
 	return userIDs, nil
+}
+
+// ListActiveTeamIDsByUser returns all active team memberships in one query.
+// It is used by discovery surfaces to avoid one membership query per team.
+func (r *WorkspaceRepository) ListActiveTeamIDsByUser(ctx context.Context, workspaceID string) (map[string][]string, error) {
+	var rows []struct {
+		UserID string
+		TeamID string
+	}
+	if err := r.db.WithContext(ctx).
+		Table("team_workspace_memberships twm").
+		Select("wm.user_id AS user_id, twm.team_id AS team_id").
+		Joins("JOIN workspace_members wm ON wm.id = twm.workspace_member_id").
+		Where("wm.workspace_id = ? AND wm.status = ? AND wm.user_id IS NOT NULL", workspaceID, model.WorkspaceMemberStatusActive).
+		Order("wm.user_id ASC, twm.team_id ASC").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list active team ids by user: %w", err)
+	}
+	result := make(map[string][]string)
+	for _, row := range rows {
+		result[row.UserID] = append(result[row.UserID], row.TeamID)
+	}
+	return result, nil
 }
 
 // ListActiveUserIDsByRoles returns active linked workspace user IDs for the given roles.

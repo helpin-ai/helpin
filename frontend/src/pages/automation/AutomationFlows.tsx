@@ -1,24 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Clock03Icon,
+  ArrowRight01Icon,
   FilterIcon,
-  GitBranchIcon,
-  GitPullRequestIcon,
   HelpCircleIcon,
   BookOpen01Icon,
   Cancel01Icon,
   MoreHorizontalIcon,
-  PlayIcon,
   PlusSignIcon,
   Search01Icon,
   SourceCodeIcon,
-  SparklesIcon,
-  Tag01Icon,
-  ZapIcon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
@@ -29,14 +22,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
-import { useAllDocsCollections, useAutomationFlowTemplates, useAutomationFlows, useAutomationOverview, useAutomationSkillCatalog, useAutomationToolCatalog, useAgents, useDocsSpaces, useInstallAutomationFlowTemplate, useUninstallAutomationFlowTemplate, useWorkflows } from '@/hooks/queries';
+import { useAllDocsCollections, useAutomationActivity, useAutomationFlowTemplates, useAutomationFlows, useAutomationOverview, useAutomationSkillCatalog, useAutomationToolCatalog, useAgents, useDocsSpaces, useInstallAutomationFlowTemplate, useUninstallAutomationFlowTemplate, useWorkflows } from '@/hooks/queries';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -53,7 +49,9 @@ import { buildAutomationActivityPath } from '@/lib/automationUi';
 import { getAgentTeamIds, isAgentVisibleToActor } from '@/lib/agentAccess';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { cn } from '@/lib/utils';
+import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useAuthStore } from '@/stores/authStore';
 
 export type AutomationFlowsSearch = {
   workflow?: string;
@@ -176,12 +174,6 @@ const SCHEDULE_MONTH_DAY_OPTIONS = Array.from({ length: 31 }, (_, idx) => {
   const day = String(idx + 1);
   return { value: day, label: day };
 });
-
-const TEMPLATE_APPROVAL_OPTIONS: { value: AgentApprovalMode; label: string; description: string }[] = [
-  { value: 'always', label: 'Review before starting', description: 'A team member approves each run before the agent starts.' },
-  { value: 'never', label: 'Start automatically', description: 'Runs begin as soon as the flow trigger fires.' },
-  { value: 'preset_default', label: 'Use agent default', description: 'Use the default approval behavior for this agent profile.' },
-];
 
 type ParsedSimpleSchedule = {
   frequency: FlowDraft['scheduleFrequency'];
@@ -603,45 +595,6 @@ function serializeScheduleConfig(expression: string) {
   return config;
 }
 
-const FLOW_EMPTY_STATE_CARDS: Array<{
-  icon: typeof PlayIcon;
-  title: string;
-  desc: string;
-}> = [
-  {
-    icon: ZapIcon,
-    title: 'Event-driven',
-    desc: 'Fires when a task changes state, a PR is merged, a tag ships, or on a schedule.',
-  },
-  {
-    icon: SparklesIcon,
-    title: 'Runs an agent',
-    desc: 'Pair a trigger with any agent — Lens reviews, Forge builds, Scribe drafts, etc.',
-  },
-  {
-    icon: Clock03Icon,
-    title: 'Safe by default',
-    desc: 'Flows start in review-first mode; flip them to autonomous once you trust the output.',
-  },
-];
-
-const FLOW_TEMPLATE_ICONS: Record<string, typeof PlayIcon> = {
-  'git-pull-request': GitPullRequestIcon,
-  zap: ZapIcon,
-  sparkles: SparklesIcon,
-  'git-branch': GitBranchIcon,
-  tag: Tag01Icon,
-  clock: Clock03Icon,
-  check: SparklesIcon,
-  'file-text': SparklesIcon,
-  shield: ZapIcon,
-  package: GitBranchIcon,
-  timer: Clock03Icon,
-  chart: SparklesIcon,
-  scroll: SparklesIcon,
-  'dollar-sign': SparklesIcon,
-};
-
 const TEMPLATE_CATEGORY_LABELS: Record<string, string> = {
   engineering: 'Engineering',
   sales: 'Sales',
@@ -649,33 +602,6 @@ const TEMPLATE_CATEGORY_LABELS: Record<string, string> = {
   marketing: 'Marketing',
   docs: 'Docs',
   workflow: 'Workflow',
-};
-
-const TEMPLATE_CATEGORY_TONES: Record<string, { icon: string; hover: string }> = {
-  engineering: {
-    icon: 'bg-sky-500/12 text-sky-700 dark:text-sky-300',
-    hover: 'group-hover:border-sky-500/30 group-hover:bg-sky-500/[0.04]',
-  },
-  docs: {
-    icon: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
-    hover: 'group-hover:border-emerald-500/30 group-hover:bg-emerald-500/[0.04]',
-  },
-  marketing: {
-    icon: 'bg-fuchsia-500/12 text-fuchsia-700 dark:text-fuchsia-300',
-    hover: 'group-hover:border-fuchsia-500/30 group-hover:bg-fuchsia-500/[0.04]',
-  },
-  sales: {
-    icon: 'bg-amber-500/14 text-amber-700 dark:text-amber-300',
-    hover: 'group-hover:border-amber-500/30 group-hover:bg-amber-500/[0.05]',
-  },
-  workflow: {
-    icon: 'bg-violet-500/12 text-violet-700 dark:text-violet-300',
-    hover: 'group-hover:border-violet-500/30 group-hover:bg-violet-500/[0.04]',
-  },
-  support: {
-    icon: 'bg-rose-500/12 text-rose-700 dark:text-rose-300',
-    hover: 'group-hover:border-rose-500/30 group-hover:bg-rose-500/[0.04]',
-  },
 };
 
 const TEMPLATE_TONE_CATEGORY_BY_KEY: Record<string, string> = {
@@ -703,11 +629,6 @@ const TEMPLATE_DISPLAY_ORDER: Record<string, number> = {
 
 function templatePrimaryCategory(template: FlowTemplateManifest) {
   return TEMPLATE_TONE_CATEGORY_BY_KEY[template.key] ?? template.categories?.[0] ?? 'workflow';
-}
-
-function templateTone(template: FlowTemplateManifest) {
-  const category = templatePrimaryCategory(template);
-  return TEMPLATE_CATEGORY_TONES[category] ?? TEMPLATE_CATEGORY_TONES.workflow;
 }
 
 function compareTemplatesForDisplay(a: FlowTemplateManifest, b: FlowTemplateManifest) {
@@ -817,7 +738,7 @@ function defaultTemplateAgentSetup(template: FlowTemplateManifest, inputs: Recor
   return {
     name: templateAgentName(template),
     system_prompt: defaultTemplateAgentInstructions(template, inputs),
-    approval_mode: (template.agent.create.approval_mode as AgentApprovalMode | undefined) ?? 'always',
+    approval_mode: (template.agent.create.approval_mode as AgentApprovalMode | undefined) ?? 'mutating_tools',
     allowed_targets: (template.agent.create.allowed_targets ?? ['task']) as AgentTargetType[],
     allowed_tools: normalizeToolList(template.agent.create.allowed_tools ?? []),
     skills: (template.agent.create.skills ?? []).map((key) => ({ key })),
@@ -1245,9 +1166,9 @@ function isFollowUpTaskSection(title: string) {
 function TemplateInputLabel({ input }: { input: FlowTemplateInput }) {
   return (
     <div className="flex items-center gap-1.5">
-      <label className="text-sm font-medium text-foreground">
+      <Label className="text-sm font-medium text-foreground">
         {input.label}{input.required ? ' *' : ''}
-      </label>
+      </Label>
       {input.help_text?.trim() && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -1439,7 +1360,7 @@ function applyTriggerDefaults(next: FlowDraft, workflows: WorkflowWithStates[]) 
 }
 
 function draftFromSearch(search: AutomationFlowsSearch, workflows: WorkflowWithStates[]): FlowDraft | null {
-  const requestedTrigger = search.trigger_type || search.template;
+  const requestedTrigger = search.trigger_type;
   if (!requestedTrigger) {
     return null;
   }
@@ -1464,12 +1385,14 @@ function draftFromSearch(search: AutomationFlowsSearch, workflows: WorkflowWithS
   return draft;
 }
 
-export function filterAutomationFlowsForSearch(rules: AutomationRule[], search: Pick<AutomationFlowsSearch, 'show_rule' | 'show_trigger' | 'agent_id'>) {
+export function filterAutomationFlowsForSearch(rules: AutomationRule[], search: Pick<AutomationFlowsSearch, 'show_rule' | 'show_trigger' | 'agent_id' | 'workflow' | 'team'>) {
   const selectedAgentId = String(search.agent_id ?? '').trim();
   return rules.filter((rule) => {
     if (search.show_rule && rule.id !== search.show_rule) return false;
     if (search.show_trigger && rule.trigger_type !== search.show_trigger) return false;
     if (selectedAgentId && stringValue(rule.action_config?.agent_id) !== selectedAgentId) return false;
+    if (search.workflow && rule.workflow_id !== search.workflow) return false;
+    if (search.team && rule.team_id !== search.team) return false;
     return true;
   });
 }
@@ -1874,69 +1797,41 @@ function deriveFlowState(rule: AutomationRule, agentNames: Map<string, string>, 
   return 'active';
 }
 
-const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: string }> = {
+const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: string; color: string; edge?: string }> = {
   active: {
     pill: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
     dot: 'bg-current',
     label: 'Active',
+    color: '#1E9E6A',
   },
   paused: {
     pill: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
     dot: 'bg-amber-500',
     label: 'Paused',
+    color: '#B4B0A7',
   },
   error: {
     pill: 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400',
     dot: 'bg-rose-500',
-    label: 'Error',
+    label: 'Errored',
+    color: '#C0483C',
+    edge: '#C0483C',
   },
   needs_review: {
     pill: 'border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-400',
     dot: 'bg-violet-500',
     label: 'Needs review',
+    color: '#C08A2E',
+    edge: '#C08A2E',
   },
   incomplete: {
     pill: 'border-border/60 bg-muted/40 text-muted-foreground',
     dot: 'bg-muted-foreground/40',
     label: 'Incomplete',
+    color: '#C08A2E',
+    edge: '#C08A2E',
   },
 };
-const FLOW_ERROR_PREVIEW_LENGTH = 260;
-
-function FlowErrorMessage({ message }: { message: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const trimmed = message.trim();
-  const isLong = trimmed.length > FLOW_ERROR_PREVIEW_LENGTH;
-  const visibleMessage = !isLong || expanded
-    ? trimmed
-    : `${trimmed.slice(0, FLOW_ERROR_PREVIEW_LENGTH).trimEnd()}...`;
-
-  return (
-    <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
-      <div className="whitespace-pre-wrap break-words">⚠ {visibleMessage}</div>
-      {isLong ? (
-        <button
-          type="button"
-          className="mt-1 text-[11px] font-medium text-destructive underline underline-offset-2 hover:text-destructive/80"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function FlowStatePill({ state }: { state: FlowState }) {
-  const style = FLOW_STATE_STYLES[state];
-  return (
-    <Badge variant="outline" className={cn('gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium', style.pill)}>
-      <span className={cn('h-1.5 w-1.5 rounded-full', style.dot)} />
-      {style.label}
-    </Badge>
-  );
-}
-
 function readMetricNumber(metrics: Record<string, unknown> | undefined, keys: string[]): number | undefined {
   if (!metrics) return undefined;
   for (const key of keys) {
@@ -1969,18 +1864,6 @@ function readMetricBoolean(metrics: Record<string, unknown> | undefined, keys: s
     }
   }
   return false;
-}
-
-function FlowStat({ value, label, sub, tone = 'neutral' }: { value: number | undefined; label: string; sub?: string; tone?: 'neutral' | 'warn' }) {
-  return (
-    <div>
-      <div className={cn('text-xl font-semibold leading-none tracking-tight', tone === 'warn' && value ? 'text-amber-600 dark:text-amber-400' : 'text-foreground')}>
-        {value === undefined ? <span className="text-muted-foreground">—</span> : value}
-      </div>
-      <div className="mt-1.5 text-[11px] text-muted-foreground">{label}</div>
-      {sub && <div className="font-mono text-[10px] text-muted-foreground/70">{sub}</div>}
-    </div>
-  );
 }
 
 type FlowDetailsSection = {
@@ -2017,9 +1900,11 @@ function flowMetricValues(healthItem?: AutomationInventoryItem) {
   const metrics = (healthItem?.health.metrics ?? undefined) as Record<string, unknown> | undefined;
   return {
     totalRuns: readMetricNumber(metrics, ['total_runs', 'runs_total', 'handled_total']),
+    errorRuns: readMetricNumber(metrics, ['error_runs', 'failed_runs', 'errors_total']),
     lastRunId: readMetricString(metrics, ['last_run_id', 'run_id']),
     lastExecutionId: readMetricString(metrics, ['last_execution_id', 'execution_id']),
     lastRunStatus: readMetricString(metrics, ['last_run_status', 'run_status', 'status']),
+    nextRunAt: readMetricString(metrics, ['next_run_at']),
   };
 }
 
@@ -2223,6 +2108,7 @@ export function FlowRow({
   onToggle,
   onRunNow,
   onDelete,
+  onOpen,
   runningNow,
 }: {
   rule: AutomationRule;
@@ -2238,6 +2124,7 @@ export function FlowRow({
   onToggle: (rule: AutomationRule) => void;
   onRunNow: (rule: AutomationRule) => void;
   onDelete: (rule: AutomationRule) => void;
+  onOpen?: (rule: AutomationRule) => void;
   runningNow?: boolean;
 }) {
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -2246,263 +2133,311 @@ export function FlowRow({
   const agentName = agentNames.get(agentId);
   const agentMissing = rule.action_type === 'start_agent_run' && (!agentId || !agentNames.has(agentId));
   const flowState = deriveFlowState(rule, agentNames, healthItem);
-  const { totalRuns, lastRunId, lastExecutionId, lastRunStatus } = flowMetricValues(healthItem);
+  const { totalRuns, lastRunStatus, nextRunAt } = flowMetricValues(healthItem);
   const trigger = flowTriggerSummary(rule, statesById, timezone);
   const action = flowActionSummary(rule, statesById, agentNames);
   const lastRunLabel = flowLastRunLabel(healthItem);
   const hasRunActivity = flowHasRunActivity(healthItem);
-  const nextRunLabel = flowNextRunLabel(rule);
+  const nextRunLabel = rule.enabled && nextRunAt
+    ? futureRelativeTime(new Date(nextRunAt))
+    : flowNextRunLabel(rule);
   const triggerRunLabel = flowTriggerRunLabel(rule);
   const lastErrorMessage = healthItem?.health.last_error_message?.trim();
   const currentRunLabel = flowCurrentRunLabel(lastRunStatus);
   const blockerLabel = flowActivityBlockerLabel(flowState);
   const activitySearch = { page: 1, source: 'automation_rule', reference_id: rule.id };
-  const lastRunPath = workspaceSlug && lastRunId
-    ? buildAutomationActivityPath(workspaceSlug, { ...activitySearch, run_id: lastRunId }, 'trigger-executions')
-    : null;
-  const lastExecutionPath = workspaceSlug && lastExecutionId
-    ? buildAutomationActivityPath(workspaceSlug, { ...activitySearch, execution_id: lastExecutionId }, 'trigger-executions')
-    : null;
   const runNowBlocker = flowRunNowRuntimeBlocker(lastRunStatus) || flowRunNowBlocker(rule, agentNames);
   const supportsRunNow = rule.trigger_type === 'cron';
   const showRunNow = canRunNowAction;
   const canRunNow = showRunNow && supportsRunNow && !runNowBlocker;
+  const stateStyle = FLOW_STATE_STYLES[flowState];
+  const triggerKind = rule.trigger_type === 'cron'
+    ? 'Schedule'
+    : rule.trigger_type.startsWith('github.')
+      ? 'GitHub'
+      : rule.trigger_type.startsWith('gitlab.')
+        ? 'GitLab'
+        : rule.trigger_type.startsWith('agent_run.')
+          ? 'Approval'
+          : 'Task';
+  const actionKind = rule.action_type === 'start_agent_run'
+    ? 'Agent'
+    : rule.action_type === 'merge_branch'
+      ? 'Branch'
+      : 'Task';
+  const desktopNextLabel = blockerLabel ?? (rule.enabled ? nextRunLabel ?? triggerRunLabel ?? 'On trigger' : 'Paused');
+
+  const openRow = () => onOpen?.(rule);
 
   return (
-    <>
-      <div
-        className={cn(
-          'group rounded-lg border bg-card px-4 py-3 transition-colors hover:border-border hover:bg-muted/10',
-          isIncomplete || flowState === 'error' ? 'border-destructive/35 bg-destructive/[0.025]' : 'border-border/70',
-        )}
-      >
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1 space-y-1.5" data-testid="flow-row-title-area">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <FlowStatePill state={flowState} />
-              <TruncatedTextWithTooltip
-                testId="flow-row-name-text"
-                className="min-w-0 max-w-full truncate text-sm font-semibold text-foreground"
-              >
-                {rule.name}
-              </TruncatedTextWithTooltip>
-              {agentMissing && (
-                <Badge variant="destructive" className="shrink-0 text-xs">Missing agent</Badge>
-              )}
-            </div>
-            {rule.description?.trim() ? (
-              <TruncatedTextWithTooltip
-                testId="flow-row-description-text"
-                className="line-clamp-2 text-xs leading-relaxed text-muted-foreground"
-              >
-                {rule.description.trim()}
-              </TruncatedTextWithTooltip>
-            ) : null}
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1">
-            {workspaceSlug ? (
-              <Button asChild variant="outline" size="sm" className="h-7 gap-1.5 px-2 text-xs">
-                <a href={buildAutomationActivityPath(workspaceSlug, activitySearch, 'trigger-executions')}>
-                  <Clock03Icon className="h-3.5 w-3.5" />
-                  View runs
-                </a>
-              </Button>
-            ) : null}
-
-            {showRunNow ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      className={cn(
-                        'inline-flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
-                        canRunNow && !runningNow ? 'cursor-pointer' : 'cursor-not-allowed',
-                      )}
-                    >
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={!canRunNow || runningNow}
-                        className={cn(
-                          'h-7 gap-1.5 px-2 text-xs',
-                          canRunNow && !runningNow ? 'cursor-pointer' : 'pointer-events-none cursor-not-allowed',
-                        )}
-                        onClick={() => onRunNow(rule)}
-                      >
-                        <ZapIcon className="h-3.5 w-3.5" />
-                        {runningNow ? 'Running…' : 'Run now'}
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  {runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
-
-            <DropdownMenu onOpenChange={(open) => {
-              if (!open) {
-                window.requestAnimationFrame(() => {
-                  menuTriggerRef.current?.blur();
-                });
-              }
-            }}>
-              <DropdownMenuTrigger asChild>
-                <Button ref={menuTriggerRef} variant="ghost" size="sm" className="h-7 w-7 p-0">
-                  <MoreHorizontalIcon className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                onCloseAutoFocus={(event) => {
-                  event.preventDefault();
-                  menuTriggerRef.current?.blur();
-                }}
-              >
-                {canEdit && (
-                  <DropdownMenuItem onClick={() => onEdit(rule)}>
-                    Edit
-                  </DropdownMenuItem>
-                )}
-                {workspaceSlug && (
-                  <DropdownMenuItem asChild>
-                    <a href={buildAutomationActivityPath(workspaceSlug, activitySearch, 'trigger-executions')}>
-                      View runs
-                    </a>
-                  </DropdownMenuItem>
-                )}
-                {lastRunPath && (
-                  <DropdownMenuItem asChild>
-                    <a href={lastRunPath}>
-                      Open last run
-                    </a>
-                  </DropdownMenuItem>
-                )}
-                {!lastRunPath && lastExecutionPath && (
-                  <DropdownMenuItem asChild>
-                    <a href={lastExecutionPath}>
-                      View last run
-                    </a>
-                  </DropdownMenuItem>
-                )}
-                {showRunNow && (
-                  <DropdownMenuItem
-                    disabled={!canRunNow || runningNow}
-                    onClick={() => onRunNow(rule)}
-                  >
-                    {runningNow ? 'Running…' : 'Run now'}
-                  </DropdownMenuItem>
-                )}
-                {canEdit && (
-                  <>
-                    <DropdownMenuItem onClick={() => onToggle(rule)}>
-                      {rule.enabled ? 'Disable' : 'Enable'}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => onDelete(rule)}
-                    >
-                      Delete
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+    <div
+      role={onOpen ? 'button' : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={onOpen ? `Open ${rule.name}` : undefined}
+      onClick={openRow}
+      onKeyDown={(event) => {
+        if (!onOpen || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        openRow();
+      }}
+      className="group relative grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_28px] items-center gap-x-3 gap-y-2 border-b border-border/60 px-[14px] py-[13px] outline-none transition-colors duration-100 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:grid-cols-[minmax(0,1fr)_96px_116px_120px_28px] md:gap-4"
+      style={stateStyle.edge ? { boxShadow: `inset 2px 0 0 ${stateStyle.edge}` } : undefined}
+    >
+      <div className="min-w-0" data-testid="flow-row-title-area">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ backgroundColor: stateStyle.color }} aria-hidden="true" />
+          <span className="sr-only">{stateStyle.label}</span>
+          <TruncatedTextWithTooltip testId="flow-row-name-text" className="min-w-0 truncate text-sm font-medium text-foreground">
+            {rule.name}
+          </TruncatedTextWithTooltip>
+          {agentMissing ? (
+            <span className="shrink-0 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">Missing agent</span>
+          ) : isIncomplete ? (
+            <span className="shrink-0 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">Setup incomplete</span>
+          ) : null}
         </div>
-
-        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
-          <div className="min-w-0 space-y-1.5 text-xs">
-            <p className="truncate text-muted-foreground">
-              <span className="font-medium text-foreground">Trigger</span>{' '}
-              {trigger.value ? `${trigger.label} ${trigger.value}` : trigger.label}
-            </p>
-            <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-              <span className="shrink-0 font-medium leading-5 text-foreground">Action</span>
-              {rule.action_type === 'start_agent_run' && agentName ? (
-                <span className="inline-flex min-w-0 items-center gap-1.5 leading-5" data-testid="flow-row-action-agent">
-                  <span className="shrink-0 leading-5" data-testid="flow-row-action-verb">{action.verb}</span>
-                  <span className="truncate font-medium leading-5 text-foreground" data-testid="flow-row-action-agent-name">{action.value}</span>
-                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center" data-testid="flow-row-action-agent-avatar">
-                    <AgentAvatar
-                      name={agentName}
-                      className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none"
-                      genericBare
-                    />
-                  </span>
-                </span>
-              ) : (
-                <span className="truncate">{action.label}</span>
-              )}
-            </div>
-          </div>
-
-          <div className="grid gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-2">
-            {totalRuns !== undefined ? (
-              <FlowStat value={totalRuns} label="Total runs" />
-            ) : null}
-            <div className={cn('text-[11px] text-muted-foreground', totalRuns !== undefined && 'border-t border-border/60 pt-1.5')}>
-              {currentRunLabel ? (
-                <span className="font-medium text-foreground/80">{currentRunLabel}</span>
-              ) : hasRunActivity ? (
-                <span className="inline-flex items-baseline gap-1">
-                  <span>Last run</span>
-                  {lastRunPath ? (
-                    <a
-                      href={lastRunPath}
-                      className="font-mono text-foreground/80 underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
-                    >
-                      {lastRunLabel}
-                    </a>
-                  ) : lastExecutionPath ? (
-                    <a
-                      href={lastExecutionPath}
-                      className="font-mono text-foreground/80 underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
-                    >
-                      {lastRunLabel}
-                    </a>
-                  ) : (
-                    <span className="font-mono text-foreground/80">{lastRunLabel}</span>
-                  )}
-                </span>
-              ) : (
-                <span className="font-medium text-foreground/80">No runs yet</span>
-              )}
-            </div>
-            {!currentRunLabel && hasRunActivity && blockerLabel ? (
-              <div className="text-[11px] font-medium text-foreground/80">{blockerLabel}</div>
-            ) : !currentRunLabel && hasRunActivity && nextRunLabel && !blockerLabel ? (
-              <div className="text-[11px] text-muted-foreground">
-                <span className="inline-flex items-baseline gap-1">
-                  <span>Next run</span>
-                  <span className="font-mono text-foreground/80">{nextRunLabel}</span>
-                </span>
-              </div>
-            ) : !currentRunLabel && hasRunActivity && triggerRunLabel && !blockerLabel ? (
-              <div className="text-[11px] text-muted-foreground">{triggerRunLabel}</div>
-            ) : !currentRunLabel && !hasRunActivity && blockerLabel ? (
-              <div className="text-[11px] font-medium text-foreground/80">{blockerLabel}</div>
-            ) : !currentRunLabel && !hasRunActivity && nextRunLabel ? (
-              <div className="text-[11px] text-muted-foreground">
-                <span className="inline-flex items-baseline gap-1">
-                  <span>Next run</span>
-                  <span className="font-mono text-foreground/80">{nextRunLabel}</span>
-                </span>
-              </div>
-            ) : !currentRunLabel && !hasRunActivity && triggerRunLabel ? (
-              <div className="text-[11px] text-muted-foreground">{triggerRunLabel}</div>
-            ) : !currentRunLabel && !hasRunActivity ? (
-              <div className="text-[11px] text-muted-foreground">Waiting for trigger</div>
-            ) : null}
-          </div>
+        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 pl-[15px] text-xs text-foreground/80">
+          <span className="shrink-0 text-muted-foreground">When</span>
+          <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-0.5">
+            <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{triggerKind}</span>
+            <span className="truncate">{trigger.value ? `${trigger.label} ${trigger.value}` : trigger.label}</span>
+          </span>
+          <ArrowRight01Icon className="h-3 w-3 shrink-0 text-muted-foreground/50" />
+          <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 py-0.5" data-testid={agentName ? 'flow-row-action-agent' : undefined}>
+            <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground" data-testid={agentName ? 'flow-row-action-verb' : undefined}>{actionKind}</span>
+            <span className="truncate" data-testid={agentName ? 'flow-row-action-agent-name' : undefined}>{action.label}</span>
+            {agentName ? <span className="sr-only" data-testid="flow-row-action-agent-avatar">Agent avatar</span> : null}
+          </span>
         </div>
-
-        {flowState === 'error' && lastErrorMessage && (
-          <FlowErrorMessage message={lastErrorMessage} />
-        )}
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 pl-[15px] text-xs text-muted-foreground md:hidden">
+          <span>{totalRuns ?? 0} runs</span>
+          <span>{currentRunLabel ?? (hasRunActivity ? lastRunLabel : 'Never run')}</span>
+          <span>{desktopNextLabel}</span>
+        </div>
+        {flowState === 'error' && lastErrorMessage ? (
+          <p className="mt-2 truncate pl-[15px] text-xs text-destructive">{lastErrorMessage}</p>
+        ) : null}
       </div>
-    </>
+
+      <div className="hidden text-right text-sm tabular-nums text-foreground md:block">{totalRuns ?? 0}</div>
+      <div className="hidden text-xs text-muted-foreground md:block">{currentRunLabel ?? (hasRunActivity ? lastRunLabel : 'Never')}</div>
+      <div className={cn('hidden text-xs md:block', rule.enabled && nextRunLabel ? 'text-foreground' : 'text-muted-foreground')}>{desktopNextLabel}</div>
+
+      <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+        <DropdownMenu onOpenChange={(open) => {
+          if (!open) window.requestAnimationFrame(() => menuTriggerRef.current?.blur());
+        }}>
+          <DropdownMenuTrigger asChild>
+            <Button ref={menuTriggerRef} variant="ghost" size="sm" className="h-[26px] w-[26px] p-0 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={`Actions for ${rule.name}`}>
+              <MoreHorizontalIcon className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44 rounded-lg p-1.5">
+            {workspaceSlug ? <DropdownMenuItem asChild><a href={buildAutomationActivityPath(workspaceSlug, activitySearch, 'trigger-executions')}>View run history</a></DropdownMenuItem> : null}
+            {supportsRunNow && showRunNow ? <DropdownMenuItem disabled={!canRunNow || runningNow} onClick={() => onRunNow(rule)}>{runningNow ? 'Running…' : 'Run now'}</DropdownMenuItem> : null}
+            {canEdit ? <DropdownMenuItem onClick={() => onEdit(rule)}>Edit flow</DropdownMenuItem> : null}
+            {canEdit ? <DropdownMenuItem onClick={() => onToggle(rule)}>{rule.enabled ? 'Disable' : 'Enable'}</DropdownMenuItem> : null}
+            {canEdit ? <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete(rule)}>Delete</DropdownMenuItem> : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+function flowTargetLabel(rule: AutomationRule, workspaceName?: string) {
+  const targetType = stringValue(rule.action_config?.target_type);
+  const targetID = stringValue(rule.action_config?.target_id);
+  const repo = stringValue(rule.trigger_config?.repo_full_name);
+  if (targetType === 'workspace') return workspaceName || 'Workspace';
+  if (targetType === 'event' || (!targetType && rule.trigger_type !== 'cron')) {
+    return repo || 'Event target';
+  }
+  if (repo && targetType === 'repository') return repo;
+  if (targetType && targetID) return `${targetType.replaceAll('_', ' ')} · ${targetID}`;
+  if (repo) return repo;
+  return 'Workspace';
+}
+
+function executionStatusMeta(status: string) {
+  switch (status.trim().toLowerCase()) {
+    case 'completed':
+      return { color: '#1E9E6A', label: 'Completed' };
+    case 'running':
+    case 'queued':
+      return { color: '#3F6A9E', label: status === 'queued' ? 'Queued' : 'Running' };
+    case 'failed':
+      return { color: '#C0483C', label: 'Failed' };
+    case 'paused':
+      return { color: '#C08A2E', label: 'Needs attention' };
+    case 'cancelled':
+      return { color: '#B4B0A7', label: 'Cancelled' };
+    default:
+      return { color: '#B4B0A7', label: status || 'Unknown' };
+  }
+}
+
+function FlowDetailDrawer({
+  rule,
+  workspaceId,
+  workspaceSlug,
+  workspaceName,
+  statesById,
+  agentNames,
+  healthItem,
+  timezone,
+  canEdit,
+  canRunNowAction,
+  runningNow,
+  onOpenChange,
+  onEdit,
+  onToggle,
+  onRunNow,
+  onDelete,
+}: {
+  rule: AutomationRule | null;
+  workspaceId: string;
+  workspaceSlug?: string;
+  workspaceName?: string;
+  statesById: Map<string, WorkflowState>;
+  agentNames: Map<string, string>;
+  healthItem?: AutomationInventoryItem;
+  timezone: string;
+  canEdit: boolean;
+  canRunNowAction: boolean;
+  runningNow: boolean;
+  onOpenChange: (open: boolean) => void;
+  onEdit: (rule: AutomationRule) => void;
+  onToggle: (rule: AutomationRule) => void;
+  onRunNow: (rule: AutomationRule) => void;
+  onDelete: (rule: AutomationRule) => void;
+}) {
+  const recentRuns = useAutomationActivity(workspaceId, {
+    source: 'automation_rule',
+    reference_id: rule?.id,
+    page: 1,
+    per_page: 4,
+  }, !!rule);
+
+  const trigger = rule ? flowTriggerSummary(rule, statesById, timezone) : null;
+  const action = rule ? flowActionSummary(rule, statesById, agentNames) : null;
+  const agentId = rule ? stringValue(rule.action_config?.agent_id) : '';
+  const agentName = agentNames.get(agentId);
+  const flowState = rule ? deriveFlowState(rule, agentNames, healthItem) : 'active';
+  const stateStyle = FLOW_STATE_STYLES[flowState];
+  const metrics = flowMetricValues(healthItem);
+  const lastRun = flowLastRunLabel(healthItem);
+  const nextRun = rule
+    ? !rule.enabled
+      ? 'Paused'
+      : metrics.nextRunAt
+        ? futureRelativeTime(new Date(metrics.nextRunAt))
+        : flowNextRunLabel(rule) ?? 'On trigger'
+    : '—';
+  const runNowBlocker = rule
+    ? flowRunNowRuntimeBlocker(metrics.lastRunStatus) || flowRunNowBlocker(rule, agentNames)
+    : '';
+  const canRunNow = !!rule && rule.trigger_type === 'cron' && canRunNowAction && !runNowBlocker && !runningNow;
+
+  return (
+    <Sheet open={!!rule} onOpenChange={onOpenChange}>
+      <SheetContent
+        className="w-full overflow-hidden border-l border-border bg-popover p-0 shadow-none duration-150 sm:max-w-[460px]"
+        overlayClassName="bg-[rgba(26,25,23,0.14)] backdrop-blur-none duration-150"
+        showCloseButton
+      >
+        {rule ? (
+          <>
+            <SheetHeader className="sticky top-0 z-10 border-b border-border bg-popover px-[22px] py-[18px] pr-14">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ backgroundColor: stateStyle.color }} aria-hidden="true" />
+                <SheetTitle className="truncate text-sm font-semibold">{rule.name}</SheetTitle>
+              </div>
+              <SheetDescription className="sr-only">Details and actions for {rule.name}</SheetDescription>
+            </SheetHeader>
+
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[22px] py-[22px]">
+              <div className="space-y-[26px]">
+                <p className="text-pretty text-sm leading-relaxed text-muted-foreground">
+                  {rule.description?.trim() || 'This flow connects a trigger to an automated action.'}
+                </p>
+
+                <section className="space-y-2.5">
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Logic</h3>
+                  <div className="overflow-hidden rounded-lg border border-border">
+                    {[
+                      ['When', trigger?.value ? `${trigger.label} ${trigger.value}` : trigger?.label || '—'],
+                      ['Then', action?.label || '—'],
+                      ['Using', agentName || (rule.action_type === 'start_agent_run' ? 'Not connected' : 'Built-in action')],
+                      ['On', flowTargetLabel(rule, workspaceName)],
+                    ].map(([label, value], index) => (
+                      <div key={label} className={cn('flex gap-3 px-[14px] py-[13px]', index > 0 && 'border-t border-border')}>
+                        <span className="w-[52px] shrink-0 text-xs text-muted-foreground">{label}</span>
+                        <span className="min-w-0 break-words text-sm text-foreground">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border">
+                  {[
+                    ['Total runs', String(metrics.totalRuns ?? 0), false],
+                    ['Errors', String(metrics.errorRuns ?? 0), (metrics.errorRuns ?? 0) > 0],
+                    ['Last run', lastRun, false],
+                    ['Next run', nextRun, false],
+                  ].map(([label, value, danger]) => (
+                    <div key={String(label)} className="flex min-h-[64px] flex-col gap-1 bg-popover px-[14px] py-[13px]">
+                      <span className="text-xs text-muted-foreground">{label}</span>
+                      <span className={cn(label === 'Total runs' || label === 'Errors' ? 'text-base tabular-nums' : 'text-sm', danger && 'text-destructive')}>{String(value)}</span>
+                    </div>
+                  ))}
+                </section>
+
+                <section className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent runs</h3>
+                    {workspaceSlug ? <a className="text-xs text-muted-foreground hover:text-foreground" href={buildAutomationActivityPath(workspaceSlug, { source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>View all</a> : null}
+                  </div>
+                  <div>
+                    {recentRuns.isLoading ? Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="mb-2 h-8 w-full rounded-md" />) : null}
+                    {recentRuns.isError ? <p className="py-3 text-xs text-destructive">Recent runs could not be loaded.</p> : null}
+                    {!recentRuns.isLoading && !recentRuns.isError && recentRuns.data?.data.length === 0 ? <p className="py-3 text-xs text-muted-foreground">No runs yet.</p> : null}
+                    {recentRuns.data?.data.map((run) => {
+                      const status = executionStatusMeta(run.status);
+                      const path = workspaceSlug
+                        ? buildAutomationActivityPath(workspaceSlug, {
+                            source: 'automation_rule',
+                            reference_id: rule.id,
+                            run_id: run.run_id,
+                            execution_id: run.run_id ? undefined : run.execution_id,
+                          }, 'trigger-executions')
+                        : undefined;
+                      const content = (
+                        <>
+                          <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ backgroundColor: status.color }} aria-hidden="true" />
+                          <span className="min-w-0 flex-1 truncate text-xs text-foreground">{status.label}{run.target_title ? ` · ${run.target_title}` : ''}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">{relativeTime(run.fired_at)}</span>
+                        </>
+                      );
+                      return path ? <a key={run.execution_id} href={path} className="flex items-center gap-2.5 border-b border-border/60 px-0.5 py-2.5 hover:bg-muted/50">{content}</a> : <div key={run.execution_id} className="flex items-center gap-2.5 border-b border-border/60 px-0.5 py-2.5">{content}</div>;
+                    })}
+                  </div>
+                </section>
+
+                <div className="flex flex-wrap gap-2 pb-2">
+                  {canEdit ? <Button variant="outline" size="sm" onClick={() => onToggle(rule)}>{rule.enabled ? 'Pause flow' : 'Enable flow'}</Button> : null}
+                  {canEdit ? <Button variant="outline" size="sm" onClick={() => onEdit(rule)}>Edit flow</Button> : null}
+                  {rule.trigger_type === 'cron' && canRunNowAction ? (
+                    <TooltipProvider><Tooltip><TooltipTrigger asChild><span><Button variant="outline" size="sm" disabled={!canRunNow} onClick={() => onRunNow(rule)}>{runningNow ? 'Running…' : 'Run now'}</Button></span></TooltipTrigger>{runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}</Tooltip></TooltipProvider>
+                  ) : null}
+                  {canEdit ? <Button variant="destructive" size="sm" onClick={() => onDelete(rule)}>Delete</Button> : null}
+                </div>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -2726,8 +2661,9 @@ function FlowComposer({
         <div className="space-y-5">
           <div className="space-y-2">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Flow name</label>
+              <Label htmlFor="flow-name">Flow name</Label>
               <Input
+                id="flow-name"
                 value={draft.name}
                 onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
                 placeholder="Review merged PRs"
@@ -2736,8 +2672,9 @@ function FlowComposer({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Internal description</label>
+              <Label htmlFor="flow-description">Internal description</Label>
               <Textarea
+                id="flow-description"
                 rows={2}
                 value={draft.description}
                 onChange={(event) => updateDraft((current) => ({ ...current, description: event.target.value }))}
@@ -3328,10 +3265,10 @@ function FlowTemplateGallery({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[86vh] flex-col sm:max-w-3xl">
+      <DialogContent className="flex max-h-[86vh] flex-col gap-4 p-6 sm:max-w-[720px]">
         <DialogHeader>
-          <DialogTitle>Create a flow</DialogTitle>
-          <DialogDescription>Install a ready-made automation, or build a custom flow.</DialogDescription>
+          <DialogTitle>New flow</DialogTitle>
+          <DialogDescription>Pick a starting point, or build one from an empty trigger.</DialogDescription>
         </DialogHeader>
 
         <div className="relative">
@@ -3346,34 +3283,23 @@ function FlowTemplateGallery({
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap gap-2">
+          <Tabs value={category} onValueChange={setCategory}>
+            <TabsList variant="line" className="max-w-full flex-wrap justify-start">
             {['all', ...categories].map((item) => {
-              const active = category === item;
               return (
-                <button
+                <TabsTrigger
                   key={item}
-                  type="button"
-                  onClick={() => setCategory(item)}
-                  className={cn(
-                    'h-8 rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30',
-                    active
-                      ? 'border-primary bg-primary text-primary-foreground shadow-sm'
-                      : 'border-border/70 bg-background text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground',
-                  )}
-                  aria-pressed={active}
+                  value={item}
                 >
                   {item === 'all' ? 'All' : TEMPLATE_CATEGORY_LABELS[item] ?? item}
-                </button>
+                </TabsTrigger>
               );
             })}
-          </div>
-          <Button type="button" variant="ghost" size="sm" className="self-start border border-border/60 px-2.5 text-foreground hover:text-foreground sm:self-auto" onClick={() => onPick(null)}>
-            <PlusSignIcon className="h-3.5 w-3.5" />
-            Custom flow
-          </Button>
+            </TabsList>
+          </Tabs>
         </div>
 
-        <div className="grid h-[52vh] min-h-[360px] auto-rows-min content-start gap-3 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
+        <div className="grid h-[52vh] min-h-[360px] auto-rows-min content-start gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2">
           {loading && Array.from({ length: 6 }).map((_, index) => (
             <div key={index} className="rounded-lg border border-border/60 p-4">
               <Skeleton className="h-8 w-8 rounded-lg" />
@@ -3382,13 +3308,13 @@ function FlowTemplateGallery({
             </div>
           ))}
           {!loading && error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/[0.03] p-4 text-sm sm:col-span-2 md:col-span-3">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/[0.03] p-4 text-sm sm:col-span-2">
               <p className="font-medium text-destructive">Templates could not be loaded</p>
               <p className="mt-1 text-muted-foreground">{error}</p>
             </div>
           )}
           {!loading && !error && visibleTemplates.length === 0 && (
-            <div className="rounded-lg border border-border/60 bg-muted/20 p-4 text-sm sm:col-span-2 md:col-span-3">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-4 text-sm sm:col-span-2">
               <p className="font-medium">No templates available</p>
               <p className="mt-1 text-muted-foreground">
                 {trimmedSearch ? 'No templates match this search.' : category === 'all' ? 'No flow templates are available in this workspace yet.' : 'No templates match this category.'}
@@ -3396,35 +3322,26 @@ function FlowTemplateGallery({
             </div>
           )}
           {!loading && !error && visibleTemplates.map((template) => {
-            const Icon = FLOW_TEMPLATE_ICONS[template.icon] ?? PlayIcon;
-            const tone = templateTone(template);
-            const primaryCategory = templatePrimaryCategory(template);
+            const kind = template.trigger.type === 'cron'
+              ? 'Schedule'
+              : (template.trigger.event?.split('.')[0] || templatePrimaryCategory(template)).replaceAll('_', ' ');
             return (
               <button
                 key={template.key}
                 type="button"
                 onClick={() => onPick(template)}
                 className={cn(
-                  'group relative flex min-h-36 flex-col items-start gap-2 overflow-hidden rounded-lg border border-border/60 bg-card p-4 text-left transition-colors hover:border-border focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30',
-                  tone.hover,
+                  'group relative flex min-h-[112px] flex-col items-start gap-2 overflow-hidden rounded-lg border border-border bg-popover p-[14px] text-left transition-colors duration-100 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 )}
               >
-                <span className={cn('flex h-8 w-8 items-center justify-center rounded-md transition-transform group-hover:scale-105', tone.icon)}>
-                  <Icon className="h-4 w-4" />
-                </span>
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{kind}</span>
                 <p className="text-sm font-medium leading-tight">{template.name}</p>
-                <p className="text-xs leading-relaxed text-muted-foreground">{template.short_description}</p>
-                <div className="mt-auto flex flex-wrap gap-1.5">
-                  {(template.categories?.length ? template.categories : [primaryCategory]).map((category) => (
-                    <span key={category} className="inline-flex rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium leading-none text-muted-foreground">
-                      {TEMPLATE_CATEGORY_LABELS[category] ?? category}
-                    </span>
-                  ))}
-                </div>
+                <p className="text-pretty text-xs leading-relaxed text-muted-foreground">{template.short_description}</p>
               </button>
             );
           })}
         </div>
+        <Button variant="outline" className="w-full border-dashed" onClick={() => onPick(null)}>Build a custom flow</Button>
       </DialogContent>
     </Dialog>
   );
@@ -3629,16 +3546,18 @@ function FlowTemplateInstallDialog({
                     </p>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground">Flow name</label>
+                    <Label htmlFor="template-flow-name">Flow name</Label>
                     <Input
+                      id="template-flow-name"
                       className="rounded-lg border-border bg-background"
                       value={flowSetup.name}
                       onChange={(event) => setFlowSetup({ name: event.target.value })}
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground">Internal description</label>
+                    <Label htmlFor="template-flow-description">Internal description</Label>
                     <Textarea
+                      id="template-flow-description"
                       value={flowSetup.description}
                       rows={3}
                       placeholder="What this flow is for, who owns it, or what it should do."
@@ -3674,17 +3593,17 @@ function FlowTemplateInstallDialog({
               </div>
               <div className="grid gap-4 sm:grid-cols-[1fr_220px]">
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">Agent name</label>
-                  <Input className="rounded-lg border-border bg-background" value={agentSetup.name} onChange={(event) => setAgentSetup({ name: event.target.value })} />
+                  <Label htmlFor="template-agent-name">Agent name</Label>
+                  <Input id="template-agent-name" className="rounded-lg border-border bg-background" value={agentSetup.name} onChange={(event) => setAgentSetup({ name: event.target.value })} />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">Run approval</label>
+                  <Label htmlFor="template-agent-approval">Run approval</Label>
                   <Select value={agentSetup.approval_mode} onValueChange={(value) => setAgentSetup({ approval_mode: value as AgentApprovalMode })}>
-                    <SelectTrigger className="w-full rounded-lg border-border bg-background">
+                    <SelectTrigger id="template-agent-approval" className="w-full rounded-lg border-border bg-background">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {TEMPLATE_APPROVAL_OPTIONS.map((option) => (
+                      {AGENT_APPROVAL_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -3692,13 +3611,14 @@ function FlowTemplateInstallDialog({
                     </SelectContent>
                   </Select>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    {TEMPLATE_APPROVAL_OPTIONS.find((option) => option.value === agentSetup.approval_mode)?.description}
+                    {agentApprovalDescription(agentSetup.approval_mode)}
                   </p>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Instructions</label>
+                <Label htmlFor="template-agent-instructions">Instructions</Label>
                 <Textarea
+                  id="template-agent-instructions"
                   value={agentSetup.system_prompt}
                   rows={8}
                   className="min-h-44 resize-y rounded-lg border-border bg-background font-mono text-xs leading-relaxed"
@@ -3813,8 +3733,9 @@ function FlowTemplateInstallDialog({
                 </p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Prompt context</label>
+                <Label htmlFor="template-prompt-context">Prompt context</Label>
                 <Textarea
+                  id="template-prompt-context"
                   value={runContext}
                   readOnly
                   rows={8}
@@ -3822,8 +3743,9 @@ function FlowTemplateInstallDialog({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Additional instructions</label>
+                <Label htmlFor="template-additional-instructions">Additional instructions</Label>
                 <Textarea
+                  id="template-additional-instructions"
                   value={additionalInstructions}
                   rows={3}
                   placeholder="Optional. Add anything Quill should pay special attention to in this sweep."
@@ -4312,6 +4234,7 @@ export function AutomationFlowsPage({
 }) {
   useTitle('Automation Flows');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const currentUser = useAuthStore((state) => state.user);
   const workspaceId = workspace?.id ?? '';
   const workspaceSlug = workspace?.slug;
   const scheduleTimezone = normalizeTimeZone(workspace?.timezone);
@@ -4371,6 +4294,10 @@ export function AutomationFlowsPage({
   const [draft, setDraft] = useState<FlowDraft>(defaultDraft());
   const [saving, setSaving] = useState(false);
   const [runningFlowId, setRunningFlowId] = useState<string | null>(null);
+  const [selectedFlowId, setSelectedFlowId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'paused' | 'attention'>('all');
+  const [flowQuery, setFlowQuery] = useState('');
+  const [scopeFilter, setScopeFilter] = useState<'workspace' | 'team' | 'mine'>('workspace');
   const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const searchSignature = useMemo(() => JSON.stringify(search), [search]);
   const [appliedSearchSignature, setAppliedSearchSignature] = useState('');
@@ -4402,32 +4329,44 @@ export function AutomationFlowsPage({
     [authoredFlows, search],
   );
   const teamNamesById = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
-  const [activeTab, setActiveTab] = useState<string>('all');
-  const teamTabs = useMemo(() => {
-    const counts = new Map<string, number>();
-    let uncategorized = 0;
-    for (const rule of highlightedFlows) {
-      if (rule.team_id && teamNamesById.has(rule.team_id)) {
-        counts.set(rule.team_id, (counts.get(rule.team_id) ?? 0) + 1);
-      } else {
-        uncategorized++;
-      }
+  const scopedAndSearchedFlows = useMemo(() => {
+    const query = flowQuery.trim().toLowerCase();
+    return highlightedFlows.filter((rule) => {
+      if (scopeFilter === 'team' && (!rule.team_id || !accessibleTeamIds.has(rule.team_id))) return false;
+      if (scopeFilter === 'mine' && (!currentUser?.id || rule.created_by !== currentUser.id)) return false;
+      if (!query) return true;
+      const trigger = flowTriggerSummary(rule, statesById, scheduleTimezone);
+      const action = flowActionSummary(rule, statesById, agentNames);
+      const target = flowTargetLabel(rule, workspace?.name);
+      return [rule.name, rule.description, trigger.label, trigger.value, action.label, target]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [accessibleTeamIds, agentNames, currentUser?.id, flowQuery, highlightedFlows, scheduleTimezone, scopeFilter, statesById, workspace?.name]);
+  const statusCounts = useMemo(() => {
+    let active = 0;
+    let paused = 0;
+    let attention = 0;
+    for (const rule of scopedAndSearchedFlows) {
+      const state = deriveFlowState(rule, agentNames, flowHealth.get(rule.id));
+      if (state === 'active') active++;
+      else if (state === 'paused') paused++;
+      else attention++;
     }
-    const tabs: { id: string; label: string; count: number }[] = [];
-    for (const [teamId, count] of counts) {
-      tabs.push({ id: teamId, label: teamNamesById.get(teamId) ?? teamId, count });
-    }
-    tabs.sort((a, b) => a.label.localeCompare(b.label));
-    if (uncategorized > 0) {
-      tabs.push({ id: '__uncategorized__', label: 'Workspace-wide', count: uncategorized });
-    }
-    return tabs;
-  }, [highlightedFlows, teamNamesById]);
-  const filteredFlows = useMemo(() => {
-    if (activeTab === 'all') return highlightedFlows;
-    if (activeTab === '__uncategorized__') return highlightedFlows.filter((r) => !r.team_id || !teamNamesById.has(r.team_id));
-    return highlightedFlows.filter((r) => r.team_id === activeTab);
-  }, [activeTab, highlightedFlows, teamNamesById]);
+    return { all: scopedAndSearchedFlows.length, active, paused, attention };
+  }, [agentNames, flowHealth, scopedAndSearchedFlows]);
+  const filteredFlows = useMemo(() => scopedAndSearchedFlows.filter((rule) => {
+    if (statusFilter === 'all') return true;
+    const state = deriveFlowState(rule, agentNames, flowHealth.get(rule.id));
+    if (statusFilter === 'attention') return state === 'error' || state === 'incomplete' || state === 'needs_review';
+    return state === statusFilter;
+  }), [agentNames, flowHealth, scopedAndSearchedFlows, statusFilter]);
+  const selectedRule = useMemo(
+    () => authoredFlows.find((rule) => rule.id === selectedFlowId) ?? null,
+    [authoredFlows, selectedFlowId],
+  );
   const activeFlowFilterLabel = useMemo(() => {
     if (search.show_rule) {
       return search.show_rule_title
@@ -4440,9 +4379,15 @@ export function AutomationFlowsPage({
     if (search.agent_id) {
       return agentNames.get(search.agent_id) ?? search.agent_id;
     }
+    if (search.workflow) {
+      return workflows.find((item) => item.workflow.id === search.workflow)?.workflow.name ?? search.workflow;
+    }
+    if (search.team) {
+      return teamNamesById.get(search.team) ?? search.team;
+    }
     return '';
-  }, [agentNames, authoredFlows, search.agent_id, search.show_rule, search.show_rule_title, search.show_trigger, search.show_trigger_title]);
-  const hasFlowFilter = Boolean(search.show_rule || search.show_trigger || search.agent_id);
+  }, [agentNames, authoredFlows, search.agent_id, search.show_rule, search.show_rule_title, search.show_trigger, search.show_trigger_title, search.team, search.workflow, teamNamesById, workflows]);
+  const hasFlowFilter = Boolean(search.show_rule || search.show_trigger || search.agent_id || search.workflow || search.team);
 
   const loading = settingsQuery.isLoading || inventoryQuery.isLoading || rulesQuery.isLoading || tasksQuery.isLoading || epicsQuery.isLoading || repositoriesQuery.isLoading;
 
@@ -4484,11 +4429,34 @@ export function AutomationFlowsPage({
       show_trigger: undefined,
       show_trigger_title: undefined,
       agent_id: undefined,
+      workflow: undefined,
+      team: undefined,
     });
   }, [onSearchChange]);
 
   useEffect(() => {
     if (loading || appliedSearchSignature === searchSignature) return;
+    if (search.template) {
+      const template = flowTemplatesQuery.data?.find((item) => item.key === search.template);
+      if (!template) {
+        if (flowTemplatesQuery.isLoading) return;
+        setGalleryOpen(true);
+        setAppliedSearchSignature(searchSignature);
+        return;
+      }
+      const inputs = defaultTemplateInputs(template, workspace, repositories);
+      const agentSetup = defaultTemplateAgentSetup(template, inputs);
+      const templateContext = { agents, workflows, repositories, spaces: docsSpaces, collections: docsCollections, teams, timezone: scheduleTimezone };
+      setSelectedTemplate(template);
+      setTemplateInputs(inputs);
+      setTemplateAgentSetup(agentSetup);
+      setTemplateFlowSetup(defaultTemplateFlowSetup(template, inputs, templateContext, agentSetup));
+      setTemplateFlowSetupEdited(false);
+      setTemplateAgentInstructionsEdited(false);
+      setTemplateAdditionalInstructions('');
+      setAppliedSearchSignature(searchSignature);
+      return;
+    }
     const prefilledDraft = draftFromSearch(search, workflows);
     if (!prefilledDraft) return;
     setDraft(prefilledDraft);
@@ -4496,7 +4464,12 @@ export function AutomationFlowsPage({
     setComposerMode('create');
     setComposerOpen(true);
     setAppliedSearchSignature(searchSignature);
-  }, [appliedSearchSignature, loading, search, searchSignature, workflows]);
+  }, [agents, appliedSearchSignature, docsCollections, docsSpaces, flowTemplatesQuery.data, flowTemplatesQuery.isLoading, loading, repositories, scheduleTimezone, search, searchSignature, teams, workflows, workspace]);
+
+  useEffect(() => {
+    if (!search.show_rule || !authoredFlows.some((rule) => rule.id === search.show_rule)) return;
+    setSelectedFlowId(search.show_rule);
+  }, [authoredFlows, search.show_rule]);
 
   const openCreateComposer = () => {
     setEditingRuleId(null);
@@ -4701,6 +4674,7 @@ export function AutomationFlowsPage({
             ? ' and kept the agent'
             : '';
         toast.success(`Flow deleted${suffix}`);
+        setSelectedFlowId(null);
         setDeleteRule(null);
         await refreshAll();
       } catch (error) {
@@ -4717,6 +4691,7 @@ export function AutomationFlowsPage({
       return;
     }
     toast.success('Flow deleted');
+    setSelectedFlowId(null);
     setDeleteRule(null);
     await refreshAll();
   };
@@ -4726,7 +4701,7 @@ export function AutomationFlowsPage({
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 pb-20">
+    <div className="text-foreground">
       <FlowTemplateGallery
         open={galleryOpen}
         onOpenChange={(open) => {
@@ -4828,55 +4803,55 @@ export function AutomationFlowsPage({
         onSave={handleSave}
       />
 
-      {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
+      <FlowDetailDrawer
+        rule={selectedRule}
+        workspaceId={workspaceId}
+        workspaceSlug={workspaceSlug}
+        workspaceName={workspace?.name}
+        statesById={statesById}
+        agentNames={agentNames}
+        healthItem={selectedRule ? flowHealth.get(selectedRule.id) : undefined}
+        timezone={scheduleTimezone}
+        canEdit={permissions.canAdminAutomations}
+        canRunNowAction={permissions.canEdit}
+        runningNow={runningFlowId === selectedRule?.id}
+        onOpenChange={(open) => { if (!open) setSelectedFlowId(null); }}
+        onEdit={(rule) => { setSelectedFlowId(null); openEditComposer(rule); }}
+        onToggle={handleToggle}
+        onRunNow={handleRunNow}
+        onDelete={openDeleteFlow}
+      />
+
+      <div className="mb-5 flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-xl font-semibold">Automation flows</h1>
-          <p className="text-sm text-muted-foreground">Event-driven and time-based automations that trigger agents and workflow actions.</p>
+          <h1 className="text-xl font-semibold">Flows</h1>
+          <p className="text-sm text-muted-foreground">When something happens, do something. Flows keep agents working without anyone prompting them.</p>
         </div>
         {permissions.canAdminAutomations && (
-          <Button size="sm" onClick={openCreateComposer}>
-            <PlusSignIcon className="mr-1.5 h-4 w-4" />
+          <Button size="sm" className="shrink-0" onClick={openCreateComposer}>
+            <PlusSignIcon className="h-4 w-4" />
             New flow
           </Button>
         )}
       </div>
 
       {loading ? (
-        <div className="space-y-3">
-          <Skeleton className="h-10 w-80 rounded-lg" />
-          <Skeleton className="h-20 w-full rounded-lg" />
-          <Skeleton className="h-20 w-full rounded-lg" />
-          <Skeleton className="h-20 w-full rounded-lg" />
+        <div className="space-y-2">
+          <Skeleton className="mb-5 h-8 w-full rounded-lg" />
+          {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-[68px] w-full rounded-[9px]" />)}
+        </div>
+      ) : rulesQuery.isError ? (
+        <div className="border-y border-border py-16 text-center">
+          <p className="text-sm text-muted-foreground">Flows could not be loaded.</p>
+          <Button variant="outline" size="sm" className="mt-4" onClick={() => void rulesQuery.refetch()}>Try again</Button>
         </div>
       ) : authoredFlows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center px-4 py-16">
-          <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10">
-            <ZapIcon className="h-7 w-7 text-violet-500" />
-          </div>
-          <h3 className="mb-1.5 text-lg font-semibold">Put an agent on autopilot</h3>
-          <p className="mb-6 max-w-md text-center text-sm text-muted-foreground">
-            Flows are event-driven automations — they watch for a trigger (a task changing state, a PR
-            merging, a tag shipping, a schedule) and run an agent to act on it.
-          </p>
+        <div className="border-y border-border px-4 py-16 text-center">
+          <h3 className="text-base font-semibold">Put routine work on autopilot</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Start with a proven template or connect a trigger to an agent and build your own flow.</p>
           {permissions.canAdminAutomations && (
-            <Button className="mb-8 gap-2" onClick={openCreateComposer}>
-              <PlusSignIcon className="h-4 w-4" />
-              New flow
-            </Button>
+            <div className="mt-5 flex justify-center gap-2"><Button size="sm" onClick={openCreateComposer}>Choose a template</Button><Button variant="outline" size="sm" onClick={() => handleTemplatePick(null)}>Build custom flow</Button></div>
           )}
-          <div className="grid w-full max-w-4xl grid-cols-1 gap-4 sm:grid-cols-3">
-            {FLOW_EMPTY_STATE_CARDS.map((card) => (
-              <div
-                key={card.title}
-                className="flex flex-col items-center rounded-lg border border-border/50 bg-muted/30 p-6 text-center"
-              >
-                <card.icon className="mb-3 h-5 w-5 text-muted-foreground" />
-                <p className="mb-1 text-sm font-medium">{card.title}</p>
-                <p className="text-sm leading-relaxed text-muted-foreground">{card.desc}</p>
-              </div>
-            ))}
-          </div>
         </div>
       ) : (
         <>
@@ -4888,41 +4863,43 @@ export function AutomationFlowsPage({
             />
           )}
 
-          {/* Category tabs */}
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('all')}
-              className={cn(
-                'rounded-full px-3 py-1 text-sm font-medium transition-colors',
-                activeTab === 'all'
-                  ? 'bg-foreground text-background'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )}
-            >
-              All ({highlightedFlows.length})
-            </button>
-            {teamTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'rounded-full px-3 py-1 text-sm font-medium transition-colors',
-                  activeTab === tab.id
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                )}
-              >
-                {tab.label} ({tab.count})
-              </button>
-            ))}
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
+              <TabsList variant="line" aria-label="Flow status" className="max-w-full flex-wrap justify-start">
+              {([
+                ['all', 'All'],
+                ['active', 'Active'],
+                ['paused', 'Paused'],
+                ['attention', 'Needs attention'],
+              ] as const).map(([value, label]) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                >
+                  <span>{label}</span>
+                  <span className="text-xs font-normal tabular-nums text-muted-foreground">{statusCounts[value]}</span>
+                </TabsTrigger>
+              ))}
+              </TabsList>
+            </Tabs>
+            <div className="flex min-w-0 flex-col gap-2 xs:flex-row sm:justify-end">
+              <div className="relative min-w-0 sm:w-52">
+                <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input aria-label="Search flows" value={flowQuery} onChange={(event) => setFlowQuery(event.target.value)} placeholder="Search flows" className="h-8 pl-8 text-sm" />
+              </div>
+              <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as typeof scopeFilter)}>
+                <SelectTrigger aria-label="Flow scope" className="h-8 w-full text-sm xs:w-36"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="workspace">Workspace-wide</SelectItem><SelectItem value="team">My team</SelectItem><SelectItem value="mine">Created by me</SelectItem></SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Flow list */}
+          <div className="hidden grid-cols-[minmax(0,1fr)_96px_116px_120px_28px] gap-4 border-b border-border px-[14px] pb-[9px] text-xs font-medium uppercase tracking-wide text-muted-foreground md:grid">
+            <span>Flow</span><span className="text-right">Runs</span><span>Last run</span><span>Next run</span><span />
+          </div>
           <div>
             {filteredFlows.length > 0 ? (
-              <div className="space-y-2">
+              <div>
                 {filteredFlows.map((rule) => (
                   <FlowRow
                     key={rule.id}
@@ -4939,22 +4916,22 @@ export function AutomationFlowsPage({
                     onToggle={handleToggle}
                     onRunNow={handleRunNow}
                     onDelete={openDeleteFlow}
+                    onOpen={(selected) => setSelectedFlowId(selected.id)}
                     runningNow={runningFlowId === rule.id}
                   />
                 ))}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border/70 px-6 py-12 text-center">
-                <PlayIcon className="mx-auto mb-3 h-6 w-6 text-muted-foreground" />
-                <p className="text-sm font-medium">{hasFlowFilter ? 'No flows match this filter' : 'No automation flows yet'}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {hasFlowFilter
-                    ? 'Clear the filter to return to all automation flows.'
-                    : 'Create a flow to connect events to agents and workflow actions.'}
-                </p>
-              </div>
+              <div className="py-16 text-center text-sm text-muted-foreground">No flows match this view.</div>
             )}
           </div>
+
+          {permissions.canAdminAutomations ? (
+            <div className="mt-10 flex flex-col items-start justify-between gap-3 border-t border-border pt-5 sm:flex-row sm:items-center">
+              <span className="text-sm text-muted-foreground">Start from a template instead of building from scratch.</span>
+              <Button variant="outline" size="sm" onClick={() => setGalleryOpen(true)}>Browse templates</Button>
+            </div>
+          ) : null}
         </>
       )}
       <UpgradeRequiredDialog

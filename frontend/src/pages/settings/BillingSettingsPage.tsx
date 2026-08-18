@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Ban,
   BarChart3,
@@ -30,22 +30,23 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { UsageDetail } from '@/components/billing/UsageDetail';
 import { useAuthStore } from '@/stores/authStore';
 import { useApplyBillingTestScenario, useBillingCheckout, useBillingPlanChange, useBillingPlanChangePreview, useBillingPortal, useConfirmBillingCheckout, useResumeBillingSubscription, useSetBillingOnDemand, useWorkspaceBilling } from '@/hooks/queries';
-import type { BillingTestScenarioID, PlanChangePreview } from '@/lib/billingTypes';
+import type { BillingTestScenarioID, PlanChangePreview, UsageResponse } from '@/lib/billingTypes';
 import type { BillingInterval, BillingPlan, WorkspaceBillingSummary } from '@/lib/types';
 import { SettingsPageFrame } from './SettingsPageFrame';
+import { getBillingNoticePresentation } from './billingNoticePresentation';
+import { calculateAIUsagePercent, formatAIUsagePercent } from '@/lib/aiUsage';
 
 const PLAN_OPTIONS: Array<{
   id: BillingPlan;
   name: string;
   monthly: number;
   annual: number;
-  credits: number;
+  aiUsage: string;
   description: string;
   features: string[];
   popular?: boolean;
@@ -55,7 +56,7 @@ const PLAN_OPTIONS: Array<{
     name: 'Starter',
     monthly: 99,
     annual: 948,
-    credits: 5_000,
+    aiUsage: '100% included',
     description: "For teams that want the full platform and Helpin's built-in AI out of the box.",
     features: [
       'Project management, support, CRM, and docs',
@@ -72,7 +73,7 @@ const PLAN_OPTIONS: Array<{
     name: 'Growth',
     monthly: 299,
     annual: 2_868,
-    credits: 25_000,
+    aiUsage: '100% included',
     description: 'For growing teams ready to automate their own processes with agents and flows.',
     popular: true,
     features: [
@@ -131,11 +132,11 @@ const COMPARISON_FEATURES: Array<{
   { name: 'Buyer signal detection', starter: true, growth: true },
   { name: 'Deal automation', starter: false, growth: true },
   { name: 'AI Agents', category: true },
-  { name: 'Monthly AI usage', starter: '5,000 units', growth: '25,000 units' },
+  { name: 'Included AI usage', starter: '100% each month', growth: '100% each month' },
   { name: 'Built-in agents', starter: true, growth: true },
   { name: 'Custom agents', starter: false, growth: true },
   { name: 'Agent scheduling', starter: false, growth: true },
-  { name: 'Extra AI usage packs', starter: '$50 / 5,000 units', growth: '$50 / 5,000 units' },
+  { name: 'Extra AI usage', starter: 'Exact metered usage', growth: 'Exact metered usage' },
   { name: 'Platform', category: true },
   { name: 'Users', starter: 'Unlimited', growth: 'Unlimited' },
   { name: 'Teams', starter: '10', growth: 'Unlimited' },
@@ -161,7 +162,7 @@ const BILLING_FAQS = [
   },
   {
     q: 'What happens if I exceed my AI usage limit?',
-    a: 'The Starter and Growth plans can enable extra AI usage at $50 per 5,000-unit pack.',
+    a: 'Starter and Growth can allow exact metered usage beyond the included allowance. It is settled monthly with no prepaid packs.',
   },
   {
     q: 'Can I switch plans anytime?',
@@ -193,12 +194,12 @@ const BILLING_TEST_SCENARIOS: Array<{
     id: 'reset_starter',
     label: 'Reset to Starter baseline',
     description: 'Starter, active, zero AI usage, extra AI usage off, and billing-test docs/contacts removed.',
-    next: ['Confirm the page shows Starter with 5,000 AI units remaining.', 'Use this before switching to another scenario when you want clean test data.'],
+    next: ['Confirm the page shows Starter with 0% used.', 'Use this before switching to another scenario when you want clean test data.'],
   },
   {
     id: 'trial_cap',
     label: 'Trial AI cap reached',
-    description: 'Growth trial with the full 25,000 trial AI units already used.',
+    description: 'Growth trial with 100% of its included AI usage already used.',
     next: ['Try an AI action such as drafting a support reply or running an agent.', 'It should stop before the model call and ask you to upgrade.'],
   },
   {
@@ -216,14 +217,14 @@ const BILLING_TEST_SCENARIOS: Array<{
   {
     id: 'starter_ai_cap',
     label: 'Starter AI cap reached',
-    description: 'Starter with all 5,000 included AI units used and extra AI usage disabled.',
+    description: 'Starter with 100% of its included AI usage used and extra AI usage disabled.',
     next: ['Try an AI action.', 'It should fail before the model call and prompt for upgrade or extra AI usage.'],
   },
   {
     id: 'starter_on_demand',
     label: 'Starter near overage',
-    description: 'Starter with 4,995 AI units used, extra AI usage enabled, and fake Stripe IDs for overage-path testing.',
-    next: ['Run an AI action that costs more than 5 units.', 'With real Stripe test credentials this should bill one extra usage pack; with fake IDs, expect Stripe portal/charge calls to fail safely.'],
+    description: 'Starter near 100% used, with extra AI usage enabled and fake Stripe IDs for settlement-path testing.',
+    next: ['Run an AI action that crosses the allowance.', 'With real Stripe test credentials this should accrue exact extra usage; with fake IDs, expect Stripe settlement calls to fail safely.'],
   },
   {
     id: 'starter_docs_limit',
@@ -239,17 +240,67 @@ const BILLING_TEST_SCENARIOS: Array<{
   },
 ];
 
-export function BillingSettingsPage() {
+export function BillingSettingsPage({
+  openPlanChooser = false,
+  onPlanChooserChange,
+}: {
+  openPlanChooser?: boolean;
+  onPlanChooserChange?: (open: boolean) => void;
+}) {
   return (
     <SettingsPageFrame section="billing">
       {({ workspaceId, permissions }) => (
-        <BillingSettingsContent workspaceId={workspaceId} editable={permissions.canManageSettings} />
+        <BillingSettingsContent
+          workspaceId={workspaceId}
+          editable={permissions.canManageSettings}
+          openPlanChooser={openPlanChooser}
+          onPlanChooserChange={onPlanChooserChange}
+        />
       )}
     </SettingsPageFrame>
   );
 }
 
-function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string; editable: boolean }) {
+export function BillingSettingsPreview({
+  billing,
+  usage,
+}: {
+  billing: WorkspaceBillingSummary;
+  usage: UsageResponse;
+}) {
+  return (
+    <div className="min-h-screen bg-background px-4 py-8 sm:px-8">
+      <div className="mx-auto mb-6 max-w-6xl">
+        <Badge variant="secondary">Development preview · mock data</Badge>
+        <h1 className="mt-3 text-2xl font-semibold">Billing settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">This page is read-only and does not contact Stripe.</p>
+      </div>
+      <BillingSettingsContent
+        workspaceId={billing.workspace_id}
+        editable={false}
+        openPlanChooser={false}
+        mockBilling={billing}
+        mockUsage={usage}
+      />
+    </div>
+  );
+}
+
+function BillingSettingsContent({
+  workspaceId,
+  editable,
+  openPlanChooser,
+  onPlanChooserChange,
+  mockBilling,
+  mockUsage,
+}: {
+  workspaceId: string;
+  editable: boolean;
+  openPlanChooser: boolean;
+  onPlanChooserChange?: (open: boolean) => void;
+  mockBilling?: WorkspaceBillingSummary;
+  mockUsage?: UsageResponse;
+}) {
   const [choosingPlan, setChoosingPlan] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState<BillingInterval>('annual');
   const [checkoutResult, setCheckoutResult] = useState<'success' | 'cancelled' | null>(null);
@@ -258,7 +309,8 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   const [planPreview, setPlanPreview] = useState<PlanChangePreview | null>(null);
   const [pendingPlanAction, setPendingPlanAction] = useState<string | null>(null);
   const [selectedTestScenario, setSelectedTestScenario] = useState<BillingTestScenarioID>('reset_starter');
-  const { data: billing, isLoading, refetch } = useWorkspaceBilling(workspaceId);
+  const { data: queriedBilling, isLoading, refetch } = useWorkspaceBilling(workspaceId);
+  const billing = mockBilling ?? queriedBilling;
   const currentUserId = useAuthStore((s) => s.user?.id);
   const checkout = useBillingCheckout(workspaceId);
   const confirmCheckout = useConfirmBillingCheckout(workspaceId);
@@ -268,6 +320,15 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
   const portal = useBillingPortal(workspaceId);
   const setOnDemand = useSetBillingOnDemand(workspaceId);
   const applyTestScenario = useApplyBillingTestScenario(workspaceId);
+
+  const setPlanChooserOpen = useCallback((open: boolean) => {
+    setChoosingPlan(open);
+    onPlanChooserChange?.(open);
+  }, [onPlanChooserChange]);
+
+  useEffect(() => {
+    if (openPlanChooser) setChoosingPlan(true);
+  }, [openPlanChooser]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -287,7 +348,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             setCheckoutResult(null);
             setCheckoutConfirming(false);
             setCheckoutConfirmationDelayed(false);
-            setChoosingPlan(false);
+            setPlanChooserOpen(false);
             toast.success('Plan updated.');
           },
           () => {
@@ -311,7 +372,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
       setCheckoutConfirmationDelayed(false);
       toast.info('Checkout was cancelled. No billing changes were made.');
     }
-  }, [confirmCheckout, refetch]);
+  }, [confirmCheckout, refetch, setPlanChooserOpen]);
 
   useEffect(() => {
     if (checkoutResult !== 'success' || !checkoutConfirming) return;
@@ -345,10 +406,16 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
     return () => window.clearInterval(interval);
   }, [billing?.manage_billing_enabled, billing?.stripe_subscription_id, checkoutConfirming, checkoutResult, refetch]);
 
-  const creditPct = useMemo(() => {
+  const usagePct = useMemo(() => {
+    if (billing?.ai_usage_allowance_microusd) {
+      return calculateAIUsagePercent(billing.ai_usage_used_microusd ?? 0, billing.ai_usage_allowance_microusd);
+    }
     if (!billing?.included_credits) return 0;
-    return Math.min(100, Math.round((billing.credits_used / billing.included_credits) * 100));
+    return calculateAIUsagePercent(billing.credits_used ?? 0, billing.included_credits);
   }, [billing]);
+  const reservedPct = billing?.ai_usage_allowance_microusd
+    ? (100 * (billing.ai_usage_reserved_microusd ?? 0)) / billing.ai_usage_allowance_microusd
+    : 0;
 
   const startCheckout = async (plan: BillingPlan, interval: BillingInterval) => {
     const result = await checkout.mutateAsync({ plan, interval, return_url: window.location.href }).catch((error) => {
@@ -370,7 +437,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
     });
     if (!result) return;
     toast.success(result.pending_plan ? 'Plan change scheduled' : 'Plan updated');
-    setChoosingPlan(false);
+    setPlanChooserOpen(false);
   };
 
   const beginPaidPlanChange = async (plan: BillingPlan, interval: BillingInterval) => {
@@ -416,7 +483,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
     );
   };
 
-  if (isLoading || !billing) {
+  if ((isLoading && !mockBilling) || !billing) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
         <Skeleton className="h-32 w-full" />
@@ -452,14 +519,20 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             variant="outline"
             size="sm"
             className="w-fit shrink-0"
-            onClick={() => setChoosingPlan(false)}
+            onClick={() => setPlanChooserOpen(false)}
           >
             Back to overview
           </Button>
         </div>
 
         <CheckoutReturnNotice result={checkoutResult} confirming={checkoutConfirming} delayed={checkoutConfirmationDelayed} onRefresh={() => void refetch()} />
-        <BillingNoticeBanner billing={billing} onPortal={() => void openPortal('payment method management')} portalLoading={portal.isPending} />
+        <BillingNoticeBanner
+          billing={billing}
+          onPortal={() => void openPortal('payment method management')}
+          onUpgrade={() => setPlanChooserOpen(true)}
+          portalLoading={portal.isPending}
+          actionDisabled={!canManageBilling}
+        />
         <PendingBillingNotice
           billing={billing}
           editable={canManageBilling}
@@ -577,7 +650,13 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
           </div>
         )}
         <CheckoutReturnNotice result={checkoutResult} confirming={checkoutConfirming} delayed={checkoutConfirmationDelayed} onRefresh={() => void refetch()} />
-        <BillingNoticeBanner billing={billing} onPortal={() => void openPortal('payment method management')} portalLoading={portal.isPending} />
+        <BillingNoticeBanner
+          billing={billing}
+          onPortal={() => void openPortal('payment method management')}
+          onUpgrade={() => setPlanChooserOpen(true)}
+          portalLoading={portal.isPending}
+          actionDisabled={!canManageBilling}
+        />
         <Card className="overflow-hidden">
           <CardContent className="p-0">
             <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -599,7 +678,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 <Badge variant="outline" className="shrink-0">Managed by Helpin</Badge>
               ) : !billing.locked ? (
                 <Button
-                  onClick={() => setChoosingPlan(true)}
+                  onClick={() => setPlanChooserOpen(true)}
                   disabled={!canManageBilling}
                   className="shrink-0"
                 >
@@ -607,7 +686,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
                 </Button>
               ) : (
                 <Button
-                  onClick={() => setChoosingPlan(true)}
+                  onClick={() => setPlanChooserOpen(true)}
                   disabled={!canManageBilling}
                   className="shrink-0"
                 >
@@ -619,7 +698,7 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
             <div className="grid border-t bg-muted/20 sm:grid-cols-3">
               <PlanMetric label="Billing period" value={periodCopy(billing)} />
               <PlanMetric label={nextChargeMetricLabel(billing)} value={nextChargeMetricValue(billing)} />
-              <PlanMetric label="Monthly AI usage" value={`${formatNumber(billing.included_credits)} units / month`} />
+              <PlanMetric label="Included AI usage" value="100% each month" />
             </div>
           </CardContent>
         </Card>
@@ -651,25 +730,25 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
       <section className="space-y-3">
         <SectionHeading
           title="Extra AI usage"
-          description="Allow extra AI usage packs when included usage runs out."
+          description="Allow exact metered AI usage after the included allowance is consumed."
         />
         <Card>
           <CardContent className="p-5">
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-1">
-                <p className="text-sm font-medium">{billing.on_demand_enabled ? 'Enabled' : 'Disabled'}</p>
+                <p className="text-sm font-medium">{(billing.extra_ai_usage_enabled ?? billing.on_demand_enabled) ? 'Enabled' : 'Disabled'}</p>
                 <p className="text-sm text-muted-foreground">
                   {isFounderPlan
-                    ? 'The Founder plan includes 100,000 AI usage units each month. Extra usage packs are not available on this plan.'
-                    : billing.on_demand_available
-                    ? '$50 per 5,000-unit pack, added to your next invoice.'
+                    ? 'Founder has an internal monthly soft budget. Usage is never blocked or invoiced and may exceed 100%.'
+                    : (billing.extra_ai_usage_available ?? billing.on_demand_available)
+                    ? 'Only the exact extra usage is added to the monthly invoice, before applicable tax.'
                     : 'Available on the Starter and Growth plans with an active subscription.'}
                 </p>
               </div>
               <Switch
-                checked={billing.on_demand_enabled}
+                checked={billing.extra_ai_usage_enabled ?? billing.on_demand_enabled}
                 onCheckedChange={(checked) => void toggleOnDemand(checked)}
-                disabled={!canManageBilling || !billing.on_demand_available || setOnDemand.isPending}
+                disabled={!canManageBilling || !(billing.extra_ai_usage_available ?? billing.on_demand_available) || setOnDemand.isPending}
               />
             </div>
           </CardContent>
@@ -679,23 +758,45 @@ function BillingSettingsContent({ workspaceId, editable }: { workspaceId: string
       <section className="space-y-3">
         <SectionHeading
           title="AI usage"
-          description={`Current billing period resets on ${formatDate(billing.current_period_end)}.`}
+          description={`Current allowance resets on ${formatDate(billing.ai_usage_period_end || billing.current_period_end)}.`}
         />
         <Card>
           <CardContent className="space-y-5 p-5">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium">Monthly AI usage</span>
+                <span className="font-medium">{formatAIUsagePercent(usagePct)} used</span>
                 <span className="text-muted-foreground">
-                  {formatNumber(billing.credits_remaining)} remaining
+                  {billing.ai_usage_unlimited ? 'Internal soft budget' : `${formatAIUsagePercent(Math.max(0, 100 - usagePct))} remaining`}
                 </span>
               </div>
-              <Progress value={creditPct} />
+              <div
+                className="flex h-2 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.min(100, usagePct)}
+                aria-valuetext={`${formatAIUsagePercent(usagePct)} used, ${formatAIUsagePercent(reservedPct)} reserved`}
+              >
+                <span className="bg-primary" style={{ width: `${Math.min(100, usagePct)}%` }} />
+                <span className="bg-primary/35" style={{ width: `${Math.min(Math.max(0, 100 - usagePct), reservedPct)}%` }} />
+              </div>
+              {(billing.ai_usage_reserved_microusd ?? 0) > 0 && (
+                <p className="text-xs text-muted-foreground">An active AI run has reserved part of the remaining allowance.</p>
+              )}
+              {(billing.ai_usage_overage_microusd ?? 0) > 0 && !billing.ai_usage_unlimited && (
+                <p className="text-xs text-muted-foreground">Extra AI usage is accruing for this period.</p>
+              )}
+              {billing.ai_usage_unlimited && usagePct >= 100 && (
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                  Founder usage is above the internal monthly soft budget; AI remains available and no invoice is created.
+                </p>
+              )}
             </div>
             <UsageDetail
               workspaceId={workspaceId}
-              periodStart={billing.current_period_start}
-              periodEnd={billing.current_period_end}
+              periodStart={billing.ai_usage_period_start || billing.current_period_start}
+              periodEnd={billing.ai_usage_period_end || billing.current_period_end}
+              mockUsage={mockUsage}
             />
           </CardContent>
         </Card>
@@ -923,46 +1024,51 @@ function AnnualBillingNudge({
 function BillingNoticeBanner({
   billing,
   onPortal,
+  onUpgrade,
   portalLoading,
+  actionDisabled,
 }: {
   billing: WorkspaceBillingSummary;
   onPortal: () => void;
+  onUpgrade: () => void;
   portalLoading: boolean;
+  actionDisabled: boolean;
 }) {
-  if (billing.billing_notice_type === 'payment_failed' || billing.status === 'past_due') {
+  const notice = getBillingNoticePresentation(billing);
+  if (!notice) return null;
+
+  if (notice.kind === 'payment') {
     return (
       <div className="flex flex-col gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="font-medium">Payment needs attention</p>
-            <p className="mt-1">
-              {billing.billing_notice_message || 'Payment failed. Update your payment method to keep this workspace active.'}
-            </p>
+            <p className="font-medium">{notice.title}</p>
+            <p className="mt-1">{notice.message}</p>
           </div>
         </div>
         <Button size="sm" variant="destructive" onClick={onPortal} disabled={portalLoading || !billing.manage_billing_enabled} className="shrink-0">
           {portalLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Update payment
+          {notice.actionLabel}
         </Button>
       </div>
     );
   }
 
-  const trialEnd = billing.trial_will_end_at || billing.trial_ends_at;
-  if (billing.billing_notice_type === 'trial_will_end' && trialEnd) {
-    return (
-      <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+  return (
+    <div className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
         <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
-          <p className="font-medium">Trial ending soon</p>
-          <p className="mt-1">Your Growth plan trial ends on {formatDate(trialEnd)}. Choose a plan to keep Growth plan limits active.</p>
+          <p className="font-medium">{notice.title}</p>
+          <p className="mt-1">{notice.message}</p>
         </div>
       </div>
-    );
-  }
-
-  return null;
+      <Button size="sm" onClick={onUpgrade} disabled={actionDisabled} className="shrink-0">
+        {notice.actionLabel}
+      </Button>
+    </div>
+  );
 }
 
 function CheckoutReturnNotice({
@@ -1066,7 +1172,6 @@ function PendingBillingNotice({
   const pendingLabel = PLAN_LABELS[billing.pending_plan] ?? billing.pending_plan;
   const currentLabel = PLAN_LABELS[billing.plan] ?? billing.plan;
   const isCancel = billing.cancel_at_period_end;
-  const pendingCredits = includedCreditsForPlan(billing.pending_plan);
   return (
     <div className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex items-start gap-3">
@@ -1081,7 +1186,7 @@ function PendingBillingNotice({
             : `${pendingLabel} will begin on ${formatDate(billing.pending_change_at)}. ${currentLabel} remains active until then.`}
         </p>
         <p className="mt-1">
-          You have used {formatNumber(billing.credits_used)} of {formatNumber(billing.included_credits)} {currentLabel} AI usage units. {pendingLabel} includes {formatNumber(pendingCredits)} units per billing period.
+          Your current AI usage percentage remains unchanged. {pendingLabel} starts with a fresh 100% allowance at the next AI usage period.
         </p>
         </div>
       </div>
@@ -1158,7 +1263,7 @@ function PlanChoiceCard({
               <p className="mt-0.5 text-[11px] uppercase text-muted-foreground">Seats</p>
             </div>
             <div>
-              <p className="text-sm font-semibold">{formatNumber(plan.credits)}/mo</p>
+              <p className="text-sm font-semibold">{plan.aiUsage}</p>
               <p className="mt-0.5 text-[11px] uppercase text-muted-foreground">AI usage</p>
             </div>
           </div>
@@ -1331,7 +1436,7 @@ function PlanChangePreviewDialog({
           <div className="rounded-md border bg-muted/20 p-3">
             <p className="font-medium">AI usage after change</p>
             <p className="mt-1 text-muted-foreground">
-              {formatNumber(preview.target_included_credits)} units per month. {formatNumber(preview.credits_used)} used this period, {formatNumber(preview.credits_remaining_after)} available after the change.
+              Upgrades increase the current allowance immediately without resetting usage. Deferred changes receive a fresh 100% allowance at the next period.
             </p>
           </div>
 
@@ -1445,7 +1550,7 @@ function planActionState(
     return { kind: 'current', label: 'Current plan' };
   }
   if (billing.locked || !billing.stripe_subscription_id) {
-    return { kind: 'upgrade', label: billing.locked ? 'Reactivate' : 'Upgrade' };
+    return { kind: 'upgrade', label: billing.status === 'trial_expired' ? 'Upgrade' : billing.locked ? 'Reactivate' : 'Upgrade' };
   }
   const targetRank = planRank(targetPlan);
   const currentRank = planRank(billing.plan);
@@ -1463,13 +1568,6 @@ function planRank(plan: BillingPlan | string): number {
   if (plan === 'founder') return 3;
   if (plan === 'growth') return 2;
   if (plan === 'starter') return 1;
-  return 0;
-}
-
-function includedCreditsForPlan(plan: BillingPlan | string): number {
-  if (plan === 'founder') return 100_000;
-  if (plan === 'growth') return 25_000;
-  if (plan === 'starter') return 5_000;
   return 0;
 }
 
@@ -1515,7 +1613,7 @@ function statusLabel(billing: WorkspaceBillingSummary): string {
 
 function billingStatusCopy(billing: WorkspaceBillingSummary): string {
   if (billing.plan === 'founder') {
-    return 'The Founder plan includes all features and 100,000 AI usage units each month.';
+    return 'The internal Founder plan includes all features and a monthly AI usage soft budget.';
   }
   if (hasScheduledCancellation(billing)) {
     return `Subscription cancellation scheduled. This workspace will lock on ${formatDate(cancellationEffectiveDate(billing))}.`;
@@ -1538,6 +1636,7 @@ function periodCopy(billing: WorkspaceBillingSummary): string {
 function nextChargeMetricLabel(billing: WorkspaceBillingSummary): string {
   if (billing.plan === 'founder') return 'Usage resets';
   if (hasScheduledCancellation(billing)) return 'Ends on';
+  if (billing.status === 'trial_expired') return 'Upgrade';
   if (billing.locked) return 'Reactivate';
   if (billing.trialing) return 'Trial ends';
   return 'Next charge';

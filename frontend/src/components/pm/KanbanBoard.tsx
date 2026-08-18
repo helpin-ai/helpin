@@ -14,7 +14,7 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { BotIcon, ArrowExpandIcon, ArrowShrinkIcon, LayoutTwoColumnIcon, LayoutTable01Icon, Loading01Icon, PlusSignIcon, UserIcon } from '@/lib/icons';
+import { BotIcon, CollapseIcon, ExpandIcon, LayoutTwoColumnIcon, LayoutTable01Icon, Loading01Icon, PlusSignIcon, UserIcon } from '@/lib/icons';
 import { ChartColumnIcon, StickyNote01Icon } from '@/lib/pmIcons';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -213,7 +213,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         {column.state.color && (
           <div className="absolute top-0 left-2 right-2 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
         )}
-        <ArrowExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <ExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
         {automatedStateIds?.has(column.state.id) && (
           <AutomatedStateIndicator compact />
@@ -277,7 +277,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
               className="h-7 w-7 opacity-0 transition-opacity group-hover/header:opacity-100"
               onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}
             >
-              <ArrowShrinkIcon className="h-3.5 w-3.5" />
+              <CollapseIcon className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
           <QuickTooltip label="Create task">
@@ -409,7 +409,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
           )}
           onClick={() => callbacksRef.current.onToggleCollapse(colKey)}
         >
-          <ArrowExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <ExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           {column.member ? (
             <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} avatarStyle={column.member.avatar_style} avatarSeed={column.member.avatar_seed} avatarBackgroundMode={column.member.avatar_background_mode} avatarBackgroundColor={column.member.avatar_background_color} className="h-5 w-5 text-[10px]" />
           ) : (
@@ -459,7 +459,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
         <div className="flex items-center gap-0.5">
           <QuickTooltip label="Collapse column">
             <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity" onClick={() => callbacksRef.current.onToggleCollapse(colKey)}>
-              <ArrowShrinkIcon className="h-3.5 w-3.5" />
+              <CollapseIcon className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
           <QuickTooltip label="Create task">

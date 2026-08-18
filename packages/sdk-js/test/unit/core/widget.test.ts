@@ -37,6 +37,7 @@ const flushAsync = async () => {
   await Promise.resolve();
   await Promise.resolve();
 };
+const OUTGOING_STATUS_DELAY_MS_FOR_TEST = 1500;
 
 describe('WidgetManager', () => {
   let widget: WidgetManager;
@@ -61,6 +62,7 @@ describe('WidgetManager', () => {
     setDocumentVisibility('visible');
     MockWebSocket.reset();
     localStorage.clear();
+    sessionStorage.clear();
     hasFocusSpy = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
 
     (localStorage.getItem as any).mockReset();
@@ -432,6 +434,19 @@ describe('WidgetManager', () => {
         articleSlug: 'article-123',
       });
     });
+
+    it('clears a pending article request when opening Messages', async () => {
+      widget.boot({ key: 'test-key' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      widget.openArticle('article-123');
+      widget.openMessages();
+
+      const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      expect(latestOptions.initialView).toBe('messages');
+      expect(latestOptions.openArticleRequest).toBeUndefined();
+    });
   });
 
   describe('websocket reconnect policy', () => {
@@ -586,7 +601,7 @@ describe('WidgetManager', () => {
       expect(postSendOptions.messages[0].content).toBe('Fresh question');
     });
 
-    it('shows AI thinking immediately after sending an AI-first widget message', () => {
+    it('keeps the optimistic bubble pending and starts AI thinking after acknowledgment', () => {
       const sent: string[] = [];
       (widget as any).widgetConfig = {
         workspaceId: 'ws_test',
@@ -604,16 +619,37 @@ describe('WidgetManager', () => {
       (widget as any).render();
       const mockMount = mountWidget as ReturnType<typeof vi.fn>;
       const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+      const rendersBeforeSend = mockMount.mock.calls.length;
 
       latestOptions.onSendMessage('Need help');
 
       const postSendOptions = mockMount.mock.calls.at(-1)?.[1];
+      expect(mockMount.mock.calls.length - rendersBeforeSend).toBe(1);
       expect(postSendOptions.messages.at(-1)?.content).toBe('Need help');
-      expect(postSendOptions.isAIThinking).toBe(true);
+      expect(postSendOptions.messages.at(-1)?.deliveryStatus).toBe('sending');
+      expect(postSendOptions.isAIThinking).toBe(false);
       expect(sent.map((frame) => JSON.parse(frame))).toContainEqual({
         type: 'message:send',
         data: { content: 'Need help' },
       });
+
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-server-1',
+          conversation_id: 'conv-1',
+          sender_type: 'customer',
+          message_type: 'reply',
+          content: 'Need help',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      const acknowledgedOptions = mockMount.mock.calls.at(-1)?.[1];
+      expect(acknowledgedOptions.messages.at(-1)?.id).toBe('msg-server-1');
+      expect(acknowledgedOptions.messages.at(-1)?.clientId).toBe(postSendOptions.messages.at(-1)?.clientId);
+      expect(acknowledgedOptions.messages.at(-1)?.deliveryStatus).toBeUndefined();
+      expect(acknowledgedOptions.isAIThinking).toBe(true);
     });
 
     it('clears optimistic AI thinking when a non-customer reply arrives', () => {
@@ -634,6 +670,7 @@ describe('WidgetManager', () => {
           sender_type: 'ai',
           message_type: 'reply',
           content: 'Here is what I found.',
+          metadata: JSON.stringify({ ai_reply_kind: 'answer' }),
           created_at: new Date().toISOString(),
         },
       });
@@ -641,6 +678,166 @@ describe('WidgetManager', () => {
       const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
       expect(latestOptions?.isAIThinking).toBe(false);
       expect(latestOptions?.messages.at(-1)?.content).toBe('Here is what I found.');
+      expect(latestOptions?.messages.at(-1)?.aiReplyKind).toBe('answer');
+    });
+
+    it('ignores an unsupported AI reply kind from message metadata', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: { aiEnabled: true, aiFirst: true },
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-ai',
+          conversation_id: 'conv-1',
+          sender_type: 'ai',
+          message_type: 'reply',
+          content: 'A response.',
+          metadata: JSON.stringify({ ai_reply_kind: 'unexpected' }),
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.messages.at(-1)?.aiReplyKind).toBeUndefined();
+    });
+
+    it('shows curated support progress copy without trusting arbitrary labels', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: { aiEnabled: true, aiFirst: true },
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+
+      (widget as any).handleWSMessage({
+        type: 'ai:progress',
+        data: {
+          conversation_id: 'conv-1',
+          stage: 'checking',
+          label: 'Leaked internal tool details',
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.isAIThinking).toBe(true);
+      expect(latestOptions?.aiProgressLabel).toBe('Checking the details…');
+    });
+
+    it('reveals sequenced reply chunks and replaces them with one canonical message', async () => {
+      vi.useFakeTimers();
+      try {
+        (widget as any).widgetConfig = {
+          workspaceId: 'ws_test',
+          branding: { primaryColor: '#6366f1' },
+          features: { aiEnabled: true, aiFirst: true },
+        };
+        (widget as any).mountContainer = document.createElement('div');
+        (widget as any).activeConversationId = 'conv-1';
+
+        (widget as any).handleWSMessage({
+          type: 'ai:response:start',
+          data: {
+            response_id: 'msg-stream',
+            conversation_id: 'conv-1',
+            sender_type: 'ai',
+            sender_name: 'Helpin AI',
+            created_at: '2026-08-11T19:00:00Z',
+          },
+        });
+        let latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        expect(latestOptions?.isAIThinking).toBe(false);
+        expect(latestOptions?.messages).toEqual([
+          expect.objectContaining({ id: 'msg-stream', content: '', isStreaming: true }),
+        ]);
+
+        (widget as any).handleWSMessage({
+          type: 'ai:response:delta',
+          data: { response_id: 'msg-stream', conversation_id: 'conv-1', sequence: 1, delta: 'Here is ' },
+        });
+        // A replayed sequence must not duplicate text.
+        (widget as any).handleWSMessage({
+          type: 'ai:response:delta',
+          data: { response_id: 'msg-stream', conversation_id: 'conv-1', sequence: 1, delta: 'Here is ' },
+        });
+        (widget as any).handleWSMessage({
+          type: 'ai:response:delta',
+          data: { response_id: 'msg-stream', conversation_id: 'conv-1', sequence: 2, delta: 'your answer.' },
+        });
+        (widget as any).handleWSMessage({
+          type: 'message:received',
+          data: {
+            id: 'msg-stream',
+            conversation_id: 'conv-1',
+            sender_type: 'ai',
+            message_type: 'reply',
+            content: 'Here is your answer.',
+            created_at: '2026-08-11T19:00:00Z',
+          },
+        });
+        (widget as any).handleWSMessage({
+          type: 'ai:response:complete',
+          data: { response_id: 'msg-stream', conversation_id: 'conv-1' },
+        });
+
+        await vi.advanceTimersByTimeAsync(45);
+        latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        expect(latestOptions?.messages[0]).toMatchObject({
+          id: 'msg-stream', content: 'Here is ', isStreaming: true,
+        });
+
+        await vi.advanceTimersByTimeAsync(45);
+        latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        expect(latestOptions?.messages).toHaveLength(1);
+        expect(latestOptions?.messages[0]).toMatchObject({
+          id: 'msg-stream', content: 'Here is your answer.',
+        });
+        expect(latestOptions?.messages[0].isStreaming).toBeUndefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('maps email projection fields from live message payloads', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-email',
+          conversation_id: 'conv-1',
+          sender_type: 'user',
+          content: 'Legacy fallback',
+          via_channel: 'email',
+          email_visible_text: 'Visible reply',
+          email_quoted_text: '',
+          email_has_quoted_content: false,
+          email_projection_confidence: 'none',
+          email_projection_version: 1,
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.messages.at(-1)).toMatchObject({
+        emailVisibleText: 'Visible reply',
+        emailQuotedText: '',
+        emailHasQuotedContent: false,
+        emailProjectionConfidence: 'none',
+        emailProjectionVersion: 1,
+      });
     });
 
     it('does not show optimistic AI thinking after a conversation is escalated to a human', () => {
@@ -677,6 +874,141 @@ describe('WidgetManager', () => {
         type: 'message:send',
         data: { content: 'Are you there?' },
       });
+    });
+  });
+
+  describe('offline message recovery', () => {
+    it('delays queue status, flushes offline messages, and clears them on acknowledgment', () => {
+      vi.useFakeTimers();
+      try {
+        const sent: string[] = [];
+        (widget as any).widgetKey = 'test-key';
+        (widget as any).widgetConfig = {
+          workspaceId: 'ws_test',
+          branding: { primaryColor: '#6366f1' },
+          features: {},
+        };
+        (widget as any).mountContainer = document.createElement('div');
+        (widget as any).activeConversationId = 'conv-1';
+        (widget as any).wsConnection = {
+          readyState: MockWebSocket.CLOSED,
+          send: (payload: string) => sent.push(payload),
+          close: vi.fn(),
+        };
+
+        (widget as any).render();
+        const offlineOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        offlineOptions.onSendMessage('Please send this later');
+
+        expect((widget as any).pendingOutgoingMessages).toHaveLength(1);
+        expect(JSON.parse(sessionStorage.getItem('helpin_pending_messages_test-key') || '[]')).toHaveLength(1);
+        expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(0);
+        vi.advanceTimersByTime(OUTGOING_STATUS_DELAY_MS_FOR_TEST);
+        expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(1);
+        expect(sent).toHaveLength(0);
+
+        (widget as any).wsConnection.readyState = MockWebSocket.OPEN;
+        (widget as any).connectionGeneration = 1;
+        (widget as any).flushPendingOutgoingMessages();
+
+        expect(sent.map((frame) => JSON.parse(frame))).toEqual([
+          { type: 'conversation:select', data: { conversation_id: 'conv-1' } },
+          { type: 'message:send', data: { content: 'Please send this later' } },
+        ]);
+
+        (widget as any).handleWSMessage({
+          type: 'message:received',
+          data: {
+            id: 'msg-server-1',
+            conversation_id: 'conv-1',
+            sender_type: 'customer',
+            message_type: 'reply',
+            content: 'Please send this later',
+            created_at: new Date().toISOString(),
+          },
+        });
+
+        expect((widget as any).pendingOutgoingMessages).toHaveLength(0);
+        expect(sessionStorage.getItem('helpin_pending_messages_test-key')).toBeNull();
+        expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].queuedMessageCount).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('restores a saved message into its conversation after a page reload', () => {
+      const queuedAt = Date.now();
+      sessionStorage.setItem('helpin_pending_messages_test-key', JSON.stringify([{
+        id: 'temp-restored',
+        content: 'Restored draft',
+        conversationId: 'conv-1',
+        queuedAt,
+        lastSentConnection: 4,
+      }]));
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).pendingOutgoingMessages = (widget as any).restorePendingOutgoingMessages();
+
+      (widget as any).restorePendingMessagesIntoThread();
+
+      expect((widget as any).messages).toContainEqual(expect.objectContaining({
+        id: 'temp-restored',
+        content: 'Restored draft',
+        conversationId: 'conv-1',
+      }));
+      expect((widget as any).pendingOutgoingMessages[0].lastSentConnection).toBe(-1);
+    });
+  });
+
+  describe('AI answer feedback', () => {
+    it('tracks useful feedback with message and conversation context', () => {
+      const track = vi.fn();
+      (globalThis as any).helpin = { track };
+      (widget as any).activeConversationId = 'conv-1';
+
+      (widget as any).handleAnswerFeedback('answer-1', false);
+
+      expect(track).toHaveBeenCalledWith('support_ai_answer_feedback', {
+        message_id: 'answer-1',
+        conversation_id: 'conv-1',
+        helpful: false,
+      });
+      delete (globalThis as any).helpin;
+    });
+  });
+
+  describe('conversation CSAT', () => {
+    it('tracks and persists a valid conversation rating', () => {
+      const track = vi.fn();
+      (globalThis as any).helpin = { track };
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).messages = [{ role: 'agent' }];
+
+      (widget as any).handleCsatSubmit(4, ' Helpful and quick ');
+
+      expect(localStorage.setItem).toHaveBeenCalledWith('helpin_csat_test-key_conv-1', '1');
+      expect(track).toHaveBeenCalledWith('support_conversation_csat', {
+        conversation_id: 'conv-1',
+        rating: 4,
+        feedback: 'Helpful and quick',
+        handled_by: 'human',
+      });
+      delete (globalThis as any).helpin;
+    });
+
+    it('exposes persisted CSAT state to the mounted widget', () => {
+      (localStorage.getItem as any).mockImplementation((key: string) => key === 'helpin_csat_test-key_conv-1' ? '1' : null);
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test', branding: { primaryColor: '#6366f1' }, features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+
+      (widget as any).render();
+
+      expect((mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1].csatSubmitted).toBe(true);
     });
   });
 
@@ -1031,6 +1363,11 @@ describe('WidgetManager', () => {
               sender_type: 'user',
               content: 'Email reply',
               via_channel: 'email',
+              email_visible_text: 'Fresh email reply',
+              email_quoted_text: 'Earlier email',
+              email_has_quoted_content: true,
+              email_projection_confidence: 'high',
+              email_projection_version: 1,
               created_at: new Date().toISOString(),
             },
           ],
@@ -1039,6 +1376,13 @@ describe('WidgetManager', () => {
 
       const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
       expect(latestOptions?.messages?.[0]?.viaChannel).toBe('email');
+      expect(latestOptions?.messages?.[0]).toMatchObject({
+        emailVisibleText: 'Fresh email reply',
+        emailQuotedText: 'Earlier email',
+        emailHasQuotedContent: true,
+        emailProjectionConfidence: 'high',
+        emailProjectionVersion: 1,
+      });
       expect((widget as any).activeConversationId).toBe('conv-2');
       expect((widget as any).currentView).toBe('conversation');
       expect((widget as any).isOpen).toBe(true);
@@ -1191,6 +1535,12 @@ describe('WidgetManager', () => {
         },
       });
       expect((widget as any).currentEmail).toBe('lead@example.com');
+      expect((widget as any).preChatDone).toBe(true);
+      expect((widget as any).messages).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: expect.stringContaining('prechat-confirm-') }),
+        ]),
+      );
     });
 
     it('upgrades an anonymous restored session when boot user email is provided', async () => {
@@ -1203,7 +1553,11 @@ describe('WidgetManager', () => {
       };
       (widget as any).config = {
         key: 'test-key',
-        user: { email: 'boot@example.com', name: 'Boot User' },
+        user: {
+          email: 'boot@example.com',
+          name: 'Boot User',
+          company: { id: 'account-boot', name: 'Boot Account', created_at: '2025-01-01' },
+        },
       };
       (widget as any).widgetKey = 'test-key';
 
@@ -1226,6 +1580,7 @@ describe('WidgetManager', () => {
           last_name: '',
           name: 'Boot User',
           source: 'sdk_identify',
+          company: { id: 'account-boot', name: 'Boot Account', created_at: '2025-01-01' },
         },
       });
       expect((widget as any).currentEmail).toBe('boot@example.com');
@@ -1390,6 +1745,27 @@ describe('WidgetManager', () => {
         type: 'conversations:list',
         data: {},
       });
+    });
+
+    it('consumes a pending article request when widget navigation leaves the article', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: {},
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).openArticleRequest = { key: 1, articleSlug: 'article-123' };
+
+      (widget as any).render();
+      const articleOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(articleOptions.openArticleRequest).toEqual({ key: 1, articleSlug: 'article-123' });
+
+      articleOptions.onViewChange('help');
+      (widget as any).render();
+
+      const helpOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(helpOptions.initialView).toBe('help');
+      expect(helpOptions.openArticleRequest).toBeUndefined();
     });
 
     it('updates cache and normalizes teammate payloads on config:updated', () => {

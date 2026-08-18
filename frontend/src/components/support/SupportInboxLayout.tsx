@@ -1,19 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft02Icon } from '@/lib/icons';
 import { useLocation, useNavigate, useParams } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
+import { useMinWidth } from '@/hooks/use-min-width';
 import { supportInboxBuiltinViewKey, useSupportInboxStore } from '@/stores/supportInboxStore';
-import { useSupportInboxViews, useSupportMailboxes, useSupportRoutingUsage } from '@/hooks/queries/useSupport';
+import { useConversation, useSupportInboxViews, useSupportMailboxes, useSupportRoutingUsage } from '@/hooks/queries/useSupport';
 import { ConversationList } from './ConversationList';
 import { MessageThread } from './MessageThread';
-import { ConversationDetailSidebar } from './ConversationDetailSidebar';
+import { buildSupportConversationPageContext } from './supportAgentContext';
+import { supportSidebarWidthClass } from './supportSidebarLayout';
+import { shouldClearConversationForMailbox } from './supportInboxSelection';
 import { NewConversationDialog } from './NewConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
 import { conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
+
+const LazySupportAgentSidebar = lazy(() => import('./SupportAgentSidebar').then((module) => ({ default: module.SupportAgentSidebar })));
+const LazyConversationDetailSidebar = lazy(() => import('./ConversationDetailSidebar').then((module) => ({ default: module.ConversationDetailSidebar })));
 
 function parseRouteStates(value: string | undefined, navFilter: ReturnType<typeof navFilterFromView>): ConversationStateFilter[] {
   if (!value) return defaultStatesForNav(navFilter);
@@ -90,9 +96,17 @@ export function SupportInboxLayout() {
     teamInboxDialogOpen,
     setTeamInboxDialogOpen,
     editMailboxId,
+    detailSidebarMode,
+    detailSidebarCollapsed,
+    setDetailSidebarMode,
   } = useSupportInboxStore();
   const { data: mailboxes = [] } = useSupportMailboxes(workspaceId);
   const { data: routingUsage } = useSupportRoutingUsage(workspaceId);
+  const { data: selectedConversation } = useConversation(workspaceId, selectedConversationId);
+  const supportAgentContext = useMemo(
+    () => buildSupportConversationPageContext(selectedConversation ?? (selectedConversationId ? { id: selectedConversationId } : null)),
+    [selectedConversation, selectedConversationId],
+  );
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { isAdmin } = usePermissions(access);
   const editMailbox = editMailboxId ? mailboxes.find((m) => m.id === editMailboxId) ?? null : null;
@@ -101,6 +115,7 @@ export function SupportInboxLayout() {
   const location = useLocation();
   const params = useParams({ strict: false }) as { conversationId?: string };
   const routeConversationId = params.conversationId ?? null;
+  const showDetailSidebar = useMinWidth(1280) && !!selectedConversationId;
   const routeSearch = useMemo(
     () => normalizeSupportInboxRouteSearch(location.search as Record<string, unknown>),
     [location.search],
@@ -112,7 +127,7 @@ export function SupportInboxLayout() {
   }, [navigate, slug]);
   const handleRoutingSettingsClick = useCallback(() => {
     if (!slug) return;
-    void navigate({ to: '/w/$slug/settings/inboxes-routing', params: { slug }, search: { tab: 'routing' } });
+    void navigate({ to: '/w/$slug/settings/inboxes-routing', params: { slug }, search: { tab: 'routing', create_inbox: false } });
   }, [navigate, slug]);
   const handleSupportSearchClick = useCallback(() => {
     if (!slug) return;
@@ -125,6 +140,12 @@ export function SupportInboxLayout() {
     }
     void navigate({ to: '/w/$slug/support/search', params: { slug }, search: {} as never });
   }, [navigate, slug]);
+  const handleCloseAgentSidebar = useCallback(() => {
+    setDetailSidebarMode('details');
+    window.setTimeout(() => {
+      document.querySelector<HTMLButtonElement>('[aria-label="Ask agents about this conversation"]')?.focus();
+    }, 0);
+  }, [setDetailSidebarMode]);
 
   const supportRouteSearch = useMemo(
     () => {
@@ -302,6 +323,22 @@ export function SupportInboxLayout() {
     }
   }, [routeConversationId, selectedConversationId, slug, supportRouteSearch, navigate]);
 
+  // A team inbox can become empty after its final conversation is moved or
+  // resolved. Do not leave a thread from a different mailbox selected beside
+  // that empty list.
+  useEffect(() => {
+    if (!selectedConversationId || !selectedConversation) return;
+    if (!shouldClearConversationForMailbox(selectedMailboxId, selectedConversation.mailbox_id)) return;
+
+    selectConversation(null);
+    void navigate({
+      to: '/w/$slug/support',
+      params: { slug },
+      search: supportRouteSearch,
+      replace: true,
+    });
+  }, [navigate, selectConversation, selectedConversation, selectedConversationId, selectedMailboxId, slug, supportRouteSearch]);
+
   if (!workspace) {
     return <p className="p-4 text-sm text-muted-foreground">Workspace not found.</p>;
   }
@@ -373,9 +410,42 @@ export function SupportInboxLayout() {
         </div>
 
         {/* Panel 3: Detail sidebar - hidden on mobile & tablet */}
-        <div className={`hidden ${selectedConversationId ? 'xl:flex' : ''}`}>
-          <ConversationDetailSidebar workspaceId={workspaceId} conversationId={selectedConversationId} />
-        </div>
+        {showDetailSidebar ? <div
+          className={`relative hidden shrink-0 overflow-hidden border-l border-border/70 transition-[width,flex-basis] duration-200 ease-out motion-reduce:transition-none ${
+            selectedConversationId ? 'xl:flex' : ''
+          } ${supportSidebarWidthClass(detailSidebarMode, detailSidebarCollapsed)}`}
+        >
+          <div
+            aria-hidden={detailSidebarMode === 'agents' || undefined}
+            inert={detailSidebarMode === 'agents'}
+            className={`absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+              detailSidebarMode === 'agents' ? 'pointer-events-none -translate-x-2 opacity-0' : 'translate-x-0 opacity-100'
+            }`}
+          >
+            {detailSidebarMode !== 'agents' ? (
+              <Suspense fallback={null}>
+                <LazyConversationDetailSidebar workspaceId={workspaceId} conversationId={selectedConversationId} />
+              </Suspense>
+            ) : null}
+          </div>
+          {supportAgentContext && detailSidebarMode === 'agents' ? (
+            <div
+              aria-hidden={detailSidebarMode !== 'agents' || undefined}
+              inert={detailSidebarMode !== 'agents'}
+              className={`absolute inset-0 transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+                detailSidebarMode === 'agents' ? 'translate-x-0 opacity-100' : 'pointer-events-none translate-x-2 opacity-0'
+              }`}
+            >
+              <Suspense fallback={null}>
+                <LazySupportAgentSidebar
+                  context={supportAgentContext}
+                  active={detailSidebarMode === 'agents'}
+                  onBack={handleCloseAgentSidebar}
+                />
+              </Suspense>
+            </div>
+          ) : null}
+        </div> : null}
       </div>
 
       <NewConversationDialog

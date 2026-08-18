@@ -21,11 +21,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Delete01Icon,
   FolderInputIcon,
   InboxIcon,
   Link01Icon,
+  Mail01Icon,
   MailOpenIcon,
   OctagonXIcon,
   PencilEdit01Icon,
@@ -38,6 +40,7 @@ import {
   useMoveConversation,
   useUpdateConversationStatus,
   useUpdateConversationSubject,
+  useSendConversationTranscript,
 } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -95,6 +98,23 @@ export function ConversationActionsMenu({
   const iconClassName = 'h-3.5 w-3.5';
   const [subjectDialogOpen, setSubjectDialogOpen] = useState(false);
   const [subjectDraft, setSubjectDraft] = useState(conversation.subject);
+  const [transcriptDialogOpen, setTranscriptDialogOpen] = useState(false);
+  const transcriptRecipients = Array.from(new Map([
+    conversation.customer_email,
+    conversation.suggested_primary_recipient_email,
+    ...(conversation.email_cc ?? []),
+    ...(conversation.email_thread_participants ?? []),
+  ].filter((email): email is string => !!email?.trim()).map((email) => [email.trim().toLowerCase(), email.trim()])).values());
+  const [transcriptEmail, setTranscriptEmail] = useState('');
+  const [updateCustomerEmail, setUpdateCustomerEmail] = useState(false);
+  const sendTranscript = useSendConversationTranscript(workspaceId);
+
+  useEffect(() => {
+    if (transcriptDialogOpen) {
+      setTranscriptEmail(transcriptRecipients[0] ?? '');
+      setUpdateCustomerEmail(!conversation.customer_email);
+    }
+  }, [transcriptDialogOpen, conversation.customer_email, transcriptRecipients.join('|')]);
 
   useEffect(() => {
     if (!subjectDialogOpen) {
@@ -181,6 +201,10 @@ export function ConversationActionsMenu({
           <DropdownMenuItem onClick={handleCopyLink} className={itemClassName}>
             <Link01Icon className={iconClassName} />
             Copy link
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTranscriptDialogOpen(true)} className={itemClassName}>
+            <Mail01Icon className={iconClassName} />
+            Email transcript
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleUpdateSubject} className={itemClassName}>
             <PencilEdit01Icon className={iconClassName} />
@@ -292,6 +316,43 @@ export function ConversationActionsMenu({
           </DialogContent>
         </Dialog>
       )}
+      <Dialog open={transcriptDialogOpen} onOpenChange={setTranscriptDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Email conversation transcript</DialogTitle>
+            <DialogDescription>Choose where to send a copy of this conversation.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {transcriptRecipients.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Recipient</div>
+                {transcriptRecipients.map((email) => (
+                  <label key={email} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input type="radio" name={`transcript-recipient-${conversation.id}`} value={email} checked={transcriptEmail === email} onChange={() => setTranscriptEmail(email)} />
+                    <span className="truncate">{email}</span>
+                  </label>
+                ))}
+                <Input value={transcriptRecipients.includes(transcriptEmail) ? '' : transcriptEmail} onChange={(event) => setTranscriptEmail(event.target.value)} placeholder="Or enter another email" />
+              </div>
+            )}
+            {transcriptRecipients.length === 0 && (
+              <Input value={transcriptEmail} onChange={(event) => setTranscriptEmail(event.target.value)} placeholder="recipient@example.com" autoFocus />
+            )}
+            {(!conversation.customer_email || transcriptEmail.trim().toLowerCase() !== conversation.customer_email.trim().toLowerCase()) && (
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox checked={updateCustomerEmail} onCheckedChange={(checked) => setUpdateCustomerEmail(checked === true)} />
+                <span>Also save this email to the visitor profile</span>
+              </label>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTranscriptDialogOpen(false)}>Cancel</Button>
+            <Button disabled={sendTranscript.isPending || !transcriptEmail.trim()} onClick={() => sendTranscript.mutate({ conversationId: conversation.id, email: transcriptEmail.trim(), updateCustomerEmail }, { onSuccess: (data) => { setTranscriptDialogOpen(false); toast.success(data.message || 'Transcript sent'); }, onError: (error: Error) => toast.error('Failed to send transcript', { description: error.message }) })}>
+              {sendTranscript.isPending ? 'Sending…' : 'Send transcript'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

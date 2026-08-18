@@ -19,6 +19,7 @@ const (
 	AgentPresetCodeBuilder        = "code_builder"
 	AgentPresetReviewAgent        = "review_agent"
 	AgentPresetCommandAgent       = "command_agent"
+	AgentPresetAskAgent           = "ask_agent"
 	// AgentPresetResearcher is a legacy alias accepted for old command-agent rows.
 	AgentPresetResearcher = "researcher"
 
@@ -36,12 +37,19 @@ const (
 	AgentRunTriggerTypeCommandBar = "command_bar"
 )
 
+// Native SDK tool-step limits mirror the bounds enforced by Agent Runtime.
+const (
+	MinNativeToolSteps = 1
+	MaxNativeToolSteps = 1000
+)
+
 // Agent represents an LLM agent in a workspace.
 type Agent struct {
 	ID                         string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID                string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	IsSystem                   bool            `json:"is_system" gorm:"not null;default:false"`
 	Name                       string          `json:"name" gorm:"not null"`
+	IconKey                    string          `json:"icon_key" gorm:"not null;default:''"`
 	PresetKey                  string          `json:"preset_key"`
 	PresetVersionKey           string          `json:"preset_version_key"`
 	SourcePresetKey            string          `json:"source_preset_key"`
@@ -165,45 +173,54 @@ func (AgentVersion) TableName() string { return "agent_versions" }
 
 // AgentRun represents a single execution run of an agent.
 type AgentRun struct {
-	ID                string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	AgentID           string          `json:"agent_id" gorm:"type:uuid;not null;index"`
-	TaskID            *string         `json:"task_id" gorm:"column:task_id;type:uuid"`
-	ConversationID    *string         `json:"conversation_id" gorm:"type:uuid"`
-	TargetType        string          `json:"target_type" gorm:"not null;default:'task';index"`
-	TargetID          string          `json:"target_id" gorm:"type:uuid;not null;index"`
-	RuntimeKind       string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
-	InvocationMode    string          `json:"invocation_mode" gorm:"not null;default:'autonomous'"`
-	ParentRunID       *string         `json:"parent_run_id" gorm:"type:uuid;index"`
-	HandoffState      *string         `json:"handoff_state"`
-	ApprovalState     string          `json:"approval_state" gorm:"not null;default:'not_required'"`
-	PauseReason       string          `json:"pause_reason" gorm:"not null;default:'none'"`
-	TriggeredByUserID *string         `json:"triggered_by_user_id" gorm:"type:uuid"`
-	Status            string          `json:"status" gorm:"not null;default:'queued'"`
-	WorkflowID        *string         `json:"workflow_id"`
-	WorkflowRunID     *string         `json:"workflow_run_id"`
-	TaskQueue         *string         `json:"task_queue"`
-	RunnerPool        *string         `json:"runner_pool"`
-	AgentVersionID    *string         `json:"agent_version_id,omitempty" gorm:"type:uuid;index"`
-	RepositoryID      *string         `json:"repository_id" gorm:"type:uuid;index"`
-	RepoFullName      *string         `json:"repo_full_name"`
-	BaseBranch        *string         `json:"base_branch"`
-	WorkingBranch     *string         `json:"working_branch"`
-	DeliveryTargetID  *string         `json:"delivery_target_id" gorm:"type:uuid;index"`
-	ExecutionStage    *string         `json:"execution_stage"`
-	LastHeartbeatAt   *time.Time      `json:"last_heartbeat_at"`
-	Input             json.RawMessage `json:"input" gorm:"type:jsonb;not null;default:'{}'"`
-	OutputSummary     json.RawMessage `json:"output_summary" gorm:"type:jsonb;not null;default:'{}'"`
-	CachedInputTokens int             `json:"cached_input_tokens" gorm:"not null;default:0"`
-	InputTokens       int             `json:"input_tokens" gorm:"not null;default:0"`
-	OutputTokens      int             `json:"output_tokens" gorm:"not null;default:0"`
-	TokensUsed        int             `json:"tokens_used" gorm:"not null;default:0"`
-	ErrorMessage      *string         `json:"error_message"`
-	StartedAt         *time.Time      `json:"started_at"`
-	CompletedAt       *time.Time      `json:"completed_at"`
-	CreatedAt         time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt         time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
-	TargetInfo        *AgentRunTarget `json:"target_info,omitempty" gorm:"-"`
+	ID                string                  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string                  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	AgentID           string                  `json:"agent_id" gorm:"type:uuid;not null;index"`
+	TaskID            *string                 `json:"task_id" gorm:"column:task_id;type:uuid"`
+	ConversationID    *string                 `json:"conversation_id" gorm:"type:uuid"`
+	TargetType        string                  `json:"target_type" gorm:"not null;default:'task';index"`
+	TargetID          string                  `json:"target_id" gorm:"type:uuid;not null;index"`
+	RuntimeKind       string                  `json:"runtime_kind" gorm:"not null;default:'opencode'"`
+	InvocationMode    string                  `json:"invocation_mode" gorm:"not null;default:'autonomous'"`
+	ParentRunID       *string                 `json:"parent_run_id" gorm:"type:uuid;index"`
+	DockChatID        *string                 `json:"dock_chat_id,omitempty" gorm:"type:uuid;index"`
+	HandoffState      *string                 `json:"handoff_state"`
+	ApprovalState     string                  `json:"approval_state" gorm:"not null;default:'not_required'"`
+	PauseReason       string                  `json:"pause_reason" gorm:"not null;default:'none'"`
+	TriggeredByUserID *string                 `json:"triggered_by_user_id" gorm:"type:uuid"`
+	Status            string                  `json:"status" gorm:"not null;default:'queued'"`
+	WorkflowID        *string                 `json:"workflow_id"`
+	WorkflowRunID     *string                 `json:"workflow_run_id"`
+	ExternalRuntime   *string                 `json:"external_runtime,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:1,where:external_runtime_id IS NOT NULL"`
+	ExternalRuntimeID *string                 `json:"external_runtime_id,omitempty" gorm:"uniqueIndex:idx_agent_runs_external_runtime_pair,priority:2,where:external_runtime_id IS NOT NULL"`
+	TaskQueue         *string                 `json:"task_queue"`
+	RunnerPool        *string                 `json:"runner_pool"`
+	AgentVersionID    *string                 `json:"agent_version_id,omitempty" gorm:"type:uuid;index"`
+	RepositoryID      *string                 `json:"repository_id" gorm:"type:uuid;index"`
+	RepoFullName      *string                 `json:"repo_full_name"`
+	BaseBranch        *string                 `json:"base_branch"`
+	WorkingBranch     *string                 `json:"working_branch"`
+	DeliveryTargetID  *string                 `json:"delivery_target_id" gorm:"type:uuid;index"`
+	ExecutionStage    *string                 `json:"execution_stage"`
+	LastHeartbeatAt   *time.Time              `json:"last_heartbeat_at"`
+	Input             json.RawMessage         `json:"input" gorm:"type:jsonb;not null;default:'{}'"`
+	OutputSummary     json.RawMessage         `json:"output_summary" gorm:"type:jsonb;not null;default:'{}'"`
+	CachedInputTokens int                     `json:"cached_input_tokens" gorm:"not null;default:0"`
+	InputTokens       int                     `json:"input_tokens" gorm:"not null;default:0"`
+	OutputTokens      int                     `json:"output_tokens" gorm:"not null;default:0"`
+	TokensUsed        int                     `json:"tokens_used" gorm:"not null;default:0"`
+	ErrorMessage      *string                 `json:"error_message"`
+	StartedAt         *time.Time              `json:"started_at"`
+	CompletedAt       *time.Time              `json:"completed_at"`
+	CreatedAt         time.Time               `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt         time.Time               `json:"updated_at" gorm:"autoUpdateTime"`
+	TargetInfo        *AgentRunTarget         `json:"target_info,omitempty" gorm:"-"`
+	MCPAttribution    *MCPAgentRunAttribution `json:"mcp_attribution,omitempty" gorm:"-"`
+}
+
+// AgentRunAttentionCountResponse is the lightweight sidebar badge response.
+type AgentRunAttentionCountResponse struct {
+	Count int64 `json:"count"`
 }
 
 // AgentRunTarget is a computed sidecar with resolved display info for the
@@ -265,6 +282,7 @@ func (AgentTriggerExecution) TableName() string { return "agent_trigger_executio
 type CreateAgentRequest struct {
 	WorkspaceID           string          `json:"workspace_id"`
 	Name                  string          `json:"name"`
+	IconKey               *string         `json:"icon_key"`
 	PresetKey             *string         `json:"preset_key"`
 	PresetVersionKey      *string         `json:"preset_version_key"`
 	Role                  string          `json:"role"`
@@ -326,6 +344,7 @@ type CustomAgentDraftLLMResponse struct {
 // UpdateAgentRequest is the payload for updating an agent.
 type UpdateAgentRequest struct {
 	Name                  *string         `json:"name"`
+	IconKey               *string         `json:"icon_key"`
 	PresetKey             *string         `json:"preset_key"`
 	PresetVersionKey      *string         `json:"preset_version_key"`
 	Role                  *string         `json:"role"`
@@ -486,11 +505,16 @@ const (
 	AgentRunStatusCancelled = "cancelled"
 )
 
+const AgentRunArtifactTypeToolCall = "tool_call"
+const AgentRunArtifactTypeBrowserScreenshot = "browser_screenshot"
+const AgentRunArtifactTypeBrowserRecording = "browser_recording"
+
 const (
 	AgentRunPauseReasonNone           = "none"
 	AgentRunPauseReasonHumanInput     = "human_input"
 	AgentRunPauseReasonHumanApproval  = "human_approval"
 	AgentRunPauseReasonAuthentication = "authentication"
+	AgentRunPauseReasonUserMessage    = "awaiting_user_message"
 )
 
 const (
@@ -543,7 +567,7 @@ func IsAgentRunActiveStatus(status string) bool {
 
 func normalizeAgentRunPauseReason(status string, pauseReason string, approvalState string, executionStage *string) string {
 	switch strings.TrimSpace(pauseReason) {
-	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication:
+	case AgentRunPauseReasonHumanInput, AgentRunPauseReasonHumanApproval, AgentRunPauseReasonAuthentication, AgentRunPauseReasonUserMessage:
 		return strings.TrimSpace(pauseReason)
 	}
 	if strings.TrimSpace(approvalState) == "pending" {
@@ -611,6 +635,13 @@ type AgentRunTargetContext struct {
 	TargetID   string `json:"target_id,omitempty"`
 }
 
+// AgentRunContextReference identifies a workspace object explicitly attached
+// to a chat turn. It is execution context, not model-only prompt text.
+type AgentRunContextReference struct {
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+}
+
 type AgentRunGitHubReleaseEventContext struct {
 	TagName         string     `json:"tag_name,omitempty"`
 	TargetCommitish string     `json:"target_commitish,omitempty"`
@@ -659,25 +690,33 @@ type AgentRunOutputContext struct {
 	IdempotencyKey string  `json:"idempotency_key,omitempty"`
 }
 
+type AgentRunWorkspaceContext struct {
+	Name                  string `json:"name,omitempty"`
+	WebsiteURL            string `json:"website_url,omitempty"`
+	CompanyProductContext string `json:"company_product_context,omitempty"`
+}
+
 // AgentRunInputPayload is the shared input contract for all agent runs.
 // It preserves legacy top-level IDs and planning fields while adding
 // explicit trigger/target/event metadata for generic launches.
 type AgentRunInputPayload struct {
-	Trigger             *AgentRunTriggerContext `json:"trigger,omitempty"`
-	Target              *AgentRunTargetContext  `json:"target,omitempty"`
-	Event               *AgentRunEventContext   `json:"event,omitempty"`
-	Output              *AgentRunOutputContext  `json:"output,omitempty"`
-	StoryID             string                  `json:"story_id,omitempty"`
-	EpicID              string                  `json:"epic_id,omitempty"`
-	ConversationID      string                  `json:"conversation_id,omitempty"`
-	AdditionalContext   string                  `json:"additional_context,omitempty"`
-	AllowedTools        []string                `json:"allowed_tools,omitempty"`
-	Stage               string                  `json:"stage,omitempty"`
-	PlanDocumentID      string                  `json:"plan_document_id,omitempty"`
-	SpecDocumentID      string                  `json:"spec_document_id,omitempty"`
-	SpecVersionID       string                  `json:"spec_version_id,omitempty"`
-	PlanningMethodology string                  `json:"planning_methodology,omitempty"`
-	FlowOutputKind      string                  `json:"flow_output_kind,omitempty"`
+	Trigger             *AgentRunTriggerContext    `json:"trigger,omitempty"`
+	Target              *AgentRunTargetContext     `json:"target,omitempty"`
+	Event               *AgentRunEventContext      `json:"event,omitempty"`
+	Output              *AgentRunOutputContext     `json:"output,omitempty"`
+	WorkspaceContext    *AgentRunWorkspaceContext  `json:"workspace_context,omitempty"`
+	AttachedContexts    []AgentRunContextReference `json:"attached_contexts,omitempty"`
+	StoryID             string                     `json:"story_id,omitempty"`
+	EpicID              string                     `json:"epic_id,omitempty"`
+	ConversationID      string                     `json:"conversation_id,omitempty"`
+	AdditionalContext   string                     `json:"additional_context,omitempty"`
+	AllowedTools        []string                   `json:"allowed_tools,omitempty"`
+	Stage               string                     `json:"stage,omitempty"`
+	PlanDocumentID      string                     `json:"plan_document_id,omitempty"`
+	SpecDocumentID      string                     `json:"spec_document_id,omitempty"`
+	SpecVersionID       string                     `json:"spec_version_id,omitempty"`
+	PlanningMethodology string                     `json:"planning_methodology,omitempty"`
+	FlowOutputKind      string                     `json:"flow_output_kind,omitempty"`
 }
 
 func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
@@ -706,7 +745,8 @@ func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
 }
 
 type SendAgentRunMessageRequest struct {
-	Content string `json:"content"`
+	Content         string `json:"content"`
+	ClientMessageID string `json:"client_message_id,omitempty"`
 }
 
 type ContinueAgentRunRequest struct {
@@ -722,6 +762,7 @@ type ResumeAgentRunRequest struct {
 	Content         string          `json:"content,omitempty"`
 	SendMessage     bool            `json:"send_message,omitempty"`
 	ResponsePayload json.RawMessage `json:"response_payload,omitempty"`
+	ClientMessageID string          `json:"client_message_id,omitempty"`
 }
 
 // RuntimeProfile describes the policy attached to a capability profile.
@@ -774,6 +815,7 @@ type AgentPresetDefinition struct {
 type AgentModelProviderOption struct {
 	Value                     string   `json:"value"`
 	Label                     string   `json:"label"`
+	DefaultModel              string   `json:"default_model"`
 	ModelPlaceholder          string   `json:"model_placeholder"`
 	SupportsReasoningEffort   bool     `json:"supports_reasoning_effort"`
 	SupportedReasoningEfforts []string `json:"supported_reasoning_efforts,omitempty"`
@@ -784,6 +826,7 @@ type AgentModelProviderOption struct {
 type AgentExecutionConfig struct {
 	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
 	ServiceTier     *string `json:"service_tier,omitempty"`
+	MaxToolSteps    *int    `json:"max_tool_steps,omitempty"`
 }
 
 type AgentSkillRef struct {
@@ -808,6 +851,35 @@ type AgentAnalyticsResponse struct {
 	Range  string                `json:"range"`
 	Bucket string                `json:"bucket"`
 	Series []AgentAnalyticsPoint `json:"series"`
+}
+
+// AgentFleetStats is the compact run summary used by the agents overview.
+// It intentionally contains list-safe AgentRun projections rather than full
+// run detail payloads.
+type AgentFleetStats struct {
+	RecentRuns      int        `json:"recent_runs"`
+	RecentCompleted int        `json:"recent_completed"`
+	RecentFailed    int        `json:"recent_failed"`
+	RecentTokens    int        `json:"recent_tokens"`
+	LastRun         *AgentRun  `json:"last_run,omitempty"`
+	AttentionRun    *AgentRun  `json:"attention_run,omitempty"`
+	AttentionCount  int        `json:"attention_count"`
+	RecentRunItems  []AgentRun `json:"recent_run_items"`
+}
+
+// AgentFleetItem combines the existing agent card data with the compact
+// runtime and trigger-binding summaries needed by the fleet page.
+type AgentFleetItem struct {
+	Agent Agent                    `json:"agent"`
+	Stats AgentFleetStats          `json:"stats"`
+	Usage AgentTriggerUsageSummary `json:"usage"`
+}
+
+// AgentFleetResponse is the page-specific read model for the agents overview.
+type AgentFleetResponse struct {
+	GeneratedAt     time.Time        `json:"generated_at"`
+	WindowStartedAt time.Time        `json:"window_started_at"`
+	Agents          []AgentFleetItem `json:"agents"`
 }
 
 func (r AgentSkillRef) Normalize() AgentSkillRef {
@@ -975,7 +1047,7 @@ func (c AgentExecutionConfig) Normalize() AgentExecutionConfig {
 
 func (c AgentExecutionConfig) IsZero() bool {
 	normalized := c.Normalize()
-	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil
+	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil && normalized.MaxToolSteps == nil
 }
 
 func ParseAgentExecutionConfig(raw []byte) (AgentExecutionConfig, error) {

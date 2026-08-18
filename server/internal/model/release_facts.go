@@ -80,6 +80,7 @@ type FindTasksForGitChangesResult struct {
 
 type GetTaskContextRequest struct {
 	TaskIDs                []string `json:"task_ids"`
+	TaskKeys               []string `json:"task_keys,omitempty"`
 	IncludeLinkedDocs      bool     `json:"include_linked_docs,omitempty"`
 	IncludeDocumentContent bool     `json:"include_document_content,omitempty"`
 	IncludeComments        bool     `json:"include_comments,omitempty"`

@@ -1,8 +1,12 @@
-import { useState, useEffect, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { Outlet } from '@tanstack/react-router'
 import { TopBar } from './TopBar'
-import { SearchDialog } from '@/components/search/SearchDialog'
 import { useDocsContext } from '@/contexts/DocsContext'
+
+const SearchDialog = lazy(async () => {
+  const module = await import('@/components/search/SearchDialog')
+  return { default: module.SearchDialog }
+})
 
 const WIDGET_SCRIPT_ID = 'helpin-widget'
 const WIDGET_SCRIPT_SRC = import.meta.env.VITE_WIDGET_SCRIPT_URL || 'https://cdn.helpin.ai/lib.js'
@@ -28,9 +32,24 @@ function HelpCenterChatWidget() {
     script.setAttribute('data-widget-key', widgetKey)
     script.setAttribute('data-host', WIDGET_HOST)
     script.src = WIDGET_SCRIPT_SRC
-    document.body.appendChild(script)
+    let timeoutID: ReturnType<typeof setTimeout> | undefined
+    let idleID: number | undefined
+    const appendScript = () => {
+      if (!document.getElementById(WIDGET_SCRIPT_ID)) {
+        document.body.appendChild(script)
+      }
+    }
+    if ('requestIdleCallback' in window) {
+      idleID = window.requestIdleCallback(appendScript, { timeout: 3000 })
+    } else {
+      timeoutID = globalThis.setTimeout(appendScript, 1500)
+    }
 
     return () => {
+      if (idleID !== undefined && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleID)
+      }
+      if (timeoutID !== undefined) globalThis.clearTimeout(timeoutID)
       script.remove()
     }
   }, [config.chat_widget_enabled, config.is_published, config.support_widget_key])
@@ -69,7 +88,11 @@ export function AppShell() {
       <div className="flex-1">
         <Outlet />
       </div>
-      <SearchDialog open={searchOpen} onClose={closeSearch} />
+      {searchOpen && (
+        <Suspense fallback={null}>
+          <SearchDialog open onClose={closeSearch} />
+        </Suspense>
+      )}
       <HelpCenterChatWidget />
     </div>
   )

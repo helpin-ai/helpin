@@ -4,9 +4,123 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
+
+func TestManagedDocumentPromptsRequireArtifactInsertionTool(t *testing.T) {
+	documentationPrompt := defaultSystemPromptForPreset(model.AgentPresetDocumentationAgent)
+	if documentationPrompt == nil {
+		t.Fatal("expected documentation prompt")
+	}
+	prompts := map[string]string{
+		"ask agent":           askAgentSystemPrompt(),
+		"documentation agent": *documentationPrompt,
+	}
+	for name, prompt := range prompts {
+		for _, required := range []string{
+			"Required document artifact embedding policy",
+			"write_document_content does not embed",
+			"call insert_document_artifact",
+			"Use artifact_id, not artifact_ref",
+			"Do not claim an artifact is embedded until insert_document_artifact succeeds",
+		} {
+			if !strings.Contains(prompt, required) {
+				t.Fatalf("%s prompt missing %q:\n%s", name, required, prompt)
+			}
+		}
+	}
+}
+
+func TestManagedAskAgentExecutionPolicyPrefersNarrowRepositoryReads(t *testing.T) {
+	prompt := agentcontract.EnsureAskAgentExecutionPolicy(model.AgentPresetAskAgent, askAgentSystemPrompt())
+	for _, required := range []string{
+		"Before checkout_repositories, call list_repositories",
+		"returned repository_id (preferred) or exact repo_full_name",
+		"Never pass a display name or bare repository name",
+		"use read_symbol directly when you know a declaration name",
+		"locate exact files or lines with repository_search or list_symbols",
+		"use read_files for bounded known spans",
+		"use list_symbols before paging through a file when you do not know the declaration name",
+		"continue exactly from next_start_line; do not restart the same range or increase limit_lines",
+		"Use trace_symbol for callers or callees",
+		"Do not use reads for broad exploration or re-read a whole file",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("Ask Agent prompt missing repository navigation guidance %q:\n%s", required, prompt)
+		}
+	}
+}
+
+func TestManagedAskAgentExecutionPolicyIsEfficientAndAlwaysCurrent(t *testing.T) {
+	tests := []struct {
+		name   string
+		prompt string
+	}{
+		{name: "managed", prompt: askAgentSystemPrompt()},
+		{name: "custom", prompt: "You are the workspace concierge. Preserve this custom identity."},
+		{name: "stale header", prompt: "Custom identity.\n\n## Required Ask Agent execution policy\n\nUse the old rules."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := &model.Agent{
+				PresetKey:    model.AgentPresetAskAgent,
+				RuntimeKind:  "native_sdk",
+				SystemPrompt: &tt.prompt,
+			}
+			effective := runtimeAgentFromHelpinAgent(agent, "helpin").SystemPrompt
+			for _, required := range []string{
+				"## Required Ask Agent execution policy v2",
+				"Begin with the smallest targeted action",
+				"After every tool result",
+				"resolve a material uncertainty",
+				"Do not explore merely to build a complete picture",
+				"Distinguish confirmed findings",
+				"Do not announce routine tool calls",
+			} {
+				if !strings.Contains(effective, required) {
+					t.Fatalf("effective Ask prompt missing %q:\n%s", required, effective)
+				}
+			}
+			if count := strings.Count(effective, "## Required Ask Agent execution policy v2"); count != 1 {
+				t.Fatalf("current Ask execution policy count = %d, want 1:\n%s", count, effective)
+			}
+		})
+	}
+
+	once := agentcontract.EnsureAskAgentExecutionPolicy(model.AgentPresetAskAgent, "Custom identity.")
+	twice := agentcontract.EnsureAskAgentExecutionPolicy(model.AgentPresetAskAgent, once)
+	if count := strings.Count(twice, "## Required Ask Agent execution policy v2"); count != 1 {
+		t.Fatalf("repeated Ask policy assembly count = %d, want 1:\n%s", count, twice)
+	}
+}
+
+func TestAskAgentPresetPromptDoesNotDuplicateProductExecutionPolicy(t *testing.T) {
+	prompt := askAgentSystemPrompt()
+	for _, duplicated := range []string{
+		"Prefer doing sequential work yourself",
+		"For complex or long requests, call update_plan early",
+		"Do not delegate merely because a request has multiple steps",
+	} {
+		if strings.Contains(prompt, duplicated) {
+			t.Fatalf("Ask preset prompt duplicates product execution policy %q:\n%s", duplicated, prompt)
+		}
+	}
+}
+
+func TestAskAgentDoesNotRetryPricingConfigurationFailures(t *testing.T) {
+	prompt := askAgentSystemPrompt()
+	for _, required := range []string{
+		"model unavailable under current pricing",
+		"pricing configuration missing",
+		"non-retriable",
+		"do not retry it through another agent, target, or launch method",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("Ask Agent prompt missing non-retriable pricing guidance %q", required)
+		}
+	}
+}
 
 func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testing.T) {
 	prompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
@@ -25,10 +139,10 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"If an approved spec exists and no tasks exist yet:",
 		"If no approved spec exists but a draft PRD already exists:",
 		"If approved PRD persistence is already complete:",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishPRDDraft) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlan) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestUserInput) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestApproval) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishPRDDraft) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlan) + "`",
 		"Use `isOther: true` instead of adding an explicit Other option.",
 		"`files_to_modify` must be an array of objects",
 		"\"name\": \"Add tracking helper\"",
@@ -38,9 +152,14 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 		"The value of `content` must be a JSON object.",
 		"Inside `proposed_tasks`, use the canonical field names `name` and `task_type`.",
 		"Use `dependency_refs` only for refs that appear elsewhere in the same `proposed_tasks` array.",
-		"`" + worker.RuntimeToolNameForPrompt("list_workspace_teams") + "`",
-		"platform will persist the approved PRD artifact",
-		"platform will apply the approved task plan artifact and create the tasks",
+		"load the `task_plan_publishing` skill with `" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolReadSkill) + "` before publishing or requesting approval",
+		"`" + agentcontract.RuntimeToolNameForPrompt("list_workspace_teams") + "`",
+		"Call `" + agentcontract.RuntimeToolNameForPrompt("ensure_epic_spec_doc") + "` with `{}`",
+		"Call `" + agentcontract.RuntimeToolNameForPrompt("write_document_content") + "` with that `document_id`",
+		"Call `" + agentcontract.RuntimeToolNameForPrompt("approve_epic_spec") + "` with `{}`",
+		"Continue to task planning only after all three product tool calls succeed.",
+		"call `" + agentcontract.RuntimeToolNameForPrompt("create_task_batch") + "` with the full approved `proposed_tasks` array",
+		"Do not claim the task plan was applied based on approval alone.",
 		"Only treat the phase as approved when the human gives a clear, explicit approval.",
 		"Do not complete the run immediately after PRD approval.",
 		"Do not end the run with a prose-only acknowledgement after change feedback.",
@@ -72,15 +191,17 @@ func TestTaskPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 
 	for _, snippet := range []string{
 		"You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "`",
-		"call `" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`, then call `" + worker.RuntimeToolNameForPrompt(worker.ToolRequestApproval) + "` with `phase=\"task_doc\"`, then stop.",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestUserInput) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestApproval) + "`",
+		"call `" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc) + "`, then call `" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestApproval) + "` with `phase=\"task_doc\"`, then stop.",
 		"\"phase\": \"prd|tasks|task_doc\"",
 		"`content` is required and must contain the full current markdown draft being reviewed.",
 		"Never call the tool with only `title` or with empty `content`.",
-		"platform will persist and link the approved preview",
-		"Revise the active planning document, republish the full replacement draft with `" + worker.RuntimeToolNameForPrompt(worker.ToolPublishTaskPlanDoc) + "`, and request another approval request with `phase=\"task_doc\"` when the revision is ready.",
+		"After approval, call `" + agentcontract.RuntimeToolNameForPrompt("ensure_task_plan_doc") + "` with `{}`.",
+		"Call `" + agentcontract.RuntimeToolNameForPrompt("write_document_content") + "` with that `document_id` and the full approved markdown draft as `content`.",
+		"Do not claim the document was persisted or attached based on the approval alone.",
+		"Revise the active planning document, republish the full replacement draft with `" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc) + "`, and request another approval request with `phase=\"task_doc\"` when the revision is ready.",
 		"Produce a planning document, not code.",
 		"keep repository interactions read-only",
 		"Do not modify code, create files, apply patches, or change git state in this run.",
@@ -98,11 +219,17 @@ func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
 	}
 	for _, snippet := range []string{
 		"You are Lens, the workspace reviewer.",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestUserInput) + "`",
-		"`" + worker.RuntimeToolNameForPrompt(worker.ToolRequestReviewCheckpoint) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestUserInput) + "`",
+		"`" + agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestReviewCheckpoint) + "`",
 		"Treat review as an interactive loop, not a one-shot report.",
 		"After the initial findings pass, produce a `review_checkpoint` handoff and stop.",
-		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",
+		"Do not finish immediately after the initial findings pass unless the latest human reply clearly says the review is done",
+		"Do not ask for the same missing value again in the current run.",
+		"Do not offer a selectable option whose label merely promises to provide it",
+		"Ask at most once for a missing path, credential, deployment configuration, or other dependency outside the available workspace.",
+		"Treat an inaccessible external dependency as a delivery blocker, not as a new review finding.",
+		"finish whenever no useful in-scope action remains; an explicit \"done\" reply is not required.",
+		"If an approved finding remains blocked only by an unavailable external dependency, report the partial completion and blocker once and finish as well.",
 		"If the human asks you to implement changes based on the review",
 	} {
 		if !strings.Contains(*prompt, snippet) {
@@ -172,6 +299,12 @@ func TestLegacyPromptIsManaged(t *testing.T) {
 			name:      "review agent branded prompt",
 			presetKey: model.AgentPresetReviewAgent,
 			prompt:    "You are Review Agent for Helpin.\n- Inspect the relevant code and run targeted validation when possible.",
+			want:      true,
+		},
+		{
+			name:      "persisted Echo default prompt",
+			presetKey: model.AgentPresetSupportAgent,
+			prompt:    "You are Echo, the workspace support agent. You are chatting live with a customer inside a support conversation.\nEvery turn MUST end with exactly one call to send_support_reply.\nFor any factual or product question, call search_knowledge FIRST.",
 			want:      true,
 		},
 		{

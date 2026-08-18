@@ -81,6 +81,77 @@ describe('ChatWindow', () => {
     expect(windowEl.style.right).toBe('');
   });
 
+  it('uses the current light and dark themes when the color scheme follows the system', () => {
+    let prefersDark = false;
+    let notifyThemeChange: (() => void) | undefined;
+    const removeEventListener = vi.fn();
+
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      get matches() {
+        return prefersDark;
+      },
+      media: '(prefers-color-scheme: dark)',
+      onchange: null,
+      addEventListener: vi.fn((_event: string, listener: () => void) => {
+        notifyThemeChange = listener;
+      }),
+      removeEventListener,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+
+    const { container, unmount } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          branding: {
+            ...baseConfig.branding,
+            colorScheme: 'system',
+          },
+        }}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    const windowEl = container.querySelector('.helpin-chat-window') as HTMLElement;
+    expect(windowEl.className).toContain('helpin-theme-light');
+    expect(windowEl.className).not.toContain('helpin-theme-system');
+
+    prefersDark = true;
+    act(() => notifyThemeChange?.());
+    expect(windowEl.className).toContain('helpin-theme-dark');
+
+    unmount();
+    expect(removeEventListener).toHaveBeenCalledWith('change', expect.any(Function));
+  });
+
+  it('uses the configured brand color and a contrasting icon color for the active rail item', () => {
+    const { container } = render(
+      <ChatWindow
+        config={baseConfig}
+        messages={[]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+      />,
+    );
+
+    const navigation = container.querySelector('.helpin-bottom-nav') as HTMLElement;
+    expect(navigation.style.getPropertyValue('--helpin-nav-active-color')).toBe('#6366f1');
+    expect(navigation.style.getPropertyValue('--helpin-nav-active-foreground')).toBe('#ffffff');
+    expect(container.querySelector('.helpin-bottom-nav-item--active')?.getAttribute('aria-current')).toBe('page');
+  });
+
   it('keeps the window mounted briefly while closing for the exit transition', () => {
     vi.useFakeTimers();
 
@@ -188,7 +259,7 @@ describe('ChatWindow', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 
-  it('renders powered-by text without the Helpin logo mark', () => {
+  it('renders the Helpin logo mark with the powered-by text', () => {
     const { container, getByText } = render(
       <ChatWindow
         config={baseConfig}
@@ -204,8 +275,21 @@ describe('ChatWindow', () => {
 
     expect(getByText('Powered by')).toBeTruthy();
     expect(getByText('Helpin')).toBeTruthy();
-    expect(container.querySelector('.helpin-powered-by img')).toBeNull();
-    expect(container.querySelector('.helpin-powered-by-icon')).toBeNull();
+    const attribution = container.querySelector('a.helpin-powered-by.helpin-brand-attribution');
+    expect(attribution).not.toBeNull();
+    const attributionUrl = new URL(attribution?.getAttribute('href') ?? '');
+    expect(attributionUrl.searchParams.get('utm_source')).toBe('acme-ws-123');
+    expect(attributionUrl.searchParams.get('utm_medium')).toBe('referral');
+    expect(attributionUrl.searchParams.get('utm_campaign')).toBe('powered_by_helpin');
+    expect(attributionUrl.searchParams.get('utm_content')).toBe('chat_widget_footer');
+    expect(attribution?.getAttribute('href')).not.toContain('amp;');
+    expect(attribution?.children).toHaveLength(2);
+    expect(attribution?.querySelector('.helpin-brand-attribution-brand')).not.toBeNull();
+    const mark = attribution?.querySelector('.helpin-brand-attribution-icon');
+    expect(mark).not.toBeNull();
+    expect(mark?.tagName.toLowerCase()).toBe('svg');
+    expect(mark?.getAttribute('fill')).toBe('currentColor');
+    expect(mark?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('uses the inline header close button instead of a floating close button in help docs subviews', () => {
@@ -339,6 +423,63 @@ describe('ChatWindow', () => {
     expect(queryByText('Contact us')).toBeNull();
   });
 
+  it('does not reopen a programmatically opened article after navigating to Messages', () => {
+    const openArticleRequest = { key: 1, articleSlug: 'getting-started' };
+    const widgetProps = {
+      config: baseConfig,
+      messages: [],
+      isOpen: true,
+      onClose: () => {},
+      onSendMessage: () => {},
+      onQuickReply: () => {},
+      showPreChatForm: false,
+      onPreChatSubmit: () => {},
+      host: 'https://example.com',
+      widgetKey: 'widget-key',
+      openArticleRequest,
+    };
+    const { container, getByText, rerender } = render(
+      <ChatWindow {...widgetProps} onViewChange={vi.fn()} />,
+    );
+
+    expect(container.querySelector('.helpin-article-view')).toBeTruthy();
+    fireEvent.click(getByText('Messages'));
+    expect(container.querySelector('.helpin-messages-view')).toBeTruthy();
+
+    rerender(<ChatWindow {...widgetProps} onViewChange={vi.fn()} />);
+
+    expect(container.querySelector('.helpin-messages-view')).toBeTruthy();
+    expect(container.querySelector('.helpin-article-view')).toBeNull();
+  });
+
+  it('does not reopen a programmatically opened article after navigating back', () => {
+    const openArticleRequest = { key: 1, articleSlug: 'getting-started' };
+    const widgetProps = {
+      config: baseConfig,
+      messages: [],
+      isOpen: true,
+      onClose: () => {},
+      onSendMessage: () => {},
+      onQuickReply: () => {},
+      showPreChatForm: false,
+      onPreChatSubmit: () => {},
+      host: 'https://example.com',
+      widgetKey: 'widget-key',
+      openArticleRequest,
+    };
+    const { container, getByLabelText, rerender } = render(
+      <ChatWindow {...widgetProps} onViewChange={vi.fn()} />,
+    );
+
+    fireEvent.click(getByLabelText('Back'));
+    expect(container.querySelector('.helpin-help-view')).toBeTruthy();
+
+    rerender(<ChatWindow {...widgetProps} onViewChange={vi.fn()} />);
+
+    expect(container.querySelector('.helpin-help-view')).toBeTruthy();
+    expect(container.querySelector('.helpin-article-view')).toBeNull();
+  });
+
   it('starts a fresh conversation from empty Messages view', () => {
     const handleStartNewConversation = vi.fn();
     const { getByText } = render(
@@ -383,7 +524,7 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
   });
 
   it('shows talk to human when enabled after an AI reply and the conversation is idle', () => {
@@ -419,10 +560,10 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('Talk to a human')).toBeTruthy();
+    expect(getByText('Talk to a person')).toBeTruthy();
   });
 
-  it('reveals human handoff status only after the visitor asks for a human', () => {
+  it('reveals human handoff status only after the visitor asks for a person', () => {
     const { getByText, queryByText } = render(
       <ChatWindow
         config={{
@@ -460,10 +601,69 @@ describe('ChatWindow', () => {
 
     expect(queryByText('We typically reply in a few minutes')).toBeNull();
 
-    fireEvent.click(getByText('Talk to a human'));
+    fireEvent.click(getByText('Talk to a person'));
 
+    expect(getByText('Finding the right teammate…')).toBeTruthy();
     expect(getByText('We typically reply in a few minutes')).toBeTruthy();
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
+  });
+
+  it('asks for contact details only after handoff is requested and escalates after the choice', () => {
+    const onPreChatSubmit = vi.fn();
+    const onEscalateToHuman = vi.fn();
+    const { getByText, queryByPlaceholderText, getByPlaceholderText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            aiEnabled: true,
+            aiFirst: true,
+            showTalkToHuman: true,
+            preChatForm: true,
+            requirePhone: false,
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'ai' as const,
+            content: 'I can help with that.',
+            senderName: 'Helpin AI',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={true}
+        onPreChatSubmit={onPreChatSubmit}
+        onEscalateToHuman={onEscalateToHuman}
+        initialView="conversation"
+      />,
+    );
+
+    expect(queryByPlaceholderText('you@example.com')).toBeNull();
+    expect(onEscalateToHuman).not.toHaveBeenCalled();
+
+    fireEvent.click(getByText('Talk to a person'));
+
+    const emailInput = getByPlaceholderText('you@example.com');
+    expect(emailInput).toBeTruthy();
+    expect(onEscalateToHuman).not.toHaveBeenCalled();
+
+    fireEvent.input(emailInput, { target: { value: 'visitor@example.com' } });
+    fireEvent.submit(emailInput.closest('form') as HTMLFormElement);
+
+    expect(onPreChatSubmit).toHaveBeenCalledWith({
+      phone: '',
+      email: 'visitor@example.com',
+    });
+    expect(onEscalateToHuman).toHaveBeenCalledTimes(1);
   });
 
   it('shows waiting for teammate after an escalated system handoff message', () => {
@@ -500,12 +700,14 @@ describe('ChatWindow', () => {
         onQuickReply={() => {}}
         showPreChatForm={false}
         onPreChatSubmit={() => {}}
+        transcriptEmail="visitor@example.com"
         initialView="conversation"
       />,
     );
 
     expect(getByText('Let me connect you with a team member who can help further.')).toBeTruthy();
-    expect(getByText('A team member will reply soon')).toBeTruthy();
+    expect(getByText('You’re in the support queue')).toBeTruthy();
+    expect(getByText('Replies will also go to visitor@example.com')).toBeTruthy();
     expect(container.querySelectorAll('.helpin-waiting-teammate-avatar').length).toBe(2);
   });
 
@@ -549,8 +751,8 @@ describe('ChatWindow', () => {
     );
 
     expect(getByText('A teammate will join shortly.')).toBeTruthy();
-    expect(getByText('A team member will reply soon')).toBeTruthy();
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(getByText('You’re in the support queue')).toBeTruthy();
+    expect(queryByText('Talk to a person')).toBeNull();
   });
 
   it('groups consecutive Helpin AI handoff and reply messages under one sender label', () => {
@@ -622,7 +824,7 @@ describe('ChatWindow', () => {
   });
 
   it('hides talk to human while AI is thinking', () => {
-    const { queryByText } = render(
+    const { container, getByRole, queryByText } = render(
       <ChatWindow
         config={{
           ...baseConfig,
@@ -644,7 +846,14 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
+    expect(getByRole('status').textContent).toContain('Looking into this…');
+    expect(container.querySelector('.helpin-ai-thinking-icon svg')).toBeTruthy();
+    expect(container.querySelector('.helpin-ai-thinking-mark')).toBeTruthy();
+    expect(container.querySelectorAll('.helpin-ai-thinking-mark-arm')).toHaveLength(4);
+    expect(container.querySelector('.helpin-ai-thinking-status')).toBeTruthy();
+    expect(container.querySelectorAll('.helpin-ai-thinking-line')).toHaveLength(2);
+    expect(queryByText('Thinking')).toBeNull();
   });
 
   it('hides talk to human while an agent is typing', () => {
@@ -670,7 +879,7 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
   });
 
   it('shows a reconnecting banner while the widget is temporarily disconnected', () => {
@@ -689,11 +898,11 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('Connection lost. Reconnecting...')).toBeTruthy();
+    expect(getByText('Connection lost. Reconnecting…')).toBeTruthy();
     expect(queryByText('Reconnect')).toBeNull();
   });
 
-  it('shows a reconnect prompt and disables the composer after prolonged disconnection', () => {
+  it('shows a reconnect prompt while keeping the composer available for queued messages', () => {
     const handleRetry = vi.fn();
     const { getByText, container } = render(
       <ChatWindow
@@ -717,8 +926,8 @@ describe('ChatWindow', () => {
     expect(handleRetry).toHaveBeenCalledTimes(1);
 
     const textarea = container.querySelector('.helpin-compose-input') as HTMLTextAreaElement;
-    expect(textarea.disabled).toBe(true);
-    expect(textarea.placeholder).toBe('Offline. Reconnecting in the background...');
+    expect(textarea.disabled).toBe(false);
+    expect(textarea.placeholder).toBe('Write a message — we’ll send it when reconnected');
   });
 
   it('hides talk to human after a human teammate has already replied', () => {
@@ -754,6 +963,6 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText('Talk to a human')).toBeNull();
+    expect(queryByText('Talk to a person')).toBeNull();
   });
 });

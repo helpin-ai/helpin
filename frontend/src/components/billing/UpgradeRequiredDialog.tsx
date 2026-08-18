@@ -19,6 +19,7 @@ import {
   getUpgradeRequiredReason,
   type UpgradeRequiredReason,
 } from '@/lib/upgradeRequired';
+import { BILLING_CHOOSE_PLAN_SEARCH } from '@/lib/billingNavigation';
 
 interface UpgradeRequiredDialogProps {
   open: boolean;
@@ -61,7 +62,11 @@ export function UpgradeRequiredDialog({ open, onOpenChange, onUpgrade, reason }:
     if (!workspace?.slug) return;
     onUpgrade?.();
     onOpenChange(false);
-    void navigate({ to: '/w/$slug/settings/billing', params: { slug: workspace.slug } });
+    void navigate({
+      to: '/w/$slug/settings/billing',
+      params: { slug: workspace.slug },
+      search: BILLING_CHOOSE_PLAN_SEARCH,
+    });
   };
 
   if (!resolved) return null;

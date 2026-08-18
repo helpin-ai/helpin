@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	agentruntime "github.com/helpin-ai/agent-runtime-go"
+
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 func (s *AgentService) GetCodingSession(ctx context.Context, workspaceID, sessionID string) (*model.CodingSession, error) {
@@ -170,8 +170,9 @@ func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID,
 	}
 
 	return &model.CodingSessionEventListResponse{
-		Events:         events,
-		NextSequenceNo: nextSequenceNo,
+		Events:              events,
+		NextSequenceNo:      nextSequenceNo,
+		StreamStateSnapshot: s.codingSessionStreamSnapshot(ctx, run),
 	}, nil
 }
 
@@ -188,28 +189,8 @@ func (s *AgentService) GetCodingSessionRepo(ctx context.Context, workspaceID, se
 }
 
 func (s *AgentService) GetCodingSessionDiff(ctx context.Context, workspaceID, sessionID, path string) (*model.CodingSessionDiff, error) {
-	run, err := s.GetAgentRun(ctx, workspaceID, sessionID)
-	if err != nil {
+	if _, err := s.GetAgentRun(ctx, workspaceID, sessionID); err != nil {
 		return nil, err
-	}
-
-	workDir := worker.PersistentWorkspacePathForRun(run.ID)
-	if info, statErr := os.Stat(workDir); statErr == nil && info.IsDir() {
-		args := []string{"diff", "--no-ext-diff", "--"}
-		if strings.TrimSpace(path) != "" {
-			args = append(args, strings.TrimSpace(path))
-		}
-		cmd := exec.CommandContext(ctx, "git", args...)
-		cmd.Dir = workDir
-		out, err := cmd.CombinedOutput()
-		if err == nil {
-			diffPath := strings.TrimSpace(path)
-			return &model.CodingSessionDiff{
-				Path:        stringPtrIfNotEmpty(diffPath),
-				Diff:        string(out),
-				IsTruncated: false,
-			}, nil
-		}
 	}
 
 	artifacts, err := s.ListRunArtifacts(ctx, workspaceID, sessionID)
@@ -268,35 +249,10 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 		responseSchemaVersion = model.AgentRunInteractionSchemaVersionHelpinV1
 	}
 	followupMessage := strings.TrimSpace(derefString(req.FollowupMessage))
-	liveCodexPause, err := s.shouldUseLiveCodexPausePath(ctx, run)
-	if err != nil {
-		return nil, err
-	}
 
 	previousInteraction := *interaction
 	if err := s.markInteractionResolved(ctx, interaction, actorID, responsePayload, responseSchemaVersion); err != nil {
 		return nil, err
-	}
-
-	if liveCodexPause && strings.TrimSpace(run.RuntimeKind) == "codex" && interactionUsesNativeCodexResume(interaction) {
-		if followupMessage != "" {
-			if _, err := s.createRunMessage(ctx, run, "user", interactionMessageTypeForIntent(resolveIntentForInteraction(interaction, responsePayload)), followupMessage); err != nil {
-				_ = s.restorePendingInteraction(ctx, &previousInteraction)
-				return nil, err
-			}
-		}
-		if err := s.persistResolvedInteractionArtifacts(ctx, run, interaction, actorID); err != nil {
-			slog.ErrorContext(ctx, "failed to persist resolved interaction artifacts",
-				"error", err,
-				"workspace_id", run.WorkspaceID,
-				"run_id", run.ID,
-				"interaction_id", interaction.ID,
-				"interaction_kind", interaction.InteractionKind,
-			)
-		}
-		s.clearAgentAttentionNotification(ctx, run)
-		s.publishResolvedInteractionEvent(run, interaction, actorID)
-		return interaction, nil
 	}
 
 	resumeReq, err := resumeRequestForResolvedInteraction(interaction, responsePayload, followupMessage)
@@ -319,24 +275,6 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 	}
 	s.publishResolvedInteractionEvent(run, interaction, actorID)
 	return interaction, nil
-}
-
-func interactionUsesNativeCodexResume(interaction *model.AgentRunInteraction) bool {
-	if interaction == nil {
-		return false
-	}
-	if strings.TrimSpace(interaction.RuntimeKind) != "codex" {
-		return false
-	}
-	switch strings.TrimSpace(interaction.InteractionKind) {
-	case model.AgentRunInteractionKindRequestUserInput,
-		model.AgentRunInteractionKindCommandExecutionApproval,
-		model.AgentRunInteractionKindFileChangeApproval,
-		model.AgentRunInteractionKindPermissionsApproval:
-		return true
-	default:
-		return false
-	}
 }
 
 func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentRun) (*model.CodingSession, error) {
@@ -365,19 +303,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		return nil, err
 	}
 
-	var streamSnapshot *model.CodingSessionStreamSnapshot
-	if s.sessionSnapshotRepo != nil && run.Status != model.AgentRunStatusCompleted && run.Status != model.AgentRunStatusCancelled {
-		snapshotRecord, err := s.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
-		if err != nil {
-			return nil, err
-		}
-		if snapshotRecord != nil {
-			streamSnapshot, err = model.DecodeCodingSessionStreamSnapshot(snapshotRecord.SnapshotPayload)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
+	streamSnapshot := s.codingSessionStreamSnapshot(ctx, run)
 
 	var triggeredBy *model.CodingSessionActor
 	if run.TriggeredByUserID != nil && s.userRepo != nil {
@@ -387,10 +313,14 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		}
 		if user != nil {
 			triggeredBy = &model.CodingSessionActor{
-				ID:        user.ID,
-				Email:     user.Email,
-				FullName:  user.FullName,
-				AvatarURL: user.AvatarURL,
+				ID:                    user.ID,
+				Email:                 user.Email,
+				FullName:              user.FullName,
+				AvatarURL:             user.AvatarURL,
+				AvatarStyle:           user.AvatarStyle,
+				AvatarSeed:            user.AvatarSeed,
+				AvatarBackgroundMode:  user.AvatarBackgroundMode,
+				AvatarBackgroundColor: user.AvatarBackgroundColor,
 			}
 		}
 	}
@@ -407,6 +337,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		InvocationMode:      run.InvocationMode,
 		Status:              run.Status,
 		PauseReason:         run.PauseReason,
+		ApprovalState:       run.ApprovalState,
 		ErrorMessage:        run.ErrorMessage,
 		ExecutionStage:      trimPtr(run.ExecutionStage),
 		LastHeartbeatAt:     run.LastHeartbeatAt,
@@ -429,6 +360,37 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	session.Status = run.Status
 	session.PauseReason = run.PauseReason
 	return session, nil
+}
+
+func (s *AgentService) codingSessionStreamSnapshot(ctx context.Context, run *model.AgentRun) *model.CodingSessionStreamSnapshot {
+	if s == nil || s.sessionSnapshotRepo == nil || run == nil {
+		return nil
+	}
+	if run.Status == model.AgentRunStatusCompleted || run.Status == model.AgentRunStatusCancelled {
+		return nil
+	}
+	snapshotRecord, err := s.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "load coding session stream snapshot failed",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+		)
+		return nil
+	}
+	if snapshotRecord == nil {
+		return nil
+	}
+	streamSnapshot, err := model.DecodeCodingSessionStreamSnapshot(snapshotRecord.SnapshotPayload)
+	if err != nil {
+		slog.WarnContext(ctx, "decode coding session stream snapshot failed",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+		)
+		return nil
+	}
+	return streamSnapshot
 }
 
 func (s *AgentService) markInteractionResolved(ctx context.Context, interaction *model.AgentRunInteraction, actorID string, responsePayload json.RawMessage, responseSchemaVersion string) error {
@@ -749,17 +711,41 @@ func approvalRequestResumeContent(requestPayload, responsePayload json.RawMessag
 			}
 			return "Approved. Continue."
 		}
-		if response.Message != "" {
-			return response.Message
-		}
 		switch strings.ToLower(strings.TrimSpace(request.Phase)) {
 		case "prd":
-			return "Approved PRD. Continue to task planning."
+			lines := []string{
+				"Approved PRD.",
+				"Call ensure_epic_spec_doc with {} to create or load and attach the canonical epic PRD document. Then call write_document_content with the returned document_id and the full approved markdown. Then call approve_epic_spec with {} to record the approved spec version.",
+				"Do not claim the PRD was persisted or attached, and do not continue to task planning, until all three tool calls succeed.",
+			}
+			if response.Message != "" {
+				lines = append(lines, "Human note: "+response.Message)
+			}
+			return strings.Join(lines, "\n")
 		case "tasks":
-			return "Approved task plan. Apply it and create tasks."
+			lines := []string{
+				"Approved task plan.",
+				"Call create_task_batch with the full approved proposed_tasks array using {\"proposed_tasks\":[...]}. Preserve every approved task field and dependency_refs.",
+				"Do not claim the task plan was applied and do not finish until create_task_batch succeeds.",
+			}
+			if response.Message != "" {
+				lines = append(lines, "Human note: "+response.Message)
+			}
+			return strings.Join(lines, "\n")
 		case "task_doc":
-			return "Approved task planning document. Persist it and finish."
+			lines := []string{
+				"Approved task planning document.",
+				"Call ensure_task_plan_doc with {} to create or load and attach the canonical document. Then call write_document_content with the returned document_id and the full approved markdown.",
+				"Do not claim the document was persisted and do not finish until both tool calls succeed.",
+			}
+			if response.Message != "" {
+				lines = append(lines, "Human note: "+response.Message)
+			}
+			return strings.Join(lines, "\n")
 		default:
+			if response.Message != "" {
+				return response.Message
+			}
 			return "Approved. Continue."
 		}
 	}
@@ -896,21 +882,6 @@ func (s *AgentService) resolveCodingSessionRepoState(ctx context.Context, run *m
 		state.Branch = stringPtrIfNotEmpty(strings.TrimSpace(derefString(run.BaseBranch)))
 	}
 
-	workDir := worker.PersistentWorkspacePathForRun(run.ID)
-	if info, err := os.Stat(workDir); err == nil && info.IsDir() {
-		if repoName := strings.TrimSpace(derefString(run.RepoFullName)); repoName != "" {
-			state.RepoName = &repoName
-		}
-		if branch := gitCurrentBranch(ctx, workDir); branch != "" {
-			state.Branch = &branch
-		}
-		files := gitChangedFiles(ctx, workDir)
-		state.ChangedFiles = files
-		state.ChangedFileCount = len(files)
-		state.IsDirty = len(files) > 0
-		return state, nil
-	}
-
 	if summary := parseChangedFilesFromOutputSummary(run.OutputSummary); len(summary) > 0 {
 		state.ChangedFiles = summary
 		state.ChangedFileCount = len(summary)
@@ -992,11 +963,65 @@ func codingSessionEventFromArtifact(artifact model.AgentRunArtifact) (string, ma
 		return "repo.diff.updated", payload
 	case model.AgentRunArtifactTypeRunPlan:
 		return "activity.updated", payload
-	case worker.RunPreviewArtifactType:
+	case model.AgentRunArtifactTypeToolCall:
+		mergeArtifactPayloadContent(payload)
+		switch strings.TrimSpace(metadataStringFromJSON(artifact.Metadata, "runtime_event_type")) {
+		case agentruntime.EventToolCallStarted:
+			return "tool.call.started", payload
+		case agentruntime.EventToolCallResult:
+			return "tool.call.result", payload
+		case agentruntime.EventToolCallFinished:
+			if artifactPayloadString(payload, "error") != "" {
+				return "tool.call.failed", payload
+			}
+			return "tool.call.completed", payload
+		default:
+			return "", nil
+		}
+	case agentcontract.RunPreviewArtifactType:
 		return "preview.updated", payload
 	default:
 		return "", nil
 	}
+}
+
+func mergeArtifactPayloadContent(payload map[string]any) {
+	content, _ := payload["content"].(map[string]any)
+	if len(content) == 0 {
+		return
+	}
+	for key, value := range content {
+		if _, exists := payload[key]; exists {
+			continue
+		}
+		payload[key] = value
+	}
+}
+
+func artifactPayloadString(payload map[string]any, key string) string {
+	if len(payload) == 0 || strings.TrimSpace(key) == "" {
+		return ""
+	}
+	if value, ok := payload[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	content, _ := payload["content"].(map[string]any)
+	if value, ok := content[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func metadataStringFromJSON(raw json.RawMessage, key string) string {
+	if len(raw) == 0 || strings.TrimSpace(key) == "" {
+		return ""
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return ""
+	}
+	value, _ := metadata[key].(string)
+	return strings.TrimSpace(value)
 }
 
 func codingSessionEventFromInteraction(interaction model.AgentRunInteraction) (string, map[string]any, map[string]any) {
@@ -1251,58 +1276,6 @@ func parseChangedFilesFromOutputSummary(raw json.RawMessage) []model.CodingSessi
 	return files
 }
 
-func gitCurrentBranch(ctx context.Context, workDir string) string {
-	out, err := exec.CommandContext(ctx, "git", "-C", workDir, "branch", "--show-current").CombinedOutput()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
-func gitChangedFiles(ctx context.Context, workDir string) []model.CodingSessionRepoFile {
-	out, err := exec.CommandContext(ctx, "git", "-C", workDir, "status", "--porcelain").CombinedOutput()
-	if err != nil {
-		return nil
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	files := make([]model.CodingSessionRepoFile, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimRight(line, "\r\n")
-		if strings.TrimSpace(line) == "" || len(line) < 4 {
-			continue
-		}
-		statusCode := strings.TrimSpace(line[:2])
-		path := strings.TrimSpace(line[3:])
-		if path == "" {
-			continue
-		}
-		files = append(files, model.CodingSessionRepoFile{
-			Path:   path,
-			Status: gitStatusLabel(statusCode),
-		})
-	}
-	return files
-}
-
-func gitStatusLabel(code string) string {
-	switch {
-	case strings.Contains(code, "A"):
-		return "added"
-	case strings.Contains(code, "D"):
-		return "deleted"
-	case strings.Contains(code, "R"):
-		return "renamed"
-	case strings.Contains(code, "M"):
-		return "modified"
-	case strings.Contains(code, "U"):
-		return "unmerged"
-	case strings.Contains(code, "?"):
-		return "untracked"
-	default:
-		return "modified"
-	}
-}
-
 func codingSessionStringValue(value any) string {
 	text, _ := value.(string)
 	return text
@@ -1332,4 +1305,14 @@ func sessionPathLabel(path string) *string {
 	}
 	cleaned := filepath.Clean(path)
 	return &cleaned
+}
+
+// ListRunInteractions returns the run's interaction records (approval
+// requests, input requests) ordered as persisted. Used by the dock chat view
+// as the authoritative pending-interaction source.
+func (s *AgentService) ListRunInteractions(ctx context.Context, workspaceID, runID string) ([]model.AgentRunInteraction, error) {
+	if s == nil || s.interactionRepo == nil {
+		return nil, fmt.Errorf("interaction repository is not configured")
+	}
+	return s.interactionRepo.ListByRun(ctx, workspaceID, runID)
 }

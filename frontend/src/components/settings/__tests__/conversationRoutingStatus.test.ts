@@ -78,17 +78,17 @@ describe('conversation routing status helpers', () => {
     ])?.id).toBe('workspace-sender');
   });
 
-  it('shows awaiting email for active forwarding before the first inbound email', () => {
-    expect(getEmailForwardingStatus({ active: true, last_inbound_at: null })).toEqual({
-      label: 'Awaiting email',
+  it('shows setup incomplete before end-to-end forwarding verification', () => {
+    expect(getEmailForwardingStatus({ active: true, forwarding_verified_at: null })).toEqual({
+      label: 'Setup incomplete',
       tone: 'warning',
-      tooltip: 'Forwarding is enabled. Send or forward a test email to finish verification.',
+      tooltip: 'Confirm forwarding in your email provider, then run an end-to-end test.',
     });
   });
 
-  it('shows on for forwarding after inbound email has been received', () => {
-    expect(getEmailForwardingStatus({ active: true, last_inbound_at: '2026-06-16T12:00:00Z' })).toEqual({
-      label: 'On',
+  it('shows verified only after end-to-end forwarding verification', () => {
+    expect(getEmailForwardingStatus({ active: true, forwarding_verified_at: '2026-06-16T12:00:00Z' })).toEqual({
+      label: 'Verified',
       tone: 'success',
       tooltip: null,
     });

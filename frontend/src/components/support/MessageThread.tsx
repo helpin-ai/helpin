@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, useMemo, memo } from 'react';
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { Message01Icon, BotIcon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
+import { Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -13,7 +13,6 @@ import {
   useInboxScopes,
   useSupportTeammatePresence,
   useUpdateConversationStatus,
-  useRunConversationAgent,
   useCreateTaskFromConversation,
   useMoveConversation,
   useDismissConversationTriage,
@@ -23,24 +22,25 @@ import {
 import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
-import { CreateTaskDialog } from './CreateTaskDialog';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
+import { flattenSupportMessagePages } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
-import { ReplyComposer } from './ReplyComposer';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
+import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
-import { getInitialThreadScrollTarget, isNearThreadBottom, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
+import type { UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 interface MessageThreadProps {
   workspaceId: string;
@@ -50,8 +50,9 @@ interface MessageThreadProps {
   onCreateConversationClick?: () => void;
 }
 
-const INITIAL_THREAD_ITEM_COUNT = 60;
-const THREAD_HISTORY_HYDRATION_DELAY_MS = 120;
+const LazyCreateTaskDialog = lazy(() => import('./CreateTaskDialog').then((module) => ({ default: module.CreateTaskDialog })));
+const LazyReplyComposer = lazy(() => import('./ReplyComposer').then((module) => ({ default: module.ReplyComposer })));
+
 const THREAD_SELECTION_FADE_MS = 160;
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
@@ -253,19 +254,27 @@ export function MessageThread({
   const isNearBottomRef = useRef(true);
   const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const pendingInitialScrollRef = useRef(false);
+  const olderPageScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const threadScrollStateRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
     conversationId: null,
     messageCount: 0,
     lastMessageId: null,
   });
   const { data: conversation, isFetched: conversationFetched } = useConversation(workspaceId, conversationId);
-  const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
+  const {
+    data: messagePages,
+    isLoading,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useConversationMessages(workspaceId, conversationId);
+  const messages = useMemo(() => flattenSupportMessagePages(messagePages), [messagePages]);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);
   const { data: members = [] } = useWorkspaceMembers(workspaceId);
   const updateStatus = useUpdateConversationStatus(workspaceId);
-  const runAgent = useRunConversationAgent(workspaceId);
   const createTaskFromConversation = useCreateTaskFromConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
@@ -281,7 +290,6 @@ export function MessageThread({
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const [composerReady, setComposerReady] = useState(false);
-  const [historyHydrated, setHistoryHydrated] = useState(true);
   const [isThreadTransitioning, setIsThreadTransitioning] = useState(false);
   const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
@@ -414,6 +422,7 @@ export function MessageThread({
 
   useEffect(() => {
     const handleAgentRunEvent = (event: Event) => {
+      if (!isAgentRunLifecycleEvent(event)) return;
       const detail = (event as CustomEvent<{ parent_type?: string; parent_id?: string }>).detail;
       if (detail?.parent_type !== 'support_conversation' || detail.parent_id !== conversationId || !assignedAgentId) return;
 
@@ -513,7 +522,7 @@ export function MessageThread({
     const dismissed = access?.membership?.support_task_dialog_dismissed;
     const savedTeamId = access?.membership?.support_default_team_id;
 
-    if (!dismissed) {
+    if (!dismissed || !savedTeamId) {
       setShowCreateTaskDialog(true);
       return;
     }
@@ -563,13 +572,14 @@ export function MessageThread({
   }, [messages]);
 
   // Derive delivered/read status from conversation's contact_last_seen_at cursor
-  const receiptStatus = useMemo<'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
+  const receiptStatus = useMemo<'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
     if (!receiptMessageId || !conversation) return null;
     const msg = messages.find((m) => m.id === receiptMessageId);
     if (!msg) return null;
     if (msg.email_read_at) return 'read_email';
     if (msg.email_delivery_status === 'opened') return 'read_email';
     if (msg.email_delivery_status === 'delivered') return 'delivered_email';
+    if (msg.id.startsWith('optimistic-') && msg.via_channel === 'email') return 'sending_email';
     const seen = conversation.contact_last_seen_at;
     if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
     if (msg.email_notified_at) return 'sent_email';
@@ -613,45 +623,7 @@ export function MessageThread({
     return items;
   }, [messages]);
 
-  useEffect(() => {
-    if (!conversationId || groupedMessages.length <= INITIAL_THREAD_ITEM_COUNT) {
-      setHistoryHydrated(true);
-      return;
-    }
-
-    setHistoryHydrated(false);
-    let timeout = 0;
-    const frame = window.requestAnimationFrame(() => {
-      timeout = window.setTimeout(() => setHistoryHydrated(true), THREAD_HISTORY_HYDRATION_DELAY_MS);
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      if (timeout) window.clearTimeout(timeout);
-    };
-  }, [conversationId, groupedMessages.length]);
-
-  const visibleGroupedMessages = useMemo(() => {
-    if (historyHydrated || groupedMessages.length <= INITIAL_THREAD_ITEM_COUNT) {
-      return groupedMessages;
-    }
-
-    const start = Math.max(0, groupedMessages.length - INITIAL_THREAD_ITEM_COUNT);
-    let firstSeparatorBeforeWindow: (typeof groupedMessages)[number] | undefined;
-    for (let i = start - 1; i >= 0; i -= 1) {
-      if (groupedMessages[i]?.type === 'separator') {
-        firstSeparatorBeforeWindow = groupedMessages[i];
-        break;
-      }
-    }
-    const visibleItems = groupedMessages.slice(start);
-
-    if (firstSeparatorBeforeWindow && visibleItems[0]?.type !== 'separator') {
-      return [firstSeparatorBeforeWindow, ...visibleItems];
-    }
-
-    return visibleItems;
-  }, [groupedMessages, historyHydrated]);
+  const visibleGroupedMessages = groupedMessages;
 
   const lastMessageId = messages[messages.length - 1]?.id ?? null;
   const initialScrollTargetMessageId = useMemo(
@@ -739,7 +711,7 @@ export function MessageThread({
     timeouts.push(window.setTimeout(scheduleFrame, 80));
     timeouts.push(window.setTimeout(scheduleFrame, 180));
 
-    if (pendingInitialScrollRef.current && historyHydrated) {
+    if (pendingInitialScrollRef.current) {
       pendingInitialScrollRef.current = false;
     }
 
@@ -748,7 +720,21 @@ export function MessageThread({
       frames.forEach((frame) => window.cancelAnimationFrame(frame));
       timeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
-  }, [conversationId, historyHydrated, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+  }, [conversationId, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+
+  useLayoutEffect(() => {
+    const previous = olderPageScrollRef.current;
+    if (!previous || isFetchingNextPage) return;
+    olderPageScrollRef.current = null;
+
+    const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+    if (!viewport) return;
+    viewport.scrollTop = getPrependRestoredScrollTop({
+      previousScrollHeight: previous.scrollHeight,
+      nextScrollHeight: viewport.scrollHeight,
+      previousScrollTop: previous.scrollTop,
+    });
+  }, [isFetchingNextPage, messages.length]);
 
   useEffect(() => {
     if (!conversationId || !conversation) return;
@@ -788,6 +774,13 @@ export function MessageThread({
 
     const onScroll = () => {
       isNearBottomRef.current = isNearThreadBottom(viewport);
+      if (isNearThreadTop(viewport) && hasNextPage && !isFetchingNextPage && !isFetchNextPageError && !olderPageScrollRef.current) {
+        olderPageScrollRef.current = {
+          scrollHeight: viewport.scrollHeight,
+          scrollTop: viewport.scrollTop,
+        };
+        void fetchNextPage();
+      }
       if (frame) return;
       frame = window.requestAnimationFrame(updateActiveStickySeparator);
     };
@@ -802,7 +795,7 @@ export function MessageThread({
         window.cancelAnimationFrame(frame);
       }
     };
-  }, [visibleGroupedMessages]);
+  }, [fetchNextPage, hasNextPage, isFetchNextPageError, isFetchingNextPage, visibleGroupedMessages]);
 
   // Treat a stale conversation id (e.g., previous selection that no longer
   // matches the active filter, or a deleted conversation) the same as no
@@ -861,25 +854,6 @@ export function MessageThread({
               {createTaskFromConversation.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
               Create Task
             </Button>
-
-            {/* Run Agent */}
-            {conversation.assigned_agent_id && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1 text-xs"
-                disabled={runAgent.isPending}
-                onClick={() => runAgent.mutate(conversation.id, {
-                  onError: (error) => {
-                    const reason = getUpgradeRequiredReason(error);
-                    if (reason) setUpgradeDialogReason(reason);
-                  },
-                })}
-              >
-                {runAgent.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <BotIcon className="h-3 w-3" />}
-                Run
-              </Button>
-            )}
 
             {/* Resolve / Unresolve */}
             {conversation.status === 'resolved' ? (
@@ -987,6 +961,15 @@ export function MessageThread({
         </div>
       )}
 
+      {/* Approvals raised by the conversation's AI chat run (child launches). */}
+      {conversation && (
+        <AIRunApprovalCard
+          workspaceId={workspaceId}
+          conversationId={conversation.id}
+          enabled={!!conversation.ai_state}
+        />
+      )}
+
       {/* Agent runs — hidden for AI-first conversations (ai_state is set) */}
       {agentRuns.length > 0 && !conversation?.ai_state && (
         <div className="border-b px-4 py-2">
@@ -999,9 +982,37 @@ export function MessageThread({
       )}
 
       {/* Messages area with light background (Crisp-style) */}
-      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 bg-muted/20">
-        <div className="px-4 pb-10 pt-2">
+      <ScrollArea
+        ref={scrollAreaRef}
+        className="min-h-0 min-w-0 flex-1 bg-muted/20 [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!max-w-full"
+      >
+        <div data-support-message-list className="w-full min-w-0 max-w-full overflow-x-hidden px-4 pb-10 pt-2">
           {isThreadLoading && <MessageSkeleton />}
+          {!isThreadLoading && isFetchingNextPage && (
+            <div className="flex justify-center py-3 text-muted-foreground">
+              <Loading01Icon className="h-4 w-4 animate-spin" />
+            </div>
+          )}
+          {!isThreadLoading && isFetchNextPageError && hasNextPage && (
+            <div className="flex justify-center py-3">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+                  if (viewport) {
+                    olderPageScrollRef.current = {
+                      scrollHeight: viewport.scrollHeight,
+                      scrollTop: viewport.scrollTop,
+                    };
+                  }
+                  void fetchNextPage();
+                }}
+              >
+                Load earlier messages
+              </Button>
+            </div>
+          )}
           {!isThreadLoading && messages.length === 0 && (
             <EmptyState
               icon={Message01Icon}
@@ -1029,7 +1040,7 @@ export function MessageThread({
             return (
               <div
                 key={item.message.id}
-                className="support-thread-message"
+                className="support-thread-message w-full min-w-0 max-w-full"
                 data-support-message-id={item.message.id}
               >
                 <MessageBubble
@@ -1039,6 +1050,9 @@ export function MessageThread({
                   source={conversation?.source}
                   receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
                   customerDisplayName={conversation?.customer_name || conversation?.customer_email}
+                  customerEmail={conversation?.customer_email}
+                  workspaceSlug={workspaceSlug}
+                  linkedTaskId={conversation?.linked_task_id}
                   fallbackAvatarUrl={
                     (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
                     ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
@@ -1062,22 +1076,28 @@ export function MessageThread({
           messages have loaded, so switching threads never exposes a stale
           or half-ready composer. */}
       {composerReady && conversationId && conversation && !isLoading && (
-        <ReplyComposer
-          workspaceId={workspaceId}
-          conversationId={conversationId}
-          emailFallbackHint={emailFallbackHint}
-          onUpgradeRequired={setUpgradeDialogReason}
-        />
+        <Suspense fallback={null}>
+          <LazyReplyComposer
+            workspaceId={workspaceId}
+            conversationId={conversationId}
+            emailFallbackHint={emailFallbackHint}
+            onUpgradeRequired={setUpgradeDialogReason}
+          />
+        </Suspense>
       )}
 
-      <CreateTaskDialog
-        open={showCreateTaskDialog}
-        onOpenChange={setShowCreateTaskDialog}
-        teams={wsSettings?.teams ?? []}
-        defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
-        isPending={createTaskFromConversation.isPending}
-        onConfirm={handleCreateTaskConfirm}
-      />
+      {showCreateTaskDialog ? (
+        <Suspense fallback={null}>
+          <LazyCreateTaskDialog
+            open={showCreateTaskDialog}
+            onOpenChange={setShowCreateTaskDialog}
+            teams={wsSettings?.teams ?? []}
+            defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
+            isPending={createTaskFromConversation.isPending}
+            onConfirm={handleCreateTaskConfirm}
+          />
+        </Suspense>
+      ) : null}
       <UpgradeRequiredDialog
         open={upgradeDialogReason !== null}
         onOpenChange={(open) => {

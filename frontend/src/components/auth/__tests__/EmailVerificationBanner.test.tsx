@@ -44,6 +44,7 @@ function render(ui: ReactNode) {
 
 describe('EmailVerificationBanner', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     document.body.innerHTML = '';
   });
@@ -63,7 +64,8 @@ describe('EmailVerificationBanner', () => {
       (candidate) => candidate.textContent === 'Resend email',
     );
 
-    expect(container.textContent).toContain('Verify your email');
+    expect(container.textContent).toContain('We sent a verification email');
+    expect(container.textContent).toContain('Open it and click the verification link');
     expect(button).toBeTruthy();
 
     await act(async () => {
@@ -71,7 +73,49 @@ describe('EmailVerificationBanner', () => {
     });
 
     expect(resendVerification).toHaveBeenCalledTimes(1);
-    expect(toastSuccess).toHaveBeenCalledWith('Verification email sent');
+    expect(toastSuccess).toHaveBeenCalledWith('Verification email sent. Check your inbox.');
+
+    unmount();
+  });
+
+  it('centers the notification message and action as one responsive group', () => {
+    const { container, unmount } = render(<EmailVerificationBanner emailVerified={false} />);
+    const layout = container.querySelector('.max-w-screen-2xl');
+    const message = layout?.querySelector('.text-sm');
+
+    expect(layout?.classList.contains('justify-center')).toBe(true);
+    expect(layout?.classList.contains('flex-wrap')).toBe(true);
+    expect(message?.classList.contains('text-center')).toBe(true);
+
+    unmount();
+  });
+
+  it('prevents repeated resend clicks during the cooldown', async () => {
+    vi.useFakeTimers();
+    resendVerification.mockResolvedValue({ data: { message: 'sent' }, error: null });
+    const { container, unmount } = render(<EmailVerificationBanner emailVerified={false} resendCooldownSeconds={3} />);
+
+    const clickResend = async () => {
+      const button = Array.from(container.querySelectorAll('button')).find(
+        (candidate) => candidate.textContent?.includes('Resend'),
+      );
+      await act(async () => {
+        button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+    };
+
+    await clickResend();
+    await clickResend();
+
+    expect(resendVerification).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Resend in 3s');
+
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
+    await clickResend();
+
+    expect(resendVerification).toHaveBeenCalledTimes(2);
 
     unmount();
   });

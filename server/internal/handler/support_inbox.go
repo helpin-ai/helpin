@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -171,6 +172,30 @@ func (h *SupportInboxHandler) GetConversation(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, conversation)
 }
 
+// SendConversationTranscript handles POST /api/support/inbox/conversations/{id}/transcript.
+func (h *SupportInboxHandler) SendConversationTranscript(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	var req model.SendSupportConversationTranscriptRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.supportService.SendSupportConversationTranscript(r.Context(), workspaceID, conversationID, req.Email, req.UpdateCustomerEmail)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "invalid email") {
+			status = http.StatusBadRequest
+		}
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *SupportInboxHandler) GetRoutingUsageStatus(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
@@ -280,6 +305,47 @@ func (h *SupportInboxHandler) ListConversationMessages(w http.ResponseWriter, r 
 		messages = []model.SupportMessage{}
 	}
 	writeJSON(w, http.StatusOK, messages)
+}
+
+// ListConversationMessagePage handles GET
+// /api/support/inbox/conversations/{id}/message-pages.
+func (h *SupportInboxHandler) ListConversationMessagePage(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	limit, err := parseSupportMessagePageLimit(r.URL.Query().Get("limit"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "limit must be between 1 and 100")
+		return
+	}
+
+	page, err := h.supportService.ListConversationMessagePage(
+		r.Context(),
+		workspaceID,
+		conversationID,
+		true,
+		limit,
+		r.URL.Query().Get("cursor"),
+	)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidSupportMessageCursor) {
+			writeError(w, http.StatusBadRequest, "invalid message cursor")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func parseSupportMessagePageLimit(raw string) (int, error) {
+	if raw == "" {
+		return 20, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 1 || limit > 100 {
+		return 0, errors.New("invalid message page limit")
+	}
+	return limit, nil
 }
 
 // CreateConversationMessage handles POST /api/support/tickets/{id}/messages.
@@ -449,6 +515,24 @@ func (h *SupportInboxHandler) UpdateConversationCRMContact(w http.ResponseWriter
 	}
 
 	conversation, err := h.supportService.UpdateConversationCRMContact(r.Context(), workspaceID, conversationID, req.CRMContactID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, conversation)
+}
+
+// UpdateConversationCRMCompany handles PUT /api/support/inbox/conversations/{id}/crm-company.
+func (h *SupportInboxHandler) UpdateConversationCRMCompany(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+	var req model.UpdateConversationCRMCompanyRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	conversation, err := h.supportService.UpdateConversationCRMCompany(r.Context(), workspaceID, conversationID, req.CRMCompanyID, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -745,6 +829,23 @@ func (h *SupportInboxHandler) DisableEmailRoute(w http.ResponseWriter, r *http.R
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// SendEmailRouteTest starts end-to-end verification for an email forwarding route.
+func (h *SupportInboxHandler) SendEmailRouteTest(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	routeID := chi.URLParam(r, "routeId")
+	var req model.SendSupportEmailRouteTestRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	route, err := h.supportService.SendEmailRouteTest(r.Context(), workspaceID, routeID, req.SourceAddress)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, route)
 }
 
 func (h *SupportInboxHandler) ListEmailSenders(w http.ResponseWriter, r *http.Request) {

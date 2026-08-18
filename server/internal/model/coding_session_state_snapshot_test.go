@@ -54,6 +54,95 @@ func TestApplyCodingSessionStreamEventMaintainsOrderedLiveTurnSegments(t *testin
 	}
 }
 
+func TestApplyCodingSessionStreamEventStitchesWordTokenDeltas(t *testing.T) {
+	base := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+
+	var snapshot *CodingSessionStreamSnapshot
+	snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.started", map[string]any{
+		"message_id": "assistant-1",
+	}, base)
+	for index, token := range []string{"inspect", " the", " Rust", " crate", " first,", " then", " update", " the", " dependency", " and", " build", " against", " the", " new", " API.", " If", " it", " breaks", " I", "'ll", " patch", "."} {
+		snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.delta", map[string]any{
+			"message_id": "assistant-1",
+			"text":       token,
+		}, base.Add(time.Duration(index+1)*time.Second))
+	}
+
+	if snapshot == nil || snapshot.LiveAssistantMessage == nil {
+		t.Fatalf("expected live assistant snapshot, got %#v", snapshot)
+	}
+	if got := snapshot.LiveAssistantMessage.Content; got != "inspect the Rust crate first, then update the dependency and build against the new API. If it breaks I'll patch." {
+		t.Fatalf("unexpected stitched assistant content %q", got)
+	}
+	if len(snapshot.LiveTurnSegments) != 1 || snapshot.LiveTurnSegments[0].AssistantMessage == nil {
+		t.Fatalf("expected one assistant segment, got %#v", snapshot.LiveTurnSegments)
+	}
+	if got := snapshot.LiveTurnSegments[0].AssistantMessage.Content; got != snapshot.LiveAssistantMessage.Content {
+		t.Fatalf("segment content did not match live assistant content: %q", got)
+	}
+}
+
+func TestApplyCodingSessionStreamEventRepairsAssistantSegmentOnCompletedText(t *testing.T) {
+	base := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+
+	var snapshot *CodingSessionStreamSnapshot
+	snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.started", map[string]any{
+		"message_id": "assistant-1",
+	}, base)
+	for index, token := range []string{"inspect", "the", "Rust", "crate"} {
+		snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.delta", map[string]any{
+			"message_id": "assistant-1",
+			"text":       token,
+		}, base.Add(time.Duration(index+1)*time.Second))
+	}
+	snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.completed", map[string]any{
+		"message_id": "assistant-1",
+		"text":       "Inspect the Rust crate first, then build against the new API.",
+	}, base.Add(10*time.Second))
+
+	if snapshot == nil || snapshot.LiveAssistantMessage == nil {
+		t.Fatalf("expected live assistant snapshot, got %#v", snapshot)
+	}
+	const expected = "Inspect the Rust crate first, then build against the new API."
+	if got := snapshot.LiveAssistantMessage.Content; got != expected {
+		t.Fatalf("completed text did not repair live assistant content %q", got)
+	}
+	if len(snapshot.LiveTurnSegments) != 1 || snapshot.LiveTurnSegments[0].AssistantMessage == nil {
+		t.Fatalf("expected one assistant segment, got %#v", snapshot.LiveTurnSegments)
+	}
+	if got := snapshot.LiveTurnSegments[0].AssistantMessage.Content; got != expected {
+		t.Fatalf("completed text did not repair assistant segment %q", got)
+	}
+}
+
+func TestApplyCodingSessionStreamEventCompletedTextReplacesLongerDuplicatedLiveText(t *testing.T) {
+	base := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+
+	var snapshot *CodingSessionStreamSnapshot
+	snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.delta", map[string]any{
+		"message_id": "assistant-duplicate",
+		"text":       "I found the Docker build arg issue. I found the Docker build arg issue.",
+	}, base)
+	snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.completed", map[string]any{
+		"message_id": "assistant-duplicate",
+		"text":       "I found the Docker build arg issue.",
+	}, base.Add(time.Second))
+
+	if snapshot == nil || snapshot.LiveAssistantMessage == nil {
+		t.Fatalf("expected live assistant snapshot, got %#v", snapshot)
+	}
+	const expected = "I found the Docker build arg issue."
+	if got := snapshot.LiveAssistantMessage.Content; got != expected {
+		t.Fatalf("completed text did not replace duplicated live content %q", got)
+	}
+	if len(snapshot.LiveTurnSegments) != 1 || snapshot.LiveTurnSegments[0].AssistantMessage == nil {
+		t.Fatalf("expected one assistant segment, got %#v", snapshot.LiveTurnSegments)
+	}
+	if got := snapshot.LiveTurnSegments[0].AssistantMessage.Content; got != expected {
+		t.Fatalf("completed text did not repair duplicated assistant segment %q", got)
+	}
+}
+
 func TestApplyCodingSessionStreamEventStoresCurrentPlan(t *testing.T) {
 	base := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
 

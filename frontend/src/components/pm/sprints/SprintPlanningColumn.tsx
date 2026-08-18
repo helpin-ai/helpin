@@ -12,9 +12,7 @@ import {
   Link01Icon,
   Loading01Icon,
   MoreHorizontalIcon,
-  PlusSignIcon,
 } from '@/lib/icons';
-import { format, parseISO } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -32,7 +30,10 @@ import { queryKeys } from '@/lib/queryKeys';
 import type { AssignableMember } from '@/lib/types';
 import type { PaginatedResponse, SprintPlanningCard, SprintPlanningTaskPreview } from '@/lib/pmTypes';
 import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
+import { SprintPlanningColumnActions } from './SprintPlanningColumnActions';
 import { cn } from '@/lib/utils';
+import { getSprintProgress } from './sprintProgress';
+import { formatSprintDateOnly, isSprintOpenForPlanning } from '@/lib/pmSprintOptions';
 
 const SPRINT_PREVIEW_PAGE_SIZE = 20;
 const SPRINT_TASK_ROW_GAP = 10;
@@ -47,12 +48,13 @@ interface SprintPlanningColumnProps {
   isDropTargetActive?: boolean;
   onOpenSprint: (sprintId: string) => void;
   onOpenTask: (taskId: string) => void;
+  onLinkTasks: (sprintId: string) => void;
   onCreateTask: (sprintId: string) => void;
 }
 
 function formatSprintRange(startDate: string | null, endDate: string | null) {
   if (!startDate || !endDate) return 'No dates set';
-  return `${format(parseISO(startDate), 'MMM d')} – ${format(parseISO(endDate), 'MMM d')}`;
+  return `${formatSprintDateOnly(startDate)} – ${formatSprintDateOnly(endDate)}`;
 }
 
 export const SprintPlanningColumn = memo(function SprintPlanningColumn({
@@ -64,14 +66,17 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
   isDropTargetActive = false,
   onOpenSprint,
   onOpenTask,
+  onLinkTasks,
   onCreateTask,
 }: SprintPlanningColumnProps) {
   const queryClient = useQueryClient();
   const deleteSprint = useDeleteSprint(workspaceId);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const sprintUrl = workspaceSlug ? `/w/${workspaceSlug}/pm/sprints/${card.sprint.id}` : '';
+  const isCompleted = !isSprintOpenForPlanning(card.sprint.status);
   const { setNodeRef, isOver } = useDroppable({
     id: `sprint:${card.sprint.id}`,
+    disabled: isCompleted,
   });
 
   const handleCopyLink = () => {
@@ -99,15 +104,16 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
       },
     });
   };
-  const showDropIndicator = isOver || isDropTargetActive;
+  const showDropIndicator = !isCompleted && (isOver || isDropTargetActive);
   const statusConfig = SPRINT_STATUS_CONFIG[card.sprint.status];
   const cardTotal = card.stats.task_count;
   const previewTasks = card.preview_tasks ?? [];
   const previewQuery = useInfiniteSprintPreviewTasks(workspaceId, card.sprint.id, previewTasks, cardTotal, SPRINT_PREVIEW_PAGE_SIZE);
   const previewQueryTotal = previewQuery.data?.pages[0]?.total;
   const total = typeof previewQueryTotal === 'number' ? previewQueryTotal : cardTotal;
-  const done = card.stats.done_task_count;
-  const pctDone = total > 0 ? Math.round((done / total) * 100) : 0;
+  const progress = getSprintProgress(card.stats, card.closeout);
+  const done = progress.completedTasks;
+  const pctDone = progress.percentage;
   const listRef = useRef<HTMLDivElement | null>(null);
   const previewSignature = useMemo(
     () => `${total}:${previewTasks.map((task) => task.id).join(',')}`,
@@ -263,8 +269,10 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
               {pctDone > 0 && <div className="bg-emerald-500 transition-all" style={{ width: `${pctDone}%` }} />}
             </div>
             <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-              <span>{done}/{total} tasks done</span>
-              <span>{card.stats.done_points}/{card.stats.total_points} pts</span>
+              <span>
+                {done}/{progress.committedTasks} tasks done
+                {progress.historical && progress.rolledOverTasks > 0 ? ` · ${progress.rolledOverTasks} rolled over` : ''}
+              </span>
             </div>
           </div>
         </CardHeader>
@@ -299,7 +307,7 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
                         <SprintPlanningTaskCard
                           task={task}
                           owner={task.owner_member_ids?.[0] ? ownerByMemberId.get(task.owner_member_ids[0]) : undefined}
-                          canDrag={canEdit}
+                          canDrag={canEdit && !isCompleted}
                           onOpenTask={onOpenTask}
                         />
                       )}
@@ -325,17 +333,13 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
             </div>
           ) : null}
 
-          {canEdit && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-auto w-full gap-2 text-muted-foreground"
-              onClick={() => onCreateTask(card.sprint.id)}
-            >
-              <PlusSignIcon className="h-4 w-4" />
-              Create task
-            </Button>
-          )}
+          {canEdit && !isCompleted ? (
+            <SprintPlanningColumnActions
+              linkTasksDisabledReason={card.sprint.team_id ? null : 'Assign this sprint to a team before linking tasks.'}
+              onLinkTasks={() => onLinkTasks(card.sprint.id)}
+              onCreateTask={() => onCreateTask(card.sprint.id)}
+            />
+          ) : null}
         </CardContent>
         <ConfirmDialog
           open={deleteOpen}

@@ -14,9 +14,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/worker"
 )
 
 type fakeSkillPackageStore struct {
@@ -34,6 +34,14 @@ func (f *fakeSkillPackageStore) PutObject(_ context.Context, key, _ string, _ in
 	}
 	f.objects[key] = payload
 	return nil
+}
+
+func (f *fakeSkillPackageStore) GetObject(_ context.Context, key string) ([]byte, error) {
+	payload, ok := f.objects[key]
+	if !ok {
+		return nil, fmt.Errorf("object not found")
+	}
+	return append([]byte(nil), payload...), nil
 }
 
 func (f *fakeSkillPackageStore) DeleteObject(_ context.Context, key string) error {
@@ -74,7 +82,7 @@ func TestCreateWorkspaceSkillStoresArchiveAndMetadata(t *testing.T) {
 	}
 
 	stored := mustOnlyStoredArchive(t, store)
-	loaded, err := worker.LoadSkillArchive(stored, model.WorkspaceSkillSourceWorkspace)
+	loaded, err := agentcontract.LoadSkillArchive(stored, model.WorkspaceSkillSourceWorkspace)
 	if err != nil {
 		t.Fatalf("LoadSkillArchive returned error: %v", err)
 	}
@@ -107,7 +115,7 @@ func TestImportWorkspaceSkillPreservesArchiveAndAppearsInCatalog(t *testing.T) {
 	svc, _, store := newWorkspaceSkillTestService(t)
 	ctx := context.Background()
 
-	archive, _, _, err := worker.BuildSkillArchive(worker.SkillDefinition{
+	archive, _, _, err := agentcontract.BuildSkillArchive(agentcontract.SkillDefinition{
 		Key:               "external_review",
 		Title:             "External Review",
 		Description:       "Use when reviewing third-party contribution changes.",
@@ -148,7 +156,7 @@ func TestUpdateWorkspaceSkillRejectsImportedSkill(t *testing.T) {
 	svc, repo, _ := newWorkspaceSkillTestService(t)
 	ctx := context.Background()
 
-	archive, _, _, err := worker.BuildSkillArchive(worker.SkillDefinition{
+	archive, _, _, err := agentcontract.BuildSkillArchive(agentcontract.SkillDefinition{
 		Key:          "external_review",
 		Title:        "External Review",
 		Description:  "Use when reviewing third-party contribution changes.",
@@ -204,7 +212,7 @@ func TestUpdateWorkspaceSkillRebuildsArchive(t *testing.T) {
 	}
 
 	stored := mustOnlyStoredArchive(t, store)
-	loaded, err := worker.LoadSkillArchive(stored, model.WorkspaceSkillSourceWorkspace)
+	loaded, err := agentcontract.LoadSkillArchive(stored, model.WorkspaceSkillSourceWorkspace)
 	if err != nil {
 		t.Fatalf("LoadSkillArchive returned error: %v", err)
 	}

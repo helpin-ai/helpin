@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/iconcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -15,14 +16,15 @@ import (
 
 // DocsSpaceService handles business logic for docs spaces.
 type DocsSpaceService struct {
-	spaceRepo       *repository.DocsSpaceRepository
-	collectionRepo  *repository.DocsCollectionRepository
-	docRepo         *repository.DocsDocumentRepository
-	documentSvc     *DocsDocumentService
-	translationRepo *repository.DocsHelpcenterTranslationRepository
-	translationSvc  *DocsHelpcenterTranslationService
-	helpcenterRepo  *repository.DocsHelpcenterRepository
-	wsPublisher     *websocket.Publisher
+	spaceRepo        *repository.DocsSpaceRepository
+	collectionRepo   *repository.DocsCollectionRepository
+	docRepo          *repository.DocsDocumentRepository
+	documentSvc      *DocsDocumentService
+	translationRepo  *repository.DocsHelpcenterTranslationRepository
+	translationSvc   *DocsHelpcenterTranslationService
+	helpcenterRepo   *repository.DocsHelpcenterRepository
+	apiReferenceRepo *repository.DocsAPIReferenceRepository
+	wsPublisher      *websocket.Publisher
 }
 
 // NewDocsSpaceService creates a new DocsSpaceService.
@@ -46,6 +48,11 @@ func (s *DocsSpaceService) SetPermanentDeleteDependencies(collectionRepo *reposi
 // the public count defaults to zero.
 func (s *DocsSpaceService) SetHelpcenterRepository(helpcenterRepo *repository.DocsHelpcenterRepository) {
 	s.helpcenterRepo = helpcenterRepo
+}
+
+// SetAPIReferenceRepository wires API reference lifecycle and delete-impact support.
+func (s *DocsSpaceService) SetAPIReferenceRepository(apiReferenceRepo *repository.DocsAPIReferenceRepository) {
+	s.apiReferenceRepo = apiReferenceRepo
 }
 
 // GetDeleteImpact summarizes what permanent deletion of a space will
@@ -75,6 +82,14 @@ func (s *DocsSpaceService) GetDeleteImpact(ctx context.Context, workspaceID, id 
 			return nil, err
 		}
 		impact.CollectionCount = len(collections)
+	}
+
+	if s.apiReferenceRepo != nil {
+		references, err := s.apiReferenceRepo.ListBySpace(ctx, space.WorkspaceID, space.ID)
+		if err != nil {
+			return nil, err
+		}
+		impact.APIReferenceCount = len(references)
 	}
 
 	if s.docRepo == nil {
@@ -137,6 +152,11 @@ func (s *DocsSpaceService) Create(ctx context.Context, workspaceID string, req m
 	if req.Type != model.SpaceTypeInternal && req.Type != model.SpaceTypeExternalCapable {
 		return nil, fmt.Errorf("invalid space type: %s", req.Type)
 	}
+	normalizedIcon, err := iconcatalog.NormalizeNew(req.Icon)
+	if err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	}
+	req.Icon = normalizedIcon
 
 	// Append to end of section.
 	nextPos, err := s.spaceRepo.NextPosition(ctx, workspaceID, req.Type)
@@ -354,8 +374,14 @@ func (s *DocsSpaceService) Update(ctx context.Context, id string, req model.Upda
 		updates["slug"] = *req.Slug
 		shouldRefreshTranslations = true
 	}
-	if req.Icon != nil {
-		updates["icon"] = *req.Icon
+	if normalizedIcon, changed, err := iconcatalog.NormalizeUpdate(req.Icon, space.Icon); err != nil {
+		return nil, fmt.Errorf("icon: %w", err)
+	} else if changed {
+		if normalizedIcon == nil {
+			updates["icon"] = nil
+		} else {
+			updates["icon"] = *normalizedIcon
+		}
 	}
 	if req.Type != nil {
 		if *req.Type != model.SpaceTypeInternal && *req.Type != model.SpaceTypeExternalCapable {
@@ -453,6 +479,11 @@ func (s *DocsSpaceService) Delete(ctx context.Context, workspaceID, id string) e
 		}
 		if err := s.collectionRepo.HardDeleteByIDs(ctx, collectionIDs); err != nil {
 			return err
+		}
+		if s.apiReferenceRepo != nil {
+			if err := s.apiReferenceRepo.HardDeleteBySpace(ctx, id); err != nil {
+				return err
+			}
 		}
 		if err := s.spaceRepo.HardDelete(ctx, id); err != nil {
 			return err
