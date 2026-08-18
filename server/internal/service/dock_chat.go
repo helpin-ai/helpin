@@ -182,6 +182,13 @@ func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID st
 				return &existingChats[index], nil
 			}
 		}
+		ownedChat, err := s.restoreOwnedSupportConversationChat(ctx, workspaceID, userID, conversationID)
+		if err != nil {
+			return nil, err
+		}
+		if ownedChat != nil {
+			return ownedChat, nil
+		}
 	}
 	chat := &model.DockChat{
 		WorkspaceID:           workspaceID,
@@ -202,9 +209,28 @@ func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID st
 					}
 				}
 			}
+			ownedChat, lookupErr := s.restoreOwnedSupportConversationChat(ctx, workspaceID, userID, *req.SupportConversationID)
+			if lookupErr == nil && ownedChat != nil {
+				return ownedChat, nil
+			}
 		}
 		return nil, fmt.Errorf("create dock chat: %w", err)
 	}
+	return chat, nil
+}
+
+func (s *DockChatService) restoreOwnedSupportConversationChat(ctx context.Context, workspaceID, userID, conversationID string) (*model.DockChat, error) {
+	chat, err := s.chatRepo.GetOwnedBySupportConversation(ctx, workspaceID, userID, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("find owned support conversation chat: %w", err)
+	}
+	if chat == nil || chat.ArchivedAt == nil {
+		return chat, nil
+	}
+	if err := s.chatRepo.Update(ctx, workspaceID, chat.ID, map[string]interface{}{"archived_at": nil}); err != nil {
+		return nil, fmt.Errorf("restore support conversation chat: %w", err)
+	}
+	chat.ArchivedAt = nil
 	return chat, nil
 }
 

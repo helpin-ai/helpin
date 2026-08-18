@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -131,6 +132,8 @@ export function AskAgentsDock({
     runId: string | null;
   } | null>(null);
   const [draftChat, setDraftChat] = useState(false);
+  const [supportChatError, setSupportChatError] = useState<{ associationKey: string; message: string } | null>(null);
+  const [supportChatRetry, setSupportChatRetry] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const askTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -144,6 +147,9 @@ export function AskAgentsDock({
     : embedded
       ? `support:${associatedSupportConversationId ?? 'unknown'}:draft`
       : 'global:draft';
+  const supportAssociationKey = workspaceId && associatedSupportConversationId
+    ? `${workspaceId}:${associatedSupportConversationId}`
+    : null;
 
   const orderedRuns = useMemo(() => [...runs].sort((left, right) => {
     const leftPresentation = presentDockRun(left.run.status, left.run.pause_reason, left.attention_kind);
@@ -172,6 +178,15 @@ export function AskAgentsDock({
     chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null || chat.support_conversation_id != null
   )), [activeChatId, chats]);
   const activeChat = visibleChats.find((chat) => chat.id === activeChatId) ?? null;
+  const activeChatMatchesSupportConversation = Boolean(
+    activeChat && activeChat.support_conversation_id === associatedSupportConversationId,
+  );
+  const currentSupportChatError = supportChatError?.associationKey === supportAssociationKey
+    ? supportChatError.message
+    : null;
+  const resolvingSupportChat = Boolean(
+    embedded && active && supportAssociationKey && !activeChatMatchesSupportConversation && !currentSupportChatError,
+  );
   const selectedChatId = activeChat?.id ?? null;
   const activeChatRunId = chatRunOverride?.chatId === selectedChatId
     ? chatRunOverride.runId
@@ -379,6 +394,7 @@ export function AskAgentsDock({
     ensuredSupportConversationRef.current = null;
     setEmbeddedActiveChatId(null);
     setDraftChat(false);
+    setSupportChatError(null);
   }, [associatedSupportConversationId, embedded]);
 
   useEffect(() => {
@@ -389,6 +405,7 @@ export function AskAgentsDock({
     );
     if (associatedChat) {
       setDraftChat(false);
+      setSupportChatError(null);
       ensuredSupportConversationRef.current = associationKey;
       if (activeChatId !== associatedChat.id) {
         setActiveChatId(associatedChat.id);
@@ -398,20 +415,31 @@ export function AskAgentsDock({
     }
     if (ensuredSupportConversationRef.current === associationKey) return;
     ensuredSupportConversationRef.current = associationKey;
+    setSupportChatError(null);
     void dockChatService.createChat(workspaceId, '', associatedSupportConversationId, 'support').then((result) => {
       if (ensuredSupportConversationRef.current !== associationKey) return;
       if (result.error || !result.data) {
         ensuredSupportConversationRef.current = null;
-        toast.error(result.error ?? 'Failed to open the conversation chat');
+        const message = result.error ?? 'Failed to open the conversation chat';
+        setSupportChatError({ associationKey, message });
+        toast.error(message);
         return;
       }
       upsertChat(result.data);
       setDraftChat(false);
+      setSupportChatError(null);
       setActiveChatId(result.data.id);
       setTab('chats');
       focusTargetRef.current = 'composer';
     });
-  }, [active, activeChatId, associatedSupportConversationId, chats, chatsLoading, setActiveChatId, setTab, upsertChat, workspaceId]);
+  }, [active, activeChatId, associatedSupportConversationId, chats, chatsLoading, setActiveChatId, setTab, supportChatRetry, upsertChat, workspaceId]);
+
+  const retrySupportChat = useCallback(() => {
+    if (!supportAssociationKey) return;
+    ensuredSupportConversationRef.current = null;
+    setSupportChatError(null);
+    setSupportChatRetry((current) => current + 1);
+  }, [supportAssociationKey]);
 
   useEffect(() => {
     if (runsLoading) return;
@@ -653,8 +681,17 @@ export function AskAgentsDock({
           onRenameChat={renameChat}
           onArchiveChat={archiveChat}
           onUpdateVisibility={updateChatVisibility}
+          chatPlaceholder={resolvingSupportChat
+            ? { title: 'Opening chat…', subtitle: 'Loading conversation context' }
+            : currentSupportChatError
+              ? { title: 'Conversation chat', subtitle: 'Unable to open' }
+              : undefined}
         />
-        {activeChat || draftChat ? (
+        {resolvingSupportChat ? (
+          <SupportChatLoadingPane />
+        ) : currentSupportChatError ? (
+          <SupportChatErrorPane message={currentSupportChatError} onRetry={retrySupportChat} />
+        ) : activeChat || draftChat ? (
           <ChatView
             key={activeChat?.id ?? draftStoreKey}
             workspaceId={workspaceId}
@@ -857,6 +894,7 @@ function DockPaneHeader({
   onUpdateVisibility,
   closeLabel = 'Minimize',
   allowMaximize = true,
+  chatPlaceholder,
 }: {
   tab: 'agents' | 'chats';
   run: DockRunSummary | null;
@@ -873,6 +911,7 @@ function DockPaneHeader({
   onUpdateVisibility: (chatId: string, visibility: DockChatVisibility) => Promise<boolean>;
   closeLabel?: string;
   allowMaximize?: boolean;
+  chatPlaceholder?: { title: string; subtitle: string };
 }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState(chat?.title ?? '');
@@ -915,7 +954,7 @@ function DockPaneHeader({
           <span className="block truncate text-[13.5px] font-semibold text-[#1c1b19] dark:text-[#eeeae1]">
             {tab === 'agents'
               ? (run ? dockRunTitle(run) : 'Agent runs')
-              : <AnimatedDockChatTitle title={chat?.title.trim() || 'New chat'} />}
+              : <AnimatedDockChatTitle title={chat?.title.trim() || chatPlaceholder?.title || 'New chat'} />}
           </span>
         )}
         {tab === 'agents' && run ? (
@@ -928,7 +967,7 @@ function DockPaneHeader({
             onChange={(visibility) => onUpdateVisibility(chat.id, visibility)}
           />
         ) : (
-          <span className="block truncate text-[10.5px] text-[#a5a29b]">Only you can see this</span>
+          <span className="block truncate text-[10.5px] text-[#a5a29b]">{chatPlaceholder?.subtitle || 'Only you can see this'}</span>
         )}
       </span>
       {presentation ? (
@@ -1225,6 +1264,43 @@ function EmptyChatPane({ onNewChat }: { onNewChat: () => void }) {
         <AskAgentAvatar plateStyle="feather" className="mx-auto mb-2 h-[72px] w-[72px]" />
         <p className="text-[13px] text-[#8a8781]">No conversations yet.</p>
         <button type="button" onClick={onNewChat} className="mt-3 rounded-[9px] bg-[#1c1b19] px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-[#34322e] dark:bg-[#eeeae1] dark:text-[#1c1b19]">Start a conversation</button>
+      </div>
+    </div>
+  );
+}
+
+function SupportChatLoadingPane() {
+  return (
+    <div className="relative min-h-0 flex-1 px-4 py-5" role="status" aria-label="Opening conversation chat">
+      <span className="sr-only">Opening conversation chat…</span>
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+          <div className="w-full space-y-2 pt-1">
+            <Skeleton className="h-3 w-2/3 rounded" />
+            <Skeleton className="h-3 w-5/6 rounded" />
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Skeleton className="h-12 w-4/5 rounded-xl" />
+        </div>
+        <div className="flex items-start gap-3">
+          <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+          <Skeleton className="h-16 w-3/4 rounded-xl" />
+        </div>
+      </div>
+      <Skeleton className="absolute inset-x-4 bottom-4 h-20 rounded-xl" />
+    </div>
+  );
+}
+
+function SupportChatErrorPane({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center px-6 text-center">
+      <div>
+        <p className="text-[13px] font-medium text-[#4b4945] dark:text-[#ddd8ce]">Unable to open this conversation chat.</p>
+        <p className="mt-1 text-[11.5px] text-[#8a8781]">{message}</p>
+        <button type="button" onClick={onRetry} className="mt-3 rounded-[9px] border border-[#dedad1] px-3 py-2 text-[12.5px] font-semibold text-[#4b4945] hover:bg-[#f4f2ee] dark:border-[#45423d] dark:text-[#ddd8ce] dark:hover:bg-[#302f2b]">Retry</button>
       </div>
     </div>
   );

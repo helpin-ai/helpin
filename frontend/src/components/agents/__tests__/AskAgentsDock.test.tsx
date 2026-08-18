@@ -639,6 +639,31 @@ describe('AskAgentsDock', () => {
 		expect(useDockStore.getState().chats.some((chat) => chat.id === 'chat-stale')).toBe(false);
 		expect(document.body.textContent).toContain('Next conversation');
 	});
+
+	it('shows a loading structure instead of the new-chat action while switching support conversations', async () => {
+		const firstContext: CommandBarPageContext = {
+			entity_type: 'support_conversation', entity_id: 'conv-1', display_title: 'First conversation',
+		};
+		const nextContext: CommandBarPageContext = {
+			entity_type: 'support_conversation', entity_id: 'conv-2', display_title: 'Next conversation',
+		};
+		const firstChat = { ...CHAT, support_conversation_id: 'conv-1' };
+		let resolveNext: ((value: { data: DockChat; error: null }) => void) | undefined;
+		mocks.listChats.mockResolvedValue({ data: { chats: [firstChat] }, error: null });
+		mocks.createChat.mockImplementation(async () => new Promise((resolve) => { resolveNext = resolve; }));
+
+		await renderEmbeddedDock(firstContext);
+		await renderEmbeddedDock(nextContext);
+		await waitForCondition(() => resolveNext !== undefined, 'next associated chat request did not start');
+
+		expect(document.body.textContent).toContain('Opening conversation chat…');
+		expect(document.body.textContent).not.toContain('Start a conversation');
+		expect(document.body.textContent).not.toContain('New chat');
+
+		await act(async () => {
+			resolveNext?.({ data: { ...CHAT, id: 'chat-next', support_conversation_id: 'conv-2' }, error: null });
+		});
+	});
   it('renders the collapsed pill and expands via the / key', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();

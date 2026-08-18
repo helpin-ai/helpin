@@ -63,6 +63,25 @@ func (r *DockChatRepository) ListBySupportConversation(ctx context.Context, work
 	return chats, nil
 }
 
+// GetOwnedBySupportConversation returns the requester's chat for a support
+// conversation, including an archived row that may need to be restored.
+func (r *DockChatRepository) GetOwnedBySupportConversation(ctx context.Context, workspaceID, userID, conversationID string) (*model.DockChat, error) {
+	if r == nil || r.db == nil {
+		return nil, gorm.ErrInvalidDB
+	}
+	var chat model.DockChat
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND user_id = ? AND support_conversation_id = ?", workspaceID, userID, conversationID).
+		First(&chat).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &chat, nil
+}
+
 // ListVisible returns the requester's private chats plus chats shared with the
 // workspace or with a module the requester can access.
 func (r *DockChatRepository) ListVisible(ctx context.Context, workspaceID, userID string, modules []model.ModuleID, limit int, before *time.Time, beforeID string) ([]model.DockChat, error) {
