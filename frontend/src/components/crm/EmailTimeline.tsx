@@ -10,7 +10,7 @@ import {
 } from '@/lib/icons';
 // ArrowDownLeft/ArrowUpRight kept for email detail dialog direction badge
 import { useInfiniteContactEmails, useInfiniteDealEmails, useEmailAccounts } from '@/hooks/queries/useCRM';
-import { ComposeEmailDialog, type EmailDraft } from './ComposeEmailDialog';
+import { CRMEmailComposerDialog, type EmailDraft } from './CRMEmailComposerDialog';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -23,6 +23,7 @@ interface EmailTimelineProps {
   workspaceId: string;
   contactId?: string;
   dealId?: string;
+  defaultRecipient?: string;
 }
 
 type EmailBucket = 'Today' | 'Yesterday' | 'Last Week' | 'Older';
@@ -180,7 +181,7 @@ function LoadingState() {
   );
 }
 
-export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineProps) {
+export function EmailTimeline({ workspaceId, contactId, dealId, defaultRecipient }: EmailTimelineProps) {
   const contactQuery = useInfiniteContactEmails(workspaceId, contactId ?? '');
   const dealQuery = useInfiniteDealEmails(workspaceId, dealId ?? '');
   const accountsQuery = useEmailAccounts(workspaceId);
@@ -205,6 +206,13 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
     (account) => account.is_active && account.status !== 'pending_oauth' && account.status !== 'disconnected',
   );
   const hasConnectedAccounts = connectedAccounts.length > 0;
+  const openNewEmail = () => {
+    setComposeDraft({
+      title: 'New email',
+      to: defaultRecipient ? [defaultRecipient] : undefined,
+    });
+  };
+
   const openEmailSettings = () => {
     if (!currentWorkspace?.slug) {
       return;
@@ -242,31 +250,44 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
     });
   };
 
+  const composerDialog = composeDraft ? (
+    <CRMEmailComposerDialog
+      workspaceId={workspaceId}
+      accounts={connectedAccounts}
+      open
+      draft={composeDraft}
+      onOpenChange={(nextOpen) => !nextOpen && setComposeDraft(null)}
+    />
+  ) : null;
+
   if (query.isLoading) {
     return <LoadingState />;
   }
 
   if (messages.length === 0) {
     return (
-      <div className="px-6 py-6">
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-12 text-center">
-          <div className="rounded-full bg-muted p-3">
-            <Mail01Icon className="h-7 w-7 text-muted-foreground" />
+      <>
+        <div className="px-6 py-6">
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-12 text-center">
+            <div className="rounded-full bg-muted p-3">
+              <Mail01Icon className="h-7 w-7 text-muted-foreground" />
+            </div>
+            <p className="mt-4 text-base font-medium text-foreground">No emails tracked</p>
+            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+              {hasConnectedAccounts
+                ? 'This contact does not have any synced messages yet.'
+                : 'Connect Gmail to sync conversations, show all participants, and open full message threads here.'}
+            </p>
+            <Button variant="outline" className="mt-5" onClick={openEmailSettings}>
+              {hasConnectedAccounts ? 'Manage email accounts' : 'Set up email sending'}
+            </Button>
+            {hasConnectedAccounts && (
+              <Button className="mt-2" onClick={openNewEmail}>Compose email</Button>
+            )}
           </div>
-          <p className="mt-4 text-base font-medium text-foreground">No emails tracked</p>
-          <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-            {hasConnectedAccounts
-              ? 'This contact does not have any synced messages yet.'
-              : 'Connect Gmail to sync conversations, show all participants, and open full message threads here.'}
-          </p>
-          <Button variant="outline" className="mt-5" onClick={openEmailSettings}>
-            {hasConnectedAccounts ? 'Manage email accounts' : 'Set up email sending'}
-          </Button>
-          {hasConnectedAccounts && (
-            <Button className="mt-2" onClick={() => setComposeDraft({ title: 'New email' })}>Compose email</Button>
-          )}
         </div>
-      </div>
+        {composerDialog}
+      </>
     );
   }
 
@@ -275,7 +296,7 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
       <div>
         {hasConnectedAccounts && (
           <div className="flex justify-end border-b border-border/60 px-5 py-3">
-            <Button size="sm" onClick={() => setComposeDraft({ title: 'New email' })}>Compose email</Button>
+            <Button size="sm" onClick={openNewEmail}>Compose email</Button>
           </div>
         )}
         {groupedMessages.map((group) => (
@@ -408,15 +429,7 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
           </DialogContent>
         ) : null}
       </Dialog>
-      {composeDraft && (
-        <ComposeEmailDialog
-          workspaceId={workspaceId}
-          accounts={connectedAccounts}
-          open
-          draft={composeDraft}
-          onOpenChange={(open) => !open && setComposeDraft(null)}
-        />
-      )}
+      {composerDialog}
     </>
   );
 }
