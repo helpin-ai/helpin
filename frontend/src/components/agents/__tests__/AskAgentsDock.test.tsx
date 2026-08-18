@@ -161,7 +161,7 @@ beforeEach(() => {
   root = createRoot(container);
   localStorage.clear();
   localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'chats', chatId: 'chat-1' }));
-  useDockStore.setState({ collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], drafts: {}, lastAttentionIds: [] });
+  useDockStore.setState({ collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], transcripts: {}, drafts: {}, lastAttentionIds: [] });
   useWorkspaceStore.setState({
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
@@ -298,6 +298,29 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it('renders a cached transcript immediately and keeps it when refresh fails', async () => {
+    useDockStore.setState({
+      workspaceId: 'ws-1',
+      chats: [CHAT],
+      activeChatId: CHAT.id,
+      transcripts: {
+        [CHAT.id]: {
+          detail: chatDetail(),
+          messages: [{ id: 'cached-message', role: 'assistant', content: 'Cached answer', created_at: '2026-08-18T12:00:00Z' }],
+          nextBefore: null,
+        },
+      },
+    } as never);
+    mocks.getChat.mockResolvedValue({ data: null, error: 'Network unavailable' });
+    mocks.listMessages.mockResolvedValue({ data: null, error: 'Network unavailable' });
+
+    await renderDock();
+    await waitForText('Cached answer');
+    expect(document.body.textContent).not.toContain('Loading chat…');
+    await waitForText('Couldn’t refresh this conversation');
+    expect(document.body.textContent).toContain('Retry');
+  });
+
   it('shows attachment types before opening a file picker', async () => {
     await renderDock();
     await waitForText('Sprint questions');
@@ -1549,6 +1572,37 @@ describe('AskAgentsDock', () => {
 
     expect(mocks.listChats).toHaveBeenLastCalledWith('ws-1', 'cursor-1');
     await waitForText('Older conversation');
+  });
+
+  it('loads the next cursor page when the agent roster nears its end', async () => {
+    const olderRun: DockRunSummary = {
+      ...DOCK_RUN,
+      run: { ...DOCK_RUN.run, id: 'agent-run-older', status: 'completed' },
+      agent: { ...DOCK_RUN.agent, name: 'Older agent run' },
+      last_activity_at: '2026-08-10T10:00:00Z',
+    };
+    mocks.listRuns.mockReset();
+    mocks.listRuns
+      .mockResolvedValueOnce({ data: { runs: [DOCK_RUN], attention_count: 1, next_cursor: 'run-cursor-1' }, error: null })
+      .mockResolvedValueOnce({ data: { runs: [olderRun], attention_count: 0, next_cursor: null }, error: null });
+    localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'agents', runId: DOCK_RUN.run.id }));
+    useDockStore.setState({ tab: 'agents', activeRunId: DOCK_RUN.run.id });
+    await renderDock();
+    await waitForText('Polish the agent dock');
+
+    const roster = document.body.querySelector<HTMLElement>('[role="tabpanel"]');
+    Object.defineProperties(roster!, {
+      scrollHeight: { configurable: true, value: 1_000 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, value: 450 },
+    });
+    await act(async () => {
+      roster?.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(mocks.listRuns).toHaveBeenLastCalledWith('ws-1', 'run-cursor-1');
+    await waitForText('Older agent run');
   });
 
   it('renders and resolves an approval for a personal agent run', async () => {

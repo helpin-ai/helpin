@@ -129,6 +129,7 @@ export interface DockRunSummary {
 export interface DockRunListResponse {
   runs: DockRunSummary[]
   attention_count: number
+  next_cursor?: string | null
 }
 
 export type PublicShareResourceType = 'dock_chat' | 'agent_run'

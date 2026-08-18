@@ -40,6 +40,7 @@ import {
   resolveDockComposerState,
   transformDockStream,
 } from './dockChatState';
+import { useDockStore } from '@/stores/dockStore';
 
 interface ChatViewProps {
   workspaceId: string;
@@ -94,8 +95,11 @@ export function ChatView({
   requiredPageContext,
   showComposerShortcutHint,
 }: ChatViewProps) {
-  const [detail, setDetail] = useState<DockChatDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(true);
+  const cachedTranscript = chatId ? useDockStore.getState().transcripts[chatId] : undefined;
+  const cacheTranscript = useDockStore((state) => state.cacheTranscript);
+  const [detail, setDetail] = useState<DockChatDetail | null>(cachedTranscript?.detail ?? null);
+  const [detailLoading, setDetailLoading] = useState(!!chatId && !cachedTranscript);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [plans, setPlans] = useState<CommandBarPlanSummary[]>([]);
   const [localValue, setLocalValue] = useState('');
   const value = draftValue ?? localValue;
@@ -111,8 +115,8 @@ export function ChatView({
   const [launchStartedAt, setLaunchStartedAt] = useState<string | undefined>();
   const [stopping, setStopping] = useState(false);
   const [pendingEcho, setPendingEcho] = useState<{ id: string; content: string; timestamp: string } | null>(null);
-  const [persistedMessages, setPersistedMessages] = useState<AgentRunMessage[]>([]);
-  const [nextMessagesBefore, setNextMessagesBefore] = useState<number | null>(null);
+  const [persistedMessages, setPersistedMessages] = useState<AgentRunMessage[]>(cachedTranscript?.messages ?? []);
+  const [nextMessagesBefore, setNextMessagesBefore] = useState<number | null>(cachedTranscript?.nextBefore ?? null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [references, setReferences] = useState<DockEntityReference[]>([]);
   const [mediaAttachments, setMediaAttachments] = useState<DockChatMediaAttachment[]>([]);
@@ -158,6 +162,10 @@ export function ChatView({
   const refreshDetail = useCallback(async () => {
 	if (!chatId) return null;
     const res = await dockChatService.getChat(workspaceId, chatId);
+    if (res.error || !res.data) {
+      setRefreshError(res.error ?? 'Unable to refresh conversation');
+      return null;
+    }
     if (res.data) setDetail(res.data);
     return res.data ?? null;
   }, [chatId, workspaceId]);
@@ -165,6 +173,10 @@ export function ChatView({
   const refreshMessages = useCallback(async () => {
 	if (!chatId) return [];
     const res = await dockChatService.listMessages(workspaceId, chatId, undefined, 50);
+    if (res.error || !res.data) {
+      setRefreshError(res.error ?? 'Unable to refresh conversation');
+      return [];
+    }
     if (res.data) {
       setPersistedMessages((current) => mergeMessagePages(current, res.data?.messages ?? []));
       setNextMessagesBefore(res.data.next_before ?? null);
@@ -186,6 +198,14 @@ export function ChatView({
   }, [chatId, loadingEarlier, nextMessagesBefore, workspaceId]);
 
   // Load chat on mount / chat switch.
+  const refreshConversation = useCallback(async () => {
+    if (!chatId) return;
+    setRefreshError(null);
+    if (!useDockStore.getState().transcripts[chatId]) setDetailLoading(true);
+    await Promise.all([refreshDetail(), refreshMessages()]);
+    setDetailLoading(false);
+  }, [chatId, refreshDetail, refreshMessages]);
+
   useEffect(() => {
 	if (!chatId) {
 	  setDetail(null);
@@ -196,12 +216,15 @@ export function ChatView({
 	}
     autoFollowRef.current = true;
     const timer = window.setTimeout(() => {
-      setPersistedMessages([]);
-      setNextMessagesBefore(null);
-      void Promise.all([refreshDetail(), refreshMessages()]).finally(() => setDetailLoading(false));
+      void refreshConversation();
     }, 0);
     return () => window.clearTimeout(timer);
-	}, [chatId, refreshDetail, refreshMessages]);
+	}, [chatId, refreshConversation]);
+
+  useEffect(() => {
+    if (!chatId || !detail || detailLoading) return;
+    cacheTranscript(chatId, { detail, messages: persistedMessages, nextBefore: nextMessagesBefore });
+  }, [cacheTranscript, chatId, detail, detailLoading, nextMessagesBefore, persistedMessages]);
 
   // Refresh the run summary when its WS event fires (stream refetch is
   // handled inside useAgentRunStream; this keeps status/pause_reason fresh).
@@ -675,6 +698,12 @@ export function ChatView({
 		)}
         {detailLoading && !detail && (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading chat…</p>
+        )}
+        {refreshError && (
+          <div className="mx-3 my-2 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            <span>Couldn’t refresh this conversation</span>
+            <button type="button" className="font-semibold hover:underline" onClick={() => void refreshConversation()}>Retry</button>
+          </div>
         )}
         {!detailLoading && !run && !visiblePendingEcho && (
           <p className="py-6 text-center text-sm text-muted-foreground">

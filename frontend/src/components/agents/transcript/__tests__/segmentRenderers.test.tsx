@@ -223,7 +223,7 @@ describe('TranscriptSegmentView — tool', () => {
     expect(container.textContent).not.toContain('plain output');
   });
 
-  it('places the failed-tool disclosure chevron immediately after its label', () => {
+  it('places the failed-tool disclosure chevron at the end of the row', () => {
     const segment: TranscriptSegment = {
       ...failedToolSegment,
       toolCall: { ...failedToolSegment.toolCall, result: { error: 'command failed' } },
@@ -231,9 +231,9 @@ describe('TranscriptSegmentView — tool', () => {
     render(segment, true, { showToolDetails: true });
 
     const label = container.querySelector('[data-transcript-row-label]');
-    const chevron = container.querySelector('[data-transcript-row-chevron]');
+    const chevron = container.querySelector('[data-disclosure-chevron]');
     expect(label).not.toBeNull();
-    expect(label?.nextElementSibling).toBe(chevron);
+    expect(container.querySelector('button')?.firstElementChild?.lastElementChild).toBe(chevron);
   });
 });
 
@@ -249,8 +249,8 @@ describe('TranscriptSegmentView — reasoning', () => {
     expect(container.textContent).toContain('Thought');
     const toggle = container.querySelector('button');
     expect(toggle).not.toBeNull();
-    expect(container.querySelector('[data-transcript-row-label]')?.nextElementSibling)
-      .toBe(container.querySelector('[data-transcript-row-chevron]'));
+    expect(toggle?.firstElementChild?.lastElementChild)
+      .toBe(container.querySelector('[data-disclosure-chevron]'));
     act(() => toggle?.click());
     expect(container.textContent).toContain('Considering the edge cases.');
   });

@@ -87,8 +87,11 @@ export const dockChatService = {
     ),
   cancelChatRun: (workspaceId: string, chatId: string) =>
     api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/cancel${qs(workspaceId)}`),
-  listRuns: (workspaceId: string) =>
-    api.get<DockRunListResponse>(`/dock/runs${qs(workspaceId)}`),
+  listRuns: (workspaceId: string, cursor?: string | null, limit = 30) => {
+    const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return api.get<DockRunListResponse>(`/dock/runs?${query.toString()}`);
+  },
   getRunSnapshot: (workspaceId: string, runId: string) =>
     api.get<CodingSession>(`/dock/runs/${encodeURIComponent(runId)}/snapshot${qs(workspaceId)}`),
   listRunEvents: (workspaceId: string, runId: string, after = 0) =>

@@ -99,6 +99,8 @@ export function AskAgentsDock({
   const [attentionNudge, setAttentionNudge] = useState(false);
   const [nextChatCursor, setNextChatCursor] = useState<string | null>(null);
   const [loadingMoreChats, setLoadingMoreChats] = useState(false);
+  const [nextRunCursor, setNextRunCursor] = useState<string | null>(null);
+  const [loadingMoreRuns, setLoadingMoreRuns] = useState(false);
   const [chatPresenceOverride, setChatPresenceOverride] = useState<{
     chatId: string;
     state: AskAgentAvatarState;
@@ -114,6 +116,7 @@ export function AskAgentsDock({
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const focusTargetRef = useRef<DockFocusTarget>('header');
   const loadingMoreChatsRef = useRef(false);
+  const loadingMoreRunsRef = useRef(false);
   const ensuredSupportConversationRef = useRef<string | null>(null);
 
   const orderedRuns = useMemo(() => [...runs].sort((left, right) => {
@@ -186,9 +189,31 @@ export function AskAgentsDock({
       return [];
     }
     setRuns(result.data.runs ?? []);
+    setNextRunCursor(result.data.next_cursor ?? null);
     setRunsLoading(false);
     return result.data.runs ?? [];
   }, [workspaceId]);
+
+  const loadMoreRuns = useCallback(async () => {
+    if (!workspaceId || !nextRunCursor || loadingMoreRunsRef.current) return;
+    loadingMoreRunsRef.current = true;
+    setLoadingMoreRuns(true);
+    const cursor = nextRunCursor;
+    const result = await dockChatService.listRuns(workspaceId, cursor);
+    if (useWorkspaceStore.getState().currentWorkspace?.id === workspaceId) {
+      if (result.error || !result.data) {
+        toast.error(result.error ?? 'Unable to load more agent runs');
+      } else {
+        setRuns((current) => {
+          const known = new Set(current.map((summary) => summary.run.id));
+          return [...current, ...(result.data?.runs ?? []).filter((summary) => !known.has(summary.run.id))];
+        });
+        setNextRunCursor(result.data.next_cursor ?? null);
+      }
+    }
+    loadingMoreRunsRef.current = false;
+    setLoadingMoreRuns(false);
+  }, [nextRunCursor, workspaceId]);
 
   const refreshChats = useCallback(async (preserveLoaded = false) => {
     if (!workspaceId) return;
@@ -297,6 +322,9 @@ export function AskAgentsDock({
       if (cancelled) return;
       setRuns([]);
       setRunsLoading(true);
+      setNextRunCursor(null);
+      loadingMoreRunsRef.current = false;
+      setLoadingMoreRuns(false);
       setChatsLoading(true);
       setNextChatCursor(null);
       loadingMoreChatsRef.current = false;
@@ -677,6 +705,9 @@ export function AskAgentsDock({
               hasMoreChats={!!nextChatCursor}
               loadingMoreChats={loadingMoreChats}
               onLoadMoreChats={() => void loadMoreChats()}
+              hasMoreRuns={!!nextRunCursor}
+              loadingMoreRuns={loadingMoreRuns}
+              onLoadMoreRuns={() => void loadMoreRuns()}
               onRetryRuns={() => void refreshRuns()}
               onRetryChats={() => void refreshChats()}
             />
