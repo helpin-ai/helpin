@@ -852,6 +852,7 @@ func main() {
 	supportInboxService.SetCRMCompanyRepository(crmCompanyRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)
 	supportLinkPreviewService := service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs)
+	supportLinkPreviewService.SetLinkScanner(service.NewGoogleWebRiskClient(cfg.GoogleWebRiskAPIKey))
 	emailFallbackService := service.NewEmailFallbackService(
 		redisClient,
 		wsHub,

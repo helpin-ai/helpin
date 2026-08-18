@@ -260,9 +260,17 @@ func (h *Hub) Broadcast(event Event) {
 
 	// Prepare widget-formatted payload when applicable.
 	var widgetData []byte
+	widgetAgentData := agentData
+	widgetEventData := event.Data
+	if event.Entity == "support_conversation_message" {
+		widgetEventData = widgetSafeSupportMessageEventData(event.Data)
+		widgetEvent := event
+		widgetEvent.Data = widgetEventData
+		widgetAgentData, _ = json.Marshal(widgetEvent)
+	}
 	switch {
 	case event.Entity == "support_conversation_message" && event.Action == "created" && len(event.Data) > 0:
-		wm := widgetMessage{Type: "message:received", Data: event.Data}
+		wm := widgetMessage{Type: "message:received", Data: widgetEventData}
 		widgetData, _ = json.Marshal(wm)
 	case event.Entity == "support_conversation" && event.Action == "typing_started":
 		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start", Data: event.Data})
@@ -313,8 +321,11 @@ func (h *Hub) Broadcast(event Event) {
 			continue
 		}
 		payload := agentData
-		if c.IsWidget && widgetData != nil {
-			payload = widgetData
+		if c.IsWidget {
+			payload = widgetAgentData
+			if widgetData != nil {
+				payload = widgetData
+			}
 		}
 		if isTyping {
 			slog.Debug("[ws] delivering typing event to client",

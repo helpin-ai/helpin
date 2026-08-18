@@ -43,6 +43,18 @@ func TestSupportMessageEventIncludesMessageType(t *testing.T) {
 	}
 }
 
+func TestWidgetSafeSupportMessageEventDataRemovesLinkSecurity(t *testing.T) {
+	data := json.RawMessage(`{"id":"msg-1","metadata":"{\"link_previews\":[{\"url\":\"http://example.com\"}],\"link_security\":[{\"status\":\"malicious\"}]}"}`)
+
+	got := widgetSafeSupportMessageEventData(data)
+	if strings.Contains(string(got), "link_security") {
+		t.Fatalf("widget event leaked link security: %s", got)
+	}
+	if !strings.Contains(string(got), "link_previews") {
+		t.Fatalf("widget event lost previews: %s", got)
+	}
+}
+
 // TestSupportMessageEventOmitsSystemEventTypeForReplies ensures only system
 // messages carry the event type on the wire — regular replies do not.
 func TestSupportMessageEventOmitsSystemEventTypeForReplies(t *testing.T) {

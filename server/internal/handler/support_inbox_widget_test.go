@@ -10,7 +10,25 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestWidgetSafeSupportMessagesRemovesLinkSecurity(t *testing.T) {
+	messages := []model.SupportMessage{{
+		Metadata: `{"link_previews":[{"url":"http://example.com"}],"link_security":[{"status":"malicious"}],"other":true}`,
+	}}
+
+	got := widgetSafeSupportMessages(messages)
+	if strings.Contains(got[0].Metadata, "link_security") {
+		t.Fatalf("widget metadata leaked link security: %s", got[0].Metadata)
+	}
+	if !strings.Contains(got[0].Metadata, "link_previews") || !strings.Contains(got[0].Metadata, `"other":true`) {
+		t.Fatalf("widget metadata lost safe fields: %s", got[0].Metadata)
+	}
+	if strings.Contains(messages[0].Metadata, `"other":false`) {
+		t.Fatal("input messages were mutated")
+	}
+}
 
 func TestSupportInboxWidgetHandlerValidation(t *testing.T) {
 	h := NewSupportInboxWidgetHandler(nil)

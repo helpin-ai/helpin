@@ -365,6 +365,15 @@ type SupportLinkPreview struct {
 	Host        string  `json:"host"`
 }
 
+// SupportLinkSecurity records a time-bounded reputation lookup for a support-message URL.
+type SupportLinkSecurity struct {
+	URL         string    `json:"url"`
+	Status      string    `json:"status"`
+	ThreatTypes []string  `json:"threat_types,omitempty"`
+	CheckedAt   time.Time `json:"checked_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
 // SupportCannedResponse represents a canned response for quick replies.
 type SupportCannedResponse struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`

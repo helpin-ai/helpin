@@ -70,6 +70,24 @@ func supportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID,
 	return event
 }
 
+func widgetSafeSupportMessageEventData(data json.RawMessage) json.RawMessage {
+	if len(data) == 0 {
+		return data
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil
+	}
+	if metadata, ok := payload["metadata"].(string); ok {
+		payload["metadata"] = model.StripSupportLinkSecurityMetadata(metadata)
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	return encoded
+}
+
 // SupportMessageDeletedEvent builds the standard websocket event for a support
 // message soft-delete. Clients invalidate the same message-list cache they use
 // for created events.

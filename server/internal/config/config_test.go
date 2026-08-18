@@ -108,6 +108,19 @@ func TestLoadAgentRuntimeConfig(t *testing.T) {
 	}
 }
 
+func TestLoadGoogleWebRiskAPIKey(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("GOOGLE_WEB_RISK_API_KEY", " web-risk-key ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.GoogleWebRiskAPIKey != "web-risk-key" {
+		t.Fatalf("unexpected Google Web Risk API key: %q", cfg.GoogleWebRiskAPIKey)
+	}
+}
+
 func TestLoadMeetingCaptureProvider(t *testing.T) {
 	setRequiredConfigEnv(t)
 	t.Setenv("CRM_MEETING_CAPTURE_PROVIDER", " VEXA ")
