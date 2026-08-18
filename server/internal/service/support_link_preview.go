@@ -164,7 +164,13 @@ func (s *SupportLinkPreviewService) EnrichMessage(ctx context.Context, msg *mode
 	}
 	securityResult := make(chan []model.SupportLinkSecurity, 1)
 	previewResults := make(chan previewResult, 1)
-	go func() { securityResult <- s.scanLinks(previewCtx, urls) }()
+	go func() {
+		if strings.EqualFold(strings.TrimSpace(msg.SenderType), "customer") {
+			securityResult <- s.scanLinks(previewCtx, urls)
+			return
+		}
+		securityResult <- nil
+	}()
 	go func() {
 		previews, err := s.fetchLinkPreviews(previewCtx, previewURLs)
 		previewResults <- previewResult{previews: previews, err: err}

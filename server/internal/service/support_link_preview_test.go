@@ -99,7 +99,7 @@ func TestEnrichMessagePersistsSecurityWhenPreviewFails(t *testing.T) {
 	service.clients = []*http.Client{{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("preview unavailable")
 	})}}
-	msg := &model.SupportMessage{Content: "Open http://example.com/path", Metadata: `{"existing":true}`}
+	msg := &model.SupportMessage{SenderType: "customer", Content: "Open http://example.com/path", Metadata: `{"existing":true}`}
 
 	service.EnrichMessage(context.Background(), msg)
 
@@ -125,12 +125,39 @@ func TestEnrichMessagePreviewSurvivesScannerTimeout(t *testing.T) {
 			Body: io.NopCloser(strings.NewReader(`<html><title>Available preview</title></html>`)), Request: req,
 		}, nil
 	})}}
-	msg := &model.SupportMessage{Content: "https://example.com/path"}
+	msg := &model.SupportMessage{SenderType: "customer", Content: "https://example.com/path"}
 
 	service.EnrichMessage(context.Background(), msg)
 
 	if !strings.Contains(msg.Metadata, `"title":"Available preview"`) {
 		t.Fatalf("metadata = %s", msg.Metadata)
+	}
+}
+
+func TestEnrichMessageDoesNotScanTrustedAuthorLinks(t *testing.T) {
+	for _, senderType := range []string{"user", "agent", "ai"} {
+		t.Run(senderType, func(t *testing.T) {
+			scanner := &recordingSupportLinkScanner{}
+			service := NewSupportLinkPreviewService("")
+			service.SetLinkScanner(scanner)
+			service.resolver = staticSupportResolver{addresses: []netip.Addr{netip.MustParseAddr("93.184.216.34")}}
+			service.clients = []*http.Client{{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/html"}},
+					Body: io.NopCloser(strings.NewReader(`<html><title>Trusted author preview</title></html>`)), Request: req,
+				}, nil
+			})}}
+			msg := &model.SupportMessage{SenderType: senderType, Content: "http://example.com/path"}
+
+			service.EnrichMessage(context.Background(), msg)
+
+			if len(scanner.urls) != 0 {
+				t.Fatalf("scanned urls = %#v, want none", scanner.urls)
+			}
+			if !strings.Contains(msg.Metadata, `"title":"Trusted author preview"`) {
+				t.Fatalf("metadata = %s", msg.Metadata)
+			}
+		})
 	}
 }
 
