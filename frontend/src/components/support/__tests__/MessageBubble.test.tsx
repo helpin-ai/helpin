@@ -796,6 +796,10 @@ Can I export my data?`,
     expect(hoverPreview?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
     expect(container.textContent).toContain('1 / 2')
 
+    const hoverPreviewBridge = container.querySelector('[data-testid="support-attachment-hover-preview"]')
+    expect(hoverPreviewBridge?.className).toContain('pb-2')
+    expect(hoverPreviewBridge?.className).not.toContain('mb-2')
+
     const hoverNext = container.querySelector('button[aria-label="Next image attachment"]')
     act(() => {
       hoverNext?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
