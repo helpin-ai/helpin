@@ -10,6 +10,9 @@ import type {
   DockRunListResponse,
   SendDockChatMessageRequest,
   UpdateDockChatRequest,
+	PublicShareLink,
+	PublicShareResourceType,
+	PublicSharedResource,
 } from '../dockTypes';
 import type {
   AgentRun,
@@ -24,6 +27,14 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const dockChatService = {
+	getPublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>
+		api.get<PublicShareLink | null>(`/dock/shares/${resourceType}/${encodeURIComponent(resourceId)}${qs(workspaceId)}`),
+	createPublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>
+		api.post<PublicShareLink>(`/dock/shares/${resourceType}/${encodeURIComponent(resourceId)}${qs(workspaceId)}`, {}),
+	revokePublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>
+		api.del<void>(`/dock/shares/${resourceType}/${encodeURIComponent(resourceId)}${qs(workspaceId)}`),
+	getPublicSharedResource: (token: string) =>
+		api.get<PublicSharedResource>(`/public/shares/${encodeURIComponent(token)}`),
   listChats: (workspaceId: string, cursor?: string | null, limit = 30) => {
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
     if (cursor) query.set('cursor', cursor);

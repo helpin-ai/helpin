@@ -9,6 +9,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+	DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -28,6 +29,7 @@ import { dockRunContext, dockRunTitle, presentDockRun } from './dock/dockPresent
 import { buildCodingSessionPath } from '@/lib/codingSessionSurface';
 import { AnimatedDockChatTitle } from './dock/AnimatedDockChatTitle';
 import { usePageContext } from '@/components/command-bar/pageContext';
+import { PublicShareMenuActions } from './PublicShareMenuActions';
 
 type AskAgentsEventDetail = { query?: string; mode?: 'compose' | 'runs'; runId?: string; chatId?: string };
 type DockFocusTarget = 'composer' | 'selection' | 'header';
@@ -74,6 +76,17 @@ export function AskAgentsDock({
     activateWorkspace,
   } = useDockStore();
   const workspaceId = workspace?.id;
+	useEffect(() => {
+		if (!workspaceId || typeof window === 'undefined') return;
+		const url = new URL(window.location.href);
+		const sharedChatID = url.searchParams.get('ask_chat')?.trim();
+		if (!sharedChatID) return;
+		setTab('chats');
+		setActiveChatId(sharedChatID);
+		setCollapsed(false);
+		url.searchParams.delete('ask_chat');
+		window.history.replaceState(window.history.state, '', url);
+	}, [setActiveChatId, setCollapsed, setTab, workspaceId]);
   const [runs, setRuns] = useState<DockRunSummary[]>([]);
   const [runsLoading, setRunsLoading] = useState(true);
   const [chatsLoading, setChatsLoading] = useState(true);
@@ -858,16 +871,24 @@ function DockPaneHeader({
           <LinkSquare01Icon className="h-3.5 w-3.5" />
         </a>
       ) : null}
-      {tab === 'chats' && chat && chat.user_id === currentUserId ? (
+      {(tab === 'chats' && chat) || (tab === 'agents' && run) ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button type="button" aria-label="Conversation actions" className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
+            <button type="button" aria-label={tab === 'agents' ? 'Agent run actions' : 'Conversation actions'} className="agent-dock-header-action grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
               <MoreVerticalIcon className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="z-[70]">
-            <DropdownMenuItem onSelect={() => { setTitle(chat.title); setEditingTitle(true); }}>Rename</DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive" onSelect={() => void onArchiveChat(chat.id)}>Archive</DropdownMenuItem>
+			<PublicShareMenuActions
+				workspaceId={run?.run.workspace_id ?? chat?.workspace_id ?? ''}
+				resourceType={tab === 'agents' ? 'agent_run' : 'dock_chat'}
+				resourceId={run?.run.id ?? chat?.id ?? ''}
+			/>
+			{tab === 'chats' && chat?.user_id === currentUserId ? <>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem onSelect={() => { setTitle(chat?.title ?? ''); setEditingTitle(true); }}>Rename</DropdownMenuItem>
+				<DropdownMenuItem className="text-destructive" onSelect={() => chat && void onArchiveChat(chat.id)}>Archive</DropdownMenuItem>
+			</> : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}

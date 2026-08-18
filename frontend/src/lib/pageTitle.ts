@@ -90,6 +90,7 @@ export function getPageTitle(pathname: string): string {
   if (normalizedPath === '/oauth/authorize') return 'Authorize AI Client'
   if (normalizedPath.startsWith('/join/')) return 'Join Workspace'
   if (normalizedPath.startsWith('/share/')) return 'Shared Document'
+  if (normalizedPath.startsWith('/shared/')) return 'Shared conversation'
 
   const workspaceMatch = normalizedPath.match(/^\/w\/[^/]+\/?(.*)$/)
   if (!workspaceMatch) return 'Helpin'

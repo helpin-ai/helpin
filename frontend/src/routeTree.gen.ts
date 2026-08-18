@@ -17,6 +17,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as BillingPreviewRouteImport } from './routes/billing-preview'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SharedShareTokenRouteImport } from './routes/shared/$shareToken'
 import { Route as ShareShareTokenRouteImport } from './routes/share/$shareToken'
 import { Route as JoinTokenRouteImport } from './routes/join/$token'
 import { Route as AuthenticatedWorkspacesRouteImport } from './routes/_authenticated/workspaces'
@@ -155,6 +156,11 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SharedShareTokenRoute = SharedShareTokenRouteImport.update({
+  id: '/shared/$shareToken',
+  path: '/shared/$shareToken',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShareShareTokenRoute = ShareShareTokenRouteImport.update({
@@ -760,6 +766,7 @@ export interface FileRoutesByFullPath {
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
+  '/shared/$shareToken': typeof SharedShareTokenRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
@@ -869,6 +876,7 @@ export interface FileRoutesByTo {
   '/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
+  '/shared/$shareToken': typeof SharedShareTokenRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
@@ -974,6 +982,7 @@ export interface FileRoutesById {
   '/_authenticated/workspaces': typeof AuthenticatedWorkspacesRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
+  '/shared/$shareToken': typeof SharedShareTokenRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
@@ -1085,6 +1094,7 @@ export interface FileRouteTypes {
     | '/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
+    | '/shared/$shareToken'
     | '/oauth/authorize'
     | '/w/$slug'
     | '/w/$slug/automation'
@@ -1194,6 +1204,7 @@ export interface FileRouteTypes {
     | '/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
+    | '/shared/$shareToken'
     | '/oauth/authorize'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
@@ -1298,6 +1309,7 @@ export interface FileRouteTypes {
     | '/_authenticated/workspaces'
     | '/join/$token'
     | '/share/$shareToken'
+    | '/shared/$shareToken'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
     | '/_authenticated/w/$slug/automation'
@@ -1406,6 +1418,7 @@ export interface RootRouteChildren {
   VerifyEmailRoute: typeof VerifyEmailRoute
   JoinTokenRoute: typeof JoinTokenRoute
   ShareShareTokenRoute: typeof ShareShareTokenRoute
+  SharedShareTokenRoute: typeof SharedShareTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1464,6 +1477,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shared/$shareToken': {
+      id: '/shared/$shareToken'
+      path: '/shared/$shareToken'
+      fullPath: '/shared/$shareToken'
+      preLoaderRoute: typeof SharedShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/share/$shareToken': {
@@ -2503,6 +2523,7 @@ const rootRouteChildren: RootRouteChildren = {
   VerifyEmailRoute: VerifyEmailRoute,
   JoinTokenRoute: JoinTokenRoute,
   ShareShareTokenRoute: ShareShareTokenRoute,
+  SharedShareTokenRoute: SharedShareTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

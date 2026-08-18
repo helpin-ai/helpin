@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowReloadHorizontalIcon, CancelCircleIcon, Folder01Icon, GitBranchIcon, InformationCircleIcon, Loading01Icon } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon, CancelCircleIcon, Folder01Icon, GitBranchIcon, InformationCircleIcon, Loading01Icon, MoreVerticalIcon } from '@/lib/icons';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,8 @@ import { buildAutomationActivityPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { PublicShareMenuActions } from '@/components/agents/PublicShareMenuActions';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 import {
   codingSessionStatusLabel,
@@ -244,6 +246,14 @@ export function CodingSessionHeader({
 
         {/* Actions — pr-10 reserves space for the sheet close button */}
         <div className="flex items-center gap-1.5 pr-10">
+		  {session ? <DropdownMenu>
+			<DropdownMenuTrigger asChild>
+			  <Button variant="outline" size="icon" className="h-8 w-8" aria-label="Agent run actions"><MoreVerticalIcon className="h-3.5 w-3.5" /></Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" className="z-[1000]">
+			  <PublicShareMenuActions workspaceId={session.workspace_id} resourceType="agent_run" resourceId={session.run_id || session.id} />
+			</DropdownMenuContent>
+		  </DropdownMenu> : null}
           {workspaceSlug ? (
             <Tooltip>
               <TooltipTrigger asChild>

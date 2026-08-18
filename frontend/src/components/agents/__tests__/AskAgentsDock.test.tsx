@@ -44,6 +44,9 @@ const mocks = vi.hoisted(() => ({
   cancelRun: vi.fn(),
   startRunAuth: vi.fn(),
   cancelRunAuth: vi.fn(),
+	getPublicShare: vi.fn(),
+	createPublicShare: vi.fn(),
+	revokePublicShare: vi.fn(),
   getPlan: vi.fn(),
   searchEntities: vi.fn(),
   uploadEditorFile: vi.fn(),
@@ -73,6 +76,9 @@ vi.mock('@/lib/services/dockChatService', () => ({
     cancelRun: mocks.cancelRun,
     startRunAuth: mocks.startRunAuth,
     cancelRunAuth: mocks.cancelRunAuth,
+	getPublicShare: mocks.getPublicShare,
+	createPublicShare: mocks.createPublicShare,
+	revokePublicShare: mocks.revokePublicShare,
   },
 }));
 
@@ -178,6 +184,10 @@ beforeEach(() => {
   mocks.getPlan.mockResolvedValue({ data: null, error: null });
   mocks.searchEntities.mockResolvedValue({ items: [], error: null });
   mocks.uploadEditorFile.mockResolvedValue({ attachmentId: 'attachment-clipboard-1', publicUrl: '/clipboard.png' });
+	mocks.getPublicShare.mockResolvedValue({ data: null, error: null });
+	mocks.createPublicShare.mockResolvedValue({ data: { token: 'share-token', url: 'https://helpin.ai/shared/share-token' }, error: null });
+	mocks.revokePublicShare.mockResolvedValue({ data: null, error: null });
+	Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } });
 });
 
 afterEach(() => {
@@ -1394,6 +1404,32 @@ describe('AskAgentsDock', () => {
     expect(header?.querySelector('[aria-label="Open full agent session"]')).toBeNull();
     expect(header?.querySelector('[aria-label="Conversation actions"]')).not.toBeNull();
   });
+
+	it('creates and copies a public Ask chat link from the header menu', async () => {
+		await renderDock();
+		await waitForText('Sprint questions');
+		const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Conversation actions"]');
+		await act(async () => trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })));
+		await waitForText('Share publicly');
+		const share = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+			.find((item) => item.textContent === 'Share publicly');
+		await act(async () => share?.click());
+		await flush();
+		expect(mocks.createPublicShare).toHaveBeenCalledWith('ws-1', 'dock_chat', 'chat-1');
+		expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://helpin.ai/shared/share-token');
+	});
+
+	it('shows public sharing in the agent run header menu', async () => {
+		localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'agents', runId: 'agent-run-1' }));
+		useDockStore.setState({ tab: 'agents', activeRunId: 'agent-run-1' });
+		mocks.listRuns.mockResolvedValue({ data: { runs: [DOCK_RUN], attention_count: 1 }, error: null });
+		await renderDock();
+		await waitForText('HLP-42');
+		const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Agent run actions"]');
+		expect(trigger).not.toBeNull();
+		await act(async () => trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })));
+		await waitForText('Share publicly');
+	});
 
   it('presents the dock close control as a minimized action with a tooltip', async () => {
     await renderDock();
