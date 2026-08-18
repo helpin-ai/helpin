@@ -1066,8 +1066,8 @@ func (s *DockChatService) resolveDockChatMediaAttachments(ctx context.Context, w
 		if attachment == nil || attachment.WorkspaceID != workspaceID || attachment.UploadedByID != userID || !attachment.IsUploaded || attachment.EntityType != entityTypeEditorUpload {
 			return nil, fmt.Errorf("Ask media attachment is unavailable")
 		}
-		if !isDockChatMediaType(attachment.ContentType) {
-			return nil, fmt.Errorf("Ask supports images and short videos only")
+		if !isDockChatAttachmentType(attachment.ContentType) {
+			return nil, fmt.Errorf("Ask does not support this file type")
 		}
 		if attachment.FileSize > 20*1024*1024 {
 			return nil, fmt.Errorf("Ask media attachments must be 20 MB or smaller")
@@ -1075,6 +1075,18 @@ func (s *DockChatService) resolveDockChatMediaAttachments(ctx context.Context, w
 		result = append(result, dockChatMediaAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.ContentType, FileSize: attachment.FileSize})
 	}
 	return result, nil
+}
+
+func isDockChatAttachmentType(contentType string) bool {
+	if isDockChatMediaType(contentType) {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(contentType)) {
+	case "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/json", "text/plain", "text/markdown", "text/x-markdown", "text/csv":
+		return true
+	default:
+		return false
+	}
 }
 
 func isDockChatMediaType(contentType string) bool {

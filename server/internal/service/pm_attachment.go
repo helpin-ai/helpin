@@ -29,6 +29,7 @@ var allowedMIMETypes = map[string]bool{
 	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": true,
 	// Text
 	"text/plain": true, "text/csv": true, "text/markdown": true,
+	"application/json": true,
 	// Archives
 	"application/zip": true, "application/gzip": true,
 	"application/x-tar": true,
@@ -301,9 +302,9 @@ func (s *PMAttachmentService) ContentURL(ctx context.Context, id string) (string
 	return downloadURL, nil
 }
 
-// ReadForAskMedia returns an explicitly attached Ask media file only after
+// ReadForAskAttachment returns an explicitly attached Ask file only after
 // verifying workspace ownership and its temporary editor-upload origin.
-func (s *PMAttachmentService) ReadForAskMedia(ctx context.Context, workspaceID, userID, id string) (*model.PMAttachment, []byte, error) {
+func (s *PMAttachmentService) ReadForAskAttachment(ctx context.Context, workspaceID, userID, id string) (*model.PMAttachment, []byte, error) {
 	if s == nil || s.attachmentRepo == nil || s.s3Client == nil {
 		return nil, nil, fmt.Errorf("file storage is not configured")
 	}
@@ -312,11 +313,11 @@ func (s *PMAttachmentService) ReadForAskMedia(ctx context.Context, workspaceID, 
 		return nil, nil, err
 	}
 	if attachment == nil || attachment.WorkspaceID != workspaceID || attachment.UploadedByID != userID || attachment.EntityType != entityTypeEditorUpload || !attachment.IsUploaded {
-		return nil, nil, fmt.Errorf("Ask media attachment is unavailable")
+		return nil, nil, fmt.Errorf("Ask attachment is unavailable")
 	}
 	body, err := s.s3Client.GetObject(ctx, attachment.StorageKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read Ask media attachment: %w", err)
+		return nil, nil, fmt.Errorf("read Ask attachment: %w", err)
 	}
 	return attachment, body, nil
 }

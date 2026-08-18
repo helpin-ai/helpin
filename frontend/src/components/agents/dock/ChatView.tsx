@@ -449,7 +449,8 @@ export function ChatView({
   );
 
   const submit = async () => {
-    const content = value.trim();
+    const readyAttachmentCount = mediaAttachments.filter((attachment) => attachment.status === 'ready' && attachment.id).length;
+    const content = value.trim() || (readyAttachmentCount === 1 ? 'Review the attached file.' : readyAttachmentCount > 1 ? 'Review the attached files.' : '');
     if (!content) return;
     setValue('');
     await sendContent(content, references);
@@ -457,12 +458,17 @@ export function ChatView({
 
   const addMediaAttachments = useCallback(async (files: File[]) => {
     const accepted = files.filter((file) => (
-      ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/webm', 'video/mpeg'].includes(file.type)
+      [
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+        'video/mp4', 'video/quicktime', 'video/webm', 'video/mpeg',
+        'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'text/plain', 'text/markdown', 'text/csv', 'application/json',
+      ].includes(file.type)
       && file.size > 0
       && file.size <= 20 * 1024 * 1024
     ));
     if (accepted.length !== files.length) {
-      toast.error('Ask supports PNG, JPG, GIF, WebP, MP4, MOV, WebM, and MPEG files up to 20 MB.');
+      toast.error('Ask supports images, short videos, PDF, DOCX, TXT, Markdown, CSV, and JSON files up to 20 MB.');
     }
     for (const file of accepted) {
       const localId = newClientMessageID();
@@ -492,7 +498,7 @@ export function ChatView({
           ...attachment,
           status: 'failed',
         } : attachment));
-        toast.error(error instanceof Error ? error.message : 'Failed to upload media');
+        toast.error(error instanceof Error ? error.message : 'Failed to upload file');
       }
     }
   }, [mediaAttachments.length, workspaceId]);

@@ -10,6 +10,7 @@ import {
   FolderKanbanIcon,
   GitBranchIcon,
   Loading01Icon,
+  Image01Icon,
   Message01Icon,
   PlusSignIcon,
   Search01Icon,
@@ -21,6 +22,7 @@ import {
 import type { CommandBarPageContext } from '@/lib/pmTypes';
 import type { DockEntityReference } from '@/lib/dockTypes';
 import type { DockChatMediaAttachment } from '@/lib/dockTypes';
+import { getClipboardImageFiles } from '@/lib/clipboardAttachments';
 import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -206,6 +208,7 @@ export function DockInput({
   const [expandedComposer, setExpandedComposer] = useState(false);
   const referencePickerRef = useRef<DockReferencePickerHandle | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
+  const documentInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -244,7 +247,8 @@ export function DockInput({
   // for entity-scoped contexts (task / epic / doc / contact / deal) where the
   // chip tells the user "your input runs against this thing."
   const showChip = !!pageContext && (pageContext.entity_type !== 'workspace' || !!pageContext.metadata?.context_scope);
-  const sendDisabled = !value.trim() || !!busy || !!disabled;
+  const hasReadyAttachment = mediaAttachments.some((attachment) => attachment.status === 'ready');
+  const sendDisabled = (!value.trim() && !hasReadyAttachment) || !!busy || !!disabled;
 
   const canAddReferences = !!workspaceId && !!onAddReference;
   const canAddContext = !!onAddContext || canAddReferences;
@@ -264,9 +268,41 @@ export function DockInput({
           if (files.length > 0) onAddMedia(files);
         }}
       />
-      <button type="button" title="Attach image or video" aria-label="Attach image or video" onClick={() => mediaInputRef.current?.click()} disabled={disabled || busy} className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
-        <AttachmentIcon className="h-3.5 w-3.5" />
-      </button>
+      <input
+        ref={documentInputRef}
+        type="file"
+        accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/json,.pdf,.docx,.txt,.md,.markdown,.csv,.json"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = '';
+          if (files.length > 0) onAddMedia(files);
+        }}
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" title="Attach files" aria-label="Attach files" disabled={disabled || busy} className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
+            <AttachmentIcon className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" side="top" className="w-52">
+          <DropdownMenuItem onSelect={() => mediaInputRef.current?.click()} className="gap-2">
+            <Image01Icon className="h-4 w-4" />
+            <span className="flex flex-col">
+              <span>Images &amp; videos</span>
+              <span className="text-[10px] text-muted-foreground">PNG, JPG, GIF, WebP, MP4, MOV</span>
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => documentInputRef.current?.click()} className="gap-2">
+            <File01Icon className="h-4 w-4" />
+            <span className="flex flex-col">
+              <span>Documents</span>
+              <span className="text-[10px] text-muted-foreground">PDF, DOCX, TXT, Markdown, CSV, JSON</span>
+            </span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   ) : null;
   const submitControl = onStop ? (
@@ -399,6 +435,20 @@ export function DockInput({
           ref={ref}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onPaste={(event) => {
+            if (!onAddMedia || busy || disabled) return;
+            const imageFiles = getClipboardImageFiles(event.clipboardData);
+            if (imageFiles.length > 0) {
+              event.preventDefault();
+              onAddMedia(imageFiles);
+              return;
+            }
+            const pastedText = event.clipboardData.getData('text/plain');
+            if (pastedText.length > 10_000) {
+              event.preventDefault();
+              onAddMedia([new File([pastedText], 'Pasted text.txt', { type: 'text/plain' })]);
+            }
+          }}
           onFocus={() => onFocusChange?.(true)}
           onBlur={() => onFocusChange?.(false)}
           onKeyDown={(e) => {

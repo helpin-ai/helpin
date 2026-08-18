@@ -1,8 +1,11 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	htmlstd "html"
 	"io"
@@ -674,8 +677,14 @@ func extractUploadedContentText(data []byte, contentType, fileName string) (stri
 		return "", "", err
 	}
 	switch normalizedType {
-	case "text/plain", "text/markdown", "text/x-markdown", "text/csv":
+	case "text/plain", "text/markdown", "text/x-markdown", "text/csv", "application/json":
 		return normalizeContentText(string(data)), model.ContentSourceFormatMarkdown, nil
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		text, err := extractDOCXText(data)
+		if err != nil {
+			return "", "", err
+		}
+		return normalizeContentText(text), model.ContentSourceFormatMarkdown, nil
 	case "application/pdf":
 		text, err := extractPDFText(data)
 		if err != nil {
@@ -685,6 +694,56 @@ func extractUploadedContentText(data []byte, contentType, fileName string) (stri
 	default:
 		return "", "", fmt.Errorf("unsupported file type %s", normalizedType)
 	}
+}
+
+func extractDOCXText(data []byte) (string, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return "", fmt.Errorf("open DOCX: %w", err)
+	}
+	for _, file := range reader.File {
+		if file.Name != "word/document.xml" {
+			continue
+		}
+		if file.UncompressedSize64 > 8*1024*1024 {
+			return "", fmt.Errorf("DOCX document text is too large")
+		}
+		stream, err := file.Open()
+		if err != nil {
+			return "", fmt.Errorf("open DOCX document: %w", err)
+		}
+		defer func() { _ = stream.Close() }()
+
+		decoder := xml.NewDecoder(io.LimitReader(stream, 8*1024*1024+1))
+		var text strings.Builder
+		for {
+			token, err := decoder.Token()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return "", fmt.Errorf("decode DOCX document: %w", err)
+			}
+			switch node := token.(type) {
+			case xml.StartElement:
+				if node.Name.Local == "t" {
+					var value string
+					if err := decoder.DecodeElement(&value, &node); err != nil {
+						return "", fmt.Errorf("decode DOCX text: %w", err)
+					}
+					text.WriteString(value)
+				} else if node.Name.Local == "tab" {
+					text.WriteByte('\t')
+				}
+			case xml.EndElement:
+				if node.Name.Local == "p" {
+					text.WriteByte('\n')
+				}
+			}
+		}
+		return strings.TrimSpace(text.String()), nil
+	}
+	return "", fmt.Errorf("DOCX document.xml is missing")
 }
 
 func extractPDFText(data []byte) (string, error) {

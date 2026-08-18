@@ -419,10 +419,14 @@ func normalizeKnowledgeFileContentType(raw, fileName string) (string, error) {
 			contentType = "text/plain"
 		case ".csv":
 			contentType = "text/csv"
+		case ".json":
+			contentType = "application/json"
+		case ".docx":
+			contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 		}
 	}
 	switch contentType {
-	case "application/pdf", "text/plain", "text/markdown", "text/x-markdown", "text/csv":
+	case "application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/json", "text/plain", "text/markdown", "text/x-markdown", "text/csv":
 		return contentType, nil
 	default:
 		return "", fmt.Errorf("unsupported file type %s", strings.TrimSpace(raw))
