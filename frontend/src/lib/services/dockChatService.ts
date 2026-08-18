@@ -40,6 +40,10 @@ export const dockChatService = {
     if (cursor) query.set('cursor', cursor);
     return api.get<DockChatListResponse>(`/dock/chats?${query.toString()}`);
   },
+  findSupportConversationChat: (workspaceId: string, conversationId: string) => {
+    const query = new URLSearchParams({ workspace_id: workspaceId, conversation_id: conversationId });
+    return api.get<DockChat | null>(`/dock/chats/support-conversation?${query.toString()}`);
+  },
   createChat: (workspaceId: string, title = '', supportConversationId?: string, moduleId?: DockChatModule | null) =>
     api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, {
       title,

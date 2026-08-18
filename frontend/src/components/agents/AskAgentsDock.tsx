@@ -171,11 +171,11 @@ export function AskAgentsDock({
       || summary.run.status === 'running';
   }), [orderedRuns]);
   const activeRun = orderedRuns.find((summary) => summary.run.id === activeRunId) ?? null;
-  // Earlier versions persisted a general chat as soon as the user clicked
-  // New chat. Keep those abandoned rows out of the roster; Support-linked
-  // chats remain visible because their association is meaningful context.
+  // Keep untouched drafts out of the global roster. An empty support-linked
+  // row can still be selected from its support conversation, but it should not
+  // appear as an "Untitled chat" in the user's general Ask history.
   const visibleChats = useMemo(() => chats.filter((chat) => (
-    chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null || chat.support_conversation_id != null
+    chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null
   )), [activeChatId, chats]);
   const activeChat = visibleChats.find((chat) => chat.id === activeChatId) ?? null;
   const activeChatMatchesSupportConversation = Boolean(
@@ -185,7 +185,7 @@ export function AskAgentsDock({
     ? supportChatError.message
     : null;
   const resolvingSupportChat = Boolean(
-    embedded && active && supportAssociationKey && !activeChatMatchesSupportConversation && !currentSupportChatError,
+    embedded && active && supportAssociationKey && !activeChatMatchesSupportConversation && !draftChat && !currentSupportChatError,
   );
   const selectedChatId = activeChat?.id ?? null;
   const activeChatRunId = chatRunOverride?.chatId === selectedChatId
@@ -416,13 +416,20 @@ export function AskAgentsDock({
     if (ensuredSupportConversationRef.current === associationKey) return;
     ensuredSupportConversationRef.current = associationKey;
     setSupportChatError(null);
-    void dockChatService.createChat(workspaceId, '', associatedSupportConversationId, 'support').then((result) => {
+    void dockChatService.findSupportConversationChat(workspaceId, associatedSupportConversationId).then((result) => {
       if (ensuredSupportConversationRef.current !== associationKey) return;
-      if (result.error || !result.data) {
+      if (result.error) {
         ensuredSupportConversationRef.current = null;
-        const message = result.error ?? 'Failed to open the conversation chat';
+        const message = result.error;
         setSupportChatError({ associationKey, message });
         toast.error(message);
+        return;
+      }
+      if (!result.data) {
+        setDraftChat(true);
+        setEmbeddedActiveChatId(null);
+        setSupportChatError(null);
+        focusTargetRef.current = 'composer';
         return;
       }
       upsertChat(result.data);
@@ -520,7 +527,9 @@ export function AskAgentsDock({
 
   const createDraftChat = useCallback(async () => {
     if (!workspaceId) return null;
-    const result = await dockChatService.createChat(workspaceId, '', undefined, creationModule);
+    const supportConversationId = embedded ? associatedSupportConversationId : undefined;
+    const moduleId = embedded ? 'support' : creationModule;
+    const result = await dockChatService.createChat(workspaceId, '', supportConversationId, moduleId);
     if (result.error || !result.data) {
       toast.error(result.error ?? 'Failed to create chat');
       return null;
@@ -530,7 +539,7 @@ export function AskAgentsDock({
     setActiveChatId(result.data.id);
     setTab('chats');
     return result.data;
-  }, [creationModule, setActiveChatId, setTab, upsertChat, workspaceId]);
+  }, [associatedSupportConversationId, creationModule, embedded, setActiveChatId, setTab, upsertChat, workspaceId]);
 
   useLayoutEffect(() => {
     if (collapsed && !embedded) return;

@@ -804,6 +804,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(wsActive)
 				r.With(requireCommandBarRead()).Get("/chats", h.DockChat.ListChats)
 				r.With(requireCommandBarRead()).Post("/chats", h.DockChat.CreateChat)
+				r.With(requireCommandBarRead()).Get("/chats/support-conversation", h.DockChat.FindSupportConversationChat)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}", h.DockChat.GetChat)
 				r.With(requireCommandBarRead()).Patch("/chats/{chatID}", h.DockChat.UpdateChat)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/messages", h.DockChat.ListMessages)

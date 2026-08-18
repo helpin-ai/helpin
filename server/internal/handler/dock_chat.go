@@ -44,6 +44,23 @@ func (h *DockChatHandler) ListChats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+// FindSupportConversationChat handles GET
+// /api/dock/chats/support-conversation?conversation_id=... without creating a
+// chat for an untouched support conversation.
+func (h *DockChatHandler) FindSupportConversationChat(w http.ResponseWriter, r *http.Request) {
+	chat, err := h.dockChatService.FindSupportConversationChat(
+		r.Context(),
+		getWorkspaceID(r),
+		middleware.GetUserID(r.Context()),
+		r.URL.Query().Get("conversation_id"),
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, chat)
+}
+
 // CreateChat handles POST /api/dock/chats.
 func (h *DockChatHandler) CreateChat(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
