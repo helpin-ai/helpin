@@ -649,8 +649,8 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(container.textContent).toContain('Apply patch');
-    expect(container.textContent).toContain('frontend/src/App.tsx');
+    expect(container.textContent).toContain('apply_patch · Apply patch');
+    expect(container.textContent).not.toContain('frontend/src/App.tsx');
 
     act(() => {
       root.unmount();

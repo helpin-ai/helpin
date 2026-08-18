@@ -400,11 +400,11 @@ describe('CodingTranscriptPane', () => {
     // Live reasoning renders as an open "Thinking…" disclosure row while streaming.
     expect(container.textContent).toContain('Thinking…');
     expect(container.textContent).toContain('Hidden reasoning stream');
-    expect(container.textContent).toContain('Read Dockerfile');
+    expect(container.textContent).toContain('read_file · Read file');
     expect(container.textContent.indexOf('This streamed prose should render inline')).toBeLessThan(
-      container.textContent.indexOf('Read Dockerfile'),
+      container.textContent.indexOf('read_file · Read file'),
     );
-    expect(container.textContent.indexOf('Read Dockerfile')).toBeLessThan(
+    expect(container.textContent.indexOf('read_file · Read file')).toBeLessThan(
       container.textContent.indexOf('Second streamed chunk.'),
     );
     expect(container.querySelectorAll('.markdown-caret')).toHaveLength(0);
