@@ -446,13 +446,18 @@ describe('AskAgentsDock', () => {
     };
     const associatedChat = { ...CHAT, id: 'chat-support', support_conversation_id: 'conv-42' };
     mocks.listChats.mockResolvedValue({ data: { chats: [CHAT, associatedChat] }, error: null });
+		mocks.getChat.mockImplementation(async (_workspaceId, chatId) => ({
+			data: chatDetail({ chat: chatId === associatedChat.id ? associatedChat : CHAT }),
+			error: null,
+		}));
 
     await renderEmbeddedDock(supportContext);
     await waitForCondition(
-      () => useDockStore.getState().activeChatId === 'chat-support',
+      () => mocks.getChat.mock.calls.some((call) => call[1] === 'chat-support'),
       'associated support chat was not selected',
     );
 
+		expect(useDockStore.getState().activeChatId).toBe('chat-1');
     expect(mocks.createChat).not.toHaveBeenCalled();
   });
 
@@ -486,8 +491,48 @@ describe('AskAgentsDock', () => {
     await waitForCondition(() => mocks.createChat.mock.calls.length === 1, 'support chat was not created');
 
     expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support');
-    expect(useDockStore.getState().activeChatId).toBe('chat-new');
+		expect(useDockStore.getState().activeChatId).toBe('chat-1');
   });
+
+	it('keeps a fresh global draft independent while the support sidebar is mounted', async () => {
+		const supportContext: CommandBarPageContext = {
+			entity_type: 'support_conversation',
+			entity_id: 'conv-42',
+			display_title: 'Refund request',
+		};
+		const associatedChat = { ...CHAT, id: 'chat-support', support_conversation_id: 'conv-42' };
+		mocks.listChats.mockResolvedValue({ data: { chats: [CHAT, associatedChat] }, error: null });
+
+		await act(async () => {
+			root.render(
+				<TooltipProvider>
+					<PageContextProvider>
+						<AskAgentsDock />
+						<AskAgentsDock
+							presentation="embedded"
+							requiredPageContext={supportContext}
+							associatedSupportConversationId="conv-42"
+							active
+						/>
+					</PageContextProvider>
+				</TooltipProvider>,
+			);
+		});
+		await flush();
+		act(() => {
+			useDockStore.setState({ drafts: { 'global:draft': 'stale unsent text' } });
+		});
+
+		await act(async () => {
+			window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
+				detail: { mode: 'compose', intent: 'new_chat' },
+			}));
+		});
+
+		expect(useDockStore.getState()).toMatchObject({ activeChatId: null, tab: 'chats', collapsed: false });
+		expect(useDockStore.getState().drafts['global:draft']).toBeUndefined();
+		expect(document.body.textContent).toContain('New chat');
+	});
 
   it('embeds the full chat without a floating trigger and sends mandatory support context', async () => {
     const supportContext: CommandBarPageContext = {
@@ -540,10 +585,7 @@ describe('AskAgentsDock', () => {
 
     await renderEmbeddedDock(nextContext);
     await waitForText('Next conversation');
-    await waitForCondition(
-      () => useDockStore.getState().activeChatId === 'chat-2',
-      'next support chat was not selected',
-    );
+		expect(useDockStore.getState().activeChatId).toBe('chat-1');
     const nextTextarea = dockTextarea();
 
     await act(async () => {
@@ -556,6 +598,38 @@ describe('AskAgentsDock', () => {
       page_context: nextContext,
     }));
   });
+
+	it('ignores a late associated-chat response after the support conversation changes', async () => {
+		const firstContext: CommandBarPageContext = {
+			entity_type: 'support_conversation', entity_id: 'conv-1', display_title: 'First conversation',
+		};
+		const nextContext: CommandBarPageContext = {
+			entity_type: 'support_conversation', entity_id: 'conv-2', display_title: 'Next conversation',
+		};
+		const staleChat = { ...CHAT, id: 'chat-stale', support_conversation_id: 'conv-1' };
+		const nextChat = { ...CHAT, id: 'chat-next', title: 'Next questions', support_conversation_id: 'conv-2' };
+		let resolveFirst: ((value: { data: typeof staleChat; error: null }) => void) | undefined;
+		mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
+		mocks.createChat.mockImplementation(async (_workspaceId, _title, conversationId) => {
+			if (conversationId === 'conv-1') {
+				return new Promise((resolve) => { resolveFirst = resolve; });
+			}
+			return { data: nextChat, error: null };
+		});
+
+		await renderEmbeddedDock(firstContext);
+		await waitForCondition(() => resolveFirst !== undefined, 'first associated chat request did not start');
+		await renderEmbeddedDock(nextContext);
+		await waitForText('Next conversation');
+
+		await act(async () => {
+			resolveFirst?.({ data: staleChat, error: null });
+		});
+		await flush();
+
+		expect(useDockStore.getState().chats.some((chat) => chat.id === 'chat-stale')).toBe(false);
+		expect(document.body.textContent).toContain('Next conversation');
+	});
   it('renders the collapsed pill and expands via the / key', async () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();
