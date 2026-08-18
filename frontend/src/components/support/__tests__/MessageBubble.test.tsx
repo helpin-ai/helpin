@@ -730,6 +730,58 @@ Can I export my data?`,
     cleanup()
   })
 
+  it('defers support image downloads until the thumbnail is near the viewport', () => {
+    let intersect: IntersectionObserverCallback | undefined
+    const originalIntersectionObserver = globalThis.IntersectionObserver
+    globalThis.IntersectionObserver = class IntersectionObserver {
+      readonly root = null
+      readonly rootMargin = '240px'
+      readonly thresholds = [0]
+      constructor(callback: IntersectionObserverCallback) {
+        intersect = callback
+      }
+      disconnect() {}
+      observe() {}
+      takeRecords() { return [] }
+      unobserve() {}
+    }
+
+    const message: SupportMessage = {
+      id: 'msg-deferred-image',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      content: '',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'widget',
+      attachments: [{
+        id: 'att-deferred-image',
+        file_key: 'support/att-deferred-image',
+        file_name: 'large-photo.png',
+        file_type: 'image/png',
+        file_size: 8_000_000,
+        url: 'https://cdn.example.com/large-photo.png',
+      }],
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    const image = rendered.container.querySelector('img[alt="large-photo.png"]') as HTMLImageElement
+    expect(image.getAttribute('src')).toBeNull()
+    expect(image.getAttribute('decoding')).toBe('async')
+    expect(image.getAttribute('fetchpriority')).toBe('low')
+
+    act(() => {
+      intersect?.([{ isIntersecting: true, target: image } as IntersectionObserverEntry], {} as IntersectionObserver)
+    })
+    expect(image.getAttribute('src')).toBe('https://cdn.example.com/large-photo.png')
+
+    rendered.cleanup()
+    globalThis.IntersectionObserver = originalIntersectionObserver
+  })
+
   it('renders internal note images as thumbnails with hover preview and image navigation', () => {
     const message: SupportMessage = {
       id: 'msg-note-attachments-1',
