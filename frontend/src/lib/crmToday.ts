@@ -50,7 +50,7 @@ export function buildTodayTaskItems(tasks: Task[], now = new Date()): TodayTaskI
       !task.archived
       && !task.completed
       && task.state_type !== 'done'
-      && Boolean(task.contact_id || task.company_id || task.deal_id)
+      && Boolean(task.contacts?.length || task.companies?.length || task.deals?.length)
     ))
     .map((task) => {
       const deadline = parsedDate(task.deadline);
