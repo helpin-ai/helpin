@@ -56,6 +56,9 @@ func TestMeetingIntelligenceFallsBackAfterReasoningOnlyResponse(t *testing.T) {
 	if output == nil || output.SummaryMarkdown != "The team agreed to ship." {
 		t.Fatalf("output = %#v", output)
 	}
+	if len(output.ParticipantsContext) != 1 || len(output.Rapport) != 1 {
+		t.Fatalf("linear sections = %#v", output)
+	}
 	if len(provider.requests) != 2 {
 		t.Fatalf("requests = %d, want primary and fallback", len(provider.requests))
 	}
@@ -81,8 +84,8 @@ func TestMeetingIntelligenceFallsBackAfterReasoningOnlyResponse(t *testing.T) {
 		}
 	}
 	if len(provider.metering) != 2 ||
-		!strings.HasSuffix(provider.metering[0].IdempotencyKey, ":v2:primary") ||
-		!strings.HasSuffix(provider.metering[1].IdempotencyKey, ":v2:fallback") {
+		!strings.HasSuffix(provider.metering[0].IdempotencyKey, ":v3:primary") ||
+		!strings.HasSuffix(provider.metering[1].IdempotencyKey, ":v3:fallback") {
 		t.Fatalf("metering = %#v", provider.metering)
 	}
 }
@@ -115,11 +118,14 @@ func TestMeetingIntelligenceReturnsStableErrorAfterInvalidFallback(t *testing.T)
 func validMeetingIntelligenceJSON() string {
 	return `{
 		"summary_markdown":"The team agreed to ship.",
+		"participants_context":["Azhar led the weekly release sync"],
 		"key_points":["Release is ready"],
 		"decisions":["Ship Friday"],
 		"objections":[],
 		"risks":[],
+		"open_questions":[],
 		"next_steps":["Prepare release"],
+		"rapport":["The team was aligned on the release"],
 		"action_items":[],
 		"follow_up_draft":{"subject":"Release","body":"We will ship Friday."}
 	}`
