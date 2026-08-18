@@ -1,4 +1,7 @@
 const COLLAPSIBLE_SETTINGS_GROUP_LABELS = ['Project Settings', 'Support & Docs', 'CRM Settings', 'AI & Automations', 'Data'];
+const CRM_SECTIONS = new Set(['overview', 'contacts', 'companies', 'deals', 'meetings', 'review', 'insights']);
+
+const crmLastPathKey = (workspaceId: string) => `crm_sidebar_last_path_${workspaceId}`;
 
 export const COLLAPSIBLE_SETTINGS_GROUPS = new Set(COLLAPSIBLE_SETTINGS_GROUP_LABELS);
 
@@ -8,7 +11,7 @@ export function getExpandedTeams(workspaceId: string): Set<string> {
     if (raw) {
       return new Set(JSON.parse(raw));
     }
-  } catch {}
+  } catch { /* local preference is best effort */ }
 
   return new Set();
 }
@@ -16,7 +19,7 @@ export function getExpandedTeams(workspaceId: string): Set<string> {
 export function saveExpandedTeams(workspaceId: string, teams: Set<string>) {
   try {
     localStorage.setItem(`pm_sidebar_expanded_teams_${workspaceId}`, JSON.stringify([...teams]));
-  } catch {}
+  } catch { /* local preference is best effort */ }
 }
 
 export function getCollapsedSettingsGroups(): Set<string> {
@@ -25,7 +28,7 @@ export function getCollapsedSettingsGroups(): Set<string> {
     if (raw) {
       return new Set(JSON.parse(raw));
     }
-  } catch {}
+  } catch { /* local preference is best effort */ }
 
   return new Set(COLLAPSIBLE_SETTINGS_GROUPS);
 }
@@ -33,6 +36,39 @@ export function getCollapsedSettingsGroups(): Set<string> {
 export function saveCollapsedSettingsGroups(groups: Set<string>) {
   try {
     localStorage.setItem('settings_sidebar_collapsed', JSON.stringify([...groups]));
-  } catch {}
+  } catch { /* local preference is best effort */ }
 }
 
+export function normalizeCRMSectionPath(workspaceSlug: string, pathname?: string): string {
+  const basePath = `/w/${workspaceSlug}/crm`;
+  if (!pathname?.startsWith(`${basePath}/`)) {
+    return `${basePath}/overview`;
+  }
+
+  const section = pathname.slice(basePath.length + 1).split('/')[0];
+  return CRM_SECTIONS.has(section) ? `${basePath}/${section}` : `${basePath}/overview`;
+}
+
+export function getLastCRMPath(workspaceId: string, workspaceSlug: string): string {
+  if (!workspaceId) {
+    return normalizeCRMSectionPath(workspaceSlug);
+  }
+
+  try {
+    return normalizeCRMSectionPath(workspaceSlug, localStorage.getItem(crmLastPathKey(workspaceId)) ?? undefined);
+  } catch {
+    return normalizeCRMSectionPath(workspaceSlug);
+  }
+}
+
+export function saveLastCRMPath(workspaceId: string, workspaceSlug: string, pathname: string): string {
+  const normalizedPath = normalizeCRMSectionPath(workspaceSlug, pathname);
+  if (!workspaceId) {
+    return normalizedPath;
+  }
+
+  try {
+    localStorage.setItem(crmLastPathKey(workspaceId), normalizedPath);
+  } catch { /* local preference is best effort */ }
+  return normalizedPath;
+}

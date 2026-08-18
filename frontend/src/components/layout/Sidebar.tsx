@@ -29,7 +29,16 @@ import { DocsRailNav } from './sidebar/DocsRailNav';
 import { buildPanelNavGroups, buildRailItems, deriveActiveRail, projectCreateOptions } from './sidebar/config';
 import { isSidebarLinkActive, isTeamSubLinkActive, type SidebarNavigateTarget } from './sidebar/navigation';
 import { ProjectsTeamsNav } from './sidebar/ProjectsTeamsNav';
-import { COLLAPSIBLE_SETTINGS_GROUPS, getCollapsedSettingsGroups, getExpandedTeams, saveCollapsedSettingsGroups, saveExpandedTeams } from './sidebar/state';
+import {
+  COLLAPSIBLE_SETTINGS_GROUPS,
+  getCollapsedSettingsGroups,
+  getExpandedTeams,
+  getLastCRMPath,
+  normalizeCRMSectionPath,
+  saveCollapsedSettingsGroups,
+  saveExpandedTeams,
+  saveLastCRMPath,
+} from './sidebar/state';
 import { SidebarAccountMenu } from './sidebar/SidebarAccountMenu';
 import { SidebarCreateBar } from './sidebar/SidebarCreateBar';
 import { SidebarRail } from './sidebar/SidebarRail';
@@ -202,10 +211,19 @@ export function Sidebar() {
   );
   const currentNavGroups = panelNavGroups[activeRail];
   const setupProgress = setup?.total_count ? Math.round((setup.completed_count / setup.total_count) * 100) : 0;
+  const crmDefaultLink = activeRail === 'crm'
+    ? normalizeCRMSectionPath(wsSlug, location.pathname)
+    : getLastCRMPath(workspaceId ?? '', wsSlug);
   const railItems = useMemo(
-    () => buildRailItems(wsSlug, totalSupportUnread, isSetupSuccessEnabled() ? setupProgress : undefined),
-    [wsSlug, totalSupportUnread, setupProgress],
+    () => buildRailItems(wsSlug, totalSupportUnread, isSetupSuccessEnabled() ? setupProgress : undefined, crmDefaultLink),
+    [wsSlug, totalSupportUnread, setupProgress, crmDefaultLink],
   );
+
+  useEffect(() => {
+    if (activeRail === 'crm' && workspaceId) {
+      saveLastCRMPath(workspaceId, wsSlug, location.pathname);
+    }
+  }, [activeRail, location.pathname, workspaceId, wsSlug]);
 
   useEffect(() => {
     if (activeRail !== 'settings') {
