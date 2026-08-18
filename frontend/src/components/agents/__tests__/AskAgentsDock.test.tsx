@@ -308,6 +308,29 @@ describe('AskAgentsDock', () => {
 
     await waitForText('Images & videos');
     await waitForText('Documents');
+
+    const menu = document.body.querySelector<HTMLElement>('[data-slot="dropdown-menu-content"]');
+    expect(menu?.className).toContain('z-[70]');
+    const formatLabels = Array.from(menu?.querySelectorAll<HTMLElement>('.text-muted-foreground') ?? []);
+    expect(formatLabels).toHaveLength(2);
+    expect(formatLabels.every((element) => element.className.includes('whitespace-nowrap'))).toBe(true);
+  });
+
+  it('labels the attachment control with a visible tooltip', async () => {
+    await renderDock();
+    await waitForText('Sprint questions');
+
+    const attachButton = document.body.querySelector<HTMLButtonElement>('[aria-label="Attach files"]');
+    const tooltipTrigger = attachButton?.closest<HTMLElement>('[data-slot="tooltip-trigger"]');
+    expect(tooltipTrigger).not.toBeNull();
+
+    await act(async () => {
+      tooltipTrigger?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' }));
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
+    });
+    const tooltip = Array.from(document.body.querySelectorAll<HTMLElement>('[data-slot="tooltip-content"]'))
+      .find((element) => element.textContent?.includes('Attach files'));
+    expect(tooltip?.className).toContain('z-[70]');
   });
 
   it('uploads images pasted into the Ask composer', async () => {
