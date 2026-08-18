@@ -173,7 +173,7 @@ export function ChatView({
   }, [chatId, workspaceId]);
 
   const loadEarlierMessages = useCallback(async () => {
-    if (!nextMessagesBefore || loadingEarlier) return;
+    if (!chatId || !nextMessagesBefore || loadingEarlier) return;
     setLoadingEarlier(true);
     try {
       const res = await dockChatService.listMessages(workspaceId, chatId, nextMessagesBefore, 50);
@@ -271,7 +271,7 @@ export function ChatView({
   // approval card always renders instead of leaving the composer open.
   const [fallbackInteraction, setFallbackInteraction] = useState<CodingSessionInteraction | null>(null);
   const pausedOnInteraction =
-    run?.status === 'paused' && (run.pause_reason === 'human_approval' || run.pause_reason === 'human_input');
+    !!chatId && run?.status === 'paused' && (run.pause_reason === 'human_approval' || run.pause_reason === 'human_input');
   useEffect(() => {
     if (!pausedOnInteraction) {
       const timer = window.setTimeout(() => setFallbackInteraction(null), 0);
@@ -512,7 +512,7 @@ export function ChatView({
   const canStop = runActive && (run?.status === 'queued' || run?.status === 'running');
   const cancellationPending = stopping || run?.execution_stage === 'cancelling';
   const handleStop = useCallback(async () => {
-    if (cancellationPending) return;
+    if (!chatId || cancellationPending) return;
     setStopping(true);
     try {
       const res = await dockChatService.cancelChatRun(workspaceId, chatId);
@@ -531,6 +531,7 @@ export function ChatView({
 
   const resolveInteraction = useCallback(
     async (interactionId: string, payload: { response_payload: Record<string, unknown>; followup_message?: string }) => {
+      if (!chatId) return { error: 'Chat is not ready' };
       const res = await dockChatService.resolveInteraction(workspaceId, chatId, interactionId, payload);
       if (!res.error) {
         clearPendingInteraction(interactionId);

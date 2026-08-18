@@ -592,6 +592,12 @@ export interface SupportMessage {
   updated_at: string;
 }
 
+export interface SupportMessagePage {
+  data: SupportMessage[];
+  has_more: boolean;
+  next_cursor?: string;
+}
+
 export interface SupportMessageActionResponse {
   id: string;
   markdown?: string;

@@ -3,6 +3,7 @@ import type { AssignableMember } from '../types';
 import type {
   SupportConversation,
   SupportMessage,
+  SupportMessagePage,
   CreateConversationRequest,
   CreateConversationWithMessageRequest,
   CreateConversationWithMessageResponse,
@@ -217,6 +218,12 @@ export const supportService = {
     api.post<CreateConversationWithMessageResponse>(`/support/inbox/conversations/create-and-send${qs(workspaceId)}`, payload),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
     api.get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
+  listConversationMessagePage: (workspaceId: string, conversationId: string, limit: number, cursor?: string) => {
+    const cursorQuery = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
+    return api.get<SupportMessagePage>(
+      `/support/inbox/conversations/${conversationId}/message-pages${qs(workspaceId)}&limit=${limit}${cursorQuery}`,
+    );
+  },
   sendConversationTranscript: (workspaceId: string, conversationId: string, payload: { email?: string; update_customer_email?: boolean }) =>
     api.post<SendSupportConversationTranscriptResponse>(`/support/inbox/conversations/${conversationId}/transcript${qs(workspaceId)}`, payload),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>

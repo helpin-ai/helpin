@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useMemo, memo } from 'react';
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
@@ -22,25 +22,24 @@ import {
 import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
-import { CreateTaskDialog } from './CreateTaskDialog';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
+import { flattenSupportMessagePages } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
-import { ReplyComposer } from './ReplyComposer';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
-import { getInitialThreadScrollTarget, isNearThreadBottom, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
+import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
 import type { UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 interface MessageThreadProps {
@@ -51,8 +50,9 @@ interface MessageThreadProps {
   onCreateConversationClick?: () => void;
 }
 
-const INITIAL_THREAD_ITEM_COUNT = 60;
-const THREAD_HISTORY_HYDRATION_DELAY_MS = 120;
+const LazyCreateTaskDialog = lazy(() => import('./CreateTaskDialog').then((module) => ({ default: module.CreateTaskDialog })));
+const LazyReplyComposer = lazy(() => import('./ReplyComposer').then((module) => ({ default: module.ReplyComposer })));
+
 const THREAD_SELECTION_FADE_MS = 160;
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
@@ -254,13 +254,22 @@ export function MessageThread({
   const isNearBottomRef = useRef(true);
   const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const pendingInitialScrollRef = useRef(false);
+  const olderPageScrollRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const threadScrollStateRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
     conversationId: null,
     messageCount: 0,
     lastMessageId: null,
   });
   const { data: conversation, isFetched: conversationFetched } = useConversation(workspaceId, conversationId);
-  const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
+  const {
+    data: messagePages,
+    isLoading,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  } = useConversationMessages(workspaceId, conversationId);
+  const messages = useMemo(() => flattenSupportMessagePages(messagePages), [messagePages]);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);
@@ -281,7 +290,6 @@ export function MessageThread({
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const [composerReady, setComposerReady] = useState(false);
-  const [historyHydrated, setHistoryHydrated] = useState(true);
   const [isThreadTransitioning, setIsThreadTransitioning] = useState(false);
   const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
@@ -615,45 +623,7 @@ export function MessageThread({
     return items;
   }, [messages]);
 
-  useEffect(() => {
-    if (!conversationId || groupedMessages.length <= INITIAL_THREAD_ITEM_COUNT) {
-      setHistoryHydrated(true);
-      return;
-    }
-
-    setHistoryHydrated(false);
-    let timeout = 0;
-    const frame = window.requestAnimationFrame(() => {
-      timeout = window.setTimeout(() => setHistoryHydrated(true), THREAD_HISTORY_HYDRATION_DELAY_MS);
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      if (timeout) window.clearTimeout(timeout);
-    };
-  }, [conversationId, groupedMessages.length]);
-
-  const visibleGroupedMessages = useMemo(() => {
-    if (historyHydrated || groupedMessages.length <= INITIAL_THREAD_ITEM_COUNT) {
-      return groupedMessages;
-    }
-
-    const start = Math.max(0, groupedMessages.length - INITIAL_THREAD_ITEM_COUNT);
-    let firstSeparatorBeforeWindow: (typeof groupedMessages)[number] | undefined;
-    for (let i = start - 1; i >= 0; i -= 1) {
-      if (groupedMessages[i]?.type === 'separator') {
-        firstSeparatorBeforeWindow = groupedMessages[i];
-        break;
-      }
-    }
-    const visibleItems = groupedMessages.slice(start);
-
-    if (firstSeparatorBeforeWindow && visibleItems[0]?.type !== 'separator') {
-      return [firstSeparatorBeforeWindow, ...visibleItems];
-    }
-
-    return visibleItems;
-  }, [groupedMessages, historyHydrated]);
+  const visibleGroupedMessages = groupedMessages;
 
   const lastMessageId = messages[messages.length - 1]?.id ?? null;
   const initialScrollTargetMessageId = useMemo(
@@ -741,7 +711,7 @@ export function MessageThread({
     timeouts.push(window.setTimeout(scheduleFrame, 80));
     timeouts.push(window.setTimeout(scheduleFrame, 180));
 
-    if (pendingInitialScrollRef.current && historyHydrated) {
+    if (pendingInitialScrollRef.current) {
       pendingInitialScrollRef.current = false;
     }
 
@@ -750,7 +720,21 @@ export function MessageThread({
       frames.forEach((frame) => window.cancelAnimationFrame(frame));
       timeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
-  }, [conversationId, historyHydrated, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+  }, [conversationId, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+
+  useLayoutEffect(() => {
+    const previous = olderPageScrollRef.current;
+    if (!previous || isFetchingNextPage) return;
+    olderPageScrollRef.current = null;
+
+    const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+    if (!viewport) return;
+    viewport.scrollTop = getPrependRestoredScrollTop({
+      previousScrollHeight: previous.scrollHeight,
+      nextScrollHeight: viewport.scrollHeight,
+      previousScrollTop: previous.scrollTop,
+    });
+  }, [isFetchingNextPage, messages.length]);
 
   useEffect(() => {
     if (!conversationId || !conversation) return;
@@ -790,6 +774,13 @@ export function MessageThread({
 
     const onScroll = () => {
       isNearBottomRef.current = isNearThreadBottom(viewport);
+      if (isNearThreadTop(viewport) && hasNextPage && !isFetchingNextPage && !isFetchNextPageError && !olderPageScrollRef.current) {
+        olderPageScrollRef.current = {
+          scrollHeight: viewport.scrollHeight,
+          scrollTop: viewport.scrollTop,
+        };
+        void fetchNextPage();
+      }
       if (frame) return;
       frame = window.requestAnimationFrame(updateActiveStickySeparator);
     };
@@ -804,7 +795,7 @@ export function MessageThread({
         window.cancelAnimationFrame(frame);
       }
     };
-  }, [visibleGroupedMessages]);
+  }, [fetchNextPage, hasNextPage, isFetchNextPageError, isFetchingNextPage, visibleGroupedMessages]);
 
   // Treat a stale conversation id (e.g., previous selection that no longer
   // matches the active filter, or a deleted conversation) the same as no
@@ -997,6 +988,31 @@ export function MessageThread({
       >
         <div data-support-message-list className="w-full min-w-0 max-w-full overflow-x-hidden px-4 pb-10 pt-2">
           {isThreadLoading && <MessageSkeleton />}
+          {!isThreadLoading && isFetchingNextPage && (
+            <div className="flex justify-center py-3 text-muted-foreground">
+              <Loading01Icon className="h-4 w-4 animate-spin" />
+            </div>
+          )}
+          {!isThreadLoading && isFetchNextPageError && hasNextPage && (
+            <div className="flex justify-center py-3">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+                  if (viewport) {
+                    olderPageScrollRef.current = {
+                      scrollHeight: viewport.scrollHeight,
+                      scrollTop: viewport.scrollTop,
+                    };
+                  }
+                  void fetchNextPage();
+                }}
+              >
+                Load earlier messages
+              </Button>
+            </div>
+          )}
           {!isThreadLoading && messages.length === 0 && (
             <EmptyState
               icon={Message01Icon}
@@ -1060,22 +1076,28 @@ export function MessageThread({
           messages have loaded, so switching threads never exposes a stale
           or half-ready composer. */}
       {composerReady && conversationId && conversation && !isLoading && (
-        <ReplyComposer
-          workspaceId={workspaceId}
-          conversationId={conversationId}
-          emailFallbackHint={emailFallbackHint}
-          onUpgradeRequired={setUpgradeDialogReason}
-        />
+        <Suspense fallback={null}>
+          <LazyReplyComposer
+            workspaceId={workspaceId}
+            conversationId={conversationId}
+            emailFallbackHint={emailFallbackHint}
+            onUpgradeRequired={setUpgradeDialogReason}
+          />
+        </Suspense>
       )}
 
-      <CreateTaskDialog
-        open={showCreateTaskDialog}
-        onOpenChange={setShowCreateTaskDialog}
-        teams={wsSettings?.teams ?? []}
-        defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
-        isPending={createTaskFromConversation.isPending}
-        onConfirm={handleCreateTaskConfirm}
-      />
+      {showCreateTaskDialog ? (
+        <Suspense fallback={null}>
+          <LazyCreateTaskDialog
+            open={showCreateTaskDialog}
+            onOpenChange={setShowCreateTaskDialog}
+            teams={wsSettings?.teams ?? []}
+            defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
+            isPending={createTaskFromConversation.isPending}
+            onConfirm={handleCreateTaskConfirm}
+          />
+        </Suspense>
+      ) : null}
       <UpgradeRequiredDialog
         open={upgradeDialogReason !== null}
         onOpenChange={(open) => {

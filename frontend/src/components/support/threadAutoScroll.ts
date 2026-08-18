@@ -1,4 +1,5 @@
 export const THREAD_BOTTOM_THRESHOLD_PX = 96;
+export const THREAD_TOP_THRESHOLD_PX = 64;
 
 type ThreadViewportMetrics = Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>;
 
@@ -24,6 +25,25 @@ export function isNearThreadBottom(
   threshold = THREAD_BOTTOM_THRESHOLD_PX,
 ) {
   return viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= threshold;
+}
+
+export function isNearThreadTop(
+  viewport: Pick<HTMLElement, 'scrollTop'>,
+  threshold = THREAD_TOP_THRESHOLD_PX,
+) {
+  return viewport.scrollTop <= threshold;
+}
+
+export function getPrependRestoredScrollTop({
+  previousScrollHeight,
+  nextScrollHeight,
+  previousScrollTop,
+}: {
+  previousScrollHeight: number;
+  nextScrollHeight: number;
+  previousScrollTop: number;
+}) {
+  return previousScrollTop + Math.max(0, nextScrollHeight - previousScrollHeight);
 }
 
 export function shouldAutoScrollThread({

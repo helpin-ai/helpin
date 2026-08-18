@@ -104,9 +104,9 @@ export function CustomerProfileDrawer({
   const [createContactOpen, setCreateContactOpen] = useState(false);
   const [linkingContactId, setLinkingContactId] = useState<string | null>(null);
   const contactId = conversation?.crm_contact_id?.trim() ?? '';
-  const { data: contact, isLoading: contactLoading } = useContact(workspaceId, contactId);
-  const { data: associations = [] } = useContactAssociations(workspaceId, contactId);
-  const { data: supportPage } = useContactSupportConversations(workspaceId, contactId);
+  const { data: contact, isLoading: contactLoading } = useContact(workspaceId, contactId, open);
+  const { data: associations = [] } = useContactAssociations(workspaceId, contactId, open);
+  const { data: supportPage } = useContactSupportConversations(workspaceId, contactId, open);
   const updateContact = useUpdateContact(workspaceId);
 
   const linkedAssociations = useMemo(() => normalizeContactAssociations(associations, contactId), [associations, contactId]);

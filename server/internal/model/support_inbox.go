@@ -348,6 +348,13 @@ type SupportMessage struct {
 
 func (SupportMessage) TableName() string { return "support_messages" }
 
+// SupportMessagePage is a cursor-paginated slice of a conversation transcript.
+type SupportMessagePage struct {
+	Data       []SupportMessage `json:"data"`
+	HasMore    bool             `json:"has_more"`
+	NextCursor *string          `json:"next_cursor,omitempty"`
+}
+
 // SupportLinkPreview represents an unfurled link card attached to a support message.
 type SupportLinkPreview struct {
 	URL         string  `json:"url"`

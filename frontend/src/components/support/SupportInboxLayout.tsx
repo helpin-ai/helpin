@@ -1,16 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft02Icon } from '@/lib/icons';
 import { useLocation, useNavigate, useParams } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
+import { useMinWidth } from '@/hooks/use-min-width';
 import { supportInboxBuiltinViewKey, useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useConversation, useSupportInboxViews, useSupportMailboxes, useSupportRoutingUsage } from '@/hooks/queries/useSupport';
 import { ConversationList } from './ConversationList';
 import { MessageThread } from './MessageThread';
-import { ConversationDetailSidebar } from './ConversationDetailSidebar';
-import { SupportAgentSidebar } from './SupportAgentSidebar';
 import { buildSupportConversationPageContext } from './supportAgentContext';
 import { supportSidebarWidthClass } from './supportSidebarLayout';
 import { shouldClearConversationForMailbox } from './supportInboxSelection';
@@ -18,6 +17,9 @@ import { NewConversationDialog } from './NewConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
 import { conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
+
+const LazySupportAgentSidebar = lazy(() => import('./SupportAgentSidebar').then((module) => ({ default: module.SupportAgentSidebar })));
+const LazyConversationDetailSidebar = lazy(() => import('./ConversationDetailSidebar').then((module) => ({ default: module.ConversationDetailSidebar })));
 
 function parseRouteStates(value: string | undefined, navFilter: ReturnType<typeof navFilterFromView>): ConversationStateFilter[] {
   if (!value) return defaultStatesForNav(navFilter);
@@ -113,6 +115,7 @@ export function SupportInboxLayout() {
   const location = useLocation();
   const params = useParams({ strict: false }) as { conversationId?: string };
   const routeConversationId = params.conversationId ?? null;
+  const showDetailSidebar = useMinWidth(1280) && !!selectedConversationId;
   const routeSearch = useMemo(
     () => normalizeSupportInboxRouteSearch(location.search as Record<string, unknown>),
     [location.search],
@@ -407,7 +410,7 @@ export function SupportInboxLayout() {
         </div>
 
         {/* Panel 3: Detail sidebar - hidden on mobile & tablet */}
-        <div
+        {showDetailSidebar ? <div
           className={`relative hidden shrink-0 overflow-hidden border-l border-border/70 transition-[width,flex-basis] duration-200 ease-out motion-reduce:transition-none ${
             selectedConversationId ? 'xl:flex' : ''
           } ${supportSidebarWidthClass(detailSidebarMode, detailSidebarCollapsed)}`}
@@ -419,9 +422,13 @@ export function SupportInboxLayout() {
               detailSidebarMode === 'agents' ? 'pointer-events-none -translate-x-2 opacity-0' : 'translate-x-0 opacity-100'
             }`}
           >
-            <ConversationDetailSidebar workspaceId={workspaceId} conversationId={selectedConversationId} />
+            {detailSidebarMode !== 'agents' ? (
+              <Suspense fallback={null}>
+                <LazyConversationDetailSidebar workspaceId={workspaceId} conversationId={selectedConversationId} />
+              </Suspense>
+            ) : null}
           </div>
-          {supportAgentContext ? (
+          {supportAgentContext && detailSidebarMode === 'agents' ? (
             <div
               aria-hidden={detailSidebarMode !== 'agents' || undefined}
               inert={detailSidebarMode !== 'agents'}
@@ -429,14 +436,16 @@ export function SupportInboxLayout() {
                 detailSidebarMode === 'agents' ? 'translate-x-0 opacity-100' : 'pointer-events-none translate-x-2 opacity-0'
               }`}
             >
-              <SupportAgentSidebar
-                context={supportAgentContext}
-                active={detailSidebarMode === 'agents'}
-                onBack={handleCloseAgentSidebar}
-              />
+              <Suspense fallback={null}>
+                <LazySupportAgentSidebar
+                  context={supportAgentContext}
+                  active={detailSidebarMode === 'agents'}
+                  onBack={handleCloseAgentSidebar}
+                />
+              </Suspense>
             </div>
           ) : null}
-        </div>
+        </div> : null}
       </div>
 
       <NewConversationDialog

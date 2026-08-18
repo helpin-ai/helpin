@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getInitialThreadScrollTarget, isNearThreadBottom, shouldAutoScrollThread, shouldMarkOpenThreadRead } from '../threadAutoScroll';
+import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from '../threadAutoScroll';
 
 describe('thread auto-scroll helpers', () => {
   describe('isNearThreadBottom', () => {
@@ -9,6 +9,17 @@ describe('thread auto-scroll helpers', () => {
 
     it('treats a viewport beyond the threshold as away from the bottom', () => {
       expect(isNearThreadBottom({ scrollHeight: 1000, scrollTop: 560, clientHeight: 300 }, 96)).toBe(false);
+    });
+  });
+
+  describe('older history loading', () => {
+    it('detects the top loading threshold', () => {
+      expect(isNearThreadTop({ scrollTop: 40 }, 64)).toBe(true);
+      expect(isNearThreadTop({ scrollTop: 65 }, 64)).toBe(false);
+    });
+
+    it('preserves the visible position after messages are prepended', () => {
+      expect(getPrependRestoredScrollTop({ previousScrollHeight: 800, nextScrollHeight: 1250, previousScrollTop: 20 })).toBe(470);
     });
   });
 
