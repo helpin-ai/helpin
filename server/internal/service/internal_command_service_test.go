@@ -751,6 +751,7 @@ func TestAddTaskCommentCommandConvertsMarkdownToRichTextHTML(t *testing.T) {
 func TestAddTaskCommentCommandPersistsAgentAttribution(t *testing.T) {
 	db := newTestDB(t)
 	mustExec(t, db, `CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, icon_key TEXT, preset_key TEXT)`)
+	mustExec(t, db, `CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, external_runtime TEXT, external_runtime_id TEXT)`)
 	seedUser(t, db, "actor-1", "actor@example.com", "Waqar Azeem", "hash")
 	seedWorkspace(t, db, "ws-1", "Workspace", "workspace", "actor-1")
 	seedWorkspaceMember(t, db, "member-1", "ws-1", "actor-1", "actor@example.com", "Waqar Azeem", "admin")
@@ -759,6 +760,8 @@ func TestAddTaskCommentCommandPersistsAgentAttribution(t *testing.T) {
 	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, priority, severity, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"task-1", "ws-1", 1, "Attributed task", model.PMTaskTypeChore, "wf-1", "state-1", "high", "high", now, now)
 	mustExec(t, db, `INSERT INTO agents (id, workspace_id, name) VALUES (?, ?, ?)`, "agent-1", "ws-1", "Code Review Agent")
+	mustExec(t, db, `INSERT INTO agent_runs (id, workspace_id, external_runtime, external_runtime_id) VALUES (?, ?, ?, ?)`,
+		"0198c7d7-7654-7000-8000-000000000001", "ws-1", agentRuntimeName, "run_f1cb17f9f9fe4edc28403c7a")
 
 	taskRepo := repository.NewPMTaskRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -766,10 +769,11 @@ func TestAddTaskCommentCommandPersistsAgentAttribution(t *testing.T) {
 	taskService := NewPMTaskService(taskRepo, workspaceRepo, repository.NewPMWorkflowRepository(db), nil, nil, nil, nil, nil, nil, activityService, nil, nil, nil, nil)
 	commentService := NewPMCommentService(repository.NewPMCommentRepository(db), taskRepo, nil, activityService, nil, nil, workspaceRepo, nil)
 	svc := NewInternalCommandService(&AgentService{agentRepo: repository.NewAgentRepository(db)}, taskService, nil, nil, nil, nil, taskRepo, nil)
+	svc.agentRunRepo = repository.NewAgentRunRepository(db)
 	svc.SetPMCommentService(commentService)
 
 	_, err := svc.Execute(context.Background(), model.InternalCommandContext{
-		WorkspaceID: "ws-1", ActorID: "actor-1", AgentID: "agent-1", AgentScopeResolved: true, RunID: "run-1", TargetType: "task", TargetID: "task-1",
+		WorkspaceID: "ws-1", ActorID: "actor-1", AgentID: "agent-1", AgentScopeResolved: true, RunID: "run_f1cb17f9f9fe4edc28403c7a", TargetType: "task", TargetID: "task-1",
 	}, "pm.add_task_comment", json.RawMessage(`{"content":"Reviewed by the agent"}`))
 	if err != nil {
 		t.Fatalf("pm.add_task_comment returned error: %v", err)
@@ -782,7 +786,7 @@ func TestAddTaskCommentCommandPersistsAgentAttribution(t *testing.T) {
 	if comment.AuthorID != "actor-1" {
 		t.Fatalf("author_id = %q, want initiating user", comment.AuthorID)
 	}
-	if comment.AgentID == nil || *comment.AgentID != "agent-1" || comment.AgentName != "Code Review Agent" || comment.AgentRunID == nil || *comment.AgentRunID != "run-1" {
+	if comment.AgentID == nil || *comment.AgentID != "agent-1" || comment.AgentName != "Code Review Agent" || comment.AgentRunID == nil || *comment.AgentRunID != "0198c7d7-7654-7000-8000-000000000001" {
 		t.Fatalf("agent attribution = id:%v name:%q run:%v", comment.AgentID, comment.AgentName, comment.AgentRunID)
 	}
 }

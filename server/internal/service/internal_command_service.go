@@ -116,8 +116,10 @@ func (s *InternalCommandService) withAgentCommentAttribution(ctx context.Context
 		return req
 	}
 	req.AgentID = &agentID
-	if runID := strings.TrimSpace(meta.RunID); runID != "" {
-		req.AgentRunID = &runID
+	if strings.TrimSpace(meta.RunID) != "" && s != nil && s.agentRunRepo != nil {
+		if run, err := s.resolveCommandRun(ctx, meta); err == nil && run != nil {
+			req.AgentRunID = &run.ID
+		}
 	}
 	if s != nil && s.agentService != nil && s.agentService.agentRepo != nil {
 		if agents, err := s.agentService.agentRepo.ListByIDs(ctx, meta.WorkspaceID, []string{agentID}); err == nil && len(agents) == 1 {
