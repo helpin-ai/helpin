@@ -292,7 +292,15 @@ func main() {
 		SetConversationRepositories(conversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
-	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService).SetMeetingRepository(crmMeetingRepo).SetMeetingCaptureScheduler(service.NewTemporalMeetingCaptureScheduler(temporalClient))
+	meetingCaptureScheduler := service.NewTemporalMeetingCaptureScheduler(temporalClient)
+	calendarMeetingPolicyService := service.NewCRMMeetingService(crmMeetingRepo, crmAssociationRepo, nil).
+		SetCaptureProvider(cfg.CRMMeetingCaptureProvider).
+		SetCaptureScheduler(meetingCaptureScheduler).
+		SetCalendarIntegration(crmCalendarRepo, crmEmailRepo)
+	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService).
+		SetMeetingRepository(crmMeetingRepo).
+		SetMeetingCaptureScheduler(meetingCaptureScheduler).
+		SetMeetingPolicyReconciler(calendarMeetingPolicyService)
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	runRepo.SetTriggerExecutionRepository(triggerExecutionRepo)

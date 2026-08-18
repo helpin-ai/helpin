@@ -20,6 +20,7 @@ func TestGmailSyncClient_ListCalendarEventsNormalizesConferenceAndAttendees(t *t
 		_, _ = w.Write([]byte(`{
 			"items":[{
 				"id":"event-1",
+				"recurringEventId":"series-1",
 				"status":"confirmed",
 				"summary":"Customer call",
 				"description":"Join at https://zoom.us/j/123456789",
@@ -50,6 +51,9 @@ func TestGmailSyncClient_ListCalendarEventsNormalizesConferenceAndAttendees(t *t
 	event := events[0]
 	if event.MeetingURL != "https://zoom.us/j/123456789" {
 		t.Fatalf("meeting_url = %q", event.MeetingURL)
+	}
+	if event.RecurringSeriesID != "series-1" {
+		t.Fatalf("recurring_series_id = %q", event.RecurringSeriesID)
 	}
 	if len(event.Attendees) != 2 || event.Attendees[1].Email != "buyer@example.com" {
 		t.Fatalf("attendees = %+v", event.Attendees)

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -6,12 +6,12 @@ import {
   ArrowLeft02Icon,
   Copy01Icon,
   LinkSquare01Icon,
-  Loading01Icon,
   PlayCircleIcon,
   StopIcon,
 } from '@/lib/icons';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { MeetingPlatformIcon } from '@/components/crm/MeetingPlatform';
+import { MeetingRecordingPlayer, type MeetingRecordingPlayerHandle } from '@/components/crm/MeetingRecordingPlayer';
 import { getMeetingPlatformLabel } from '@/lib/meetingPresentation';
 import { MeetingProcessingState } from '@/components/crm/MeetingProcessingState';
 import { MeetingStatusBadge } from '@/components/crm/MeetingStatusBadge';
@@ -33,7 +33,6 @@ import {
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
-import { crmMeetingService } from '@/lib/services/crmMeetingService';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMMeetingActionItem } from '@/lib/crmMeetingTypes';
@@ -121,7 +120,8 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   const { teams } = useAccessibleTeams(workspaceId);
   const [teamByAction, setTeamByAction] = useState<Record<string, string>>({});
   const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null);
-  const [recordingLoading, setRecordingLoading] = useState(false);
+  const recordingPlayerRef = useRef<MeetingRecordingPlayerHandle | null>(null);
+  const [playbackSeconds, setPlaybackSeconds] = useState(0);
   useTitle(data?.meeting.title ?? 'Meeting');
 
   const defaultTeamId = teams[0]?.id ?? '';
@@ -153,18 +153,6 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
     toast.success(`${label} copied`);
   };
 
-  const openRecording = async () => {
-    setRecordingLoading(true);
-    try {
-      const response = await crmMeetingService.getRecording(workspaceId, meetingId);
-      if (response.error || !response.data?.url) throw new Error(response.error ?? 'Recording is unavailable');
-      window.open(response.data.url, '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to open recording');
-    } finally {
-      setRecordingLoading(false);
-    }
-  };
 
   const accept = async (item: CRMMeetingActionItem) => {
     const teamId = teamByAction[item.id] ?? defaultTeamId;
@@ -206,7 +194,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm"><a href={meeting.meeting_url} target="_blank" rel="noreferrer"><MeetingPlatformIcon platform={meeting.platform} size="sm" className="-ml-1 border-0 shadow-none" /> Open {getMeetingPlatformLabel(meeting.platform)} <LinkSquare01Icon className="h-3.5 w-3.5" /></a></Button>
-          {meeting.recording_object_key && <Button variant="outline" size="sm" onClick={openRecording} disabled={recordingLoading}>{recordingLoading ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlayCircleIcon className="h-4 w-4" />} Recording</Button>}
+          {meeting.recording_object_key && <Button variant="outline" size="sm" onClick={() => recordingPlayerRef.current?.focus()}><PlayCircleIcon className="h-4 w-4" /> Recording</Button>}
           {canEditCRM && canStart && <Button size="sm" onClick={() => runCommand(() => startCapture.mutateAsync(), 'Helpin is joining the meeting')} disabled={startCapture.isPending}><PlayCircleIcon className="h-4 w-4" /> Start capture</Button>}
           {canEditCRM && canStop && <Button size="sm" variant="destructive" onClick={() => runCommand(() => stopCapture.mutateAsync(), 'Capture is finalizing')} disabled={stopCapture.isPending}><StopIcon className="h-4 w-4" /> Stop</Button>}
           {canEditCRM && canRetry && <Button size="sm" onClick={() => runCommand(() => retryProcessing.mutateAsync(), 'Meeting processing restarted')} disabled={retryProcessing.isPending}>Retry processing</Button>}
@@ -216,6 +204,14 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
       <div className="mx-auto grid min-h-0 w-full max-w-[1500px] flex-1 gap-5 overflow-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:p-6">
         <main className="min-w-0 space-y-5">
           {meeting.failure_message && <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"><p className="font-medium">Meeting capture needs attention</p><p className="mt-1">{meeting.failure_message}</p></div>}
+          {meeting.recording_object_key && (
+            <MeetingRecordingPlayer
+              ref={recordingPlayerRef}
+              workspaceId={workspaceId}
+              meetingId={meetingId}
+              onTimeUpdate={setPlaybackSeconds}
+            />
+          )}
           {meeting.summary_status === 'blocked_usage' && <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300"><p className="font-medium">Transcript captured; AI processing is paused</p><p className="mt-1">Upgrade or add AI capacity, then retry processing. The transcript remains available.</p></div>}
 
           <Card>
@@ -266,7 +262,31 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
             </CardHeader>
             <CardContent>
               {data.transcript?.segments?.length ? (
-                <div className="space-y-4">{data.transcript.segments.map((segment) => <div key={segment.id} className="grid gap-1 sm:grid-cols-[120px_minmax(0,1fr)]"><div className="text-xs font-medium">{segment.speaker_name || 'Speaker'}<span className="ml-2 text-[10px] font-normal text-muted-foreground">{Math.floor(segment.start_seconds / 60)}:{String(Math.floor(segment.start_seconds % 60)).padStart(2, '0')}</span></div><p className="text-sm leading-6 text-muted-foreground">{segment.text}</p></div>)}</div>
+                <div className="space-y-2">
+                  {data.transcript.segments.map((segment) => {
+                    const segmentEnd = Math.max(segment.end_seconds, segment.start_seconds + 0.5);
+                    const active = Boolean(meeting.recording_object_key) && playbackSeconds >= segment.start_seconds && playbackSeconds < segmentEnd;
+                    const timestamp = `${Math.floor(segment.start_seconds / 60)}:${String(Math.floor(segment.start_seconds % 60)).padStart(2, '0')}`;
+                    return (
+                      <div key={segment.id} className={`grid gap-1 rounded-lg px-2 py-2 transition-colors sm:grid-cols-[120px_minmax(0,1fr)] ${active ? 'bg-primary/5 ring-1 ring-primary/15' : ''}`}>
+                        <div className="text-xs font-medium">
+                          {segment.speaker_name || 'Speaker'}
+                          {meeting.recording_object_key ? (
+                            <button
+                              type="button"
+                              className="ml-2 rounded px-1 text-[10px] font-normal text-primary hover:bg-primary/10 hover:underline"
+                              title="Play from this moment"
+                              onClick={() => recordingPlayerRef.current?.seekTo(segment.start_seconds)}
+                            >
+                              {timestamp}
+                            </button>
+                          ) : <span className="ml-2 text-[10px] font-normal text-muted-foreground">{timestamp}</span>}
+                        </div>
+                        <p className="text-sm leading-6 text-muted-foreground">{segment.text}</p>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : transcriptText ? <p className="whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{transcriptText}</p> : <p className="py-8 text-center text-sm text-muted-foreground">Transcript is not available yet.</p>}
             </CardContent>
           </Card>
@@ -277,7 +297,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
             <CardHeader><CardTitle className="text-sm">Capture details</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-xs">
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Visibility</span><span className="font-medium">{titleCase(meeting.visibility)}</span></div>
-              <div className="flex justify-between gap-3"><span className="text-muted-foreground">Audio</span><span className="font-medium">{meeting.record_audio ? 'Recorded' : 'Transcript only'}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-muted-foreground">Recording</span><span className="font-medium">{meeting.recording_object_key ? (meeting.recording_content_type?.startsWith('video/') ? 'Video' : 'Audio') : meeting.record_audio ? 'Requested' : 'Transcript only'}</span></div>
               <div className="flex justify-between gap-3"><span className="text-muted-foreground">Participants</span><span className="font-medium">{meeting.participants?.length ?? 0}</span></div>
               <div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">Platform</span><span className="inline-flex items-center gap-1.5 font-medium"><MeetingPlatformIcon platform={meeting.platform} size="sm" className="border-0 shadow-none" />{getMeetingPlatformLabel(meeting.platform)}</span></div>
             </CardContent>

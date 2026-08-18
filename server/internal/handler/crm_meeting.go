@@ -140,12 +140,12 @@ func (h *CRMMeetingHandler) RetryProcessing(w http.ResponseWriter, r *http.Reque
 
 // GetRecording handles GET /api/crm/meetings/{id}/recording.
 func (h *CRMMeetingHandler) GetRecording(w http.ResponseWriter, r *http.Request) {
-	url, err := h.meetingService.GetRecordingURL(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
+	recording, err := h.meetingService.GetRecording(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
 	if err != nil {
 		writeError(w, meetingErrorStatus(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"url": url})
+	writeJSON(w, http.StatusOK, recording)
 }
 
 // DeleteRecording handles DELETE /api/crm/meetings/{id}/recording.

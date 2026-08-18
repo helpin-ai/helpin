@@ -9,6 +9,7 @@ import type {
   UpdateCRMMeetingRequest,
   UpdateCRMMeetingSettingsRequest,
   UpdateCRMCalendarMeetingCaptureRequest,
+  UpdateCRMCalendarSeriesCaptureRequest,
 } from '@/lib/crmMeetingTypes';
 
 export const crmMeetingKeys = {
@@ -43,6 +44,18 @@ export function useUpdateCalendarMeetingCapture(workspaceId: string) {
   return useMutation({
     mutationFn: async ({ calendarEventId, payload }: { calendarEventId: string; payload: UpdateCRMCalendarMeetingCaptureRequest }) =>
       unwrap(await crmMeetingService.updateCalendarCapture(workspaceId, calendarEventId, payload)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: crmMeetingKeys.all(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: crmMeetingKeys.upcomingCalendar(workspaceId) });
+    },
+  });
+}
+
+export function useUpdateCalendarMeetingSeriesCapture(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: UpdateCRMCalendarSeriesCaptureRequest) =>
+      unwrap(await crmMeetingService.updateCalendarSeriesCapture(workspaceId, payload)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: crmMeetingKeys.all(workspaceId) });
       queryClient.invalidateQueries({ queryKey: crmMeetingKeys.upcomingCalendar(workspaceId) });
@@ -141,6 +154,9 @@ export function useUpdateCRMMeetingSettings(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: UpdateCRMMeetingSettingsRequest) => unwrap(await crmMeetingService.updateSettings(workspaceId, payload)),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: crmMeetingKeys.settings(workspaceId) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: crmMeetingKeys.settings(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: crmMeetingKeys.upcomingCalendar(workspaceId) });
+    },
   });
 }

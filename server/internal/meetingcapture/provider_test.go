@@ -29,6 +29,13 @@ func TestRecallProviderStartCaptureUsesRecallContract(t *testing.T) {
 		if body["meeting_url"] != "https://meet.google.com/abc-defg-hij" {
 			t.Fatalf("meeting_url = %#v", body["meeting_url"])
 		}
+		recordingConfig, _ := body["recording_config"].(map[string]interface{})
+		if _, ok := recordingConfig["video_mixed_mp4"].(map[string]interface{}); !ok {
+			t.Fatalf("video_mixed_mp4 = %#v, want enabled object", recordingConfig["video_mixed_mp4"])
+		}
+		if _, exists := recordingConfig["audio_mixed_mp3"]; exists {
+			t.Fatalf("audio_mixed_mp3 should not be requested for new video captures")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"id":"bot-1","status_changes":[{"code":"joining_call"}]}`))
 	}))
@@ -42,6 +49,7 @@ func TestRecallProviderStartCaptureUsesRecallContract(t *testing.T) {
 		Platform:        "google_meet",
 		NativeMeetingID: "abc-defg-hij",
 		BotName:         "Helpin Notetaker",
+		RecordAudio:     true,
 	})
 	if err != nil {
 		t.Fatalf("StartCapture: %v", err)
@@ -51,6 +59,48 @@ func TestRecallProviderStartCaptureUsesRecallContract(t *testing.T) {
 	}
 }
 
+func TestRecallProviderGetRecordingPrefersVideoAndFallsBackToAudio(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		response    string
+		wantURL     string
+		contentType string
+	}{
+		{
+			name:     "mixed video",
+			response: `{"recordings":[{"id":"recording-1","media_shortcuts":{"video_mixed":{"data":{"download_url":"https://media.example/video.mp4"}},"audio_mixed":{"data":{"download_url":"https://media.example/audio.mp3"}}}}]}`,
+			wantURL:  "https://media.example/video.mp4", contentType: "video/mp4",
+		},
+		{
+			name:     "legacy mixed audio",
+			response: `{"recordings":[{"id":"recording-2","media_shortcuts":{"audio_mixed":{"data":{"download_url":"https://media.example/audio.mp3"}}}}]}`,
+			wantURL:  "https://media.example/audio.mp3", contentType: "audio/mpeg",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/api/v1/bot/bot-1/" {
+					t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(test.response))
+			}))
+			defer server.Close()
+
+			provider := NewRecallProvider(RecallConfig{BaseURL: server.URL, APIKey: "recall-key", WebhookSecret: "whsec_dGVzdA==", HTTPClient: server.Client()})
+			recording, err := provider.GetRecording(context.Background(), "bot-1")
+			if err != nil {
+				t.Fatalf("GetRecording: %v", err)
+			}
+			if recording.ProviderRecordingID == "" || recording.DownloadURL != test.wantURL || recording.ContentType != test.contentType {
+				t.Fatalf("recording = %#v", recording)
+			}
+		})
+	}
+}
 func TestVexaProviderStartCaptureUsesProviderNeutralID(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

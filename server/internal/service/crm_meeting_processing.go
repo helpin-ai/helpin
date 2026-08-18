@@ -392,26 +392,40 @@ func (s *CRMMeetingProcessingService) copyRecording(
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("download meeting recording: provider returned HTTP %d", response.StatusCode)
 	}
-	contentType := strings.TrimSpace(recording.ContentType)
-	if contentType == "" {
-		contentType = strings.TrimSpace(response.Header.Get("Content-Type"))
-	}
-	extension := ".bin"
-	if strings.Contains(contentType, "mpeg") {
-		extension = ".mp3"
-	} else if strings.Contains(contentType, "webm") {
-		extension = ".webm"
+	contentType, extension, err := canonicalMeetingRecordingFormat(recording.ContentType, response.Header.Get("Content-Type"))
+	if err != nil {
+		return err
 	}
 	key := "crm-meetings/" + meeting.WorkspaceID + "/" + meeting.ID + "/recording" + extension
 	if err := s.artifactStore.PutObject(ctx, key, contentType, response.ContentLength, response.Body, false); err != nil {
 		return err
 	}
 	meeting.RecordingObjectKey = &key
+	meeting.RecordingContentType = &contentType
 	capture.ProviderRecordingID = trimStringPtr(&recording.ProviderRecordingID)
 	if err := s.repo.UpdateCapture(ctx, capture); err != nil {
 		return err
 	}
 	return s.repo.Update(ctx, meeting)
+}
+
+func canonicalMeetingRecordingFormat(values ...string) (string, string, error) {
+	for _, value := range values {
+		contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(value, ";", 2)[0]))
+		switch contentType {
+		case "video/mp4":
+			return "video/mp4", ".mp4", nil
+		case "video/webm":
+			return "video/webm", ".webm", nil
+		case "audio/mpeg", "audio/mp3":
+			return "audio/mpeg", ".mp3", nil
+		case "audio/webm":
+			return "audio/webm", ".webm", nil
+		case "audio/mp4", "audio/x-m4a":
+			return "audio/mp4", ".m4a", nil
+		}
+	}
+	return "", "", fmt.Errorf("meeting recording has an unsupported content type")
 }
 
 func (s *CRMMeetingProcessingService) projectActivity(
