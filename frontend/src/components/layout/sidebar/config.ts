@@ -63,12 +63,17 @@ export const projectCreateOptions = [
   { key: 'objective' as const, label: 'Objective', icon: Target01Icon, pages: ['objectives'] },
 ];
 
-export function buildRailItems(wsSlug: string, totalSupportUnread: number, setupProgress?: number): RailItem[] {
+export function buildRailItems(
+  wsSlug: string,
+  totalSupportUnread: number,
+  setupProgress?: number,
+  crmDefaultLink = `/w/${wsSlug}/crm/overview`,
+): RailItem[] {
   const items: RailItem[] = [
     { id: 'projects', label: 'Projects', icon: FolderKanbanIcon, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'support', label: 'Support', icon: Message01Icon, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
     { id: 'docs', label: 'Docs', icon: File01Icon, defaultLink: `/w/${wsSlug}/docs` },
-    { id: 'crm', label: 'CRM', icon: Briefcase01Icon, defaultLink: `/w/${wsSlug}/crm/contacts` },
+    { id: 'crm', label: 'CRM', icon: Briefcase01Icon, defaultLink: crmDefaultLink },
     { id: 'automation', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/automation/flows` },
     { id: 'settings', label: 'Settings', icon: Setting07Icon, defaultLink: buildSettingsRoutePath(wsSlug, 'profile') },
   ];
@@ -105,6 +110,7 @@ export function buildPanelNavGroups(
       {
         label: '',
         items: [
+          { link: `/w/${wsSlug}/crm/overview`, label: 'Overview', icon: ChartColumnIcon },
           { link: `/w/${wsSlug}/crm/contacts`, label: 'Contacts', icon: UserGroupIcon },
           { link: `/w/${wsSlug}/crm/companies`, label: 'Companies', icon: Building03Icon },
           { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarCircleIcon },
