@@ -33,7 +33,16 @@ type ChatRequest struct {
 	JSONMode         bool
 	JSONSchema       map[string]any
 	JSONSchemaStrict bool
+	Reasoning        *ReasoningConfig
 	ProviderOptions  json.RawMessage
+}
+
+// ReasoningConfig controls provider reasoning budgets for compatible models.
+type ReasoningConfig struct {
+	Effort    string `json:"effort,omitempty"`
+	MaxTokens int    `json:"max_tokens,omitempty"`
+	Enabled   *bool  `json:"enabled,omitempty"`
+	Exclude   bool   `json:"exclude,omitempty"`
 }
 
 // Message represents a conversation message.
@@ -62,6 +71,7 @@ type ChatResponse struct {
 	TokensUsed             TokenUsage
 	Provider, Model, Route string
 	ServiceTier            string
+	FinishReason           string
 }
 
 // ChatPricingIdentity is the exact route selected before a provider call.

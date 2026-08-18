@@ -148,20 +148,23 @@ func (CRMMeetingTranscript) TableName() string { return "crm_meeting_transcripts
 
 // CRMMeetingIntelligence contains fixed-schema post-meeting AI output.
 type CRMMeetingIntelligence struct {
-	ID                 string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID        string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	MeetingID          string    `json:"meeting_id" gorm:"type:uuid;not null;uniqueIndex"`
-	GenerationVersion  string    `json:"generation_version" gorm:"not null"`
-	TranscriptChecksum string    `json:"transcript_checksum" gorm:"not null"`
-	SummaryMarkdown    string    `json:"summary_markdown" gorm:"type:text;not null;default:''"`
-	KeyPoints          JSONBlob  `json:"key_points" gorm:"type:jsonb;default:'[]'"`
-	Decisions          JSONBlob  `json:"decisions" gorm:"type:jsonb;default:'[]'"`
-	Objections         JSONBlob  `json:"objections" gorm:"type:jsonb;default:'[]'"`
-	Risks              JSONBlob  `json:"risks" gorm:"type:jsonb;default:'[]'"`
-	NextSteps          JSONBlob  `json:"next_steps" gorm:"type:jsonb;default:'[]'"`
-	FollowUpDraft      JSONB     `json:"follow_up_draft" gorm:"type:jsonb;default:'{}'"`
-	CreatedAt          time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                  string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID         string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	MeetingID           string    `json:"meeting_id" gorm:"type:uuid;not null;uniqueIndex"`
+	GenerationVersion   string    `json:"generation_version" gorm:"not null"`
+	TranscriptChecksum  string    `json:"transcript_checksum" gorm:"not null"`
+	SummaryMarkdown     string    `json:"summary_markdown" gorm:"type:text;not null;default:''"`
+	ParticipantsContext JSONBlob  `json:"participants_context" gorm:"type:jsonb;default:'[]'"`
+	KeyPoints           JSONBlob  `json:"key_points" gorm:"type:jsonb;default:'[]'"`
+	Decisions           JSONBlob  `json:"decisions" gorm:"type:jsonb;default:'[]'"`
+	Objections          JSONBlob  `json:"objections" gorm:"type:jsonb;default:'[]'"`
+	Risks               JSONBlob  `json:"risks" gorm:"type:jsonb;default:'[]'"`
+	OpenQuestions       JSONBlob  `json:"open_questions" gorm:"type:jsonb;default:'[]'"`
+	NextSteps           JSONBlob  `json:"next_steps" gorm:"type:jsonb;default:'[]'"`
+	Rapport             JSONBlob  `json:"rapport" gorm:"type:jsonb;default:'[]'"`
+	FollowUpDraft       JSONB     `json:"follow_up_draft" gorm:"type:jsonb;default:'{}'"`
+	CreatedAt           time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt           time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (CRMMeetingIntelligence) TableName() string { return "crm_meeting_intelligence" }

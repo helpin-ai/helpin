@@ -33,6 +33,7 @@ func TestOpenAIProviderBuildChatCompletionBodyOmitsTemperatureForGPT5(t *testing
 				schema,
 				true,
 				nil,
+				nil,
 			)
 
 			if _, ok := body["max_completion_tokens"]; !ok {
@@ -73,6 +74,7 @@ func TestOpenAIProviderBuildChatCompletionBodyKeepsGenericJSONModeWithoutStrictS
 		map[string]any{"type": "object"},
 		false,
 		nil,
+		nil,
 	)
 
 	responseFormat, ok := body["response_format"].(map[string]string)
@@ -91,6 +93,7 @@ func TestOpenAIProviderBuildChatCompletionBodyUsesMaxTokensForNonGPT5(t *testing
 		false,
 		nil,
 		false,
+		nil,
 		nil,
 	)
 
@@ -118,6 +121,7 @@ func TestOpenAIProviderBuildChatCompletionBodyIncludesProviderOptions(t *testing
 		false,
 		nil,
 		false,
+		&ReasoningConfig{Effort: "low"},
 		[]byte(`{"order":["openai"],"allow_fallbacks":false}`),
 	)
 
@@ -127,6 +131,13 @@ func TestOpenAIProviderBuildChatCompletionBodyIncludesProviderOptions(t *testing
 	}
 	if string(raw) != `{"order":["openai"],"allow_fallbacks":false}` {
 		t.Fatalf("unexpected provider options: %s", string(raw))
+	}
+	reasoning, ok := body["reasoning"].(*ReasoningConfig)
+	if !ok {
+		t.Fatalf("expected reasoning configuration, got %#v", body["reasoning"])
+	}
+	if reasoning.Effort != "low" {
+		t.Fatalf("unexpected reasoning configuration: %#v", reasoning)
 	}
 }
 

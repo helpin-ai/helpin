@@ -19,9 +19,12 @@ import (
 )
 
 const (
-	meetingIntelligenceGenerationVersion = "v1"
+	meetingIntelligenceGenerationVersion = "v3"
 	meetingIntelligenceLLMProvider       = "openrouter"
 	meetingIntelligenceLLMModel          = "deepseek/deepseek-v4-flash-0731"
+	meetingIntelligenceFallbackProvider  = "openrouter"
+	meetingIntelligenceFallbackModel     = "google/gemini-3.7-flash"
+	meetingIntelligenceMaxTokens         = 8192
 )
 
 type meetingArtifactStore interface {
@@ -249,14 +252,17 @@ func canonicalMeetingTranscript(
 }
 
 type meetingIntelligenceOutput struct {
-	SummaryMarkdown string                    `json:"summary_markdown"`
-	KeyPoints       []string                  `json:"key_points"`
-	Decisions       []string                  `json:"decisions"`
-	Objections      []string                  `json:"objections"`
-	Risks           []string                  `json:"risks"`
-	NextSteps       []string                  `json:"next_steps"`
-	ActionItems     []meetingActionItemOutput `json:"action_items"`
-	FollowUpDraft   meetingFollowUpOutput     `json:"follow_up_draft"`
+	SummaryMarkdown     string                    `json:"summary_markdown"`
+	ParticipantsContext []string                  `json:"participants_context"`
+	KeyPoints           []string                  `json:"key_points"`
+	Decisions           []string                  `json:"decisions"`
+	Objections          []string                  `json:"objections"`
+	Risks               []string                  `json:"risks"`
+	OpenQuestions       []string                  `json:"open_questions"`
+	NextSteps           []string                  `json:"next_steps"`
+	Rapport             []string                  `json:"rapport"`
+	ActionItems         []meetingActionItemOutput `json:"action_items"`
+	FollowUpDraft       meetingFollowUpOutput     `json:"follow_up_draft"`
 }
 
 type meetingActionItemOutput struct {
@@ -284,30 +290,96 @@ func (s *CRMMeetingProcessingService) generateIntelligence(
 	if len(content) > 120000 {
 		content = content[:120000]
 	}
-	meteredCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
-		WorkspaceID:    meeting.WorkspaceID,
-		FeatureKey:     BillingFeatureMeetingIntelligence,
-		IdempotencyKey: aiUsageIdempotencyKey(meeting.WorkspaceID, meeting.ID, transcript.Checksum, meetingIntelligenceGenerationVersion),
-		Metadata:       map[string]interface{}{"meeting_id": meeting.ID, "provider": transcript.SourceProvider},
-	})
-	response, err := s.llmProvider.ChatCompletion(meteredCtx, llm.ChatRequest{
-		SystemPrompt: meetingIntelligenceSystemPrompt,
-		Messages:     []llm.Message{{Role: "user", Content: "Meeting title: " + meeting.Title + "\n\nTranscript:\n" + content}},
-		Provider:     meetingIntelligenceLLMProvider,
-		Model:        meetingIntelligenceLLMModel,
-		Temperature:  0.1,
-		MaxTokens:    6000,
-		JSONMode:     true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("generate meeting intelligence: %w", err)
+
+	routes := []struct {
+		key      string
+		provider string
+		model    string
+	}{
+		{key: "primary", provider: meetingIntelligenceLLMProvider, model: meetingIntelligenceLLMModel},
+		{key: "fallback", provider: meetingIntelligenceFallbackProvider, model: meetingIntelligenceFallbackModel},
+	}
+	var primaryErr error
+	for index, route := range routes {
+		meteredCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+			WorkspaceID:    meeting.WorkspaceID,
+			FeatureKey:     BillingFeatureMeetingIntelligence,
+			IdempotencyKey: aiUsageIdempotencyKey(meeting.WorkspaceID, meeting.ID, transcript.Checksum, meetingIntelligenceGenerationVersion, route.key),
+			Metadata: map[string]interface{}{
+				"meeting_id": meeting.ID,
+				"provider":   transcript.SourceProvider,
+				"route":      route.key,
+			},
+		})
+		response, err := s.llmProvider.ChatCompletion(meteredCtx, llm.ChatRequest{
+			SystemPrompt:     meetingIntelligenceSystemPrompt,
+			Messages:         []llm.Message{{Role: "user", Content: "Meeting title: " + meeting.Title + "\n\nTranscript:\n" + content}},
+			Provider:         route.provider,
+			Model:            route.model,
+			Temperature:      0.1,
+			MaxTokens:        meetingIntelligenceMaxTokens,
+			JSONMode:         true,
+			JSONSchema:       meetingIntelligenceJSONSchema,
+			JSONSchemaStrict: true,
+			Reasoning:        &llm.ReasoningConfig{Effort: "low"},
+			ProviderOptions:  json.RawMessage(`{"require_parameters":true}`),
+		})
+		if err != nil {
+			err = fmt.Errorf("%s model request failed: %w", route.key, err)
+		} else {
+			var output *meetingIntelligenceOutput
+			output, err = parseMeetingIntelligenceResponse(response)
+			if err == nil {
+				return output, nil
+			}
+		}
+		if isMeetingUsageBlocked(err) {
+			return nil, err
+		}
+		if index == 0 {
+			primaryErr = err
+			slog.WarnContext(ctx, "meeting intelligence primary model returned unusable output",
+				"workspace_id", meeting.WorkspaceID,
+				"meeting_id", meeting.ID,
+				"model", route.model,
+				"error", err,
+			)
+			continue
+		}
+		slog.ErrorContext(ctx, "meeting intelligence fallback model returned unusable output",
+			"workspace_id", meeting.WorkspaceID,
+			"meeting_id", meeting.ID,
+			"model", route.model,
+			"primary_error", primaryErr,
+			"error", err,
+		)
+		return nil, fmt.Errorf("meeting intelligence generation failed after trying a backup model")
+	}
+	return nil, fmt.Errorf("meeting intelligence generation failed")
+}
+
+func parseMeetingIntelligenceResponse(response *llm.ChatResponse) (*meetingIntelligenceOutput, error) {
+	if response == nil {
+		return nil, fmt.Errorf("model returned no response")
+	}
+	if strings.TrimSpace(response.Content) == "" {
+		finishReason := strings.TrimSpace(response.FinishReason)
+		if finishReason == "" {
+			finishReason = "unknown"
+		}
+		return nil, fmt.Errorf(
+			"model returned no structured output (finish_reason=%s, reasoning_tokens=%d, completion_tokens=%d)",
+			finishReason,
+			response.TokensUsed.ReasoningTokens,
+			response.TokensUsed.CompletionTokensTotal,
+		)
 	}
 	var output meetingIntelligenceOutput
 	if err := llm.UnmarshalResponse(response.Content, &output); err != nil {
-		return nil, fmt.Errorf("parse meeting intelligence: %w", err)
+		return nil, fmt.Errorf("model returned malformed structured output")
 	}
 	if strings.TrimSpace(output.SummaryMarkdown) == "" {
-		return nil, fmt.Errorf("meeting intelligence did not include a summary")
+		return nil, fmt.Errorf("model response did not include a summary")
 	}
 	return &output, nil
 }
@@ -319,17 +391,20 @@ func (s *CRMMeetingProcessingService) persistIntelligence(
 	output *meetingIntelligenceOutput,
 ) error {
 	intelligence := &model.CRMMeetingIntelligence{
-		WorkspaceID:        meeting.WorkspaceID,
-		MeetingID:          meeting.ID,
-		GenerationVersion:  meetingIntelligenceGenerationVersion,
-		TranscriptChecksum: transcript.Checksum,
-		SummaryMarkdown:    strings.TrimSpace(output.SummaryMarkdown),
-		KeyPoints:          jsonBlob(output.KeyPoints),
-		Decisions:          jsonBlob(output.Decisions),
-		Objections:         jsonBlob(output.Objections),
-		Risks:              jsonBlob(output.Risks),
-		NextSteps:          jsonBlob(output.NextSteps),
-		FollowUpDraft:      model.JSONB{"subject": output.FollowUpDraft.Subject, "body": output.FollowUpDraft.Body},
+		WorkspaceID:         meeting.WorkspaceID,
+		MeetingID:           meeting.ID,
+		GenerationVersion:   meetingIntelligenceGenerationVersion,
+		TranscriptChecksum:  transcript.Checksum,
+		SummaryMarkdown:     strings.TrimSpace(output.SummaryMarkdown),
+		ParticipantsContext: jsonBlob(output.ParticipantsContext),
+		KeyPoints:           jsonBlob(output.KeyPoints),
+		Decisions:           jsonBlob(output.Decisions),
+		Objections:          jsonBlob(output.Objections),
+		Risks:               jsonBlob(output.Risks),
+		OpenQuestions:       jsonBlob(output.OpenQuestions),
+		NextSteps:           jsonBlob(output.NextSteps),
+		Rapport:             jsonBlob(output.Rapport),
+		FollowUpDraft:       model.JSONB{"subject": output.FollowUpDraft.Subject, "body": output.FollowUpDraft.Body},
 	}
 	if err := s.repo.UpsertIntelligence(ctx, intelligence); err != nil {
 		return err
@@ -610,12 +685,84 @@ func meetingStringPointer(value string) *string {
 	return &value
 }
 
-const meetingIntelligenceSystemPrompt = `You are Helpin's meeting intelligence processor. Convert the transcript into reliable, concise CRM intelligence.
+var meetingIntelligenceJSONSchema = map[string]any{
+	"type":                 "object",
+	"additionalProperties": false,
+	"required": []string{
+		"summary_markdown",
+		"participants_context",
+		"key_points",
+		"decisions",
+		"objections",
+		"risks",
+		"open_questions",
+		"next_steps",
+		"rapport",
+		"action_items",
+		"follow_up_draft",
+	},
+	"properties": map[string]any{
+		"summary_markdown":     map[string]any{"type": "string"},
+		"participants_context": meetingIntelligenceStringArraySchema(),
+		"key_points":           meetingIntelligenceStringArraySchema(),
+		"decisions":            meetingIntelligenceStringArraySchema(),
+		"objections":           meetingIntelligenceStringArraySchema(),
+		"risks":                meetingIntelligenceStringArraySchema(),
+		"open_questions":       meetingIntelligenceStringArraySchema(),
+		"next_steps":           meetingIntelligenceStringArraySchema(),
+		"rapport":              meetingIntelligenceStringArraySchema(),
+		"action_items": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required": []string{
+					"title",
+					"details",
+					"assignee_name",
+					"due_date",
+					"evidence",
+				},
+				"properties": map[string]any{
+					"title":         map[string]any{"type": "string"},
+					"details":       map[string]any{"type": "string"},
+					"assignee_name": map[string]any{"type": "string"},
+					"due_date":      map[string]any{"type": "string"},
+					"evidence":      map[string]any{"type": "string"},
+				},
+			},
+		},
+		"follow_up_draft": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []string{"subject", "body"},
+			"properties": map[string]any{
+				"subject": map[string]any{"type": "string"},
+				"body":    map[string]any{"type": "string"},
+			},
+		},
+	},
+}
+
+func meetingIntelligenceStringArraySchema() map[string]any {
+	return map[string]any{
+		"type":  "array",
+		"items": map[string]any{"type": "string"},
+	}
+}
+
+const meetingIntelligenceSystemPrompt = `You are Helpin's meeting intelligence processor. Convert the transcript into a concise, reliable meeting record that reads in a clear linear order.
 
 Return one JSON object with exactly these keys:
-- summary_markdown: concise factual summary in Markdown
-- key_points, decisions, objections, risks, next_steps: arrays of concise strings
+- summary_markdown: one concise factual overview paragraph in Markdown, without a heading
+- participants_context: participant roles and meeting purpose/context as concise strings
+- key_points: the most important discussion points, without repeating the overview
+- decisions: confirmed decisions only
+- open_questions: unresolved questions, issues, or blockers
+- next_steps: concrete next steps, without duplicating action_items
+- rapport: useful relationship, engagement, or sentiment observations supported by the transcript
+- objections and risks: concise internal CRM signals retained for automation
 - action_items: array of objects with title, details, assignee_name, due_date (YYYY-MM-DD or empty), and a short evidence excerpt
 - follow_up_draft: object with subject and body
 
-Never invent facts, owners, dates, or commitments. Use empty arrays or empty strings when the transcript does not support a field. Do not include prose outside JSON.`
+Prioritize signal over completeness. Never invent identities, roles, facts, owners, dates, commitments, sentiment, or rapport. Use empty arrays or empty strings when the transcript does not support a field. Do not include prose outside JSON.`
