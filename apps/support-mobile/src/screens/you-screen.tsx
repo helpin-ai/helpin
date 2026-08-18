@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, useRouter } from '@tanstack/react-router'
+import { useParams } from '@tanstack/react-router'
 import { useTheme } from 'next-themes'
 import { Bell } from 'lucide-react'
 import { toast } from 'sonner'
@@ -13,6 +13,8 @@ import { useConfirmPress } from '@mobile/lib/use-confirm-press'
 import { isTauri } from '@mobile/lib/host'
 import { getPushPrimingPref, setPushPrimingPref, type PushPrimingPref } from '@mobile/lib/prefs'
 import { registerForPush } from '@mobile/push/push-registration'
+import { PrimaryNavigation } from '@mobile/navigation/primary-navigation'
+import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 
 /** App version footer caption: real version via the Tauri shell, 'dev' in a plain browser tab. */
 function useAppVersion(): string {
@@ -104,7 +106,7 @@ function useNotificationsRowState() {
 
 export function SettingsScreen() {
   const { slug } = useParams({ strict: false })
-  const router = useRouter()
+  const workspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '')
   const user = useAuthStore((state) => state.user)
   const { theme, setTheme } = useTheme()
   const appVersion = useAppVersion()
@@ -112,19 +114,12 @@ export function SettingsScreen() {
   const notifications = useNotificationsRowState()
   const notificationsEnabled = notifications.pref?.decision === 'enabled'
 
-  const handleBack = () => {
-    if (router.history.canGoBack()) {
-      router.history.back()
-    } else {
-      router.navigate({ to: '/w/$slug/support', params: { slug: slug ?? '' } })
-    }
-  }
-
   return (
-    <div className="flex h-dvh flex-col overflow-y-auto">
-      <TopBar title="Settings" large onBack={handleBack} />
+    <div className="flex h-dvh flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <TopBar title="Settings" large />
 
-      <div className="px-4 pb-[var(--safe-bottom)]">
+        <div className="px-4">
           <section className="flex items-center gap-3 border-b border-border/70 py-3">
             <Avatar name={user?.full_name ?? ''} src={user?.avatar_url} size={44} />
             <span className="flex flex-1 flex-col">
@@ -188,7 +183,10 @@ export function SettingsScreen() {
           </section>
 
           <p className="pb-6 pt-2 text-center text-caption text-muted-foreground">Helpin v{appVersion}</p>
+        </div>
       </div>
+
+      <PrimaryNavigation activeTab="settings" workspaceId={workspaceId} workspaceSlug={slug ?? ''} />
     </div>
   )
 }

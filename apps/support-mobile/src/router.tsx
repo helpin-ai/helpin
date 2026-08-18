@@ -27,6 +27,7 @@ import {
 import { InboxScreen } from '@mobile/screens/inbox-screen'
 import { ConversationPending } from '@mobile/screens/conversation-pending'
 import { SettingsScreen } from '@mobile/screens/you-screen'
+import { SearchScreen } from '@mobile/screens/search-screen'
 import { Spinner } from '@mobile/ui/spinner'
 
 export interface RouterContext {
@@ -124,6 +125,13 @@ const supportInboxRoute = createRoute({
   component: InboxScreen,
 })
 
+const supportSearchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/w/$slug/support/search',
+  beforeLoad: requireAuth,
+  component: SearchScreen,
+})
+
 const supportConversationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/w/$slug/support/$conversationId',
@@ -180,6 +188,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   workspacesRoute,
   supportInboxRoute,
+  supportSearchRoute,
   supportConversationRoute,
   settingsRoute,
   legacyYouRoute,

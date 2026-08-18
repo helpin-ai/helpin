@@ -9,36 +9,40 @@ test.each([
   expect(formatBadgeCount(input)).toBe(expected)
 })
 
-test('renders both tab items', () => {
+test('renders all four primary destinations', () => {
   render(<TabBar activeTab="inbox" onNavigate={vi.fn()} />)
   expect(screen.getByRole('button', { name: /Inbox/ })).toBeDefined()
-  expect(screen.getByRole('button', { name: /You/ })).toBeDefined()
+  expect(screen.getByRole('button', { name: /Mine/ })).toBeDefined()
+  expect(screen.getByRole('button', { name: /Search/ })).toBeDefined()
+  expect(screen.getByRole('button', { name: /Settings/ })).toBeDefined()
 })
 
 test('marks the active tab via aria-pressed', () => {
-  render(<TabBar activeTab="you" onNavigate={vi.fn()} />)
+  render(<TabBar activeTab="settings" onNavigate={vi.fn()} />)
   expect(screen.getByRole('button', { name: /Inbox/ }).getAttribute('aria-pressed')).toBe('false')
-  expect(screen.getByRole('button', { name: /You/ }).getAttribute('aria-pressed')).toBe('true')
+  expect(screen.getByRole('button', { name: /Settings/ }).getAttribute('aria-pressed')).toBe('true')
 })
 
 test('fires onNavigate with the tapped tab key', () => {
   const onNavigate = vi.fn()
   render(<TabBar activeTab="inbox" onNavigate={onNavigate} />)
-  fireEvent.click(screen.getByRole('button', { name: /You/ }))
-  expect(onNavigate).toHaveBeenCalledWith('you')
+  fireEvent.click(screen.getByRole('button', { name: /Mine/ }))
+  expect(onNavigate).toHaveBeenCalledWith('mine')
 })
 
-test('renders the unread badge on the Inbox tab when a count is provided', () => {
-  render(<TabBar activeTab="inbox" onNavigate={vi.fn()} unreadCount={5} />)
-  expect(screen.getByTestId('tab-badge').textContent).toBe('5')
+test('renders independent unread badges for Inbox and Mine', () => {
+  render(<TabBar activeTab="inbox" onNavigate={vi.fn()} badges={{ inbox: 5, mine: 2 }} />)
+  expect(screen.getByTestId('tab-badge-inbox').textContent).toBe('5')
+  expect(screen.getByTestId('tab-badge-mine').textContent).toBe('2')
 })
 
-test('caps the badge at 99+', () => {
-  render(<TabBar activeTab="inbox" onNavigate={vi.fn()} unreadCount={150} />)
-  expect(screen.getByTestId('tab-badge').textContent).toBe('99+')
+test('caps badges at 99+', () => {
+  render(<TabBar activeTab="inbox" onNavigate={vi.fn()} badges={{ inbox: 150 }} />)
+  expect(screen.getByTestId('tab-badge-inbox').textContent).toBe('99+')
 })
 
-test('hides the badge element when the count is zero or absent', () => {
-  render(<TabBar activeTab="inbox" onNavigate={vi.fn()} unreadCount={0} />)
-  expect(screen.queryByTestId('tab-badge')).toBeNull()
+test('hides badge elements when counts are zero or absent', () => {
+  render(<TabBar activeTab="inbox" onNavigate={vi.fn()} badges={{ inbox: 0 }} />)
+  expect(screen.queryByTestId('tab-badge-inbox')).toBeNull()
+  expect(screen.queryByTestId('tab-badge-mine')).toBeNull()
 })

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Check, ChevronDown, Inbox as InboxIcon, Mail, MailOpen, Menu } from 'lucide-react'
+import { Check, Inbox as InboxIcon, Mail, MailOpen, SlidersHorizontal } from 'lucide-react'
 import {
   useConversations,
   useMarkConversationRead,
@@ -34,6 +34,7 @@ import { selectionTitle, selectionToConversationFilters } from '@mobile/inbox/us
 import { SwipeableRow, type SwipeAction } from '@mobile/inbox/swipeable-row'
 import { PULL_ARM_THRESHOLD, usePullToRefresh } from '@mobile/inbox/use-pull-to-refresh'
 import { CONVERSATION_CELL_HEIGHT, isUnread } from '@mobile/inbox/inbox-helpers'
+import { PrimaryNavigation } from '@mobile/navigation/primary-navigation'
 
 function InboxSkeletonList() {
   return (
@@ -275,30 +276,27 @@ export function InboxScreen() {
   }
 
   return (
-    <div className="relative h-dvh">
-      <div
-        ref={scrollRef}
-        onPointerDown={pull.handlers.onPointerDown}
-        onPointerMove={pull.handlers.onPointerMove}
-        onPointerUp={pull.handlers.onPointerUp}
-        onPointerCancel={pull.handlers.onPointerCancel}
-        className="h-full overflow-y-auto"
-      >
+    <div className="flex h-dvh flex-col">
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          onPointerDown={pull.handlers.onPointerDown}
+          onPointerMove={pull.handlers.onPointerMove}
+          onPointerUp={pull.handlers.onPointerUp}
+          onPointerCancel={pull.handlers.onPointerCancel}
+          className="h-full overflow-y-auto"
+        >
         <TopBar
           title={currentTitle}
-          // Title lives inline next to the menu button (drawer nav pattern),
-          // so suppress the top bar's own centered title slot.
-          titleSlot={<></>}
-          leading={
+          subtitle={workspace?.name}
+          trailing={
             <Pressable
-              aria-label={`Current view: ${currentTitle}. Open views menu`}
+              aria-label="Open inbox views"
               haptic="selection"
               onPress={() => setDrawerOpen(true)}
-              className="flex min-w-0 max-w-[72vw] items-center gap-1.5 rounded-full py-1 pr-1.5"
+              className="flex items-center justify-center rounded-full"
             >
-              <Menu className="h-6 w-6 shrink-0 text-foreground" />
-              <span className="truncate text-headline">{currentTitle}</span>
-              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <SlidersHorizontal className="h-5 w-5" />
             </Pressable>
           }
         />
@@ -410,7 +408,7 @@ export function InboxScreen() {
         type="button"
         aria-hidden
         tabIndex={-1}
-        className="fixed inset-y-0 left-0 z-20 w-4"
+        className="absolute inset-y-0 left-0 z-20 w-4"
         onPointerDown={(e) => {
           edgeStart.current = { x: e.clientX, y: e.clientY }
         }}
@@ -448,7 +446,14 @@ export function InboxScreen() {
         onSelect={setSelection}
       />
 
-      <PermissionPrimingSheet open={primingSheetOpen} onOpenChange={setPrimingSheetOpen} />
+        <PermissionPrimingSheet open={primingSheetOpen} onOpenChange={setPrimingSheetOpen} />
+      </div>
+
+      <PrimaryNavigation
+        activeTab={selection.kind === 'builtin' && selection.navFilter === 'mine' ? 'mine' : 'inbox'}
+        workspaceId={workspaceId}
+        workspaceSlug={slug ?? ''}
+      />
     </div>
   )
 }

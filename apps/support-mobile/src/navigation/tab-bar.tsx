@@ -1,13 +1,11 @@
-import type { ComponentType, ReactNode } from 'react'
+import type { ComponentType } from 'react'
 import { motion } from 'motion/react'
-import { useRouter, useRouterState } from '@tanstack/react-router'
-import { Inbox, CircleUser } from 'lucide-react'
-import { useUnreadStats } from '@helpin-ai/support-core'
+import { Inbox, Search, Settings, UserRoundCheck } from 'lucide-react'
 import { cn } from '@mobile/lib/cn'
 import { pressTransition } from '@mobile/lib/motion'
 import { Pressable } from '@mobile/ui/pressable'
 
-export type TabKey = 'inbox' | 'you'
+export type TabKey = 'inbox' | 'mine' | 'search' | 'settings'
 
 /**
  * `0` (or negative, defensively) hides the badge entirely, otherwise the raw
@@ -27,26 +25,25 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { key: 'inbox', label: 'Inbox', icon: Inbox },
-  { key: 'you', label: 'You', icon: CircleUser },
+  { key: 'mine', label: 'Mine', icon: UserRoundCheck },
+  { key: 'search', label: 'Search', icon: Search },
+  { key: 'settings', label: 'Settings', icon: Settings },
 ]
 
 export interface TabBarProps {
   activeTab: TabKey
   onNavigate: (tab: TabKey) => void
-  /** Unread count shown as a badge on the Inbox tab. Omit/0 hides it. */
-  unreadCount?: number
+  /** Per-destination unread counts. Omitted/zero values do not render badges. */
+  badges?: Partial<Record<TabKey, number>>
   className?: string
 }
 
 /**
  * Pure presentational bottom tab bar — no router or data-fetching
- * dependencies, so it can be exercised directly in tests. `TabShell` below
- * is the wiring layer that supplies `activeTab`/`onNavigate`/`unreadCount`
- * from the router and `useUnreadStats`.
+ * dependencies, so it can be exercised directly in tests. Route and inbox
+ * filter wiring lives in `PrimaryNavigation`.
  */
-export function TabBar({ activeTab, onNavigate, unreadCount = 0, className }: TabBarProps) {
-  const badgeLabel = formatBadgeCount(unreadCount)
-
+export function TabBar({ activeTab, onNavigate, badges = {}, className }: TabBarProps) {
   // Two-layer split (same precedent as TopBar's safe-top handling): the outer
   // nav absorbs the safe-area inset as padding, the inner row keeps the full
   // 49px content height. Putting both on one border-box element would subtract
@@ -59,6 +56,7 @@ export function TabBar({ activeTab, onNavigate, unreadCount = 0, className }: Ta
       <div className="flex h-[49px] items-stretch">
         {TABS.map(({ key, label, icon: Icon }) => {
           const selected = key === activeTab
+          const badgeLabel = formatBadgeCount(badges[key] ?? 0)
           return (
             <Pressable
               key={key}
@@ -78,9 +76,9 @@ export function TabBar({ activeTab, onNavigate, unreadCount = 0, className }: Ta
                 >
                   <Icon className="h-6 w-6" />
                 </motion.span>
-                {key === 'inbox' && badgeLabel && (
+                {badgeLabel && (
                   <span
-                    data-testid="tab-badge"
+                    data-testid={`tab-badge-${key}`}
                     className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-caption tnum text-white"
                   >
                     {badgeLabel}
@@ -93,47 +91,5 @@ export function TabBar({ activeTab, onNavigate, unreadCount = 0, className }: Ta
         })}
       </div>
     </nav>
-  )
-}
-
-const TAB_PATHS: Record<TabKey, string> = {
-  inbox: '/w/$slug/support',
-  you: '/w/$slug/you',
-}
-
-export interface TabShellProps {
-  workspaceSlug: string
-  workspaceId: string
-  children: ReactNode
-}
-
-/**
- * Layout wrapper for the two tab-root screens: content fills the remaining
- * height, TabBar is pinned to the bottom. Active tab is derived from the
- * current pathname rather than passed in, so callers don't have to track it.
- */
-export function TabShell({ workspaceSlug, workspaceId, children }: TabShellProps) {
-  const router = useRouter()
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const activeTab: TabKey = pathname.endsWith('/you') ? 'you' : 'inbox'
-
-  // `useUnreadStats` is internally `enabled: !!workspaceId`, so this is inert
-  // (no request fires) until a real workspaceId is wired in (Task 11).
-  const { data } = useUnreadStats(workspaceId)
-  // `my_inbox` (not `total`) is the count of unread conversations assigned to
-  // the current user — the badge represents "things waiting on you," not the
-  // whole workspace's unread volume (which also includes unassigned/AI-active).
-  const unreadCount = data?.my_inbox ?? 0
-
-  const handleNavigate = (tab: TabKey) => {
-    if (tab === activeTab) return
-    router.navigate({ to: TAB_PATHS[tab], params: { slug: workspaceSlug } })
-  }
-
-  return (
-    <div className="flex h-dvh flex-col">
-      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
-      <TabBar activeTab={activeTab} onNavigate={handleNavigate} unreadCount={unreadCount} />
-    </div>
   )
 }
