@@ -26,9 +26,9 @@ The backend uses three states:
 
 Only `malicious` triggers the inbox warning. `no_match` means no threat was found by this lookup; the UI must not describe the link as guaranteed safe. `unknown` is fail-open for message delivery and navigation but fail-closed for trust claims: the conversation remains usable, no safe badge is shown, and the system never converts an error into `no_match`.
 
-Web Risk runs within the existing asynchronous message-enrichment path. It never delays or rejects message creation. Calls use a short timeout. A small process-local cache prevents repeated lookups: successful no-match responses receive a five-minute TTL, malicious responses honor the provider expiry with a bounded fallback, and failures receive a 30-second TTL to prevent an outage from creating a retry storm. No persistent global reputation database is introduced.
+Web Risk runs within the existing asynchronous message-enrichment path. It never delays or rejects message creation. Calls use a short timeout. A small process-local cache prevents repeated lookups: successful no-match responses receive a five-minute TTL, malicious responses require and honor the provider expiry, and failures receive a 30-second TTL to prevent an outage from creating a retry storm. A malicious response with no valid future expiry is treated as `unknown`. No persistent global reputation database is introduced.
 
-Every persisted entry has a valid `checked_at` and `expires_at`. Cached results retain the timestamps from the lookup that populated the cache. `expires_at` describes provider/cache freshness; it does not remove a warning from a historical message. Because enrichment currently runs only once, the inbox continues warning for a persisted malicious verdict after that timestamp. A future rescan can replace the verdict, but silently aging a known malicious result into an unprotected link is not allowed. Invalid statuses or timestamps parse as `unknown`.
+Every persisted entry has a valid `checked_at` and `expires_at`. Cached results retain the timestamps from the lookup that populated the cache. A malicious response uses Google's `expireTime`; Web Risk requires clients not to cache a match beyond it. After expiry, the inbox treats the persisted result as `unknown` and does not claim that the old verdict is current. No-match and failure entries use their fixed local cache deadlines. Invalid statuses or timestamps parse as `unknown`.
 
 If `GOOGLE_WEB_RISK_API_KEY` is absent, scanning is disabled and verdicts are `unknown`. The key is read only by the backend and sent in the `x-goog-api-key` header. Neither the key nor scanned URLs are written to logs.
 
@@ -87,17 +87,19 @@ The Web Risk client has one responsibility: convert the Lookup API response into
 
 The inbox parses `link_security` alongside `link_previews`.
 
-- HTTP anchors and preview cards receive a compact `Not secure` cue and expose the complete destination in the browser title/hover affordance.
+- Normal HTTPS anchors have no added icon or badge.
+- HTTP anchors receive a small amber warning icon immediately after the linked text. Its hover text says `Not secure — this link does not use HTTPS.` Preview cards show compact `Not secure` text beside the domain.
+- Confirmed-malicious anchors use red link styling plus a red warning icon immediately after the linked text. Preview cards show `Potentially harmful` beside the domain.
 - A click on a URL with a `malicious` verdict opens one shared warning dialog rather than navigating immediately.
 - The dialog shows the destination and human-readable threat categories, defaults to the safe back action, and keeps the continue action disabled until the agent checks an acknowledgment box.
 - Continuing opens the exact original normalized destination in a new tab with opener isolation.
-- `no_match`, `unknown`, or absent verdicts do not show the malicious dialog. A persisted `malicious` verdict continues to warn after `expires_at`; expiry controls cache freshness, not historical UI enforcement.
+- `no_match`, `unknown`, absent, or expired verdicts do not show the malicious dialog and receive no security-status cue. HTTP still receives its independent insecure-transport cue.
 
 The warning applies to both markdown anchors and compact preview cards. Internal app links and non-HTTP schemes are outside this feature.
 
 ## Widget UI
 
-The widget adds only the subtle `Not secure` cue to HTTP compact previews and anchors. It does not parse, render, or react to Web Risk verdicts and adds no warning dialog in this release. The existing message endpoint may still carry `link_security` inside its raw metadata; this is acceptable because it describes a URL supplied in that same customer conversation and is not a secret. Existing `noopener noreferrer` behavior remains mandatory.
+The widget adds only the subtle amber icon to HTTP anchors and `Not secure` text to HTTP compact previews. It does not parse, render, or react to Web Risk verdicts and adds no warning dialog in this release. Widget HTTP and realtime responses remove `link_security` before serialization so provider verdict data is not redistributed. Existing `noopener noreferrer` behavior remains mandatory.
 
 ## Privacy and observability
 
