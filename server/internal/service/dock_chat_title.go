@@ -93,6 +93,7 @@ func dockChatTitleFromPageContext(pageContext map[string]interface{}) string {
 	}
 	typeName, _ := pageContext["entity_type"].(string)
 	entityID, _ := pageContext["entity_id"].(string)
+	displayID, _ := pageContext["display_id"].(string)
 	displayTitle, _ := pageContext["display_title"].(string)
 	if strings.TrimSpace(typeName) == "" || strings.TrimSpace(entityID) == "" {
 		return ""
@@ -104,7 +105,7 @@ func dockChatTitleFromPageContext(pageContext map[string]interface{}) string {
 		return ""
 	}
 	module := dockContextModuleLabel(typeName)
-	id := compactDockContextID(entityID)
+	id := strings.TrimSpace(displayID)
 	name := strings.TrimSpace(displayTitle)
 	if typeName == "support_conversation" {
 		name = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(name, "Conversation "), "conversation "))
@@ -117,9 +118,12 @@ func dockChatTitleFromPageContext(pageContext map[string]interface{}) string {
 		parts = append(parts, id)
 	}
 	if name != "" {
-		if !strings.EqualFold(name, entityID) && !strings.EqualFold(name, id) {
+		if !strings.EqualFold(name, entityID) && (id == "" || !strings.EqualFold(name, id)) {
 			parts = append(parts, name)
 		}
+	}
+	if len(parts) == 1 && module != "" {
+		return ""
 	}
 	return normalizeDockChatTitle(strings.Join(parts, " · "))
 }
@@ -137,14 +141,6 @@ func dockContextModuleLabel(entityType string) string {
 	default:
 		return ""
 	}
-}
-
-func compactDockContextID(raw string) string {
-	id := strings.TrimSpace(raw)
-	if len(id) > 20 {
-		return id[:8]
-	}
-	return id
 }
 
 func (s *DockChatService) generateSemanticTitle(
