@@ -19,9 +19,12 @@ import (
 )
 
 const (
-	meetingIntelligenceGenerationVersion = "v1"
+	meetingIntelligenceGenerationVersion = "v2"
 	meetingIntelligenceLLMProvider       = "openrouter"
 	meetingIntelligenceLLMModel          = "deepseek/deepseek-v4-flash-0731"
+	meetingIntelligenceFallbackProvider  = "openrouter"
+	meetingIntelligenceFallbackModel     = "google/gemini-3.7-flash"
+	meetingIntelligenceMaxTokens         = 8192
 )
 
 type meetingArtifactStore interface {
@@ -284,30 +287,96 @@ func (s *CRMMeetingProcessingService) generateIntelligence(
 	if len(content) > 120000 {
 		content = content[:120000]
 	}
-	meteredCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
-		WorkspaceID:    meeting.WorkspaceID,
-		FeatureKey:     BillingFeatureMeetingIntelligence,
-		IdempotencyKey: aiUsageIdempotencyKey(meeting.WorkspaceID, meeting.ID, transcript.Checksum, meetingIntelligenceGenerationVersion),
-		Metadata:       map[string]interface{}{"meeting_id": meeting.ID, "provider": transcript.SourceProvider},
-	})
-	response, err := s.llmProvider.ChatCompletion(meteredCtx, llm.ChatRequest{
-		SystemPrompt: meetingIntelligenceSystemPrompt,
-		Messages:     []llm.Message{{Role: "user", Content: "Meeting title: " + meeting.Title + "\n\nTranscript:\n" + content}},
-		Provider:     meetingIntelligenceLLMProvider,
-		Model:        meetingIntelligenceLLMModel,
-		Temperature:  0.1,
-		MaxTokens:    6000,
-		JSONMode:     true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("generate meeting intelligence: %w", err)
+
+	routes := []struct {
+		key      string
+		provider string
+		model    string
+	}{
+		{key: "primary", provider: meetingIntelligenceLLMProvider, model: meetingIntelligenceLLMModel},
+		{key: "fallback", provider: meetingIntelligenceFallbackProvider, model: meetingIntelligenceFallbackModel},
+	}
+	var primaryErr error
+	for index, route := range routes {
+		meteredCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+			WorkspaceID:    meeting.WorkspaceID,
+			FeatureKey:     BillingFeatureMeetingIntelligence,
+			IdempotencyKey: aiUsageIdempotencyKey(meeting.WorkspaceID, meeting.ID, transcript.Checksum, meetingIntelligenceGenerationVersion, route.key),
+			Metadata: map[string]interface{}{
+				"meeting_id": meeting.ID,
+				"provider":   transcript.SourceProvider,
+				"route":      route.key,
+			},
+		})
+		response, err := s.llmProvider.ChatCompletion(meteredCtx, llm.ChatRequest{
+			SystemPrompt:     meetingIntelligenceSystemPrompt,
+			Messages:         []llm.Message{{Role: "user", Content: "Meeting title: " + meeting.Title + "\n\nTranscript:\n" + content}},
+			Provider:         route.provider,
+			Model:            route.model,
+			Temperature:      0.1,
+			MaxTokens:        meetingIntelligenceMaxTokens,
+			JSONMode:         true,
+			JSONSchema:       meetingIntelligenceJSONSchema,
+			JSONSchemaStrict: true,
+			Reasoning:        &llm.ReasoningConfig{Effort: "low"},
+			ProviderOptions:  json.RawMessage(`{"require_parameters":true}`),
+		})
+		if err != nil {
+			err = fmt.Errorf("%s model request failed: %w", route.key, err)
+		} else {
+			var output *meetingIntelligenceOutput
+			output, err = parseMeetingIntelligenceResponse(response)
+			if err == nil {
+				return output, nil
+			}
+		}
+		if isMeetingUsageBlocked(err) {
+			return nil, err
+		}
+		if index == 0 {
+			primaryErr = err
+			slog.WarnContext(ctx, "meeting intelligence primary model returned unusable output",
+				"workspace_id", meeting.WorkspaceID,
+				"meeting_id", meeting.ID,
+				"model", route.model,
+				"error", err,
+			)
+			continue
+		}
+		slog.ErrorContext(ctx, "meeting intelligence fallback model returned unusable output",
+			"workspace_id", meeting.WorkspaceID,
+			"meeting_id", meeting.ID,
+			"model", route.model,
+			"primary_error", primaryErr,
+			"error", err,
+		)
+		return nil, fmt.Errorf("meeting intelligence generation failed after trying a backup model")
+	}
+	return nil, fmt.Errorf("meeting intelligence generation failed")
+}
+
+func parseMeetingIntelligenceResponse(response *llm.ChatResponse) (*meetingIntelligenceOutput, error) {
+	if response == nil {
+		return nil, fmt.Errorf("model returned no response")
+	}
+	if strings.TrimSpace(response.Content) == "" {
+		finishReason := strings.TrimSpace(response.FinishReason)
+		if finishReason == "" {
+			finishReason = "unknown"
+		}
+		return nil, fmt.Errorf(
+			"model returned no structured output (finish_reason=%s, reasoning_tokens=%d, completion_tokens=%d)",
+			finishReason,
+			response.TokensUsed.ReasoningTokens,
+			response.TokensUsed.CompletionTokensTotal,
+		)
 	}
 	var output meetingIntelligenceOutput
 	if err := llm.UnmarshalResponse(response.Content, &output); err != nil {
-		return nil, fmt.Errorf("parse meeting intelligence: %w", err)
+		return nil, fmt.Errorf("model returned malformed structured output")
 	}
 	if strings.TrimSpace(output.SummaryMarkdown) == "" {
-		return nil, fmt.Errorf("meeting intelligence did not include a summary")
+		return nil, fmt.Errorf("model response did not include a summary")
 	}
 	return &output, nil
 }
@@ -608,6 +677,66 @@ func jsonBlob(value interface{}) model.JSONBlob {
 
 func meetingStringPointer(value string) *string {
 	return &value
+}
+
+var meetingIntelligenceJSONSchema = map[string]any{
+	"type":                 "object",
+	"additionalProperties": false,
+	"required": []string{
+		"summary_markdown",
+		"key_points",
+		"decisions",
+		"objections",
+		"risks",
+		"next_steps",
+		"action_items",
+		"follow_up_draft",
+	},
+	"properties": map[string]any{
+		"summary_markdown": map[string]any{"type": "string"},
+		"key_points":       meetingIntelligenceStringArraySchema(),
+		"decisions":        meetingIntelligenceStringArraySchema(),
+		"objections":       meetingIntelligenceStringArraySchema(),
+		"risks":            meetingIntelligenceStringArraySchema(),
+		"next_steps":       meetingIntelligenceStringArraySchema(),
+		"action_items": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required": []string{
+					"title",
+					"details",
+					"assignee_name",
+					"due_date",
+					"evidence",
+				},
+				"properties": map[string]any{
+					"title":         map[string]any{"type": "string"},
+					"details":       map[string]any{"type": "string"},
+					"assignee_name": map[string]any{"type": "string"},
+					"due_date":      map[string]any{"type": "string"},
+					"evidence":      map[string]any{"type": "string"},
+				},
+			},
+		},
+		"follow_up_draft": map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []string{"subject", "body"},
+			"properties": map[string]any{
+				"subject": map[string]any{"type": "string"},
+				"body":    map[string]any{"type": "string"},
+			},
+		},
+	},
+}
+
+func meetingIntelligenceStringArraySchema() map[string]any {
+	return map[string]any{
+		"type":  "array",
+		"items": map[string]any{"type": "string"},
+	}
 }
 
 const meetingIntelligenceSystemPrompt = `You are Helpin's meeting intelligence processor. Convert the transcript into reliable, concise CRM intelligence.

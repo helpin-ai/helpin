@@ -39,7 +39,8 @@ type openAIUsage struct {
 
 type openAIChatCompletionResponse struct {
 	Choices []struct {
-		Message struct {
+		FinishReason string `json:"finish_reason"`
+		Message      struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
@@ -88,7 +89,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		modelName = req.Model
 	}
 
-	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode, req.JSONSchema, req.JSONSchemaStrict, req.ProviderOptions)
+	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode, req.JSONSchema, req.JSONSchemaStrict, req.Reasoning, req.ProviderOptions)
 
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -126,14 +127,17 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 	}
 
 	content := ""
+	finishReason := ""
 	if len(result.Choices) > 0 {
 		content = result.Choices[0].Message.Content
+		finishReason = result.Choices[0].FinishReason
 	}
 
 	return &ChatResponse{
 		Content:    content,
 		TokensUsed: tokenUsageFromOpenAI(result.Usage),
 		Provider:   req.Provider, Model: modelName, Route: modelName, ServiceTier: "standard",
+		FinishReason: finishReason,
 	}, nil
 }
 
@@ -179,6 +183,7 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 	jsonMode bool,
 	jsonSchema map[string]any,
 	jsonSchemaStrict bool,
+	reasoning *ReasoningConfig,
 	providerOptions json.RawMessage,
 ) map[string]interface{} {
 	body := map[string]interface{}{
@@ -187,6 +192,9 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 	}
 	if len(providerOptions) > 0 && strings.TrimSpace(string(providerOptions)) != "" {
 		body["provider"] = json.RawMessage(providerOptions)
+	}
+	if reasoning != nil {
+		body["reasoning"] = reasoning
 	}
 	if p.usesMaxCompletionTokens(modelName) {
 		body["max_completion_tokens"] = maxTokens
