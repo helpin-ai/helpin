@@ -198,11 +198,14 @@ describe('MessageBubble', () => {
           title: 'Pricing',
           description: 'Compare plans and limits.',
           host: 'example.com',
+          image_url: 'https://example.com/pricing.png',
         },
       ],
     });
     const { container, getByRole } = render(<MessageBubble message={message} />);
     expect(container.textContent).toContain('Pricing');
+    expect(container.textContent).not.toContain('Compare plans and limits.');
+    expect(container.querySelector('img[src="https://example.com/pricing.png"]')).toBeNull();
     expect((getByRole('link', { name: /pricing/i }) as HTMLAnchorElement).href).toContain('https://example.com/pricing');
   });
 

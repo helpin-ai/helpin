@@ -247,25 +247,14 @@ function LinkPreviewCard({ preview }: { preview: SupportLinkPreview }) {
       rel="noopener noreferrer"
       className="block overflow-hidden rounded-xl border border-border bg-background text-foreground transition-colors hover:opacity-95"
     >
-      {preview.image_url ? (
-        <img
-          src={preview.image_url}
-          alt={preview.title}
-          className="h-36 w-full object-cover"
-          loading="lazy"
-        />
-      ) : null}
-      <div className="space-y-1.5 p-3">
-        <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-          <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
-          <LinkSquare01Icon className="h-3 w-3 shrink-0" />
+      <div className="flex items-center gap-2.5 px-3 py-2">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {preview.site_name || previewHostLabel(preview)}
+          </div>
+          <div className="truncate text-sm font-semibold leading-snug">{preview.title}</div>
         </div>
-        <div className="text-sm font-semibold leading-snug">{preview.title}</div>
-        {preview.description ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {preview.description}
-          </p>
-        ) : null}
+        <LinkSquare01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
       </div>
     </a>
   );

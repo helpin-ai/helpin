@@ -101,20 +101,14 @@ function LinkPreviews({ previews, outgoing }: { previews: NonNullable<Message['l
           target="_blank"
           rel="noopener noreferrer"
         >
-          {preview.image_url ? (
-            <img
-              src={preview.image_url}
-              alt={preview.title}
-              className="helpin-link-preview-image"
-              loading="lazy"
-            />
-          ) : null}
           <div className="helpin-link-preview-body">
-            <div className="helpin-link-preview-host">{preview.site_name || linkPreviewHost(preview)}</div>
-            <div className="helpin-link-preview-title">{preview.title}</div>
-            {preview.description ? (
-              <div className="helpin-link-preview-description">{preview.description}</div>
-            ) : null}
+            <div className="helpin-link-preview-copy">
+              <div className="helpin-link-preview-host">{preview.site_name || linkPreviewHost(preview)}</div>
+              <div className="helpin-link-preview-title">{preview.title}</div>
+            </div>
+            <svg className="helpin-link-preview-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6 3H3.75A.75.75 0 0 0 3 3.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75V10M9 3h4v4M13 3 7.5 8.5" />
+            </svg>
           </div>
         </a>
       ))}

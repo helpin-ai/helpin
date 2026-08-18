@@ -288,6 +288,8 @@ describe('MessageBubble', () => {
             url: LONG_PADDLE_URL,
             host: 'customer-portal.paddle.com',
             title: 'Customer Portal',
+            description: 'Manage billing details and subscription settings.',
+            image_url: 'https://customer-portal.paddle.com/preview.png',
           },
         ],
       }),
@@ -311,6 +313,8 @@ describe('MessageBubble', () => {
     })
 
     expect(container.textContent).toContain('Customer Portal')
+    expect(container.textContent).not.toContain('Manage billing details and subscription settings.')
+    expect(container.querySelector('img[src="https://customer-portal.paddle.com/preview.png"]')).toBeNull()
 
     const bubble = container.querySelector('[data-slot="support-message-bubble"]')
     expect(bubble?.className).toContain('min-w-0')
