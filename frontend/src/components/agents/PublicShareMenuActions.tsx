@@ -30,8 +30,12 @@ export function PublicShareMenuActions({ workspaceId, resourceType, resourceId }
 		if (busy) return;
 		setBusy(true);
 		try {
-			const current = link ?? (await dockChatService.createPublicShare(workspaceId, resourceType, resourceId)).data;
-			if (!current) throw new Error('Unable to create public link');
+			let current = link;
+			if (!current) {
+				const result = await dockChatService.createPublicShare(workspaceId, resourceType, resourceId);
+				if (!result.data) throw new Error(result.error || 'Unable to create public link');
+				current = result.data;
+			}
 			await navigator.clipboard.writeText(current.url);
 			setLink(current);
 			toast.success(created ? 'Public link created and copied' : 'Public link copied');

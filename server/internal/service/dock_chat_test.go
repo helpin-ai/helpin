@@ -64,7 +64,9 @@ func TestDockChatListCursorPagination(t *testing.T) {
 		t.Fatalf("create dock chats: %v", err)
 	}
 	base := time.Date(2026, 8, 10, 7, 0, 0, 0, time.UTC)
+	emptySupportConversationID := "conversation-empty"
 	chats := []model.DockChat{
+		{ID: "chat-empty-support", WorkspaceID: "ws-1", UserID: "user-1", SupportConversationID: &emptySupportConversationID, CreatedAt: base.Add(3 * time.Hour), UpdatedAt: base.Add(3 * time.Hour)},
 		{ID: "chat-c", WorkspaceID: "ws-1", UserID: "user-1", Title: "C", CreatedAt: base.Add(2 * time.Hour), UpdatedAt: base.Add(2 * time.Hour)},
 		{ID: "chat-b", WorkspaceID: "ws-1", UserID: "user-1", Title: "B", CreatedAt: base.Add(time.Hour), UpdatedAt: base.Add(time.Hour)},
 		{ID: "chat-a", WorkspaceID: "ws-1", UserID: "user-1", Title: "A", CreatedAt: base.Add(time.Hour), UpdatedAt: base.Add(time.Hour)},
@@ -190,6 +192,92 @@ func TestDockChatCreateReusesSupportConversationChat(t *testing.T) {
 	}
 	if chat.ID != existing.ID {
 		t.Fatalf("chat ID = %q, want existing %q", chat.ID, existing.ID)
+	}
+}
+
+func TestDockChatFindSupportConversationChatDoesNotCreateMissingRow(t *testing.T) {
+	dbName := fmt.Sprintf("file:dock_chat_find_support_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT, support_conversation_id TEXT, active_run_id TEXT,
+		last_message_at DATETIME, archived_at DATETIME, created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create dock chats: %v", err)
+	}
+
+	service := &DockChatService{chatRepo: repository.NewDockChatRepository(db)}
+	chat, err := service.FindSupportConversationChat(context.Background(), "ws-1", "user-1", "conversation-missing")
+	if err != nil {
+		t.Fatalf("find support chat: %v", err)
+	}
+	if chat != nil {
+		t.Fatalf("chat = %#v, want nil", chat)
+	}
+	var count int64
+	if err := db.Model(&model.DockChat{}).Count(&count).Error; err != nil {
+		t.Fatalf("count dock chats: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("dock chat count = %d, want 0", count)
+	}
+}
+
+func TestDockChatCreatePreservesArchivedSupportConversationChat(t *testing.T) {
+	dbName := fmt.Sprintf("file:dock_chat_archived_support_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, user_id TEXT NOT NULL,
+		title TEXT, visibility TEXT NOT NULL DEFAULT 'private', module_id TEXT, support_conversation_id TEXT, active_run_id TEXT,
+		last_message_at DATETIME, archived_at DATETIME, created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create dock chats: %v", err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX idx_dock_chats_support_conversation
+		ON dock_chats (workspace_id, user_id, support_conversation_id)
+		WHERE archived_at IS NULL`).Error; err != nil {
+		t.Fatalf("create active support chat index: %v", err)
+	}
+	conversationID := "conversation-archived"
+	archivedAt := time.Now().Add(-time.Hour).UTC()
+	existing := model.DockChat{
+		ID: "chat-archived", WorkspaceID: "ws-1", UserID: "user-1",
+		Title: "Archived refund request", SupportConversationID: &conversationID,
+		ArchivedAt: &archivedAt, CreatedAt: archivedAt.Add(-time.Hour), UpdatedAt: archivedAt,
+	}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatalf("seed archived dock chat: %v", err)
+	}
+
+	service := &DockChatService{chatRepo: repository.NewDockChatRepository(db)}
+	created, err := service.CreateChat(context.Background(), "ws-1", "user-1", model.CreateDockChatRequest{
+		SupportConversationID: &conversationID,
+	})
+	if err != nil {
+		t.Fatalf("create replacement support chat: %v", err)
+	}
+	if created.ID == existing.ID {
+		t.Fatalf("chat ID = %q, want a fresh chat", created.ID)
+	}
+	var archived model.DockChat
+	if err := db.First(&archived, "id = ?", existing.ID).Error; err != nil {
+		t.Fatalf("reload archived chat: %v", err)
+	}
+	if archived.ArchivedAt == nil {
+		t.Fatal("archived chat was unexpectedly restored")
+	}
+	var count int64
+	if err := db.Model(&model.DockChat{}).Count(&count).Error; err != nil {
+		t.Fatalf("count dock chats: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("dock chat count = %d, want 2", count)
 	}
 }
 

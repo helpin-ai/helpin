@@ -7,6 +7,7 @@ import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Cancel01Icon, Check
 import { EmptyState } from './EmptyState';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
@@ -42,6 +43,42 @@ interface ConversationDetailSidebarProps {
 }
 
 export const conversationDetailSidebarRootClassName = 'flex h-full min-h-0 w-[300px] flex-col bg-muted/30';
+
+export function shouldShowConversationDetailLoading(
+  conversationId: string | null,
+  conversation: SupportConversation | undefined,
+  isLoading: boolean
+): boolean {
+  return Boolean(conversationId && !conversation && isLoading);
+}
+
+function ConversationDetailLoadingSkeleton() {
+  return (
+    <div
+      className="h-full overflow-hidden px-3 py-4"
+      role="status"
+      aria-label="Loading conversation details"
+    >
+      <span className="sr-only">Loading conversation details</span>
+      <div className="flex flex-col items-center gap-2 border-b border-border/50 pb-4">
+        <Skeleton className="h-12 w-12 rounded-full" />
+        <Skeleton className="h-3.5 w-28 rounded" />
+        <Skeleton className="h-3 w-40 rounded" />
+      </div>
+      <div className="space-y-5 py-4">
+        {[0, 1, 2, 3].map((section) => (
+          <div key={section} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-4 rounded" />
+              <Skeleton className="h-3 w-24 rounded" />
+            </div>
+            <Skeleton className="h-8 w-full rounded-md" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function normalizeCountryCode(code?: string | null): keyof typeof Flags | null {
   const normalized = code?.trim().toUpperCase().replace(/-/g, '_');
@@ -261,7 +298,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
   const [ccAdding, setCcAdding] = useState(false);
   const [ccDraft, setCcDraft] = useState('');
   const [ccError, setCcError] = useState('');
-  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const { data: conversation, isLoading: conversationLoading } = useConversation(workspaceId, conversationId);
   const { data: visitorContext } = useVisitorContext(workspaceId, conversationId);
   const { data: assignableMembers = [], isLoading: assigneesLoading } = useConversationAssignees(workspaceId, conversationId);
   const assignConversationUser = useAssignConversationUser(workspaceId);
@@ -385,7 +422,9 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        {!conversation ? (
+        {shouldShowConversationDetailLoading(conversationId, conversation, conversationLoading) ? (
+          <ConversationDetailLoadingSkeleton />
+        ) : !conversation ? (
           <EmptyState
             icon={Message01Icon}
             title="No conversation selected"

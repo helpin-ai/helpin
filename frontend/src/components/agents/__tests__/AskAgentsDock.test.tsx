@@ -22,7 +22,10 @@ Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn
 Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 
 const mocks = vi.hoisted(() => ({
+	toastError: vi.fn(),
+	toastSuccess: vi.fn(),
   listChats: vi.fn(),
+  findSupportConversationChat: vi.fn(),
   createChat: vi.fn(),
   getChat: vi.fn(),
   updateChat: vi.fn(),
@@ -52,9 +55,17 @@ const mocks = vi.hoisted(() => ({
   uploadEditorFile: vi.fn(),
 }));
 
+vi.mock('sonner', () => ({
+	toast: {
+		error: mocks.toastError,
+		success: mocks.toastSuccess,
+	},
+}));
+
 vi.mock('@/lib/services/dockChatService', () => ({
   dockChatService: {
     listChats: mocks.listChats,
+    findSupportConversationChat: mocks.findSupportConversationChat,
     createChat: mocks.createChat,
     getChat: mocks.getChat,
     updateChat: mocks.updateChat,
@@ -167,6 +178,7 @@ beforeEach(() => {
   });
   useAuthStore.setState({ user: { id: 'user-1', email: 'owner@example.com' } as never });
   mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
+  mocks.findSupportConversationChat.mockResolvedValue({ data: null, error: null });
   mocks.createChat.mockResolvedValue({ data: null, error: 'not configured' });
   mocks.listRuns.mockResolvedValue({ data: { runs: [], attention_count: 0 }, error: null });
   mocks.getChat.mockResolvedValue({ data: chatDetail(), error: null });
@@ -478,20 +490,33 @@ describe('AskAgentsDock', () => {
     expect(document.body.textContent).not.toContain('Press / to open');
   });
 
-  it('creates an associated chat when the support conversation has no history', async () => {
+  it('keeps an unsent support conversation chat local until the first message', async () => {
     const supportContext: CommandBarPageContext = {
       entity_type: 'support_conversation',
       entity_id: 'conv-new',
       display_title: 'New request',
     };
-    const newChat = { ...CHAT, id: 'chat-new', support_conversation_id: 'conv-new' };
-    mocks.createChat.mockResolvedValue({ data: newChat, error: null });
-
     await renderEmbeddedDock(supportContext);
-    await waitForCondition(() => mocks.createChat.mock.calls.length === 1, 'support chat was not created');
+    await waitForCondition(() => mocks.findSupportConversationChat.mock.calls.length === 1, 'support chat was not looked up');
 
-    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support');
-		expect(useDockStore.getState().activeChatId).toBe('chat-1');
+    expect(mocks.findSupportConversationChat).toHaveBeenCalledWith('ws-1', 'conv-new');
+    expect(mocks.createChat).not.toHaveBeenCalled();
+		expect(dockTextarea()).not.toBeNull();
+
+		const createdChat = { ...CHAT, id: 'chat-new', title: '', support_conversation_id: 'conv-new' };
+		mocks.createChat.mockResolvedValue({ data: createdChat, error: null });
+		mocks.sendMessage.mockResolvedValue({ data: chatDetail({ chat: createdChat }), error: null });
+		await act(async () => {
+			setTextareaValue(dockTextarea(), 'Investigate this request');
+			dockTextarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		});
+		await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'support draft message was not sent');
+
+		expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support');
+		expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-new', expect.objectContaining({
+			content: 'Investigate this request',
+			page_context: supportContext,
+		}));
   });
 
 	it('keeps a fresh global draft independent while the support sidebar is mounted', async () => {
@@ -610,7 +635,7 @@ describe('AskAgentsDock', () => {
 		const nextChat = { ...CHAT, id: 'chat-next', title: 'Next questions', support_conversation_id: 'conv-2' };
 		let resolveFirst: ((value: { data: typeof staleChat; error: null }) => void) | undefined;
 		mocks.listChats.mockResolvedValue({ data: { chats: [CHAT] }, error: null });
-		mocks.createChat.mockImplementation(async (_workspaceId, _title, conversationId) => {
+		mocks.findSupportConversationChat.mockImplementation(async (_workspaceId, conversationId) => {
 			if (conversationId === 'conv-1') {
 				return new Promise((resolve) => { resolveFirst = resolve; });
 			}
@@ -629,6 +654,48 @@ describe('AskAgentsDock', () => {
 
 		expect(useDockStore.getState().chats.some((chat) => chat.id === 'chat-stale')).toBe(false);
 		expect(document.body.textContent).toContain('Next conversation');
+	});
+
+	it('shows a loading structure instead of the new-chat action while switching support conversations', async () => {
+		const firstContext: CommandBarPageContext = {
+			entity_type: 'support_conversation', entity_id: 'conv-1', display_title: 'First conversation',
+		};
+		const nextContext: CommandBarPageContext = {
+			entity_type: 'support_conversation', entity_id: 'conv-2', display_title: 'Next conversation',
+		};
+		const firstChat = { ...CHAT, support_conversation_id: 'conv-1' };
+		let resolveNext: ((value: { data: DockChat; error: null }) => void) | undefined;
+		mocks.listChats.mockResolvedValue({ data: { chats: [firstChat] }, error: null });
+		mocks.findSupportConversationChat.mockImplementation(async () => new Promise((resolve) => { resolveNext = resolve; }));
+
+		await renderEmbeddedDock(firstContext);
+		await renderEmbeddedDock(nextContext);
+		await waitForCondition(() => resolveNext !== undefined, 'next associated chat request did not start');
+
+		expect(document.body.textContent).toContain('Opening conversation chat…');
+		expect(document.body.textContent).not.toContain('Start a conversation');
+		expect(document.body.textContent).not.toContain('New chat');
+
+		await act(async () => {
+			resolveNext?.({ data: { ...CHAT, id: 'chat-next', support_conversation_id: 'conv-2' }, error: null });
+		});
+	});
+
+	it('hides untouched support drafts from the global chat roster', async () => {
+		mocks.listChats.mockResolvedValue({
+			data: {
+				chats: [
+					CHAT,
+					{ ...CHAT, id: 'empty-support-chat', title: '', support_conversation_id: 'conv-empty', active_run_id: null, last_message_at: null },
+				],
+			},
+			error: null,
+		});
+
+		await renderDock();
+		await waitForText('Sprint questions');
+
+		expect(document.body.textContent).not.toContain('Untitled chat');
 	});
   it('renders the collapsed pill and expands via the / key', async () => {
     useDockStore.setState({ collapsed: true });
@@ -1541,6 +1608,20 @@ describe('AskAgentsDock', () => {
 		await flush();
 		expect(mocks.createPublicShare).toHaveBeenCalledWith('ws-1', 'dock_chat', 'chat-1');
 		expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://helpin.ai/shared/share-token');
+	});
+
+	it('shows the API error when public link creation fails', async () => {
+		mocks.createPublicShare.mockResolvedValue({ data: null, error: 'failed to manage public link' });
+		await renderDock();
+		await waitForText('Sprint questions');
+		const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Conversation actions"]');
+		await act(async () => trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })));
+		await waitForText('Share publicly');
+		const share = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+			.find((item) => item.textContent === 'Share publicly');
+		await act(async () => share?.click());
+		await flush();
+		expect(mocks.toastError).toHaveBeenCalledWith('failed to manage public link');
 	});
 
 	it('shows public sharing in the agent run header menu', async () => {

@@ -72,7 +72,9 @@ func (r *DockChatRepository) ListVisible(ctx context.Context, workspaceID, userI
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	query := r.db.WithContext(ctx).Where("workspace_id = ? AND archived_at IS NULL", workspaceID)
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND archived_at IS NULL", workspaceID).
+		Where("TRIM(COALESCE(title, '')) <> '' OR last_message_at IS NOT NULL OR active_run_id IS NOT NULL")
 	visibility := r.db.Where("user_id = ?", userID).
 		Or("visibility = ?", model.DockChatVisibilityWorkspace)
 	if len(modules) > 0 {

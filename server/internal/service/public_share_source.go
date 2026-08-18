@@ -43,7 +43,20 @@ func (s *PublicShareSource) CanAccessAgentRun(ctx context.Context, workspaceID, 
 	if err != nil {
 		return false, nil
 	}
-	return run != nil && run.DockChatID == nil, nil
+	if run == nil {
+		return false, nil
+	}
+	if run.DockChatID == nil || strings.TrimSpace(*run.DockChatID) == "" {
+		return true, nil
+	}
+	if s.dockChatService == nil {
+		return false, nil
+	}
+	_, err = s.dockChatService.GetChat(ctx, workspaceID, actorID, strings.TrimSpace(*run.DockChatID))
+	if errors.Is(err, ErrDockChatNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // PublicDockChat returns the latest compact Ask transcript.

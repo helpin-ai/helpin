@@ -156,6 +156,30 @@ func (s *DockChatService) ListChats(ctx context.Context, workspaceID, userID str
 	return response, nil
 }
 
+// FindSupportConversationChat returns an existing visible chat for a support
+// conversation without creating one. The support sidebar uses this to keep an
+// untouched conversation as a local draft until the first message is sent.
+func (s *DockChatService) FindSupportConversationChat(ctx context.Context, workspaceID, userID, conversationID string) (*model.DockChat, error) {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return nil, errors.New("support conversation id is required")
+	}
+	existingChats, err := s.chatRepo.ListBySupportConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("find support conversation chat: %w", err)
+	}
+	for index := range existingChats {
+		allowed, accessErr := s.canAccessChat(ctx, &existingChats[index], userID)
+		if accessErr != nil {
+			return nil, accessErr
+		}
+		if allowed {
+			return &existingChats[index], nil
+		}
+	}
+	return nil, nil
+}
+
 // CreateChat creates an empty chat; its backing run starts lazily on the
 // first message.
 func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID string, req model.CreateDockChatRequest) (*model.DockChat, error) {
@@ -169,18 +193,12 @@ func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID st
 			return nil, errors.New("support conversation id is required")
 		}
 		req.SupportConversationID = &conversationID
-		existingChats, err := s.chatRepo.ListBySupportConversation(ctx, workspaceID, conversationID)
+		existingChat, err := s.FindSupportConversationChat(ctx, workspaceID, userID, conversationID)
 		if err != nil {
-			return nil, fmt.Errorf("find support conversation chat: %w", err)
+			return nil, err
 		}
-		for index := range existingChats {
-			allowed, accessErr := s.canAccessChat(ctx, &existingChats[index], userID)
-			if accessErr != nil {
-				return nil, accessErr
-			}
-			if allowed {
-				return &existingChats[index], nil
-			}
+		if existingChat != nil {
+			return existingChat, nil
 		}
 	}
 	chat := &model.DockChat{
