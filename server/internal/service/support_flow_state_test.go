@@ -74,6 +74,13 @@ func TestCreateConversationMessageHumanReplySetsAssignedToHumanFlowState(t *test
 	if err := convRepo.Create(ctx, conv); err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
+	customerMessage := &model.SupportMessage{
+		WorkspaceID: workspaceID, ConversationID: conv.ID, SenderType: "customer",
+		MessageType: "reply", Content: "I still need help.",
+	}
+	if err := messageRepo.Create(ctx, customerMessage); err != nil {
+		t.Fatalf("create customer message: %v", err)
+	}
 
 	svc := NewSupportInboxService(
 		convRepo,
@@ -119,6 +126,12 @@ func TestCreateConversationMessageHumanReplySetsAssignedToHumanFlowState(t *test
 	}
 	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
 		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
+	if updated.TeamLastSeenAt == nil {
+		t.Fatal("team_last_seen_at = nil, want teammate reply to advance the read cursor")
+	}
+	if updated.UnreadCount != 0 {
+		t.Fatalf("unread_count = %d, want 0 after teammate reply", updated.UnreadCount)
 	}
 }
 

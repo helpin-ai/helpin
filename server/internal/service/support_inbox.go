@@ -2189,6 +2189,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 			})
 		}
 	}
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" {
+		if err := s.conversationRepo.MarkInternalRead(ctx, ticketID); err != nil {
+			slog.ErrorContext(ctx, "mark support conversation read after teammate reply", "error", err, "conversation_id", ticketID)
+		}
+	}
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && previousOwnerID != "" && s.notificationService != nil {
 		if err := s.notificationService.MarkEntityCategoryAsRead(ctx, previousOwnerID, workspaceID, "support_conversation", ticketID, model.NotifCategorySupportReplies); err != nil {
