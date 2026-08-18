@@ -103,7 +103,10 @@ function LinkPreviews({ previews, outgoing }: { previews: NonNullable<Message['l
         >
           <div className="helpin-link-preview-body">
             <div className="helpin-link-preview-copy">
-              <div className="helpin-link-preview-host">{preview.site_name || linkPreviewHost(preview)}</div>
+              <div className="helpin-link-preview-host">
+                <span>{preview.site_name || linkPreviewHost(preview)}</span>
+                {preview.url.toLowerCase().startsWith('http://') && <span className="helpin-link-preview-security">Not secure</span>}
+              </div>
               <div className="helpin-link-preview-title">{preview.title}</div>
             </div>
             <svg className="helpin-link-preview-icon" viewBox="0 0 16 16" aria-hidden="true">

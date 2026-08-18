@@ -4212,6 +4212,31 @@
   color: var(--helpin-fg-muted);
 }
 
+.helpin-link-preview-security {
+  margin-left: 6px;
+  color: #b45309;
+  white-space: nowrap;
+}
+
+.helpin-insecure-link-indicator {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  color: #b45309;
+  vertical-align: -2px;
+}
+
+.helpin-insecure-link-indicator svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
 .helpin-link-preview--outgoing .helpin-link-preview-host {
   color: rgba(255, 255, 255, 0.7);
 }

@@ -61,6 +61,11 @@ function trimAutoLinkedUrl(url: string): string {
   return trimmed;
 }
 
+function insecureLinkIndicator(url: string): string {
+  if (!url.toLowerCase().startsWith('http://')) return '';
+  return '<span class="helpin-insecure-link-indicator" role="img" aria-label="Not secure" title="Not secure — this link does not use HTTPS."><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"></circle><path d="M8 4.5v4M8 11.5h.01"></path></svg></span>';
+}
+
 function applyInlineTransforms(raw: string, inlineCodeMap: PlaceholderMap): string {
   // 1. Inline code → placeholders (content is escaped, not processed further)
   let result = raw.replace(/`([^`\n]+?)`/g, (_match, code) => {
@@ -95,7 +100,7 @@ function applyInlineTransforms(raw: string, inlineCodeMap: PlaceholderMap): stri
   // 6b. Links: [text](url)
   result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, text, url) => {
     const safeUrl = sanitizeUrl(url);
-    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${text}</a>${insecureLinkIndicator(safeUrl)}`;
   });
 
   // 6c. Bare URLs: https://example.com
@@ -104,7 +109,7 @@ function applyInlineTransforms(raw: string, inlineCodeMap: PlaceholderMap): stri
     const suffix = rawUrl.slice(trimmedUrl.length);
     const safeUrl = sanitizeUrl(trimmedUrl);
     if (!safeUrl) return match;
-    return `${prefix}<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${trimmedUrl}</a>${suffix}`;
+    return `${prefix}<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${trimmedUrl}</a>${insecureLinkIndicator(safeUrl)}${suffix}`;
   });
 
   // 7. Restore <br> placeholders

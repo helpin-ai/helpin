@@ -2,7 +2,7 @@
 import { act, type ComponentProps } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/authStore'
 import type { SupportMessage } from '@/lib/pmTypes'
@@ -328,6 +328,53 @@ describe('MessageBubble', () => {
     })
     container.remove()
     queryClient.clear()
+  })
+
+  it('marks HTTP links and previews as not secure without blocking navigation', () => {
+    const message: SupportMessage = {
+      id: 'msg-http', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'customer',
+      content: 'Open [the page](http://example.com/path)', message_type: 'reply', is_internal: false,
+      metadata: JSON.stringify({ link_previews: [{ url: 'http://example.com/path', host: 'example.com', title: 'Example' }] }),
+      created_at: '2026-08-18T12:00:00Z', updated_at: '2026-08-18T12:00:00Z',
+    }
+    const rendered = renderBubble(message)
+
+    expect(rendered.container.querySelector('[aria-label="Not secure"]')).toBeTruthy()
+    expect(rendered.container.textContent).toContain('Not secure')
+    expect(rendered.container.querySelector('a[href="http://example.com/path"]')?.getAttribute('rel')).toBe('noopener noreferrer')
+    rendered.cleanup()
+  })
+
+  it('intercepts confirmed malicious links until risk is acknowledged', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const message: SupportMessage = {
+      id: 'msg-malicious', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'customer',
+      content: 'Open [the invoice](https://bad.example/invoice)', message_type: 'reply', is_internal: false,
+      metadata: JSON.stringify({
+        link_security: [{
+          url: 'https://bad.example/invoice', status: 'malicious', threat_types: ['SOCIAL_ENGINEERING'],
+          checked_at: '2026-08-18T12:00:00Z', expires_at: '2099-08-18T12:30:00Z',
+        }],
+      }),
+      created_at: '2026-08-18T12:00:00Z', updated_at: '2026-08-18T12:00:00Z',
+    }
+    const rendered = renderBubble(message)
+    const link = rendered.container.querySelector('a[href="https://bad.example/invoice"]') as HTMLAnchorElement
+
+    act(() => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
+    expect(document.body.textContent).toContain('Potentially harmful link')
+    expect(document.body.textContent).toContain('Phishing or deceptive site')
+    const continueButton = findButtonByText(document.body, 'Open link') as HTMLButtonElement
+    expect(continueButton.disabled).toBe(true)
+
+    const checkbox = document.body.querySelector('[data-slot="checkbox"]') as HTMLElement
+    act(() => checkbox.click())
+    expect(continueButton.disabled).toBe(false)
+    act(() => continueButton.click())
+    expect(open).toHaveBeenCalledWith('https://bad.example/invoice', '_blank', 'noopener,noreferrer')
+
+    open.mockRestore()
+    rendered.cleanup()
   })
 
   it('constrains email iframe content to the message bubble width', () => {

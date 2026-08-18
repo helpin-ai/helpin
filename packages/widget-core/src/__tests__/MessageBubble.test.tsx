@@ -209,6 +209,15 @@ describe('MessageBubble', () => {
     expect((getByRole('link', { name: /pricing/i }) as HTMLAnchorElement).href).toContain('https://example.com/pricing');
   });
 
+  it('labels HTTP preview cards as not secure', () => {
+    const message = createMessage({
+      role: 'agent',
+      linkPreviews: [{ url: 'http://example.com/pricing', title: 'Pricing', host: 'example.com' }],
+    });
+    const { container } = render(<MessageBubble message={message} />);
+    expect(container.querySelector('.helpin-link-preview-security')?.textContent).toBe('Not secure');
+  });
+
   it('uses outgoing preview styling for customer links and incoming styling for agent links', () => {
     const customerMessage = createMessage({
       role: 'customer',
