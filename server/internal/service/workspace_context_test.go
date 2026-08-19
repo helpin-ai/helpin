@@ -61,6 +61,9 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionUsesDirectWebsiteFetch
 	if len(llmProvider.lastRequest.Messages) != 1 || !strings.Contains(llmProvider.lastRequest.Messages[0].Content, "support answers") {
 		t.Fatalf("LLM prompt did not include fetched website text: %#v", llmProvider.lastRequest.Messages)
 	}
+	if llmProvider.lastRequest.Provider != "anthropic" || llmProvider.lastRequest.Model != "claude-sonnet-5" {
+		t.Fatalf("LLM route = %q/%q, want anthropic/claude-sonnet-5", llmProvider.lastRequest.Provider, llmProvider.lastRequest.Model)
+	}
 	promptText := strings.ToLower(llmProvider.lastRequest.SystemPrompt + "\n" + llmProvider.lastRequest.Messages[0].Content)
 	if strings.Contains(promptText, "markdown") {
 		t.Fatalf("LLM prompt should request plain text, got system=%q user=%q", llmProvider.lastRequest.SystemPrompt, llmProvider.lastRequest.Messages[0].Content)

@@ -62,6 +62,21 @@ func TestCatalogResolvesAskMediaReaderRoute(t *testing.T) {
 	}
 }
 
+func TestCatalogResolvesClaudeSonnet5Route(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+
+	resolved, err := catalog.Resolve("anthropic", "claude-sonnet-5", "claude-sonnet-5", "standard")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.CanonicalModel != "claude-sonnet-5" || resolved.Route != "claude-sonnet-5" {
+		t.Fatalf("Resolve() = %#v, want Claude Sonnet 5", resolved)
+	}
+}
+
 func TestCatalogResolveRejectsUnapprovedRoute(t *testing.T) {
 	catalog, err := LoadCatalog()
 	if err != nil {
@@ -86,8 +101,8 @@ func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
 	}
 
 	pricing := catalog.PublicSnapshot()
-	if pricing.PricingVersion != "2026-08-16" {
-		t.Errorf("pricing version = %q, want 2026-08-16", pricing.PricingVersion)
+	if pricing.PricingVersion != "2026-08-19" {
+		t.Errorf("pricing version = %q, want 2026-08-19", pricing.PricingVersion)
 	}
 
 	wantAllowances := map[string]int64{

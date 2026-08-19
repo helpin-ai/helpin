@@ -12,7 +12,7 @@ func TestRunValidateReportsActivePricingVersion(t *testing.T) {
 	if err := run([]string{"validate"}, &output); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
-	if got := output.String(); got != "pricing 2026-08-13 valid\n" {
+	if got := output.String(); got != "pricing 2026-08-19 valid\n" {
 		t.Fatalf("run() output = %q", got)
 	}
 }
@@ -36,7 +36,7 @@ func TestRunExportTypeScriptIsDeterministic(t *testing.T) {
 	if first.String() != second.String() {
 		t.Fatal("TypeScript export is not deterministic")
 	}
-	for _, expected := range []string{"export const AI_PRICING", `"pricing_version": "2026-08-13`, "catalogSha256"} {
+	for _, expected := range []string{"export const AI_PRICING", `"pricing_version": "2026-08-19`, "catalogSha256"} {
 		if !strings.Contains(first.String(), expected) {
 			t.Fatalf("export missing %q: %s", expected, first.String())
 		}

@@ -15,6 +15,8 @@ import (
 
 const workspaceContextMaxPageBytes = 256 * 1024
 const workspaceContextMaxPromptChars = 18000
+const workspaceContextProvider = "anthropic"
+const workspaceContextModel = "claude-sonnet-5"
 
 type workspaceContextLLM interface {
 	ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error)
@@ -88,6 +90,8 @@ func (s *WorkspaceService) GenerateCompanyProductDescription(ctx context.Context
 	})
 
 	resp, err := s.contextLLM.ChatCompletion(meteringCtx, llm.ChatRequest{
+		Provider:     workspaceContextProvider,
+		Model:        workspaceContextModel,
 		SystemPrompt: "You draft compact, factual company/product context for AI agents. Use only the provided website text. Return plain text only.",
 		Messages: []llm.Message{{
 			Role: "user",
