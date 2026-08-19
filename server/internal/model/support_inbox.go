@@ -319,7 +319,8 @@ type SupportMessage struct {
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	// Virtual fields — populated by service layer, not stored in DB.
-	Attachments []SupportAttachmentPayload `json:"attachments,omitempty" gorm:"-"`
+	Attachments     []SupportAttachmentPayload `json:"attachments,omitempty" gorm:"-"`
+	ClientMessageID string                     `json:"client_message_id,omitempty" gorm:"-"`
 	// HTMLBody is the sanitized HTML variant of an inbound email's body, loaded
 	// from the linked support_email_logs row. Only populated for messages
 	// where ViaChannel == "email" and an email log exists.
@@ -844,14 +845,15 @@ type CreateConversationWithMessageResponse struct {
 
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
-	Content       string   `json:"content"`
-	IsInternal    bool     `json:"is_internal"`
-	AIAssisted    bool     `json:"ai_assisted,omitempty"`
-	MessageType   string   `json:"message_type"` // reply, csat_survey, system
-	AttachmentIDs []string `json:"attachment_ids,omitempty"`
-	Channels      []string `json:"channels,omitempty"`
-	CCEmails      []string `json:"cc_emails,omitempty"`
-	BCCEmails     []string `json:"bcc_emails,omitempty"`
+	Content         string   `json:"content"`
+	ClientMessageID string   `json:"client_message_id,omitempty"`
+	IsInternal      bool     `json:"is_internal"`
+	AIAssisted      bool     `json:"ai_assisted,omitempty"`
+	MessageType     string   `json:"message_type"` // reply, csat_survey, system
+	AttachmentIDs   []string `json:"attachment_ids,omitempty"`
+	Channels        []string `json:"channels,omitempty"`
+	CCEmails        []string `json:"cc_emails,omitempty"`
+	BCCEmails       []string `json:"bcc_emails,omitempty"`
 }
 
 // LinkStoryRequest links a conversation to a task.
@@ -1073,6 +1075,7 @@ type WidgetSessionJoinedPayload struct {
 // WidgetMessageReceivedPayload is sent to widget clients for new messages.
 type WidgetMessageReceivedPayload struct {
 	ID                        string                     `json:"id"`
+	ClientMessageID           string                     `json:"client_message_id,omitempty"`
 	ConversationID            string                     `json:"conversation_id"`
 	Content                   string                     `json:"content"`
 	SenderType                string                     `json:"sender_type"`

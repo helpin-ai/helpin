@@ -1089,14 +1089,18 @@ func TestSupportInboxServiceCreateConversationMessageBlocksEmailReplyUntilPrimar
 	}
 
 	aiAssisted, err := svc.CreateConversationMessage(ctx, workspaceID, conversation.ID, model.CreateMessageRequest{
-		Content:    "Here is the AI-polished response.",
-		AIAssisted: true,
+		Content:         "Here is the AI-polished response.",
+		ClientMessageID: "optimistic-conversation-1",
+		AIAssisted:      true,
 	}, "user", &actorID, nil, nil)
 	if err != nil {
 		t.Fatalf("AI-assisted reply: %v", err)
 	}
 	if !strings.Contains(aiAssisted.Metadata, `"ai_assisted":true`) {
 		t.Fatalf("AI-assisted reply metadata = %q", aiAssisted.Metadata)
+	}
+	if aiAssisted.ClientMessageID != "optimistic-conversation-1" {
+		t.Fatalf("client_message_id = %q, want optimistic-conversation-1", aiAssisted.ClientMessageID)
 	}
 }
 

@@ -555,6 +555,7 @@ export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number]
 
 export interface SupportMessage {
   id: string;
+  client_message_id?: string;
   workspace_id: string;
   conversation_id: string;
   sender_type: MessageSenderType;
@@ -964,6 +965,7 @@ export interface CreateConversationRequest {
 
 export interface CreateMessageRequest {
   content: string;
+  client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
   channels?: ('chat' | 'email')[];

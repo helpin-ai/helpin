@@ -53,6 +53,38 @@ describe('support message page cache', () => {
     expect(flattenSupportMessagePages(duplicated).map((item) => item.id)).toEqual(['msg-01', 'msg-02'])
   })
 
+  it('replaces the correlated optimistic message when realtime arrives first', () => {
+    const optimistic = {
+      ...message('client-msg-01'),
+      client_message_id: 'client-msg-01',
+    }
+    const realtime = {
+      ...message('msg-02'),
+      client_message_id: 'client-msg-01',
+    }
+
+    const initial = seedSupportMessagePages([message('msg-01'), optimistic])
+    const reconciled = appendMessageToNewestPage(initial, realtime)
+
+    expect(flattenSupportMessagePages(reconciled).map((item) => item.id)).toEqual(['msg-01', 'msg-02'])
+  })
+
+  it('does not replace an unrelated optimistic message', () => {
+    const optimistic = {
+      ...message('client-msg-01'),
+      client_message_id: 'client-msg-01',
+    }
+    const realtime = {
+      ...message('msg-02'),
+      client_message_id: 'different-client-message',
+    }
+
+    const initial = seedSupportMessagePages([optimistic])
+    const appended = appendMessageToNewestPage(initial, realtime)
+
+    expect(flattenSupportMessagePages(appended).map((item) => item.id)).toEqual(['client-msg-01', 'msg-02'])
+  })
+
   it('replaces and removes messages without discarding loaded older pages', () => {
     const initial = {
       pages: [page(['optimistic-02'], 'older'), page(['msg-01'])],

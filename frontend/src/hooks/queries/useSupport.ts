@@ -99,6 +99,7 @@ export type SupportConversationGlobalSearchFilters = SupportConversationSearchPa
 
 type SendMessagePayload = {
   content: string;
+  client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
   channels?: Array<'chat' | 'email'>;
@@ -131,6 +132,7 @@ export function buildOptimisticSupportMessage({
 }): SupportMessage {
   return {
     id: optimisticId,
+    client_message_id: optimisticId,
     workspace_id: workspaceId,
     conversation_id: conversationId,
     sender_type: 'user',
@@ -930,7 +932,9 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
       await queryClient.cancelQueries({ queryKey: key });
       const previousMessages = queryClient.getQueryData<SupportMessagePages>(key);
       const now = new Date().toISOString();
-      const optimisticId = `optimistic-${conversationId}-${Date.now()}`;
+      const optimisticId = payload.client_message_id?.trim()
+        || `optimistic-${conversationId}-${crypto.randomUUID()}`;
+      payload.client_message_id = optimisticId;
       const optimistic = buildOptimisticSupportMessage({
         workspaceId,
         conversationId,

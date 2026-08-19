@@ -33,6 +33,21 @@ export function appendMessageToNewestPage(
   if (!data) return seedSupportMessagePages([message])
   if (data.pages.some((page) => page.data.some((item) => item.id === message.id))) return data
 
+  const clientMessageID = message.client_message_id?.trim()
+  if (clientMessageID && data.pages.some((page) => page.data.some((item) =>
+    item.id === clientMessageID || item.client_message_id === clientMessageID,
+  ))) {
+    return {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        data: page.data.map((item) =>
+          item.id === clientMessageID || item.client_message_id === clientMessageID ? message : item,
+        ),
+      })),
+    }
+  }
+
   return {
     ...data,
     pages: data.pages.map((page, index) => index === 0

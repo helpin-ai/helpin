@@ -47,6 +47,7 @@ func supportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID,
 
 	payload, err := json.Marshal(model.WidgetMessageReceivedPayload{
 		ID:                        msg.ID,
+		ClientMessageID:           msg.ClientMessageID,
 		ConversationID:            msg.ConversationID,
 		Content:                   msg.Content,
 		SenderType:                msg.SenderType,

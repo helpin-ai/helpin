@@ -25,6 +25,7 @@ describe('support optimistic messages', () => {
 
     expect(message).toEqual(expect.objectContaining({
       id: 'optimistic-1',
+      client_message_id: 'optimistic-1',
       workspace_id: 'ws-1',
       conversation_id: 'conv-1',
       sender_type: 'user',
