@@ -77,6 +77,21 @@ func TestCatalogResolvesClaudeSonnet5Route(t *testing.T) {
 	}
 }
 
+func TestCatalogResolvesClaudeSonnet5ThroughOpenRouter(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+
+	resolved, err := catalog.Resolve("openrouter", "anthropic/claude-sonnet-5", "anthropic/claude-sonnet-5", "standard")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.CanonicalModel != "claude-sonnet-5" || resolved.Route != "anthropic/claude-sonnet-5" {
+		t.Fatalf("Resolve() = %#v, want OpenRouter Claude Sonnet 5", resolved)
+	}
+}
+
 func TestCatalogResolveRejectsUnapprovedRoute(t *testing.T) {
 	catalog, err := LoadCatalog()
 	if err != nil {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -19,13 +20,49 @@ func (f fakeWorkspaceContextFetcher) FetchText(ctx context.Context, rawURL strin
 
 type fakeWorkspaceContextLLM struct {
 	lastRequest llm.ChatRequest
+	requests    []llm.ChatRequest
+	failures    map[string]error
 }
 
 func (f *fakeWorkspaceContextLLM) ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	f.lastRequest = req
+	f.requests = append(f.requests, req)
+	if err := f.failures[req.Provider]; err != nil {
+		return nil, err
+	}
 	return &llm.ChatResponse{
 		Content: "Product: **Acme** helps support and product teams understand customers.\nCustomers:\n- Support teams\nKey capabilities:\n1. Support answers\n",
 	}, nil
+}
+
+func TestWorkspaceServiceGenerateCompanyProductDescriptionFallsBackToOpenRouter(t *testing.T) {
+	llmProvider := &fakeWorkspaceContextLLM{failures: map[string]error{
+		"anthropic": errors.New("anthropic unavailable"),
+	}}
+	svc := NewWorkspaceService(nil, nil, nil).
+		SetContextGeneratorDependencies(llmProvider, fakeWorkspaceContextFetcher{pages: map[string]string{
+			"https://acme.com": "Acme is a customer intelligence platform.",
+		}})
+
+	resp, err := svc.GenerateCompanyProductDescription(context.Background(), model.GenerateWorkspaceContextDescriptionRequest{
+		WorkspaceName: "Acme",
+		WebsiteURL:    "https://acme.com",
+	})
+	if err != nil {
+		t.Fatalf("GenerateCompanyProductDescription() error = %v", err)
+	}
+	if resp.CompanyProductContext == "" {
+		t.Fatal("CompanyProductContext = empty, want OpenRouter fallback result")
+	}
+	if len(llmProvider.requests) != 2 {
+		t.Fatalf("LLM requests = %d, want direct attempt plus one fallback", len(llmProvider.requests))
+	}
+	if got := llmProvider.requests[0]; got.Provider != "anthropic" || got.Model != "claude-sonnet-5" {
+		t.Fatalf("primary route = %q/%q, want anthropic/claude-sonnet-5", got.Provider, got.Model)
+	}
+	if got := llmProvider.requests[1]; got.Provider != "openrouter" || got.Model != "anthropic/claude-sonnet-5" {
+		t.Fatalf("fallback route = %q/%q, want openrouter/anthropic/claude-sonnet-5", got.Provider, got.Model)
+	}
 }
 
 func TestWorkspaceServiceGenerateCompanyProductDescriptionUsesDirectWebsiteFetch(t *testing.T) {
