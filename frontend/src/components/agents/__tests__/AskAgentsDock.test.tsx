@@ -310,6 +310,35 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it('keeps the first message visible while a newly created chat starts its run', async () => {
+    const createdChat = { ...CHAT, id: 'chat-new', title: '', active_run_id: null };
+    let resolveSend: ((value: { data: DockChatDetail; error: null }) => void) | undefined;
+    mocks.createChat.mockResolvedValue({ data: createdChat, error: null });
+    mocks.sendMessage.mockImplementation(() => new Promise((resolve) => {
+      resolveSend = resolve;
+    }));
+
+    await renderDock();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
+        detail: { mode: 'compose', intent: 'new_chat' },
+      }));
+    });
+
+    await act(async () => {
+      setTextareaValue(dockTextarea(), 'Investigate the workspace');
+      dockTextarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'new chat message was not sent');
+
+    expect(document.body.textContent).toContain('Investigate the workspace');
+    expect(document.body.textContent).not.toContain('Ask a question about your workspace, or describe work for an agent to do.');
+
+    await act(async () => {
+      resolveSend?.({ data: chatDetail({ chat: createdChat }), error: null });
+    });
+  });
+
   it('renders a cached transcript immediately and keeps it when refresh fails', async () => {
     useDockStore.setState({
       workspaceId: 'ws-1',

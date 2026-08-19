@@ -178,6 +178,11 @@ export function AskAgentsDock({
     chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null
   )), [activeChatId, chats]);
   const activeChat = visibleChats.find((chat) => chat.id === activeChatId) ?? null;
+  const chatViewKey = draftChat
+    ? embedded
+      ? `support:${associatedSupportConversationId ?? 'unknown'}:draft`
+      : 'global:draft'
+    : activeChat?.id ?? draftStoreKey;
   const activeChatMatchesSupportConversation = Boolean(
     activeChat && activeChat.support_conversation_id === associatedSupportConversationId,
   );
@@ -535,7 +540,6 @@ export function AskAgentsDock({
       return null;
     }
     upsertChat(result.data);
-    setDraftChat(false);
     setActiveChatId(result.data.id);
     setTab('chats');
     return result.data;
@@ -702,14 +706,17 @@ export function AskAgentsDock({
           <SupportChatErrorPane message={currentSupportChatError} onRetry={retrySupportChat} />
         ) : activeChat || draftChat ? (
           <ChatView
-            key={activeChat?.id ?? draftStoreKey}
+            key={chatViewKey}
             workspaceId={workspaceId}
             chatId={activeChat?.id}
             onCreateChat={createDraftChat}
             textareaRef={textareaRef}
             draftValue={drafts[draftStoreKey] ?? ''}
             onDraftChange={(value) => setDraft(draftStoreKey, value)}
-            onChatChanged={() => void refreshChats(true)}
+            onChatChanged={() => {
+              setDraftChat(false);
+              void refreshChats(true);
+            }}
             onRunStatusChange={updateChatRunStatus}
             streamController={chatStreamController}
             onPresenceChange={handleChatPresenceChange}
@@ -835,7 +842,7 @@ export function AskAgentsDock({
                 )
               ) : activeChat || draftChat ? (
                 <ChatView
-                  key={activeChat?.id ?? draftStoreKey}
+                  key={chatViewKey}
                   workspaceId={workspaceId}
                   chatId={activeChat?.id}
                   onCreateChat={createDraftChat}
@@ -845,7 +852,10 @@ export function AskAgentsDock({
                   onDraftConsumed={() => setPendingDraft(undefined)}
                   draftValue={drafts[draftStoreKey] ?? ''}
                   onDraftChange={(value) => setDraft(draftStoreKey, value)}
-                  onChatChanged={() => void refreshChats(true)}
+                  onChatChanged={() => {
+                    setDraftChat(false);
+                    void refreshChats(true);
+                  }}
                   onRunStatusChange={updateChatRunStatus}
                   streamController={chatStreamController}
                   onPresenceChange={handleChatPresenceChange}
