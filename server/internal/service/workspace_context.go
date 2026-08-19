@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,10 +15,8 @@ import (
 
 const workspaceContextMaxPageBytes = 256 * 1024
 const workspaceContextMaxPromptChars = 18000
-const workspaceContextProvider = "anthropic"
-const workspaceContextModel = "claude-sonnet-5"
-const workspaceContextFallbackProvider = "openrouter"
-const workspaceContextFallbackModel = "anthropic/claude-sonnet-5"
+const workspaceContextProvider = "openrouter"
+const workspaceContextModel = "deepseek/deepseek-v4-flash-0731"
 
 type workspaceContextLLM interface {
 	ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error)
@@ -117,13 +114,7 @@ Website text:
 	}
 	resp, err := s.contextLLM.ChatCompletion(meteringCtx, chatRequest)
 	if err != nil {
-		primaryErr := err
-		chatRequest.Provider = workspaceContextFallbackProvider
-		chatRequest.Model = workspaceContextFallbackModel
-		resp, err = s.contextLLM.ChatCompletion(meteringCtx, chatRequest)
-		if err != nil {
-			return nil, fmt.Errorf("generate company/product context: %w", errors.Join(primaryErr, err))
-		}
+		return nil, fmt.Errorf("generate company/product context: %w", err)
 	}
 	description := normalizeCompanyProductContextPlainText(resp.Content)
 	if description == "" {
