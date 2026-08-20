@@ -8,6 +8,9 @@ import {
   useConversation,
   useConversationMessages,
   useMarkConversationRead,
+  useDismissConversationTriage,
+  useInboxScopes,
+  useMoveConversation,
   useSupportInstallation,
   useSupportPresenceStore,
   useUpdateConversationStatus,
@@ -34,10 +37,11 @@ import { computeSupportReceipt, groupMessages } from '@mobile/thread/thread-help
 import { Composer } from '@mobile/thread/composer'
 import { ContextSheet } from '@mobile/thread/context-sheet'
 import { ConversationActionsSheet } from '@mobile/thread/conversation-actions-sheet'
+import { buildTriageBanner } from '@mobile/thread/triage-banner'
 import { MessageActionsSheet } from '@mobile/thread/message-actions-sheet'
 import { useDraftStore } from '@mobile/thread/draft-store'
 import { haptic } from '@mobile/lib/haptics'
-import { CheckCircle2, MessageCircle, MoreHorizontal } from 'lucide-react'
+import { CheckCircle2, MessageCircle, MoreHorizontal, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
@@ -208,6 +212,11 @@ export function ConversationScreen() {
   const setDraftText = useDraftStore((state) => state.setText)
   const setDraftMode = useDraftStore((state) => state.setMode)
   const updateStatus = useUpdateConversationStatus(workspaceId)
+  const moveConversation = useMoveConversation(workspaceId)
+  const dismissTriage = useDismissConversationTriage(workspaceId)
+  const inboxScopes = useInboxScopes(supportWorkspaceId, !!conversation?.triage)
+
+  const triageBanner = useMemo(() => buildTriageBanner(conversation, inboxScopes.data), [conversation, inboxScopes.data])
 
   useEffect(() => {
     setSelectedMessage(null)
@@ -298,6 +307,46 @@ export function ConversationScreen() {
       />
 
       <OfflineBanner />
+
+      {triageBanner && canEditSupport && conversation && (
+        <div className="border-b border-amber-200/70 bg-amber-50/80 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/25">
+          <div className="flex items-start gap-2">
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-footnote font-semibold text-foreground">Suggested inbox: {triageBanner.mailboxName}</p>
+              <p className="mt-0.5 text-caption text-muted-foreground">
+                {triageBanner.source}{triageBanner.confidence ? ` · ${triageBanner.confidence} confidence` : ''}
+              </p>
+              {triageBanner.reason && <p className="mt-1 line-clamp-2 text-footnote text-muted-foreground">{triageBanner.reason}</p>}
+            </div>
+          </div>
+          <div className="mt-2 flex justify-end gap-2">
+            <Pressable
+              disabled={moveConversation.isPending || dismissTriage.isPending}
+              onPress={() => moveConversation.mutate(
+                { conversationId: conversation.id, mailboxId: triageBanner.mailboxId },
+                {
+                  onSuccess: () => toast.success(`Moved to ${triageBanner.mailboxName}`),
+                  onError: () => toast.error('Could not move conversation'),
+                },
+              )}
+              className="flex min-h-9 w-auto min-w-0 items-center rounded-full bg-primary px-4 text-footnote font-semibold text-primary-foreground disabled:opacity-50"
+            >
+              Move
+            </Pressable>
+            <Pressable
+              disabled={moveConversation.isPending || dismissTriage.isPending}
+              onPress={() => dismissTriage.mutate(conversation.id, {
+                onSuccess: () => toast.success('Routing suggestion dismissed'),
+                onError: () => toast.error('Could not dismiss suggestion'),
+              })}
+              className="flex min-h-9 w-auto min-w-0 items-center rounded-full px-4 text-footnote font-semibold text-muted-foreground active:bg-muted disabled:opacity-50"
+            >
+              Dismiss
+            </Pressable>
+          </div>
+        </div>
+      )}
 
       {conversation && (
         <Pressable

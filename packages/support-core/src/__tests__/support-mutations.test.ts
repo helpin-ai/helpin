@@ -117,6 +117,17 @@ describe('supportService mutations (unit, no React)', () => {
       { team_id: 'team-1' },
     )
   })
+
+  it('dismissConversationTriage posts to the verified endpoint', async () => {
+    fakeApi.post.mockResolvedValue({ data: { status: 'dismissed' }, error: null })
+
+    await supportService.dismissConversationTriage(WORKSPACE_ID, CONVERSATION_ID)
+
+    expect(fakeApi.post).toHaveBeenCalledWith(
+      `/support/inbox/conversations/${CONVERSATION_ID}/triage/dismiss?workspace_id=${WORKSPACE_ID}`,
+      {},
+    )
+  })
 })
 
 describe('useCreateTaskFromConversation', () => {

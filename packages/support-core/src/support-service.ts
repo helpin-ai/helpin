@@ -192,6 +192,11 @@ export const supportService = {
     getApi().post<SupportConversation>(`/support/inbox/conversations/${conversationId}/move${qs(workspaceId)}`, {
       mailbox_id: mailboxId,
     }),
+  dismissConversationTriage: (workspaceId: string, conversationId: string) =>
+    getApi().post<SupportConversation['triage']>(
+      `/support/inbox/conversations/${conversationId}/triage/dismiss${qs(workspaceId)}`,
+      {},
+    ),
   deleteConversation: (workspaceId: string, conversationId: string) =>
     getApi().del<void>(`/support/inbox/conversations/${conversationId}${qs(workspaceId)}`),
   rewriteConversationDraft: (workspaceId: string, conversationId: string, payload: SupportAIRewriteDraftRequest) =>

@@ -619,6 +619,20 @@ export function useMoveConversation(workspaceId: string) {
   })
 }
 
+export function useDismissConversationTriage(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (conversationId: string) =>
+      unwrapOrThrow(await supportService.dismissConversationTriage(workspaceId, conversationId)),
+    onSuccess: (_data, conversationId) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxScopes(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxViewCounts(workspaceId) })
+    },
+  })
+}
+
 export function useDeleteConversation(workspaceId: string) {
   const queryClient = useQueryClient()
   return useMutation({
