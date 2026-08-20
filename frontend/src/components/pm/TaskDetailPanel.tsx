@@ -3,6 +3,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
+  Activity01Icon,
   ArchiveIcon,
   ArrowUpRight01Icon,
   Copy01Icon,
@@ -40,6 +41,7 @@ import {
 } from '@/lib/pmConstants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -104,6 +106,7 @@ import { repositoryDefaultBranchLabel } from '@/lib/branchLabels';
 import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import { TaskUpdatesView } from '@/components/pm/task-detail/TaskUpdatesView';
+import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { resolveTaskTeamWorkflow, resolveTaskWorkflowStates } from '@/components/pm/task-detail/taskWorkflowResolution';
@@ -448,7 +451,7 @@ function TaskDetailPanelBody({
   const taskId = taskDetail.task.id;
   const [activeView, setActiveView] = useState<TaskDetailView>(() => {
     const value = new URLSearchParams(window.location.search).get('task_view');
-    return value === 'updates' || value === 'delivery' ? value : 'overview';
+    return value === 'delivery' ? 'delivery' : 'overview';
   });
   const updatesSummary = useTaskUpdates(workspaceId, taskId, 'all');
   const initializeUpdatesRead = useInitializeTaskUpdatesRead(workspaceId, taskId);
@@ -493,7 +496,7 @@ function TaskDetailPanelBody({
   useEffect(() => {
     const onPopState = () => {
       const value = new URLSearchParams(window.location.search).get('task_view');
-      setActiveView(value === 'updates' || value === 'delivery' ? value : 'overview');
+      setActiveView(value === 'delivery' ? 'delivery' : 'overview');
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -1340,7 +1343,7 @@ function TaskDetailPanelBody({
         {/* ── Left column (main content) ────────────────────────── */}
         <div className="flex min-h-0 min-w-0 flex-col">
           <div role="tablist" aria-label="Task detail views" className="flex items-center gap-6 border-b border-border/60 px-10">
-            {(['overview', 'updates', 'delivery'] as TaskDetailView[]).map((view) => (
+            {(['overview', 'delivery'] as TaskDetailView[]).map((view) => (
               <button
                 key={view}
                 type="button"
@@ -1353,11 +1356,6 @@ function TaskDetailPanelBody({
                 onClick={() => selectView(view)}
               >
                 {view}
-                {view === 'updates' && (updatesSummary.data?.unread_count ?? 0) > 0 && (
-                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
-                    {updatesSummary.data!.unread_count}
-                  </span>
-                )}
                 {view === 'delivery' && taskDetail.task.latest_run_status === 'failed' && (
                   <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Latest agent run failed" />
                 )}
@@ -1468,6 +1466,26 @@ function TaskDetailPanelBody({
             />
           </div>
 
+          <Separator className="my-6" />
+
+          <TaskDetailSectionHeading title="Updates" icon={Activity01Icon} className="mb-4" />
+          {commentsLoading ? (
+            <div className="space-y-3 py-4">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+            </div>
+          ) : (
+            <TaskUpdatesView
+              workspaceId={workspaceId}
+              taskId={taskDetail.task.id}
+              comments={comments}
+              onCommentsChange={setComments}
+              currentUserId={currentUser?.id}
+              teams={mentionTeams}
+              members={assignableMembers}
+              onOpenDelivery={openDelivery}
+            />
+          )}
+
           </>
           )}
 
@@ -1485,24 +1503,6 @@ function TaskDetailPanelBody({
             </div>
           )}
 
-          {activeView === 'updates' && (
-            commentsLoading ? (
-              <div className="space-y-3 py-4">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
-            ) : (
-              <TaskUpdatesView
-                workspaceId={workspaceId}
-                taskId={taskDetail.task.id}
-                comments={comments}
-                onCommentsChange={setComments}
-                currentUserId={currentUser?.id}
-                teams={mentionTeams}
-                members={assignableMembers}
-                onOpenDelivery={openDelivery}
-              />
-            )
-          )}
           <div className="h-40 shrink-0" aria-hidden="true" />
           </div>
         </div>
