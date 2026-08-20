@@ -28,6 +28,7 @@ import type {
   SupportMessageActionResponse,
   SupportMessageInfo,
   SupportMessagePage,
+  UpdateConversationEmailRecipientsRequest,
 } from './support-types'
 import type { VisitorContextResponse } from './visitor-types'
 import {
@@ -591,6 +592,19 @@ export function useUpdateConversationCRMCompany(workspaceId: string) {
   })
 }
 
+export function useUpdateConversationCRMContact(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ conversationId, contactId }: { conversationId: string; contactId: string | null }) =>
+      unwrapOrThrow(await supportService.updateConversationCRMContact(workspaceId, conversationId, contactId)),
+    onSuccess: (_data, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.visitorContext(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
 export function useUpdateConversationCustomerName(workspaceId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -600,6 +614,27 @@ export function useUpdateConversationCustomerName(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.visitorContext(workspaceId, conversationId) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
+export function useUpdateConversationEmailRecipients(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      conversationId,
+      payload,
+    }: {
+      conversationId: string
+      payload: UpdateConversationEmailRecipientsRequest
+    }) => unwrapOrThrow(
+      await supportService.updateConversationEmailRecipients(workspaceId, conversationId, payload),
+    ),
+    onSuccess: (_data, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.messages(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxViewCounts(workspaceId) })
     },
   })
 }

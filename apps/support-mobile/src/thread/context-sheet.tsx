@@ -20,6 +20,7 @@ import { displayNameFor } from '@mobile/inbox/conversation-cell'
 import { formatRelativeTime } from '@mobile/inbox/inbox-helpers'
 import { AssignList } from './assign-list'
 import { ConversationTagEditor } from './conversation-tag-editor'
+import { ConversationContactTools } from './conversation-contact-tools'
 import { CustomerContext } from './customer-context'
 
 export interface ContextSheetProps {
@@ -287,6 +288,12 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, 
             selectedTags={conversation.tags ?? []}
           />
         )}
+
+        <ConversationContactTools
+          workspaceId={workspaceId}
+          conversation={conversation}
+          canEdit={canEdit}
+        />
 
         {conversationId && (
           <CustomerContext

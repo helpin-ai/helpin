@@ -105,6 +105,13 @@ export interface CreateConversationWithMessageResponse {
   message: SupportMessage
 }
 
+export interface UpdateConversationEmailRecipientsRequest {
+  primary_recipient_email?: string
+  primary_recipient_name?: string
+  cc_emails?: string[]
+  confirm_primary?: boolean
+}
+
 export interface SupportConversation {
   id: string
   workspace_id: string

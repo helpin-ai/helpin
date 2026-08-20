@@ -28,6 +28,10 @@ vi.mock('../customer-context', () => ({
   CustomerContext: () => <div>Customer context</div>,
 }))
 
+vi.mock('../conversation-contact-tools', () => ({
+  ConversationContactTools: () => <div>Contact tools</div>,
+}))
+
 vi.mock('@mobile/lib/haptics', () => ({
   haptic: vi.fn(),
 }))

@@ -23,6 +23,7 @@ import type {
   SupportMessagePage,
   SupportTag,
   SupportTeammatePresenceStatus,
+  UpdateConversationEmailRecipientsRequest,
   UnreadStats,
 } from './support-types'
 import type { VisitorContextResponse } from './visitor-types'
@@ -203,10 +204,23 @@ export const supportService = {
     getApi().put<SupportConversation>(`/support/inbox/conversations/${conversationId}/crm-company${qs(workspaceId)}`, {
       crm_company_id: companyId,
     }),
+  updateConversationCRMContact: (workspaceId: string, conversationId: string, contactId: string | null) =>
+    getApi().put<SupportConversation>(`/support/inbox/conversations/${conversationId}/crm-contact${qs(workspaceId)}`, {
+      crm_contact_id: contactId,
+    }),
   updateConversationCustomerName: (workspaceId: string, conversationId: string, customerName: string) =>
     getApi().put<SupportConversation>(`/support/inbox/conversations/${conversationId}/customer-name${qs(workspaceId)}`, {
       customer_name: customerName,
     }),
+  updateConversationEmailRecipients: (
+    workspaceId: string,
+    conversationId: string,
+    payload: UpdateConversationEmailRecipientsRequest,
+  ) =>
+    getApi().put<SupportConversation>(
+      `/support/inbox/conversations/${conversationId}/email-recipients${qs(workspaceId)}`,
+      payload,
+    ),
   createConversationWithMessage: (workspaceId: string, payload: CreateConversationWithMessageRequest) =>
     getApi().post<CreateConversationWithMessageResponse>(
       `/support/inbox/conversations/create-and-send${qs(workspaceId)}`,

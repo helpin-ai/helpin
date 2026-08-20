@@ -6,8 +6,10 @@ import { supportQueryKeys } from '../support-query-keys'
 import { configureSupportApi } from '../support-service'
 import {
   useRewriteSupportDraft,
+  useUpdateConversationCRMContact,
   useUpdateConversationCRMCompany,
   useUpdateConversationCustomerName,
+  useUpdateConversationEmailRecipients,
 } from '../use-support-core'
 
 const workspaceId = 'ws-1'
@@ -94,6 +96,43 @@ describe('support AI and CRM context mutations', () => {
     expect(api.put).toHaveBeenCalledWith(
       `/support/inbox/conversations/${conversationId}/customer-name?workspace_id=${workspaceId}`,
       { customer_name: 'Ada Lovelace' },
+    )
+  })
+
+  test('CRM contact relinking sends the exact crm_contact_id payload', async () => {
+    api.put.mockResolvedValue({ data: { id: conversationId }, error: null })
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const { result } = renderHook(() => useUpdateConversationCRMContact(workspaceId), {
+      wrapper: wrapper(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId, contactId: 'contact-2' })
+    })
+
+    expect(api.put).toHaveBeenCalledWith(
+      `/support/inbox/conversations/${conversationId}/crm-contact?workspace_id=${workspaceId}`,
+      { crm_contact_id: 'contact-2' },
+    )
+  })
+
+  test('Cc updates use the existing email recipient contract', async () => {
+    api.put.mockResolvedValue({ data: { id: conversationId }, error: null })
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const { result } = renderHook(() => useUpdateConversationEmailRecipients(workspaceId), {
+      wrapper: wrapper(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        conversationId,
+        payload: { cc_emails: ['finance@example.com'] },
+      })
+    })
+
+    expect(api.put).toHaveBeenCalledWith(
+      `/support/inbox/conversations/${conversationId}/email-recipients?workspace_id=${workspaceId}`,
+      { cc_emails: ['finance@example.com'] },
     )
   })
 })
