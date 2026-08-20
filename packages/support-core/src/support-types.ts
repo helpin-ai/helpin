@@ -165,6 +165,43 @@ export interface ResolveSupportRunInteractionRequest {
   followup_message?: string
 }
 
+export type SupportAgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled'
+export type SupportAgentRunApprovalState = 'not_required' | 'pending' | 'approved' | 'changes_requested' | string
+
+export interface SupportAgentRun {
+  id: string
+  workspace_id: string
+  agent_id: string
+  conversation_id?: string
+  target_type: string
+  target_id: string
+  runtime_kind: string
+  invocation_mode: string
+  approval_state: SupportAgentRunApprovalState
+  pause_reason: string
+  status: SupportAgentRunStatus
+  execution_stage?: string
+  input: Record<string, unknown>
+  output_summary: Record<string, unknown>
+  tokens_used: number
+  error_message?: string
+  started_at?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportAgentRunMessage {
+  id: string
+  workspace_id: string
+  run_id: string
+  role: string
+  content: string
+  message_type: string
+  sequence_no: number
+  created_at: string
+}
+
 export interface SupportConversation {
   id: string
   workspace_id: string

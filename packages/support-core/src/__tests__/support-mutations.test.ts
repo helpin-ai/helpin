@@ -12,6 +12,7 @@ import {
   useAssignConversationUser,
   useConversationAssignees,
   useCreateTaskFromConversation,
+  useApproveAgentRun,
 } from '../use-support-core'
 import type { SupportMessage } from '../support-types'
 
@@ -136,6 +137,49 @@ describe('supportService mutations (unit, no React)', () => {
     await supportService.resolveAIRunInteraction(WORKSPACE_ID, CONVERSATION_ID, 'int/1', { response_payload: { decision: 'approve' } })
     expect(fakeApi.get).toHaveBeenCalledWith(`/support/inbox/conversations/${CONVERSATION_ID}/ai-run/interactions?workspace_id=${WORKSPACE_ID}`)
     expect(fakeApi.post).toHaveBeenCalledWith(`/support/inbox/conversations/${CONVERSATION_ID}/ai-run/interactions/int%2F1/resolve?workspace_id=${WORKSPACE_ID}`, { response_payload: { decision: 'approve' } })
+  })
+
+  it('lists conversation agent runs and messages, then approves a draft', async () => {
+    fakeApi.get.mockResolvedValue({ data: [], error: null })
+    fakeApi.post.mockResolvedValue({ data: { id: 'run-1' }, error: null })
+
+    await supportService.listConversationAgentRuns(WORKSPACE_ID, 'conv/1')
+    await supportService.listAgentRunMessages(WORKSPACE_ID, 'run/1')
+    await supportService.approveAgentRun(WORKSPACE_ID, 'run/1')
+
+    expect(fakeApi.get).toHaveBeenNthCalledWith(
+      1,
+      '/automation/runs?workspace_id=ws-1&target_type=support_conversation&target_id=conv%2F1',
+    )
+    expect(fakeApi.get).toHaveBeenNthCalledWith(
+      2,
+      '/automation/runs/run%2F1/messages?workspace_id=ws-1',
+    )
+    expect(fakeApi.post).toHaveBeenCalledWith(
+      '/automation/runs/run%2F1/approve?workspace_id=ws-1',
+      { send_message: true },
+    )
+  })
+})
+
+describe('useApproveAgentRun', () => {
+  it('invalidates the run, conversation, and message caches after approval', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.post.mockResolvedValue({ data: { id: 'run-1' }, error: null })
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useApproveAgentRun(WORKSPACE_ID, CONVERSATION_ID), {
+      wrapper: wrapperFor(queryClient),
+    })
+
+    await act(async () => {
+      await result.current.mutateAsync('run-1')
+    })
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: supportQueryKeys.agentRuns(WORKSPACE_ID, CONVERSATION_ID) })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: supportQueryKeys.agentRunMessages(WORKSPACE_ID, 'run-1') })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID) })
   })
 })
 

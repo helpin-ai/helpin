@@ -26,6 +26,8 @@ import type {
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportAIRunInteractionsResponse,
+  SupportAgentRun,
+  SupportAgentRunMessage,
   SupportConversation,
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
@@ -264,6 +266,43 @@ export function useResolveConversationAIRunInteraction(workspaceId: string, conv
       unwrapOrThrow(await supportService.resolveAIRunInteraction(workspaceId, conversationId, interactionId, payload)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.aiRunInteractions(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.messages(workspaceId, conversationId) })
+    },
+  })
+}
+
+export function useConversationAgentRuns(
+  workspaceId: string,
+  conversationId: string | null,
+  enabled = true,
+) {
+  return useQuery<SupportAgentRun[]>({
+    queryKey: supportQueryKeys.agentRuns(workspaceId, conversationId ?? ''),
+    queryFn: async () => unwrapOrThrow(await supportService.listConversationAgentRuns(workspaceId, conversationId!)),
+    enabled: enabled && !!workspaceId && !!conversationId,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useAgentRunMessages(workspaceId: string, runId: string | null, enabled = true) {
+  return useQuery<SupportAgentRunMessage[]>({
+    queryKey: supportQueryKeys.agentRunMessages(workspaceId, runId ?? ''),
+    queryFn: async () => unwrapOrThrow(await supportService.listAgentRunMessages(workspaceId, runId!)),
+    enabled: enabled && !!workspaceId && !!runId,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useApproveAgentRun(workspaceId: string, conversationId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (runId: string) => unwrapOrThrow(await supportService.approveAgentRun(workspaceId, runId)),
+    onSuccess: (run) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.agentRuns(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.agentRunMessages(workspaceId, run.id) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.messages(workspaceId, conversationId) })
     },

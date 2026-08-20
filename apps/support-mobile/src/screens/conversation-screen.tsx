@@ -39,6 +39,7 @@ import { ContextSheet } from '@mobile/thread/context-sheet'
 import { ConversationActionsSheet } from '@mobile/thread/conversation-actions-sheet'
 import { buildTriageBanner } from '@mobile/thread/triage-banner'
 import { AIRunApprovals } from '@mobile/thread/ai-run-approvals'
+import { AssignedAgentRuns } from '@mobile/thread/assigned-agent-runs'
 import { MessageActionsSheet } from '@mobile/thread/message-actions-sheet'
 import { useDraftStore } from '@mobile/thread/draft-store'
 import { haptic } from '@mobile/lib/haptics'
@@ -354,6 +355,20 @@ export function ConversationScreen() {
           workspaceId={supportWorkspaceId}
           conversationId={conversation.id}
           enabled={canEditSupport && !!conversation.ai_state}
+        />
+      )}
+
+      {conversation && (
+        <AssignedAgentRuns
+          workspaceId={supportWorkspaceId}
+          conversationId={conversation.id}
+          enabled={
+            canReadSupport &&
+            !!conversation.assigned_agent_id &&
+            !conversation.ai_state &&
+            !!accessQuery.data?.modules.includes('automation')
+          }
+          canApprove={canEditSupport}
         />
       )}
 

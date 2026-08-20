@@ -7,6 +7,10 @@ export const supportQueryKeys = {
   conversation: (wsId: string, id: string) => ['support', wsId, 'conversations', id] as const,
   aiRunInteractions: (wsId: string, id: string) =>
     ['support', wsId, 'conversations', id, 'ai-run-interactions'] as const,
+  agentRuns: (wsId: string, conversationId: string) =>
+    ['support', wsId, 'conversations', conversationId, 'agent-runs'] as const,
+  agentRunMessages: (wsId: string, runId: string) =>
+    ['support', wsId, 'agent-runs', runId, 'messages'] as const,
   messages: (wsId: string, conversationId: string) =>
     ['support', wsId, 'conversations', conversationId, 'messages'] as const,
   messageInfo: (wsId: string, conversationId: string, messageId: string) =>

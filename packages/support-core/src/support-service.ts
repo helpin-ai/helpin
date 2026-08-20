@@ -11,6 +11,8 @@ import type {
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportAIRunInteractionsResponse,
+  SupportAgentRun,
+  SupportAgentRunMessage,
   SupportAttachmentInitResponse,
   SupportCannedResponse,
   SupportConversation,
@@ -269,6 +271,19 @@ export const supportService = {
     `/support/inbox/conversations/${conversationId}/ai-run/interactions/${encodeURIComponent(interactionId)}/resolve${qs(workspaceId)}`,
     payload,
   ),
+  listConversationAgentRuns: (workspaceId: string, conversationId: string) =>
+    getApi().get<SupportAgentRun[]>(
+      `/automation/runs${qs(workspaceId)}&target_type=support_conversation&target_id=${encodeURIComponent(conversationId)}`,
+    ),
+  listAgentRunMessages: (workspaceId: string, runId: string) =>
+    getApi().get<SupportAgentRunMessage[]>(
+      `/automation/runs/${encodeURIComponent(runId)}/messages${qs(workspaceId)}`,
+    ),
+  approveAgentRun: (workspaceId: string, runId: string) =>
+    getApi().post<SupportAgentRun>(
+      `/automation/runs/${encodeURIComponent(runId)}/approve${qs(workspaceId)}`,
+      { send_message: true },
+    ),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
     getApi().get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
   deleteConversationMessage: (
