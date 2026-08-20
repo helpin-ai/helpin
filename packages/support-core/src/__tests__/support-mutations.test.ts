@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { configureSupportApi, supportService } from '../support-service'
 import { supportQueryKeys } from '../support-query-keys'
+import { flattenSupportMessagePages, seedSupportMessagePages, type SupportMessagePages } from '../support-pages'
 import {
   useSendMessage,
   useUpdateConversationStatus,
@@ -113,7 +114,7 @@ describe('useSendMessage (optimistic update)', () => {
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     })
-    queryClient.setQueryData(supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID), [] as SupportMessage[])
+    queryClient.setQueryData(supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID), seedSupportMessagePages([]))
   })
 
   it('optimistically appends a pending message then replaces it with the server response', async () => {
@@ -133,15 +134,15 @@ describe('useSendMessage (optimistic update)', () => {
     })
 
     await waitFor(() => {
-      const cached = queryClient.getQueryData<SupportMessage[]>(
+      const cached = queryClient.getQueryData<SupportMessagePages>(
         supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID),
       )
-      expect(cached).toHaveLength(1)
+      expect(flattenSupportMessagePages(cached)).toHaveLength(1)
     })
 
-    const pendingCached = queryClient.getQueryData<SupportMessage[]>(
-      supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID),
-    )!
+    const pendingCached = flattenSupportMessagePages(
+      queryClient.getQueryData<SupportMessagePages>(supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID)),
+    )
     expect(pendingCached[0].pending).toBe(true)
     expect(pendingCached[0].sender_type).toBe('user')
     expect(pendingCached[0].content).toBe('optimistic hello')
@@ -156,9 +157,9 @@ describe('useSendMessage (optimistic update)', () => {
       expect(result.current.isSuccess).toBe(true)
     })
 
-    const finalCached = queryClient.getQueryData<SupportMessage[]>(
-      supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID),
-    )!
+    const finalCached = flattenSupportMessagePages(
+      queryClient.getQueryData<SupportMessagePages>(supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID)),
+    )
     expect(finalCached).toHaveLength(1)
     expect(finalCached[0].id).toBe('server-msg-1')
     expect(finalCached[0].pending).toBeFalsy()
@@ -179,9 +180,9 @@ describe('useSendMessage (optimistic update)', () => {
       expect(result.current.isError).toBe(true)
     })
 
-    const finalCached = queryClient.getQueryData<SupportMessage[]>(
-      supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID),
-    )!
+    const finalCached = flattenSupportMessagePages(
+      queryClient.getQueryData<SupportMessagePages>(supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID)),
+    )
     expect(finalCached).toHaveLength(0)
   })
 })

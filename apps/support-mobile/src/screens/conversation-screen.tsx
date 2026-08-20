@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  findConversationInListCache,
+  flattenSupportMessagePages,
   isSupportConversationListQueryKey,
   useConversation,
   useConversationMessages,
@@ -9,7 +11,7 @@ import {
   useSupportInstallation,
   useSupportPresenceStore,
   useUpdateConversationStatus,
-  type ConversationListResponse,
+  type ConversationListCache,
   type ConversationStatus,
   type SupportConversation,
 } from '@helpin-ai/support-core'
@@ -57,11 +59,11 @@ function useConversationFromListCache(
   const queryClient = useQueryClient()
   return useMemo(() => {
     if (!workspaceId || !conversationId) return undefined
-    const lists = queryClient.getQueriesData<ConversationListResponse>({
+    const lists = queryClient.getQueriesData<ConversationListCache>({
       predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
     })
     for (const [, data] of lists) {
-      const found = data?.data?.find((c) => c.id === conversationId)
+      const found = findConversationInListCache(data, conversationId)
       if (found) return found
     }
     return undefined
@@ -104,7 +106,7 @@ export function ConversationScreen() {
   const conversation = conversationQuery.data ?? cachedConversation
 
   const messagesQuery = useConversationMessages(workspaceId, conversationId ?? null)
-  const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data])
+  const messages = useMemo(() => flattenSupportMessagePages(messagesQuery.data), [messagesQuery.data])
   const items = useMemo(() => groupMessages(messages), [messages])
   const receipt = useMemo(() => computeSupportReceipt(messages, conversation), [messages, conversation])
 
@@ -301,6 +303,13 @@ export function ConversationScreen() {
             ref={messageListRef}
             items={items}
             loading={messagesQuery.isPending}
+            hasEarlier={!!messagesQuery.hasNextPage}
+            loadingEarlier={messagesQuery.isFetchingNextPage}
+            loadEarlierError={messagesQuery.isFetchNextPageError}
+            onLoadEarlier={() => void messagesQuery.fetchNextPage()}
+            messageCount={messages.length}
+            oldestMessageId={messages[0]?.id}
+            newestMessageId={messages[messages.length - 1]?.id}
             typingIndicator={typingIndicator}
             receiptMessageId={receipt.receiptMessageId}
             receiptStatus={receipt.receiptStatus}

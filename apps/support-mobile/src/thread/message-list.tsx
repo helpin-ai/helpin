@@ -3,6 +3,7 @@ import { Sparkles } from 'lucide-react'
 import { cn } from '@mobile/lib/cn'
 import { Avatar } from '@mobile/ui/avatar'
 import { Skeleton } from '@mobile/ui/skeleton'
+import { Spinner } from '@mobile/ui/spinner'
 import { MessageBubble } from './message-bubble'
 import type { SupportReceiptStatus, ThreadItem } from './thread-helpers'
 
@@ -26,6 +27,7 @@ const NEAR_BOTTOM_PX = 300
  * pill flow takes over.
  */
 const PINNED_TO_BOTTOM_PX = 40
+const LOAD_EARLIER_THRESHOLD_PX = 120
 
 export interface TypingIndicatorState {
   align: 'left' | 'right'
@@ -44,6 +46,14 @@ export interface MessageListProps {
   /** The id of the last outbound reply that carries a read receipt, and its status. */
   receiptMessageId?: string | null
   receiptStatus?: SupportReceiptStatus | null
+  hasEarlier?: boolean
+  loadingEarlier?: boolean
+  loadEarlierError?: boolean
+  onLoadEarlier?: () => void
+  /** Stable edge ids and the raw count distinguish prepended history from newly appended chat. */
+  messageCount?: number
+  oldestMessageId?: string
+  newestMessageId?: string
   /** Fires when the list decides the floating "New message" pill should show/hide — the pill itself is rendered by the screen (it floats above the composer, which is screen-level layout). */
   onShowNewMessagePillChange?: (show: boolean) => void
 }
@@ -139,7 +149,21 @@ function ClusterView({
  * message" pill.
  */
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
-  { items, loading, typingIndicator, receiptMessageId, receiptStatus, onShowNewMessagePillChange },
+  {
+    items,
+    loading,
+    typingIndicator,
+    receiptMessageId,
+    receiptStatus,
+    hasEarlier,
+    loadingEarlier,
+    loadEarlierError,
+    onLoadEarlier,
+    messageCount,
+    oldestMessageId,
+    newestMessageId,
+    onShowNewMessagePillChange,
+  },
   ref,
 ) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -147,7 +171,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const distanceRef = useRef(0)
   const pillShownRef = useRef(false)
   const initializedRef = useRef(false)
-  const prevCountRef = useRef(items.length)
+  const prevMessageCountRef = useRef(messageCount ?? items.length)
+  const prevNewestMessageIdRef = useRef(newestMessageId)
+  const loadEarlierRequestedRef = useRef(false)
+  const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number; oldestMessageId?: string } | null>(null)
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = scrollRef.current
@@ -159,6 +186,18 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
   }, [onShowNewMessagePillChange])
 
+  const requestEarlier = useCallback(() => {
+    const el = scrollRef.current
+    if (!el || !hasEarlier || loadingEarlier || loadEarlierRequestedRef.current || !onLoadEarlier) return
+    prependAnchorRef.current = {
+      scrollHeight: el.scrollHeight,
+      scrollTop: el.scrollTop,
+      oldestMessageId,
+    }
+    loadEarlierRequestedRef.current = true
+    onLoadEarlier()
+  }, [hasEarlier, loadingEarlier, oldestMessageId, onLoadEarlier])
+
   useImperativeHandle(ref, () => ({ scrollToBottom }), [scrollToBottom])
 
   // Auto-scroll to bottom once, the first time there's something to show.
@@ -167,6 +206,16 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     initializedRef.current = true
     scrollToBottom('auto')
   }, [loading, items.length, scrollToBottom])
+
+  // Preserve the visible message when an older page is inserted above it.
+  useLayoutEffect(() => {
+    const anchor = prependAnchorRef.current
+    const el = scrollRef.current
+    if (!anchor || !el || oldestMessageId === anchor.oldestMessageId) return
+    el.scrollTop = anchor.scrollTop + (el.scrollHeight - anchor.scrollHeight)
+    distanceRef.current = el.scrollHeight - el.scrollTop - el.clientHeight
+    prependAnchorRef.current = null
+  }, [items.length, oldestMessageId])
 
   // While pinned to the bottom, keep it that way through content growth
   // (image loads, expanders, optimistic sends) via a ResizeObserver on the
@@ -205,11 +254,16 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // New items appended after the initial paint: stick to bottom if the
   // reader was already there, otherwise surface the "New message" pill.
   useEffect(() => {
+    const currentMessageCount = messageCount ?? items.length
     if (!initializedRef.current) {
-      prevCountRef.current = items.length
+      prevMessageCountRef.current = currentMessageCount
+      prevNewestMessageIdRef.current = newestMessageId
       return
     }
-    if (items.length > prevCountRef.current) {
+    const appended =
+      currentMessageCount > prevMessageCountRef.current &&
+      newestMessageId !== prevNewestMessageIdRef.current
+    if (appended) {
       if (distanceRef.current <= NEAR_BOTTOM_PX) {
         requestAnimationFrame(() => scrollToBottom('smooth'))
       } else {
@@ -217,8 +271,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         onShowNewMessagePillChange?.(true)
       }
     }
-    prevCountRef.current = items.length
-  }, [items.length, scrollToBottom, onShowNewMessagePillChange])
+    prevMessageCountRef.current = currentMessageCount
+    prevNewestMessageIdRef.current = newestMessageId
+  }, [items.length, messageCount, newestMessageId, scrollToBottom, onShowNewMessagePillChange])
 
   const handleScroll = () => {
     const el = scrollRef.current
@@ -229,7 +284,21 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       pillShownRef.current = false
       onShowNewMessagePillChange?.(false)
     }
+    if (el.scrollTop <= LOAD_EARLIER_THRESHOLD_PX) requestEarlier()
   }
+
+  useEffect(() => {
+    if (!loadingEarlier) loadEarlierRequestedRef.current = false
+  }, [loadingEarlier, items.length, loadEarlierError])
+
+  // A short first page may not create a scrollbar, so continue until the
+  // viewport is filled or the server reports that history is exhausted.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!loading && el && el.scrollHeight <= el.clientHeight + LOAD_EARLIER_THRESHOLD_PX) {
+      requestEarlier()
+    }
+  }, [loading, items.length, requestEarlier])
 
   if (loading) return <ThreadSkeleton />
 
@@ -237,8 +306,26 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="h-full overflow-y-auto px-4 pb-[max(var(--safe-bottom),20px)] pt-3"
+      className="relative h-full overflow-y-auto px-4 pb-[max(var(--safe-bottom),20px)] pt-3"
     >
+      {(loadingEarlier || (loadEarlierError && hasEarlier)) && (
+        <div className="sticky top-2 z-10 -mb-8 flex h-8 items-center justify-center">
+          {loadingEarlier ? (
+            <span className="flex items-center gap-2 rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-caption text-muted-foreground shadow-sm backdrop-blur">
+              <Spinner size={14} />
+              Loading earlier messages
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={requestEarlier}
+              className="rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-caption font-medium text-foreground shadow-sm backdrop-blur"
+            >
+              Retry earlier messages
+            </button>
+          )}
+        </div>
+      )}
       {/* Inner wrapper exists solely as the ResizeObserver target: the scroll
           container itself has a fixed height, so content growth is only
           observable on the child. */}

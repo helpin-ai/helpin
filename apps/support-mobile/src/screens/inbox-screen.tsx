@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Check, Inbox as InboxIcon, Mail, MailOpen, SlidersHorizontal } from 'lucide-react'
 import {
-  useConversations,
+  flattenConversationPages,
+  useInfiniteConversations,
   useMarkConversationRead,
   useMarkConversationUnread,
   useUnreadStats,
@@ -123,8 +124,11 @@ export function InboxScreen() {
   // `keepPrevious` avoids a skeleton flash when switching views — the previous
   // view's data stays on screen (dimmed below) until the new one loads instead
   // of getting torn down first.
-  const conversationsQuery = useConversations(workspaceId, filters, true)
-  const rawConversations = useMemo(() => conversationsQuery.data?.data ?? [], [conversationsQuery.data])
+  const conversationsQuery = useInfiniteConversations(workspaceId, filters, true)
+  const rawConversations = useMemo(
+    () => flattenConversationPages(conversationsQuery.data),
+    [conversationsQuery.data],
+  )
   const markRead = useMarkConversationRead(workspaceId)
   const markUnread = useMarkConversationUnread(workspaceId)
   const updateStatus = useUpdateConversationStatus(workspaceId)
@@ -239,6 +243,34 @@ export function InboxScreen() {
     estimateSize: () => CONVERSATION_CELL_HEIGHT,
     overscan: 8,
   })
+  const loadNextPageIfNeeded = useCallback((element: HTMLDivElement) => {
+    if (
+      !conversationsQuery.hasNextPage ||
+      conversationsQuery.isFetchingNextPage ||
+      conversationsQuery.isPlaceholderData
+    ) {
+      return
+    }
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+    if (distanceFromBottom <= CONVERSATION_CELL_HEIGHT * 4) {
+      void conversationsQuery.fetchNextPage()
+    }
+  }, [
+    conversationsQuery.fetchNextPage,
+    conversationsQuery.hasNextPage,
+    conversationsQuery.isFetchingNextPage,
+    conversationsQuery.isPlaceholderData,
+  ])
+
+  // If a page does not fill the viewport (small screens, restrictive views),
+  // continue until the list becomes scrollable or the server reports no more.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const element = scrollRef.current
+      if (element) loadNextPageIfNeeded(element)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [loadNextPageIfNeeded, rawConversations.length])
 
   const pull = usePullToRefresh({
     scrollRef,
@@ -254,7 +286,7 @@ export function InboxScreen() {
   const isWorkspaceError = workspaceQuery.isError
   const hasConversationData = conversationsQuery.data !== undefined
   const showSkeleton = isWorkspaceLoading || (!!workspaceId && !hasConversationData && !conversationsQuery.isError)
-  const showError = !isWorkspaceLoading && (isWorkspaceError || conversationsQuery.isError)
+  const showError = !isWorkspaceLoading && (isWorkspaceError || (!hasConversationData && conversationsQuery.isError))
   const showEmpty = !showSkeleton && !showError && conversations.length === 0
 
   const handleRetry = () => {
@@ -281,6 +313,7 @@ export function InboxScreen() {
       <div className="relative min-h-0 flex-1">
         <div
           ref={scrollRef}
+          onScroll={(event) => loadNextPageIfNeeded(event.currentTarget)}
           onPointerDown={pull.handlers.onPointerDown}
           onPointerMove={pull.handlers.onPointerMove}
           onPointerUp={pull.handlers.onPointerUp}
@@ -398,6 +431,22 @@ export function InboxScreen() {
                 </div>
               )
             })}
+          </div>
+        )}
+        {!showSkeleton && !showError && conversationsQuery.isFetchingNextPage && (
+          <div className="flex h-14 items-center justify-center" aria-label="Loading more conversations">
+            <Spinner size={18} />
+          </div>
+        )}
+        {!showSkeleton && !showError && conversationsQuery.isFetchNextPageError && (
+          <div className="flex h-14 items-center justify-center">
+            <Pressable
+              haptic="impactLight"
+              onPress={() => void conversationsQuery.fetchNextPage()}
+              className="rounded-full px-4 py-2 text-footnote font-medium text-primary active:bg-primary/10"
+            >
+              Retry loading more
+            </Pressable>
           </div>
         )}
       </div>

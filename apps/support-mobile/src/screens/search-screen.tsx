@@ -1,8 +1,8 @@
-import { useDeferredValue, useEffect, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useRouter } from '@tanstack/react-router'
 import { Search, X } from 'lucide-react'
-import { useConversations } from '@helpin-ai/support-core'
+import { flattenConversationPages, useInfiniteConversations } from '@helpin-ai/support-core'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { ConversationCell } from '@mobile/inbox/conversation-cell'
@@ -44,12 +44,18 @@ export function SearchScreen() {
 
   // Passing an empty workspace id keeps the query disabled until the user has
   // entered something, avoiding an unnecessary full-inbox fetch on this tab.
-  const resultsQuery = useConversations(
+  const resultsQuery = useInfiniteConversations(
     deferredQuery ? workspaceId : '',
     deferredQuery ? { search: deferredQuery } : undefined,
     true,
   )
-  const conversations = resultsQuery.data?.data ?? []
+  const conversations = useMemo(
+    () => flattenConversationPages(resultsQuery.data),
+    [resultsQuery.data],
+  )
+  const totalResults = resultsQuery.data?.pages[0]?.total ?? conversations.length
+  const hasInitialError =
+    workspaceQuery.isError || (resultsQuery.isError && resultsQuery.data === undefined)
 
   return (
     <div className="flex h-dvh flex-col">
@@ -95,7 +101,7 @@ export function SearchScreen() {
           </div>
         )}
 
-        {deferredQuery && (workspaceQuery.isError || resultsQuery.isError) && (
+        {deferredQuery && hasInitialError && (
           <EmptyState
             icon={<Search className="h-6 w-6" />}
             title="Couldn't search conversations"
@@ -103,7 +109,7 @@ export function SearchScreen() {
           />
         )}
 
-        {deferredQuery && !resultsQuery.isPending && !resultsQuery.isError && conversations.length === 0 && (
+        {deferredQuery && !resultsQuery.isPending && !hasInitialError && conversations.length === 0 && (
           <EmptyState
             icon={<Search className="h-6 w-6" />}
             title="No results"
@@ -112,7 +118,7 @@ export function SearchScreen() {
         )}
 
         {deferredQuery && conversations.length > 0 && (
-          <div aria-live="polite" aria-label={`${conversations.length} search results`}>
+          <div aria-live="polite" aria-label={`${conversations.length} of ${totalResults} search results`}>
             {conversations.map((conversation) => (
               <ConversationCell
                 key={conversation.id}
@@ -128,6 +134,24 @@ export function SearchScreen() {
                 }
               />
             ))}
+            {resultsQuery.hasNextPage && (
+              <div className="flex justify-center px-4 py-4">
+                <Pressable
+                  haptic="impactLight"
+                  disabled={resultsQuery.isFetchingNextPage}
+                  onPress={() => void resultsQuery.fetchNextPage()}
+                  className="flex min-h-10 items-center justify-center rounded-full bg-muted px-5 text-footnote font-medium text-foreground active:bg-muted/70 disabled:opacity-60"
+                >
+                  {resultsQuery.isFetchingNextPage ? (
+                    <Spinner size={16} />
+                  ) : resultsQuery.isFetchNextPageError ? (
+                    'Retry loading more'
+                  ) : (
+                    `Load more (${Math.max(0, totalResults - conversations.length)} remaining)`
+                  )}
+                </Pressable>
+              </div>
+            )}
           </div>
         )}
       </div>

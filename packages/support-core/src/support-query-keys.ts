@@ -1,5 +1,7 @@
 export const supportQueryKeys = {
   conversations: (wsId: string) => ['support', wsId, 'conversations'] as const,
+  conversationPages: (wsId: string, filters?: object) =>
+    ['support', wsId, 'conversations', { ...filters, pagination: 'infinite' }] as const,
   conversation: (wsId: string, id: string) => ['support', wsId, 'conversations', id] as const,
   messages: (wsId: string, conversationId: string) =>
     ['support', wsId, 'conversations', conversationId, 'messages'] as const,

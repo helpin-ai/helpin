@@ -14,6 +14,7 @@ import type {
   SupportMailbox,
   SupportMailboxMember,
   SupportMessage,
+  SupportMessagePage,
   SupportTeammatePresenceStatus,
   UnreadStats,
 } from './support-types'
@@ -96,6 +97,8 @@ export interface ConversationFilters {
   sort?: string
   tag_ids?: string
   system_tags?: string
+  page?: number
+  per_page?: number
 }
 
 // Serialized in a fixed order for stable, comparable query strings.
@@ -114,6 +117,8 @@ const CONVERSATION_FILTER_KEYS = [
   'sort',
   'tag_ids',
   'system_tags',
+  'page',
+  'per_page',
 ] as const
 
 export const supportService = {
@@ -166,6 +171,17 @@ export const supportService = {
     getApi().get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
     getApi().get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
+  listConversationMessagePage: (
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    cursor?: string,
+  ) => {
+    const cursorQuery = cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''
+    return getApi().get<SupportMessagePage>(
+      `/support/inbox/conversations/${conversationId}/message-pages${qs(workspaceId)}&limit=${limit}${cursorQuery}`,
+    )
+  },
   getVisitorContext: (workspaceId: string, conversationId: string) =>
     getApi().get<VisitorContextResponse>(`/support/inbox/conversations/${conversationId}/visitor-context${qs(workspaceId)}`),
   getUnreadStats: (workspaceId: string, mailboxId?: string | null) => {

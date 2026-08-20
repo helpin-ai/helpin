@@ -227,6 +227,12 @@ export interface ConversationListResponse {
   meta: ConversationListMeta
 }
 
+export interface SupportMessagePage {
+  data: SupportMessage[]
+  has_more: boolean
+  next_cursor?: string
+}
+
 export interface SupportAttachmentPayload {
   id: string
   file_key: string
