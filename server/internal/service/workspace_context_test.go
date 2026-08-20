@@ -95,6 +95,9 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionUsesDirectWebsiteFetch
 	if llmProvider.lastRequest.Provider != "openrouter" || llmProvider.lastRequest.Model != "deepseek/deepseek-v4-flash-0731" {
 		t.Fatalf("LLM route = %q/%q, want openrouter/deepseek/deepseek-v4-flash-0731", llmProvider.lastRequest.Provider, llmProvider.lastRequest.Model)
 	}
+	if llmProvider.lastRequest.MaxTokens != 2400 {
+		t.Fatalf("LLM MaxTokens = %d, want 2400", llmProvider.lastRequest.MaxTokens)
+	}
 	promptText := strings.ToLower(llmProvider.lastRequest.SystemPrompt + "\n" + llmProvider.lastRequest.Messages[0].Content)
 	if strings.Contains(promptText, "markdown") {
 		t.Fatalf("LLM prompt should request plain text, got system=%q user=%q", llmProvider.lastRequest.SystemPrompt, llmProvider.lastRequest.Messages[0].Content)

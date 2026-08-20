@@ -110,7 +110,7 @@ Website text:
 %s`, strings.TrimSpace(req.WorkspaceName), pageText),
 		}},
 		Temperature: 0.2,
-		MaxTokens:   1200,
+		MaxTokens:   2400,
 	}
 	resp, err := s.contextLLM.ChatCompletion(meteringCtx, chatRequest)
 	if err != nil {
