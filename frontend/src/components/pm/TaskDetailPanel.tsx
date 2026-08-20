@@ -1339,10 +1339,10 @@ function TaskDetailPanelBody({
       ) : null}
 
       {/* ── Two-column grid ─────────────────────────────────────── */}
-      <div className="relative grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_300px] overflow-hidden">
+      <div className="relative grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-x-hidden overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
         {/* ── Left column (main content) ────────────────────────── */}
-        <div className="flex min-h-0 min-w-0 flex-col">
-          <div role="tablist" aria-label="Task detail views" className="flex items-center gap-6 border-b border-border/60 px-10">
+        <div className="flex min-w-0 flex-col lg:min-h-0">
+          <div role="tablist" aria-label="Task detail views" className="flex items-center gap-6 border-b border-border/60 px-4 sm:px-6 lg:px-10">
             {(['overview', 'delivery'] as TaskDetailView[]).map((view) => (
               <button
                 key={view}
@@ -1363,7 +1363,7 @@ function TaskDetailPanelBody({
             ))}
           </div>
 
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-10 pt-5">
+          <div className="min-w-0 flex-1 overflow-x-hidden px-4 pt-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:px-10">
           {activeView === 'overview' && (
           <>
           {/* Title */}
@@ -1503,12 +1503,12 @@ function TaskDetailPanelBody({
             </div>
           )}
 
-          <div className="h-40 shrink-0" aria-hidden="true" />
+          <div className="h-20 shrink-0 lg:h-40" aria-hidden="true" />
           </div>
         </div>
 
         {/* ── Right column (sidebar) ────────────────────────────── */}
-        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-5 pb-40">
+        <aside className="border-t border-border/60 px-4 py-5 pb-16 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0 lg:px-5 lg:pb-40">
           <TaskSidebarIdRow displayId={taskDetail.task.display_id} taskKey={taskDetail.task.task_key} taskName={taskDetail.task.name} taskType={taskDetail.task.task_type} />
 
           <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
@@ -2010,7 +2010,7 @@ export function TaskDetailPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="max-w-[100vw] overflow-hidden p-0 data-[side=right]:w-[80vw] data-[side=right]:!max-w-[1200px]"
+        className="h-dvh overflow-hidden p-0 data-[side=right]:w-screen data-[side=right]:!max-w-none lg:data-[side=right]:w-[80vw] lg:data-[side=right]:!max-w-[1200px]"
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(event) => {
