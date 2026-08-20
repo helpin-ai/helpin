@@ -28,6 +28,10 @@ import type {
   SupportAIRunInteractionsResponse,
   SupportAgentRun,
   SupportAgentRunMessage,
+  SupportDockChat,
+  SupportDockChatDetail,
+  SupportDockChatMessageListResponse,
+  SupportDockPageContext,
   SupportConversation,
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
@@ -35,6 +39,7 @@ import type {
   SupportMessageActionResponse,
   SupportMessageInfo,
   SupportMessagePage,
+  SupportRunInteraction,
   ResolveSupportRunInteractionRequest,
   UpdateConversationEmailRecipientsRequest,
 } from './support-types'
@@ -305,6 +310,96 @@ export function useApproveAgentRun(workspaceId: string, conversationId: string) 
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.agentRunMessages(workspaceId, run.id) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.messages(workspaceId, conversationId) })
+    },
+  })
+}
+
+export function useEnsureConversationDockChat(workspaceId: string) {
+  return useMutation<SupportDockChat, Error, string>({
+    mutationFn: async (conversationId) =>
+      unwrapOrThrow(await supportService.ensureConversationDockChat(workspaceId, conversationId)),
+  })
+}
+
+export function useSupportDockChat(workspaceId: string, chatId: string | null, enabled = true) {
+  return useQuery<SupportDockChatDetail>({
+    queryKey: supportQueryKeys.dockChat(workspaceId, chatId ?? ''),
+    queryFn: async () => unwrapOrThrow(await supportService.getSupportDockChat(workspaceId, chatId!)),
+    enabled: enabled && !!workspaceId && !!chatId,
+    staleTime: 3_000,
+    refetchInterval: enabled ? 5_000 : false,
+  })
+}
+
+export function useSupportDockChatMessages(workspaceId: string, chatId: string | null, enabled = true) {
+  return useQuery<SupportDockChatMessageListResponse>({
+    queryKey: supportQueryKeys.dockChatMessages(workspaceId, chatId ?? ''),
+    queryFn: async () => unwrapOrThrow(await supportService.listSupportDockChatMessages(workspaceId, chatId!)),
+    enabled: enabled && !!workspaceId && !!chatId,
+    staleTime: 2_000,
+    refetchInterval: enabled ? 3_000 : false,
+  })
+}
+
+export function useSendSupportDockChatMessage(workspaceId: string, chatId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<SupportDockChatDetail, Error, {
+    clientMessageId: string
+    content: string
+    pageContext: SupportDockPageContext
+  }>({
+    mutationFn: async ({ clientMessageId, content, pageContext }) =>
+      unwrapOrThrow(await supportService.sendSupportDockChatMessage(workspaceId, chatId, {
+        client_message_id: clientMessageId,
+        content,
+        page_context: pageContext,
+      })),
+    onSuccess: (detail) => {
+      queryClient.setQueryData(supportQueryKeys.dockChat(workspaceId, chatId), detail)
+      if (detail.accepted_message) {
+        queryClient.setQueryData<SupportDockChatMessageListResponse>(
+          supportQueryKeys.dockChatMessages(workspaceId, chatId),
+          (current) => ({
+            messages: current?.messages.some((message) => message.id === detail.accepted_message?.id)
+              ? current.messages
+              : [...(current?.messages ?? []), detail.accepted_message!],
+            next_before: current?.next_before,
+          }),
+        )
+      }
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.dockChatMessages(workspaceId, chatId) })
+    },
+  })
+}
+
+export function useGenerateSupportDockChatTitle(workspaceId: string, chatId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ content, pageContext }: { content: string; pageContext: SupportDockPageContext }) =>
+      unwrapOrThrow(await supportService.generateSupportDockChatTitle(workspaceId, chatId, content, pageContext)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: supportQueryKeys.dockChat(workspaceId, chatId) }),
+  })
+}
+
+export function useSupportDockRunInteractions(workspaceId: string, chatId: string | null, enabled = true) {
+  return useQuery<{ interactions: SupportRunInteraction[] }>({
+    queryKey: supportQueryKeys.dockRunInteractions(workspaceId, chatId ?? ''),
+    queryFn: async () => unwrapOrThrow(await supportService.listSupportDockRunInteractions(workspaceId, chatId!)),
+    enabled: enabled && !!workspaceId && !!chatId,
+    staleTime: 5_000,
+    refetchInterval: enabled ? 5_000 : false,
+  })
+}
+
+export function useResolveSupportDockRunInteraction(workspaceId: string, chatId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ interactionId, payload }: { interactionId: string; payload: ResolveSupportRunInteractionRequest }) =>
+      unwrapOrThrow(await supportService.resolveSupportDockRunInteraction(workspaceId, chatId, interactionId, payload)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.dockRunInteractions(workspaceId, chatId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.dockChat(workspaceId, chatId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.dockChatMessages(workspaceId, chatId) })
     },
   })
 }

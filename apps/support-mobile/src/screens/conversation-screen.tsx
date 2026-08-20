@@ -40,6 +40,7 @@ import { ConversationActionsSheet } from '@mobile/thread/conversation-actions-sh
 import { buildTriageBanner } from '@mobile/thread/triage-banner'
 import { AIRunApprovals } from '@mobile/thread/ai-run-approvals'
 import { AssignedAgentRuns } from '@mobile/thread/assigned-agent-runs'
+import { AskAgentSheet } from '@mobile/thread/ask-agent-sheet'
 import { MessageActionsSheet } from '@mobile/thread/message-actions-sheet'
 import { useDraftStore } from '@mobile/thread/draft-store'
 import { haptic } from '@mobile/lib/haptics'
@@ -210,6 +211,7 @@ export function ConversationScreen() {
   const [showNewMessagePill, setShowNewMessagePill] = useState(false)
   const [contextSheetOpen, setContextSheetOpen] = useState(false)
   const [actionsSheetOpen, setActionsSheetOpen] = useState(false)
+  const [askAgentOpen, setAskAgentOpen] = useState(false)
   const [selectedMessage, setSelectedMessage] = useState<SupportMessage | null>(null)
   const setDraftText = useDraftStore((state) => state.setText)
   const setDraftMode = useDraftStore((state) => state.setMode)
@@ -284,25 +286,32 @@ export function ConversationScreen() {
         onTitlePress={() => setContextSheetOpen(true)}
         titleSlot={<span className="max-w-[200px] truncate text-headline">{conversationTitle}</span>}
         trailing={
-          conversation && canEditSupport && (
+          conversation && canReadSupport && (
             <>
-              <Pressable
-                aria-label={isResolved ? 'Reopen conversation' : 'Resolve conversation'}
-                haptic="selection"
-                onPress={handleToggleResolve}
-                disabled={updateStatus.isPending}
-                className="flex h-9 w-9 items-center justify-center rounded-full active:bg-muted disabled:opacity-40"
-              >
-                <CheckCircle2 className={cn('h-6 w-6', isResolved ? 'text-green-500' : 'text-muted-foreground')} />
+              <Pressable aria-label="Ask Agent about this conversation" haptic="selection" onPress={() => setAskAgentOpen(true)} className="flex h-9 w-9 items-center justify-center rounded-full text-primary active:bg-primary/10">
+                <Sparkles className="h-5 w-5" />
               </Pressable>
-              <Pressable
-                aria-label="Conversation actions"
-                haptic="selection"
-                onPress={() => setActionsSheetOpen(true)}
-                className="flex h-9 w-9 items-center justify-center rounded-full active:bg-muted"
-              >
-                <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
-              </Pressable>
+              {canEditSupport && (
+                <>
+                  <Pressable
+                    aria-label={isResolved ? 'Reopen conversation' : 'Resolve conversation'}
+                    haptic="selection"
+                    onPress={handleToggleResolve}
+                    disabled={updateStatus.isPending}
+                    className="flex h-9 w-9 items-center justify-center rounded-full active:bg-muted disabled:opacity-40"
+                  >
+                    <CheckCircle2 className={cn('h-6 w-6', isResolved ? 'text-green-500' : 'text-muted-foreground')} />
+                  </Pressable>
+                  <Pressable
+                    aria-label="Conversation actions"
+                    haptic="selection"
+                    onPress={() => setActionsSheetOpen(true)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full active:bg-muted"
+                  >
+                    <MoreHorizontal className="h-5 w-5 text-muted-foreground" />
+                  </Pressable>
+                </>
+              )}
             </>
           )
         }
@@ -471,6 +480,16 @@ export function ConversationScreen() {
         onOpenChange={setContextSheetOpen}
         canEdit={canEditSupport}
       />
+
+      {conversation && canReadSupport && (
+        <AskAgentSheet
+          workspaceId={supportWorkspaceId}
+          conversation={conversation}
+          open={askAgentOpen}
+          onOpenChange={setAskAgentOpen}
+          canResolveInteractions={canEditSupport}
+        />
+      )}
 
       {conversation && canEditSupport && (
         <ConversationActionsSheet

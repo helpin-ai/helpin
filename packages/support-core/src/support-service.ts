@@ -13,6 +13,11 @@ import type {
   SupportAIRunInteractionsResponse,
   SupportAgentRun,
   SupportAgentRunMessage,
+  SupportDockChat,
+  SupportDockChatDetail,
+  SupportDockChatMessageListResponse,
+  SupportDockPageContext,
+  SendSupportDockChatMessageRequest,
   SupportAttachmentInitResponse,
   SupportCannedResponse,
   SupportConversation,
@@ -284,6 +289,52 @@ export const supportService = {
       `/automation/runs/${encodeURIComponent(runId)}/approve${qs(workspaceId)}`,
       { send_message: true },
     ),
+  ensureConversationDockChat: (workspaceId: string, conversationId: string) =>
+    getApi().post<SupportDockChat>(`/dock/chats${qs(workspaceId)}`, {
+      title: '',
+      support_conversation_id: conversationId,
+      module_id: 'support',
+      visibility: 'module',
+    }),
+  getSupportDockChat: (workspaceId: string, chatId: string) =>
+    getApi().get<SupportDockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}${qs(workspaceId)}`),
+  listSupportDockChatMessages: (workspaceId: string, chatId: string, before?: number | null) => {
+    const query = new URLSearchParams({ workspace_id: workspaceId, limit: '50' })
+    if (before) query.set('before', String(before))
+    return getApi().get<SupportDockChatMessageListResponse>(
+      `/dock/chats/${encodeURIComponent(chatId)}/messages?${query.toString()}`,
+    )
+  },
+  sendSupportDockChatMessage: (
+    workspaceId: string,
+    chatId: string,
+    payload: SendSupportDockChatMessageRequest,
+  ) => getApi().post<SupportDockChatDetail>(
+    `/dock/chats/${encodeURIComponent(chatId)}/messages${qs(workspaceId)}`,
+    payload,
+  ),
+  generateSupportDockChatTitle: (
+    workspaceId: string,
+    chatId: string,
+    content: string,
+    pageContext: SupportDockPageContext,
+  ) => getApi().post<SupportDockChat>(
+    `/dock/chats/${encodeURIComponent(chatId)}/title${qs(workspaceId)}`,
+    { content, page_context: pageContext },
+  ),
+  listSupportDockRunInteractions: (workspaceId: string, chatId: string) =>
+    getApi().get<{ interactions: SupportRunInteraction[] }>(
+      `/dock/chats/${encodeURIComponent(chatId)}/run/interactions${qs(workspaceId)}`,
+    ),
+  resolveSupportDockRunInteraction: (
+    workspaceId: string,
+    chatId: string,
+    interactionId: string,
+    payload: ResolveSupportRunInteractionRequest,
+  ) => getApi().post<SupportRunInteraction>(
+    `/dock/chats/${encodeURIComponent(chatId)}/interactions/${encodeURIComponent(interactionId)}/resolve${qs(workspaceId)}`,
+    payload,
+  ),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
     getApi().get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
   deleteConversationMessage: (

@@ -160,6 +160,32 @@ describe('supportService mutations (unit, no React)', () => {
       { send_message: true },
     )
   })
+
+  it('uses the conversation-scoped Ask Agents chat contract', async () => {
+    fakeApi.post.mockResolvedValue({ data: { id: 'chat-1' }, error: null })
+    fakeApi.get.mockResolvedValue({ data: { messages: [] }, error: null })
+    const pageContext = { entity_type: 'support_conversation', entity_id: CONVERSATION_ID, display_title: 'Refund request' } as const
+
+    await supportService.ensureConversationDockChat(WORKSPACE_ID, CONVERSATION_ID)
+    await supportService.listSupportDockChatMessages(WORKSPACE_ID, 'chat/1')
+    await supportService.sendSupportDockChatMessage(WORKSPACE_ID, 'chat/1', {
+      client_message_id: '00000000-0000-4000-8000-000000000001', content: 'Draft a reply', page_context: pageContext,
+    })
+    await supportService.listSupportDockRunInteractions(WORKSPACE_ID, 'chat/1')
+    await supportService.resolveSupportDockRunInteraction(WORKSPACE_ID, 'chat/1', 'int/1', { response_payload: { decision: 'approve' } })
+
+    expect(fakeApi.post).toHaveBeenNthCalledWith(1, '/dock/chats?workspace_id=ws-1', {
+      title: '', support_conversation_id: CONVERSATION_ID, module_id: 'support', visibility: 'module',
+    })
+    expect(fakeApi.get).toHaveBeenNthCalledWith(1, '/dock/chats/chat%2F1/messages?workspace_id=ws-1&limit=50')
+    expect(fakeApi.post).toHaveBeenNthCalledWith(2, '/dock/chats/chat%2F1/messages?workspace_id=ws-1', {
+      client_message_id: '00000000-0000-4000-8000-000000000001', content: 'Draft a reply', page_context: pageContext,
+    })
+    expect(fakeApi.get).toHaveBeenNthCalledWith(2, '/dock/chats/chat%2F1/run/interactions?workspace_id=ws-1')
+    expect(fakeApi.post).toHaveBeenNthCalledWith(3, '/dock/chats/chat%2F1/interactions/int%2F1/resolve?workspace_id=ws-1', {
+      response_payload: { decision: 'approve' },
+    })
+  })
 })
 
 describe('useApproveAgentRun', () => {

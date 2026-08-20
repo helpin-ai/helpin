@@ -195,11 +195,53 @@ export interface SupportAgentRunMessage {
   id: string
   workspace_id: string
   run_id: string
+  dock_chat_sequence?: number
+  client_message_id?: string
   role: string
   content: string
   message_type: string
   sequence_no: number
   created_at: string
+}
+
+export interface SupportDockChat {
+  id: string
+  workspace_id: string
+  user_id: string
+  title: string
+  visibility: 'private' | 'module' | 'workspace'
+  module_id?: 'support' | 'crm' | 'pm' | 'docs' | null
+  support_conversation_id?: string | null
+  active_run_id?: string | null
+  active_run_status?: SupportAgentRunStatus | null
+  last_message_at?: string | null
+  archived_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportDockChatDetail {
+  chat: SupportDockChat
+  run?: SupportAgentRun | null
+  accepted_message?: SupportAgentRunMessage | null
+  plan_ids: string[]
+}
+
+export interface SupportDockChatMessageListResponse {
+  messages: SupportAgentRunMessage[]
+  next_before?: number | null
+}
+
+export interface SupportDockPageContext {
+  entity_type: 'support_conversation'
+  entity_id: string
+  display_title: string
+}
+
+export interface SendSupportDockChatMessageRequest {
+  client_message_id: string
+  content: string
+  page_context: SupportDockPageContext
 }
 
 export interface SupportConversation {

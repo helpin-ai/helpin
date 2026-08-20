@@ -22,28 +22,62 @@ export function AIRunApprovals({ workspaceId, conversationId, enabled }: {
   enabled: boolean
 }) {
   const interactionsQuery = useConversationAIRunInteractions(workspaceId, conversationId, enabled)
-  const pending = (interactionsQuery.data?.interactions ?? []).filter((item) => item.status === 'pending' && interactionId(item))
-  if (!enabled || pending.length === 0) return null
+  const resolve = useResolveConversationAIRunInteraction(workspaceId, conversationId)
+  if (!enabled) return null
   return (
-    <div className="space-y-2 border-b border-amber-200/70 bg-amber-50/50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-      <div className="flex items-center gap-2 text-footnote font-semibold"><ShieldCheck className="h-4 w-4 text-amber-600" />AI agent needs your input</div>
-      {pending.map((interaction) => <InteractionCard key={interactionId(interaction)} workspaceId={workspaceId} conversationId={conversationId} interaction={interaction} />)}
+    <RunInteractionCards
+      interactions={interactionsQuery.data?.interactions ?? []}
+      onResolve={(variables, options) => resolve.mutate(variables, options)}
+      resolving={resolve.isPending}
+    />
+  )
+}
+
+interface ResolveInteractionVariables {
+  interactionId: string
+  payload: { response_payload: Record<string, unknown>; followup_message?: string }
+}
+
+export function RunInteractionCards({ interactions, onResolve, resolving, inline = false }: {
+  interactions: SupportRunInteraction[]
+  onResolve: (
+    variables: ResolveInteractionVariables,
+    options: { onSuccess: () => void; onError: () => void },
+  ) => void
+  resolving: boolean
+  inline?: boolean
+}) {
+  const pending = interactions.filter((item) => item.status === 'pending' && interactionId(item))
+  if (pending.length === 0) return null
+  return (
+    <div className={cn('space-y-2', !inline && 'border-b border-amber-200/70 bg-amber-50/50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/20')}>
+      <div className="flex items-center gap-2 text-footnote font-semibold"><ShieldCheck className="h-4 w-4 text-amber-600" />Agent needs your input</div>
+      {pending.map((interaction) => (
+        <InteractionCard
+          key={interactionId(interaction)}
+          interaction={interaction}
+          onResolve={onResolve}
+          resolving={resolving}
+        />
+      ))}
     </div>
   )
 }
 
-function InteractionCard({ workspaceId, conversationId, interaction }: {
-  workspaceId: string
-  conversationId: string
+function InteractionCard({ interaction, onResolve, resolving }: {
   interaction: SupportRunInteraction
+  onResolve: (
+    variables: ResolveInteractionVariables,
+    options: { onSuccess: () => void; onError: () => void },
+  ) => void
+  resolving: boolean
 }) {
-  const resolve = useResolveConversationAIRunInteraction(workspaceId, conversationId)
   const [note, setNote] = useState('')
   const [answers, setAnswers] = useState<Record<string, { value?: string; freetext?: string }>>({})
   const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([])
   const questions = parseInteractionQuestions(interaction.request_payload)
   const id = interactionId(interaction)
-  const submit = (responsePayload: Record<string, unknown>) => resolve.mutate(
+  const submit = (responsePayload: Record<string, unknown>) => onResolve(
     { interactionId: id, payload: { response_payload: responsePayload, ...(note.trim() ? { followup_message: note.trim() } : {}) } },
     { onSuccess: () => toast.success('Response sent'), onError: () => toast.error('Could not send response') },
   )
@@ -74,7 +108,7 @@ function InteractionCard({ workspaceId, conversationId, interaction }: {
               {needsText && <input type={question.secret ? 'password' : 'text'} value={answer?.freetext ?? ''} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: { ...current[question.id], freetext: event.target.value } }))} placeholder="Type your answer" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-body outline-none" />}
             </div>
           })}
-          <ActionButton disabled={!questionsAnswered(questions, answers)} busy={resolve.isPending} onPress={() => submit(buildQuestionResponse(questions, answers))}>Submit answers</ActionButton>
+          <ActionButton disabled={!questionsAnswered(questions, answers)} busy={resolving} onPress={() => submit(buildQuestionResponse(questions, answers))}>Submit answers</ActionButton>
         </div>
       )}
 
@@ -84,9 +118,9 @@ function InteractionCard({ workspaceId, conversationId, interaction }: {
           {interaction.interaction_kind === 'review_checkpoint' && findings.length > 0 && <div className="space-y-1"><p className="text-caption font-semibold uppercase tracking-wide text-muted-foreground">Select findings to continue</p>{findings.map((finding) => { const selected = selectedFindingIds.includes(finding.id); return <Pressable key={finding.id} aria-pressed={selected} onPress={() => setSelectedFindingIds((current) => selected ? current.filter((id) => id !== finding.id) : [...current, finding.id])} className={cn('flex min-h-11 items-start gap-2 rounded-xl border p-3 text-left', selected ? 'border-primary/40 bg-primary/5' : 'border-border')}><span className="min-w-0 flex-1"><span className="block text-footnote font-medium">{finding.title}</span>{finding.body && <span className="mt-0.5 block text-caption text-muted-foreground">{finding.body}</span>}</span>{finding.priority && <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase">{finding.priority}</span>}{selected && <Check className="h-4 w-4 shrink-0 text-primary" />}</Pressable> })}</div>}
           {!isRuntimeApproval && interaction.interaction_kind !== 'permissions_approval' && <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional note" className="min-h-20 w-full rounded-xl border border-input bg-background p-3 text-body outline-none" />}
           <div className="flex flex-wrap gap-2">
-            {(interaction.interaction_kind === 'approval_request' || interaction.interaction_kind === 'review_checkpoint') && <><ActionButton disabled={interaction.interaction_kind === 'review_checkpoint' && findings.length > 0 && selectedFindingIds.length === 0} busy={resolve.isPending} onPress={() => submit({ decision: 'approve', ...(interaction.interaction_kind === 'review_checkpoint' && findings.length > 0 ? { selection_mode: 'selected', selected_finding_ids: selectedFindingIds } : {}) })}>Approve</ActionButton><ActionButton secondary busy={resolve.isPending} onPress={() => submit({ decision: 'request_changes', ...(interaction.interaction_kind === 'review_checkpoint' && findings.length > 0 ? { selection_mode: selectedFindingIds.length > 0 ? 'selected' : 'all', ...(selectedFindingIds.length > 0 ? { selected_finding_ids: selectedFindingIds } : {}) } : {}) })}>Request changes</ActionButton>{interaction.interaction_kind === 'review_checkpoint' && findings.length > 0 && <ActionButton secondary busy={resolve.isPending} onPress={() => submit({ decision: 'skip', selection_mode: 'none', selected_finding_ids: [] })}>Skip</ActionButton>}</>}
-            {interaction.interaction_kind === 'permissions_approval' && <><ActionButton busy={resolve.isPending} onPress={() => submit({ permissions: requestedPermissions, scope: 'turn' })}>Allow for turn</ActionButton><ActionButton secondary busy={resolve.isPending} onPress={() => submit({ permissions: requestedPermissions, scope: 'session' })}>Allow for session</ActionButton><ActionButton secondary busy={resolve.isPending} onPress={() => submit({ permissions: {}, scope: 'turn' })}>Deny</ActionButton></>}
-            {isRuntimeApproval && decisions.map((decision) => <ActionButton key={decision} secondary={!decision.startsWith('accept')} busy={resolve.isPending} onPress={() => submit({ decision })}>{decision === 'acceptForSession' ? 'Allow for session' : decision === 'accept' ? 'Allow' : decision === 'decline' ? 'Deny' : 'Cancel'}</ActionButton>)}
+            {(interaction.interaction_kind === 'approval_request' || interaction.interaction_kind === 'review_checkpoint') && <><ActionButton disabled={interaction.interaction_kind === 'review_checkpoint' && findings.length > 0 && selectedFindingIds.length === 0} busy={resolving} onPress={() => submit({ decision: 'approve', ...(interaction.interaction_kind === 'review_checkpoint' && findings.length > 0 ? { selection_mode: 'selected', selected_finding_ids: selectedFindingIds } : {}) })}>Approve</ActionButton><ActionButton secondary busy={resolving} onPress={() => submit({ decision: 'request_changes', ...(interaction.interaction_kind === 'review_checkpoint' && findings.length > 0 ? { selection_mode: selectedFindingIds.length > 0 ? 'selected' : 'all', ...(selectedFindingIds.length > 0 ? { selected_finding_ids: selectedFindingIds } : {}) } : {}) })}>Request changes</ActionButton>{interaction.interaction_kind === 'review_checkpoint' && findings.length > 0 && <ActionButton secondary busy={resolving} onPress={() => submit({ decision: 'skip', selection_mode: 'none', selected_finding_ids: [] })}>Skip</ActionButton>}</>}
+            {interaction.interaction_kind === 'permissions_approval' && <><ActionButton busy={resolving} onPress={() => submit({ permissions: requestedPermissions, scope: 'turn' })}>Allow for turn</ActionButton><ActionButton secondary busy={resolving} onPress={() => submit({ permissions: requestedPermissions, scope: 'session' })}>Allow for session</ActionButton><ActionButton secondary busy={resolving} onPress={() => submit({ permissions: {}, scope: 'turn' })}>Deny</ActionButton></>}
+            {isRuntimeApproval && decisions.map((decision) => <ActionButton key={decision} secondary={!decision.startsWith('accept')} busy={resolving} onPress={() => submit({ decision })}>{decision === 'acceptForSession' ? 'Allow for session' : decision === 'accept' ? 'Allow' : decision === 'decline' ? 'Deny' : 'Cancel'}</ActionButton>)}
           </div>
         </div>
       )}

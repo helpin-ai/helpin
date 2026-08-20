@@ -11,6 +11,11 @@ export const supportQueryKeys = {
     ['support', wsId, 'conversations', conversationId, 'agent-runs'] as const,
   agentRunMessages: (wsId: string, runId: string) =>
     ['support', wsId, 'agent-runs', runId, 'messages'] as const,
+  dockChat: (wsId: string, chatId: string) => ['support', wsId, 'dock-chats', chatId] as const,
+  dockChatMessages: (wsId: string, chatId: string) =>
+    ['support', wsId, 'dock-chats', chatId, 'messages'] as const,
+  dockRunInteractions: (wsId: string, chatId: string) =>
+    ['support', wsId, 'dock-chats', chatId, 'run-interactions'] as const,
   messages: (wsId: string, conversationId: string) =>
     ['support', wsId, 'conversations', conversationId, 'messages'] as const,
   messageInfo: (wsId: string, conversationId: string, messageId: string) =>

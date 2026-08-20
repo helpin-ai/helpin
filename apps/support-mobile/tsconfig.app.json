@@ -33,7 +33,8 @@
       "@/components/support/conversationRowVisual": ["../../frontend/src/components/support/conversationRowVisual.ts"],
       "@/components/support/supportSystemEvent": ["../../frontend/src/components/support/supportSystemEvent.ts"],
       "@/components/support/shortcutFiltering": ["../../frontend/src/components/support/shortcutFiltering.ts"],
-      "@/components/support/shortcutVariables": ["../../frontend/src/components/support/shortcutVariables.ts"]
+      "@/components/support/shortcutVariables": ["../../frontend/src/components/support/shortcutVariables.ts"],
+      "@/components/agents/dock/starterSuggestions": ["../../frontend/src/components/agents/dock/starterSuggestions.ts"]
     }
   },
   "include": ["src"]
