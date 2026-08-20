@@ -7,7 +7,7 @@ Vite/React frontend at `apps/support-mobile/src` with a thin native shell in
 ## Stack
 
 - Frontend: Vite 7 + React 19 + TypeScript, dev server on port `5176`
-- Native shell: Tauri 2.9 (`src-tauri/`), plugins: `tauri-plugin-notification`, `tauri-plugin-store`, `tauri-plugin-deep-link`, `tauri-plugin-opener`
+- Native shell: Tauri 2.11 (`src-tauri/`), plugins: `tauri-plugin-notification`, `tauri-plugin-store`, `tauri-plugin-deep-link`, `tauri-plugin-opener`
 - Rust command: `mobile_shell_info()` returns `{ runtime, platform, app_version }` (mirrors desktop's `desktop_shell_info`)
 
 ## Environment prerequisites

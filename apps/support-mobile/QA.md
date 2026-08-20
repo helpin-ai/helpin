@@ -10,6 +10,38 @@ that could be verified from source, `pnpm build`, and `pnpm test` was
 measured or code-reviewed directly, and gaps found were fixed in this same
 pass (see "Fixes applied").
 
+## 2026-08-20 parity and build revalidation
+
+The support-agent parity follow-up was revalidated after adding full-text
+search, inbox discovery, outbound attachments, message actions, contacts and
+recipients, CRM contact management, linked tasks, AI triage/run interactions,
+Ask Agent, teammate availability, modern sign-in, colored conversation
+avatars, and the daily composer tools (recipient confirmation, emoji picker,
+and shortcut management).
+
+- `apps/support-mobile`: **73 test files / 433 tests passed**.
+- `packages/support-core`: **9 test files / 46 tests passed**.
+- Mobile and support-core TypeScript checks passed.
+- The production mobile web build passed. Current assets are:
+  `index-*.js` 780.52 kB raw / **240.14 kB gzip**,
+  `conversation-screen-*.js` 309.59 kB raw / **91.27 kB gzip**, and
+  `emoji-catalog-*.js` 12.25 kB raw / **4.28 kB gzip**. The initial entry
+  remains far below the 900 kB gzip hard gate.
+- `tauri info` found that the JavaScript API had advanced to 2.11.1 while
+  the Rust crate manifest still requested 2.9.1. The Rust manifest was
+  aligned to 2.11.1. Native compilation is still pending because this host
+  has no Rust, Cargo, Android SDK/NDK, generated Android project, macOS/Xcode,
+  or generated Apple project.
+
+The daily mobile support workflow now covers inbox/search/view discovery,
+conversation and history pagination, reply/note/attachments/CC/recipient
+confirmation, emoji and shortcuts, message and conversation actions,
+assignment/tags/teammate presence, customer/visitor/CRM context, linked tasks,
+AI triage/rewrite/Ask Agent/runs/approvals, realtime, push/deep-link client
+flows, and password/Google/passkey sign-in. Workspace administration,
+team-inbox creation/configuration, Support Coverage analytics, and support
+settings remain web surfaces rather than mobile-agent workflow gaps.
+
 ---
 
 ## 1. Performance audit against A7 budgets
