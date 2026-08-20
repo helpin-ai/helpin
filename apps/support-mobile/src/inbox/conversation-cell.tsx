@@ -9,6 +9,7 @@ import {
   isNotePreview,
   stripNotePrefix,
 } from '@/components/support/conversationRowVisual'
+import { getAvatarColor } from '@/components/support/helpers'
 import { cn } from '@mobile/lib/cn'
 import { Avatar } from '@mobile/ui/avatar'
 import { CONVERSATION_CELL_HEIGHT, formatRelativeTime, isUnread, previewText } from './inbox-helpers'
@@ -145,7 +146,13 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
       )}
     >
       <div className="relative shrink-0">
-        <Avatar name={displayName} size={44} />
+        <Avatar
+          name={displayName}
+          size={44}
+          className={getAvatarColor(
+            conversation.customer_email || conversation.customer_name || conversation.id,
+          )}
+        />
         {isVisitorOnline && (
           <span
             aria-label="Visitor online"

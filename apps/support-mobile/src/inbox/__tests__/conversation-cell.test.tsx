@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import type { SupportConversation } from '@helpin-ai/support-core'
+import { getAvatarColor } from '@/components/support/helpers'
 import { ConversationCell } from '../conversation-cell'
 
 function conversation(overrides: Partial<SupportConversation> = {}): SupportConversation {
@@ -25,6 +26,13 @@ test('renders customer name, preview, and relative time', () => {
   expect(screen.getByTestId('conversation-name').textContent).toBe('Ada Lovelace')
   expect(screen.getByTestId('conversation-preview').textContent).toBe('Can you help me with my invoice?')
   expect(screen.getByTestId('conversation-time').textContent).toBeTruthy()
+})
+
+test('uses the same deterministic support badge color as the web conversation list', () => {
+  render(<ConversationCell conversation={conversation({ customer_email: 'ada@example.com' })} onPress={vi.fn()} />)
+
+  const avatar = screen.getByText('AL').parentElement
+  expect(avatar?.className).toContain(getAvatarColor('ada@example.com').split(' ')[0])
 })
 
 test('no unread count badge when the conversation is read', () => {
