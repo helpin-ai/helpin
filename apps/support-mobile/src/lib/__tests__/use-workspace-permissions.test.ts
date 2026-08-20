@@ -24,6 +24,8 @@ describe('supportPermissionFlags', () => {
       canReadSupport: true,
       canEditSupport: false,
       canAdminSupport: false,
+      canReadPM: false,
+      canEditPM: false,
     })
   })
 
@@ -36,6 +38,8 @@ describe('supportPermissionFlags', () => {
       canReadSupport: true,
       canEditSupport: true,
       canAdminSupport: true,
+      canReadPM: false,
+      canEditPM: false,
     })
   })
 
@@ -48,6 +52,19 @@ describe('supportPermissionFlags', () => {
       canReadSupport: false,
       canEditSupport: false,
       canAdminSupport: false,
+      canReadPM: false,
+      canEditPM: false,
+    })
+  })
+
+  it('requires both the PM module and matching permissions for linked tasks', () => {
+    expect(supportPermissionFlags(access(['support.read', 'pm.read', 'pm.edit'], ['support', 'pm']))).toMatchObject({
+      canReadPM: true,
+      canEditPM: true,
+    })
+    expect(supportPermissionFlags(access(['support.read', 'pm.read'], ['support']))).toMatchObject({
+      canReadPM: false,
+      canEditPM: false,
     })
   })
 })

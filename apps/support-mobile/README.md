@@ -41,6 +41,12 @@ locally hosted API:
 
 Set this in `apps/support-mobile/.env.local` (create it if it doesn't exist).
 
+Set `VITE_WEB_APP_URL` to the matching Helpin web application origin (for
+example `https://stage.helpin.ai`). Linked PM tasks created from a support
+conversation open at that origin in the system browser. When omitted, the
+current page origin is used, which is suitable only when that origin also
+serves the main Helpin web routes.
+
 ## Google and passkey sign-in
 
 Google uses the existing backend callback configured by

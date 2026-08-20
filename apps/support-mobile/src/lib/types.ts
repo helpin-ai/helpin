@@ -42,10 +42,26 @@ export interface WorkspaceAccess {
     user_id: string
     role: 'owner' | 'admin' | 'member' | 'viewer'
     status: string
+    support_default_team_id?: string
+    support_task_dialog_dismissed?: boolean
   }
   permissions: string[]
   team_memberships: Array<{ team_id: string; role: string }>
   modules: string[]
+}
+
+export interface WorkspaceTeam {
+  id: string
+  workspace_id: string
+  name: string
+  handle?: string
+  description?: string
+  team_type?: 'engineering' | 'product' | 'design' | 'support' | 'marketing' | 'sales' | 'hr' | 'operations' | 'custom'
+  default_task_type?: 'feature' | 'bug' | 'chore'
+}
+
+export interface WorkspaceSettingsSummary {
+  teams: WorkspaceTeam[]
 }
 
 export interface Workspace {

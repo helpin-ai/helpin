@@ -11,6 +11,7 @@ import {
   useUpdateConversationStatus,
   useAssignConversationUser,
   useConversationAssignees,
+  useCreateTaskFromConversation,
 } from '../use-support-core'
 import type { SupportMessage } from '../support-types'
 
@@ -104,6 +105,45 @@ describe('supportService mutations (unit, no React)', () => {
     expect(fakeApi.get).toHaveBeenCalledWith(
       `/support/inbox/conversations/${CONVERSATION_ID}/assignees?workspace_id=${WORKSPACE_ID}`,
     )
+  })
+
+  it('createTaskFromConversation posts the selected team to the verified endpoint', async () => {
+    fakeApi.post.mockResolvedValue({ data: { task_id: 'task-1', task_key: 'ENG-1' }, error: null })
+
+    await supportService.createTaskFromConversation(WORKSPACE_ID, CONVERSATION_ID, { team_id: 'team-1' })
+
+    expect(fakeApi.post).toHaveBeenCalledWith(
+      `/support/inbox/conversations/${CONVERSATION_ID}/create-task?workspace_id=${WORKSPACE_ID}`,
+      { team_id: 'team-1' },
+    )
+  })
+})
+
+describe('useCreateTaskFromConversation', () => {
+  it('returns the created task and invalidates conversation and message queries', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.post.mockResolvedValue({
+      data: {
+        task_id: 'task-1', display_id: 1, task_key: 'ENG-1', task_name: 'Fix billing',
+        copied_contact_associations: 1, copied_company_associations: 0, copied_deal_associations: 0,
+      },
+      error: null,
+    })
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useCreateTaskFromConversation(WORKSPACE_ID), {
+      wrapper: wrapperFor(queryClient),
+    })
+
+    let created: { task_id: string } | undefined
+    await act(async () => {
+      created = await result.current.mutateAsync({ conversationId: CONVERSATION_ID, teamId: 'team-1' })
+    })
+
+    expect(created?.task_id).toBe('task-1')
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: supportQueryKeys.conversation(WORKSPACE_ID, CONVERSATION_ID) })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: supportQueryKeys.messages(WORKSPACE_ID, CONVERSATION_ID) })
   })
 })
 

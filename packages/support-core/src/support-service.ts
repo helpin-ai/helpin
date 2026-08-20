@@ -5,6 +5,8 @@ import type {
   ConversationStatus,
   CreateConversationWithMessageRequest,
   CreateConversationWithMessageResponse,
+  CreateTaskFromConversationRequest,
+  CreateTaskFromConversationResponse,
   SendSupportConversationTranscriptResponse,
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
@@ -238,6 +240,14 @@ export const supportService = {
       `/support/inbox/conversations/create-and-send${qs(workspaceId)}`,
       payload,
     ),
+  createTaskFromConversation: (
+    workspaceId: string,
+    conversationId: string,
+    payload: CreateTaskFromConversationRequest,
+  ) => getApi().post<CreateTaskFromConversationResponse>(
+    `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
+    payload,
+  ),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
     getApi().get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
   deleteConversationMessage: (

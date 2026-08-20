@@ -7,6 +7,8 @@ export interface SupportPermissionFlags {
   canReadSupport: boolean
   canEditSupport: boolean
   canAdminSupport: boolean
+  canReadPM: boolean
+  canEditPM: boolean
 }
 
 export function supportPermissionFlags(access?: WorkspaceAccess | null): SupportPermissionFlags {
@@ -16,6 +18,8 @@ export function supportPermissionFlags(access?: WorkspaceAccess | null): Support
     canReadSupport: hasSupportModule && permissions.has('support.read'),
     canEditSupport: hasSupportModule && permissions.has('support.edit'),
     canAdminSupport: hasSupportModule && permissions.has('support.admin'),
+    canReadPM: (access?.modules.includes('pm') ?? false) && permissions.has('pm.read'),
+    canEditPM: (access?.modules.includes('pm') ?? false) && permissions.has('pm.edit'),
   }
 }
 

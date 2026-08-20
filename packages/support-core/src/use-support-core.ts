@@ -22,6 +22,7 @@ import type {
   ConversationStatus,
   CreateConversationWithMessageRequest,
   CreateConversationWithMessageResponse,
+  CreateTaskFromConversationResponse,
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportConversation,
@@ -262,6 +263,22 @@ export function useCreateConversationWithMessage(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxScopes(workspaceId) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.unreadStats(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxViewCounts(workspaceId) })
+    },
+  })
+}
+
+export function useCreateTaskFromConversation(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ conversationId, teamId }: { conversationId: string; teamId: string }) =>
+      unwrapOrThrow<CreateTaskFromConversationResponse>(
+        await supportService.createTaskFromConversation(workspaceId, conversationId, { team_id: teamId }),
+      ),
+    onSuccess: (_data, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.messages(workspaceId, conversationId) })
       queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxViewCounts(workspaceId) })
     },
   })

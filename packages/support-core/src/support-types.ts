@@ -112,6 +112,25 @@ export interface UpdateConversationEmailRecipientsRequest {
   confirm_primary?: boolean
 }
 
+export interface CreateTaskFromConversationRequest {
+  team_id: string
+  name?: string
+  description?: string
+  task_type?: 'feature' | 'bug' | 'chore'
+  priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent'
+}
+
+export interface CreateTaskFromConversationResponse {
+  task_id: string
+  display_id: number
+  task_key: string
+  task_name: string
+  summary?: string
+  copied_contact_associations: number
+  copied_company_associations: number
+  copied_deal_associations: number
+}
+
 export interface SupportConversation {
   id: string
   workspace_id: string

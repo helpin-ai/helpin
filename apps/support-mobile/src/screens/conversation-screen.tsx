@@ -89,7 +89,7 @@ export function ConversationScreen() {
     enabled: !!slug,
   })
   const workspaceId = workspaceQuery.data?.id ?? ''
-  const { accessQuery, canReadSupport, canEditSupport } = useWorkspacePermissions(workspaceId)
+  const { accessQuery, canReadSupport, canEditSupport, canReadPM, canEditPM } = useWorkspacePermissions(workspaceId)
   const supportWorkspaceId = canReadSupport ? workspaceId : ''
   const accessDenied = accessQuery.isSuccess && !canReadSupport
 
@@ -404,7 +404,11 @@ export function ConversationScreen() {
           open={actionsSheetOpen}
           onOpenChange={setActionsSheetOpen}
           workspaceId={workspaceId}
+          workspaceSlug={slug ?? ''}
           conversation={conversation}
+          canReadPM={canReadPM}
+          canCreateTask={canEditPM}
+          defaultTeamId={accessQuery.data?.membership.support_default_team_id ?? accessQuery.data?.team_memberships[0]?.team_id}
           onLeave={handleBack}
         />
       )}
