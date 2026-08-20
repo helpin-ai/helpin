@@ -1,15 +1,21 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useRouter } from '@tanstack/react-router'
-import { Check, Mail, MessageCircle, Search, Tag, X } from 'lucide-react'
+import { Check, Mail, MessageCircle, Search, Sparkles, Tag, Undo2, X } from 'lucide-react'
 import {
   useCreateConversationWithMessage,
   useInboxScopes,
+  useRewriteSupportDraft,
+  useSupportCannedResponses,
+  type SupportAIRewriteOperation,
   useSupportTags,
   type SupportInboxScope,
+  type SupportCannedResponse,
 } from '@helpin-ai/support-core'
 import { parseSupportInboxViewFilters } from '@/lib/supportInboxFilters'
 import { cn } from '@mobile/lib/cn'
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@mobile/lib/upgrade-required'
+import { useAuthStore } from '@mobile/stores/auth-store'
 import { haptic } from '@mobile/lib/haptics'
 import {
   mobileContactsService,
@@ -26,6 +32,12 @@ import { Spinner } from '@mobile/ui/spinner'
 import { TextField } from '@mobile/ui/text-field'
 import { TopBar } from '@mobile/ui/top-bar'
 import { toast } from 'sonner'
+import { UpgradeRequiredSheet } from '@mobile/ui/upgrade-required-sheet'
+import { AIToolsSheet } from '@mobile/thread/ai-tools-sheet'
+import { CannedResponsesSheet } from '@mobile/thread/canned-responses-sheet'
+import { cannedToPlainText } from '@mobile/thread/canned-shortcuts'
+import { resolveShortcutVariables } from '@/components/support/shortcutVariables'
+
 import { parseEmailList } from './new-conversation-helpers'
 
 
@@ -50,6 +62,7 @@ export function NewConversationScreen() {
   const router = useRouter()
   const selection = useSupportViewStore((state) => state.selection)
   const setCurrentWorkspace = useWorkspaceStore((state) => state.setCurrentWorkspace)
+  const user = useAuthStore((state) => state.user)
   const workspaceQuery = useQuery({
     queryKey: ['workspace', slug],
     queryFn: async () => {
@@ -67,6 +80,15 @@ export function NewConversationScreen() {
   const createConversation = useCreateConversationWithMessage(workspaceId)
 
   const [recipient, setRecipient] = useState('')
+  const rewriteDraft = useRewriteSupportDraft(workspaceId, null)
+  const cannedQuery = useSupportCannedResponses(workspaceId)
+  const cannedResponses = cannedQuery.data ?? []
+  const [aiSheetOpen, setAiSheetOpen] = useState(false)
+  const [cannedSheetOpen, setCannedSheetOpen] = useState(false)
+  const [busyOperation, setBusyOperation] = useState<SupportAIRewriteOperation | null>(null)
+  const [undoText, setUndoText] = useState<string | null>(null)
+  const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null)
+
   const [selectedContact, setSelectedContact] = useState<MobileCRMContact | null>(null)
   const deferredRecipient = useDeferredValue(recipient.trim())
   const contactsQuery = useQuery({
@@ -138,6 +160,45 @@ export function NewConversationScreen() {
     setSendChat(true)
     setSendEmail(Boolean(contact.email))
     setShowContacts(false)
+    haptic('selection')
+  }
+
+  const handleRewrite = async (operation: SupportAIRewriteOperation) => {
+    const source = message.trim()
+    if (!source || busyOperation) return
+    setBusyOperation(operation)
+    try {
+      const result = await rewriteDraft.mutateAsync({ content: source, operation })
+      setMessage(result.content)
+      setUndoText(source)
+      setAiSheetOpen(false)
+      haptic('notificationSuccess')
+    } catch (error) {
+      const reason = getUpgradeRequiredReason(error)
+      if (reason) {
+        setAiSheetOpen(false)
+        setUpgradeReason(reason)
+      } else {
+        toast.error('Could not rewrite draft')
+      }
+      haptic('notificationError')
+    } finally {
+      setBusyOperation(null)
+    }
+  }
+
+  const insertCanned = (response: SupportCannedResponse) => {
+    const resolved = cannedToPlainText(resolveShortcutVariables(response.content, {
+      customer: {
+        fullName: selectedContact ? contactName(selectedContact) : null,
+        email: selectedContact?.email ?? (isEmail(recipient.trim()) ? recipient.trim() : null),
+      },
+      agent: { fullName: user?.full_name, email: user?.email },
+      workspaceName: workspace?.name,
+      conversationSubject: subject,
+    }))
+    setMessage((current) => current.trim() ? `${current.trimEnd()}\n\n${resolved}` : resolved)
+    setCannedSheetOpen(false)
     haptic('selection')
   }
 
@@ -346,6 +407,38 @@ export function NewConversationScreen() {
               className="w-full resize-none rounded-xl border border-input bg-background px-3.5 py-3 text-body text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
             />
           </section>
+            <div className="flex items-center gap-2">
+              <Pressable
+                aria-label="AI writing tools"
+                disabled={!message.trim() || busyOperation !== null}
+                onPress={() => setAiSheetOpen(true)}
+                className="flex h-auto min-h-9 w-auto min-w-0 items-center gap-1.5 rounded-full bg-primary/10 px-3 text-footnote font-medium text-primary disabled:opacity-40"
+              >
+                <Sparkles className="h-4 w-4" />
+                AI tools
+              </Pressable>
+              <Pressable
+                aria-label="Canned responses"
+                onPress={() => setCannedSheetOpen(true)}
+                className="h-auto min-h-9 w-auto min-w-0 rounded-full bg-muted px-3 text-footnote font-medium"
+              >
+                Shortcuts
+              </Pressable>
+              {undoText !== null && (
+                <Pressable
+                  aria-label="Undo AI rewrite"
+                  onPress={() => {
+                    setMessage(undoText)
+                    setUndoText(null)
+                    haptic('impactLight')
+                  }}
+                  className="ml-auto flex h-auto min-h-9 w-auto min-w-0 items-center gap-1 text-footnote font-medium text-primary"
+                >
+                  <Undo2 className="h-4 w-4" />
+                  Undo
+                </Pressable>
+              )}
+            </div>
 
           <section className="space-y-2">
             <label htmlFor="new-conversation-inbox" className="text-footnote font-medium">Inbox</label>
@@ -389,6 +482,25 @@ export function NewConversationScreen() {
               </div>
             )}
           </section>
+      <AIToolsSheet
+        open={aiSheetOpen}
+        onOpenChange={setAiSheetOpen}
+        busyOperation={busyOperation}
+        onSelect={(operation) => void handleRewrite(operation)}
+      />
+      <CannedResponsesSheet
+        open={cannedSheetOpen}
+        onOpenChange={setCannedSheetOpen}
+        responses={cannedResponses}
+        loading={cannedQuery.isPending}
+        onSelect={insertCanned}
+      />
+      <UpgradeRequiredSheet
+        reason={upgradeReason}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeReason(null)
+        }}
+      />
         </div>
       )}
     </div>

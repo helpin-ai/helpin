@@ -1,11 +1,12 @@
-import { useState } from 'react'
-import { ChevronRight, Copy } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from '@tanstack/react-router'
+import { Check, ChevronRight, Copy, Pencil, X } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   useAssignConversationUser,
   useConversation,
   useUpdateConversationStatus,
-  useVisitorContext,
+  useUpdateConversationCustomerName,
   type ConversationStatus,
 } from '@helpin-ai/support-core'
 import { Sheet } from '@mobile/ui/sheet'
@@ -19,6 +20,7 @@ import { displayNameFor } from '@mobile/inbox/conversation-cell'
 import { formatRelativeTime } from '@mobile/inbox/inbox-helpers'
 import { AssignList } from './assign-list'
 import { ConversationTagEditor } from './conversation-tag-editor'
+import { CustomerContext } from './customer-context'
 
 export interface ContextSheetProps {
   workspaceId: string
@@ -51,16 +53,6 @@ const STATUS_TONES: Record<ConversationStatus, BadgeTone> = {
   spam: 'neutral',
 }
 
-/** A label/value row sourced from VisitorContextResponse; renders nothing when the value is empty. */
-function ContextRow({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null
-  return (
-    <div className="flex items-center justify-between gap-3 px-4 py-1.5">
-      <span className="text-footnote text-muted-foreground">{label}</span>
-      <span className="max-w-[65%] truncate text-right text-footnote text-foreground">{value}</span>
-    </div>
-  )
-}
 
 /**
  * Bottom sheet opened from the conversation header (Task 13's `onTitlePress`
@@ -69,15 +61,25 @@ function ContextRow({ label, value }: { label: string; value?: string | null }) 
  */
 export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, canEdit }: ContextSheetProps) {
   const [assignExpanded, setAssignExpanded] = useState(false)
+  const router = useRouter()
+  const { slug } = useParams({ strict: false })
   const [tagsExpanded, setTagsExpanded] = useState(false)
+  const [editingCustomerName, setEditingCustomerName] = useState(false)
+  const [customerNameDraft, setCustomerNameDraft] = useState('')
 
   const conversationQuery = useConversation(workspaceId, conversationId)
-  const visitorContextQuery = useVisitorContext(workspaceId, conversationId)
   const updateStatus = useUpdateConversationStatus(workspaceId)
   const assignUser = useAssignConversationUser(workspaceId)
 
+  const updateCustomerName = useUpdateConversationCustomerName(workspaceId)
   const conversation = conversationQuery.data
-  const visitor = visitorContextQuery.data
+
+  useEffect(() => {
+    setAssignExpanded(false)
+    setTagsExpanded(false)
+    setEditingCustomerName(false)
+    setCustomerNameDraft('')
+  }, [conversationId, open])
 
   const handleCopyEmail = async () => {
     const email = conversation?.customer_email
@@ -122,6 +124,24 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, 
     setAssignExpanded(false)
   }
 
+  const handleSaveCustomerName = () => {
+    const customerName = customerNameDraft.trim()
+    if (!conversationId || !customerName || updateCustomerName.isPending) return
+    updateCustomerName.mutate(
+      { conversationId, customerName },
+      {
+        onSuccess: () => {
+          setEditingCustomerName(false)
+          haptic('notificationSuccess')
+        },
+        onError: () => {
+          haptic('notificationError')
+          toast.error('Could not update customer name')
+        },
+      },
+    )
+  }
+
   if (!conversation) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange} detents={CONTEXT_SHEET_DETENTS} title="Conversation options">
@@ -138,11 +158,6 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, 
     ? `Active ${formatRelativeTime(conversation.contact_last_seen_at)}`
     : undefined
 
-  const device = visitor?.device
-  const location = visitor?.location
-  const locationValue = location
-    ? [location.city_name, location.region_name, location.country_name].filter(Boolean).join(', ') || undefined
-    : undefined
 
   return (
     <Sheet
@@ -156,10 +171,53 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, 
         <div className="flex items-start gap-3 px-4 pb-4">
           <Avatar name={customerName} size={44} />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="truncate text-headline">{customerName}</p>
-              <Badge tone={STATUS_TONES[conversation.status]}>{STATUS_LABELS[conversation.status]}</Badge>
-            </div>
+            {editingCustomerName ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  aria-label="Customer name"
+                  value={customerNameDraft}
+                  onChange={(event) => setCustomerNameDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') handleSaveCustomerName()
+                    if (event.key === 'Escape') setEditingCustomerName(false)
+                  }}
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-body outline-none"
+                />
+                <Pressable
+                  aria-label="Save customer name"
+                  disabled={!customerNameDraft.trim() || updateCustomerName.isPending}
+                  onPress={handleSaveCustomerName}
+                  className="flex items-center justify-center rounded-full text-primary disabled:opacity-40"
+                >
+                  <Check className="h-4 w-4" />
+                </Pressable>
+                <Pressable
+                  aria-label="Cancel editing customer name"
+                  onPress={() => setEditingCustomerName(false)}
+                  className="flex items-center justify-center rounded-full text-muted-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </Pressable>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <p className="min-w-0 flex-1 truncate text-headline">{customerName}</p>
+                <Badge tone={STATUS_TONES[conversation.status]}>{STATUS_LABELS[conversation.status]}</Badge>
+                {canEdit && (
+                  <Pressable
+                    aria-label="Edit customer name"
+                    onPress={() => {
+                      setCustomerNameDraft(customerName)
+                      setEditingCustomerName(true)
+                    }}
+                    className="flex items-center justify-center rounded-full text-muted-foreground"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Pressable>
+                )}
+              </div>
+            )}
             {conversation.customer_email && (
               <Pressable
                 haptic="selection"
@@ -230,17 +288,20 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, 
           />
         )}
 
-        {visitor && (
-          <div className="mt-2 border-t border-border/60 pt-2">
-            <ContextRow
-              label="Browser"
-              value={device ? `${device.browser} ${device.browser_version}`.trim() : undefined}
-            />
-            <ContextRow label="OS" value={device ? `${device.os} ${device.os_version}`.trim() : undefined} />
-            <ContextRow label="Device" value={device?.device_type} />
-            <ContextRow label="Location" value={locationValue} />
-            <ContextRow label="Timezone" value={location?.timezone} />
-          </div>
+        {conversationId && (
+          <CustomerContext
+            workspaceId={workspaceId}
+            conversationId={conversationId}
+            canEdit={canEdit}
+            channel={conversation.source}
+            onOpenConversation={(nextConversationId) => {
+              onOpenChange(false)
+              router.navigate({
+                to: '/w/$slug/support/$conversationId',
+                params: { slug: slug ?? '', conversationId: nextConversationId },
+              })
+            }}
+          />
         )}
       </div>
     </Sheet>

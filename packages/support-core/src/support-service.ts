@@ -182,6 +182,11 @@ export const supportService = {
       `/support/inbox/conversations/${conversationId}/rewrite-draft${qs(workspaceId)}`,
       payload,
     ),
+  rewriteNewDraft: (workspaceId: string, payload: SupportAIRewriteDraftRequest) =>
+    getApi().post<SupportAIRewriteDraftResponse>(
+      `/support/inbox/rewrite-draft${qs(workspaceId)}`,
+      payload,
+    ),
   listBuiltinInboxViews: (workspaceId: string) =>
     getApi().get<SupportInboxView[]>(`/support/inbox/views/builtin${qs(workspaceId)}`),
   listInboxViews: (workspaceId: string) =>
@@ -192,6 +197,14 @@ export const supportService = {
     getApi().get<SupportMailboxMember[]>(`/support/inbox/mailboxes/${mailboxId}/members${qs(workspaceId)}`),
   getConversation: (workspaceId: string, id: string) =>
     getApi().get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
+  updateConversationCRMCompany: (workspaceId: string, conversationId: string, companyId: string | null) =>
+    getApi().put<SupportConversation>(`/support/inbox/conversations/${conversationId}/crm-company${qs(workspaceId)}`, {
+      crm_company_id: companyId,
+    }),
+  updateConversationCustomerName: (workspaceId: string, conversationId: string, customerName: string) =>
+    getApi().put<SupportConversation>(`/support/inbox/conversations/${conversationId}/customer-name${qs(workspaceId)}`, {
+      customer_name: customerName,
+    }),
   createConversationWithMessage: (workspaceId: string, payload: CreateConversationWithMessageRequest) =>
     getApi().post<CreateConversationWithMessageResponse>(
       `/support/inbox/conversations/create-and-send${qs(workspaceId)}`,

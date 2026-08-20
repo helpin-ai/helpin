@@ -517,6 +517,32 @@ export function useDeleteConversation(workspaceId: string) {
     },
   })
 }
+export function useUpdateConversationCRMCompany(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ conversationId, companyId }: { conversationId: string; companyId: string | null }) =>
+      unwrapOrThrow(await supportService.updateConversationCRMCompany(workspaceId, conversationId, companyId)),
+    onSuccess: (_data, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.visitorContext(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
+export function useUpdateConversationCustomerName(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ conversationId, customerName }: { conversationId: string; customerName: string }) =>
+      unwrapOrThrow(await supportService.updateConversationCustomerName(workspaceId, conversationId, customerName)),
+    onSuccess: (_data, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.visitorContext(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
 
 export function useSupportInstallation(workspaceId: string, enabled = true) {
   return useQuery({
@@ -530,8 +556,9 @@ export function useSupportInstallation(workspaceId: string, enabled = true) {
 export function useRewriteSupportDraft(workspaceId: string, conversationId: string | null) {
   return useMutation<SupportAIRewriteDraftResponse, Error, SupportAIRewriteDraftRequest>({
     mutationFn: async (payload) => {
-      if (!conversationId) throw new Error('No conversation selected')
-      return unwrapOrThrow(await supportService.rewriteConversationDraft(workspaceId, conversationId, payload))
+      return unwrapOrThrow(conversationId
+        ? await supportService.rewriteConversationDraft(workspaceId, conversationId, payload)
+        : await supportService.rewriteNewDraft(workspaceId, payload))
     },
   })
 }

@@ -3,18 +3,29 @@ import {
   useAssignConversationUser,
   useConversation,
   useConversationAssignees,
+  useUpdateConversationCustomerName,
   useUpdateConversationStatus,
-  useVisitorContext,
   type SupportConversation,
 } from '@helpin-ai/support-core'
 import { ContextSheet } from '../context-sheet'
 
 vi.mock('@helpin-ai/support-core', () => ({
   useConversation: vi.fn(),
-  useVisitorContext: vi.fn(),
   useConversationAssignees: vi.fn(),
   useUpdateConversationStatus: vi.fn(),
   useAssignConversationUser: vi.fn(),
+  useUpdateConversationCustomerName: vi.fn(),
+}))
+
+const navigate = vi.fn()
+
+vi.mock('@tanstack/react-router', () => ({
+  useParams: () => ({ slug: 'test-workspace' }),
+  useRouter: () => ({ navigate }),
+}))
+
+vi.mock('../customer-context', () => ({
+  CustomerContext: () => <div>Customer context</div>,
 }))
 
 vi.mock('@mobile/lib/haptics', () => ({
@@ -26,10 +37,10 @@ vi.mock('sonner', () => ({
 }))
 
 const mockUseConversation = vi.mocked(useConversation)
-const mockUseVisitorContext = vi.mocked(useVisitorContext)
 const mockUseConversationAssignees = vi.mocked(useConversationAssignees)
 const mockUseUpdateConversationStatus = vi.mocked(useUpdateConversationStatus)
 const mockUseAssignConversationUser = vi.mocked(useAssignConversationUser)
+const mockUseUpdateConversationCustomerName = vi.mocked(useUpdateConversationCustomerName)
 
 const BASE_CONVERSATION: SupportConversation = {
   id: 'conv-1',
@@ -55,13 +66,14 @@ function setup({
   conversation = BASE_CONVERSATION,
   statusMutate = vi.fn(),
   assignMutate = vi.fn(),
+  customerNameMutate = vi.fn(),
 }: {
   conversation?: SupportConversation
   statusMutate?: ReturnType<typeof vi.fn>
   assignMutate?: ReturnType<typeof vi.fn>
+  customerNameMutate?: ReturnType<typeof vi.fn>
 } = {}) {
   mockUseConversation.mockReturnValue({ data: conversation } as unknown as ReturnType<typeof useConversation>)
-  mockUseVisitorContext.mockReturnValue({ data: undefined } as unknown as ReturnType<typeof useVisitorContext>)
   mockUseConversationAssignees.mockReturnValue({
     data: TEAMMATES,
     isLoading: false,
@@ -74,8 +86,12 @@ function setup({
     mutate: assignMutate,
     isPending: false,
   } as unknown as ReturnType<typeof useAssignConversationUser>)
+  mockUseUpdateConversationCustomerName.mockReturnValue({
+    mutate: customerNameMutate,
+    isPending: false,
+  } as unknown as ReturnType<typeof useUpdateConversationCustomerName>)
 
-  return { statusMutate, assignMutate }
+  return { statusMutate, assignMutate, customerNameMutate }
 }
 
 beforeEach(() => {
@@ -88,6 +104,22 @@ test('renders the customer name and email from the conversation', () => {
 
   expect(screen.getByText('Ada Lovelace')).toBeDefined()
   expect(screen.getByText('ada@example.com')).toBeDefined()
+})
+
+test('edits the customer name through the existing conversation mutation', () => {
+  const { customerNameMutate } = setup()
+  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} canEdit />)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Edit customer name' }))
+  fireEvent.change(screen.getByRole('textbox', { name: 'Customer name' }), {
+    target: { value: 'Ada Byron' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Save customer name' }))
+
+  expect(customerNameMutate).toHaveBeenCalledWith(
+    { conversationId: 'conv-1', customerName: 'Ada Byron' },
+    expect.anything(),
+  )
 })
 
 test('Resolve calls the status mutation with resolved for an open conversation', () => {
