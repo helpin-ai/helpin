@@ -128,6 +128,15 @@ describe('supportService mutations (unit, no React)', () => {
       {},
     )
   })
+
+  it('lists and resolves support AI-run interactions on conversation-scoped endpoints', async () => {
+    fakeApi.get.mockResolvedValue({ data: { run_id: 'run-1', interactions: [] }, error: null })
+    fakeApi.post.mockResolvedValue({ data: { id: 'int-1', status: 'resolved' }, error: null })
+    await supportService.listAIRunInteractions(WORKSPACE_ID, CONVERSATION_ID)
+    await supportService.resolveAIRunInteraction(WORKSPACE_ID, CONVERSATION_ID, 'int/1', { response_payload: { decision: 'approve' } })
+    expect(fakeApi.get).toHaveBeenCalledWith(`/support/inbox/conversations/${CONVERSATION_ID}/ai-run/interactions?workspace_id=${WORKSPACE_ID}`)
+    expect(fakeApi.post).toHaveBeenCalledWith(`/support/inbox/conversations/${CONVERSATION_ID}/ai-run/interactions/int%2F1/resolve?workspace_id=${WORKSPACE_ID}`, { response_payload: { decision: 'approve' } })
+  })
 })
 
 describe('useCreateTaskFromConversation', () => {

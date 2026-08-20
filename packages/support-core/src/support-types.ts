@@ -131,6 +131,40 @@ export interface CreateTaskFromConversationResponse {
   copied_deal_associations: number
 }
 
+export type SupportRunInteractionKind =
+  | 'request_user_input'
+  | 'approval_request'
+  | 'command_execution_approval'
+  | 'file_change_approval'
+  | 'permissions_approval'
+  | 'review_checkpoint'
+  | 'auth_required'
+
+export interface SupportRunInteraction {
+  id?: string
+  interaction_id?: string
+  interaction_kind: SupportRunInteractionKind
+  status: 'pending' | 'resolved' | 'cancelled'
+  request_schema_version: string
+  response_schema_version?: string
+  request_payload: Record<string, unknown>
+  response_payload?: Record<string, unknown>
+  title?: string
+  summary?: string
+  resolved_at?: string
+  resolved_by?: string
+}
+
+export interface SupportAIRunInteractionsResponse {
+  run_id: string
+  interactions: SupportRunInteraction[]
+}
+
+export interface ResolveSupportRunInteractionRequest {
+  response_payload: Record<string, unknown>
+  followup_message?: string
+}
+
 export interface SupportConversation {
   id: string
   workspace_id: string
@@ -168,6 +202,7 @@ export interface SupportConversation {
   ai_escalated_at?: string
   ai_resolution_type?: 'confirmed' | 'assumed' | null
   ai_turn_count?: number
+  ai_active_run_id?: string
   customer_requested_human_at?: string
   last_message?: string
   /** Sender type of the most recent message: 'contact' | 'user' | 'agent' | 'system'. */

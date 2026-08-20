@@ -10,6 +10,7 @@ import type {
   SendSupportConversationTranscriptResponse,
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
+  SupportAIRunInteractionsResponse,
   SupportAttachmentInitResponse,
   SupportCannedResponse,
   SupportConversation,
@@ -25,8 +26,10 @@ import type {
   SupportMessageActionResponse,
   SupportMessageInfo,
   SupportMessagePage,
+  SupportRunInteraction,
   SupportTag,
   SupportTeammatePresenceStatus,
+  ResolveSupportRunInteractionRequest,
   UpdateConversationEmailRecipientsRequest,
   UnreadStats,
 } from './support-types'
@@ -251,6 +254,19 @@ export const supportService = {
     payload: CreateTaskFromConversationRequest,
   ) => getApi().post<CreateTaskFromConversationResponse>(
     `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
+    payload,
+  ),
+  listAIRunInteractions: (workspaceId: string, conversationId: string) =>
+    getApi().get<SupportAIRunInteractionsResponse>(
+      `/support/inbox/conversations/${conversationId}/ai-run/interactions${qs(workspaceId)}`,
+    ),
+  resolveAIRunInteraction: (
+    workspaceId: string,
+    conversationId: string,
+    interactionId: string,
+    payload: ResolveSupportRunInteractionRequest,
+  ) => getApi().post<SupportRunInteraction>(
+    `/support/inbox/conversations/${conversationId}/ai-run/interactions/${encodeURIComponent(interactionId)}/resolve${qs(workspaceId)}`,
     payload,
   ),
   listConversationMessages: (workspaceId: string, conversationId: string) =>

@@ -38,6 +38,7 @@ import { Composer } from '@mobile/thread/composer'
 import { ContextSheet } from '@mobile/thread/context-sheet'
 import { ConversationActionsSheet } from '@mobile/thread/conversation-actions-sheet'
 import { buildTriageBanner } from '@mobile/thread/triage-banner'
+import { AIRunApprovals } from '@mobile/thread/ai-run-approvals'
 import { MessageActionsSheet } from '@mobile/thread/message-actions-sheet'
 import { useDraftStore } from '@mobile/thread/draft-store'
 import { haptic } from '@mobile/lib/haptics'
@@ -346,6 +347,14 @@ export function ConversationScreen() {
             </Pressable>
           </div>
         </div>
+      )}
+
+      {conversation && (
+        <AIRunApprovals
+          workspaceId={supportWorkspaceId}
+          conversationId={conversation.id}
+          enabled={canEditSupport && !!conversation.ai_state}
+        />
       )}
 
       {conversation && (

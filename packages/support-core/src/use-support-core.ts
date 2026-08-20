@@ -25,6 +25,7 @@ import type {
   CreateTaskFromConversationResponse,
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
+  SupportAIRunInteractionsResponse,
   SupportConversation,
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
@@ -32,6 +33,7 @@ import type {
   SupportMessageActionResponse,
   SupportMessageInfo,
   SupportMessagePage,
+  ResolveSupportRunInteractionRequest,
   UpdateConversationEmailRecipientsRequest,
 } from './support-types'
 import type { VisitorContextResponse } from './visitor-types'
@@ -238,6 +240,33 @@ export function useConversation(workspaceId: string, conversationId: string | nu
     queryFn: async () => unwrapOrThrow(await supportService.getConversation(workspaceId, conversationId!)),
     enabled: !!workspaceId && !!conversationId,
     staleTime: 30_000,
+  })
+}
+
+export function useConversationAIRunInteractions(
+  workspaceId: string,
+  conversationId: string | null,
+  enabled = true,
+) {
+  return useQuery<SupportAIRunInteractionsResponse>({
+    queryKey: supportQueryKeys.aiRunInteractions(workspaceId, conversationId ?? ''),
+    queryFn: async () => unwrapOrThrow(await supportService.listAIRunInteractions(workspaceId, conversationId!)),
+    enabled: enabled && !!workspaceId && !!conversationId,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useResolveConversationAIRunInteraction(workspaceId: string, conversationId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ interactionId, payload }: { interactionId: string; payload: ResolveSupportRunInteractionRequest }) =>
+      unwrapOrThrow(await supportService.resolveAIRunInteraction(workspaceId, conversationId, interactionId, payload)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.aiRunInteractions(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.messages(workspaceId, conversationId) })
+    },
   })
 }
 
