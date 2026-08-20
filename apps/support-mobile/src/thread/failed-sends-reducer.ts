@@ -5,6 +5,8 @@ export interface FailedSend {
   id: string
   content: string
   mode: ComposerMode
+  /** Confirmed uploads that must be reattached if the message request fails. */
+  attachmentIds?: string[]
 }
 
 export type FailedSendsAction =

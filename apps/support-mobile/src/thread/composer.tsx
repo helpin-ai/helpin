@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AtSign, Sparkles, Undo2, X, Zap } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { AtSign, FileText, LoaderCircle, Paperclip, RotateCcw, Sparkles, Undo2, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import {
+  useDeleteSupportAttachment,
   useRewriteSupportDraft,
   useSendMessage,
   useSupportCannedResponses,
+  useUploadSupportAttachment,
   type SupportAIRewriteOperation,
   type SupportCannedResponse,
 } from '@helpin-ai/support-core'
@@ -68,6 +70,19 @@ const MIN_TEXTAREA_HEIGHT_PX = 56
 
 const SENT_STATE_MS = 400
 
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024
+const ATTACHMENT_ACCEPT = 'image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md'
+
+interface PendingAttachment {
+  localId: string
+  file: File
+  status: 'uploading' | 'done' | 'error'
+  attachmentId?: string
+  previewUrl?: string
+}
+
+const attachmentLabel = (count: number) => `${count} attachment${count === 1 ? '' : 's'}`
+
 /**
  * NOTE: the conversation screen mounts this with `key={conversationId}` so
  * the transient local state here (`phase`, `sendingRef`, the sent-timer)
@@ -101,7 +116,13 @@ export function Composer({
   const removeFailedSend = useDraftStore((state) => state.removeFailedSend)
 
   const sendMessage = useSendMessage(workspaceId, conversationId)
+  const uploadAttachment = useUploadSupportAttachment(workspaceId, conversationId)
+  const deleteAttachment = useDeleteSupportAttachment(workspaceId)
   const [phase, setPhase] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
+  const pendingAttachmentsRef = useRef<PendingAttachment[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const mountedRef = useRef(true)
 
   const isNote = draft.mode === 'note'
   const replyRecipient = variableContext.customer?.fullName?.trim().split(/\s+/)[0]
@@ -249,11 +270,101 @@ export function Composer({
     [],
   )
 
-  const trimmed = draft.text.trim()
-  const buttonState: SendButtonState =
-    phase === 'sending' ? 'sending' : phase === 'sent' ? 'sent' : trimmed.length === 0 ? 'disabled' : 'active'
+  function updatePendingAttachments(updater: (current: PendingAttachment[]) => PendingAttachment[]) {
+    const next = updater(pendingAttachmentsRef.current)
+    pendingAttachmentsRef.current = next
+    if (mountedRef.current) setPendingAttachments(next)
+  }
 
-  async function attemptSend(content: string, mode: ComposerMode, retryId?: string) {
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      for (const attachment of pendingAttachmentsRef.current) {
+        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+      }
+      pendingAttachmentsRef.current = []
+    }
+  }, [])
+
+  async function uploadPendingAttachment(localId: string, file: File) {
+    updatePendingAttachments((current) => current.map((item) =>
+      item.localId === localId ? { ...item, status: 'uploading' } : item,
+    ))
+    try {
+      const result = await uploadAttachment.mutateAsync(file)
+      // The user may remove the chip (or leave the conversation) while the
+      // storage request is in flight. Delete the now-confirmed orphan instead
+      // of silently retaining a server record that can never be sent.
+      if (!pendingAttachmentsRef.current.some((item) => item.localId === localId)) {
+        await deleteAttachment.mutateAsync(result.id).catch(() => undefined)
+        return
+      }
+      updatePendingAttachments((current) => current.map((item) =>
+        item.localId === localId
+          ? { ...item, status: 'done', attachmentId: result.id }
+          : item,
+      ))
+    } catch {
+      updatePendingAttachments((current) => current.map((item) =>
+        item.localId === localId ? { ...item, status: 'error' } : item,
+      ))
+      toast.error(`Could not upload ${file.name}`)
+      haptic('notificationError')
+    }
+  }
+
+  function handleFileInput(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    for (const file of files) {
+      if (file.size > MAX_ATTACHMENT_SIZE) {
+        toast.error(`${file.name} is larger than 10 MB`)
+        continue
+      }
+      const localId = crypto.randomUUID()
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+      updatePendingAttachments((current) => [
+        ...current,
+        { localId, file, previewUrl, status: 'uploading' },
+      ])
+      void uploadPendingAttachment(localId, file)
+    }
+  }
+
+  function retryAttachment(attachment: PendingAttachment) {
+    void uploadPendingAttachment(attachment.localId, attachment.file)
+  }
+
+  function removeAttachment(attachment: PendingAttachment) {
+    updatePendingAttachments((current) => current.filter((item) => item.localId !== attachment.localId))
+    if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+    if (attachment.attachmentId) {
+      void deleteAttachment.mutateAsync(attachment.attachmentId).catch(() => {
+        toast.error('Could not remove uploaded file')
+      })
+    }
+  }
+
+  function clearSentAttachments(attachmentIds: string[]) {
+    const sent = new Set(attachmentIds)
+    updatePendingAttachments((current) => current.filter((attachment) => {
+      if (!attachment.attachmentId || !sent.has(attachment.attachmentId)) return true
+      if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
+      return false
+    }))
+  }
+
+  const trimmed = draft.text.trim()
+  const doneAttachmentIds = pendingAttachments
+    .filter((attachment) => attachment.status === 'done' && attachment.attachmentId)
+    .map((attachment) => attachment.attachmentId!)
+  const hasUploadingAttachment = pendingAttachments.some((attachment) => attachment.status === 'uploading')
+  const canSend = (trimmed.length > 0 || doneAttachmentIds.length > 0) && !hasUploadingAttachment
+  const buttonState: SendButtonState =
+    phase === 'sending' ? 'sending' : phase === 'sent' ? 'sent' : canSend ? 'active' : 'disabled'
+
+  async function attemptSend(content: string, mode: ComposerMode, attachmentIds: string[], retryId?: string) {
     if (sendingRef.current) return
     sendingRef.current = true
     // A new send during the 400ms 'sent' display is legitimate — cancel the
@@ -262,9 +373,14 @@ export function Composer({
     if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current)
     setPhase('sending')
     try {
-      await sendMessage.mutateAsync({ content, is_internal: mode === 'note' })
+      await sendMessage.mutateAsync({
+        content,
+        is_internal: mode === 'note',
+        ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
+      })
       haptic('notificationSuccess')
       if (retryId) removeFailedSend(conversationId, retryId)
+      clearSentAttachments(attachmentIds)
       setPhase('sent')
       sentTimeoutRef.current = setTimeout(() => setPhase('idle'), SENT_STATE_MS)
     } catch {
@@ -273,7 +389,10 @@ export function Composer({
       // A fresh send (no retryId) needs a new chip; a retry's chip is already
       // in the list — leave it there so the user can retry again.
       if (!retryId) {
-        addFailedSend(conversationId, { id: crypto.randomUUID(), content, mode })
+        addFailedSend(conversationId, {
+          id: crypto.randomUUID(), content, mode,
+          ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+        })
       }
     } finally {
       sendingRef.current = false
@@ -285,27 +404,28 @@ export function Composer({
   const [emailConfirmOpen, setEmailConfirmOpen] = useState(false)
   const [dontAskAgain, setDontAskAgain] = useState(false)
   const [emailConfirmSkipped, setEmailConfirmSkipped] = useState(() => isEmailConfirmSkipped(workspaceId))
-  const pendingSendRef = useRef<{ content: string; mode: ComposerMode } | null>(null)
+  const pendingSendRef = useRef<{ content: string; mode: ComposerMode; attachmentIds: string[] } | null>(null)
 
-  function commitSend(content: string, mode: ComposerMode) {
+  function commitSend(content: string, mode: ComposerMode, attachmentIds: string[]) {
     // Clear the draft the instant a send is confirmed — mirrors the optimistic
     // bubble appearing instantly. If it later fails, the content isn't lost: it
     // lives on in the failedSends retry chip (persisted with the draft).
     clearDraft(conversationId)
     stopTyping()
-    void attemptSend(content, mode)
+    void attemptSend(content, mode, attachmentIds)
   }
 
   function handleSendPress() {
-    if (trimmed.length === 0 || sendingRef.current) return
+    if (!canSend || sendingRef.current) return
     const content = trimmed
     const mode = draft.mode
+    const attachmentIds = doneAttachmentIds
     if (mode === 'reply' && willSendAsEmail && !emailConfirmSkipped) {
-      pendingSendRef.current = { content, mode }
+      pendingSendRef.current = { content, mode, attachmentIds }
       setEmailConfirmOpen(true)
       return
     }
-    commitSend(content, mode)
+    commitSend(content, mode, attachmentIds)
   }
 
   function handleConfirmEmailSend() {
@@ -316,11 +436,11 @@ export function Composer({
       persistEmailConfirmSkip(workspaceId)
       setEmailConfirmSkipped(true)
     }
-    if (pending) commitSend(pending.content, pending.mode)
+    if (pending) commitSend(pending.content, pending.mode, pending.attachmentIds)
   }
 
   function handleRetry(failedSend: FailedSend) {
-    void attemptSend(failedSend.content, failedSend.mode, failedSend.id)
+    void attemptSend(failedSend.content, failedSend.mode, failedSend.attachmentIds ?? [], failedSend.id)
   }
 
   return (
@@ -332,7 +452,9 @@ export function Composer({
               key={failedSend.id}
               className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-1.5 text-footnote text-destructive"
             >
-              <span className="min-w-0 flex-1 truncate">{failedSend.content}</span>
+              <span className="min-w-0 flex-1 truncate">
+                {failedSend.content || attachmentLabel(failedSend.attachmentIds?.length ?? 0)}
+              </span>
               <button
                 type="button"
                 onClick={() => handleRetry(failedSend)}
@@ -416,6 +538,58 @@ export function Composer({
             </Pressable>
           </div>
 
+          {pendingAttachments.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto px-3 pb-2">
+              {pendingAttachments.map((attachment) => (
+                <div
+                  key={attachment.localId}
+                  className={cn(
+                    'relative flex h-16 min-w-0 max-w-52 items-center gap-2 rounded-xl border bg-background px-2 pr-8',
+                    attachment.status === 'error' ? 'border-destructive/50' : 'border-border/60',
+                  )}
+                >
+                  {attachment.previewUrl ? (
+                    <img src={attachment.previewUrl} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
+                  ) : (
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-muted">
+                      <FileText className="h-5 w-5 text-muted-foreground" />
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-caption font-medium">{attachment.file.name}</span>
+                    <span className={cn(
+                      'mt-0.5 flex items-center gap-1 text-caption',
+                      attachment.status === 'error' ? 'text-destructive' : 'text-muted-foreground',
+                    )}>
+                      {attachment.status === 'uploading' && <LoaderCircle className="h-3 w-3 animate-spin" />}
+                      {attachment.status === 'uploading' ? 'Uploading' : attachment.status === 'error' ? 'Upload failed' : 'Ready'}
+                    </span>
+                  </span>
+                  {attachment.status === 'error' && (
+                    <button
+                      type="button"
+                      aria-label={`Retry upload ${attachment.file.name}`}
+                      disabled={phase === 'sending'}
+                      onClick={() => retryAttachment(attachment)}
+                      className="absolute bottom-1.5 right-1.5 rounded-full p-1 text-destructive active:bg-destructive/10 disabled:opacity-40"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${attachment.file.name}`}
+                    disabled={phase === 'sending'}
+                    onClick={() => removeAttachment(attachment)}
+                    className="absolute right-1.5 top-1.5 rounded-full bg-background/90 p-1 text-muted-foreground shadow-sm active:bg-muted disabled:opacity-40"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
         {mentionToken ? (
           <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-lg">
             {mentionItems.length > 0 ? (
@@ -475,6 +649,24 @@ export function Composer({
             className="w-full resize-none overflow-y-auto bg-transparent px-4 py-2.5 text-body text-foreground outline-none placeholder:text-muted-foreground"
           />
           <div className="flex items-center gap-1 px-2.5 pb-2.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ATTACHMENT_ACCEPT}
+              aria-label="Choose attachments"
+              onChange={handleFileInput}
+              className="hidden"
+            />
+            <Pressable
+              aria-label="Attach files"
+              haptic="selection"
+              disabled={phase === 'sending'}
+              onPress={() => fileInputRef.current?.click()}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground active:bg-muted disabled:opacity-40"
+            >
+              <Paperclip className="h-5 w-5" />
+            </Pressable>
             {isNote && (
               <Pressable
                 aria-label="Mention teammate"

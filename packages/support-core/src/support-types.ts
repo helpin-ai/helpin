@@ -242,6 +242,29 @@ export interface SupportAttachmentPayload {
   url: string
 }
 
+/** Metadata returned while initiating an outbound support attachment upload. */
+export interface SupportAttachmentUpload {
+  id: string
+  workspace_id: string
+  conversation_id?: string
+  message_id?: string
+  file_name: string
+  file_size: number
+  content_type: string
+  storage_key: string
+  public_url: string
+  is_uploaded: boolean
+  uploaded_by_type: 'user' | 'customer'
+  uploaded_by_id?: string
+  created_at: string
+}
+
+export interface SupportAttachmentInitResponse {
+  attachment: SupportAttachmentUpload
+  upload_url: string
+  public_url: string
+}
+
 export interface SupportMessage {
   id: string
   workspace_id: string

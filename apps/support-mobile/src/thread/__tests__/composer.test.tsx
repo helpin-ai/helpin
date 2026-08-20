@@ -1,11 +1,17 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { useSendMessage } from '@helpin-ai/support-core'
+import {
+  useDeleteSupportAttachment,
+  useSendMessage,
+  useUploadSupportAttachment,
+} from '@helpin-ai/support-core'
 import { haptic } from '@mobile/lib/haptics'
 import { Composer } from '../composer'
 import { useDraftStore } from '../draft-store'
 
 vi.mock('@helpin-ai/support-core', () => ({
   useSendMessage: vi.fn(),
+  useUploadSupportAttachment: vi.fn(),
+  useDeleteSupportAttachment: vi.fn(),
   // Typing broadcast reads wsSend/wsConnected via a selector; return a
   // disconnected state so the composer's typing hook is a no-op here.
   useSupportPresenceStore: (selector: (s: { wsSend: null; wsConnected: boolean }) => unknown) =>
@@ -19,8 +25,10 @@ vi.mock('@mobile/lib/haptics', () => ({
 }))
 
 const mockUseSendMessage = vi.mocked(useSendMessage)
+const mockUseUploadSupportAttachment = vi.mocked(useUploadSupportAttachment)
+const mockUseDeleteSupportAttachment = vi.mocked(useDeleteSupportAttachment)
 
-function setupMutate(impl: (payload: { content: string; is_internal?: boolean }) => Promise<unknown>) {
+function setupMutate(impl: (payload: { content: string; is_internal?: boolean; attachment_ids?: string[] }) => Promise<unknown>) {
   const mutateAsync = vi.fn(impl)
   mockUseSendMessage.mockReturnValue({ mutateAsync } as unknown as ReturnType<typeof useSendMessage>)
   return mutateAsync
@@ -30,6 +38,10 @@ beforeEach(() => {
   sessionStorage.clear()
   useDraftStore.setState({ drafts: {} })
   vi.mocked(haptic).mockClear()
+  mockUseUploadSupportAttachment.mockReturnValue({
+    mutateAsync: vi.fn(async () => ({ id: 'att-default', url: 'https://files.test/default' })),
+  } as unknown as ReturnType<typeof useUploadSupportAttachment>)
+  mockUseDeleteSupportAttachment.mockReturnValue({ mutateAsync: vi.fn(async () => undefined) } as unknown as ReturnType<typeof useDeleteSupportAttachment>)
 })
 
 test('reply mode shows the "Reply…" placeholder; switching to Note tints the composer and swaps the placeholder', () => {
@@ -205,4 +217,127 @@ test('dismissing a failed chip removes it without retrying', async () => {
 
   expect(screen.queryByText('discard me')).toBeNull()
   expect(useDraftStore.getState().drafts['conv-1']?.failedSends ?? []).toEqual([])
+})
+
+test('uploads a file and allows an attachment-only reply', async () => {
+  const mutateAsync = setupMutate(async () => ({ id: 'msg-with-file' }))
+  const upload = vi.fn(async () => ({ id: 'att-1', url: 'https://files.test/guide.pdf' }))
+  mockUseUploadSupportAttachment.mockReturnValue({ mutateAsync: upload } as unknown as ReturnType<typeof useUploadSupportAttachment>)
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+  const file = new File(['guide'], 'guide.pdf', { type: 'application/pdf' })
+  fireEvent.change(screen.getByLabelText('Choose attachments'), { target: { files: [file] } })
+
+  await waitFor(() => expect(screen.getByText('Ready')).toBeDefined())
+  expect(screen.getByRole('button', { name: 'Send message' })).toHaveProperty('disabled', false)
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+
+  await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({
+    content: '',
+    is_internal: false,
+    attachment_ids: ['att-1'],
+  }))
+  await waitFor(() => expect(screen.queryByText('guide.pdf')).toBeNull())
+})
+
+test('keeps a failed upload visible and retries it in place', async () => {
+  setupMutate(async () => ({}))
+  let shouldFail = true
+  const upload = vi.fn(async () => {
+    if (shouldFail) throw new Error('storage unavailable')
+    return { id: 'att-retried', url: 'https://files.test/retried.pdf' }
+  })
+  mockUseUploadSupportAttachment.mockReturnValue({ mutateAsync: upload } as unknown as ReturnType<typeof useUploadSupportAttachment>)
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+  const file = new File(['retry'], 'retry.pdf', { type: 'application/pdf' })
+  fireEvent.change(screen.getByLabelText('Choose attachments'), { target: { files: [file] } })
+  await waitFor(() => expect(screen.getByText('Upload failed')).toBeDefined())
+
+  shouldFail = false
+  fireEvent.click(screen.getByRole('button', { name: 'Retry upload retry.pdf' }))
+
+  await waitFor(() => expect(screen.getByText('Ready')).toBeDefined())
+  expect(upload).toHaveBeenCalledTimes(2)
+})
+
+test('removing a confirmed staged attachment deletes its server record', async () => {
+  setupMutate(async () => ({}))
+  const remove = vi.fn(async () => undefined)
+  mockUseUploadSupportAttachment.mockReturnValue({
+    mutateAsync: vi.fn(async () => ({ id: 'att-remove', url: 'https://files.test/remove.pdf' })),
+  } as unknown as ReturnType<typeof useUploadSupportAttachment>)
+  mockUseDeleteSupportAttachment.mockReturnValue({ mutateAsync: remove } as unknown as ReturnType<typeof useDeleteSupportAttachment>)
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+  const file = new File(['remove'], 'remove.pdf', { type: 'application/pdf' })
+  fireEvent.change(screen.getByLabelText('Choose attachments'), { target: { files: [file] } })
+  await waitFor(() => expect(screen.getByText('Ready')).toBeDefined())
+  fireEvent.click(screen.getByRole('button', { name: 'Remove remove.pdf' }))
+
+  await waitFor(() => expect(remove).toHaveBeenCalledWith('att-remove'))
+  expect(screen.queryByText('remove.pdf')).toBeNull()
+})
+
+test('rejects files larger than 10 MB before starting an upload', () => {
+  setupMutate(async () => ({}))
+  const upload = vi.fn()
+  mockUseUploadSupportAttachment.mockReturnValue({ mutateAsync: upload } as unknown as ReturnType<typeof useUploadSupportAttachment>)
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+  const file = new File(['large'], 'too-large.pdf', { type: 'application/pdf' })
+  Object.defineProperty(file, 'size', { value: 10 * 1024 * 1024 + 1 })
+  fireEvent.change(screen.getByLabelText('Choose attachments'), { target: { files: [file] } })
+
+  expect(upload).not.toHaveBeenCalled()
+  expect(screen.queryByText('too-large.pdf')).toBeNull()
+})
+
+test('deletes an upload that finishes after its preview was removed', async () => {
+  setupMutate(async () => ({}))
+  let finishUpload: ((value: { id: string; url: string }) => void) | undefined
+  const upload = vi.fn(() => new Promise<{ id: string; url: string }>((resolve) => { finishUpload = resolve }))
+  const remove = vi.fn(async () => undefined)
+  mockUseUploadSupportAttachment.mockReturnValue({ mutateAsync: upload } as unknown as ReturnType<typeof useUploadSupportAttachment>)
+  mockUseDeleteSupportAttachment.mockReturnValue({ mutateAsync: remove } as unknown as ReturnType<typeof useDeleteSupportAttachment>)
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+  const file = new File(['pending'], 'pending.pdf', { type: 'application/pdf' })
+  fireEvent.change(screen.getByLabelText('Choose attachments'), { target: { files: [file] } })
+  expect(await screen.findByText('Uploading')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Remove pending.pdf' }))
+
+  finishUpload?.({ id: 'att-orphan', url: 'https://files.test/orphan.pdf' })
+  await waitFor(() => expect(remove).toHaveBeenCalledWith('att-orphan'))
+  expect(screen.queryByText('pending.pdf')).toBeNull()
+})
+
+test('keeps attachment IDs on a failed message and reuses them on retry', async () => {
+  let shouldFail = true
+  const send = setupMutate(async () => {
+    if (shouldFail) throw new Error('message failed')
+    return { id: 'msg-retried' }
+  })
+  mockUseUploadSupportAttachment.mockReturnValue({
+    mutateAsync: vi.fn(async () => ({ id: 'att-retry-send', url: 'https://files.test/retry-send.pdf' })),
+  } as unknown as ReturnType<typeof useUploadSupportAttachment>)
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+  const file = new File(['retry send'], 'retry-send.pdf', { type: 'application/pdf' })
+  fireEvent.change(screen.getByLabelText('Choose attachments'), { target: { files: [file] } })
+  await waitFor(() => expect(screen.getByText('Ready')).toBeDefined())
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+
+  await waitFor(() => expect(screen.getByText('1 attachment')).toBeDefined())
+  expect(useDraftStore.getState().drafts['conv-1']?.failedSends[0]?.attachmentIds).toEqual(['att-retry-send'])
+  shouldFail = false
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+  await waitFor(() => expect(screen.queryByText('1 attachment')).toBeNull())
+  expect(send).toHaveBeenLastCalledWith({
+    content: '',
+    is_internal: false,
+    attachment_ids: ['att-retry-send'],
+  })
+  expect(screen.queryByText('retry-send.pdf')).toBeNull()
 })

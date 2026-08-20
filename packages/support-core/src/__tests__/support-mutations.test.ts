@@ -7,6 +7,7 @@ import { supportQueryKeys } from '../support-query-keys'
 import { flattenSupportMessagePages, seedSupportMessagePages, type SupportMessagePages } from '../support-pages'
 import {
   useSendMessage,
+  useUploadSupportAttachment,
   useUpdateConversationStatus,
   useAssignConversationUser,
   useConversationAssignees,
@@ -17,6 +18,7 @@ type FakeApi = {
   get: ReturnType<typeof vi.fn>
   post: ReturnType<typeof vi.fn>
   put: ReturnType<typeof vi.fn>
+  patch: ReturnType<typeof vi.fn>
   del: ReturnType<typeof vi.fn>
 }
 
@@ -25,6 +27,7 @@ function makeFakeApi(): FakeApi {
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
+    patch: vi.fn(),
     del: vi.fn(),
   }
 }
@@ -261,5 +264,82 @@ describe('useConversationAssignees', () => {
     })
 
     expect(fakeApi.get).not.toHaveBeenCalled()
+  })
+})
+
+describe('useUploadSupportAttachment', () => {
+  function attachmentInit() {
+    return {
+      attachment: {
+        id: 'att-1', workspace_id: WORKSPACE_ID, conversation_id: CONVERSATION_ID,
+        file_name: 'guide.pdf', file_size: 5, content_type: 'application/pdf',
+        storage_key: 'support/guide.pdf', public_url: 'https://files.test/guide.pdf',
+        is_uploaded: false, uploaded_by_type: 'user' as const,
+        created_at: '2026-08-20T00:00:00.000Z',
+      },
+      upload_url: 'https://storage.test/presigned',
+      public_url: 'https://files.test/guide.pdf',
+    }
+  }
+
+  it('initiates, PUTs to storage, confirms, and returns the attachment id', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.post.mockResolvedValue({ data: attachmentInit(), error: null })
+    fakeApi.patch.mockResolvedValue({ data: { message: 'confirmed' }, error: null })
+    const storageFetch = vi.fn(async () => ({ ok: true }))
+    vi.stubGlobal('fetch', storageFetch)
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const { result } = renderHook(() => useUploadSupportAttachment(WORKSPACE_ID, CONVERSATION_ID), {
+      wrapper: wrapperFor(queryClient),
+    })
+    const file = new File(['guide'], 'guide.pdf', { type: 'application/pdf' })
+
+    let uploaded: { id: string; url: string } | undefined
+    await act(async () => { uploaded = await result.current.mutateAsync(file) })
+
+    expect(fakeApi.post).toHaveBeenCalledWith(
+      `/support/inbox/conversations/${CONVERSATION_ID}/attachments?workspace_id=${WORKSPACE_ID}`,
+      { file_name: 'guide.pdf', file_size: file.size, content_type: 'application/pdf' },
+    )
+    expect(storageFetch).toHaveBeenCalledWith('https://storage.test/presigned', {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': 'application/pdf', 'x-amz-acl': 'public-read' },
+    })
+    expect(fakeApi.patch).toHaveBeenCalledWith(
+      `/support/inbox/attachments/att-1/confirm?workspace_id=${WORKSPACE_ID}`,
+    )
+    expect(uploaded).toEqual({ id: 'att-1', url: 'https://files.test/guide.pdf' })
+    vi.unstubAllGlobals()
+  })
+
+  it('does not confirm when the storage PUT fails', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.post.mockResolvedValue({ data: attachmentInit(), error: null })
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })))
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const { result } = renderHook(() => useUploadSupportAttachment(WORKSPACE_ID, CONVERSATION_ID), {
+      wrapper: wrapperFor(queryClient),
+    })
+
+    await expect(result.current.mutateAsync(
+      new File(['guide'], 'guide.pdf', { type: 'application/pdf' }),
+    )).rejects.toThrow('Upload to storage failed')
+    expect(fakeApi.patch).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('deletes a staged attachment using the workspace-scoped endpoint', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.del.mockResolvedValue({ data: { message: 'deleted' }, error: null })
+
+    await supportService.deleteAttachment(WORKSPACE_ID, 'att-delete')
+
+    expect(fakeApi.del).toHaveBeenCalledWith(
+      `/support/inbox/attachments/att-delete?workspace_id=${WORKSPACE_ID}`,
+    )
   })
 })

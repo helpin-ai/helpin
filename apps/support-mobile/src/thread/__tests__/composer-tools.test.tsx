@@ -13,6 +13,8 @@ const rewriteMutate = vi.fn(async ({ content, operation }: { content: string; op
 
 vi.mock('@helpin-ai/support-core', () => ({
   useSendMessage: vi.fn(),
+  useUploadSupportAttachment: () => ({ mutateAsync: vi.fn() }),
+  useDeleteSupportAttachment: () => ({ mutateAsync: vi.fn() }),
   useSupportPresenceStore: (selector: (s: { wsSend: null; wsConnected: boolean }) => unknown) =>
     selector({ wsSend: null, wsConnected: false }),
   useRewriteSupportDraft: () => ({ mutateAsync: rewriteMutate }),

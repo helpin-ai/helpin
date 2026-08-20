@@ -5,6 +5,7 @@ import type {
   ConversationStatus,
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
+  SupportAttachmentInitResponse,
   SupportCannedResponse,
   SupportConversation,
   SupportInboxScopeListResponse,
@@ -24,6 +25,7 @@ type ApiLike = {
   get: <T>(path: string) => Promise<ApiResponse<T>>
   post: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
   put: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
+  patch?: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
   del: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
 }
 
@@ -40,6 +42,12 @@ export interface SendMessagePayload {
   cc_emails?: string[]
   bcc_emails?: string[]
   attachment_ids?: string[]
+}
+
+export interface CreateSupportAttachmentPayload {
+  file_name: string
+  file_size: number
+  content_type: string
 }
 
 /**
@@ -199,6 +207,22 @@ export const supportService = {
     getApi().post(`/support/inbox/conversations/${conversationId}/unread${qs(workspaceId)}`, {}),
   sendMessage: (workspaceId: string, conversationId: string, payload: SendMessagePayload) =>
     getApi().post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
+  initiateAttachmentUpload: (
+    workspaceId: string,
+    conversationId: string,
+    payload: CreateSupportAttachmentPayload,
+  ) => getApi().post<SupportAttachmentInitResponse>(
+    `/support/inbox/conversations/${conversationId}/attachments${qs(workspaceId)}`,
+    payload,
+  ),
+  confirmAttachmentUpload: (workspaceId: string, attachmentId: string) =>
+    getApi().patch!<{ message: string }>(
+      `/support/inbox/attachments/${attachmentId}/confirm${qs(workspaceId)}`,
+    ),
+  deleteAttachment: (workspaceId: string, attachmentId: string) =>
+    getApi().del<{ message: string }>(
+      `/support/inbox/attachments/${attachmentId}${qs(workspaceId)}`,
+    ),
   updateConversationStatus: (workspaceId: string, conversationId: string, status: ConversationStatus) =>
     getApi().put<SupportConversation>(`/support/inbox/conversations/${conversationId}/status${qs(workspaceId)}`, { status }),
   assignConversationUser: (workspaceId: string, conversationId: string, payload: AssignConversationUserPayload) =>

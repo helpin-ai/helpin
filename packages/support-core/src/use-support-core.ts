@@ -303,6 +303,36 @@ export function useSendMessage(workspaceId: string, conversationId: string) {
   })
 }
 
+/** Uploads directly to object storage, then confirms the attachment with Helpin. */
+export function useUploadSupportAttachment(workspaceId: string, conversationId: string) {
+  return useMutation<{ id: string; url: string }, Error, File>({
+    mutationFn: async (file) => {
+      const contentType = file.type || 'application/octet-stream'
+      const initiated = unwrapOrThrow(await supportService.initiateAttachmentUpload(
+        workspaceId,
+        conversationId,
+        { file_name: file.name, file_size: file.size, content_type: contentType },
+      ))
+      const response = await fetch(initiated.upload_url, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': contentType, 'x-amz-acl': 'public-read' },
+      })
+      if (!response.ok) throw new Error('Upload to storage failed')
+      unwrapOrThrow(await supportService.confirmAttachmentUpload(workspaceId, initiated.attachment.id))
+      return { id: initiated.attachment.id, url: initiated.public_url }
+    },
+  })
+}
+
+export function useDeleteSupportAttachment(workspaceId: string) {
+  return useMutation<void, Error, string>({
+    mutationFn: async (attachmentId) => {
+      unwrapOrThrow(await supportService.deleteAttachment(workspaceId, attachmentId))
+    },
+  })
+}
+
 export function useUpdateConversationStatus(workspaceId: string) {
   const queryClient = useQueryClient()
   return useMutation({
