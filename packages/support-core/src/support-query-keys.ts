@@ -5,6 +5,8 @@ export const supportQueryKeys = {
   conversation: (wsId: string, id: string) => ['support', wsId, 'conversations', id] as const,
   messages: (wsId: string, conversationId: string) =>
     ['support', wsId, 'conversations', conversationId, 'messages'] as const,
+  messageInfo: (wsId: string, conversationId: string, messageId: string) =>
+    ['support', wsId, 'conversations', conversationId, 'messages', messageId, 'info'] as const,
   unreadStats: (wsId: string) => ['support', wsId, 'unread-stats'] as const,
   inboxScopes: (wsId: string) => ['support', wsId, 'inbox-scopes'] as const,
   mailboxes: (wsId: string) => ['support', wsId, 'mailboxes'] as const,

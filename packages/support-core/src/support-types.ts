@@ -323,6 +323,16 @@ export interface SupportMessage {
   /** Inbound email envelope addresses (customer messages received by email). */
   email_from?: string
   email_reply_to?: string
+  email_to?: string
+  email_cc?: string[]
+  email_bcc?: string[]
+  email_delivery_error?: string
+  cancellable_until?: string
+  email_visible_text?: string
+  email_quoted_text?: string
+  email_has_quoted_content?: boolean
+  email_projection_confidence?: 'high' | 'medium' | 'none'
+  email_projection_version?: number
   attachments?: SupportAttachmentPayload[]
   /**
    * Sanitized HTML body — only populated for inbound email messages
@@ -340,6 +350,41 @@ export interface SupportMessage {
   updated_at: string
   /** Client-only optimistic-send flag; never set by the backend. */
   pending?: boolean
+}
+
+export interface SupportMessageActionResponse {
+  id: string
+  markdown?: string
+  email_already_sent: boolean
+}
+
+export interface SupportMessageInfo {
+  id: string
+  sent_at: string
+  sender: {
+    id?: string
+    name: string
+    type: string
+    avatar_url?: string
+  }
+  from: string
+  to_email?: string
+  cc_emails?: string[]
+  bcc_emails?: string[]
+  origin: string
+  type: string
+  email_delivery_status?: string
+  email_delivery_status_label?: string
+  delivered?: {
+    channel: string
+    delivered_at: string
+  } | null
+  not_delivered_reason?: string | null
+  read: boolean
+  read_at?: string | null
+  edited: boolean
+  translated: boolean
+  automated: boolean
 }
 
 export interface AssignableMember {

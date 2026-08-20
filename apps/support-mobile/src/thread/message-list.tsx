@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
-import { Sparkles } from 'lucide-react'
+import { MoreHorizontal, Sparkles } from 'lucide-react'
+import type { SupportMessage } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
 import { Avatar } from '@mobile/ui/avatar'
 import { Skeleton } from '@mobile/ui/skeleton'
@@ -56,6 +57,38 @@ export interface MessageListProps {
   newestMessageId?: string
   /** Fires when the list decides the floating "New message" pill should show/hide — the pill itself is rendered by the screen (it floats above the composer, which is screen-level layout). */
   onShowNewMessagePillChange?: (show: boolean) => void
+  onMessageActions?: (message: SupportMessage) => void
+}
+
+function ActionableMessage({
+  message,
+  align,
+  receiptStatus,
+  onMessageActions,
+}: {
+  message: SupportMessage
+  align: 'left' | 'right'
+  receiptStatus?: SupportReceiptStatus | null
+  onMessageActions?: (message: SupportMessage) => void
+}) {
+  const showActions = !!onMessageActions && !message.pending && message.message_type !== 'system'
+  return (
+    <div className={cn('flex min-w-0 items-center gap-1', align === 'right' && 'flex-row-reverse')}>
+      <div className="min-w-0 flex-1">
+        <MessageBubble message={message} align={align} receiptStatus={receiptStatus} />
+      </div>
+      {showActions && (
+        <button
+          type="button"
+          aria-label="Message actions"
+          onClick={() => onMessageActions(message)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 active:bg-muted"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  )
 }
 
 function ThreadSkeleton() {
@@ -96,10 +129,12 @@ function ClusterView({
   cluster,
   receiptMessageId,
   receiptStatus,
+  onMessageActions,
 }: {
   cluster: Extract<ThreadItem, { kind: 'cluster' }>
   receiptMessageId?: string | null
   receiptStatus?: SupportReceiptStatus | null
+  onMessageActions?: (message: SupportMessage) => void
 }) {
   const receiptFor = (id: string) => (id === receiptMessageId ? receiptStatus : undefined)
 
@@ -110,7 +145,12 @@ function ClusterView({
     return (
       <div className="mb-3 flex flex-col gap-1">
         {cluster.messages.map((message) => (
-          <MessageBubble key={message.id} message={message} align="left" />
+          <ActionableMessage
+            key={message.id}
+            message={message}
+            align="left"
+            onMessageActions={onMessageActions}
+          />
         ))}
       </div>
     )
@@ -133,7 +173,13 @@ function ClusterView({
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         {cluster.messages.map((message) => (
-          <MessageBubble key={message.id} message={message} align={align} receiptStatus={receiptFor(message.id)} />
+          <ActionableMessage
+            key={message.id}
+            message={message}
+            align={align}
+            receiptStatus={receiptFor(message.id)}
+            onMessageActions={onMessageActions}
+          />
         ))}
       </div>
     </div>
@@ -163,6 +209,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     oldestMessageId,
     newestMessageId,
     onShowNewMessagePillChange,
+    onMessageActions,
   },
   ref,
 ) {
@@ -343,6 +390,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
               cluster={item}
               receiptMessageId={receiptMessageId}
               receiptStatus={receiptStatus}
+              onMessageActions={onMessageActions}
             />
           ),
         )}

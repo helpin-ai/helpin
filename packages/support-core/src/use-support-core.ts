@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { supportQueryKeys } from './support-query-keys'
 import {
   appendMessageToNewestPage,
+  removeMessageFromPages,
   replaceMessageInPages,
   seedSupportMessagePages,
   type ConversationListPages,
@@ -24,6 +25,8 @@ import type {
   SupportAIRewriteDraftResponse,
   SupportConversation,
   SupportMessage,
+  SupportMessageActionResponse,
+  SupportMessageInfo,
   SupportMessagePage,
 } from './support-types'
 import type { VisitorContextResponse } from './visitor-types'
@@ -251,6 +254,21 @@ export function useConversationMessages(workspaceId: string, conversationId: str
   })
 }
 
+export function useMessageInfo(
+  workspaceId: string,
+  conversationId: string,
+  messageId: string | null,
+  enabled = true,
+) {
+  return useQuery<SupportMessageInfo>({
+    queryKey: supportQueryKeys.messageInfo(workspaceId, conversationId, messageId ?? ''),
+    queryFn: async () =>
+      unwrapOrThrow(await supportService.getConversationMessageInfo(workspaceId, conversationId, messageId!)),
+    enabled: enabled && !!workspaceId && !!conversationId && !!messageId,
+    staleTime: 60_000,
+  })
+}
+
 export function useVisitorContext(workspaceId: string, conversationId: string | null) {
   return useQuery<VisitorContextResponse>({
     queryKey: supportQueryKeys.visitorContext(workspaceId, conversationId ?? ''),
@@ -359,6 +377,49 @@ export function useDeleteSupportAttachment(workspaceId: string) {
   return useMutation<void, Error, string>({
     mutationFn: async (attachmentId) => {
       unwrapOrThrow(await supportService.deleteAttachment(workspaceId, attachmentId))
+    },
+  })
+}
+
+interface DeleteMessageMutationContext {
+  previousMessages: SupportMessagePages | undefined
+}
+
+export function useDeleteSupportMessage(workspaceId: string, conversationId: string | null) {
+  const queryClient = useQueryClient()
+  const messagesKey = supportQueryKeys.messages(workspaceId, conversationId ?? '')
+
+  return useMutation<
+    SupportMessageActionResponse,
+    Error,
+    { messageId: string; undo?: boolean },
+    DeleteMessageMutationContext
+  >({
+    mutationFn: async ({ messageId, undo }) => {
+      if (!conversationId) throw new Error('No conversation selected')
+      return unwrapOrThrow(
+        await supportService.deleteConversationMessage(workspaceId, conversationId, messageId, !!undo),
+      )
+    },
+    onMutate: async ({ messageId }) => {
+      await queryClient.cancelQueries({ queryKey: messagesKey })
+      const previousMessages = queryClient.getQueryData<SupportMessagePages>(messagesKey)
+      queryClient.setQueryData<SupportMessagePages>(
+        messagesKey,
+        (current) => removeMessageFromPages(current, messageId),
+      )
+      return { previousMessages }
+    },
+    onError: (_error, _variables, context) => {
+      queryClient.setQueryData(messagesKey, context?.previousMessages)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: messagesKey })
+      if (conversationId) {
+        queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      }
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxViewCounts(workspaceId) })
     },
   })
 }

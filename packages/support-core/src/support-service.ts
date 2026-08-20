@@ -18,6 +18,8 @@ import type {
   SupportMailbox,
   SupportMailboxMember,
   SupportMessage,
+  SupportMessageActionResponse,
+  SupportMessageInfo,
   SupportMessagePage,
   SupportTag,
   SupportTeammatePresenceStatus,
@@ -212,6 +214,19 @@ export const supportService = {
     ),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
     getApi().get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
+  deleteConversationMessage: (
+    workspaceId: string,
+    conversationId: string,
+    messageId: string,
+    undo = false,
+  ) =>
+    getApi().del<SupportMessageActionResponse>(
+      `/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}${undo ? '&undo=1' : ''}`,
+    ),
+  getConversationMessageInfo: (workspaceId: string, conversationId: string, messageId: string) =>
+    getApi().get<SupportMessageInfo>(
+      `/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`,
+    ),
   listConversationMessagePage: (
     workspaceId: string,
     conversationId: string,

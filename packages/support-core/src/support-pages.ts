@@ -78,3 +78,17 @@ export function replaceMessageInPages(
     })),
   }
 }
+
+export function removeMessageFromPages(
+  data: SupportMessagePages | undefined,
+  messageId: string,
+): SupportMessagePages | undefined {
+  if (!data) return data
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      data: page.data.filter((message) => message.id !== messageId),
+    })),
+  }
+}

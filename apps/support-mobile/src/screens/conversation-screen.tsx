@@ -14,6 +14,7 @@ import {
   type ConversationListCache,
   type ConversationStatus,
   type SupportConversation,
+  type SupportMessage,
 } from '@helpin-ai/support-core'
 import { TopBar } from '@mobile/ui/top-bar'
 import { OfflineBanner } from '@mobile/ui/offline-banner'
@@ -33,6 +34,8 @@ import { computeSupportReceipt, groupMessages } from '@mobile/thread/thread-help
 import { Composer } from '@mobile/thread/composer'
 import { ContextSheet } from '@mobile/thread/context-sheet'
 import { ConversationActionsSheet } from '@mobile/thread/conversation-actions-sheet'
+import { MessageActionsSheet } from '@mobile/thread/message-actions-sheet'
+import { useDraftStore } from '@mobile/thread/draft-store'
 import { haptic } from '@mobile/lib/haptics'
 import { CheckCircle2, MessageCircle, MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
@@ -201,7 +204,21 @@ export function ConversationScreen() {
   const [showNewMessagePill, setShowNewMessagePill] = useState(false)
   const [contextSheetOpen, setContextSheetOpen] = useState(false)
   const [actionsSheetOpen, setActionsSheetOpen] = useState(false)
+  const [selectedMessage, setSelectedMessage] = useState<SupportMessage | null>(null)
+  const setDraftText = useDraftStore((state) => state.setText)
+  const setDraftMode = useDraftStore((state) => state.setMode)
   const updateStatus = useUpdateConversationStatus(workspaceId)
+
+  useEffect(() => {
+    setSelectedMessage(null)
+  }, [conversationId])
+
+  const restoreReplyDraft = (text: string) => {
+    if (!conversationId) return
+    setDraftMode(conversationId, 'reply')
+    setDraftText(conversationId, text)
+    requestAnimationFrame(() => messageListRef.current?.scrollToBottom('smooth'))
+  }
 
   const handleBack = () => {
     if (router.history.canGoBack()) router.history.back()
@@ -329,6 +346,7 @@ export function ConversationScreen() {
             receiptMessageId={receipt.receiptMessageId}
             receiptStatus={receipt.receiptStatus}
             onShowNewMessagePillChange={setShowNewMessagePill}
+            onMessageActions={setSelectedMessage}
           />
         )}
 
@@ -388,6 +406,20 @@ export function ConversationScreen() {
           workspaceId={workspaceId}
           conversation={conversation}
           onLeave={handleBack}
+        />
+      )}
+
+      {selectedMessage && (
+        <MessageActionsSheet
+          open
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setSelectedMessage(null)
+          }}
+          workspaceId={workspaceId}
+          message={selectedMessage}
+          currentUserId={agentUser?.id}
+          canEditSupport={canEditSupport}
+          onRestoreDraft={restoreReplyDraft}
         />
       )}
     </div>

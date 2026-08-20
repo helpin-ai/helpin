@@ -164,4 +164,18 @@ describe('MessageList history pagination', () => {
     fireEvent.click(view.getByRole('button', { name: 'Retry earlier messages' }))
     expect(loadEarlier).toHaveBeenCalledTimes(1)
   })
+
+  it('opens actions for a non-system message from its compact trigger', () => {
+    const onMessageActions = vi.fn()
+    const item = message('msg-03', '03')
+    const view = render(
+      <MessageList
+        items={groupMessages([item])}
+        onMessageActions={onMessageActions}
+      />,
+    )
+
+    fireEvent.click(view.getByRole('button', { name: 'Message actions' }))
+    expect(onMessageActions).toHaveBeenCalledWith(item)
+  })
 })
