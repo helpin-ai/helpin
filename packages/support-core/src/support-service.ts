@@ -372,6 +372,13 @@ export const supportService = {
   },
   listTeammatePresence: (workspaceId: string) =>
     getApi().get<SupportTeammatePresenceStatus[]>(`/support/inbox/teammates/presence${qs(workspaceId)}`),
+  updateMyTeammatePresence: (
+    workspaceId: string,
+    manualStatus: SupportTeammatePresenceStatus['manual_status'] | null,
+  ) => getApi().put<SupportTeammatePresenceStatus>(
+    `/support/inbox/me/presence${qs(workspaceId)}`,
+    { manual_status: manualStatus },
+  ),
   markConversationRead: (workspaceId: string, conversationId: string) =>
     getApi().post(`/support/inbox/conversations/${conversationId}/read${qs(workspaceId)}`, {}),
   markConversationUnread: (workspaceId: string, conversationId: string) =>

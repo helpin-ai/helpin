@@ -40,6 +40,7 @@ import type {
   SupportMessageInfo,
   SupportMessagePage,
   SupportRunInteraction,
+  SupportTeammatePresenceStatus,
   ResolveSupportRunInteractionRequest,
   UpdateConversationEmailRecipientsRequest,
 } from './support-types'
@@ -238,6 +239,17 @@ export function useSupportTeammatePresence(workspaceId: string, enabled = true) 
     staleTime: 15_000,
     refetchInterval: 30_000,
     refetchIntervalInBackground: true,
+  })
+}
+
+export function useUpdateMySupportTeammatePresence(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (manualStatus: SupportTeammatePresenceStatus['manual_status'] | null) =>
+      unwrapOrThrow(await supportService.updateMyTeammatePresence(workspaceId, manualStatus)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.teammatePresence(workspaceId) })
+    },
   })
 }
 

@@ -3,6 +3,7 @@ import {
   useAssignConversationUser,
   useConversation,
   useConversationAssignees,
+  useSupportTeammatePresence,
   useUpdateConversationCustomerName,
   useUpdateConversationStatus,
   type SupportConversation,
@@ -12,6 +13,7 @@ import { ContextSheet } from '../context-sheet'
 vi.mock('@helpin-ai/support-core', () => ({
   useConversation: vi.fn(),
   useConversationAssignees: vi.fn(),
+  useSupportTeammatePresence: vi.fn(),
   useUpdateConversationStatus: vi.fn(),
   useAssignConversationUser: vi.fn(),
   useUpdateConversationCustomerName: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock('sonner', () => ({
 
 const mockUseConversation = vi.mocked(useConversation)
 const mockUseConversationAssignees = vi.mocked(useConversationAssignees)
+const mockUseSupportTeammatePresence = vi.mocked(useSupportTeammatePresence)
 const mockUseUpdateConversationStatus = vi.mocked(useUpdateConversationStatus)
 const mockUseAssignConversationUser = vi.mocked(useAssignConversationUser)
 const mockUseUpdateConversationCustomerName = vi.mocked(useUpdateConversationCustomerName)
@@ -82,6 +85,7 @@ function setup({
     data: TEAMMATES,
     isLoading: false,
   } as unknown as ReturnType<typeof useConversationAssignees>)
+  mockUseSupportTeammatePresence.mockReturnValue({ data: [] } as unknown as ReturnType<typeof useSupportTeammatePresence>)
   mockUseUpdateConversationStatus.mockReturnValue({
     mutate: statusMutate,
     isPending: false,
@@ -155,7 +159,7 @@ test('tapping a teammate in the expanded assign list calls the assign mutation w
   render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} canEdit />)
 
   fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
-  fireEvent.click(screen.getByRole('button', { name: 'Grace Hopper' }))
+  fireEvent.click(screen.getByRole('button', { name: /Grace Hopper/ }))
 
   expect(assignMutate).toHaveBeenCalledWith(
     { conversationId: 'conv-1', userId: 'user-1' },

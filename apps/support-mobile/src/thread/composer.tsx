@@ -27,6 +27,7 @@ import { CannedResponsesSheet } from './canned-responses-sheet'
 import { EmailConfirmSheet } from './email-confirm-sheet'
 import { cannedToPlainText, detectShortcutToken, replaceRange } from './canned-shortcuts'
 import { detectMentionToken, mentionSuggestions, type MentionMember, type MentionSuggestion, type MentionToken } from './mentions'
+import { teammatePresenceDotClass, teammatePresenceLabel } from './teammate-presence'
 
 /** How long the "Rewritten · Undo" bar stays before auto-dismissing. */
 const UNDO_VISIBLE_MS = 6000
@@ -600,10 +601,13 @@ export function Composer({
                   onClick={() => insertMention(item, mentionToken)}
                   className="flex w-full items-center gap-2.5 border-b border-border/40 px-3 py-2 text-left last:border-0 active:bg-muted"
                 >
-                  <Avatar name={item.label} src={item.avatarUrl ?? undefined} size={28} />
+                  <span className="relative shrink-0">
+                    <Avatar name={item.label} src={item.avatarUrl ?? undefined} size={28} />
+                    {item.presenceStatus && <span aria-hidden className={`absolute bottom-0 right-0 h-2 w-2 rounded-full border-2 border-background ${teammatePresenceDotClass(item.presenceStatus)}`} />}
+                  </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-footnote font-medium">{item.label}</span>
-                    <span className="block truncate text-caption text-muted-foreground">@{item.handle}</span>
+                    <span className="block truncate text-caption text-muted-foreground">@{item.handle}{item.presenceStatus ? ` · ${teammatePresenceLabel(item.presenceStatus)}` : ''}</span>
                   </span>
                 </button>
               ))

@@ -1,8 +1,14 @@
 import { Check, UserMinus } from 'lucide-react'
-import { useConversationAssignees } from '@helpin-ai/support-core'
+import { useConversationAssignees, useSupportTeammatePresence } from '@helpin-ai/support-core'
 import { Avatar } from '@mobile/ui/avatar'
 import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
+import {
+  sortTeammatesByPresence,
+  teammatePresenceByUserId,
+  teammatePresenceDotClass,
+  teammatePresenceLabel,
+} from './teammate-presence'
 
 export interface AssignListProps {
   workspaceId: string
@@ -21,7 +27,13 @@ export interface AssignListProps {
  */
 export function AssignList({ workspaceId, conversationId, currentUserId, onSelect }: AssignListProps) {
   const { data: assignees, isLoading, isError, refetch } = useConversationAssignees(workspaceId, conversationId)
-  const assignableUsers = (assignees ?? []).filter((member) => !!member.user_id)
+  const presenceQuery = useSupportTeammatePresence(workspaceId)
+  const presence = presenceQuery.data ?? []
+  const presenceByUserId = teammatePresenceByUserId(presence)
+  const assignableUsers = sortTeammatesByPresence(
+    (assignees ?? []).filter((member) => !!member.user_id),
+    presence,
+  )
 
   return (
     <div className="flex flex-col py-1">
@@ -60,17 +72,25 @@ export function AssignList({ workspaceId, conversationId, currentUserId, onSelec
       {assignableUsers.map((member) => {
         const memberId = member.user_id ?? member.id
         const selected = memberId === currentUserId
+        const memberPresence = member.user_id ? presenceByUserId.get(member.user_id) : undefined
+        const presenceLabel = teammatePresenceLabel(memberPresence?.status)
         return (
           <Pressable
             key={member.id}
             haptic="selection"
-            aria-label={member.display_name}
+            aria-label={`${member.display_name}, ${presenceLabel}`}
             aria-pressed={selected}
             onPress={() => onSelect(memberId)}
             className="flex h-auto min-h-0 w-full items-center gap-3 px-4 py-2 text-left"
           >
-            <Avatar name={member.display_name} src={member.avatar_url} size={36} />
-            <span className="flex-1 truncate text-body">{member.display_name}</span>
+            <span className="relative shrink-0">
+              <Avatar name={member.display_name} src={member.avatar_url} size={36} />
+              <span aria-hidden className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background ${teammatePresenceDotClass(memberPresence?.status)}`} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-body">{member.display_name}</span>
+              <span className="block text-caption text-muted-foreground">{presenceLabel}</span>
+            </span>
             {selected && <Check className="h-4 w-4 shrink-0 text-primary" />}
           </Pressable>
         )

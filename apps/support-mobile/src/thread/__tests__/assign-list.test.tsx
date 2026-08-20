@@ -1,9 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { useConversationAssignees } from '@helpin-ai/support-core'
+import { useConversationAssignees, useSupportTeammatePresence } from '@helpin-ai/support-core'
 import { AssignList } from '../assign-list'
 
 vi.mock('@helpin-ai/support-core', () => ({
   useConversationAssignees: vi.fn(),
+  useSupportTeammatePresence: vi.fn(),
 }))
 
 vi.mock('@mobile/lib/haptics', () => ({
@@ -11,6 +12,7 @@ vi.mock('@mobile/lib/haptics', () => ({
 }))
 
 const mockUseConversationAssignees = vi.mocked(useConversationAssignees)
+const mockUseSupportTeammatePresence = vi.mocked(useSupportTeammatePresence)
 
 function mockQuery(overrides: Partial<{ data: unknown; isLoading: boolean; isError: boolean; refetch: () => void }>) {
   mockUseConversationAssignees.mockReturnValue({
@@ -24,6 +26,11 @@ function mockQuery(overrides: Partial<{ data: unknown; isLoading: boolean; isErr
 
 afterEach(() => {
   mockUseConversationAssignees.mockReset()
+  mockUseSupportTeammatePresence.mockReset()
+})
+
+beforeEach(() => {
+  mockUseSupportTeammatePresence.mockReturnValue({ data: [] } as never)
 })
 
 test('error state renders the "Couldn\'t load teammates" row', () => {
@@ -54,4 +61,19 @@ test('success state renders assignable teammates, not the error row', () => {
   expect(screen.getByText('Grace Hopper')).toBeDefined()
   expect(screen.queryByText('No Account')).toBeNull()
   expect(screen.queryByText("Couldn't load teammates")).toBeNull()
+})
+
+test('sorts available teammates first and exposes their status', () => {
+  mockQuery({ data: [
+    { id: 'member-1', user_id: 'user-offline', role: 'member', email: 'o@example.com', display_name: 'Offline Person' },
+    { id: 'member-2', user_id: 'user-online', role: 'member', email: 'n@example.com', display_name: 'Online Person' },
+  ] })
+  mockUseSupportTeammatePresence.mockReturnValue({ data: [
+    { user_id: 'user-offline', status: 'offline', source: 'auto' },
+    { user_id: 'user-online', status: 'online', source: 'auto' },
+  ] } as never)
+  render(<AssignList workspaceId="ws-1" conversationId="conv-1" onSelect={vi.fn()} />)
+  const buttons = screen.getAllByRole('button')
+  expect(buttons.findIndex((button) => button.getAttribute('aria-label') === 'Online Person, Online'))
+    .toBeLessThan(buttons.findIndex((button) => button.getAttribute('aria-label') === 'Offline Person, Offline'))
 })

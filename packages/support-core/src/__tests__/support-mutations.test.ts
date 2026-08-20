@@ -13,6 +13,7 @@ import {
   useConversationAssignees,
   useCreateTaskFromConversation,
   useApproveAgentRun,
+  useUpdateMySupportTeammatePresence,
 } from '../use-support-core'
 import type { SupportMessage } from '../support-types'
 
@@ -185,6 +186,25 @@ describe('supportService mutations (unit, no React)', () => {
     expect(fakeApi.post).toHaveBeenNthCalledWith(3, '/dock/chats/chat%2F1/interactions/int%2F1/resolve?workspace_id=ws-1', {
       response_payload: { decision: 'approve' },
     })
+  })
+
+  it('updates the current teammate support presence override', async () => {
+    fakeApi.put.mockResolvedValue({ data: { user_id: 'user-1', status: 'away', source: 'manual', manual_status: 'away' }, error: null })
+    await supportService.updateMyTeammatePresence(WORKSPACE_ID, 'away')
+    expect(fakeApi.put).toHaveBeenCalledWith('/support/inbox/me/presence?workspace_id=ws-1', { manual_status: 'away' })
+  })
+})
+
+describe('useUpdateMySupportTeammatePresence', () => {
+  it('invalidates teammate availability after changing the override', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.put.mockResolvedValue({ data: { user_id: 'user-1', status: 'online', source: 'auto' }, error: null })
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useUpdateMySupportTeammatePresence(WORKSPACE_ID), { wrapper: wrapperFor(queryClient) })
+    await act(async () => { await result.current.mutateAsync(null) })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: supportQueryKeys.teammatePresence(WORKSPACE_ID) })
   })
 })
 

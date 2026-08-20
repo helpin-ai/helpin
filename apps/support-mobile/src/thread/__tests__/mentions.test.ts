@@ -33,6 +33,11 @@ describe('mentionSuggestions', () => {
     expect(out[0].handle).toBe('ada.lovelace')
     expect(out.some((s) => s.handle === 'bob.stone')).toBe(false)
   })
+
+  test('carries availability into the suggestion presentation', () => {
+    const out = mentionSuggestions('', [{ ...members[0], presence_status: 'online' }])
+    expect(out[0].presenceStatus).toBe('online')
+  })
 })
 
 describe('detectMentionToken', () => {

@@ -11,6 +11,7 @@ export interface MentionMember {
   email: string
   display_name: string
   avatar_url?: string | null
+  presence_status?: 'online' | 'away' | 'offline'
 }
 
 export interface MentionSuggestion {
@@ -19,6 +20,7 @@ export interface MentionSuggestion {
   label: string
   secondaryText: string
   avatarUrl?: string | null
+  presenceStatus?: 'online' | 'away' | 'offline'
 }
 
 /** Normalizes a name/query into a mention handle (verbatim from web). */
@@ -56,6 +58,7 @@ export function mentionSuggestions(query: string, members: MentionMember[], limi
         label: member.display_name || member.email,
         secondaryText: member.email,
         avatarUrl: member.avatar_url,
+        ...(member.presence_status ? { presenceStatus: member.presence_status } : {}),
       }
     })
     .filter((item): item is MentionSuggestion => item !== null)

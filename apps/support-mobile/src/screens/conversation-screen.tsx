@@ -12,6 +12,7 @@ import {
   useInboxScopes,
   useMoveConversation,
   useSupportInstallation,
+  useSupportTeammatePresence,
   useSupportPresenceStore,
   useUpdateConversationStatus,
   type ConversationListCache,
@@ -138,6 +139,11 @@ export function ConversationScreen() {
     enabled: !!workspaceId && canEditSupport,
     staleTime: 60_000,
   })
+  const teammatePresenceQuery = useSupportTeammatePresence(supportWorkspaceId, canReadSupport)
+  const teammatePresenceByUserId = useMemo(
+    () => new Map((teammatePresenceQuery.data ?? []).map((status) => [status.user_id, status.status])),
+    [teammatePresenceQuery.data],
+  )
   const mentionMembers = useMemo<MentionMember[]>(
     () =>
       (assignableQuery.data ?? []).map((member) => ({
@@ -146,8 +152,9 @@ export function ConversationScreen() {
         email: member.email,
         display_name: member.display_name,
         avatar_url: member.avatar_url,
+        presence_status: member.user_id ? teammatePresenceByUserId.get(member.user_id) : undefined,
       })),
-    [assignableQuery.data],
+    [assignableQuery.data, teammatePresenceByUserId],
   )
 
   // Email-fallback: a reply to a widget conversation whose visitor is offline is

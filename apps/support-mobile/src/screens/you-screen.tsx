@@ -15,6 +15,8 @@ import { getPushPrimingPref, setPushPrimingPref, type PushPrimingPref } from '@m
 import { registerForPush } from '@mobile/push/push-registration'
 import { PrimaryNavigation } from '@mobile/navigation/primary-navigation'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
+import { useWorkspacePermissions } from '@mobile/lib/use-workspace-permissions'
+import { SupportAvailabilityControl } from '@mobile/thread/support-availability-control'
 
 /** App version footer caption: real version via the Tauri shell, 'dev' in a plain browser tab. */
 function useAppVersion(): string {
@@ -108,6 +110,7 @@ export function SettingsScreen() {
   const { slug } = useParams({ strict: false })
   const workspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '')
   const user = useAuthStore((state) => state.user)
+  const { canReadSupport } = useWorkspacePermissions(workspaceId)
   const { theme, setTheme } = useTheme()
   const appVersion = useAppVersion()
   const { armed, trigger } = useConfirmPress(3000)
@@ -158,6 +161,8 @@ export function SettingsScreen() {
               )}
             </section>
           )}
+
+          <SupportAvailabilityControl workspaceId={workspaceId} userId={user?.id} enabled={canReadSupport} />
 
           <section className="border-b border-border/70 py-3">
             <span className="mb-2 block text-footnote text-muted-foreground">Appearance</span>
