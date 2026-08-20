@@ -2,6 +2,7 @@ import {
   buildConversationListRequestFilters,
   defaultConversationListFiltersForNav,
   parseSupportInboxViewFilters,
+  type ConversationListFilters,
 } from '@/lib/supportInboxFilters'
 import type { NavFilter } from '@/stores/supportInboxStore'
 import type { ConversationFilters } from '@helpin-ai/support-core'
@@ -37,20 +38,47 @@ export function selectionTitle(selection: ViewSelection): string {
       return selection.name
   }
 }
+export function selectionFilterContext(selection: ViewSelection): {
+  navFilter: NavFilter
+  selectedMailboxId: string
+} {
+  if (selection.kind === 'builtin') {
+    return { navFilter: selection.navFilter, selectedMailboxId: selection.mailboxId }
+  }
+  if (selection.kind === 'mailbox') {
+    return { navFilter: 'inbox', selectedMailboxId: selection.mailboxId }
+  }
+  const parsed = parseSupportInboxViewFilters(selection.filters, 'inbox')
+  return { navFilter: parsed.navFilter, selectedMailboxId: parsed.selectedMailboxId }
+}
+
+
+/** Editable filter state for a selection, including a custom view's saved baseline. */
+export function selectionListFilters(selection: ViewSelection): ConversationListFilters {
+  if (selection.kind === 'custom') {
+    return parseSupportInboxViewFilters(selection.filters, 'inbox').listFilters
+  }
+  return defaultConversationListFiltersForNav(
+    selection.kind === 'builtin' ? selection.navFilter : 'inbox',
+  )
+}
 
 /**
  * Convert a drawer selection into the exact server query the web app sends for
  * the same view, by reusing the web's own `buildConversationListRequestFilters`.
  * This is the parity guarantee: mobile never hand-derives per-view params.
  */
-export function selectionToConversationFilters(selection: ViewSelection): ConversationFilters | undefined {
+export function selectionToConversationFilters(
+  selection: ViewSelection,
+  listFilters?: ConversationListFilters | null,
+): ConversationFilters | undefined {
   switch (selection.kind) {
     case 'builtin':
       return buildConversationListRequestFilters({
         navFilter: selection.navFilter,
         selectedMailboxId: selection.mailboxId,
         searchQuery: '',
-        listFilters: defaultConversationListFiltersForNav(selection.navFilter),
+        listFilters: listFilters ?? selectionListFilters(selection),
       })
     case 'mailbox':
       // A team inbox is the "inbox" view scoped to that mailbox — same as web.
@@ -58,7 +86,7 @@ export function selectionToConversationFilters(selection: ViewSelection): Conver
         navFilter: 'inbox',
         selectedMailboxId: selection.mailboxId,
         searchQuery: '',
-        listFilters: defaultConversationListFiltersForNav('inbox'),
+        listFilters: listFilters ?? selectionListFilters(selection),
       })
     case 'custom': {
       const parsed = parseSupportInboxViewFilters(selection.filters, 'inbox')
@@ -66,7 +94,7 @@ export function selectionToConversationFilters(selection: ViewSelection): Conver
         navFilter: parsed.navFilter,
         selectedMailboxId: parsed.selectedMailboxId,
         searchQuery: parsed.searchQuery,
-        listFilters: parsed.listFilters,
+        listFilters: listFilters ?? parsed.listFilters,
       })
     }
   }

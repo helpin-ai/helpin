@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Check, Inbox as InboxIcon, Mail, MailOpen, SlidersHorizontal } from 'lucide-react'
+import { Check, Inbox as InboxIcon, ListFilter, Mail, MailOpen, PanelLeft, Plus } from 'lucide-react'
 import {
   flattenConversationPages,
   useInfiniteConversations,
@@ -12,6 +12,7 @@ import {
   useUpdateConversationStatus,
 } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
+import { filterChangeCountFromBaseline } from '@/lib/supportInboxFilters'
 import { haptic } from '@mobile/lib/haptics'
 import { isTauri } from '@mobile/lib/host'
 import { useWorkspacePermissions } from '@mobile/lib/use-workspace-permissions'
@@ -32,7 +33,13 @@ import { useSupportViewStore } from '@mobile/stores/support-view-store'
 import { useResolvedTransitionStore } from '@mobile/stores/resolved-transition-store'
 import { CELL_EXIT_DURATION_MS, ConversationCell } from '@mobile/inbox/conversation-cell'
 import { ViewsDrawer } from '@mobile/inbox/views-drawer'
-import { selectionTitle, selectionToConversationFilters } from '@mobile/inbox/use-inbox-filters'
+import {
+  selectionFilterContext,
+  selectionListFilters,
+  selectionTitle,
+  selectionToConversationFilters,
+} from '@mobile/inbox/use-inbox-filters'
+import { InboxFilterSheet } from '@mobile/inbox/filter-sheet'
 import { SwipeableRow, type SwipeAction } from '@mobile/inbox/swipeable-row'
 import { PULL_ARM_THRESHOLD, usePullToRefresh } from '@mobile/inbox/use-pull-to-refresh'
 import { CONVERSATION_CELL_HEIGHT, isUnread } from '@mobile/inbox/inbox-helpers'
@@ -88,6 +95,9 @@ export function InboxScreen() {
 
   const selection = useSupportViewStore((s) => s.selection)
   const setSelection = useSupportViewStore((s) => s.setSelection)
+  const filterOverrides = useSupportViewStore((s) => s.filterOverrides)
+  const setFilterOverrides = useSupportViewStore((s) => s.setFilterOverrides)
+  const [filterOpen, setFilterOpen] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const edgeStart = useRef<{ x: number; y: number } | null>(null)
   const workspacesQuery = useQuery({
@@ -123,7 +133,19 @@ export function InboxScreen() {
   const unreadStats = useUnreadStats(supportWorkspaceId)
   // Reuse the web's own filter rulebook so each view returns identical
   // conversations to the web app (see use-inbox-filters).
-  const filters = useMemo(() => selectionToConversationFilters(selection), [selection])
+  const baselineFilters = useMemo(() => selectionListFilters(selection), [selection])
+  const filterContext = useMemo(() => selectionFilterContext(selection), [selection])
+  const activeListFilters = filterOverrides ?? baselineFilters
+  const filterCount = filterChangeCountFromBaseline({
+    searchQuery: '',
+    listFilters: activeListFilters,
+    baselineSearchQuery: '',
+    baselineFilters,
+  })
+  const filters = useMemo(
+    () => selectionToConversationFilters(selection, activeListFilters),
+    [activeListFilters, selection],
+  )
   // `keepPrevious` avoids a skeleton flash when switching views — the previous
   // view's data stays on screen (dimmed below) until the new one loads instead
   // of getting torn down first.
@@ -337,14 +359,42 @@ export function InboxScreen() {
           title={currentTitle}
           subtitle={workspace?.name}
           trailing={
-            <Pressable
-              aria-label="Open inbox views"
-              haptic="selection"
-              onPress={() => setDrawerOpen(true)}
-              className="flex items-center justify-center rounded-full"
-            >
-              <SlidersHorizontal className="h-5 w-5" />
-            </Pressable>
+            <>
+              {canEditSupport && (
+                <Pressable
+                  aria-label="New conversation"
+                  haptic="selection"
+                  onPress={() => router.navigate({
+                    to: '/w/$slug/support/new',
+                    params: { slug: slug ?? '' },
+                  })}
+                  className="flex items-center justify-center rounded-full"
+                >
+                  <Plus className="h-5 w-5" />
+                </Pressable>
+              )}
+              <Pressable
+                aria-label="Filter conversations"
+                haptic="selection"
+                onPress={() => setFilterOpen(true)}
+                className="relative flex items-center justify-center rounded-full"
+              >
+                <ListFilter className="h-5 w-5" />
+                {filterCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                    {filterCount}
+                  </span>
+                )}
+              </Pressable>
+              <Pressable
+                aria-label="Open inbox views"
+                haptic="selection"
+                onPress={() => setDrawerOpen(true)}
+                className="flex items-center justify-center rounded-full"
+              >
+                <PanelLeft className="h-5 w-5" />
+              </Pressable>
+            </>
           }
         />
 
@@ -519,6 +569,17 @@ export function InboxScreen() {
         onOpenSettings={() => router.navigate({ to: '/w/$slug/settings', params: { slug: slug ?? '' } })}
         activeSelection={selection}
         onSelect={setSelection}
+      />
+
+      <InboxFilterSheet
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        workspaceId={workspaceId}
+        navFilter={filterContext.navFilter}
+        selectedMailboxId={filterContext.selectedMailboxId}
+        filters={activeListFilters}
+        baseline={baselineFilters}
+        onApply={setFilterOverrides}
       />
 
         <PermissionPrimingSheet open={primingSheetOpen} onOpenChange={setPrimingSheetOpen} />

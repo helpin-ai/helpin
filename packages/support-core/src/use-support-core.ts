@@ -3,6 +3,7 @@ import { supportQueryKeys } from './support-query-keys'
 import {
   appendMessageToNewestPage,
   replaceMessageInPages,
+  seedSupportMessagePages,
   type ConversationListPages,
   type SupportMessagePages,
 } from './support-pages'
@@ -17,6 +18,8 @@ import type {
   AssignableMember,
   ConversationListResponse,
   ConversationStatus,
+  CreateConversationWithMessageRequest,
+  CreateConversationWithMessageResponse,
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportConversation,
@@ -193,6 +196,33 @@ export function useConversation(workspaceId: string, conversationId: string | nu
     queryFn: async () => unwrapOrThrow(await supportService.getConversation(workspaceId, conversationId!)),
     enabled: !!workspaceId && !!conversationId,
     staleTime: 30_000,
+  })
+}
+
+export function useCreateConversationWithMessage(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation<CreateConversationWithMessageResponse, Error, CreateConversationWithMessageRequest>({
+    mutationFn: async (payload) => {
+      const result = unwrapOrThrow(await supportService.createConversationWithMessage(workspaceId, payload))
+      if (!result.conversation?.id || !result.message?.id) {
+        throw new Error('Conversation send returned an invalid response')
+      }
+      return result
+    },
+    onSuccess: ({ conversation, message }) => {
+      queryClient.setQueryData(
+        supportQueryKeys.conversation(workspaceId, conversation.id),
+        conversation,
+      )
+      queryClient.setQueryData(
+        supportQueryKeys.messages(workspaceId, conversation.id),
+        seedSupportMessagePages([message]),
+      )
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxScopes(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.unreadStats(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.inboxViewCounts(workspaceId) })
+    },
   })
 }
 

@@ -85,6 +85,26 @@ export interface SendSupportConversationTranscriptResponse {
   email: string
 }
 
+/** Atomic outbound-conversation contract shared with the web support inbox. */
+export interface CreateConversationWithMessageRequest {
+  mailbox_id?: string | null
+  subject: string
+  customer_name?: string
+  customer_email?: string
+  crm_contact_id?: string
+  channels?: ('chat' | 'email')[]
+  content: string
+  attachment_ids?: string[]
+  tag_ids?: string[]
+  cc_emails?: string[]
+  bcc_emails?: string[]
+}
+
+export interface CreateConversationWithMessageResponse {
+  conversation: SupportConversation
+  message: SupportMessage
+}
+
 export interface SupportConversation {
   id: string
   workspace_id: string

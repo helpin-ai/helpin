@@ -3,6 +3,8 @@ import type {
   AssignableMember,
   ConversationListResponse,
   ConversationStatus,
+  CreateConversationWithMessageRequest,
+  CreateConversationWithMessageResponse,
   SendSupportConversationTranscriptResponse,
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
@@ -190,6 +192,11 @@ export const supportService = {
     getApi().get<SupportMailboxMember[]>(`/support/inbox/mailboxes/${mailboxId}/members${qs(workspaceId)}`),
   getConversation: (workspaceId: string, id: string) =>
     getApi().get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
+  createConversationWithMessage: (workspaceId: string, payload: CreateConversationWithMessageRequest) =>
+    getApi().post<CreateConversationWithMessageResponse>(
+      `/support/inbox/conversations/create-and-send${qs(workspaceId)}`,
+      payload,
+    ),
   listConversationMessages: (workspaceId: string, conversationId: string) =>
     getApi().get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
   listConversationMessagePage: (

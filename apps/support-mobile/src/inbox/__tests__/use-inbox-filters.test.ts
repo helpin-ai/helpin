@@ -6,6 +6,7 @@ import {
 import type { NavFilter } from '@/stores/supportInboxStore'
 import {
   selectionTitle,
+  selectionListFilters,
   selectionToConversationFilters,
   type ViewSelection,
 } from '../use-inbox-filters'
@@ -45,6 +46,29 @@ describe('selectionToConversationFilters — parity with the web function', () =
     expect(filters === undefined || typeof filters === 'object').toBe(true)
   })
 })
+  test('applies ad hoc mobile filters on top of a custom view baseline', () => {
+    const selection: ViewSelection = {
+      kind: 'custom',
+      viewId: 'v1',
+      name: 'VIPs',
+      filters: { states: 'open', tag_ids: 'vip' },
+    }
+    const baseline = selectionListFilters(selection)
+    expect(baseline.states).toEqual(['open'])
+    expect(baseline.tagIds).toEqual(['vip'])
+
+    expect(selectionToConversationFilters(selection, {
+      ...baseline,
+      states: ['resolved'],
+      tagIds: ['urgent'],
+      sort: 'oldest',
+    })).toMatchObject({
+      statuses: 'resolved',
+      tag_ids: 'urgent',
+      sort: 'oldest',
+    })
+  })
+
 
 describe('selectionTitle', () => {
   test('builtin uses the web label wording', () => {
