@@ -11,6 +11,8 @@ import type {
   SupportAttachmentInitResponse,
   SupportCannedResponse,
   SupportConversation,
+  SupportConversationSearchParams,
+  SupportConversationSearchResponse,
   SupportInboxScopeListResponse,
   SupportInstallation,
   SupportInboxView,
@@ -137,6 +139,16 @@ const CONVERSATION_FILTER_KEYS = [
 ] as const
 
 export const supportService = {
+  searchConversations: (workspaceId: string, params: SupportConversationSearchParams) => {
+    const query = new URLSearchParams({ workspace_id: workspaceId })
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === undefined || value === null) return
+      const stringValue = String(value).trim()
+      if (!stringValue) return
+      query.set(key, stringValue)
+    })
+    return getApi().get<SupportConversationSearchResponse>(`/support/inbox/search?${query.toString()}`)
+  },
   listConversations: (
     workspaceId: string,
     filters?: ConversationFilters,

@@ -5,10 +5,13 @@ import type {
   SupportConversation,
   SupportMessage,
   SupportMessagePage,
+  SupportConversationSearchResponse,
+  SupportConversationSearchResult,
 } from './support-types'
 
 export type ConversationListPages = InfiniteData<ConversationListResponse, number>
 export type SupportMessagePages = InfiniteData<SupportMessagePage, string | undefined>
+export type SupportConversationSearchPages = InfiniteData<SupportConversationSearchResponse, number>
 
 export function flattenConversationPages(data?: ConversationListPages): SupportConversation[] {
   if (!data) return []
@@ -23,6 +26,23 @@ export function flattenConversationPages(data?: ConversationListPages): SupportC
     }
   }
   return conversations
+}
+
+export function flattenConversationSearchPages(
+  data?: SupportConversationSearchPages,
+): SupportConversationSearchResult[] {
+  if (!data) return []
+
+  const seen = new Set<string>()
+  const results: SupportConversationSearchResult[] = []
+  for (const page of data.pages) {
+    for (const result of page.data) {
+      if (seen.has(result.conversation.id)) continue
+      seen.add(result.conversation.id)
+      results.push(result)
+    }
+  }
+  return results
 }
 
 export function flattenSupportMessagePages(data?: SupportMessagePages): SupportMessage[] {

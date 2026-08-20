@@ -6,6 +6,7 @@ import {
   replaceMessageInPages,
   seedSupportMessagePages,
   type ConversationListPages,
+  type SupportConversationSearchPages,
   type SupportMessagePages,
 } from './support-pages'
 import {
@@ -24,6 +25,8 @@ import type {
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportConversation,
+  SupportConversationSearchParams,
+  SupportConversationSearchResponse,
   SupportMessage,
   SupportMessageActionResponse,
   SupportMessageInfo,
@@ -46,6 +49,14 @@ function unwrapOrThrow<T>(value: { data: T | null; error: string | null }): T {
 }
 const CONVERSATION_PAGE_SIZE = 50
 const MESSAGE_PAGE_SIZE = 20
+const SEARCH_PAGE_SIZE = 50
+
+export function hasSupportConversationSearchInput(filters: SupportConversationSearchParams) {
+  return Object.entries(filters).some(([key, value]) => {
+    if (key === 'page' || key === 'per_page' || key === 'sort') return false
+    return typeof value === 'string' ? value.trim().length > 0 : value !== undefined && value !== null
+  })
+}
 
 function normalizeConversationResponse(
   data: ConversationListResponse | SupportConversation[] | null,
@@ -114,6 +125,32 @@ export function useInfiniteConversations(
     enabled: !!workspaceId,
     staleTime: 15_000,
     placeholderData: keepPrevious ? (previous) => previous : undefined,
+  })
+}
+
+export function useInfiniteConversationSearch(
+  workspaceId: string,
+  filters: SupportConversationSearchParams,
+  enabled = true,
+) {
+  return useInfiniteQuery<
+    SupportConversationSearchResponse,
+    Error,
+    SupportConversationSearchPages,
+    ReturnType<typeof supportQueryKeys.search>,
+    number
+  >({
+    queryKey: supportQueryKeys.search(workspaceId, filters),
+    queryFn: async ({ pageParam }) => unwrapOrThrow(await supportService.searchConversations(workspaceId, {
+      ...filters,
+      page: pageParam,
+      per_page: SEARCH_PAGE_SIZE,
+    })),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.page < lastPage.total_pages ? lastPage.page + 1 : undefined,
+    enabled: enabled && !!workspaceId && hasSupportConversationSearchInput(filters),
+    staleTime: 15_000,
   })
 }
 
