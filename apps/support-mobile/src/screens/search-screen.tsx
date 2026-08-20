@@ -57,8 +57,8 @@ export function SearchScreen() {
         <TopBar title="Search" subtitle={workspace?.name} />
         <OfflineBanner />
 
-        <div className="sticky top-[calc(52px+var(--safe-top))] z-20 border-b border-border bg-background px-4 pb-3">
-          <label className="flex h-11 items-center gap-2 rounded-xl bg-muted px-3 focus-within:ring-2 focus-within:ring-primary/40">
+        <div className="sticky top-[calc(52px+var(--safe-top))] z-20 border-b border-border/70 bg-background/95 px-4 pb-3 pt-3 backdrop-blur-sm">
+          <label className="flex h-12 items-center gap-2 rounded-2xl border border-input bg-muted/70 px-3.5 shadow-sm transition-[border-color,box-shadow,background-color] focus-within:border-primary/50 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/20">
             <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
             <input
               autoFocus

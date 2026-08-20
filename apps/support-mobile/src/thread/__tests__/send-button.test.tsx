@@ -46,7 +46,7 @@ test('sent state: announces "Message sent" and is pressable again (re-armed afte
   expect(button).toHaveProperty('disabled', false)
 })
 
-test('button footprint (h-9 w-9, min-h-0 min-w-0) is identical across every state — no layout shift while morphing', () => {
+test('button footprint (h-10 w-10, min-h-0 min-w-0) is identical across every state — no layout shift while morphing', () => {
   const states = ['disabled', 'active', 'sending', 'sent'] as const
   const footprints = states.map((state) => {
     const { unmount } = render(<SendButton state={state} onPress={vi.fn()} />)
@@ -55,6 +55,6 @@ test('button footprint (h-9 w-9, min-h-0 min-w-0) is identical across every stat
     return classes
   })
 
-  expect(footprints[0]).toEqual(['h-9', 'min-h-0', 'min-w-0', 'w-9'])
+  expect(footprints[0]).toEqual(['h-10', 'min-h-0', 'min-w-0', 'w-10'])
   footprints.forEach((classes) => expect(classes).toEqual(footprints[0]))
 })

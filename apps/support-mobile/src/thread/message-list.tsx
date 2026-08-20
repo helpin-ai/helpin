@@ -112,7 +112,7 @@ function ClusterView({
   // bubble column (customer on the left, our side on the right). No visible
   // sender-name header — the name is the avatar's native tooltip, like web.
   return (
-    <div className={cn('mb-3 flex items-end gap-2', align === 'right' && 'flex-row-reverse')}>
+    <div className={cn('mb-4 flex items-end gap-2.5', align === 'right' && 'flex-row-reverse')}>
       <div title={cluster.senderName} className="relative shrink-0">
         <Avatar name={cluster.senderName} src={cluster.senderAvatarUrl} size={28} />
         {isAI && (
@@ -237,7 +237,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="h-full overflow-y-auto px-3 pb-[max(var(--safe-bottom),16px)] pt-2"
+      className="h-full overflow-y-auto px-4 pb-[max(var(--safe-bottom),20px)] pt-3"
     >
       {/* Inner wrapper exists solely as the ResizeObserver target: the scroll
           container itself has a fixed height, so content growth is only

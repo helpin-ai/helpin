@@ -239,17 +239,7 @@ export function ConversationScreen() {
         onBack={handleBack}
         titleAlign="left"
         onTitlePress={() => setContextSheetOpen(true)}
-        titleSlot={
-          <>
-            <span className="max-w-[200px] truncate text-headline">{conversationTitle}</span>
-            {subtitle && (
-              <span className="flex items-center gap-1 text-footnote text-muted-foreground">
-                {visitorOnline && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />}
-                <span className="max-w-[220px] truncate">{subtitle}</span>
-              </span>
-            )}
-          </>
-        }
+        titleSlot={<span className="max-w-[200px] truncate text-headline">{conversationTitle}</span>}
         trailing={
           conversation && (
             <>
@@ -276,6 +266,24 @@ export function ConversationScreen() {
       />
 
       <OfflineBanner />
+
+      {conversation && (
+        <Pressable
+          aria-label="Open conversation details"
+          onPress={() => setContextSheetOpen(true)}
+          className="flex w-full flex-col items-start border-b border-border/60 bg-background px-4 pb-3 pt-2 text-left"
+        >
+          <span className="line-clamp-2 text-title text-foreground">{conversationTitle}</span>
+          <span className="mt-2 flex max-w-full items-center gap-2 text-footnote text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1.5">
+              {visitorOnline && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />}
+              <span className="truncate font-medium text-foreground/80">{customerName}</span>
+            </span>
+            <span aria-hidden className="text-border">•</span>
+            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5">{STATUS_LABELS[conversation.status]}</span>
+          </span>
+        </Pressable>
+      )}
 
       <div className="relative min-h-0 flex-1">
         {showEmpty ? (

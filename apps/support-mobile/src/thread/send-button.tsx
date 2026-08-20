@@ -1,4 +1,4 @@
-import { ArrowRight, Check } from 'lucide-react'
+import { ArrowUp, Check } from 'lucide-react'
 import { cn } from '@mobile/lib/cn'
 import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
@@ -11,7 +11,7 @@ export interface SendButtonProps {
 }
 
 /**
- * 36px circular send affordance. Fixed size across every state (`h-9 w-9`,
+ * 40px circular send affordance. Fixed size across every state (`h-10 w-10`,
  * with `min-h-0 min-w-0` to override `Pressable`'s 44px touch-target
  * minimums) so morphing disabled → active → sending → sent never shifts
  * surrounding layout — only the fill color and the icon inside change.
@@ -36,7 +36,7 @@ export function SendButton({ state, onPress }: SendButtonProps) {
       disabled={disabled}
       onPress={onPress}
       className={cn(
-        'flex h-9 w-9 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-full transition-colors duration-150',
+        'flex h-10 w-10 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-full transition-colors duration-150',
         state === 'disabled' && 'bg-muted text-muted-foreground opacity-30',
         state === 'active' && 'bg-primary text-primary-foreground',
         state === 'sending' && 'bg-primary/30 text-primary-foreground',
@@ -48,7 +48,7 @@ export function SendButton({ state, onPress }: SendButtonProps) {
       ) : state === 'sent' ? (
         <Check className="h-4 w-4" />
       ) : (
-        <ArrowRight className="h-5 w-5" />
+        <ArrowUp className="h-5 w-5" />
       )}
     </Pressable>
   )

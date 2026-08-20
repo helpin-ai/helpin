@@ -62,7 +62,7 @@ const LINE_HEIGHT_PX = 20
 const MAX_LINES = 6
 const TEXTAREA_VERTICAL_PADDING_PX = 16 // py-2 (8px top + 8px bottom)
 const MAX_TEXTAREA_HEIGHT_PX = LINE_HEIGHT_PX * MAX_LINES + TEXTAREA_VERTICAL_PADDING_PX
-const MIN_TEXTAREA_HEIGHT_PX = LINE_HEIGHT_PX + TEXTAREA_VERTICAL_PADDING_PX
+const MIN_TEXTAREA_HEIGHT_PX = 56
 
 const SENT_STATE_MS = 400
 
@@ -102,6 +102,8 @@ export function Composer({
   const [phase, setPhase] = useState<'idle' | 'sending' | 'sent'>('idle')
 
   const isNote = draft.mode === 'note'
+  const replyRecipient = variableContext.customer?.fullName?.trim().split(/\s+/)[0]
+  const replyPlaceholder = replyRecipient ? `Reply to ${replyRecipient}…` : 'Reply…'
   // Broadcast "agent is typing" to teammates + the customer while composing a
   // reply (never in note mode). Emits `stop` on send, switch-to-note, or leave.
   const { notifyTyping, stopTyping } = useTypingBroadcast(conversationId, !isNote)
@@ -333,10 +335,7 @@ export function Composer({
       )}
 
       <div
-        className={cn(
-          'border-t border-border/60 pb-[max(var(--safe-bottom),8px)] transition-[margin-bottom] duration-150 ease-out mb-[var(--keyboard-inset)]',
-          isNote ? 'bg-amber-500/10' : 'bg-background',
-        )}
+        className="border-t border-border/50 bg-background pb-[max(var(--safe-bottom),8px)] pt-2 transition-[margin-bottom] duration-150 ease-out mb-[var(--keyboard-inset)]"
       >
         {undoText !== null && (
           <div className="flex items-center gap-2 px-3 pt-2 text-footnote text-muted-foreground">
@@ -353,38 +352,26 @@ export function Composer({
           </div>
         )}
 
-        <div className="flex items-center gap-1 px-3 pt-2 pb-1.5">
-          <SegmentedControl<ComposerMode>
-            segments={[
-              { value: 'reply', label: 'Reply' },
-              { value: 'note', label: 'Note' },
-            ]}
-            value={draft.mode}
-            onChange={(mode) => setMode(conversationId, mode)}
-            size="sm"
-            className="w-[104px]"
-          />
-          <div className="ml-auto flex items-center gap-0.5">
-            <Pressable
-              aria-label="Canned responses"
-              haptic="selection"
-              disabled={phase === 'sending'}
-              onPress={() => setCannedSheetOpen(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-primary active:bg-primary/10 disabled:opacity-40"
-            >
-              <Zap className="h-5 w-5" />
-            </Pressable>
-            <Pressable
-              aria-label="AI writing tools"
-              haptic="selection"
-              disabled={trimmed.length === 0 || phase === 'sending' || busyOperation !== null}
-              onPress={() => setAiSheetOpen(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-primary active:bg-primary/10 disabled:opacity-40"
-            >
-              <Sparkles className="h-5 w-5" />
-            </Pressable>
+        <div
+          className={cn(
+            'mx-3 overflow-hidden rounded-[24px] border shadow-[0_8px_30px_rgba(15,23,42,0.08)] transition-colors',
+            isNote
+              ? 'border-amber-300/70 bg-amber-50 dark:border-amber-800/70 dark:bg-amber-950/30'
+              : 'border-border/80 bg-card',
+          )}
+        >
+          <div className="flex items-center px-3 pb-1 pt-2.5">
+            <SegmentedControl<ComposerMode>
+              segments={[
+                { value: 'reply', label: 'Reply' },
+                { value: 'note', label: 'Note' },
+              ]}
+              value={draft.mode}
+              onChange={(mode) => setMode(conversationId, mode)}
+              size="sm"
+              className="w-[116px]"
+            />
           </div>
-        </div>
 
         {mentionToken && mentionItems.length > 0 ? (
           <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-lg">
@@ -423,7 +410,6 @@ export function Composer({
             ))}
           </div>
         ) : null}
-        <div className="flex items-end gap-2 px-3 pb-2">
           <textarea
             ref={textareaRef}
             rows={1}
@@ -435,11 +421,33 @@ export function Composer({
               if (!isNote) notifyTyping(next)
             }}
             onSelect={(event) => setCursor(event.currentTarget.selectionStart ?? 0)}
-            placeholder={isNote ? 'Internal note… (@ to mention)' : 'Reply…'}
+            placeholder={isNote ? 'Internal note… (@ to mention)' : replyPlaceholder}
             style={{ minHeight: MIN_TEXTAREA_HEIGHT_PX, maxHeight: MAX_TEXTAREA_HEIGHT_PX }}
-            className="flex-1 resize-none overflow-y-auto rounded-2xl border border-input bg-background px-3 py-2 text-body text-foreground outline-none placeholder:text-muted-foreground"
+            className="w-full resize-none overflow-y-auto bg-transparent px-4 py-2.5 text-body text-foreground outline-none placeholder:text-muted-foreground"
           />
-          <SendButton state={buttonState} onPress={handleSendPress} />
+          <div className="flex items-center gap-1 px-2.5 pb-2.5">
+            <Pressable
+              aria-label="Canned responses"
+              haptic="selection"
+              disabled={phase === 'sending'}
+              onPress={() => setCannedSheetOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground active:bg-muted disabled:opacity-40"
+            >
+              <Zap className="h-5 w-5" />
+            </Pressable>
+            <Pressable
+              aria-label="AI writing tools"
+              haptic="selection"
+              disabled={trimmed.length === 0 || phase === 'sending' || busyOperation !== null}
+              onPress={() => setAiSheetOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-primary active:bg-primary/10 disabled:opacity-40"
+            >
+              <Sparkles className="h-5 w-5" />
+            </Pressable>
+            <div className="ml-auto">
+              <SendButton state={buttonState} onPress={handleSendPress} />
+            </div>
+          </div>
         </div>
       </div>
 

@@ -9,6 +9,7 @@ import {
   type SystemEventBadge,
 } from '@/components/support/supportSystemEvent'
 import { cn } from '@mobile/lib/cn'
+import { formatRelativeTime } from '@mobile/inbox/inbox-helpers'
 import { riseIn } from '@mobile/lib/motion'
 import { EmailBody } from './email-body'
 import { Markdown } from './markdown'
@@ -174,12 +175,10 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
     // Internal note: amber card, "{name} left a private note", @mentions highlighted.
     const mentionSegments = splitMentionSegments(message.content)
     content = (
-      <div className="w-full rounded-2xl border border-amber-300/60 bg-amber-100/50 px-3 py-2 dark:border-amber-800/60 dark:bg-amber-950/30">
-        <div className="mb-1 flex items-center gap-1.5 text-caption text-amber-700 dark:text-amber-300">
+      <div className="w-full rounded-[20px] border border-amber-300/60 bg-amber-100/55 px-4 py-3 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/30">
+        <div className="mb-1.5 flex items-center gap-1.5 text-caption uppercase text-amber-700 dark:text-amber-300">
           <StickyNote className="h-3 w-3 shrink-0" />
-          <span>
-            <span className="font-semibold">{senderName}</span> left a private note
-          </span>
+          <span className="font-semibold">Note · {senderName}</span>
         </div>
         {isEmail ? (
           <EmailBody html={message.html_body!} className="text-amber-900 dark:text-amber-100" />
@@ -196,6 +195,9 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
         )}
         <ImageThumbnails attachments={imageAttachments} />
         <AttachmentRows attachments={fileAttachments} tone="note" />
+        <div className="mt-2 text-caption text-amber-700/70 dark:text-amber-300/70">
+          {formatRelativeTime(message.created_at)}
+        </div>
       </div>
     )
   } else {
@@ -205,8 +207,8 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
       <div className={cn('flex flex-col', align === 'right' ? 'items-end' : 'items-start')}>
         <div
           className={cn(
-            'max-w-[85%] min-w-0 rounded-[16px] px-3 py-2',
-            align === 'right' ? 'bg-primary/10' : 'bg-muted',
+            'max-w-[92%] min-w-0 rounded-[20px] px-4 py-3 shadow-sm',
+            align === 'right' ? 'bg-primary/[0.09] dark:bg-primary/[0.13]' : 'bg-muted/80',
           )}
         >
           {isEmail ? (
@@ -216,28 +218,24 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
           )}
           <ImageThumbnails attachments={imageAttachments} />
           <AttachmentRows attachments={fileAttachments} tone="default" />
-        </div>
-        {(showEmailReceived || receipt) && (
           <div
             className={cn(
-              'mt-0.5 flex items-center gap-1 px-1 text-[11px] text-muted-foreground',
+              'mt-2 flex items-center gap-1 text-[11px] text-muted-foreground/80',
               align === 'right' ? 'justify-end' : 'justify-start',
             )}
           >
-            {showEmailReceived && (
-              <>
-                <Mail className="h-3 w-3 shrink-0" />
-                <span>Received by email</span>
-              </>
-            )}
+            {showEmailReceived && <Mail className="h-3 w-3 shrink-0" />}
+            <span>{formatRelativeTime(message.created_at)}</span>
+            {showEmailReceived && <span>· Email</span>}
             {receipt && (
               <>
+                <span>·</span>
                 <CheckCheck className={cn('h-3.5 w-3.5 shrink-0', receipt.read && 'text-blue-500')} />
                 <span>{receipt.label}</span>
               </>
             )}
           </div>
-        )}
+        </div>
       </div>
     )
   }
