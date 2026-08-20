@@ -4,7 +4,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   isSupportConversationListQueryKey,
   useConversation,
-  useConversationAssignees,
   useConversationMessages,
   useMarkConversationRead,
   useSupportInstallation,
@@ -111,21 +110,27 @@ export function ConversationScreen() {
 
   const agentUser = useAuthStore((s) => s.user)
   const workspaceName = useWorkspaceStore((s) => s.currentWorkspace?.name)
-  // Teammates mentionable in internal notes. Uses the conversation's assignable
-  // members (workspace-wide for shared inboxes, mailbox-scoped otherwise), so
-  // @mentions work in every conversation — not just team-inbox ones.
-  const assignableQuery = useConversationAssignees(workspaceId, conversationId ?? null)
+  // Match the web composer: mentions use all workspace-assignable identities,
+  // while the narrower conversation-assignee query remains assignment-only.
+  const assignableQuery = useQuery({
+    queryKey: ['workspace', workspaceId, 'assignable-members'],
+    queryFn: async () => {
+      const { data, error } = await workspacesService.listAssignableMembers(workspaceId)
+      if (error || !data) throw new Error(error ?? 'Failed to load teammates')
+      return data
+    },
+    enabled: !!workspaceId,
+    staleTime: 60_000,
+  })
   const mentionMembers = useMemo<MentionMember[]>(
     () =>
-      (assignableQuery.data ?? [])
-        .filter((member) => !!member.user_id)
-        .map((member) => ({
-          id: member.id,
-          user_id: member.user_id,
-          email: member.email,
-          display_name: member.display_name,
-          avatar_url: member.avatar_url,
-        })),
+      (assignableQuery.data ?? []).map((member) => ({
+        id: member.id,
+        user_id: member.user_id,
+        email: member.email,
+        display_name: member.display_name,
+        avatar_url: member.avatar_url,
+      })),
     [assignableQuery.data],
   )
 

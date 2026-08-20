@@ -44,6 +44,28 @@ test('reply mode shows the "Reply…" placeholder; switching to Note tints the c
   expect(useDraftStore.getState().drafts['conv-1']?.mode).toBe('note')
 })
 
+test('note mode exposes the workspace teammate picker and inserts the selected mention', () => {
+  setupMutate(async () => ({}))
+  render(
+    <Composer
+      workspaceId="ws-1"
+      conversationId="conv-1"
+      mentionMembers={[
+        { id: 'member-1', user_id: 'user-1', email: 'marcus@example.com', display_name: 'Marcus Bell' },
+        { id: 'member-2', email: 'pending@example.com', display_name: 'Pending Teammate' },
+      ]}
+    />,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Note' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Mention teammate' }))
+
+  expect(screen.getByText('Marcus Bell')).toBeDefined()
+  expect(screen.getByText('Pending Teammate')).toBeDefined()
+  fireEvent.click(screen.getByText('Marcus Bell'))
+  expect((screen.getByPlaceholderText(/Internal note/) as HTMLTextAreaElement).value).toBe('@marcus.bell ')
+})
+
 test('typing populates the draft store keyed by conversationId', () => {
   setupMutate(async () => ({}))
   render(<Composer workspaceId="ws-1" conversationId="conv-1" />)

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Sparkles, Undo2, X, Zap } from 'lucide-react'
+import { AtSign, Sparkles, Undo2, X, Zap } from 'lucide-react'
 import {
   useRewriteSupportDraft,
   useSendMessage,
@@ -191,6 +191,15 @@ export function Composer({
     pendingCaretRef.current = edit.cursor
     setCursor(edit.cursor)
     haptic('selection')
+  }
+
+  function startMention() {
+    const token = cursor > 0 && !/\s/.test(draft.text[cursor - 1] ?? '') ? ' @' : '@'
+    const nextText = draft.text.slice(0, cursor) + token + draft.text.slice(cursor)
+    const nextCursor = cursor + token.length
+    setText(conversationId, nextText)
+    pendingCaretRef.current = nextCursor
+    setCursor(nextCursor)
   }
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -396,22 +405,28 @@ export function Composer({
             </Pressable>
           </div>
 
-        {mentionToken && mentionItems.length > 0 ? (
+        {mentionToken ? (
           <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-lg">
-            {mentionItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => insertMention(item, mentionToken)}
-                className="flex w-full items-center gap-2.5 border-b border-border/40 px-3 py-2 text-left last:border-0 active:bg-muted"
-              >
-                <Avatar name={item.label} src={item.avatarUrl ?? undefined} size={28} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-footnote font-medium">{item.label}</span>
-                  <span className="block truncate text-caption text-muted-foreground">@{item.handle}</span>
-                </span>
-              </button>
-            ))}
+            {mentionItems.length > 0 ? (
+              mentionItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => insertMention(item, mentionToken)}
+                  className="flex w-full items-center gap-2.5 border-b border-border/40 px-3 py-2 text-left last:border-0 active:bg-muted"
+                >
+                  <Avatar name={item.label} src={item.avatarUrl ?? undefined} size={28} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-footnote font-medium">{item.label}</span>
+                    <span className="block truncate text-caption text-muted-foreground">@{item.handle}</span>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-3 text-footnote text-muted-foreground">
+                {mentionMembers.length === 0 ? 'No teammates available' : 'No teammates match this mention'}
+              </div>
+            )}
           </div>
         ) : activeToken && inlineSuggestions.length > 0 ? (
           <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-lg">
@@ -449,6 +464,17 @@ export function Composer({
             className="w-full resize-none overflow-y-auto bg-transparent px-4 py-2.5 text-body text-foreground outline-none placeholder:text-muted-foreground"
           />
           <div className="flex items-center gap-1 px-2.5 pb-2.5">
+            {isNote && (
+              <Pressable
+                aria-label="Mention teammate"
+                haptic="selection"
+                disabled={phase === 'sending'}
+                onPress={startMention}
+                className="flex h-9 w-9 items-center justify-center rounded-full text-amber-700 active:bg-amber-100 disabled:opacity-40 dark:text-amber-300 dark:active:bg-amber-900/40"
+              >
+                <AtSign className="h-5 w-5" />
+              </Pressable>
+            )}
             <Pressable
               aria-label="Canned responses"
               haptic="selection"
