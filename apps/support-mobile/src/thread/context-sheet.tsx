@@ -24,6 +24,7 @@ export interface ContextSheetProps {
   conversationId: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  canEdit: boolean
 }
 
 /**
@@ -66,7 +67,7 @@ function ContextRow({ label, value }: { label: string; value?: string | null }) 
  * context. Tag *editing* is out of scope (V1.1) — see the note above the
  * render return for why a tags section isn't rendered at all here.
  */
-export function ContextSheet({ workspaceId, conversationId, open, onOpenChange }: ContextSheetProps) {
+export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, canEdit }: ContextSheetProps) {
   const [assignExpanded, setAssignExpanded] = useState(false)
 
   const conversationQuery = useConversation(workspaceId, conversationId)
@@ -89,7 +90,7 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange }
   }
 
   const handleToggleStatus = () => {
-    if (!conversation || !conversationId) return
+    if (!canEdit || !conversation || !conversationId) return
     const nextStatus: ConversationStatus = conversation.status === 'resolved' ? 'open' : 'resolved'
     haptic('selection')
     updateStatus.mutate(
@@ -105,7 +106,7 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange }
   }
 
   const handleAssign = (userId: string | null) => {
-    if (!conversationId) return
+    if (!canEdit || !conversationId) return
     haptic('selection')
     assignUser.mutate(
       { conversationId, userId },
@@ -173,26 +174,32 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange }
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-t border-border/60 px-4 py-3">
-          <Pressable
-            onPress={handleToggleStatus}
-            disabled={updateStatus.isPending}
-            className="flex h-9 flex-1 items-center justify-center rounded-lg bg-muted text-body font-medium text-foreground"
-          >
-            {isResolved ? 'Reopen' : 'Resolve'}
-          </Pressable>
-          <Pressable
-            haptic="selection"
-            onPress={() => setAssignExpanded((value) => !value)}
-            aria-expanded={assignExpanded}
-            className="flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-muted text-body font-medium text-foreground"
-          >
-            Assign
-            <ChevronRight className={cn('h-4 w-4 transition-transform', assignExpanded && 'rotate-90')} />
-          </Pressable>
-        </div>
+        {canEdit ? (
+          <div className="flex items-center gap-2 border-t border-border/60 px-4 py-3">
+            <Pressable
+              onPress={handleToggleStatus}
+              disabled={updateStatus.isPending}
+              className="flex h-9 flex-1 items-center justify-center rounded-lg bg-muted text-body font-medium text-foreground"
+            >
+              {isResolved ? 'Reopen' : 'Resolve'}
+            </Pressable>
+            <Pressable
+              haptic="selection"
+              onPress={() => setAssignExpanded((value) => !value)}
+              aria-expanded={assignExpanded}
+              className="flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-muted text-body font-medium text-foreground"
+            >
+              Assign
+              <ChevronRight className={cn('h-4 w-4 transition-transform', assignExpanded && 'rotate-90')} />
+            </Pressable>
+          </div>
+        ) : (
+          <div className="border-t border-border/60 px-4 py-3 text-footnote text-muted-foreground">
+            Read-only access
+          </div>
+        )}
 
-        {assignExpanded && (
+        {canEdit && assignExpanded && (
           <div className="border-t border-border/60">
             <AssignList
               workspaceId={workspaceId}

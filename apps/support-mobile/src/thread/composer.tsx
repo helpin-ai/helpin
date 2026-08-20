@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AtSign, Sparkles, Undo2, X, Zap } from 'lucide-react'
+import { toast } from 'sonner'
 import {
   useRewriteSupportDraft,
   useSendMessage,
@@ -11,7 +12,9 @@ import { filterShortcuts, stripShortcutContent } from '@/components/support/shor
 import { resolveShortcutVariables, type ShortcutVariableContext } from '@/components/support/shortcutVariables'
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@mobile/lib/upgrade-required'
 import { Pressable } from '@mobile/ui/pressable'
+import { UpgradeRequiredSheet } from '@mobile/ui/upgrade-required-sheet'
 import { DEFAULT_DRAFT, useDraftStore, type ComposerMode } from './draft-store'
 import type { FailedSend } from './failed-sends-reducer'
 import { SendButton, type SendButtonState } from './send-button'
@@ -116,6 +119,7 @@ export function Composer({
   const [aiSheetOpen, setAiSheetOpen] = useState(false)
   const [busyOperation, setBusyOperation] = useState<SupportAIRewriteOperation | null>(null)
   const [undoText, setUndoText] = useState<string | null>(null)
+  const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null)
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => { if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current) }, [])
 
@@ -131,7 +135,14 @@ export function Composer({
       undoTimeoutRef.current = setTimeout(() => setUndoText(null), UNDO_VISIBLE_MS)
       haptic('notificationSuccess')
       setAiSheetOpen(false)
-    } catch {
+    } catch (error) {
+      const reason = getUpgradeRequiredReason(error)
+      if (reason) {
+        setAiSheetOpen(false)
+        setUpgradeReason(reason)
+      } else {
+        toast.error('Could not rewrite draft')
+      }
       haptic('notificationError')
     } finally {
       setBusyOperation(null)
@@ -515,6 +526,13 @@ export function Composer({
         onSelect={(response) => {
           insertCanned(response)
           setCannedSheetOpen(false)
+        }}
+      />
+
+      <UpgradeRequiredSheet
+        reason={upgradeReason}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeReason(null)
         }}
       />
 

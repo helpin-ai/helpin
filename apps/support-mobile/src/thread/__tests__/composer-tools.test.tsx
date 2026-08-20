@@ -58,6 +58,21 @@ describe('AI rewrite + undo', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Undo', hidden: true }))
     expect((screen.getByPlaceholderText('Reply…') as HTMLTextAreaElement).value).toBe('plz help')
   })
+
+  test('shows an upgrade sheet instead of the raw AI usage error', async () => {
+    setupSend(async () => ({}))
+    rewriteMutate.mockRejectedValueOnce(new Error('AI usage exhausted'))
+    render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+    fireEvent.change(screen.getByPlaceholderText('Reply…'), { target: { value: 'plz help' } })
+    fireEvent.click(screen.getByRole('button', { name: 'AI writing tools' }))
+    fireEvent.click(await screen.findByLabelText('Rephrase'))
+
+    expect(await screen.findByText('AI usage for this workspace is exhausted.')).toBeDefined()
+    expect(screen.getByText('Larger included AI usage allowance')).toBeDefined()
+    expect(screen.queryByText('AI usage exhausted')).toBeNull()
+    expect((screen.getByPlaceholderText('Reply…', { exact: true }) as HTMLTextAreaElement).value).toBe('plz help')
+  })
 })
 
 describe('email-fallback send confirm', () => {

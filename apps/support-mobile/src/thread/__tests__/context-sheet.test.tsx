@@ -84,7 +84,7 @@ beforeEach(() => {
 
 test('renders the customer name and email from the conversation', () => {
   setup()
-  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} />)
+  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} canEdit />)
 
   expect(screen.getByText('Ada Lovelace')).toBeDefined()
   expect(screen.getByText('ada@example.com')).toBeDefined()
@@ -92,7 +92,7 @@ test('renders the customer name and email from the conversation', () => {
 
 test('Resolve calls the status mutation with resolved for an open conversation', () => {
   const { statusMutate } = setup()
-  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} />)
+  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} canEdit />)
 
   fireEvent.click(screen.getByRole('button', { name: 'Resolve' }))
 
@@ -104,7 +104,7 @@ test('Resolve calls the status mutation with resolved for an open conversation',
 
 test('Reopen calls the status mutation with open for a resolved conversation', () => {
   const { statusMutate } = setup({ conversation: { ...BASE_CONVERSATION, status: 'resolved' } })
-  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} />)
+  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} canEdit />)
 
   fireEvent.click(screen.getByRole('button', { name: 'Reopen' }))
 
@@ -116,7 +116,7 @@ test('Reopen calls the status mutation with open for a resolved conversation', (
 
 test('tapping a teammate in the expanded assign list calls the assign mutation with that user id', () => {
   const { assignMutate } = setup()
-  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} />)
+  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} canEdit />)
 
   fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
   fireEvent.click(screen.getByRole('button', { name: 'Grace Hopper' }))
@@ -129,7 +129,7 @@ test('tapping a teammate in the expanded assign list calls the assign mutation w
 
 test('tapping Unassign in the expanded assign list calls the assign mutation with a null user id', () => {
   const { assignMutate } = setup({ conversation: { ...BASE_CONVERSATION, assigned_user_id: 'user-1' } })
-  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} />)
+  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} canEdit />)
 
   fireEvent.click(screen.getByRole('button', { name: 'Assign' }))
   fireEvent.click(screen.getByRole('button', { name: 'Unassign' }))
@@ -138,4 +138,23 @@ test('tapping Unassign in the expanded assign list calls the assign mutation wit
     { conversationId: 'conv-1', userId: null },
     expect.anything(),
   )
+})
+
+test('read-only access hides resolve and assignment controls', () => {
+  const { statusMutate, assignMutate } = setup()
+  render(
+    <ContextSheet
+      workspaceId="ws-1"
+      conversationId="conv-1"
+      open
+      onOpenChange={() => {}}
+      canEdit={false}
+    />,
+  )
+
+  expect(screen.getByText('Read-only access')).toBeDefined()
+  expect(screen.queryByRole('button', { name: 'Resolve' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Assign' })).toBeNull()
+  expect(statusMutate).not.toHaveBeenCalled()
+  expect(assignMutate).not.toHaveBeenCalled()
 })

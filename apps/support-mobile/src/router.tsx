@@ -14,6 +14,7 @@ import { AppThemeProvider } from '@mobile/ui/theme-provider'
 import { ScreenStack } from '@mobile/navigation/screen-stack'
 import { useKeyboardInset } from '@mobile/lib/use-keyboard-inset'
 import { useMobileRealtime } from '@mobile/lib/use-mobile-realtime'
+import { useWorkspacePermissions } from '@mobile/lib/use-workspace-permissions'
 import { getLastWorkspaceSlug, setLastWorkspaceSlug } from '@mobile/lib/prefs'
 import { queryClient } from '@mobile/lib/queryClient'
 import { useAuthStore } from '@mobile/stores/auth-store'
@@ -234,14 +235,21 @@ declare module '@tanstack/react-router' {
  * directly from router state via `useParams({ strict: false })` — the same
  * "router-state read" already used by both screens — so it is non-null only
  * while the conversation route is actually matched, with no extra
- * zustand slice needed. `useMobileRealtime` itself no-ops safely with an
+ * zustand slice needed. The shared workspace-access query also keeps the
+ * socket disconnected until the current user has a Support module grant and
+ * support.read permission. `useMobileRealtime` itself no-ops safely with an
  * empty `workspaceId` (e.g. on /login, /workspaces, before the workspace
- * lookup resolves), so calling it unconditionally here is safe.
+ * lookup resolves), so calling it unconditionally from this persistent mount
+ * is safe.
  */
 function RootRealtimeMount() {
   const { conversationId } = useParams({ strict: false })
   const workspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '')
-  useMobileRealtime(workspaceId, conversationId ?? null)
+  const { canReadSupport } = useWorkspacePermissions(workspaceId)
+  useMobileRealtime(
+    canReadSupport ? workspaceId : '',
+    canReadSupport ? conversationId ?? null : null,
+  )
   return null
 }
 

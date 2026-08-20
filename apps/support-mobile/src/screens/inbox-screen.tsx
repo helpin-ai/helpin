@@ -14,6 +14,7 @@ import {
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
 import { isTauri } from '@mobile/lib/host'
+import { useWorkspacePermissions } from '@mobile/lib/use-workspace-permissions'
 import { getPushPrimingPref, setLastWorkspaceSlug, shouldShowPriming } from '@mobile/lib/prefs'
 import { PermissionPrimingSheet } from '@mobile/push/permission-priming-sheet'
 import { useAuthStore } from '@mobile/stores/auth-store'
@@ -76,6 +77,8 @@ export function InboxScreen() {
   })
   const workspace = workspaceQuery.data
   const workspaceId = workspace?.id ?? ''
+  const { accessQuery, canReadSupport, canEditSupport } = useWorkspacePermissions(workspaceId)
+  const supportWorkspaceId = canReadSupport ? workspaceId : ''
 
   useEffect(() => {
     if (workspace) {
@@ -107,7 +110,7 @@ export function InboxScreen() {
   const user = useAuthStore((s) => s.user)
   const [primingSheetOpen, setPrimingSheetOpen] = useState(false)
   useEffect(() => {
-    if (!workspace || !user || !isTauri()) return
+    if (!workspace || !user || !canReadSupport || !isTauri()) return
     let cancelled = false
     void getPushPrimingPref().then((pref) => {
       if (!cancelled && shouldShowPriming(pref, new Date())) setPrimingSheetOpen(true)
@@ -115,16 +118,16 @@ export function InboxScreen() {
     return () => {
       cancelled = true
     }
-  }, [workspace, user])
+  }, [workspace, user, canReadSupport])
 
-  const unreadStats = useUnreadStats(workspaceId)
+  const unreadStats = useUnreadStats(supportWorkspaceId)
   // Reuse the web's own filter rulebook so each view returns identical
   // conversations to the web app (see use-inbox-filters).
   const filters = useMemo(() => selectionToConversationFilters(selection), [selection])
   // `keepPrevious` avoids a skeleton flash when switching views — the previous
   // view's data stays on screen (dimmed below) until the new one loads instead
   // of getting torn down first.
-  const conversationsQuery = useInfiniteConversations(workspaceId, filters, true)
+  const conversationsQuery = useInfiniteConversations(supportWorkspaceId, filters, true)
   const rawConversations = useMemo(
     () => flattenConversationPages(conversationsQuery.data),
     [conversationsQuery.data],
@@ -200,6 +203,7 @@ export function InboxScreen() {
   }, [])
 
   const handleResolve = (conversationId: string) => {
+    if (!canEditSupport) return
     beginExit(conversationId)
     updateStatus.mutate(
       { conversationId, status: 'resolved' },
@@ -214,11 +218,12 @@ export function InboxScreen() {
 
   const handleUndoResolve = useCallback(
     (conversationId: string) => {
+      if (!canEditSupport) return
       cancelExit(conversationId)
       updateStatus.mutate({ conversationId, status: 'open' })
       haptic('impactLight')
     },
-    [cancelExit, updateStatus],
+    [canEditSupport, cancelExit, updateStatus],
   )
 
   // A conversation resolved from the thread screen: animate it out of the list
@@ -226,7 +231,7 @@ export function InboxScreen() {
   const pendingResolvedId = useResolvedTransitionStore((s) => s.pendingResolvedId)
   const consumeResolvedTransition = useResolvedTransitionStore((s) => s.consumeResolved)
   useEffect(() => {
-    if (!pendingResolvedId) return
+    if (!pendingResolvedId || !canEditSupport) return
     const id = consumeResolvedTransition()
     if (!id) return
     beginExit(id)
@@ -234,7 +239,7 @@ export function InboxScreen() {
       id: `resolved-${id}`,
       action: { label: 'Undo', onClick: () => handleUndoResolve(id) },
     })
-  }, [pendingResolvedId, consumeResolvedTransition, beginExit, handleUndoResolve])
+  }, [pendingResolvedId, canEditSupport, consumeResolvedTransition, beginExit, handleUndoResolve])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
@@ -282,16 +287,24 @@ export function InboxScreen() {
 
   const currentTitle = selectionTitle(selection)
 
-  const isWorkspaceLoading = workspaceQuery.isPending
-  const isWorkspaceError = workspaceQuery.isError
+  const isWorkspaceLoading = workspaceQuery.isPending || (!!workspaceId && accessQuery.isPending)
+  const isWorkspaceError = workspaceQuery.isError || accessQuery.isError
+  const accessDenied = accessQuery.isSuccess && !canReadSupport
   const hasConversationData = conversationsQuery.data !== undefined
-  const showSkeleton = isWorkspaceLoading || (!!workspaceId && !hasConversationData && !conversationsQuery.isError)
-  const showError = !isWorkspaceLoading && (isWorkspaceError || (!hasConversationData && conversationsQuery.isError))
-  const showEmpty = !showSkeleton && !showError && conversations.length === 0
+  const showSkeleton =
+    isWorkspaceLoading ||
+    (!!supportWorkspaceId && !hasConversationData && !conversationsQuery.isError)
+  const showError =
+    !isWorkspaceLoading &&
+    (isWorkspaceError || (!hasConversationData && conversationsQuery.isError))
+  const showEmpty =
+    !showSkeleton && !showError && !accessDenied && conversations.length === 0
 
   const handleRetry = () => {
-    if (isWorkspaceError) {
+    if (workspaceQuery.isError) {
       void workspaceQuery.refetch()
+    } else if (accessQuery.isError) {
+      void accessQuery.refetch()
     } else {
       void conversationsQuery.refetch()
     }
@@ -370,6 +383,14 @@ export function InboxScreen() {
           />
         )}
 
+        {accessDenied && (
+          <EmptyState
+            icon={<InboxIcon className="h-6 w-6" />}
+            title="Support access unavailable"
+            body="Ask a workspace admin to grant you access to the Support module."
+          />
+        )}
+
         {showEmpty && (
           <EmptyState
             icon={<InboxIcon className="h-6 w-6" />}
@@ -378,7 +399,7 @@ export function InboxScreen() {
           />
         )}
 
-        {!showSkeleton && !showError && !showEmpty && (
+        {!showSkeleton && !showError && !accessDenied && !showEmpty && (
           <div
             style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
             className={cn(
@@ -389,25 +410,29 @@ export function InboxScreen() {
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const conversation = conversations[virtualRow.index]
               const unread = isUnread(conversation)
-              const leadingAction: SwipeAction = unread
+              const leadingAction: SwipeAction | undefined = unread
                 ? {
                     label: 'Read',
                     icon: MailOpen,
                     tone: 'primary',
                     onCommit: () => markRead.mutate(conversation.id),
                   }
-                : {
-                    label: 'Unread',
-                    icon: Mail,
-                    tone: 'primary',
-                    onCommit: () => markUnread.mutate(conversation.id),
+                : canEditSupport
+                  ? {
+                      label: 'Unread',
+                      icon: Mail,
+                      tone: 'primary',
+                      onCommit: () => markUnread.mutate(conversation.id),
+                    }
+                  : undefined
+              const trailingAction: SwipeAction | undefined = canEditSupport
+                ? {
+                    label: 'Resolve',
+                    icon: Check,
+                    tone: 'success',
+                    onCommit: () => handleResolve(conversation.id),
                   }
-              const trailingAction: SwipeAction = {
-                label: 'Resolve',
-                icon: Check,
-                tone: 'success',
-                onCommit: () => handleResolve(conversation.id),
-              }
+                : undefined
               return (
                 <div
                   key={conversation.id}
@@ -433,12 +458,12 @@ export function InboxScreen() {
             })}
           </div>
         )}
-        {!showSkeleton && !showError && conversationsQuery.isFetchingNextPage && (
+        {!showSkeleton && !showError && !accessDenied && conversationsQuery.isFetchingNextPage && (
           <div className="flex h-14 items-center justify-center" aria-label="Loading more conversations">
             <Spinner size={18} />
           </div>
         )}
-        {!showSkeleton && !showError && conversationsQuery.isFetchNextPageError && (
+        {!showSkeleton && !showError && !accessDenied && conversationsQuery.isFetchNextPageError && (
           <div className="flex h-14 items-center justify-center">
             <Pressable
               haptic="impactLight"

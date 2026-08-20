@@ -21,6 +21,7 @@ import { Pressable } from '@mobile/ui/pressable'
 import { EmptyState } from '@mobile/ui/empty-state'
 import { cn } from '@mobile/lib/cn'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
+import { useWorkspacePermissions } from '@mobile/lib/use-workspace-permissions'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { useAuthStore } from '@mobile/stores/auth-store'
 import type { ShortcutVariableContext } from '@/components/support/shortcutVariables'
@@ -85,6 +86,9 @@ export function ConversationScreen() {
     enabled: !!slug,
   })
   const workspaceId = workspaceQuery.data?.id ?? ''
+  const { accessQuery, canReadSupport, canEditSupport } = useWorkspacePermissions(workspaceId)
+  const supportWorkspaceId = canReadSupport ? workspaceId : ''
+  const accessDenied = accessQuery.isSuccess && !canReadSupport
 
   // Mirrors InboxScreen's effect: keeps `useWorkspaceStore` populated even
   // when this screen is reached directly (e.g. a future deep link) rather
@@ -101,11 +105,11 @@ export function ConversationScreen() {
     }
   }, [workspaceQuery.data, setCurrentWorkspace])
 
-  const cachedConversation = useConversationFromListCache(workspaceId, conversationId ?? null)
-  const conversationQuery = useConversation(workspaceId, conversationId ?? null)
+  const cachedConversation = useConversationFromListCache(supportWorkspaceId, conversationId ?? null)
+  const conversationQuery = useConversation(supportWorkspaceId, conversationId ?? null)
   const conversation = conversationQuery.data ?? cachedConversation
 
-  const messagesQuery = useConversationMessages(workspaceId, conversationId ?? null)
+  const messagesQuery = useConversationMessages(supportWorkspaceId, conversationId ?? null)
   const messages = useMemo(() => flattenSupportMessagePages(messagesQuery.data), [messagesQuery.data])
   const items = useMemo(() => groupMessages(messages), [messages])
   const receipt = useMemo(() => computeSupportReceipt(messages, conversation), [messages, conversation])
@@ -121,7 +125,7 @@ export function ConversationScreen() {
       if (error || !data) throw new Error(error ?? 'Failed to load teammates')
       return data
     },
-    enabled: !!workspaceId,
+    enabled: !!workspaceId && canEditSupport,
     staleTime: 60_000,
   })
   const mentionMembers = useMemo<MentionMember[]>(
@@ -139,7 +143,7 @@ export function ConversationScreen() {
   // Email-fallback: a reply to a widget conversation whose visitor is offline is
   // delivered by email (when the widget has email fallback enabled). Mirrors the
   // web thread's `emailFallbackHint`; drives the composer's send confirm.
-  const installationQuery = useSupportInstallation(workspaceId)
+  const installationQuery = useSupportInstallation(supportWorkspaceId)
   const isVisitorOnline = useSupportPresenceStore((s) =>
     conversation?.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false,
   )
@@ -163,9 +167,9 @@ export function ConversationScreen() {
 
   const markRead = useMarkConversationRead(workspaceId)
   useEffect(() => {
-    if (workspaceId && conversationId) markRead.mutate(conversationId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per (workspaceId, conversationId), not on every markRead identity change
-  }, [workspaceId, conversationId])
+    if (canReadSupport && workspaceId && conversationId) markRead.mutate(conversationId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per accessible (workspaceId, conversationId), not on every markRead identity change
+  }, [canReadSupport, workspaceId, conversationId])
 
   // Conversation-scoped presence slices: selecting the whole maps would
   // re-render this screen for presence churn in OTHER conversations. Each
@@ -215,7 +219,7 @@ export function ConversationScreen() {
 
   const markResolved = useResolvedTransitionStore((s) => s.markResolved)
   const handleToggleResolve = () => {
-    if (!conversation || !conversationId || updateStatus.isPending) return
+    if (!canEditSupport || !conversation || !conversationId || updateStatus.isPending) return
     const resolving = !isResolved
     updateStatus.mutate(
       { conversationId, status: resolving ? 'resolved' : 'open' },
@@ -235,7 +239,12 @@ export function ConversationScreen() {
     )
   }
 
-  const showEmpty = !workspaceQuery.isPending && !conversationQuery.isPending && !conversation && conversationQuery.isError
+  const showError =
+    !workspaceQuery.isPending &&
+    !accessQuery.isPending &&
+    (workspaceQuery.isError ||
+      accessQuery.isError ||
+      (!conversationQuery.isPending && !conversation && conversationQuery.isError))
 
   return (
     <div className="flex h-dvh flex-col bg-background">
@@ -247,7 +256,7 @@ export function ConversationScreen() {
         onTitlePress={() => setContextSheetOpen(true)}
         titleSlot={<span className="max-w-[200px] truncate text-headline">{conversationTitle}</span>}
         trailing={
-          conversation && (
+          conversation && canEditSupport && (
             <>
               <Pressable
                 aria-label={isResolved ? 'Reopen conversation' : 'Resolve conversation'}
@@ -292,7 +301,13 @@ export function ConversationScreen() {
       )}
 
       <div className="relative min-h-0 flex-1">
-        {showEmpty ? (
+        {accessDenied ? (
+          <EmptyState
+            icon={<MessageCircle className="h-6 w-6" />}
+            title="Support access unavailable"
+            body="Ask a workspace admin to grant you access to the Support module."
+          />
+        ) : showError ? (
           <EmptyState
             icon={<MessageCircle className="h-6 w-6" />}
             title="Couldn't load this conversation"
@@ -342,7 +357,7 @@ export function ConversationScreen() {
           conversation. Scroll-on-own-send is handled by MessageList's
           append effect reacting to the optimistic append, not wired from
           the composer. */}
-      {workspaceId && conversationId && (
+      {workspaceId && conversationId && canEditSupport && (
         <Composer
           key={conversationId}
           workspaceId={workspaceId}
@@ -352,15 +367,21 @@ export function ConversationScreen() {
           willSendAsEmail={willSendAsEmail}
         />
       )}
+      {workspaceId && conversationId && canReadSupport && !accessQuery.isPending && !canEditSupport && (
+        <div className="border-t border-border/60 bg-background px-4 pb-[max(var(--safe-bottom),12px)] pt-3 text-center text-footnote text-muted-foreground">
+          Read-only access
+        </div>
+      )}
 
       <ContextSheet
-        workspaceId={workspaceId}
-        conversationId={conversationId ?? null}
+        workspaceId={supportWorkspaceId}
+        conversationId={canReadSupport ? conversationId ?? null : null}
         open={contextSheetOpen}
         onOpenChange={setContextSheetOpen}
+        canEdit={canEditSupport}
       />
 
-      {conversation && (
+      {conversation && canEditSupport && (
         <ConversationActionsSheet
           open={actionsSheetOpen}
           onOpenChange={setActionsSheetOpen}

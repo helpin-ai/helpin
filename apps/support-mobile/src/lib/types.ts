@@ -22,6 +22,19 @@ export interface AuthResponse {
   refresh_token: string
 }
 
+export interface WorkspaceAccess {
+  workspace_id: string
+  membership: {
+    id: string
+    user_id: string
+    role: 'owner' | 'admin' | 'member' | 'viewer'
+    status: string
+  }
+  permissions: string[]
+  team_memberships: Array<{ team_id: string; role: string }>
+  modules: string[]
+}
+
 export interface Workspace {
   id: string
   name: string

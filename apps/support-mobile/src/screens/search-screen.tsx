@@ -4,6 +4,7 @@ import { useParams, useRouter } from '@tanstack/react-router'
 import { Search, X } from 'lucide-react'
 import { flattenConversationPages, useInfiniteConversations } from '@helpin-ai/support-core'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
+import { useWorkspacePermissions } from '@mobile/lib/use-workspace-permissions'
 import { useWorkspaceStore } from '@mobile/stores/workspace-store'
 import { ConversationCell } from '@mobile/inbox/conversation-cell'
 import { PrimaryNavigation } from '@mobile/navigation/primary-navigation'
@@ -31,6 +32,9 @@ export function SearchScreen() {
   })
   const workspace = workspaceQuery.data
   const workspaceId = workspace?.id ?? ''
+  const { accessQuery, canReadSupport } = useWorkspacePermissions(workspaceId)
+  const supportWorkspaceId = canReadSupport ? workspaceId : ''
+  const accessDenied = accessQuery.isSuccess && !canReadSupport
 
   useEffect(() => {
     if (workspace) {
@@ -45,7 +49,7 @@ export function SearchScreen() {
   // Passing an empty workspace id keeps the query disabled until the user has
   // entered something, avoiding an unnecessary full-inbox fetch on this tab.
   const resultsQuery = useInfiniteConversations(
-    deferredQuery ? workspaceId : '',
+    deferredQuery ? supportWorkspaceId : '',
     deferredQuery ? { search: deferredQuery } : undefined,
     true,
   )
@@ -55,7 +59,9 @@ export function SearchScreen() {
   )
   const totalResults = resultsQuery.data?.pages[0]?.total ?? conversations.length
   const hasInitialError =
-    workspaceQuery.isError || (resultsQuery.isError && resultsQuery.data === undefined)
+    workspaceQuery.isError ||
+    accessQuery.isError ||
+    (resultsQuery.isError && resultsQuery.data === undefined)
 
   return (
     <div className="flex h-dvh flex-col">
@@ -68,6 +74,7 @@ export function SearchScreen() {
             <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
             <input
               autoFocus
+              disabled={accessDenied}
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -87,7 +94,15 @@ export function SearchScreen() {
           </label>
         </div>
 
-        {!deferredQuery && (
+        {accessDenied && (
+          <EmptyState
+            icon={<Search className="h-6 w-6" />}
+            title="Support access unavailable"
+            body="Ask a workspace admin to grant you access to the Support module."
+          />
+        )}
+
+        {!accessDenied && !hasInitialError && !deferredQuery && (
           <EmptyState
             icon={<Search className="h-6 w-6" />}
             title="Search conversations"
@@ -95,13 +110,13 @@ export function SearchScreen() {
           />
         )}
 
-        {deferredQuery && (workspaceQuery.isPending || resultsQuery.isPending) && (
+        {!accessDenied && deferredQuery && (workspaceQuery.isPending || accessQuery.isPending || resultsQuery.isPending) && (
           <div className="flex min-h-48 items-center justify-center">
             <Spinner />
           </div>
         )}
 
-        {deferredQuery && hasInitialError && (
+        {!accessDenied && hasInitialError && (
           <EmptyState
             icon={<Search className="h-6 w-6" />}
             title="Couldn't search conversations"
@@ -109,7 +124,7 @@ export function SearchScreen() {
           />
         )}
 
-        {deferredQuery && !resultsQuery.isPending && !hasInitialError && conversations.length === 0 && (
+        {!accessDenied && deferredQuery && !resultsQuery.isPending && !hasInitialError && conversations.length === 0 && (
           <EmptyState
             icon={<Search className="h-6 w-6" />}
             title="No results"
@@ -117,7 +132,7 @@ export function SearchScreen() {
           />
         )}
 
-        {deferredQuery && conversations.length > 0 && (
+        {!accessDenied && deferredQuery && conversations.length > 0 && (
           <div aria-live="polite" aria-label={`${conversations.length} of ${totalResults} search results`}>
             {conversations.map((conversation) => (
               <ConversationCell

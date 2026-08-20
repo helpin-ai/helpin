@@ -4,7 +4,7 @@ import {
   useDeleteConversation,
   useMarkConversationUnread,
   useMoveConversation,
-  useSupportMailboxes,
+  useInboxScopes,
   useUpdateConversationStatus,
   useUpdateConversationSubject,
   type SupportConversation,
@@ -42,7 +42,8 @@ export function ConversationActionsSheet({
   const moveConversation = useMoveConversation(workspaceId)
   const updateStatus = useUpdateConversationStatus(workspaceId)
   const deleteConversation = useDeleteConversation(workspaceId)
-  const mailboxes = useSupportMailboxes(workspaceId)
+  const inboxScopes = useInboxScopes(workspaceId)
+  const mailboxes = inboxScopes.data?.mailboxes ?? []
 
   const isSpam = conversation.status === 'spam'
   const conversationId = conversation.id
@@ -153,7 +154,7 @@ export function ConversationActionsSheet({
         {view === 'move' && (
           <div className="flex flex-col gap-2">
             <SubViewHeader title="Move to inbox" onBack={() => setView('menu')} />
-            {mailboxes.isPending ? (
+            {inboxScopes.isPending ? (
               <div className="flex justify-center py-6">
                 <Spinner />
               </div>
@@ -165,7 +166,7 @@ export function ConversationActionsSheet({
                   active={!conversation.mailbox_id}
                   onPress={() => handleMove(null)}
                 />
-                {(mailboxes.data ?? []).map((mailbox) => (
+                {mailboxes.map((mailbox) => (
                   <ActionRow
                     key={mailbox.id}
                     icon={Inbox}
