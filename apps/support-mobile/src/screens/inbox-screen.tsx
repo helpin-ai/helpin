@@ -220,16 +220,17 @@ export function InboxScreen() {
   // A conversation resolved from the thread screen: animate it out of the list
   // and offer Undo (the status change already happened server-side).
   const pendingResolvedId = useResolvedTransitionStore((s) => s.pendingResolvedId)
-  const clearResolvedTransition = useResolvedTransitionStore((s) => s.clear)
+  const consumeResolvedTransition = useResolvedTransitionStore((s) => s.consumeResolved)
   useEffect(() => {
     if (!pendingResolvedId) return
-    const id = pendingResolvedId
-    clearResolvedTransition()
+    const id = consumeResolvedTransition()
+    if (!id) return
     beginExit(id)
     toast.success('Resolved', {
+      id: `resolved-${id}`,
       action: { label: 'Undo', onClick: () => handleUndoResolve(id) },
     })
-  }, [pendingResolvedId, clearResolvedTransition, beginExit, handleUndoResolve])
+  }, [pendingResolvedId, consumeResolvedTransition, beginExit, handleUndoResolve])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({

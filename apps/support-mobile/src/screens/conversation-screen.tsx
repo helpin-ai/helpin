@@ -215,7 +215,6 @@ export function ConversationScreen() {
   const handleToggleResolve = () => {
     if (!conversation || !conversationId || updateStatus.isPending) return
     const resolving = !isResolved
-    haptic('selection')
     updateStatus.mutate(
       { conversationId, status: resolving ? 'resolved' : 'open' },
       {

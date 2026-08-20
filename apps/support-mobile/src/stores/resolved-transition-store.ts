@@ -8,11 +8,15 @@ interface ResolvedTransitionState {
    */
   pendingResolvedId: string | null
   markResolved: (conversationId: string) => void
-  clear: () => void
+  consumeResolved: () => string | null
 }
 
-export const useResolvedTransitionStore = create<ResolvedTransitionState>((set) => ({
+export const useResolvedTransitionStore = create<ResolvedTransitionState>((set, get) => ({
   pendingResolvedId: null,
   markResolved: (conversationId) => set({ pendingResolvedId: conversationId }),
-  clear: () => set({ pendingResolvedId: null }),
+  consumeResolved: () => {
+    const conversationId = get().pendingResolvedId
+    if (conversationId) set({ pendingResolvedId: null })
+    return conversationId
+  },
 }))
