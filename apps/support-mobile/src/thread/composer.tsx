@@ -12,7 +12,6 @@ import { resolveShortcutVariables, type ShortcutVariableContext } from '@/compon
 import { cn } from '@mobile/lib/cn'
 import { haptic } from '@mobile/lib/haptics'
 import { Pressable } from '@mobile/ui/pressable'
-import { SegmentedControl } from '@mobile/ui/segmented-control'
 import { DEFAULT_DRAFT, useDraftStore, type ComposerMode } from './draft-store'
 import type { FailedSend } from './failed-sends-reducer'
 import { SendButton, type SendButtonState } from './send-button'
@@ -360,17 +359,41 @@ export function Composer({
               : 'border-border/80 bg-card',
           )}
         >
-          <div className="flex items-center px-3 pb-1 pt-2.5">
-            <SegmentedControl<ComposerMode>
-              segments={[
-                { value: 'reply', label: 'Reply' },
-                { value: 'note', label: 'Note' },
-              ]}
-              value={draft.mode}
-              onChange={(mode) => setMode(conversationId, mode)}
-              size="sm"
-              className="w-[116px]"
-            />
+          <div className="flex items-center gap-1 px-3 pb-1 pt-2.5">
+            <Pressable
+              haptic="selection"
+              aria-label="Reply"
+              aria-pressed={!isNote}
+              onPress={() => setMode(conversationId, 'reply')}
+              className="flex h-10 min-h-0 min-w-[60px] items-center justify-center"
+            >
+              <span
+                className={cn(
+                  'rounded-full px-3 py-1 text-caption font-semibold transition-colors',
+                  !isNote ? 'bg-primary/10 text-primary' : 'text-muted-foreground active:bg-muted',
+                )}
+              >
+                Reply
+              </span>
+            </Pressable>
+            <Pressable
+              haptic="selection"
+              aria-label="Note"
+              aria-pressed={isNote}
+              onPress={() => setMode(conversationId, 'note')}
+              className="flex h-10 min-h-0 min-w-[60px] items-center justify-center"
+            >
+              <span
+                className={cn(
+                  'rounded-full px-3 py-1 text-caption font-semibold transition-colors',
+                  isNote
+                    ? 'bg-amber-200/70 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300'
+                    : 'text-muted-foreground active:bg-muted',
+                )}
+              >
+                Note
+              </span>
+            </Pressable>
           </div>
 
         {mentionToken && mentionItems.length > 0 ? (
