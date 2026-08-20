@@ -22,6 +22,19 @@ export interface AuthResponse {
   refresh_token: string
 }
 
+export interface SigninResponse {
+  user?: User
+  access_token?: string
+  refresh_token?: string
+  requires_2fa?: boolean
+  two_fa_token?: string
+}
+
+export interface PasskeyOptionsResponse {
+  challenge: string
+  options: Record<string, unknown>
+}
+
 export interface WorkspaceAccess {
   workspace_id: string
   membership: {

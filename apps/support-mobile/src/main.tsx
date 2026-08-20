@@ -2,16 +2,18 @@ import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
-import { Toaster } from 'sonner'
-import { configureSessionStorage, createBrowserSessionStorage } from '@helpin-ai/support-core'
+import { Toaster, toast } from 'sonner'
+import { configureSessionStorage, createBrowserSessionStorage, writeSession } from '@helpin-ai/support-core'
 import { getCurrent as getCurrentDeepLink, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { onPushTapped } from '@helpin/plugin-push'
 import { setupVisibilityRefresh, startTokenRefreshTimer, stopTokenRefreshTimer } from '@mobile/lib/api'
+import { googleAuthErrorMessage, parseGoogleAuthDeepLink } from '@mobile/lib/google-auth'
 import { isTauri } from '@mobile/lib/host'
+import { authService } from '@mobile/lib/services/auth-service'
 import { queryClient } from '@mobile/lib/queryClient'
 import { createTauriSessionStorage } from '@mobile/lib/session-storage'
 import { router } from '@mobile/router'
-import { routeColdStartUrls, routeDeepLinkUrl, routePushTap } from '@mobile/push/push-registration'
+import { routeDeepLinkUrl, routePushTap } from '@mobile/push/push-registration'
 import { bootstrapAuth, useAuthStore } from '@mobile/stores/auth-store'
 import './index.css'
 
@@ -65,6 +67,38 @@ function queueTapNavigation(to: string) {
   flushPendingTap()
 }
 
+const googleCodesInFlight = new Set<string>()
+
+function routeExternalUrl(url: string) {
+  const googleCallback = parseGoogleAuthDeepLink(url)
+  if (!googleCallback) {
+    routeDeepLinkUrl(url, queueTapNavigation)
+    return
+  }
+  if (googleCallback.error) {
+    setTimeout(() => toast.error(googleAuthErrorMessage(googleCallback.error!)), 0)
+    return
+  }
+  const code = googleCallback.code
+  if (!code || googleCodesInFlight.has(code)) return
+
+  googleCodesInFlight.add(code)
+  void authService.exchangeGoogleMobileCode(code).then(async ({ data, error }) => {
+    if (error || !data) throw new Error(error || 'Google sign in failed')
+    await writeSession({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      rememberMe: true,
+    })
+    await bootstrapAuth()
+    await router.navigate({ to: '/workspaces' })
+  }).catch((error: unknown) => {
+    toast.error(error instanceof Error ? error.message : 'Google sign in failed')
+  }).finally(() => {
+    googleCodesInFlight.delete(code)
+  })
+}
+
 if (isTauri()) {
   void onPushTapped((data) => {
     routePushTap(data, queueTapNavigation)
@@ -78,7 +112,7 @@ if (isTauri()) {
   // anything that isn't a valid `helpin://w/{slug}/support/{id}` URL.
   void onOpenUrl((urls) => {
     for (const url of urls) {
-      routeDeepLinkUrl(url, queueTapNavigation)
+      routeExternalUrl(url)
     }
   })
 
@@ -90,7 +124,7 @@ if (isTauri()) {
   // `getCurrent()` (unlikely — a push tap is not a deep-link open), the
   // queue holds only one pending target and last write wins, which is fine.
   void getCurrentDeepLink().then((urls) => {
-    routeColdStartUrls(urls, queueTapNavigation)
+    for (const url of urls ?? []) routeExternalUrl(url)
   })
 }
 

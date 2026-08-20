@@ -265,6 +265,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/auth/verify-email", h.Auth.VerifyEmail)
 		r.Get("/auth/google/start", h.Auth.GoogleStart)
 		r.Get("/auth/google/callback", h.Auth.GoogleCallback)
+		r.Post("/auth/google/mobile-exchange", h.Auth.GoogleMobileExchange)
 		r.Post("/auth/signin", h.Auth.Signin)
 		r.Post("/auth/passkey/authentication-options", h.Passkey.AuthenticationOptions)
 		r.Post("/auth/passkey/authenticate", h.Passkey.Authenticate)

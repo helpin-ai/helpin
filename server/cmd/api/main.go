@@ -158,6 +158,7 @@ func main() {
 			&model.UserPasskey{},
 			&model.PasswordResetToken{},
 			&model.EmailVerificationToken{},
+			&model.OAuthMobileHandoff{},
 			&model.Organization{},
 			&model.OrganizationMember{},
 			&model.Workspace{},
@@ -801,12 +802,14 @@ func main() {
 	// Initialize services.
 	passwordResetRepo := repository.NewPasswordResetTokenRepository(db)
 	emailVerificationRepo := repository.NewEmailVerificationTokenRepository(db)
+	oauthMobileHandoffRepo := repository.NewOAuthMobileHandoffRepository(db)
 	passkeySessionCache := newPasskeySessionCache(redisClient, podID)
 	passkeyWebAuthnClient, err := appwebauthn.NewClient(cfg.WebAuthnRPID, cfg.WebAuthnRPOrigins, passkeySessionCache)
 	if err != nil {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService.SetOAuthMobileHandoffRepository(oauthMobileHandoffRepo)
 	authService.SetCustomerIOIdentityService(customerIOIdentityService)
 	authService.SetProductAnalyticsService(productAnalytics)
 	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
@@ -1749,10 +1752,11 @@ func main() {
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
 		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
-			ClientID:     cfg.GoogleAuthClientID,
-			ClientSecret: cfg.GoogleAuthClientSecret,
-			RedirectURL:  cfg.GoogleAuthRedirectURL,
-			AppBaseURL:   cfg.AppBaseURL,
+			ClientID:         cfg.GoogleAuthClientID,
+			ClientSecret:     cfg.GoogleAuthClientSecret,
+			RedirectURL:      cfg.GoogleAuthRedirectURL,
+			AppBaseURL:       cfg.AppBaseURL,
+			MobileAppBaseURL: cfg.MobileAppBaseURL,
 		}),
 		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),

@@ -21,8 +21,10 @@ func newAuthService(t *testing.T) (*AuthService, *repository.UserRepository) {
 	db := newTestDB(t)
 	userRepo := repository.NewUserRepository(db)
 	resetRepo := repository.NewPasswordResetTokenRepository(db)
+	oauthMobileHandoffRepo := repository.NewOAuthMobileHandoffRepository(db)
 	jwtMgr := auth.NewJWTManager("test-secret")
 	svc := NewAuthService(userRepo, resetRepo, nil, nil, nil, jwtMgr, nil, nil, "http://localhost:5173", []byte("0123456789abcdef0123456789abcdef"))
+	svc.SetOAuthMobileHandoffRepository(oauthMobileHandoffRepo)
 	return svc, userRepo
 }
 
@@ -74,6 +76,47 @@ func extractResetToken(t *testing.T, resetURL string) string {
 }
 
 // ----- Signup Tests --------------------------------------------------------
+
+func TestOAuthMobileHandoffIsSingleUse(t *testing.T) {
+	svc, _ := newAuthService(t)
+	ctx := context.Background()
+
+	signup, err := svc.Signup(ctx, model.SignupRequest{
+		Email: "mobile-oauth@example.com", Password: "strongpass1", FullName: "Mobile OAuth",
+	})
+	if err != nil {
+		t.Fatalf("signup: %v", err)
+	}
+
+	code, err := svc.CreateOAuthMobileHandoff(ctx, signup.User.ID)
+	if err != nil {
+		t.Fatalf("create handoff: %v", err)
+	}
+	if code == "" {
+		t.Fatal("expected non-empty handoff code")
+	}
+
+	session, err := svc.ExchangeOAuthMobileHandoff(ctx, code)
+	if err != nil {
+		t.Fatalf("exchange handoff: %v", err)
+	}
+	if session.User.ID != signup.User.ID || session.AccessToken == "" || session.RefreshToken == "" {
+		t.Fatalf("unexpected exchanged session: %+v", session)
+	}
+
+	if _, err := svc.ExchangeOAuthMobileHandoff(ctx, code); !errors.Is(err, ErrInvalidOAuthHandoff) {
+		t.Fatalf("second exchange error = %v, want ErrInvalidOAuthHandoff", err)
+	}
+}
+
+func TestOAuthMobileHandoffRejectsExpiredCode(t *testing.T) {
+	svc, _ := newAuthService(t)
+	ctx := context.Background()
+
+	if _, err := svc.ExchangeOAuthMobileHandoff(ctx, "missing-or-expired"); !errors.Is(err, ErrInvalidOAuthHandoff) {
+		t.Fatalf("exchange error = %v, want ErrInvalidOAuthHandoff", err)
+	}
+}
 
 func TestSignup(t *testing.T) {
 	t.Run("success", func(t *testing.T) {

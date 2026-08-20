@@ -23,6 +23,29 @@ import (
 
 const testAuthEncryptionKey = "0123456789abcdef0123456789abcdef"
 
+func TestGoogleMobileRedirectHelpers(t *testing.T) {
+	h := NewAuthHandler(nil, GoogleOAuthConfig{
+		AppBaseURL:       "https://app.helpin.ai",
+		MobileAppBaseURL: "https://mobile.helpin.ai",
+	})
+
+	if got := googleOAuthClient("mobile_native"); got != "mobile_native" {
+		t.Fatalf("googleOAuthClient(mobile_native) = %q", got)
+	}
+	if got := googleOAuthClient("attacker_redirect"); got != "" {
+		t.Fatalf("googleOAuthClient accepted unknown client %q", got)
+	}
+	if got := googleNativeRedirect("code", "a+b/c"); got != "helpin://auth/google?code=a%2Bb%2Fc" {
+		t.Fatalf("googleNativeRedirect = %q", got)
+	}
+	if got := h.googleAuthFailureRedirect("mobile_native", "invalid_state"); got != "helpin://auth/google?error=invalid_state" {
+		t.Fatalf("native failure redirect = %q", got)
+	}
+	if got := h.googleAuthFailureRedirect("mobile_web", "invalid_state"); got != "https://mobile.helpin.ai/login?google_error=invalid_state" {
+		t.Fatalf("mobile web failure redirect = %q", got)
+	}
+}
+
 func TestAuthHandler_TwoFASetupToSigninFlow(t *testing.T) {
 	h, userID := newAuthHandlerTestFixture(t)
 

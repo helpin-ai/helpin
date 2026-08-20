@@ -7,7 +7,7 @@ Vite/React frontend at `apps/support-mobile/src` with a thin native shell in
 ## Stack
 
 - Frontend: Vite 7 + React 19 + TypeScript, dev server on port `5176`
-- Native shell: Tauri 2.9 (`src-tauri/`), plugins: `tauri-plugin-notification`, `tauri-plugin-store`
+- Native shell: Tauri 2.9 (`src-tauri/`), plugins: `tauri-plugin-notification`, `tauri-plugin-store`, `tauri-plugin-deep-link`, `tauri-plugin-opener`
 - Rust command: `mobile_shell_info()` returns `{ runtime, platform, app_version }` (mirrors desktop's `desktop_shell_info`)
 
 ## Environment prerequisites
@@ -40,6 +40,27 @@ locally hosted API:
   `localhost` directly from the emulator will fail to connect.
 
 Set this in `apps/support-mobile/.env.local` (create it if it doesn't exist).
+
+## Google and passkey sign-in
+
+Google uses the existing backend callback configured by
+`GOOGLE_AUTH_REDIRECT_URL`. The native app opens Google in the system browser;
+the callback returns a five-minute, single-use code to
+`helpin://auth/google`, and the app exchanges it for tokens without placing
+access or refresh tokens in the URL. The hosted mobile build returns through
+its HTTPS login page. Configure the API with:
+
+```bash
+MOBILE_APP_BASE_URL=https://azhar.dev.helpin.ai
+CORS_ORIGINS=https://azhar.dev.helpin.ai,...
+```
+
+For passkeys in the DNS-hosted build, include that HTTPS origin in the
+comma-separated `WEBAUTHN_RP_ORIGIN` setting while keeping a compatible
+`WEBAUTHN_RP_ID` (for example, `helpin.ai` for Helpin subdomains). Native
+webviews expose WebAuthn differently by OS/version, so the login screen checks
+device support and disables the passkey button when the platform does not
+provide it; Google and password login remain available.
 
 ## Dev loop
 
