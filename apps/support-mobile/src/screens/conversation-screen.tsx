@@ -97,7 +97,15 @@ export function ConversationScreen() {
     enabled: !!slug,
   })
   const workspaceId = workspaceQuery.data?.id ?? ''
-  const { accessQuery, canReadSupport, canEditSupport, canReadPM, canEditPM } = useWorkspacePermissions(workspaceId)
+  const {
+    accessQuery,
+    canReadSupport,
+    canEditSupport,
+    canReadPM,
+    canEditPM,
+    canReadCRM,
+    canEditCRM,
+  } = useWorkspacePermissions(workspaceId)
   const supportWorkspaceId = canReadSupport ? workspaceId : ''
   const accessDenied = accessQuery.isSuccess && !canReadSupport
 
@@ -486,6 +494,8 @@ export function ConversationScreen() {
         open={contextSheetOpen}
         onOpenChange={setContextSheetOpen}
         canEdit={canEditSupport}
+        canReadCRM={canReadCRM}
+        canEditCRM={canEditCRM}
       />
 
       {conversation && canReadSupport && (

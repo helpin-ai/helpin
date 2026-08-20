@@ -29,6 +29,8 @@ export interface ContextSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   canEdit: boolean
+  canReadCRM?: boolean
+  canEditCRM?: boolean
 }
 
 /**
@@ -60,7 +62,15 @@ const STATUS_TONES: Record<ConversationStatus, BadgeTone> = {
  * seam): customer identity, status toggle, inline assignment, existing-tag
  * editing, and visitor context.
  */
-export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, canEdit }: ContextSheetProps) {
+export function ContextSheet({
+  workspaceId,
+  conversationId,
+  open,
+  onOpenChange,
+  canEdit,
+  canReadCRM = false,
+  canEditCRM = false,
+}: ContextSheetProps) {
   const [assignExpanded, setAssignExpanded] = useState(false)
   const router = useRouter()
   const { slug } = useParams({ strict: false })
@@ -293,6 +303,8 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, 
           workspaceId={workspaceId}
           conversation={conversation}
           canEdit={canEdit}
+          canReadCRM={canReadCRM}
+          canEditCRM={canEditCRM}
         />
 
         {conversationId && (

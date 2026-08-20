@@ -26,6 +26,8 @@ describe('supportPermissionFlags', () => {
       canAdminSupport: false,
       canReadPM: false,
       canEditPM: false,
+      canReadCRM: false,
+      canEditCRM: false,
     })
   })
 
@@ -40,6 +42,8 @@ describe('supportPermissionFlags', () => {
       canAdminSupport: true,
       canReadPM: false,
       canEditPM: false,
+      canReadCRM: false,
+      canEditCRM: false,
     })
   })
 
@@ -54,6 +58,8 @@ describe('supportPermissionFlags', () => {
       canAdminSupport: false,
       canReadPM: false,
       canEditPM: false,
+      canReadCRM: false,
+      canEditCRM: false,
     })
   })
 
@@ -65,6 +71,17 @@ describe('supportPermissionFlags', () => {
     expect(supportPermissionFlags(access(['support.read', 'pm.read'], ['support']))).toMatchObject({
       canReadPM: false,
       canEditPM: false,
+    })
+  })
+
+  it('requires both the CRM module and matching permissions for contact tools', () => {
+    expect(supportPermissionFlags(access(['support.read', 'crm.read', 'crm.edit'], ['support', 'crm']))).toMatchObject({
+      canReadCRM: true,
+      canEditCRM: true,
+    })
+    expect(supportPermissionFlags(access(['support.read', 'crm.read', 'crm.edit'], ['support']))).toMatchObject({
+      canReadCRM: false,
+      canEditCRM: false,
     })
   })
 })
