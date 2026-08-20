@@ -74,7 +74,7 @@ export function NewConversationScreen() {
   })
   const workspace = workspaceQuery.data
   const workspaceId = workspace?.id ?? ''
-  const { accessQuery, canReadSupport, canEditSupport } = useWorkspacePermissions(workspaceId)
+  const { accessQuery, canReadSupport, canEditSupport, canAdminSupport } = useWorkspacePermissions(workspaceId)
   const scopesQuery = useInboxScopes(workspaceId)
   const tagsQuery = useSupportTags(workspaceId)
   const createConversation = useCreateConversationWithMessage(workspaceId)
@@ -489,10 +489,12 @@ export function NewConversationScreen() {
         onSelect={(operation) => void handleRewrite(operation)}
       />
       <CannedResponsesSheet
+        workspaceId={workspaceId}
         open={cannedSheetOpen}
         onOpenChange={setCannedSheetOpen}
         responses={cannedResponses}
         loading={cannedQuery.isPending}
+        canManage={canAdminSupport}
         onSelect={insertCanned}
       />
       <UpgradeRequiredSheet

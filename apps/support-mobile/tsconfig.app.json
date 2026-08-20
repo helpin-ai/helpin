@@ -24,6 +24,8 @@
       "@mobile/*": ["./src/*"],
       "@helpin-ai/support-core": ["../../packages/support-core/src/index.ts"],
       "@helpin-ai/shared": ["../../packages/shared/src/index.ts"],
+      "@helpin-ai/widget-core/emoji-loader": ["../../packages/widget-core/src/components/emoji-loader.ts"],
+      "@helpin-ai/widget-core/emoji-catalog": ["../../packages/widget-core/src/components/emoji-catalog.ts"],
       "@helpin/plugin-push": ["./src-tauri/tauri-plugin-helpin-push/guest-js/index.ts"],
       "@/lib/supportInboxFilters": ["../../frontend/src/lib/supportInboxFilters.ts"],
       "@/lib/supportInboxRouting": ["../../frontend/src/lib/supportInboxRouting.ts"],
@@ -34,6 +36,7 @@
       "@/components/support/supportSystemEvent": ["../../frontend/src/components/support/supportSystemEvent.ts"],
       "@/components/support/shortcutFiltering": ["../../frontend/src/components/support/shortcutFiltering.ts"],
       "@/components/support/shortcutVariables": ["../../frontend/src/components/support/shortcutVariables.ts"],
+      "@/components/support/shortcutCategories": ["../../frontend/src/components/support/shortcutCategories.ts"],
       "@/components/agents/dock/starterSuggestions": ["../../frontend/src/components/agents/dock/starterSuggestions.ts"]
     }
   },

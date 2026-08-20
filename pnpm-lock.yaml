@@ -190,6 +190,9 @@ importers:
       '@helpin-ai/support-core':
         specifier: workspace:*
         version: link:../../packages/support-core
+      '@helpin-ai/widget-core':
+        specifier: workspace:*
+        version: link:../../packages/widget-core
       '@simplewebauthn/browser':
         specifier: ^13.3.0
         version: 13.3.0

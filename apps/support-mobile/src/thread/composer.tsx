@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { AtSign, FileText, LoaderCircle, Paperclip, RotateCcw, Sparkles, Undo2, X, Zap } from 'lucide-react'
+import { AtSign, FileText, LoaderCircle, Mail, Paperclip, RotateCcw, Smile, Sparkles, Undo2, X, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   useDeleteSupportAttachment,
   useRewriteSupportDraft,
   useSendMessage,
   useSupportCannedResponses,
+  useUpdateConversationEmailRecipients,
   useUploadSupportAttachment,
   type SupportAIRewriteOperation,
   type SupportCannedResponse,
+  type SupportConversation,
 } from '@helpin-ai/support-core'
 import { filterShortcuts, stripShortcutContent } from '@/components/support/shortcutFiltering'
 import { resolveShortcutVariables, type ShortcutVariableContext } from '@/components/support/shortcutVariables'
@@ -28,6 +30,7 @@ import { EmailConfirmSheet } from './email-confirm-sheet'
 import { cannedToPlainText, detectShortcutToken, replaceRange } from './canned-shortcuts'
 import { detectMentionToken, mentionSuggestions, type MentionMember, type MentionSuggestion, type MentionToken } from './mentions'
 import { teammatePresenceDotClass, teammatePresenceLabel } from './teammate-presence'
+import { EmojiPickerSheet } from './emoji-picker-sheet'
 
 /** How long the "Rewritten · Undo" bar stays before auto-dismissing. */
 const UNDO_VISIBLE_MS = 6000
@@ -57,6 +60,18 @@ export interface ComposerProps {
   mentionMembers?: MentionMember[]
   /** True when a reply will be delivered by email (offline widget visitor) — triggers a send confirm. */
   willSendAsEmail?: boolean
+  /** Current recipient state drives email delivery metadata and copied-email confirmation. */
+  conversation?: Pick<
+    SupportConversation,
+    | 'id'
+    | 'customer_email'
+    | 'email_cc'
+    | 'primary_recipient_state'
+    | 'suggested_primary_recipient_email'
+    | 'suggested_primary_recipient_name'
+  >
+  /** Shortcut mutations are support.admin-only even though insertion is support.read. */
+  canManageShortcuts?: boolean
 }
 
 /**
@@ -102,12 +117,26 @@ const EMPTY_VARIABLE_CONTEXT: ShortcutVariableContext = {}
 
 const EMPTY_MEMBERS: MentionMember[] = []
 
+function normalizeRecipientEmails(values: string[], excluded: string[] = []): string[] {
+  const blocked = new Set(excluded.map((value) => value.trim().toLowerCase()).filter(Boolean))
+  const seen = new Set<string>()
+  return values.flatMap((value) => {
+    const email = value.trim()
+    const key = email.toLowerCase()
+    if (!email || blocked.has(key) || seen.has(key)) return []
+    seen.add(key)
+    return [email]
+  })
+}
+
 export function Composer({
   workspaceId,
   conversationId,
   variableContext = EMPTY_VARIABLE_CONTEXT,
   mentionMembers = EMPTY_MEMBERS,
   willSendAsEmail = false,
+  conversation,
+  canManageShortcuts = false,
 }: ComposerProps) {
   const draft = useDraftStore((state) => state.drafts[conversationId] ?? DEFAULT_DRAFT)
   const setText = useDraftStore((state) => state.setText)
@@ -119,6 +148,7 @@ export function Composer({
   const sendMessage = useSendMessage(workspaceId, conversationId)
   const uploadAttachment = useUploadSupportAttachment(workspaceId, conversationId)
   const deleteAttachment = useDeleteSupportAttachment(workspaceId)
+  const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId)
   const [phase, setPhase] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([])
@@ -126,6 +156,7 @@ export function Composer({
   const mountedRef = useRef(true)
 
   const isNote = draft.mode === 'note'
+  const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed'
   const replyRecipient = variableContext.customer?.fullName?.trim().split(/\s+/)[0]
   const replyPlaceholder = replyRecipient ? `Reply to ${replyRecipient}…` : 'Reply…'
   // Broadcast "agent is typing" to teammates + the customer while composing a
@@ -139,10 +170,12 @@ export function Composer({
   // pre-rewrite text). `undoText` holds the text to restore while the bar shows.
   const rewriteDraft = useRewriteSupportDraft(workspaceId, conversationId)
   const [aiSheetOpen, setAiSheetOpen] = useState(false)
+  const [emojiSheetOpen, setEmojiSheetOpen] = useState(false)
   const [busyOperation, setBusyOperation] = useState<SupportAIRewriteOperation | null>(null)
   const [undoText, setUndoText] = useState<string | null>(null)
   const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null)
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const aiAssistedRef = useRef(false)
   useEffect(() => () => { if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current) }, [])
 
   async function handleRewrite(operation: SupportAIRewriteOperation) {
@@ -152,6 +185,7 @@ export function Composer({
     try {
       const result = await rewriteDraft.mutateAsync({ content: source, operation })
       setText(conversationId, result.content)
+      aiAssistedRef.current = true
       setUndoText(source)
       if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
       undoTimeoutRef.current = setTimeout(() => setUndoText(null), UNDO_VISIBLE_MS)
@@ -174,6 +208,7 @@ export function Composer({
   function handleUndoRewrite() {
     if (undoText === null) return
     setText(conversationId, undoText)
+    aiAssistedRef.current = false
     setUndoText(null)
     if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current)
     haptic('impactLight')
@@ -233,6 +268,15 @@ export function Composer({
     setText(conversationId, nextText)
     pendingCaretRef.current = nextCursor
     setCursor(nextCursor)
+  }
+
+  function insertEmoji(emoji: string) {
+    const nextText = draft.text.slice(0, cursor) + emoji + draft.text.slice(cursor)
+    const nextCursor = cursor + emoji.length
+    setText(conversationId, nextText)
+    pendingCaretRef.current = nextCursor
+    setCursor(nextCursor)
+    if (!isNote) notifyTyping(nextText)
   }
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -361,11 +405,18 @@ export function Composer({
     .filter((attachment) => attachment.status === 'done' && attachment.attachmentId)
     .map((attachment) => attachment.attachmentId!)
   const hasUploadingAttachment = pendingAttachments.some((attachment) => attachment.status === 'uploading')
-  const canSend = (trimmed.length > 0 || doneAttachmentIds.length > 0) && !hasUploadingAttachment
+  const canSend = (trimmed.length > 0 || doneAttachmentIds.length > 0)
+    && !hasUploadingAttachment
+    && (isNote || !primaryRecipientUnconfirmed)
   const buttonState: SendButtonState =
     phase === 'sending' ? 'sending' : phase === 'sent' ? 'sent' : canSend ? 'active' : 'disabled'
 
-  async function attemptSend(content: string, mode: ComposerMode, attachmentIds: string[], retryId?: string) {
+  async function attemptSend(
+    content: string,
+    mode: ComposerMode,
+    attachmentIds: string[],
+    options: { retryId?: string; aiAssisted?: boolean } = {},
+  ) {
     if (sendingRef.current) return
     sendingRef.current = true
     // A new send during the 400ms 'sent' display is legitimate — cancel the
@@ -373,14 +424,19 @@ export function Composer({
     // state back to 'idle' while the request is still outstanding.
     if (sentTimeoutRef.current) clearTimeout(sentTimeoutRef.current)
     setPhase('sending')
+    const primaryEmail = conversation?.customer_email?.trim() ?? ''
+    const ccEmails = normalizeRecipientEmails(conversation?.email_cc ?? [], [primaryEmail])
     try {
       await sendMessage.mutateAsync({
         content,
         is_internal: mode === 'note',
+        ...(mode === 'reply' && options.aiAssisted ? { ai_assisted: true } : {}),
+        ...(mode === 'reply' && primaryEmail ? { channels: ['email' as const] } : {}),
+        ...(mode === 'reply' && ccEmails.length > 0 ? { cc_emails: ccEmails } : {}),
         ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
       })
       haptic('notificationSuccess')
-      if (retryId) removeFailedSend(conversationId, retryId)
+      if (options.retryId) removeFailedSend(conversationId, options.retryId)
       clearSentAttachments(attachmentIds)
       setPhase('sent')
       sentTimeoutRef.current = setTimeout(() => setPhase('idle'), SENT_STATE_MS)
@@ -389,10 +445,11 @@ export function Composer({
       setPhase('idle')
       // A fresh send (no retryId) needs a new chip; a retry's chip is already
       // in the list — leave it there so the user can retry again.
-      if (!retryId) {
+      if (!options.retryId) {
         addFailedSend(conversationId, {
           id: crypto.randomUUID(), content, mode,
           ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
+          ...(options.aiAssisted ? { aiAssisted: true } : {}),
         })
       }
     } finally {
@@ -405,15 +462,21 @@ export function Composer({
   const [emailConfirmOpen, setEmailConfirmOpen] = useState(false)
   const [dontAskAgain, setDontAskAgain] = useState(false)
   const [emailConfirmSkipped, setEmailConfirmSkipped] = useState(() => isEmailConfirmSkipped(workspaceId))
-  const pendingSendRef = useRef<{ content: string; mode: ComposerMode; attachmentIds: string[] } | null>(null)
+  const pendingSendRef = useRef<{
+    content: string
+    mode: ComposerMode
+    attachmentIds: string[]
+    aiAssisted: boolean
+  } | null>(null)
 
-  function commitSend(content: string, mode: ComposerMode, attachmentIds: string[]) {
+  function commitSend(content: string, mode: ComposerMode, attachmentIds: string[], aiAssisted: boolean) {
     // Clear the draft the instant a send is confirmed — mirrors the optimistic
     // bubble appearing instantly. If it later fails, the content isn't lost: it
     // lives on in the failedSends retry chip (persisted with the draft).
     clearDraft(conversationId)
+    aiAssistedRef.current = false
     stopTyping()
-    void attemptSend(content, mode, attachmentIds)
+    void attemptSend(content, mode, attachmentIds, { aiAssisted })
   }
 
   function handleSendPress() {
@@ -421,12 +484,13 @@ export function Composer({
     const content = trimmed
     const mode = draft.mode
     const attachmentIds = doneAttachmentIds
+    const aiAssisted = aiAssistedRef.current
     if (mode === 'reply' && willSendAsEmail && !emailConfirmSkipped) {
-      pendingSendRef.current = { content, mode, attachmentIds }
+      pendingSendRef.current = { content, mode, attachmentIds, aiAssisted }
       setEmailConfirmOpen(true)
       return
     }
-    commitSend(content, mode, attachmentIds)
+    commitSend(content, mode, attachmentIds, aiAssisted)
   }
 
   function handleConfirmEmailSend() {
@@ -437,11 +501,52 @@ export function Composer({
       persistEmailConfirmSkip(workspaceId)
       setEmailConfirmSkipped(true)
     }
-    if (pending) commitSend(pending.content, pending.mode, pending.attachmentIds)
+    if (pending) commitSend(pending.content, pending.mode, pending.attachmentIds, pending.aiAssisted)
   }
 
   function handleRetry(failedSend: FailedSend) {
-    void attemptSend(failedSend.content, failedSend.mode, failedSend.attachmentIds ?? [], failedSend.id)
+    void attemptSend(failedSend.content, failedSend.mode, failedSend.attachmentIds ?? [], {
+      retryId: failedSend.id,
+      aiAssisted: failedSend.aiAssisted,
+    })
+  }
+
+  async function confirmCurrentPrimary() {
+    if (!conversation) return
+    try {
+      await updateEmailRecipients.mutateAsync({
+        conversationId: conversation.id,
+        payload: {
+          confirm_primary: true,
+          cc_emails: normalizeRecipientEmails(conversation.email_cc ?? [], [conversation.customer_email ?? '']),
+        },
+      })
+      toast.success('Primary recipient confirmed')
+      haptic('notificationSuccess')
+    } catch {
+      toast.error('Could not confirm primary recipient')
+      haptic('notificationError')
+    }
+  }
+
+  async function makeSuggestedPrimary() {
+    const suggestedEmail = conversation?.suggested_primary_recipient_email?.trim()
+    if (!conversation || !suggestedEmail) return
+    try {
+      await updateEmailRecipients.mutateAsync({
+        conversationId: conversation.id,
+        payload: {
+          primary_recipient_email: suggestedEmail,
+          primary_recipient_name: conversation.suggested_primary_recipient_name ?? undefined,
+          confirm_primary: true,
+        },
+      })
+      toast.success('Primary recipient updated')
+      haptic('notificationSuccess')
+    } catch {
+      toast.error('Could not update primary recipient')
+      haptic('notificationError')
+    }
   }
 
   return (
@@ -502,6 +607,34 @@ export function Composer({
               : 'border-border/80 bg-card',
           )}
         >
+          {primaryRecipientUnconfirmed && !isNote && (
+            <div className="space-y-2 border-b border-amber-200 bg-amber-50 px-3 py-3 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/35 dark:text-amber-100">
+              <div className="flex items-start gap-2">
+                <Mail className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="text-footnote">Support was copied on this email. Confirm who should receive replies.</p>
+              </div>
+              <div className="flex flex-wrap gap-2 pl-6">
+                {conversation?.suggested_primary_recipient_email?.trim() && (
+                  <Pressable
+                    disabled={updateEmailRecipients.isPending}
+                    onPress={() => void makeSuggestedPrimary()}
+                    className="h-auto min-h-8 w-auto min-w-0 rounded-full bg-amber-600 px-3 text-caption font-semibold text-white"
+                  >
+                    Use {conversation.suggested_primary_recipient_email.trim()}
+                  </Pressable>
+                )}
+                {conversation?.customer_email?.trim() && (
+                  <Pressable
+                    disabled={updateEmailRecipients.isPending}
+                    onPress={() => void confirmCurrentPrimary()}
+                    className="h-auto min-h-8 w-auto min-w-0 rounded-full border border-amber-300 bg-background/70 px-3 text-caption font-semibold text-foreground"
+                  >
+                    Keep {conversation.customer_email.trim()}
+                  </Pressable>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-1 px-3 pb-1 pt-2.5">
             <Pressable
               haptic="selection"
@@ -663,6 +796,15 @@ export function Composer({
               className="hidden"
             />
             <Pressable
+              aria-label="Open emoji picker"
+              haptic="selection"
+              disabled={phase === 'sending'}
+              onPress={() => setEmojiSheetOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground active:bg-muted disabled:opacity-40"
+            >
+              <Smile className="h-5 w-5" />
+            </Pressable>
+            <Pressable
               aria-label="Attach files"
               haptic="selection"
               disabled={phase === 'sending'}
@@ -715,14 +857,22 @@ export function Composer({
       />
 
       <CannedResponsesSheet
+        workspaceId={workspaceId}
         open={cannedSheetOpen}
         onOpenChange={setCannedSheetOpen}
         responses={cannedResponses}
         loading={cannedQuery.isPending}
+        canManage={canManageShortcuts}
         onSelect={(response) => {
           insertCanned(response)
           setCannedSheetOpen(false)
         }}
+      />
+
+      <EmojiPickerSheet
+        open={emojiSheetOpen}
+        onOpenChange={setEmojiSheetOpen}
+        onSelect={insertEmoji}
       />
 
       <UpgradeRequiredSheet

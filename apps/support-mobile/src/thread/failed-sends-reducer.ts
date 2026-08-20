@@ -7,6 +7,8 @@ export interface FailedSend {
   mode: ComposerMode
   /** Confirmed uploads that must be reattached if the message request fails. */
   attachmentIds?: string[]
+  /** Preserves the web-compatible AI assistance audit flag across retries. */
+  aiAssisted?: boolean
 }
 
 export type FailedSendsAction =

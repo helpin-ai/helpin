@@ -101,6 +101,7 @@ export function ConversationScreen() {
     accessQuery,
     canReadSupport,
     canEditSupport,
+    canAdminSupport,
     canReadPM,
     canEditPM,
     canReadCRM,
@@ -480,6 +481,8 @@ export function ConversationScreen() {
           variableContext={variableContext}
           mentionMembers={mentionMembers}
           willSendAsEmail={willSendAsEmail}
+          conversation={conversation}
+          canManageShortcuts={canAdminSupport}
         />
       )}
       {workspaceId && conversationId && canReadSupport && !accessQuery.isPending && !canEditSupport && (

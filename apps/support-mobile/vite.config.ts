@@ -29,6 +29,14 @@ export default defineConfig(({ mode }) => {
           replacement: path.resolve(__dirname, '../../packages/support-core/src/index.ts'),
         },
         {
+          find: '@helpin-ai/widget-core/emoji-loader',
+          replacement: path.resolve(__dirname, '../../packages/widget-core/src/components/emoji-loader.ts'),
+        },
+        {
+          find: '@helpin-ai/widget-core/emoji-catalog',
+          replacement: path.resolve(__dirname, '../../packages/widget-core/src/components/emoji-catalog.ts'),
+        },
+        {
           find: '@helpin-ai/shared',
           replacement: path.resolve(__dirname, '../../packages/shared/src/index.ts'),
         },
@@ -79,6 +87,10 @@ export default defineConfig(({ mode }) => {
         {
           find: '@/components/support/shortcutVariables',
           replacement: path.resolve(__dirname, '../../frontend/src/components/support/shortcutVariables.ts'),
+        },
+        {
+          find: '@/components/support/shortcutCategories',
+          replacement: path.resolve(__dirname, '../../frontend/src/components/support/shortcutCategories.ts'),
         },
         {
           find: '@/components/agents/dock/starterSuggestions',

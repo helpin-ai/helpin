@@ -3,6 +3,7 @@ import type {
   AssignableMember,
   ConversationListResponse,
   ConversationStatus,
+  CreateSupportCannedResponseRequest,
   CreateConversationWithMessageRequest,
   CreateConversationWithMessageResponse,
   CreateTaskFromConversationRequest,
@@ -38,6 +39,7 @@ import type {
   SupportTeammatePresenceStatus,
   ResolveSupportRunInteractionRequest,
   UpdateConversationEmailRecipientsRequest,
+  UpdateSupportCannedResponseRequest,
   UnreadStats,
 } from './support-types'
 import type { VisitorContextResponse } from './visitor-types'
@@ -63,6 +65,7 @@ export interface SendMessagePayload {
   cc_emails?: string[]
   bcc_emails?: string[]
   attachment_ids?: string[]
+  ai_assisted?: boolean
 }
 
 export interface CreateSupportAttachmentPayload {
@@ -181,6 +184,17 @@ export const supportService = {
     getApi().get<SupportInboxViewCount[]>(`/support/inbox/views/counts${qs(workspaceId)}`),
   listCannedResponses: (workspaceId: string) =>
     getApi().get<SupportCannedResponse[]>(`/support/inbox/canned-responses${qs(workspaceId)}`),
+  createCannedResponse: (workspaceId: string, payload: CreateSupportCannedResponseRequest) =>
+    getApi().post<SupportCannedResponse>(`/support/inbox/canned-responses${qs(workspaceId)}`, payload),
+  updateCannedResponse: (workspaceId: string, responseId: string, payload: UpdateSupportCannedResponseRequest) =>
+    getApi().put<SupportCannedResponse>(
+      `/support/inbox/canned-responses/${encodeURIComponent(responseId)}${qs(workspaceId)}`,
+      payload,
+    ),
+  deleteCannedResponse: (workspaceId: string, responseId: string) =>
+    getApi().del<{ message?: string }>(
+      `/support/inbox/canned-responses/${encodeURIComponent(responseId)}${qs(workspaceId)}`,
+    ),
   listTags: (workspaceId: string) =>
     getApi().get<SupportTag[]>(`/support/inbox/tags${qs(workspaceId)}`),
   addConversationTag: (workspaceId: string, conversationId: string, tagId: string) =>

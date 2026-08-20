@@ -71,6 +71,16 @@ export interface SupportCannedResponse {
   updated_at: string
 }
 
+export interface CreateSupportCannedResponseRequest {
+  short_code: string
+  content: string
+  tag?: string
+  /** Deprecated compatibility field still accepted by older API processes. */
+  title?: string
+}
+
+export type UpdateSupportCannedResponseRequest = CreateSupportCannedResponseRequest
+
 /** A workspace-scoped, user-authored support tag. `color` is a hex string (e.g. `#2563eb`). */
 export interface SupportTag {
   id: string
@@ -263,6 +273,7 @@ export interface SupportConversation {
   priority: ConversationPriority
   customer_name?: string
   customer_email?: string
+  primary_recipient_state?: 'confirmed' | 'unconfirmed'
   suggested_primary_recipient_email?: string | null
   suggested_primary_recipient_name?: string | null
   email_cc?: string[]

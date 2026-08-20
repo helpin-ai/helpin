@@ -19,6 +19,10 @@ vi.mock('@helpin-ai/support-core', () => ({
     selector({ wsSend: null, wsConnected: false }),
   useRewriteSupportDraft: () => ({ mutateAsync: rewriteMutate }),
   useSupportCannedResponses: () => ({ data: [], isPending: false }),
+  useUpdateConversationEmailRecipients: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateSupportCannedResponse: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateSupportCannedResponse: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteSupportCannedResponse: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 vi.mock('@mobile/lib/haptics', () => ({ haptic: vi.fn() }))
@@ -74,6 +78,39 @@ describe('AI rewrite + undo', () => {
     expect(screen.getByText('Larger included AI usage allowance')).toBeDefined()
     expect(screen.queryByText('AI usage exhausted')).toBeNull()
     expect((screen.getByPlaceholderText('Reply…', { exact: true }) as HTMLTextAreaElement).value).toBe('plz help')
+  })
+
+  test('marks a sent rewritten reply as AI assisted', async () => {
+    const send = setupSend(async () => ({ id: 'm-ai' }))
+    render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+    fireEvent.change(screen.getByPlaceholderText('Reply…'), { target: { value: 'plz help' } })
+    fireEvent.click(screen.getByRole('button', { name: 'AI writing tools' }))
+    fireEvent.click(await screen.findByLabelText('Rephrase'))
+    await waitFor(() => expect((screen.getByPlaceholderText('Reply…') as HTMLTextAreaElement).value).toBe('[rephrase] plz help'))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message', hidden: true }))
+
+    await waitFor(() => expect(send).toHaveBeenCalledWith({
+      content: '[rephrase] plz help',
+      is_internal: false,
+      ai_assisted: true,
+    }))
+  })
+})
+
+describe('emoji picker', () => {
+  test('inserts the selected shared-catalog emoji at the caret', async () => {
+    setupSend(async () => ({}))
+    render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+    const input = screen.getByPlaceholderText('Reply…') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'Hi ' } })
+    input.setSelectionRange(3, 3)
+    fireEvent.select(input)
+    fireEvent.click(screen.getByRole('button', { name: 'Open emoji picker' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Insert 😀' }))
+
+    await waitFor(() => expect((screen.getByPlaceholderText('Reply…', { exact: true }) as HTMLTextAreaElement).value).toBe('Hi 😀'))
   })
 })
 

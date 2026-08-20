@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import {
   useDeleteSupportAttachment,
   useSendMessage,
+  useUpdateConversationEmailRecipients,
   useUploadSupportAttachment,
 } from '@helpin-ai/support-core'
 import { haptic } from '@mobile/lib/haptics'
@@ -18,6 +19,10 @@ vi.mock('@helpin-ai/support-core', () => ({
     selector({ wsSend: null, wsConnected: false }),
   useRewriteSupportDraft: () => ({ mutateAsync: vi.fn() }),
   useSupportCannedResponses: () => ({ data: [], isPending: false }),
+  useUpdateConversationEmailRecipients: vi.fn(),
+  useCreateSupportCannedResponse: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateSupportCannedResponse: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteSupportCannedResponse: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 vi.mock('@mobile/lib/haptics', () => ({
@@ -27,6 +32,7 @@ vi.mock('@mobile/lib/haptics', () => ({
 const mockUseSendMessage = vi.mocked(useSendMessage)
 const mockUseUploadSupportAttachment = vi.mocked(useUploadSupportAttachment)
 const mockUseDeleteSupportAttachment = vi.mocked(useDeleteSupportAttachment)
+const mockUseUpdateConversationEmailRecipients = vi.mocked(useUpdateConversationEmailRecipients)
 
 function setupMutate(impl: (payload: { content: string; is_internal?: boolean; attachment_ids?: string[] }) => Promise<unknown>) {
   const mutateAsync = vi.fn(impl)
@@ -42,6 +48,10 @@ beforeEach(() => {
     mutateAsync: vi.fn(async () => ({ id: 'att-default', url: 'https://files.test/default' })),
   } as unknown as ReturnType<typeof useUploadSupportAttachment>)
   mockUseDeleteSupportAttachment.mockReturnValue({ mutateAsync: vi.fn(async () => undefined) } as unknown as ReturnType<typeof useDeleteSupportAttachment>)
+  mockUseUpdateConversationEmailRecipients.mockReturnValue({
+    mutateAsync: vi.fn(async () => ({})),
+    isPending: false,
+  } as unknown as ReturnType<typeof useUpdateConversationEmailRecipients>)
 })
 
 test('reply mode shows the "Reply…" placeholder; switching to Note tints the composer and swaps the placeholder', () => {
@@ -96,6 +106,69 @@ test('send button is disabled while the draft is empty or whitespace-only', () =
 
   fireEvent.change(screen.getByPlaceholderText('Reply…'), { target: { value: '   ' } })
   expect(button).toHaveProperty('disabled', true)
+})
+
+test('blocks ambiguous email replies until the suggested primary recipient is confirmed', async () => {
+  setupMutate(async () => ({}))
+  const updateRecipients = vi.fn(async () => ({}))
+  mockUseUpdateConversationEmailRecipients.mockReturnValue({
+    mutateAsync: updateRecipients,
+    isPending: false,
+  } as unknown as ReturnType<typeof useUpdateConversationEmailRecipients>)
+  render(
+    <Composer
+      workspaceId="ws-1"
+      conversationId="conv-1"
+      conversation={{
+        id: 'conv-1',
+        customer_email: 'support@example.com',
+        email_cc: ['customer@example.com'],
+        primary_recipient_state: 'unconfirmed',
+        suggested_primary_recipient_email: 'customer@example.com',
+        suggested_primary_recipient_name: 'Ada',
+      }}
+    />,
+  )
+
+  expect(screen.getByText(/Support was copied on this email/)).toBeDefined()
+  fireEvent.change(screen.getByPlaceholderText('Reply…'), { target: { value: 'Hello' } })
+  expect(screen.getByRole('button', { name: 'Send message' })).toHaveProperty('disabled', true)
+  fireEvent.click(screen.getByRole('button', { name: 'Use customer@example.com' }))
+
+  await waitFor(() => expect(updateRecipients).toHaveBeenCalledWith({
+    conversationId: 'conv-1',
+    payload: {
+      primary_recipient_email: 'customer@example.com',
+      primary_recipient_name: 'Ada',
+      confirm_primary: true,
+    },
+  }))
+})
+
+test('sends web-compatible email channel and normalized Cc metadata', async () => {
+  const mutateAsync = setupMutate(async () => ({ id: 'msg-email' }))
+  render(
+    <Composer
+      workspaceId="ws-1"
+      conversationId="conv-1"
+      conversation={{
+        id: 'conv-1',
+        customer_email: 'ada@example.com',
+        email_cc: ['ADA@example.com', 'finance@example.com', 'Finance@Example.com'],
+        primary_recipient_state: 'confirmed',
+      }}
+    />,
+  )
+
+  fireEvent.change(screen.getByPlaceholderText('Reply…'), { target: { value: 'Invoice attached' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+
+  await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({
+    content: 'Invoice attached',
+    is_internal: false,
+    channels: ['email'],
+    cc_emails: ['finance@example.com'],
+  }))
 })
 
 test('sending trims content and maps note mode to is_internal, clears the draft immediately, and fires a success haptic', async () => {

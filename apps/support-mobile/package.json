@@ -16,6 +16,7 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@helpin-ai/shared": "workspace:*",
     "@helpin-ai/support-core": "workspace:*",
+    "@helpin-ai/widget-core": "workspace:*",
     "@simplewebauthn/browser": "^13.3.0",
     "@tanstack/react-query": "^5.99.0",
     "@tanstack/react-router": "^1.168.22",

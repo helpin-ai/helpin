@@ -14,6 +14,8 @@ import {
   useCreateTaskFromConversation,
   useApproveAgentRun,
   useUpdateMySupportTeammatePresence,
+  useCreateSupportCannedResponse,
+  useDeleteSupportCannedResponse,
 } from '../use-support-core'
 import type { SupportMessage } from '../support-types'
 
@@ -192,6 +194,50 @@ describe('supportService mutations (unit, no React)', () => {
     fakeApi.put.mockResolvedValue({ data: { user_id: 'user-1', status: 'away', source: 'manual', manual_status: 'away' }, error: null })
     await supportService.updateMyTeammatePresence(WORKSPACE_ID, 'away')
     expect(fakeApi.put).toHaveBeenCalledWith('/support/inbox/me/presence?workspace_id=ws-1', { manual_status: 'away' })
+  })
+
+  it('creates, updates, and deletes canned responses on the admin endpoints', async () => {
+    const payload = { short_code: '!hello', content: 'Hello there', tag: 'general', title: '!hello' }
+    fakeApi.post.mockResolvedValue({ data: { id: 'shortcut-1' }, error: null })
+    fakeApi.put.mockResolvedValue({ data: { id: 'shortcut-1' }, error: null })
+    fakeApi.del.mockResolvedValue({ data: { message: 'deleted' }, error: null })
+
+    await supportService.createCannedResponse(WORKSPACE_ID, payload)
+    await supportService.updateCannedResponse(WORKSPACE_ID, 'shortcut/1', payload)
+    await supportService.deleteCannedResponse(WORKSPACE_ID, 'shortcut/1')
+
+    expect(fakeApi.post).toHaveBeenCalledWith('/support/inbox/canned-responses?workspace_id=ws-1', payload)
+    expect(fakeApi.put).toHaveBeenCalledWith('/support/inbox/canned-responses/shortcut%2F1?workspace_id=ws-1', payload)
+    expect(fakeApi.del).toHaveBeenCalledWith('/support/inbox/canned-responses/shortcut%2F1?workspace_id=ws-1')
+  })
+})
+
+describe('useCreateSupportCannedResponse', () => {
+  it('invalidates the shared canned-response list after creation', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.post.mockResolvedValue({
+      data: { id: 'shortcut-1', workspace_id: WORKSPACE_ID, short_code: '!hello', content: 'Hello', tag: 'general', created_by_id: null, created_at: '', updated_at: '' },
+      error: null,
+    })
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useCreateSupportCannedResponse(WORKSPACE_ID), { wrapper: wrapperFor(queryClient) })
+    await act(async () => { await result.current.mutateAsync({ short_code: '!hello', content: 'Hello' }) })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: supportQueryKeys.cannedResponses(WORKSPACE_ID) })
+  })
+})
+
+describe('useDeleteSupportCannedResponse', () => {
+  it('accepts a 204 response and invalidates the canned-response list', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.del.mockResolvedValue({ data: null, error: null, status: 204 })
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useDeleteSupportCannedResponse(WORKSPACE_ID), { wrapper: wrapperFor(queryClient) })
+    await act(async () => { await result.current.mutateAsync('shortcut-1') })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: supportQueryKeys.cannedResponses(WORKSPACE_ID) })
   })
 })
 

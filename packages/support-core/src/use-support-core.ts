@@ -22,6 +22,7 @@ import type {
   ConversationStatus,
   CreateConversationWithMessageRequest,
   CreateConversationWithMessageResponse,
+  CreateSupportCannedResponseRequest,
   CreateTaskFromConversationResponse,
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
@@ -35,6 +36,7 @@ import type {
   SupportConversation,
   SupportConversationSearchParams,
   SupportConversationSearchResponse,
+  SupportCannedResponse,
   SupportMessage,
   SupportMessageActionResponse,
   SupportMessageInfo,
@@ -43,6 +45,7 @@ import type {
   SupportTeammatePresenceStatus,
   ResolveSupportRunInteractionRequest,
   UpdateConversationEmailRecipientsRequest,
+  UpdateSupportCannedResponseRequest,
 } from './support-types'
 import type { VisitorContextResponse } from './visitor-types'
 import {
@@ -717,6 +720,42 @@ export function useSupportCannedResponses(workspaceId: string, enabled = true) {
     queryFn: async () => unwrapOrThrow(await supportService.listCannedResponses(workspaceId)),
     enabled: enabled && !!workspaceId,
     staleTime: 5 * 60_000,
+  })
+}
+
+export function useCreateSupportCannedResponse(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: CreateSupportCannedResponseRequest): Promise<SupportCannedResponse> =>
+      unwrapOrThrow(await supportService.createCannedResponse(workspaceId, payload)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.cannedResponses(workspaceId) })
+    },
+  })
+}
+
+export function useUpdateSupportCannedResponse(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ responseId, payload }: { responseId: string; payload: UpdateSupportCannedResponseRequest }): Promise<SupportCannedResponse> =>
+      unwrapOrThrow(await supportService.updateCannedResponse(workspaceId, responseId, payload)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.cannedResponses(workspaceId) })
+    },
+  })
+}
+
+export function useDeleteSupportCannedResponse(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (responseId: string) => {
+      const response = await supportService.deleteCannedResponse(workspaceId, responseId)
+      if (response.error) throw new Error(response.error)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.cannedResponses(workspaceId) })
+    },
   })
 }
 
