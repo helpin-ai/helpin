@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react'
-import { AlertOctagon, ChevronLeft, ChevronRight, Inbox, MailOpen, Pencil, Trash2 } from 'lucide-react'
+import { AlertOctagon, Check, ChevronLeft, ChevronRight, Inbox, Link, Mail, MailOpen, Pencil, Trash2 } from 'lucide-react'
 import {
   useDeleteConversation,
   useMarkConversationUnread,
   useMoveConversation,
   useInboxScopes,
+  useSendConversationTranscript,
   useUpdateConversationStatus,
   useUpdateConversationSubject,
   type SupportConversation,
@@ -25,7 +26,7 @@ export interface ConversationActionsSheetProps {
   onLeave: () => void
 }
 
-type View = 'menu' | 'subject' | 'move' | 'delete'
+type View = 'menu' | 'subject' | 'move' | 'transcript' | 'delete'
 
 export function ConversationActionsSheet({
   open,
@@ -36,17 +37,28 @@ export function ConversationActionsSheet({
 }: ConversationActionsSheetProps) {
   const [view, setView] = useState<View>('menu')
   const [subjectDraft, setSubjectDraft] = useState(conversation.subject)
+  const [transcriptEmail, setTranscriptEmail] = useState(
+    conversation.customer_email ?? conversation.suggested_primary_recipient_email ?? '',
+  )
+  const [updateCustomerEmail, setUpdateCustomerEmail] = useState(!conversation.customer_email)
 
   const markUnread = useMarkConversationUnread(workspaceId)
   const updateSubject = useUpdateConversationSubject(workspaceId)
   const moveConversation = useMoveConversation(workspaceId)
   const updateStatus = useUpdateConversationStatus(workspaceId)
   const deleteConversation = useDeleteConversation(workspaceId)
+  const sendTranscript = useSendConversationTranscript(workspaceId)
   const inboxScopes = useInboxScopes(workspaceId)
   const mailboxes = inboxScopes.data?.mailboxes ?? []
 
   const isSpam = conversation.status === 'spam'
   const conversationId = conversation.id
+  const transcriptRecipients = Array.from(new Map([
+    conversation.customer_email,
+    conversation.suggested_primary_recipient_email,
+    ...(conversation.email_cc ?? []),
+    ...(conversation.email_thread_participants ?? []),
+  ].filter((email): email is string => !!email?.trim()).map((email) => [email.trim().toLowerCase(), email.trim()])).values())
 
   const close = () => {
     onOpenChange(false)
@@ -59,6 +71,38 @@ export function ConversationActionsSheet({
     haptic('selection')
     onOpenChange(false)
     onLeave()
+  }
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      toast.success('Link copied')
+      haptic('notificationSuccess')
+      close()
+    } catch {
+      toast.error('Could not copy link')
+    }
+  }
+
+  const openTranscript = () => {
+    if (!transcriptEmail) setTranscriptEmail(transcriptRecipients[0] ?? '')
+    setView('transcript')
+  }
+
+  const handleSendTranscript = () => {
+    const email = transcriptEmail.trim()
+    if (!email) return
+    sendTranscript.mutate(
+      { conversationId, email, updateCustomerEmail },
+      {
+        onSuccess: (data) => {
+          toast.success(data.message || 'Transcript sent')
+          haptic('notificationSuccess')
+          close()
+        },
+        onError: () => toast.error('Could not send transcript'),
+      },
+    )
   }
 
   const handleSaveSubject = () => {
@@ -123,6 +167,8 @@ export function ConversationActionsSheet({
         {view === 'menu' && (
           <div className="flex flex-col">
             <ActionRow icon={MailOpen} label="Mark as unread" onPress={handleMarkUnread} />
+            <ActionRow icon={Link} label="Copy link" onPress={() => void handleCopyLink()} />
+            <ActionRow icon={Mail} label="Email transcript" chevron onPress={openTranscript} />
             <ActionRow icon={Pencil} label="Set subject" chevron onPress={() => setView('subject')} />
             <ActionRow icon={Inbox} label="Move to inbox" chevron onPress={() => setView('move')} />
             <ActionRow
@@ -177,6 +223,57 @@ export function ConversationActionsSheet({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {view === 'transcript' && (
+          <div className="flex flex-col gap-3">
+            <SubViewHeader title="Email transcript" onBack={() => setView('menu')} />
+            {transcriptRecipients.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-footnote font-medium">Recent recipients</span>
+                {transcriptRecipients.map((email) => (
+                  <Pressable
+                    key={email}
+                    aria-label={`Send transcript to ${email}`}
+                    aria-pressed={transcriptEmail === email}
+                    onPress={() => setTranscriptEmail(email)}
+                    className="flex h-11 items-center gap-2 rounded-xl px-2 text-left active:bg-muted"
+                  >
+                    <span className="min-w-0 flex-1 truncate text-body">{email}</span>
+                    {transcriptEmail === email && <Check className="h-4 w-4 text-primary" />}
+                  </Pressable>
+                ))}
+              </div>
+            )}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-footnote font-medium">Email address</span>
+              <input
+                type="email"
+                value={transcriptEmail}
+                onChange={(event) => setTranscriptEmail(event.target.value)}
+                placeholder="recipient@example.com"
+                className="rounded-xl border border-input bg-background px-3 py-2.5 text-body outline-none placeholder:text-muted-foreground"
+              />
+            </label>
+            {(!conversation.customer_email || transcriptEmail.trim().toLowerCase() !== conversation.customer_email.toLowerCase()) && (
+              <label className="flex items-start gap-2 text-footnote text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={updateCustomerEmail}
+                  onChange={(event) => setUpdateCustomerEmail(event.target.checked)}
+                  className="mt-0.5 h-4 w-4"
+                />
+                Also save this email to the customer profile
+              </label>
+            )}
+            <PrimaryButton
+              onPress={handleSendTranscript}
+              busy={sendTranscript.isPending}
+              disabled={!transcriptEmail.trim()}
+            >
+              Send transcript
+            </PrimaryButton>
           </div>
         )}
 

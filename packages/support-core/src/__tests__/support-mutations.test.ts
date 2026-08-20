@@ -343,3 +343,43 @@ describe('useUploadSupportAttachment', () => {
     )
   })
 })
+
+describe('agent productivity service paths', () => {
+  it('lists, adds, and removes conversation tags on the verified endpoints', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.get.mockResolvedValue({ data: [], error: null })
+    fakeApi.post.mockResolvedValue({ data: { message: 'added' }, error: null })
+    fakeApi.del.mockResolvedValue({ data: { message: 'removed' }, error: null })
+
+    await supportService.listTags(WORKSPACE_ID)
+    await supportService.addConversationTag(WORKSPACE_ID, CONVERSATION_ID, 'tag-1')
+    await supportService.removeConversationTag(WORKSPACE_ID, CONVERSATION_ID, 'tag-1')
+
+    expect(fakeApi.get).toHaveBeenCalledWith(`/support/inbox/tags?workspace_id=${WORKSPACE_ID}`)
+    expect(fakeApi.post).toHaveBeenCalledWith(
+      `/support/inbox/conversations/${CONVERSATION_ID}/tags/tag-1?workspace_id=${WORKSPACE_ID}`,
+      {},
+    )
+    expect(fakeApi.del).toHaveBeenCalledWith(
+      `/support/inbox/conversations/${CONVERSATION_ID}/tags/tag-1?workspace_id=${WORKSPACE_ID}`,
+    )
+  })
+
+  it('posts transcript recipient choices to the verified endpoint', async () => {
+    const fakeApi = makeFakeApi()
+    configureSupportApi(fakeApi)
+    fakeApi.post.mockResolvedValue({
+      data: { success: true, message: 'sent', email: 'ada@example.com' }, error: null,
+    })
+
+    await supportService.sendConversationTranscript(WORKSPACE_ID, CONVERSATION_ID, {
+      email: 'ada@example.com', update_customer_email: true,
+    })
+
+    expect(fakeApi.post).toHaveBeenCalledWith(
+      `/support/inbox/conversations/${CONVERSATION_ID}/transcript?workspace_id=${WORKSPACE_ID}`,
+      { email: 'ada@example.com', update_customer_email: true },
+    )
+  })
+})

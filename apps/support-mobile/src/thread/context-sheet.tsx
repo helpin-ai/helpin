@@ -18,6 +18,7 @@ import { cn } from '@mobile/lib/cn'
 import { displayNameFor } from '@mobile/inbox/conversation-cell'
 import { formatRelativeTime } from '@mobile/inbox/inbox-helpers'
 import { AssignList } from './assign-list'
+import { ConversationTagEditor } from './conversation-tag-editor'
 
 export interface ContextSheetProps {
   workspaceId: string
@@ -63,12 +64,12 @@ function ContextRow({ label, value }: { label: string; value?: string | null }) 
 
 /**
  * Bottom sheet opened from the conversation header (Task 13's `onTitlePress`
- * seam): customer identity, status toggle, inline assignment, and visitor
- * context. Tag *editing* is out of scope (V1.1) — see the note above the
- * render return for why a tags section isn't rendered at all here.
+ * seam): customer identity, status toggle, inline assignment, existing-tag
+ * editing, and visitor context.
  */
 export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, canEdit }: ContextSheetProps) {
   const [assignExpanded, setAssignExpanded] = useState(false)
+  const [tagsExpanded, setTagsExpanded] = useState(false)
 
   const conversationQuery = useConversation(workspaceId, conversationId)
   const visitorContextQuery = useVisitorContext(workspaceId, conversationId)
@@ -192,6 +193,17 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, 
               Assign
               <ChevronRight className={cn('h-4 w-4 transition-transform', assignExpanded && 'rotate-90')} />
             </Pressable>
+            <Pressable
+              haptic="selection"
+              onPress={() => setTagsExpanded((value) => !value)}
+              aria-label="Tags"
+              aria-expanded={tagsExpanded}
+              className="flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-muted text-body font-medium text-foreground"
+            >
+              Tags
+              {(conversation.tags?.length ?? 0) > 0 && <span className="text-caption">{conversation.tags?.length}</span>}
+              <ChevronRight className={cn('h-4 w-4 transition-transform', tagsExpanded && 'rotate-90')} />
+            </Pressable>
           </div>
         ) : (
           <div className="border-t border-border/60 px-4 py-3 text-footnote text-muted-foreground">
@@ -208,6 +220,14 @@ export function ContextSheet({ workspaceId, conversationId, open, onOpenChange, 
               onSelect={handleAssign}
             />
           </div>
+        )}
+
+        {canEdit && tagsExpanded && conversationId && (
+          <ConversationTagEditor
+            workspaceId={workspaceId}
+            conversationId={conversationId}
+            selectedTags={conversation.tags ?? []}
+          />
         )}
 
         {visitor && (

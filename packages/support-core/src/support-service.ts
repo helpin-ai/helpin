@@ -3,6 +3,7 @@ import type {
   AssignableMember,
   ConversationListResponse,
   ConversationStatus,
+  SendSupportConversationTranscriptResponse,
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportAttachmentInitResponse,
@@ -16,6 +17,7 @@ import type {
   SupportMailboxMember,
   SupportMessage,
   SupportMessagePage,
+  SupportTag,
   SupportTeammatePresenceStatus,
   UnreadStats,
 } from './support-types'
@@ -150,6 +152,17 @@ export const supportService = {
     getApi().get<SupportInboxViewCount[]>(`/support/inbox/views/counts${qs(workspaceId)}`),
   listCannedResponses: (workspaceId: string) =>
     getApi().get<SupportCannedResponse[]>(`/support/inbox/canned-responses${qs(workspaceId)}`),
+  listTags: (workspaceId: string) =>
+    getApi().get<SupportTag[]>(`/support/inbox/tags${qs(workspaceId)}`),
+  addConversationTag: (workspaceId: string, conversationId: string, tagId: string) =>
+    getApi().post<{ message: string }>(
+      `/support/inbox/conversations/${conversationId}/tags/${tagId}${qs(workspaceId)}`,
+      {},
+    ),
+  removeConversationTag: (workspaceId: string, conversationId: string, tagId: string) =>
+    getApi().del<{ message: string }>(
+      `/support/inbox/conversations/${conversationId}/tags/${tagId}${qs(workspaceId)}`,
+    ),
   getInstallation: (workspaceId: string) =>
     getApi().get<SupportInstallation>(`/support/inbox/installations${qs(workspaceId)}`),
   updateConversationSubject: (workspaceId: string, conversationId: string, subject: string) =>
@@ -207,6 +220,13 @@ export const supportService = {
     getApi().post(`/support/inbox/conversations/${conversationId}/unread${qs(workspaceId)}`, {}),
   sendMessage: (workspaceId: string, conversationId: string, payload: SendMessagePayload) =>
     getApi().post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
+  sendConversationTranscript: (workspaceId: string, conversationId: string, payload: {
+    email: string
+    update_customer_email?: boolean
+  }) => getApi().post<SendSupportConversationTranscriptResponse>(
+    `/support/inbox/conversations/${conversationId}/transcript${qs(workspaceId)}`,
+    payload,
+  ),
   initiateAttachmentUpload: (
     workspaceId: string,
     conversationId: string,

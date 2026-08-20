@@ -19,5 +19,6 @@ export const supportQueryKeys = {
   builtinInboxViews: (wsId: string) => ['support', wsId, 'builtin-inbox-views'] as const,
   inboxViews: (wsId: string) => ['support', wsId, 'inbox-views'] as const,
   cannedResponses: (wsId: string) => ['support', wsId, 'canned-responses'] as const,
+  tags: (wsId: string) => ['support', wsId, 'tags'] as const,
   installation: (wsId: string) => ['support', wsId, 'installation'] as const,
 } as const

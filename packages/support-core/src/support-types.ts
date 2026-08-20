@@ -79,6 +79,12 @@ export interface SupportTag {
   color?: string | null
 }
 
+export interface SendSupportConversationTranscriptResponse {
+  success: boolean
+  message: string
+  email: string
+}
+
 export interface SupportConversation {
   id: string
   workspace_id: string
@@ -98,6 +104,10 @@ export interface SupportConversation {
   priority: ConversationPriority
   customer_name?: string
   customer_email?: string
+  suggested_primary_recipient_email?: string | null
+  suggested_primary_recipient_name?: string | null
+  email_cc?: string[]
+  email_thread_participants?: string[]
   email_unsubscribed?: boolean
   anonymous_id?: string
   opened_by_user_id?: string

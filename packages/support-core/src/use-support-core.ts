@@ -399,6 +399,55 @@ export function useSupportCannedResponses(workspaceId: string, enabled = true) {
   })
 }
 
+export function useSupportTags(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: supportQueryKeys.tags(workspaceId),
+    queryFn: async () => unwrapOrThrow(await supportService.listTags(workspaceId)),
+    enabled: enabled && !!workspaceId,
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useAddConversationTag(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ conversationId, tagId }: { conversationId: string; tagId: string }) =>
+      unwrapOrThrow(await supportService.addConversationTag(workspaceId, conversationId, tagId)),
+    onSuccess: (_data, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
+export function useRemoveConversationTag(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ conversationId, tagId }: { conversationId: string; tagId: string }) =>
+      unwrapOrThrow(await supportService.removeConversationTag(workspaceId, conversationId, tagId)),
+    onSuccess: (_data, { conversationId }) => {
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversations(workspaceId) })
+    },
+  })
+}
+
+export function useSendConversationTranscript(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ conversationId, email, updateCustomerEmail }: {
+      conversationId: string; email: string; updateCustomerEmail?: boolean
+    }) => unwrapOrThrow(await supportService.sendConversationTranscript(workspaceId, conversationId, {
+      email, update_customer_email: updateCustomerEmail,
+    })),
+    onSuccess: (_data, { conversationId, updateCustomerEmail }) => {
+      if (updateCustomerEmail) {
+        queryClient.invalidateQueries({ queryKey: supportQueryKeys.conversation(workspaceId, conversationId) })
+      }
+    },
+  })
+}
+
 export function useUpdateConversationSubject(workspaceId: string) {
   const queryClient = useQueryClient()
   return useMutation({
