@@ -909,7 +909,14 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
-	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, aiUsageMeter)
+	completionRoutes := service.DefaultAICompletionRouteRegistry()
+	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
+		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
+	}
+	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
+		fatalWithSentry("validate AI completion providers", errors.Join(issues...))
+	}
+	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes)
 	supportInboxTriageService := service.NewSupportInboxTriageService(
 		supportInboxService,
 		supportConversationTriageRepo,
@@ -1082,18 +1089,8 @@ func main() {
 		slog.Info("Anthropic API not configured — orchestration disabled")
 	}
 
-	// Initialize LLM provider for docs translation generation, signal detection, and deal automation.
-	var llmProvider llm.Provider
-	switch cfg.CRMLLMProvider {
-	case "openai":
-		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
-	default:
-		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
-	}
-	llmProvider = service.NewMeteredLLMProvider(llmProvider, aiUsageMeter)
-	if llmProvider != nil {
-		slog.Info("LLM provider configured for signal detection")
-	}
+	// Every product-owned direct completion shares the validated route registry.
+	var llmProvider llm.Provider = supportLLMProvider
 
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
 	docsAPIReferenceService := service.NewDocsAPIReferenceService(docsAPIReferenceRepo, docsSpaceRepo)
@@ -1720,7 +1717,7 @@ func main() {
 		helpcenterAnswerRepo,
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
-		supportLLMRouter,
+		supportLLMProvider,
 		helpcenterAnswerProvider,
 		helpcenterAnswerModel,
 		redisClient,

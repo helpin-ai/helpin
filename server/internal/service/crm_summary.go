@@ -405,7 +405,7 @@ func (s *CRMSummaryService) generateContactSummary(ctx context.Context, workspac
 		return summaryGenerationOutput{}, nil, nil, nil, fmt.Errorf("marshal contact summary usage payload: %w", err)
 	}
 
-	output, err := s.generateSummaryLLM(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	output, err := s.generateSummaryLLM(ctx, AIUsageMeteringContext{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureCRMSummary,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(payloadJSON, workspaceID, BillingFeatureCRMSummary, model.CRMObjectContact, contactID),
@@ -413,7 +413,7 @@ func (s *CRMSummaryService) generateContactSummary(ctx context.Context, workspac
 			"entity_type": model.CRMObjectContact,
 			"entity_id":   contactID,
 		},
-	}), payload)
+	}, payload)
 	if err != nil {
 		return summaryGenerationOutput{}, nil, nil, nil, err
 	}
@@ -457,7 +457,7 @@ func (s *CRMSummaryService) generateDealSummary(ctx context.Context, workspaceID
 		return summaryGenerationOutput{}, nil, nil, nil, fmt.Errorf("marshal deal summary usage payload: %w", err)
 	}
 
-	output, err := s.generateSummaryLLM(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	output, err := s.generateSummaryLLM(ctx, AIUsageMeteringContext{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureCRMSummary,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(payloadJSON, workspaceID, BillingFeatureCRMSummary, model.CRMObjectDeal, dealID),
@@ -465,7 +465,7 @@ func (s *CRMSummaryService) generateDealSummary(ctx context.Context, workspaceID
 			"entity_type": model.CRMObjectDeal,
 			"entity_id":   dealID,
 		},
-	}), payload)
+	}, payload)
 	if err != nil {
 		return summaryGenerationOutput{}, nil, nil, nil, err
 	}
@@ -661,20 +661,28 @@ func (s *CRMSummaryService) loadDealAssociations(ctx context.Context, workspaceI
 	return contacts, companies, nil
 }
 
-func (s *CRMSummaryService) generateSummaryLLM(ctx context.Context, payload summaryPromptEntity) (summaryGenerationOutput, error) {
+func (s *CRMSummaryService) generateSummaryLLM(
+	ctx context.Context,
+	metering AIUsageMeteringContext,
+	payload summaryPromptEntity,
+) (summaryGenerationOutput, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return summaryGenerationOutput{}, fmt.Errorf("marshal crm summary payload: %w", err)
 	}
 
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
-		SystemPrompt: crmSummarySystemPrompt,
-		Messages: []llm.Message{
-			{Role: "user", Content: string(payloadJSON)},
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
+		WorkspaceID: metering.WorkspaceID, FeatureKey: metering.FeatureKey,
+		IdempotencyKey: metering.IdempotencyKey, Metadata: metering.Metadata,
+		Chat: llm.ChatRequest{
+			SystemPrompt: crmSummarySystemPrompt,
+			Messages: []llm.Message{
+				{Role: "user", Content: string(payloadJSON)},
+			},
+			Temperature: 0.1,
+			MaxTokens:   1400,
+			JSONMode:    true,
 		},
-		Temperature: 0.1,
-		MaxTokens:   1400,
-		JSONMode:    true,
 	})
 	if err != nil {
 		return summaryGenerationOutput{}, fmt.Errorf("LLM crm summary generation: %w", err)

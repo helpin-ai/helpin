@@ -132,7 +132,7 @@ func (s *SupportCoverageEnrichmentService) EnrichTopic(ctx context.Context, topi
 		Evidence:  evidence,
 		KBContext: kbContext,
 	})
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    topic.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleGeneration,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(promptBytes, topic.WorkspaceID, BillingFeatureDocsArticleGeneration, "coverage_enrichment", topicID, gap.ID),
@@ -140,16 +140,17 @@ func (s *SupportCoverageEnrichmentService) EnrichTopic(ctx context.Context, topi
 			"topic_id": topicID,
 			"gap_id":   gap.ID,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: "You generate support coverage gap article suggestions. Return JSON only.",
-		Messages: []llm.Message{{
-			Role:    "user",
-			Content: string(promptBytes),
-		}},
-		Temperature: 0.1,
-		MaxTokens:   1600,
-		JSONMode:    true,
-		JSONSchema:  coverageEnrichmentJSONSchema(),
+		Chat: llm.ChatRequest{
+			SystemPrompt: "You generate support coverage gap article suggestions. Return JSON only.",
+			Messages: []llm.Message{{
+				Role:    "user",
+				Content: string(promptBytes),
+			}},
+			Temperature: 0.1,
+			MaxTokens:   1600,
+			JSONMode:    true,
+			JSONSchema:  coverageEnrichmentJSONSchema(),
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("coverage enrichment llm: %w", err)

@@ -47,26 +47,24 @@ func (s *AgentService) DraftCustomAgentWithCatalog(
 		return nil, fmt.Errorf("agent draft LLM is not configured")
 	}
 
-	// Drafting is non-chargeable, but the metered LLM provider rejects calls
-	// without a metering context.
-	callCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.agentDraftLLM, AICompletionRequest{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureCustomAgentDraft,
 		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureCustomAgentDraft, "draft", aiUsageStableHash(description)),
 		Metadata: map[string]interface{}{
 			"action": "custom_agent_draft",
 		},
-	})
-	resp, err := s.agentDraftLLM.ChatCompletion(callCtx, llm.ChatRequest{
-		SystemPrompt: customAgentDraftSystemPrompt(tools, skills),
-		Messages: []llm.Message{{
-			Role:    "user",
-			Content: description,
-		}},
-		Temperature: 0.2,
-		MaxTokens:   1600,
-		JSONMode:    true,
-		JSONSchema:  customAgentDraftJSONSchema(),
+		Chat: llm.ChatRequest{
+			SystemPrompt: customAgentDraftSystemPrompt(tools, skills),
+			Messages: []llm.Message{{
+				Role:    "user",
+				Content: description,
+			}},
+			Temperature: 0.2,
+			MaxTokens:   1600,
+			JSONMode:    true,
+			JSONSchema:  customAgentDraftJSONSchema(),
+		},
 	})
 	if err != nil {
 		return nil, err

@@ -47,6 +47,12 @@ func NewAICompletionService(
 	return &AICompletionService{provider: provider, usage: usage, routes: routes}
 }
 
+// ChatCompletion exists only so AICompletionService can replace legacy llm.Provider
+// constructor dependencies during migration. Product code must call Complete.
+func (s *AICompletionService) ChatCompletion(context.Context, llm.ChatRequest) (*llm.ChatResponse, error) {
+	return nil, fmt.Errorf("direct ChatCompletion is disabled; use AICompleter.Complete")
+}
+
 // Complete executes one feature-owned completion using only catalogued routes.
 func (s *AICompletionService) Complete(ctx context.Context, input AICompletionRequest) (*llm.ChatResponse, error) {
 	if s == nil || s.provider == nil || s.usage == nil {
@@ -84,6 +90,55 @@ func (s *AICompletionService) Complete(ctx context.Context, input AICompletionRe
 			return response, nil
 		}
 		attemptErrors = append(attemptErrors, err)
+		if !retry || index == len(routes)-1 {
+			break
+		}
+	}
+	return nil, fmt.Errorf("AI completion failed: %w", errors.Join(attemptErrors...))
+}
+
+func completeAI(ctx context.Context, provider llm.Provider, input AICompletionRequest) (*llm.ChatResponse, error) {
+	if completer, ok := provider.(AICompleter); ok {
+		return completer.Complete(ctx, input)
+	}
+	if provider == nil {
+		return nil, fmt.Errorf("AI completion client is not configured")
+	}
+	// Legacy provider support keeps focused service tests isolated. Production
+	// dependency injection supplies AICompletionService and always takes the
+	// typed path above.
+	policy, ok := DefaultAICompletionRouteRegistry().Policy(input.FeatureKey, input.OperationKey)
+	if !ok {
+		return nil, fmt.Errorf("no AI completion route for feature %q", input.FeatureKey)
+	}
+	routes := completionCandidateRoutes(policy, input.PreferredRoute)
+	if len(routes) == 0 {
+		return nil, fmt.Errorf("no AI completion route for feature %q", input.FeatureKey)
+	}
+	var attemptErrors []error
+	for index, route := range routes {
+		chat := input.Chat
+		chat.Provider = route.Provider
+		chat.Model = route.Model
+		legacyCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+			WorkspaceID: input.WorkspaceID, FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
+			IdempotencyKey: fmt.Sprintf("%s:route:%d", input.IdempotencyKey, index), Metadata: input.Metadata,
+		})
+		response, err := provider.ChatCompletion(legacyCtx, chat)
+		if err == nil && response == nil {
+			err = fmt.Errorf("provider returned no response")
+		}
+		if err == nil && input.RequireComplete && isIncompleteFinishReason(response.FinishReason) {
+			err = fmt.Errorf("model output was incomplete (finish_reason=%s)", response.FinishReason)
+		}
+		if err == nil && input.ValidateResponse != nil {
+			err = input.ValidateResponse(response)
+		}
+		if err == nil {
+			return response, nil
+		}
+		attemptErrors = append(attemptErrors, err)
+		retry := llm.IsRetryableProviderError(err) || input.RetryInvalidOutput
 		if !retry || index == len(routes)-1 {
 			break
 		}

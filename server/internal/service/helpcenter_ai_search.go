@@ -268,7 +268,7 @@ func (s *HelpcenterAISearchService) Answer(ctx context.Context, workspaceID, loc
 		return &AnswerOutcome{Response: answerResponseFromRow(row, false)}, nil
 	}
 
-	contract, tokensUsed, err := s.generateAnswer(ctx, query, locale, grounded)
+	contract, tokensUsed, err := s.generateAnswer(ctx, workspaceID, cacheKey, query, locale, grounded)
 	row.TokensUsed = tokensUsed
 	if err != nil {
 		slog.WarnContext(ctx, "helpcenter answer generation failed", "error", err, "workspace_id", workspaceID)
@@ -431,7 +431,11 @@ type helpcenterAnswerContract struct {
 	DeclinedReason string   `json:"declined_reason"`
 }
 
-func (s *HelpcenterAISearchService) generateAnswer(ctx context.Context, query, locale string, chunks []repository.DocsChunkSearchResult) (*helpcenterAnswerContract, int, error) {
+func (s *HelpcenterAISearchService) generateAnswer(
+	ctx context.Context,
+	workspaceID, cacheKey, query, locale string,
+	chunks []repository.DocsChunkSearchResult,
+) (*helpcenterAnswerContract, int, error) {
 	if s.llmProvider == nil {
 		return nil, 0, fmt.Errorf("helpcenter answer LLM is not configured")
 	}
@@ -461,25 +465,29 @@ Return JSON only.`
 
 	generationCtx, cancel := context.WithTimeout(ctx, helpcenterAnswerTimeout)
 	defer cancel()
-	resp, err := s.llmProvider.ChatCompletion(generationCtx, llm.ChatRequest{
-		Provider:     s.answerProvider,
-		Model:        s.answerModel,
-		SystemPrompt: systemPrompt,
-		Messages: []llm.Message{{
-			Role:    "user",
-			Content: "Question (locale " + locale + "): " + query + "\n\nDocumentation chunks:\n" + b.String(),
-		}},
-		JSONMode: true,
-		JSONSchema: map[string]any{
-			"type":                 "object",
-			"additionalProperties": false,
-			"required":             []string{"can_answer", "answer", "cited_chunk_ids", "confidence"},
-			"properties": map[string]any{
-				"can_answer":      map[string]any{"type": "boolean"},
-				"answer":          map[string]any{"type": "string"},
-				"cited_chunk_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				"confidence":      map[string]any{"type": "number"},
-				"declined_reason": map[string]any{"type": "string"},
+	resp, err := completeAI(generationCtx, s.llmProvider, AICompletionRequest{
+		WorkspaceID:    workspaceID,
+		FeatureKey:     BillingFeatureHelpcenterAnswer,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureHelpcenterAnswer, cacheKey),
+		Chat: llm.ChatRequest{
+			SystemPrompt: systemPrompt,
+			Messages: []llm.Message{{
+				Role:    "user",
+				Content: "Question (locale " + locale + "): " + query + "\n\nDocumentation chunks:\n" + b.String(),
+			}},
+			MaxTokens: 4096,
+			JSONMode:  true,
+			JSONSchema: map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"required":             []string{"can_answer", "answer", "cited_chunk_ids", "confidence"},
+				"properties": map[string]any{
+					"can_answer":      map[string]any{"type": "boolean"},
+					"answer":          map[string]any{"type": "string"},
+					"cited_chunk_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					"confidence":      map[string]any{"type": "number"},
+					"declined_reason": map[string]any{"type": "string"},
+				},
 			},
 		},
 	})

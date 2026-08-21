@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
@@ -131,6 +132,29 @@ func (r AICompletionRouteRegistry) Validate(catalog *aiusage.Catalog) []error {
 					key, index, policy.MaximumOutputTokens, resolved.MaximumOutput,
 				))
 			}
+		}
+	}
+	return issues
+}
+
+// ValidateProviders reports route providers that are absent from the runtime router.
+func (r AICompletionRouteRegistry) ValidateProviders(hasProvider func(string) bool) []error {
+	providers := make(map[string]struct{})
+	for _, policy := range r.policies {
+		routes := append([]AICompletionRoute{policy.Primary}, policy.Fallbacks...)
+		for _, route := range routes {
+			providers[strings.ToLower(strings.TrimSpace(route.Provider))] = struct{}{}
+		}
+	}
+	names := make([]string, 0, len(providers))
+	for provider := range providers {
+		names = append(names, provider)
+	}
+	sort.Strings(names)
+	var issues []error
+	for _, provider := range names {
+		if hasProvider == nil || !hasProvider(provider) {
+			issues = append(issues, fmt.Errorf("AI completion provider %q is not configured", provider))
 		}
 	}
 	return issues

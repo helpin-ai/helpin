@@ -73,3 +73,12 @@ func TestAICompletionRouteRegistryKeepsMediaOnApprovedVisionRoute(t *testing.T) 
 		t.Fatalf("media fallbacks = %#v, want none", policy.Fallbacks)
 	}
 }
+
+func TestAICompletionRouteRegistryReportsMissingConfiguredProviders(t *testing.T) {
+	issues := DefaultAICompletionRouteRegistry().ValidateProviders(func(provider string) bool {
+		return provider == "anthropic"
+	})
+	if len(issues) != 1 || issues[0].Error() != `AI completion provider "openrouter" is not configured` {
+		t.Fatalf("provider validation issues = %v", issues)
+	}
+}

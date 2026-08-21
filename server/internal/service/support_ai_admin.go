@@ -150,21 +150,20 @@ func (s *SupportAIService) rewriteSupportDraftWithHistory(
 		return nil, fmt.Errorf("%w: unsupported operation %q", ErrSupportRewriteInvalidInput, strings.TrimSpace(req.Operation))
 	}
 
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureSupportReplyRewrite,
 		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureSupportReplyRewrite, operation, aiUsageStableHash(content)),
 		Metadata: map[string]interface{}{
 			"operation": operation,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: buildSupportRewriteSystemPrompt(operation),
-		Messages:     buildSupportRewriteMessages(history, content),
-		Provider:     supportRewriteProvider,
-		Model:        supportRewriteModel,
-		Temperature:  0.2,
-		MaxTokens:    900,
-		JSONMode:     true,
+		Chat: llm.ChatRequest{
+			SystemPrompt: buildSupportRewriteSystemPrompt(operation),
+			Messages:     buildSupportRewriteMessages(history, content),
+			Temperature:  0.2,
+			MaxTokens:    900,
+			JSONMode:     true,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rewrite support draft: %w", err)
@@ -230,23 +229,25 @@ func (s *SupportAIService) GenerateTaskDraftFromConversation(
 		return nil, fmt.Errorf("marshal support task draft usage payload: %w", err)
 	}
 
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureSupportTaskDraft,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(messagesJSON, workspaceID, BillingFeatureSupportTaskDraft, conversation.ID),
 		Metadata: map[string]interface{}{
 			"conversation_id": conversation.ID,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt:     supportTaskDraftSystemPrompt,
-		Messages:         messages,
-		Provider:         providerName,
-		Model:            modelName,
-		Temperature:      0.2,
-		MaxTokens:        1200,
-		JSONMode:         true,
-		JSONSchema:       supportTaskDraftJSONSchema(),
-		JSONSchemaStrict: true,
+		PreferredRoute: &AICompletionRoute{
+			Provider: providerName, Model: modelName, ServiceTier: defaultAICompletionServiceTier,
+		},
+		Chat: llm.ChatRequest{
+			SystemPrompt:     supportTaskDraftSystemPrompt,
+			Messages:         messages,
+			Temperature:      0.2,
+			MaxTokens:        1200,
+			JSONMode:         true,
+			JSONSchema:       supportTaskDraftJSONSchema(),
+			JSONSchemaStrict: true,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate support task draft: %w", err)
@@ -549,7 +550,7 @@ func (s *SupportAIService) generateResponseWithPlanRevision(
 		workspaceID = agent.WorkspaceID
 	}
 	messageID := customerMessage.ID
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureSupportAIReply,
 		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureSupportAIReply, conversationID, messageID),
@@ -557,16 +558,18 @@ func (s *SupportAIService) generateResponseWithPlanRevision(
 			"conversation_id": conversationID,
 			"message_id":      messageID,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt:     systemPrompt,
-		Messages:         messages,
-		Provider:         providerName,
-		Model:            modelName,
-		Temperature:      0.3,
-		MaxTokens:        1024,
-		JSONMode:         true,
-		JSONSchema:       supportAnswerJSONSchema(),
-		JSONSchemaStrict: true,
+		PreferredRoute: &AICompletionRoute{
+			Provider: providerName, Model: modelName, ServiceTier: defaultAICompletionServiceTier,
+		},
+		Chat: llm.ChatRequest{
+			SystemPrompt:     systemPrompt,
+			Messages:         messages,
+			Temperature:      0.3,
+			MaxTokens:        1024,
+			JSONMode:         true,
+			JSONSchema:       supportAnswerJSONSchema(),
+			JSONSchemaStrict: true,
+		},
 	})
 	if err != nil {
 		return nil, 0, err

@@ -20,10 +20,6 @@ import (
 
 const (
 	meetingIntelligenceGenerationVersion = "v3"
-	meetingIntelligenceLLMProvider       = "openrouter"
-	meetingIntelligenceLLMModel          = "deepseek/deepseek-v4-flash-0731"
-	meetingIntelligenceFallbackProvider  = "openrouter"
-	meetingIntelligenceFallbackModel     = "google/gemini-3.7-flash"
 	meetingIntelligenceMaxTokens         = 8192
 )
 
@@ -291,31 +287,27 @@ func (s *CRMMeetingProcessingService) generateIntelligence(
 		content = content[:120000]
 	}
 
-	routes := []struct {
-		key      string
-		provider string
-		model    string
-	}{
-		{key: "primary", provider: meetingIntelligenceLLMProvider, model: meetingIntelligenceLLMModel},
-		{key: "fallback", provider: meetingIntelligenceFallbackProvider, model: meetingIntelligenceFallbackModel},
-	}
-	var primaryErr error
-	for index, route := range routes {
-		meteredCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
-			WorkspaceID:    meeting.WorkspaceID,
-			FeatureKey:     BillingFeatureMeetingIntelligence,
-			IdempotencyKey: aiUsageIdempotencyKey(meeting.WorkspaceID, meeting.ID, transcript.Checksum, meetingIntelligenceGenerationVersion, route.key),
-			Metadata: map[string]interface{}{
-				"meeting_id": meeting.ID,
-				"provider":   transcript.SourceProvider,
-				"route":      route.key,
-			},
-		})
-		response, err := s.llmProvider.ChatCompletion(meteredCtx, llm.ChatRequest{
+	var output *meetingIntelligenceOutput
+	_, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
+		WorkspaceID:    meeting.WorkspaceID,
+		FeatureKey:     BillingFeatureMeetingIntelligence,
+		IdempotencyKey: aiUsageIdempotencyKey(meeting.WorkspaceID, meeting.ID, transcript.Checksum, meetingIntelligenceGenerationVersion),
+		Metadata: map[string]interface{}{
+			"meeting_id": meeting.ID,
+			"provider":   transcript.SourceProvider,
+		},
+		RequireComplete:    true,
+		RetryInvalidOutput: true,
+		ValidateResponse: func(response *llm.ChatResponse) error {
+			parsed, parseErr := parseMeetingIntelligenceResponse(response)
+			if parseErr == nil {
+				output = parsed
+			}
+			return parseErr
+		},
+		Chat: llm.ChatRequest{
 			SystemPrompt:     meetingIntelligenceSystemPrompt,
 			Messages:         []llm.Message{{Role: "user", Content: "Meeting title: " + meeting.Title + "\n\nTranscript:\n" + content}},
-			Provider:         route.provider,
-			Model:            route.model,
 			Temperature:      0.1,
 			MaxTokens:        meetingIntelligenceMaxTokens,
 			JSONMode:         true,
@@ -323,39 +315,12 @@ func (s *CRMMeetingProcessingService) generateIntelligence(
 			JSONSchemaStrict: true,
 			Reasoning:        &llm.ReasoningConfig{Effort: "low"},
 			ProviderOptions:  json.RawMessage(`{"require_parameters":true}`),
-		})
-		if err != nil {
-			err = fmt.Errorf("%s model request failed: %w", route.key, err)
-		} else {
-			var output *meetingIntelligenceOutput
-			output, err = parseMeetingIntelligenceResponse(response)
-			if err == nil {
-				return output, nil
-			}
-		}
-		if isMeetingUsageBlocked(err) {
-			return nil, err
-		}
-		if index == 0 {
-			primaryErr = err
-			slog.WarnContext(ctx, "meeting intelligence primary model returned unusable output",
-				"workspace_id", meeting.WorkspaceID,
-				"meeting_id", meeting.ID,
-				"model", route.model,
-				"error", err,
-			)
-			continue
-		}
-		slog.ErrorContext(ctx, "meeting intelligence fallback model returned unusable output",
-			"workspace_id", meeting.WorkspaceID,
-			"meeting_id", meeting.ID,
-			"model", route.model,
-			"primary_error", primaryErr,
-			"error", err,
-		)
+		},
+	})
+	if err != nil {
 		return nil, fmt.Errorf("meeting intelligence generation failed after trying a backup model")
 	}
-	return nil, fmt.Errorf("meeting intelligence generation failed")
+	return output, nil
 }
 
 func parseMeetingIntelligenceResponse(response *llm.ChatResponse) (*meetingIntelligenceOutput, error) {

@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -27,6 +28,30 @@ func NewRouter(
 		chatProviders:            chatProviders,
 		embeddingProviders:       embeddingProviders,
 	}
+}
+
+// ConfiguredChatProviders returns the normalized configured provider names in stable order.
+func (r *Router) ConfiguredChatProviders() []string {
+	if r == nil {
+		return nil
+	}
+	providers := make([]string, 0, len(r.chatProviders))
+	for provider, implementation := range r.chatProviders {
+		if implementation != nil {
+			providers = append(providers, normalizeProviderName(provider))
+		}
+	}
+	sort.Strings(providers)
+	return providers
+}
+
+// HasChatProvider reports whether a normalized provider is configured.
+func (r *Router) HasChatProvider(provider string) bool {
+	if r == nil {
+		return false
+	}
+	implementation := r.chatProviders[normalizeProviderName(provider)]
+	return implementation != nil
 }
 
 // ChatCompletion routes a chat completion request to the requested provider.

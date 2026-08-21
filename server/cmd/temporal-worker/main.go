@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -236,19 +237,6 @@ func main() {
 	// Email sync activities (may be nil if Gmail not configured).
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
 
-	// Signal detection activities.
-	var llmProvider llm.Provider
-	switch cfg.CRMLLMProvider {
-	case "openai":
-		if provider := llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel); provider != nil {
-			llmProvider = provider
-		} else {
-			slog.Warn("CRM OpenAI provider not configured; CRM_LLM_API_KEY is empty")
-		}
-	default:
-		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
-	}
-	llmProvider = service.NewMeteredLLMProvider(llmProvider, service.NewTokenPricedAIUsageMeter(aiUsageService))
 	supportLLMRouter, supportEmbeddingProvider := llm.NewSupportRouter(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
@@ -256,10 +244,18 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
+	completionRoutes := service.DefaultAICompletionRouteRegistry()
+	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
+		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
+	}
+	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
+		fatalWithSentry("validate AI completion providers", errors.Join(issues...))
+	}
+	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes)
+	var llmProvider llm.Provider = supportLLMProvider
 	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
 	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
 	billingService.SetWorkspaceRepository(workspaceRepo)
-	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, service.NewTokenPricedAIUsageMeter(aiUsageService))
 	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)

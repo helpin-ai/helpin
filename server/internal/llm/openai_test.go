@@ -256,3 +256,17 @@ func TestNewSupportRouterReturnsNilEmbeddingProviderWithoutOpenAIKey(t *testing.
 		t.Fatalf("expected nil embedding provider when OpenAI is not configured, got %#v", embedder)
 	}
 }
+
+func TestRouterConfiguredChatProvidersReturnsStableInventory(t *testing.T) {
+	router := NewRouter("openrouter", map[string]Provider{
+		"openrouter": &OpenAIProvider{},
+		"anthropic":  &ClaudeProvider{},
+	}, "", nil)
+	providers := router.ConfiguredChatProviders()
+	if len(providers) != 2 || providers[0] != "anthropic" || providers[1] != "openrouter" {
+		t.Fatalf("ConfiguredChatProviders() = %#v", providers)
+	}
+	if !router.HasChatProvider("openrouter-responses") {
+		t.Fatal("openrouter-responses alias should resolve to configured OpenRouter provider")
+	}
+}

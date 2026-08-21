@@ -38,10 +38,14 @@ func TestAIUsageServiceResolvesBuiltInTaskTiers(t *testing.T) {
 
 func TestAIUsageServiceResolvesCompanyContextRoute(t *testing.T) {
 	usageService := newTestAIUsageService(t, &fakeAIUsageStore{})
+	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureCompanyProductContext, "")
+	if !ok {
+		t.Fatal("company context route policy missing")
+	}
 	resolved, err := usageService.ResolveMeteringContext(MeteringRequest{
 		WorkspaceID: "ws", TaskNature: taskNatureForFeature(BillingFeatureCompanyProductContext),
-		FeatureKey: BillingFeatureCompanyProductContext, Provider: workspaceContextProvider,
-		Model: workspaceContextModel, Route: workspaceContextModel, FundingMode: aiusage.FundingHelpinHosted,
+		FeatureKey: BillingFeatureCompanyProductContext, Provider: policy.Primary.Provider,
+		Model: policy.Primary.Model, Route: policy.Primary.Model, FundingMode: aiusage.FundingHelpinHosted,
 		Promotional: true,
 	})
 	if err != nil {

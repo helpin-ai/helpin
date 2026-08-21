@@ -328,18 +328,18 @@ func (s *PMTaskInsightsService) RefreshStandingBrief(ctx context.Context, worksp
 		return s.standingBriefResponse(ctx, pending, sourceUpdatedAt)
 	}
 
-	callCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureTaskStandingBrief,
 		IdempotencyKey: fmt.Sprintf("task-standing-brief:%s:%d", taskID, sourceUpdatedAt.UnixNano()),
 		Metadata:       map[string]interface{}{"task_id": taskID},
-	})
-	resp, err := s.llmProvider.ChatCompletion(callCtx, llm.ChatRequest{
-		SystemPrompt: taskStandingBriefSystemPrompt,
-		Messages:     []llm.Message{{Role: "user", Content: string(prompt)}},
-		Temperature:  0.1,
-		MaxTokens:    taskStandingBriefMaxTokens,
-		JSONMode:     true,
+		Chat: llm.ChatRequest{
+			SystemPrompt: taskStandingBriefSystemPrompt,
+			Messages:     []llm.Message{{Role: "user", Content: string(prompt)}},
+			Temperature:  0.1,
+			MaxTokens:    taskStandingBriefMaxTokens,
+			JSONMode:     true,
+		},
 	})
 	if err != nil {
 		message := err.Error()
