@@ -61,6 +61,10 @@ export default defineConfig(({ mode }) => {
           replacement: path.resolve(__dirname, '../../frontend/src/lib/supportInboxRouting.ts'),
         },
         {
+          find: '@/lib/favicon',
+          replacement: path.resolve(__dirname, '../../frontend/src/lib/favicon.ts'),
+        },
+        {
           find: '@/lib/pmTypes',
           replacement: path.resolve(__dirname, '../../frontend/src/lib/pmTypes.ts'),
         },

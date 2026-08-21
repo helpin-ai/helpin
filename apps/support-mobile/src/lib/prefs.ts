@@ -15,9 +15,15 @@ function getStore(): LazyStore {
   return store
 }
 
-/** Last workspace the user picked, or `null` in browser preview / on first run. */
+/** Last workspace the user picked, persisted in both native and browser previews. */
 export async function getLastWorkspaceSlug(): Promise<string | null> {
-  if (!isTauri()) return null
+  if (!isTauri()) {
+    try {
+      return localStorage.getItem(LAST_WORKSPACE_KEY)
+    } catch {
+      return null
+    }
+  }
   try {
     const value = await getStore().get<string>(LAST_WORKSPACE_KEY)
     return typeof value === 'string' ? value : null
@@ -27,7 +33,14 @@ export async function getLastWorkspaceSlug(): Promise<string | null> {
 }
 
 export async function setLastWorkspaceSlug(slug: string): Promise<void> {
-  if (!isTauri()) return
+  if (!isTauri()) {
+    try {
+      localStorage.setItem(LAST_WORKSPACE_KEY, slug)
+    } catch {
+      // Best-effort, matching the native store behavior below.
+    }
+    return
+  }
   try {
     await getStore().set(LAST_WORKSPACE_KEY, slug)
     await getStore().save()

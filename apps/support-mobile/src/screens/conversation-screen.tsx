@@ -43,6 +43,7 @@ import { AIRunApprovals } from '@mobile/thread/ai-run-approvals'
 import { AssignedAgentRuns } from '@mobile/thread/assigned-agent-runs'
 import { AskAgentSheet } from '@mobile/thread/ask-agent-sheet'
 import { MessageActionsSheet } from '@mobile/thread/message-actions-sheet'
+import { ConversationReviewers } from '@mobile/thread/conversation-reviewers'
 import { useDraftStore } from '@mobile/thread/draft-store'
 import { haptic } from '@mobile/lib/haptics'
 import { CheckCircle2, MessageCircle, MoreHorizontal, Sparkles } from 'lucide-react'
@@ -54,6 +55,8 @@ const STATUS_LABELS: Record<ConversationStatus, string> = {
   resolved: 'Resolved',
   spam: 'Spam',
 }
+
+const EMPTY_VIEWER_IDS: string[] = []
 
 /**
  * Reads any already-cached conversation list page (primed by the inbox
@@ -145,7 +148,7 @@ export function ConversationScreen() {
       if (error || !data) throw new Error(error ?? 'Failed to load teammates')
       return data
     },
-    enabled: !!workspaceId && canEditSupport,
+    enabled: !!workspaceId && canReadSupport,
     staleTime: 60_000,
   })
   const teammatePresenceQuery = useSupportTeammatePresence(supportWorkspaceId, canReadSupport)
@@ -209,6 +212,9 @@ export function ConversationScreen() {
   )
   const conversationAgentTyping = useSupportPresenceStore((s) =>
     conversationId ? s.agentTyping[conversationId] : undefined,
+  )
+  const viewingAgentIds = useSupportPresenceStore((s) =>
+    conversationId ? s.viewingAgents[conversationId] ?? EMPTY_VIEWER_IDS : EMPTY_VIEWER_IDS,
   )
 
   const typingIndicator: TypingIndicatorState | null = useMemo(() => {
@@ -413,6 +419,11 @@ export function ConversationScreen() {
             <span aria-hidden className="text-border">•</span>
             <span className="shrink-0 rounded-full bg-muted px-2 py-0.5">{STATUS_LABELS[conversation.status]}</span>
           </span>
+          <ConversationReviewers
+            viewerIds={viewingAgentIds}
+            members={assignableQuery.data ?? []}
+            currentUserId={agentUser?.id}
+          />
         </Pressable>
       )}
 

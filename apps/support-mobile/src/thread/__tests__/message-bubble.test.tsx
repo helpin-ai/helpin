@@ -18,11 +18,14 @@ function message(overrides: Partial<SupportMessage> = {}): SupportMessage {
   }
 }
 
-test('shows a persistent timestamp inside a customer message card', () => {
-  render(<MessageBubble message={message()} align="left" />)
+test('shows a persistent clock time below a customer message card', () => {
+  render(<MessageBubble message={message({ created_at: '2026-08-20T14:30:00Z' })} align="left" />)
 
   expect(screen.getByText('Can you help with this charge?')).toBeDefined()
-  expect(screen.getByText('Now')).toBeDefined()
+  const bubble = screen.getByTestId('message-bubble')
+  const meta = screen.getByTestId('message-meta')
+  expect(meta.textContent).toMatch(/\d{1,2}:30/)
+  expect(bubble.contains(meta)).toBe(false)
 })
 
 test('gives internal notes a distinct sender label and timestamp', () => {
@@ -39,5 +42,20 @@ test('gives internal notes a distinct sender label and timestamp', () => {
   )
 
   expect(screen.getByText('Note · Marcus Bell')).toBeDefined()
-  expect(screen.getByText('Now')).toBeDefined()
+  expect(screen.getByTestId('message-meta')).toBeDefined()
+})
+
+test('shows email and read state below an outbound bubble', () => {
+  render(
+    <MessageBubble
+      message={message({ sender_type: 'user', via_channel: 'email' })}
+      align="right"
+      receiptStatus="read_email"
+    />,
+  )
+
+  const bubble = screen.getByTestId('message-bubble')
+  const meta = screen.getByTestId('message-meta')
+  expect(meta.textContent).toContain('Read via email')
+  expect(bubble.contains(meta)).toBe(false)
 })

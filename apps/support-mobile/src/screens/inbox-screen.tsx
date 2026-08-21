@@ -9,6 +9,7 @@ import {
   useMarkConversationRead,
   useMarkConversationUnread,
   useUnreadStats,
+  useSupportPresenceStore,
   useUpdateConversationStatus,
 } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
@@ -159,6 +160,26 @@ export function InboxScreen() {
     () => flattenConversationPages(conversationsQuery.data),
     [conversationsQuery.data],
   )
+  const reviewerMembersQuery = useQuery({
+    queryKey: ['workspace', workspaceId, 'assignable-members'],
+    queryFn: async () => {
+      const { data, error } = await workspacesService.listAssignableMembers(workspaceId)
+      if (error || !data) throw new Error(error ?? 'Failed to load teammates')
+      return data
+    },
+    enabled: !!supportWorkspaceId,
+    staleTime: 60_000,
+  })
+  const wsSend = useSupportPresenceStore((state) => state.wsSend)
+  const wsConnected = useSupportPresenceStore((state) => state.wsConnected)
+  const visibleConversationIds = useMemo(
+    () => rawConversations.map((conversation) => conversation.id),
+    [rawConversations],
+  )
+  useEffect(() => {
+    if (!wsSend || !wsConnected || visibleConversationIds.length === 0) return
+    wsSend('support:presence:sync', { conversation_ids: visibleConversationIds })
+  }, [visibleConversationIds, wsConnected, wsSend])
   const markRead = useMarkConversationRead(workspaceId)
   const markUnread = useMarkConversationUnread(workspaceId)
   const updateStatus = useUpdateConversationStatus(workspaceId)
@@ -364,6 +385,16 @@ export function InboxScreen() {
         <TopBar
           title={currentTitle}
           subtitle={workspace?.name}
+          leading={
+            <Pressable
+              aria-label="Open inbox views"
+              haptic="selection"
+              onPress={() => setDrawerOpen(true)}
+              className="flex items-center justify-center rounded-full"
+            >
+              <PanelLeft className="h-5 w-5" />
+            </Pressable>
+          }
           trailing={
             <>
               {canEditSupport && (
@@ -391,14 +422,6 @@ export function InboxScreen() {
                     {filterCount}
                   </span>
                 )}
-              </Pressable>
-              <Pressable
-                aria-label="Open inbox views"
-                haptic="selection"
-                onPress={() => setDrawerOpen(true)}
-                className="flex items-center justify-center rounded-full"
-              >
-                <PanelLeft className="h-5 w-5" />
               </Pressable>
             </>
           }
@@ -507,6 +530,8 @@ export function InboxScreen() {
                       conversation={conversation}
                       onPress={() => handleSelectConversation(conversation.id)}
                       isExiting={resolving.get(conversation.id) === 'fading'}
+                      reviewerMembers={reviewerMembersQuery.data}
+                      currentUserId={user?.id}
                     />
                   </SwipeableRow>
                 </div>

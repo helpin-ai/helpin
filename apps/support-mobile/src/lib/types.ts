@@ -69,5 +69,6 @@ export interface Workspace {
   name: string
   slug: string
   logo_url?: string
+  website_url?: string
   role?: string
 }

@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import type { SupportConversation } from '@helpin-ai/support-core'
+import { act, render, screen, fireEvent } from '@testing-library/react'
+import { useSupportPresenceStore, type SupportConversation } from '@helpin-ai/support-core'
 import { getAvatarColor } from '@/components/support/helpers'
 import { ConversationCell } from '../conversation-cell'
 
@@ -20,6 +20,10 @@ function conversation(overrides: Partial<SupportConversation> = {}): SupportConv
     ...overrides,
   }
 }
+
+afterEach(() => {
+  act(() => useSupportPresenceStore.setState({ viewingAgents: {} }))
+})
 
 test('renders customer name, preview, and relative time', () => {
   render(<ConversationCell conversation={conversation()} onPress={vi.fn()} />)
@@ -127,6 +131,21 @@ test('renders a waiting-for-human pill for queued conversations', () => {
 test('shows the team-replied indicator when the last message is from an agent', () => {
   render(<ConversationCell conversation={conversation({ last_message_sender_type: 'agent' })} onPress={vi.fn()} />)
   expect(screen.getByLabelText('Team replied')).toBeDefined()
+})
+
+test('shows the teammates currently reviewing a read conversation', () => {
+  act(() => useSupportPresenceStore.setState({ viewingAgents: { c1: ['self', 'user-2'] } }))
+  render(
+    <ConversationCell
+      conversation={conversation()}
+      onPress={vi.fn()}
+      currentUserId="self"
+      reviewerMembers={[
+        { id: 'member-2', user_id: 'user-2', role: 'member', email: 'grace@example.com', display_name: 'Grace Hopper' },
+      ]}
+    />,
+  )
+  expect(screen.getByLabelText('Grace Hopper viewing')).toBeDefined()
 })
 
 test('fires onPress when the cell is clicked', () => {

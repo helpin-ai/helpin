@@ -1,7 +1,7 @@
-import { Bot, CheckCircle2, CornerUpLeft, Eye, Mail, MessageCircle } from 'lucide-react'
+import { Bot, CheckCircle2, CornerUpLeft, Mail, MessageCircle } from 'lucide-react'
 import { motion } from 'motion/react'
 import type { ComponentType } from 'react'
-import type { SupportConversation } from '@helpin-ai/support-core'
+import type { AssignableMember, SupportConversation } from '@helpin-ai/support-core'
 import { useSupportPresenceStore } from '@helpin-ai/support-core'
 import {
   getConversationRowVisualState,
@@ -30,6 +30,7 @@ const CHANNEL_LABELS: Partial<Record<SupportConversation['source'], string>> = {
 const HUMAN_QUEUE_FLOW_STATES = new Set(['queued_for_human', 'after_hours_queue'])
 
 const MAX_VISIBLE_TAGS = 2
+const EMPTY_VIEWING_AGENT_IDS: string[] = []
 
 /** A conversation's display name — customer name, else email, else a short visitor id, else "Anonymous". */
 export function displayNameFor(conversation: SupportConversation): string {
@@ -67,6 +68,8 @@ export interface ConversationCellProps {
    * fade completes (CELL_EXIT_DURATION_MS).
    */
   isExiting?: boolean
+  reviewerMembers?: AssignableMember[]
+  currentUserId?: string
 }
 
 /**
@@ -80,7 +83,13 @@ export interface ConversationCellProps {
  * tags, plus live presence (customer/agent typing, viewing agents, visitor
  * online) read from the shared support presence store.
  */
-export function ConversationCell({ conversation, onPress, isExiting }: ConversationCellProps) {
+export function ConversationCell({
+  conversation,
+  onPress,
+  isExiting,
+  reviewerMembers = [],
+  currentUserId,
+}: ConversationCellProps) {
   const displayName = displayNameFor(conversation)
   const preview = previewText(conversation)
   const time = formatRelativeTime(conversation.updated_at)
@@ -95,7 +104,13 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
   const agentTypingMap = useSupportPresenceStore((s) => s.agentTyping[conversation.id])
   const firstAgentTyping = agentTypingMap ? Object.values(agentTypingMap)[0] : undefined
   const isAgentTyping = !!firstAgentTyping
-  const viewingCount = useSupportPresenceStore((s) => s.viewingAgents[conversation.id]?.length ?? 0)
+  const viewingAgentIds = useSupportPresenceStore((s) => s.viewingAgents[conversation.id] ?? EMPTY_VIEWING_AGENT_IDS)
+  const reviewerByUserId = new Map(
+    reviewerMembers.filter((member) => member.user_id).map((member) => [member.user_id!, member]),
+  )
+  const reviewers = viewingAgentIds
+    .filter((id) => id !== currentUserId)
+    .map((id) => reviewerByUserId.get(id) ?? { id, display_name: 'Teammate', avatar_url: undefined })
   const isVisitorOnline = useSupportPresenceStore((s) =>
     conversation.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false,
   )
@@ -237,13 +252,26 @@ export function ConversationCell({ conversation, onPress, isExiting }: Conversat
               >
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
-            ) : viewingCount > 0 ? (
+            ) : reviewers.length > 0 ? (
               <span
-                aria-label={`${viewingCount} viewing`}
-                className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground"
+                aria-label={`${reviewers.map((reviewer) => reviewer.display_name).join(', ')} viewing`}
+                title={`${reviewers.map((reviewer) => reviewer.display_name).join(', ')} viewing`}
+                className="flex flex-row-reverse justify-end pl-1"
               >
-                <Eye className="h-3.5 w-3.5" />
-                {viewingCount}
+                {reviewers.slice(0, 3).reverse().map((reviewer, index) => (
+                  <Avatar
+                    key={reviewer.id}
+                    name={reviewer.display_name}
+                    src={reviewer.avatar_url}
+                    size={20}
+                    className={`${index === 0 ? '' : '-mr-1.5'} ring-2 ring-background`}
+                  />
+                ))}
+                {reviewers.length > 3 && (
+                  <span className="-mr-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1 text-[9px] font-semibold ring-2 ring-background">
+                    +{reviewers.length - 3}
+                  </span>
+                )}
               </span>
             ) : hasAIResolved ? (
               <span

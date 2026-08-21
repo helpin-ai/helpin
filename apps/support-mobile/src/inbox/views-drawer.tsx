@@ -26,7 +26,7 @@ import { cn } from '@mobile/lib/cn'
 import { stackSpring } from '@mobile/lib/motion'
 import { formatBadgeCount } from '@mobile/navigation/tab-bar'
 import { Pressable } from '@mobile/ui/pressable'
-import { Avatar } from '@mobile/ui/avatar'
+import { WorkspaceAvatar } from '@mobile/ui/workspace-avatar'
 import { Skeleton } from '@mobile/ui/skeleton'
 import type { Workspace } from '@mobile/lib/types'
 import {
@@ -167,7 +167,7 @@ function WorkspaceSwitcher({
         onPress={() => setExpanded((value) => !value)}
         className="flex min-h-[52px] w-full items-center gap-3 rounded-xl px-2 text-left active:bg-muted"
       >
-        <Avatar name={workspace.name} src={workspace.logo_url} size={36} />
+        <WorkspaceAvatar workspace={workspace} size={36} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-caption text-muted-foreground">Workspace</span>
           <span className="truncate text-headline">{workspace.name}</span>
@@ -199,7 +199,7 @@ function WorkspaceSwitcher({
                 const current = item.id === workspace.id
                 const content = (
                   <>
-                    <Avatar name={item.name} src={item.logo_url} size={28} />
+                    <WorkspaceAvatar workspace={item} size={28} />
                     <span className={cn('min-w-0 flex-1 truncate text-body', current && 'font-medium text-primary')}>
                       {item.name}
                     </span>

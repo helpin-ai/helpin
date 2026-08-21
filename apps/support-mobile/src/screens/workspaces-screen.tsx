@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { queryOptions, useQuery } from '@tanstack/react-query'
 import { motion, useReducedMotion } from 'motion/react'
 import { TopBar } from '@mobile/ui/top-bar'
-import { Avatar } from '@mobile/ui/avatar'
+import { WorkspaceAvatar } from '@mobile/ui/workspace-avatar'
 import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
 import { workspacesService } from '@mobile/lib/services/workspaces-service'
@@ -120,7 +120,7 @@ export function WorkspacesScreen() {
                 onPress={() => handleSelect(workspace.slug)}
                 className="flex w-full items-center gap-3 border-b border-border/70 py-3 text-left"
               >
-                <Avatar name={workspace.name} src={workspace.logo_url} size={44} />
+                <WorkspaceAvatar workspace={workspace} size={44} />
                 <span className="flex flex-1 flex-col">
                   <span className="text-headline">{workspace.name}</span>
                   {workspace.role && (

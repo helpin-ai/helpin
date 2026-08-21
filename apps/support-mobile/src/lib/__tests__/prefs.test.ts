@@ -1,6 +1,19 @@
-import { shouldShowPriming, type PushPrimingPref } from '@mobile/lib/prefs'
+import {
+  getLastWorkspaceSlug,
+  setLastWorkspaceSlug,
+  shouldShowPriming,
+  type PushPrimingPref,
+} from '@mobile/lib/prefs'
 
 const RE_ASK_AFTER_MS = 7 * 24 * 60 * 60 * 1000
+
+beforeEach(() => localStorage.clear())
+
+test('browser preview remembers the last selected workspace', async () => {
+  expect(await getLastWorkspaceSlug()).toBeNull()
+  await setLastWorkspaceSlug('support-demo')
+  expect(await getLastWorkspaceSlug()).toBe('support-demo')
+})
 
 describe('shouldShowPriming', () => {
   test('never asked (no pref persisted yet): shows', () => {

@@ -9,7 +9,6 @@ import {
   type SystemEventBadge,
 } from '@/components/support/supportSystemEvent'
 import { cn } from '@mobile/lib/cn'
-import { formatRelativeTime } from '@mobile/inbox/inbox-helpers'
 import { riseIn } from '@mobile/lib/motion'
 import { EmailBody } from './email-body'
 import { Markdown } from './markdown'
@@ -78,7 +77,7 @@ function SystemEventBadgeChip({ badge }: { badge: SystemEventBadge }) {
 function receiptMeta(status: SupportReceiptStatus): { label: string; read: boolean } {
   switch (status) {
     case 'read':
-      return { label: 'Read', read: true }
+      return { label: 'Read in chat', read: true }
     case 'read_email':
       return { label: 'Read via email', read: true }
     case 'delivered_email':
@@ -88,6 +87,12 @@ function receiptMeta(status: SupportReceiptStatus): { label: string; read: boole
     case 'delivered':
       return { label: 'Delivered', read: false }
   }
+}
+
+export function formatMessageTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date)
 }
 
 function AttachmentRows({ attachments, tone }: { attachments: NonNullable<SupportMessage['attachments']>; tone: 'default' | 'note' }) {
@@ -175,28 +180,33 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
     // Internal note: amber card, "{name} left a private note", @mentions highlighted.
     const mentionSegments = splitMentionSegments(message.content)
     content = (
-      <div className="w-full rounded-[20px] border border-amber-300/60 bg-amber-100/55 px-4 py-3 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/30">
-        <div className="mb-1.5 flex items-center gap-1.5 text-caption uppercase text-amber-700 dark:text-amber-300">
-          <StickyNote className="h-3 w-3 shrink-0" />
-          <span className="font-semibold">Note · {senderName}</span>
+      <div className="w-full">
+        <div
+          data-testid="message-bubble"
+          className="w-full rounded-[20px] border border-amber-300/60 bg-amber-100/55 px-4 py-3 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/30"
+        >
+          <div className="mb-1.5 flex items-center gap-1.5 text-caption uppercase text-amber-700 dark:text-amber-300">
+            <StickyNote className="h-3 w-3 shrink-0" />
+            <span className="font-semibold">Note · {senderName}</span>
+          </div>
+          {isEmail ? (
+            <EmailBody html={message.html_body!} className="text-amber-900 dark:text-amber-100" />
+          ) : (
+            <p className="selectable whitespace-pre-wrap text-body text-amber-900 dark:text-amber-100">
+              {mentionSegments.map((segment, index) =>
+                segment.mention ? (
+                  <span key={index} className="mention-highlight">{segment.text}</span>
+                ) : (
+                  <span key={index}>{segment.text}</span>
+                ),
+              )}
+            </p>
+          )}
+          <ImageThumbnails attachments={imageAttachments} />
+          <AttachmentRows attachments={fileAttachments} tone="note" />
         </div>
-        {isEmail ? (
-          <EmailBody html={message.html_body!} className="text-amber-900 dark:text-amber-100" />
-        ) : (
-          <p className="selectable whitespace-pre-wrap text-body text-amber-900 dark:text-amber-100">
-            {mentionSegments.map((segment, index) =>
-              segment.mention ? (
-                <span key={index} className="mention-highlight">{segment.text}</span>
-              ) : (
-                <span key={index}>{segment.text}</span>
-              ),
-            )}
-          </p>
-        )}
-        <ImageThumbnails attachments={imageAttachments} />
-        <AttachmentRows attachments={fileAttachments} tone="note" />
-        <div className="mt-2 text-caption text-amber-700/70 dark:text-amber-300/70">
-          {formatRelativeTime(message.created_at)}
+        <div data-testid="message-meta" className="mt-1 px-2 text-[11px] text-amber-700/70 dark:text-amber-300/70">
+          {formatMessageTime(message.created_at)}
         </div>
       </div>
     )
@@ -206,6 +216,7 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
     content = (
       <div className={cn('flex flex-col', align === 'right' ? 'items-end' : 'items-start')}>
         <div
+          data-testid="message-bubble"
           className={cn(
             'max-w-[92%] min-w-0 rounded-[20px] px-4 py-3 shadow-sm',
             align === 'right' ? 'bg-primary/[0.09] dark:bg-primary/[0.13]' : 'bg-muted/80',
@@ -218,23 +229,29 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
           )}
           <ImageThumbnails attachments={imageAttachments} />
           <AttachmentRows attachments={fileAttachments} tone="default" />
-          <div
-            className={cn(
-              'mt-2 flex items-center gap-1 text-[11px] text-muted-foreground/80',
-              align === 'right' ? 'justify-end' : 'justify-start',
-            )}
-          >
-            {showEmailReceived && <Mail className="h-3 w-3 shrink-0" />}
-            <span>{formatRelativeTime(message.created_at)}</span>
-            {showEmailReceived && <span>· Email</span>}
-            {receipt && (
-              <>
-                <span>·</span>
-                <CheckCheck className={cn('h-3.5 w-3.5 shrink-0', receipt.read && 'text-blue-500')} />
-                <span>{receipt.label}</span>
-              </>
-            )}
-          </div>
+        </div>
+        <div
+          data-testid="message-meta"
+          className={cn(
+            'mt-1 flex items-center gap-1 px-1 text-[11px] text-muted-foreground/80',
+            align === 'right' ? 'justify-end' : 'justify-start',
+          )}
+        >
+          <span>{formatMessageTime(message.created_at)}</span>
+          {showEmailReceived && (
+            <>
+              <span>·</span>
+              <Mail className="h-3 w-3 shrink-0" />
+              <span>Received via email</span>
+            </>
+          )}
+          {receipt && (
+            <>
+              <span>·</span>
+              <CheckCheck className={cn('h-3.5 w-3.5 shrink-0', receipt.read && 'text-blue-500')} />
+              <span>{receipt.label}</span>
+            </>
+          )}
         </div>
       </div>
     )
