@@ -249,6 +249,7 @@ func newTestAIUsageService(t *testing.T, store *fakeAIUsageStore) *AIUsageServic
 
 type fakeAIUsageStore struct {
 	mode         string
+	reserveErr   error
 	reserveCalls int
 	reservation  repository.AIUsageReservationRequest
 	reconcile    repository.AIUsageReconcileRequest
@@ -264,6 +265,9 @@ type fakeAIUsageStore struct {
 func (f *fakeAIUsageStore) Reserve(_ context.Context, input repository.AIUsageReservationRequest) (*model.AIUsageReservation, error) {
 	f.reserveCalls++
 	f.reservation = input
+	if f.reserveErr != nil {
+		return nil, f.reserveErr
+	}
 	mode := f.mode
 	if mode == "" {
 		mode = model.AIUsageEnforcementStrict
