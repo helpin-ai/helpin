@@ -105,7 +105,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("openai request: %w", err)
+		return nil, &ProviderError{Provider: normalizeProviderName(req.Provider), Operation: "chat_completion", Err: err}
 	}
 	defer resp.Body.Close()
 
@@ -116,9 +116,15 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusPaymentRequired {
-			return nil, fmt.Errorf("openai API error (status %d): %s: %w", resp.StatusCode, string(respBody), ErrInsufficientCredits)
+			return nil, &ProviderError{
+				Provider: normalizeProviderName(req.Provider), Operation: "chat_completion",
+				StatusCode: resp.StatusCode, Message: string(respBody), Err: ErrInsufficientCredits,
+			}
 		}
-		return nil, fmt.Errorf("openai API error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, &ProviderError{
+			Provider: normalizeProviderName(req.Provider), Operation: "chat_completion",
+			StatusCode: resp.StatusCode, Message: string(respBody),
+		}
 	}
 
 	var result openAIChatCompletionResponse

@@ -40,7 +40,10 @@ func (r *Router) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResp
 	}
 	provider, ok := r.chatProviders[providerName]
 	if !ok || provider == nil {
-		return nil, fmt.Errorf("chat provider %q is not configured", providerName)
+		return nil, &ProviderError{
+			Provider: providerName, Operation: "chat_completion", Kind: ProviderErrorUnavailable,
+			Message: "chat provider is not configured",
+		}
 	}
 	req.Provider = providerName
 	return provider.ChatCompletion(ctx, req)
@@ -57,7 +60,10 @@ func (r *Router) ResolvePricingIdentity(req ChatRequest) (ChatPricingIdentity, e
 	}
 	provider, ok := r.chatProviders[providerName]
 	if !ok || provider == nil {
-		return ChatPricingIdentity{}, fmt.Errorf("chat provider %q is not configured", providerName)
+		return ChatPricingIdentity{}, &ProviderError{
+			Provider: providerName, Operation: "pricing_identity", Kind: ProviderErrorUnavailable,
+			Message: "chat provider is not configured",
+		}
 	}
 	req.Provider = providerName
 	resolver, ok := provider.(PricingIdentityResolver)
