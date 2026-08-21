@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { Bot, CheckCheck, Mail, Paperclip, StickyNote, User, Zap } from 'lucide-react'
 import type { SupportMessage } from '@helpin-ai/support-core'
@@ -12,6 +12,7 @@ import { cn } from '@mobile/lib/cn'
 import { riseIn } from '@mobile/lib/motion'
 import { EmailBody } from './email-body'
 import { Markdown } from './markdown'
+import { ImageViewer } from './image-viewer'
 import { splitMentionSegments, type SupportReceiptStatus } from './thread-helpers'
 
 export interface MessageBubbleProps {
@@ -121,21 +122,34 @@ function AttachmentRows({ attachments, tone }: { attachments: NonNullable<Suppor
 }
 
 function ImageThumbnails({ attachments }: { attachments: NonNullable<SupportMessage['attachments']> }) {
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null)
   if (attachments.length === 0) return null
   return (
-    <div className="mt-2 flex flex-col gap-1.5">
-      {attachments.map((attachment) => (
-        <button
-          key={attachment.id}
-          type="button"
-          onClick={() => openAttachment(attachment.url)}
-          aria-label={`Open ${attachment.file_name}`}
-          className="block overflow-hidden rounded-xl"
-        >
-          <img src={attachment.url} alt={attachment.file_name} className="max-h-48 w-full rounded-xl object-cover" />
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {attachments.map((attachment, index) => (
+          <button
+            key={attachment.id}
+            type="button"
+            onClick={() => setViewerIndex(index)}
+            aria-label={`Preview ${attachment.file_name}`}
+            className="block overflow-hidden rounded-xl"
+          >
+            <img src={attachment.url} alt={attachment.file_name} className="max-h-48 w-full rounded-xl object-cover" />
+          </button>
+        ))}
+      </div>
+      {viewerIndex !== null && (
+        <ImageViewer
+          images={attachments}
+          initialIndex={viewerIndex}
+          open
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setViewerIndex(null)
+          }}
+        />
+      )}
+    </>
   )
 }
 

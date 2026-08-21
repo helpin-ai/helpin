@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { vi } from 'vitest'
 import type { SupportMessage } from '@helpin-ai/support-core'
 import { MessageBubble } from '../message-bubble'
 
@@ -58,4 +59,32 @@ test('shows email and read state below an outbound bubble', () => {
   const meta = screen.getByTestId('message-meta')
   expect(meta.textContent).toContain('Read via email')
   expect(bubble.contains(meta)).toBe(false)
+})
+
+test('previews image attachments in-app instead of opening their raw URL', () => {
+  const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+  render(
+    <MessageBubble
+      message={message({
+        attachments: [
+          {
+            id: 'attachment-1',
+            file_key: 'support/photo.png',
+            file_name: 'photo.png',
+            file_type: 'image/png',
+            file_size: 1024,
+            url: 'https://cdn.example.com/photo.png',
+          },
+        ],
+      })}
+      align="left"
+    />,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Preview photo.png' }))
+
+  expect(screen.getByTestId('image-viewer-stage')).toBeDefined()
+  expect(screen.getByRole('button', { name: 'Close image viewer' })).toBeDefined()
+  expect(open).not.toHaveBeenCalled()
+  open.mockRestore()
 })
