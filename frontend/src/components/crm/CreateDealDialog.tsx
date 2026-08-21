@@ -7,21 +7,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
+import { useCreateAssociation, useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
 import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
+import type { CRMDeal } from '@/lib/crmTypes';
 
 interface CreateDealDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  companyContext?: { id: string; name: string };
 }
 
 const currencyOptions = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
 
-export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) {
+export function CreateDealDialog({ open, onOpenChange, companyContext }: CreateDealDialogProps) {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const createDeal = useCreateDeal(wsId);
+  const createAssociation = useCreateAssociation(wsId);
   const { data: pipelines } = usePipelines(wsId);
   const { data: contacts } = useContacts(wsId);
 
@@ -58,8 +61,9 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
     e.preventDefault();
     if (!name.trim() || !contactId || !pipelineId || !stageId) return;
 
+    let deal: CRMDeal;
     try {
-      const deal = await createDeal.mutateAsync({
+      deal = await createDeal.mutateAsync({
         workspace_id: wsId,
         name: name.trim(),
         contact_id: contactId,
@@ -70,24 +74,48 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
         close_date: closeDate ? `${closeDate}T00:00:00Z` : undefined,
         probability: probability ? parseInt(probability) : undefined,
       });
-      showEntityCreatedToast({
-        entityLabel: 'Deal',
-        title: deal.name,
-        subtitle: deal.amount ? `${deal.currency} ${deal.amount.toLocaleString()}` : undefined,
-        tone: 'crm',
-        icon: entityCreatedToastIcons.deal,
-        onOpen: currentWorkspace?.slug
-          ? () => navigate({
-              to: '/w/$slug/crm/deals/$dealId',
-              params: { slug: currentWorkspace.slug, dealId: deal.id },
-            })
-          : undefined,
-      });
-      onOpenChange(false);
-      resetForm();
     } catch {
       toast.error('Failed to create deal');
+      return;
     }
+
+    const openDeal = () => {
+      if (!currentWorkspace?.slug) return;
+      navigate({
+        to: '/w/$slug/crm/deals/$dealId',
+        params: { slug: currentWorkspace.slug, dealId: deal.id },
+      });
+    };
+
+    if (companyContext) {
+      try {
+        await createAssociation.mutateAsync({
+          workspace_id: wsId,
+          from_object_type: 'deal',
+          from_object_id: deal.id,
+          to_object_type: 'company',
+          to_object_id: companyContext.id,
+        });
+      } catch {
+        onOpenChange(false);
+        resetForm();
+        toast.warning(`Deal created, but it could not be linked to ${companyContext.name}.`, {
+          action: { label: 'Open deal', onClick: openDeal },
+        });
+        return;
+      }
+    }
+
+    showEntityCreatedToast({
+      entityLabel: 'Deal',
+      title: deal.name,
+      subtitle: deal.amount ? `${deal.currency} ${deal.amount.toLocaleString()}` : undefined,
+      tone: 'crm',
+      icon: entityCreatedToastIcons.deal,
+      onOpen: currentWorkspace?.slug ? openDeal : undefined,
+    });
+    onOpenChange(false);
+    resetForm();
   };
 
   return (
@@ -169,8 +197,8 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={createDeal.isPending || !name.trim() || !contactId || !pipelineId || !stageId}>
-              {createDeal.isPending ? 'Creating...' : 'Create'}
+            <Button type="submit" disabled={createDeal.isPending || createAssociation.isPending || !name.trim() || !contactId || !pipelineId || !stageId}>
+              {createDeal.isPending || createAssociation.isPending ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>
         </form>

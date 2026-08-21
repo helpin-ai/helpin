@@ -36,6 +36,7 @@ import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import type { CreateTaskRequest, Task, WorkflowWithStates } from '@/lib/pmTypes';
 import type { CRMObjectType } from '@/lib/crmTypes';
+import { cn } from '@/lib/utils';
 
 const CRM_TASK_DEFAULT_TEAM_KEY_PREFIX = 'crm-task-default-team:';
 
@@ -67,6 +68,7 @@ interface LinkedTasksPanelProps {
   contactId?: string;
   companyId?: string;
   dealId?: string;
+  presentation?: 'default' | 'borderless';
 }
 
 function resolveObject(props: LinkedTasksPanelProps): { id: string; type: CRMObjectType } | null {
@@ -79,6 +81,7 @@ function resolveObject(props: LinkedTasksPanelProps): { id: string; type: CRMObj
 export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
   const { workspaceId, workspaceSlug } = props;
   const target = resolveObject(props);
+  const borderless = props.presentation === 'borderless';
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
@@ -108,6 +111,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
     [allTeams],
   );
   const canCreateTask = canEdit && teams.length > 0;
+  const targetLabel = target?.type === 'company' ? 'company' : target?.type === 'deal' ? 'deal' : 'contact';
   const addTaskDisabledReason = !canEdit
     ? 'You need PM edit access to create linked tasks.'
     : teams.length === 0
@@ -250,8 +254,11 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
   }
 
   return (
-    <div className="rounded-md border border-border/60">
-      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+    <div className={cn(borderless ? 'border-y border-border/60' : 'rounded-md border border-border/60')}>
+      <div className={cn(
+        'flex items-center justify-between border-b border-border/60 px-4 py-3',
+        borderless && 'px-4 sm:px-6 lg:px-10',
+      )}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-medium">
             <CheckmarkSquare02Icon className="h-4 w-4 text-muted-foreground" />
@@ -263,9 +270,9 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
+            variant={borderless ? 'ghost' : 'outline'}
             size="sm"
-            className="h-7 gap-1.5 text-xs"
+            className={cn('h-7 gap-1.5 text-xs', borderless && 'text-muted-foreground hover:text-foreground')}
             onClick={() => setLinkDialogOpen(true)}
             disabled={!canEdit}
             title={!canEdit ? 'You need PM edit access to link tasks.' : undefined}
@@ -276,8 +283,9 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
           {teams.length > 1 ? (
           <div className="flex" title={addTaskDisabledReason ?? undefined}>
             <Button
+              variant={borderless ? 'ghost' : 'default'}
               size="sm"
-              className="h-7 gap-1.5 rounded-r-none text-xs"
+              className={cn('h-7 gap-1.5 rounded-r-none text-xs', borderless && 'text-muted-foreground hover:text-foreground')}
               onClick={() => void handleStartCreate()}
               disabled={!canCreateTask || teamsLoading || openingCreate}
             >
@@ -291,8 +299,12 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
+                  variant={borderless ? 'ghost' : 'default'}
                   size="sm"
-                  className="h-7 rounded-l-none border-l border-primary-foreground/20 px-1.5"
+                  className={cn(
+                    'h-7 rounded-l-none border-l px-1.5',
+                    borderless ? 'border-border/60 text-muted-foreground' : 'border-primary-foreground/20',
+                  )}
                   disabled={!canCreateTask || teamsLoading || openingCreate}
                   aria-label="Choose team for task creation"
                 >
@@ -320,8 +332,9 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
           </div>
         ) : (
           <Button
+            variant={borderless ? 'ghost' : 'default'}
             size="sm"
-            className="h-7 gap-1.5 text-xs"
+            className={cn('h-7 gap-1.5 text-xs', borderless && 'text-muted-foreground hover:text-foreground')}
             onClick={() => void handleStartCreate()}
             disabled={!canCreateTask || teamsLoading || openingCreate}
             title={addTaskDisabledReason ?? undefined}
@@ -341,14 +354,14 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
         {isLoading ? (
           <div className="px-4 py-6 text-center text-xs text-muted-foreground">Loading…</div>
         ) : tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
-            <div className="rounded-full bg-muted p-2.5">
-              <CheckmarkSquare02Icon className="h-5 w-5 text-muted-foreground" />
+          <div className={cn('flex flex-col items-center justify-center px-6 py-10 text-center', borderless && 'py-11')}>
+            <div className={cn(!borderless && 'rounded-full bg-muted p-2.5')}>
+              <CheckmarkSquare02Icon className={cn('h-5 w-5 text-muted-foreground', borderless && 'text-muted-foreground/45')} />
             </div>
             <p className="mt-3 text-sm font-medium">No linked tasks yet</p>
             <p className="mt-1 max-w-xs text-xs text-muted-foreground">
               {canCreateTask
-                ? 'Link or create a task to track follow-ups for this contact.'
+                ? `Link or create a task to track follow-ups for this ${targetLabel}.`
                 : (addTaskDisabledReason ?? 'No linked tasks yet.')}
             </p>
           </div>
@@ -360,7 +373,10 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
               onClick={() =>
                 openTaskRoute(navigate as never, location as never, workspaceSlug, task.id)
               }
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40"
+              className={cn(
+                'flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40',
+                borderless && 'sm:px-6 lg:px-10',
+              )}
             >
               <CheckmarkSquare02Icon
                 className={`h-4 w-4 shrink-0 ${task.completed ? 'text-emerald-500' : 'text-muted-foreground'}`}

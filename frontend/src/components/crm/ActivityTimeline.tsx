@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCreateCRMActivity, useDeleteCRMActivity } from '@/hooks/queries/useCRM';
 import type { CRMActivity, CRMActivityType } from '@/lib/crmTypes';
+import { cn } from '@/lib/utils';
 
 interface ActivityTimelineProps {
   activities: CRMActivity[];
@@ -17,6 +18,7 @@ interface ActivityTimelineProps {
   dealId?: string;
   onActivityCreated?: () => void;
   onActivityDeleted?: () => void;
+  presentation?: 'default' | 'borderless';
 }
 
 const activityIcons: Record<CRMActivityType, typeof Mail01Icon> = {
@@ -42,7 +44,9 @@ export function ActivityTimeline({
   dealId,
   onActivityCreated,
   onActivityDeleted,
+  presentation = 'default',
 }: ActivityTimelineProps) {
+  const borderless = presentation === 'borderless';
   const [filterType, setFilterType] = useState<CRMActivityType | 'all'>('all');
   const [creatingType, setCreatingType] = useState<CRMActivityType | null>(null);
   const [newSubject, setNewSubject] = useState('');
@@ -89,12 +93,16 @@ export function ActivityTimeline({
   };
 
   const creationButtons = workspaceId ? (
-    <div className="mb-4 flex gap-1.5">
+    <div className={cn('flex gap-1.5', !borderless && 'mb-4')}>
       {activityTypes.map(({ type, icon: Icon, label }) => (
         <Button
           key={type}
-          variant={creatingType === type ? 'default' : 'outline'}
+          variant={borderless ? 'ghost' : creatingType === type ? 'default' : 'outline'}
           size="sm"
+          className={cn(
+            borderless && 'h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground',
+            borderless && creatingType === type && 'bg-accent text-foreground',
+          )}
           onClick={() => {
             setCreatingType(creatingType === type ? null : type);
             setNewSubject('');
@@ -110,21 +118,29 @@ export function ActivityTimeline({
 
   return (
     <div>
-      {creationButtons}
+      {borderless ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-3 pt-5 sm:px-6 lg:px-10">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/75">Activity</h3>
+          {creationButtons}
+        </div>
+      ) : creationButtons}
 
       {creatingType && (
-        <div className="mb-4 space-y-2 rounded-md border p-3">
+        <div className={cn(
+          'space-y-2',
+          borderless ? 'border-y border-border/60 px-4 py-3 sm:px-6 lg:px-10' : 'mb-4 rounded-md border p-3',
+        )}>
           <Input
             placeholder="Subject"
             value={newSubject}
             onChange={(e) => setNewSubject(e.target.value)}
-            className="text-sm"
+            className={cn('text-sm', borderless && 'rounded-none border-x-0 border-t-0 px-0 shadow-none focus-visible:ring-0')}
           />
           <Textarea
             placeholder="Details..."
             value={newBody}
             onChange={(e) => setNewBody(e.target.value)}
-            className="min-h-[60px] text-sm"
+            className={cn('min-h-[60px] text-sm', borderless && 'rounded-none border-0 px-0 shadow-none focus-visible:ring-0')}
             rows={2}
           />
           <div className="flex justify-end gap-2">
@@ -142,16 +158,28 @@ export function ActivityTimeline({
         </div>
       )}
 
-      <div className="mb-3 flex gap-1 border-b pb-2">
+      <div className={cn(
+        'flex border-b',
+        borderless && 'overflow-x-auto',
+        borderless ? 'gap-5 border-border/60 px-4 sm:px-6 lg:px-10' : 'mb-3 gap-1 pb-2',
+      )}>
         {filterOptions.map((type) => (
           <button
             key={type}
             type="button"
-            className={`rounded-md px-2.5 py-1 text-xs transition-colors ${
+            className={cn(
+              'text-xs transition-colors',
+              borderless
+                ? '-mb-px border-b-2 px-0.5 py-2.5'
+                : 'rounded-md px-2.5 py-1',
               filterType === type
-                ? 'bg-accent font-medium text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+                ? borderless
+                  ? 'border-foreground font-semibold text-foreground'
+                  : 'bg-accent font-medium text-foreground'
+                : borderless
+                  ? 'border-transparent text-muted-foreground hover:text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+            )}
             onClick={() => setFilterType(type)}
           >
             {type === 'all' ? 'All' : `${type.charAt(0).toUpperCase()}${type.slice(1)}s`}
@@ -160,21 +188,27 @@ export function ActivityTimeline({
       </div>
 
       {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-8 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Message01Icon className="h-6 w-6 text-muted-foreground/50" />
+        <div className={cn('flex flex-col items-center justify-center py-8 text-center', borderless && 'px-6 py-11')}>
+          <div className={cn('flex h-12 w-12 items-center justify-center', !borderless && 'rounded-full bg-muted')}>
+            <Message01Icon className={cn('h-6 w-6 text-muted-foreground/50', borderless && 'h-5 w-5')} />
           </div>
           <p className="mt-3 text-sm font-medium">No activities yet</p>
           <p className="mt-1 text-xs text-muted-foreground">Log your first activity to track interactions</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className={cn(borderless ? 'divide-y divide-border/50' : 'space-y-4')}>
           {filtered.map((activity) => {
             const Icon = activityIcons[activity.activity_type] ?? Message01Icon;
             return (
-              <div key={activity.id} className="group flex gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                  <Icon className="h-4 w-4 text-muted-foreground" />
+              <div key={activity.id} className={cn(
+                'group flex gap-3',
+                borderless && 'px-4 py-4 sm:px-6 lg:px-10',
+              )}>
+                <div className={cn(
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted',
+                  borderless && 'h-7 w-7',
+                )}>
+                  <Icon className={cn('h-4 w-4 text-muted-foreground', borderless && 'h-3.5 w-3.5')} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -183,7 +217,7 @@ export function ActivityTimeline({
                       {formatDistanceToNow(new Date(activity.occurred_at), { addSuffix: true })}
                     </span>
                     {workspaceId && (
-                      <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                         <Button
                           variant="ghost"
                           size="icon"

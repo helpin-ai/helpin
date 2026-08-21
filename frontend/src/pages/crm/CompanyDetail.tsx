@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
@@ -12,10 +12,11 @@ import {
   UserGroupIcon,
   LinkSquare01Icon,
   MapPinIcon,
+  PencilEdit01Icon,
+  PlusSignIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
-import { Separator } from '@/components/ui/separator';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -25,6 +26,9 @@ import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
+import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
+import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
+import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { useTitle } from '@/hooks/useTitle';
 import type { UpdateCRMCompanyRequest } from '@/lib/crmTypes';
 
@@ -42,12 +46,14 @@ interface FormState {
 function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
   return (
     <>
-      <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
-      <span className="self-center text-[12px] text-muted-foreground">{label}</span>
-      <div className="min-w-0 self-center text-[12px]">{children}</div>
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="mt-0.5 text-[12px] text-muted-foreground">{label}</span>
+      <div className="min-w-0 text-[12px]">{children}</div>
     </>
   );
 }
+
+const railInputClassName = 'w-full rounded bg-transparent px-1.5 py-0.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:bg-accent focus:bg-accent';
 
 export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const { currentWorkspace } = useWorkspaceStore();
@@ -66,6 +72,9 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [createDealOpen, setCreateDealOpen] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const descriptionEditStartRef = useRef('');
 
   useTitle(form?.name ?? 'Company');
 
@@ -109,6 +118,20 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
     queuePatch(patch);
   };
 
+  const beginDescriptionEditing = useCallback(() => {
+    descriptionEditStartRef.current = form?.description ?? '';
+    setEditingDescription(true);
+  }, [form?.description]);
+
+  const cancelDescriptionEditing = () => {
+    if (!form) return;
+    const initialDescription = descriptionEditStartRef.current;
+    if (form.description !== initialDescription) {
+      updateField('description', initialDescription, { description: initialDescription });
+    }
+    setEditingDescription(false);
+  };
+
   const handleDelete = async () => {
     try {
       await deleteCompany.mutateAsync(companyId);
@@ -144,12 +167,12 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   return (
     <div className="flex h-full flex-col">
       {/* Header bar */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
           <ArrowLeft02Icon className="h-4 w-4" />
         </Button>
 
-        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
           <Favicon
             src={company.logo_url}
             url={form.domain}
@@ -174,122 +197,144 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
       </div>
 
       {/* Two-column layout */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]">
+      <div className="relative grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
         {/* Left column */}
-        <div className="min-h-0 overflow-y-auto px-8 py-6">
-          {/* Name */}
-          <div className="flex items-start gap-3">
-            <Favicon
-              src={company.logo_url}
-              url={form.domain}
-              name={form.name}
-              size={64}
-              className="mt-0.5 h-10 w-10 rounded-xl"
-              fallbackClassName="text-sm"
-            />
-            <input
-              className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-              value={form.name}
-              onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-              placeholder="Company name"
-            />
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">{company.display_id}</p>
-
-          <Separator className="my-6" />
+        <div className="flex min-h-0 min-w-0 flex-col lg:overflow-y-auto">
+          {/* Identity */}
+          <section className="border-b border-border/60 px-4 pb-3 pt-5 sm:px-6 lg:px-10">
+            <div className="flex flex-wrap items-start gap-3">
+              <Favicon
+                src={company.logo_url}
+                url={form.domain}
+                name={form.name}
+                size={64}
+                className="mt-0.5 h-10 w-10 rounded-xl"
+                fallbackClassName="text-sm"
+              />
+              <div className="min-w-[12rem] flex-1">
+                <input
+                  aria-label="Company name"
+                  className="w-full border-b border-transparent bg-transparent pb-1 text-2xl font-bold tracking-tight text-foreground transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/70 focus:outline-none"
+                  value={form.name}
+                  onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
+                  placeholder="Company name"
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">{company.display_id}</p>
+              </div>
+              <Button size="sm" className="h-8 shrink-0 gap-1.5" onClick={() => setCreateDealOpen(true)}>
+                <PlusSignIcon className="h-3.5 w-3.5" />
+                New deal
+              </Button>
+            </div>
+          </section>
 
           {/* Description */}
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</h3>
-            <div className="mt-3">
-              <TiptapEditor
-                content={form.description}
-                onChange={(html) => updateField('description', html, { description: html })}
-                placeholder="Add a description..."
-                className="border-transparent shadow-none"
-              />
+          <section aria-label="Description" className="border-b border-border/60 px-4 py-5 sm:px-6 lg:px-10">
+            <div className="group/desc relative">
+              {editingDescription ? (
+                <div className="group/description-editor">
+                  <TiptapEditor
+                    content={form.description}
+                    onChange={(html) => updateField('description', html, { description: html })}
+                    placeholder="Add a description..."
+                    variant="divider"
+                    contentVariant="pm"
+                    className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:p-0"
+                  />
+                  <DetailDescriptionEditorActions
+                    onCancel={cancelDescriptionEditing}
+                    onDone={() => setEditingDescription(false)}
+                  />
+                </div>
+              ) : (
+                <div className="relative">
+                  {form.description ? (
+                    <RichTextMentionContent
+                      html={form.description}
+                      variant="pm"
+                      className="[&_p:empty]:my-0 [&_p:empty]:h-1"
+                      onHtmlChange={(html) => updateField('description', html, { description: html })}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No description yet</p>
+                  )}
+                  <div className="mt-3 flex justify-start opacity-0 transition-opacity group-hover/desc:opacity-100 group-focus-within/desc:opacity-100">
+                    <button
+                      type="button"
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      onClick={beginDescriptionEditing}
+                    >
+                      <PencilEdit01Icon className="h-3 w-3" />
+                      Edit description
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          </section>
 
-          <Separator className="my-6" />
+          <LinkedTasksPanel
+            workspaceId={wsId}
+            workspaceSlug={wsSlug}
+            companyId={companyId}
+            presentation="borderless"
+          />
 
-          {/* Tasks */}
-          <div>
-            <LinkedTasksPanel
-              workspaceId={wsId}
-              workspaceSlug={wsSlug}
-              companyId={companyId}
-            />
-          </div>
+          <ActivityTimeline
+            activities={activitiesData?.data ?? []}
+            workspaceId={wsId}
+            companyId={companyId}
+            onActivityCreated={() => refetchActivities()}
+            onActivityDeleted={() => refetchActivities()}
+            presentation="borderless"
+          />
 
-          <Separator className="my-6" />
-
-          {/* Activity */}
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Activity</h3>
-            <div className="mt-3">
-              <ActivityTimeline
-                activities={activitiesData?.data ?? []}
-                workspaceId={wsId}
-                companyId={companyId}
-                onActivityCreated={() => refetchActivities()}
-                onActivityDeleted={() => refetchActivities()}
-              />
-            </div>
-          </div>
+          <div className="h-20 shrink-0 lg:h-32" aria-hidden="true" />
         </div>
 
         {/* Right sidebar */}
-        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
-          <h3 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</h3>
+        <aside className="border-t border-border/60 px-4 py-5 pb-16 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0 lg:px-5 lg:pb-40">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Details</h3>
 
-          <div className="grid grid-cols-[16px_80px_1fr] gap-x-2 gap-y-3">
+          <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             <MetadataRow icon={GlobeIcon} label="Domain">
-              <div className="flex items-center gap-2">
-                <Favicon
-                  src={company.logo_url}
-                  url={form.domain}
-                  name={form.name}
-                  size={16}
-                  className="h-4 w-4 rounded-sm border-none bg-transparent"
-                  fallbackClassName="text-[8px]"
-                />
-                <input className="w-full bg-transparent text-xs outline-none" value={form.domain}
-                  onChange={(e) => updateField('domain', e.target.value, { domain: e.target.value })} placeholder="—" />
-              </div>
+              <input className={railInputClassName} value={form.domain}
+                onChange={(e) => updateField('domain', e.target.value, { domain: e.target.value })} placeholder="None" />
             </MetadataRow>
             <MetadataRow icon={Building03Icon} label="Industry">
-              <input className="w-full bg-transparent text-xs outline-none" value={form.industry}
-                onChange={(e) => updateField('industry', e.target.value, { industry: e.target.value })} placeholder="—" />
+              <input className={railInputClassName} value={form.industry}
+                onChange={(e) => updateField('industry', e.target.value, { industry: e.target.value })} placeholder="None" />
             </MetadataRow>
             <MetadataRow icon={UserGroupIcon} label="Employees">
-              <input className="w-full bg-transparent text-xs outline-none" type="number" value={form.employee_count}
-                onChange={(e) => updateField('employee_count', e.target.value, { employee_count: e.target.value ? parseInt(e.target.value) : undefined })} placeholder="—" />
+              <input className={railInputClassName} type="number" value={form.employee_count}
+                onChange={(e) => updateField('employee_count', e.target.value, { employee_count: e.target.value ? parseInt(e.target.value) : undefined })} placeholder="None" />
             </MetadataRow>
             <MetadataRow icon={DollarCircleIcon} label="Revenue">
-              <input className="w-full bg-transparent text-xs outline-none" type="number" value={form.annual_revenue}
-                onChange={(e) => updateField('annual_revenue', e.target.value, { annual_revenue: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder="—" />
+              <input className={railInputClassName} type="number" value={form.annual_revenue}
+                onChange={(e) => updateField('annual_revenue', e.target.value, { annual_revenue: e.target.value ? parseFloat(e.target.value) : undefined })} placeholder="None" />
             </MetadataRow>
             <MetadataRow icon={LinkSquare01Icon} label="LinkedIn">
-              <input className="w-full bg-transparent text-xs outline-none" value={form.linkedin_url}
-                onChange={(e) => updateField('linkedin_url', e.target.value, { linkedin_url: e.target.value })} placeholder="—" />
+              <input className={railInputClassName} value={form.linkedin_url}
+                onChange={(e) => updateField('linkedin_url', e.target.value, { linkedin_url: e.target.value })} placeholder="None" />
             </MetadataRow>
             <MetadataRow icon={MapPinIcon} label="HQ">
-              <input className="w-full bg-transparent text-xs outline-none" value={form.headquarters}
-                onChange={(e) => updateField('headquarters', e.target.value, { headquarters: e.target.value })} placeholder="—" />
+              <input className={railInputClassName} value={form.headquarters}
+                onChange={(e) => updateField('headquarters', e.target.value, { headquarters: e.target.value })} placeholder="None" />
             </MetadataRow>
           </div>
 
-          <Separator className="my-4" />
-          <h3 className="mb-2 text-[11px] font-medium uppercase tracking-tight text-foreground">Enrichment</h3>
-          <EnrichmentRailCard workspaceId={wsId} objectType="company" objectId={companyId} />
+          <EnrichmentRailCard workspaceId={wsId} objectType="company" objectId={companyId} presentation="borderless" />
 
-          <Separator className="my-4" />
           <AssociationsList workspaceId={wsId} slug={wsSlug} associations={associations ?? []}
             currentObjectType="company" currentObjectId={companyId} onAssociationRemoved={() => refetchAssociations()} />
         </aside>
       </div>
 
+      <CreateDealDialog
+        open={createDealOpen}
+        onOpenChange={setCreateDealOpen}
+        companyContext={{ id: companyId, name: form.name || 'this company' }}
+      />
       <ConfirmDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen} title="Delete company"
         description="Are you sure? This action cannot be undone." confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} />
     </div>
