@@ -28,8 +28,8 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  VITE_API_URL: ${{ vars.SUPPORT_DESKTOP_API_URL || 'https://helpin.ai/api' }}
-  VITE_WEB_BASE_URL: ${{ vars.SUPPORT_DESKTOP_WEB_BASE_URL || 'https://helpin.ai' }}
+  VITE_API_URL: ${{ vars.SUPPORT_DESKTOP_API_URL || 'https://api.helpin.ai/api' }}
+  VITE_WEB_BASE_URL: ${{ vars.SUPPORT_DESKTOP_WEB_BASE_URL || 'https://app.helpin.ai' }}
 
 jobs:
   build:
