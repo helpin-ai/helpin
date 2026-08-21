@@ -1,12 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { writeSession } from '@helpin-ai/support-core'
-import { KeyRound } from 'lucide-react'
 import { TextField } from '@mobile/ui/text-field'
 import { Spinner } from '@mobile/ui/spinner'
 import { HelpinLogo } from '@mobile/ui/helpin-logo'
 import { authService } from '@mobile/lib/services/auth-service'
-import { passkeyService } from '@mobile/lib/services/passkey-service'
 import { googleAuthErrorMessage, startGoogleAuth } from '@mobile/lib/google-auth'
 import { bootstrapAuth } from '@mobile/stores/auth-store'
 import type { AuthResponse, SigninResponse } from '@mobile/lib/types'
@@ -40,7 +38,6 @@ export function LoginScreen() {
   const [twoFactorCode, setTwoFactorCode] = useState('')
   const [useRecoveryCode, setUseRecoveryCode] = useState(false)
   const navigate = useNavigate()
-  const passkeySupported = passkeyService.isSupported()
 
   const emailError = touched.email ? validateEmail(email) : undefined
   const passwordError = touched.password ? validatePassword(password) : undefined
@@ -127,7 +124,6 @@ export function LoginScreen() {
         return
       }
 
-      passkeyService.cancelPendingAuthentication()
       const { data, error } = await authService.signin(email.trim(), password, true)
       if (error || !data) {
         setSubmitError(error || 'Sign in failed')
@@ -136,24 +132,6 @@ export function LoginScreen() {
       await acceptSigninResponse(data)
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Sign in failed')
-    } finally {
-      setPending(false)
-    }
-  }
-
-  const handlePasskey = async () => {
-    setSubmitError(null)
-    setPending(true)
-    try {
-      const result = await passkeyService.beginAuthentication(validateEmail(email) ? undefined : email.trim())
-      if (result.cancelled) return
-      if (result.error || !result.data) {
-        setSubmitError(result.error || 'Passkey sign in failed')
-        return
-      }
-      await acceptSigninResponse(result.data)
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Passkey sign in failed')
     } finally {
       setPending(false)
     }
@@ -238,17 +216,6 @@ export function LoginScreen() {
                 Continue with Google
               </button>
 
-              <button
-                type="button"
-                disabled={pending || !passkeySupported}
-                onClick={() => void handlePasskey()}
-                title={passkeySupported ? undefined : 'Passkeys are not supported on this device'}
-                className="flex h-[52px] w-full items-center justify-center gap-3 rounded-xl border border-input bg-background text-body font-medium text-foreground transition active:scale-[0.98] disabled:opacity-50"
-              >
-                <KeyRound aria-hidden="true" size={20} />
-                Sign in with passkey
-              </button>
-
               <div className="flex items-center gap-3 py-1" aria-hidden="true">
                 <span className="h-px flex-1 bg-border" />
                 <span className="text-caption uppercase tracking-[0.12em] text-muted-foreground">or</span>
@@ -258,7 +225,7 @@ export function LoginScreen() {
               <TextField
                 label="Email"
                 type="email"
-                autoComplete="username webauthn"
+                autoComplete="username"
                 value={email}
                 onChange={setEmail}
                 onBlur={() => setTouched((current) => ({ ...current, email: true }))}

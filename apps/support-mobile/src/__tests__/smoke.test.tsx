@@ -6,5 +6,5 @@ test('renders app shell at the login route', async () => {
   render(<App />)
   expect(await screen.findByText('Helpin')).toBeDefined()
   expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeDefined()
-  expect(screen.getByRole('button', { name: 'Sign in with passkey' })).toBeDefined()
+  expect(screen.queryByRole('button', { name: 'Sign in with passkey' })).toBeNull()
 })
