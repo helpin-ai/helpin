@@ -43,6 +43,7 @@ import { InboxFilterSheet } from '@mobile/inbox/filter-sheet'
 import { SwipeableRow, type SwipeAction } from '@mobile/inbox/swipeable-row'
 import { PULL_ARM_THRESHOLD, usePullToRefresh } from '@mobile/inbox/use-pull-to-refresh'
 import { CONVERSATION_CELL_HEIGHT, isUnread } from '@mobile/inbox/inbox-helpers'
+import { useResetScrollOnChange } from '@mobile/inbox/use-reset-scroll-on-change'
 import { PrimaryNavigation } from '@mobile/navigation/primary-navigation'
 
 function InboxSkeletonList() {
@@ -145,6 +146,10 @@ export function InboxScreen() {
   const filters = useMemo(
     () => selectionToConversationFilters(selection, activeListFilters),
     [activeListFilters, selection],
+  )
+  const conversationListResetKey = useMemo(
+    () => `${supportWorkspaceId}:${JSON.stringify(filters ?? {})}`,
+    [filters, supportWorkspaceId],
   )
   // `keepPrevious` avoids a skeleton flash when switching views — the previous
   // view's data stays on screen (dimmed below) until the new one loads instead
@@ -264,6 +269,7 @@ export function InboxScreen() {
   }, [pendingResolvedId, canEditSupport, consumeResolvedTransition, beginExit, handleUndoResolve])
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  useResetScrollOnChange(scrollRef, conversationListResetKey)
   const virtualizer = useVirtualizer({
     count: conversations.length,
     getScrollElement: () => scrollRef.current,
