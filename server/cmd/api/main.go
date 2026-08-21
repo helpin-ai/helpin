@@ -768,6 +768,7 @@ func main() {
 	userNotifSettingsRepo := repository.NewUserNotificationSettingsRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
+	crmCompanyTimelineRepo := repository.NewCRMCompanyTimelineRepository(db)
 	crmDealRepo := repository.NewCRMDealRepository(db)
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
@@ -1264,10 +1265,12 @@ func main() {
 
 	crmContactService := service.NewCRMContactService(crmContactRepo).
 		SetIdentitySync(crmActivityRepo, wsPublisher)
-	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo).
+		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmContactService.SetProductAnalyticsService(productAnalytics)
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)
-	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
+		SetActivityService(pmActivityService)
 	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)

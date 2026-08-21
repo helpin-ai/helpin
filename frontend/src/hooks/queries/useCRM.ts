@@ -46,6 +46,7 @@ import type {
   UpdateCRMSuggestionRequest,
   CreateCRMWritingProfileRequest,
   UpdateCRMWritingProfileRequest,
+  CRMCompanyTimelineFilter,
 } from '@/lib/crmTypes'
 
 // ── Contacts ──
@@ -164,6 +165,16 @@ export function useCompanyActivities(wsId: string, companyId: string) {
   return useQuery({
     queryKey: queryKeys.crm.companyActivities(wsId, companyId),
     queryFn: async () => unwrap(await crmCompanyService.listActivities(wsId, companyId)),
+    enabled: !!wsId && !!companyId,
+  })
+}
+
+export function useCompanyTimeline(wsId: string, companyId: string, filter: CRMCompanyTimelineFilter) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.crm.companyTimeline(wsId, companyId, filter),
+    queryFn: async ({ pageParam }) => unwrap(await crmCompanyService.listTimeline(wsId, companyId, filter, pageParam)),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor,
     enabled: !!wsId && !!companyId,
   })
 }

@@ -8,6 +8,8 @@ import type {
   CRMAssociation,
   CRMAssociationEnriched,
   CRMActivity,
+  CRMCompanyTimelineFilter,
+  CRMCompanyTimelinePage,
   CreateCRMContactRequest,
   UpdateCRMContactRequest,
   SeedCRMContactsRequest,
@@ -98,6 +100,10 @@ export const crmCompanyService = {
     api.del(`/crm/companies/${id}${qs(workspaceId)}`),
   listActivities: (workspaceId: string, companyId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMActivity[]>>(`/crm/companies/${companyId}/activities${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listTimeline: (workspaceId: string, companyId: string, filter: CRMCompanyTimelineFilter, cursor?: string) =>
+    api.get<CRMCompanyTimelinePage>(
+      `/crm/companies/${companyId}/timeline${qs(workspaceId)}${filterQuery({ filter, cursor, limit: 25 })}`,
+    ),
   listAssociations: (workspaceId: string, companyId: string) =>
     api.get<CRMAssociationEnriched[]>(`/crm/companies/${companyId}/associations${qs(workspaceId)}`),
 };

@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -136,7 +137,7 @@ func (h *CRMDealHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.WorkspaceID == "" {
 		req.WorkspaceID = getWorkspaceID(r)
 	}
-	deal, err := h.dealService.Create(r.Context(), req)
+	deal, err := h.dealService.CreateWithActor(r.Context(), req, middleware.GetUserID(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -163,7 +164,7 @@ func (h *CRMDealHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	deal, err := h.dealService.Update(r.Context(), id, req)
+	deal, err := h.dealService.UpdateWithActor(r.Context(), id, req, middleware.GetUserID(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

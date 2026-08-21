@@ -77,6 +77,13 @@ func (r *CRMActivityRepository) Create(ctx context.Context, activity *model.CRMA
 
 // Update updates an activity.
 func (r *CRMActivityRepository) Update(ctx context.Context, activity *model.CRMActivity) error {
+	current, err := r.GetByID(ctx, activity.ID)
+	if err != nil {
+		return err
+	}
+	if current != nil && current.Metadata != nil && current.Metadata["immutable"] == true {
+		return fmt.Errorf("update activity: system activity is immutable")
+	}
 	if err := r.db.WithContext(ctx).Save(activity).Error; err != nil {
 		return fmt.Errorf("update activity: %w", err)
 	}

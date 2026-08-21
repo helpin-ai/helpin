@@ -14,6 +14,10 @@ const enrichmentSource = readFileSync(
   resolve(__dirname, '../contact-detail/EnrichmentRailCard.tsx'),
   'utf8',
 );
+const linkedTasksSource = readFileSync(
+  resolve(__dirname, '../LinkedTasksPanel.tsx'),
+  'utf8',
+);
 
 describe('Company detail divider redesign', () => {
   it('uses the task-detail rail scale and scoped borderless surfaces', () => {
@@ -21,6 +25,7 @@ describe('Company detail divider redesign', () => {
     expect(companyDetailSource).toContain('grid-cols-[16px_72px_1fr]');
     expect(companyDetailSource).toContain('<RichTextMentionContent');
     expect(companyDetailSource).toContain('<DetailDescriptionEditorActions');
+    expect(companyDetailSource).toContain('<DetailDescriptionEditButton');
     expect(companyDetailSource).toContain('presentation="borderless"');
   });
 
@@ -34,6 +39,13 @@ describe('Company detail divider redesign', () => {
     expect(associationUsage).toContain('currentObjectType="company"');
   });
 
+  it('uses the unified cursor-paginated company activity timeline', () => {
+    expect(companyDetailSource).toContain('useCompanyTimeline');
+    expect(companyDetailSource).toContain('timeline.data?.pages.flatMap');
+    expect(companyDetailSource).toContain('onTimelineFilterChange={setActivityFilter}');
+    expect(companyDetailSource).toContain('onLoadMore={() => void timeline.fetchNextPage()}');
+  });
+
   it('links deals created from company context back to the company', () => {
     expect(companyDetailSource).toContain('companyContext={{ id: companyId');
     expect(createDealSource).toContain("from_object_type: 'deal'");
@@ -44,5 +56,18 @@ describe('Company detail divider redesign', () => {
   it('keeps the new enrichment treatment opt-in', () => {
     expect(enrichmentSource).toContain("presentation?: 'default' | 'borderless'");
     expect(enrichmentSource).toContain("presentation={presentation}");
+  });
+
+  it('always chooses a team from an add-task action matching link existing', () => {
+    expect(linkedTasksSource).toContain('CheckListIcon');
+    expect(linkedTasksSource).not.toContain('CheckmarkSquare02Icon');
+    expect(linkedTasksSource).toContain('<SidebarPopoverSelect');
+    expect(linkedTasksSource).not.toContain('triggerVariant="underline"');
+    expect(linkedTasksSource).toContain('showChevron');
+    expect(linkedTasksSource).toContain('<PlusSignIcon');
+    expect(linkedTasksSource).toContain('handleStartCreate(teamId)');
+    expect(linkedTasksSource).toContain("getOptionalSectionActionClass(canEdit ? 'available' : 'locked', 'borderless')");
+    expect(linkedTasksSource).toContain("getOptionalSectionActionClass(canCreateTask && !teamsLoading && !openingCreate ? 'available' : 'locked', 'borderless')");
+    expect(linkedTasksSource).not.toContain('<DropdownMenu>');
   });
 });

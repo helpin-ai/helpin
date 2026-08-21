@@ -81,6 +81,9 @@ func (s *CRMActivityService) Update(ctx context.Context, id string, req model.Up
 	if activity == nil {
 		return nil, fmt.Errorf("activity not found")
 	}
+	if activity.Metadata != nil && activity.Metadata["immutable"] == true {
+		return nil, fmt.Errorf("system activity is immutable")
+	}
 
 	if req.ActivityType != nil {
 		if !isValidActivityType(*req.ActivityType) {

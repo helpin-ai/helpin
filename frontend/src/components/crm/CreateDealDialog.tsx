@@ -15,11 +15,12 @@ interface CreateDealDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   companyContext?: { id: string; name: string };
+  onDealCreated?: (deal: CRMDeal) => void;
 }
 
 const currencyOptions = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
 
-export function CreateDealDialog({ open, onOpenChange, companyContext }: CreateDealDialogProps) {
+export function CreateDealDialog({ open, onOpenChange, companyContext, onDealCreated }: CreateDealDialogProps) {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
@@ -105,6 +106,8 @@ export function CreateDealDialog({ open, onOpenChange, companyContext }: CreateD
         return;
       }
     }
+
+    onDealCreated?.(deal);
 
     showEntityCreatedToast({
       entityLabel: 'Deal',

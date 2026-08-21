@@ -245,6 +245,7 @@ export const queryKeys = {
       filters ? (['crm', wsId, 'companies', filters] as const) : (['crm', wsId, 'companies'] as const),
     company: (wsId: string, id: string) => ['crm', wsId, 'companies', id] as const,
     companyActivities: (wsId: string, companyId: string) => ['crm', wsId, 'companies', companyId, 'activities'] as const,
+    companyTimeline: (wsId: string, companyId: string, filter: string) => ['crm', wsId, 'companies', companyId, 'timeline', filter] as const,
     companyAssociations: (wsId: string, companyId: string) => ['crm', wsId, 'companies', companyId, 'associations'] as const,
 
     deals: (wsId: string, filters?: Record<string, unknown>) =>

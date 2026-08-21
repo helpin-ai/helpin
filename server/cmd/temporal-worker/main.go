@@ -496,7 +496,8 @@ func main() {
 		s3Client,
 		nil,
 	)
-	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
+		SetActivityService(pmActivityService)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)

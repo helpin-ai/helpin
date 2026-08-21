@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -11,13 +14,119 @@ import (
 
 // CRMCompanyService contains CRM company business logic.
 type CRMCompanyService struct {
-	companyRepo *repository.CRMCompanyRepository
+	companyRepo  *repository.CRMCompanyRepository
+	timelineRepo *repository.CRMCompanyTimelineRepository
 	productAnalyticsEmitter
 }
 
 // NewCRMCompanyService creates a new CRMCompanyService.
 func NewCRMCompanyService(companyRepo *repository.CRMCompanyRepository) *CRMCompanyService {
 	return &CRMCompanyService{companyRepo: companyRepo}
+}
+
+// SetTimelineRepository enables the unified company timeline read model.
+func (s *CRMCompanyService) SetTimelineRepository(repo *repository.CRMCompanyTimelineRepository) *CRMCompanyService {
+	s.timelineRepo = repo
+	return s
+}
+
+type crmCompanyTimelineCursor struct {
+	Version int       `json:"v"`
+	At      time.Time `json:"at"`
+	ID      string    `json:"id"`
+}
+
+// ListTimeline returns one cursor-paginated page of the unified company timeline.
+func (s *CRMCompanyService) ListTimeline(
+	ctx context.Context,
+	workspaceID, companyID, filter, cursor string,
+	limit int,
+) (*model.CRMCompanyTimelinePage, error) {
+	if workspaceID == "" || companyID == "" {
+		return nil, fmt.Errorf("workspace_id and company_id are required")
+	}
+	if s.timelineRepo == nil {
+		return nil, fmt.Errorf("company timeline is not configured")
+	}
+	company, err := s.GetByID(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	if company.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("company not found")
+	}
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		filter = model.CRMCompanyTimelineFilterAll
+	}
+	if !validCompanyTimelineFilter(filter) {
+		return nil, fmt.Errorf("invalid timeline filter")
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	query := model.CRMCompanyTimelineQuery{Filter: filter, Limit: limit + 1}
+	if cursor != "" {
+		decoded, err := decodeCompanyTimelineCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		query.CursorAt = &decoded.At
+		query.CursorID = decoded.ID
+	}
+	items, err := s.timelineRepo.List(ctx, workspaceID, companyID, query)
+	if err != nil {
+		return nil, err
+	}
+	page := &model.CRMCompanyTimelinePage{Data: items}
+	if len(items) > limit {
+		page.Data = items[:limit]
+		last := page.Data[len(page.Data)-1]
+		next, err := encodeCompanyTimelineCursor(crmCompanyTimelineCursor{Version: 1, At: last.OccurredAt, ID: last.ID})
+		if err != nil {
+			return nil, err
+		}
+		page.NextCursor = &next
+	}
+	return page, nil
+}
+
+func validCompanyTimelineFilter(filter string) bool {
+	switch filter {
+	case model.CRMCompanyTimelineFilterAll,
+		model.CRMCompanyTimelineFilterNote,
+		model.CRMCompanyTimelineFilterEmail,
+		model.CRMCompanyTimelineFilterCall,
+		model.CRMCompanyTimelineFilterMeeting,
+		model.CRMCompanyTimelineFilterTask:
+		return true
+	default:
+		return false
+	}
+}
+
+func encodeCompanyTimelineCursor(cursor crmCompanyTimelineCursor) (string, error) {
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return "", fmt.Errorf("encode company timeline cursor: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeCompanyTimelineCursor(value string) (*crmCompanyTimelineCursor, error) {
+	payload, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid timeline cursor")
+	}
+	var cursor crmCompanyTimelineCursor
+	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.Version != 1 || cursor.At.IsZero() || cursor.ID == "" {
+		return nil, fmt.Errorf("invalid timeline cursor")
+	}
+	return &cursor, nil
 }
 
 // List returns companies with filters and pagination.

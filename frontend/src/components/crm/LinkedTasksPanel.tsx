@@ -4,29 +4,23 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 
 import {
-  ArrowDown01Icon,
-  CheckmarkSquare02Icon,
+  CheckListIcon,
   Link01Icon,
   Loading01Icon,
   PlusSignIcon,
   Search01Icon,
 } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
+import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { useTasks, useCreateTask } from '@/hooks/queries';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
@@ -261,92 +255,46 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
       )}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <CheckmarkSquare02Icon className="h-4 w-4 text-muted-foreground" />
+            <CheckListIcon className="h-4 w-4 text-muted-foreground" />
             <span>Tasks</span>
             {tasks.length > 0 && (
               <span className="text-xs text-muted-foreground">({tasks.length})</span>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant={borderless ? 'ghost' : 'outline'}
-            size="sm"
-            className={cn('h-7 gap-1.5 text-xs', borderless && 'text-muted-foreground hover:text-foreground')}
+        <div className="flex items-center gap-[18px]">
+          <button
+            type="button"
+            className={getOptionalSectionActionClass(canEdit ? 'available' : 'locked', 'borderless')}
             onClick={() => setLinkDialogOpen(true)}
             disabled={!canEdit}
             title={!canEdit ? 'You need PM edit access to link tasks.' : undefined}
           >
-            <Link01Icon className="h-3 w-3" />
+            <Link01Icon className="h-[15px] w-[15px]" />
             Link existing
-          </Button>
-          {teams.length > 1 ? (
-          <div className="flex" title={addTaskDisabledReason ?? undefined}>
-            <Button
-              variant={borderless ? 'ghost' : 'default'}
-              size="sm"
-              className={cn('h-7 gap-1.5 rounded-r-none text-xs', borderless && 'text-muted-foreground hover:text-foreground')}
-              onClick={() => void handleStartCreate()}
+          </button>
+          <div className="flex items-center" title={addTaskDisabledReason ?? undefined}>
+            <SidebarPopoverSelect
+              value={selectedTeamId}
+              options={teams.map((team) => ({ value: team.id, label: team.name }))}
+              onChange={(teamId) => { void handleStartCreate(teamId); }}
+              width="w-56"
+              searchPlaceholder="Search teams..."
               disabled={!canCreateTask || teamsLoading || openingCreate}
-            >
-              {openingCreate ? (
-                <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <PlusSignIcon className="h-3 w-3" />
+              showChevron
+              triggerClassName={getOptionalSectionActionClass(canCreateTask && !teamsLoading && !openingCreate ? 'available' : 'locked', 'borderless')}
+              renderTrigger={() => (
+                <>
+                  {openingCreate
+                    ? <Loading01Icon className="h-[15px] w-[15px] shrink-0 animate-spin" />
+                    : <PlusSignIcon className="h-[15px] w-[15px] shrink-0" />}
+                  <span className="truncate text-left">
+                    {openingCreate ? 'Opening...' : 'Add task'}
+                  </span>
+                </>
               )}
-              Add task
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant={borderless ? 'ghost' : 'default'}
-                  size="sm"
-                  className={cn(
-                    'h-7 rounded-l-none border-l px-1.5',
-                    borderless ? 'border-border/60 text-muted-foreground' : 'border-primary-foreground/20',
-                  )}
-                  disabled={!canCreateTask || teamsLoading || openingCreate}
-                  aria-label="Choose team for task creation"
-                >
-                  <ArrowDown01Icon className="h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-44">
-                {teams.map((team) => (
-                  <DropdownMenuItem
-                    key={team.id}
-                    onClick={() => void handleStartCreate(team.id)}
-                  >
-                    <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                      <span className="truncate">{team.name}</span>
-                      {team.id === selectedTeamId && (
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                          Default
-                        </span>
-                      )}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            />
           </div>
-        ) : (
-          <Button
-            variant={borderless ? 'ghost' : 'default'}
-            size="sm"
-            className={cn('h-7 gap-1.5 text-xs', borderless && 'text-muted-foreground hover:text-foreground')}
-            onClick={() => void handleStartCreate()}
-            disabled={!canCreateTask || teamsLoading || openingCreate}
-            title={addTaskDisabledReason ?? undefined}
-          >
-            {openingCreate ? (
-              <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <PlusSignIcon className="h-3 w-3" />
-            )}
-            Add task
-          </Button>
-        )}
         </div>
       </div>
 
@@ -356,7 +304,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
         ) : tasks.length === 0 ? (
           <div className={cn('flex flex-col items-center justify-center px-6 py-10 text-center', borderless && 'py-11')}>
             <div className={cn(!borderless && 'rounded-full bg-muted p-2.5')}>
-              <CheckmarkSquare02Icon className={cn('h-5 w-5 text-muted-foreground', borderless && 'text-muted-foreground/45')} />
+              <CheckListIcon className={cn('h-5 w-5 text-muted-foreground', borderless && 'text-muted-foreground/45')} />
             </div>
             <p className="mt-3 text-sm font-medium">No linked tasks yet</p>
             <p className="mt-1 max-w-xs text-xs text-muted-foreground">
@@ -378,7 +326,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
                 borderless && 'sm:px-6 lg:px-10',
               )}
             >
-              <CheckmarkSquare02Icon
+              <CheckListIcon
                 className={`h-4 w-4 shrink-0 ${task.completed ? 'text-emerald-500' : 'text-muted-foreground'}`}
               />
               <div className="min-w-0 flex-1">
@@ -448,7 +396,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
                   className="flex w-full items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-60"
                   onClick={() => void handleLinkExistingTask(result.id)}
                 >
-                  <CheckmarkSquare02Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <CheckListIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate font-medium">{result.name}</span>
                   {result.display_id && (
                     <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[10px]">

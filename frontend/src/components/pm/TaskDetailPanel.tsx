@@ -19,7 +19,6 @@ import {
   Loading01Icon,
   MoreVerticalIcon,
   AttachmentIcon,
-  PencilEdit01Icon,
   PlayIcon,
   Shield02Icon,
   Tag01Icon,
@@ -108,6 +107,7 @@ import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSel
 import { TaskUpdatesView } from '@/components/pm/task-detail/TaskUpdatesView';
 import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
+import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { resolveTaskTeamWorkflow, resolveTaskWorkflowStates } from '@/components/pm/task-detail/taskWorkflowResolution';
 import {
@@ -1416,7 +1416,7 @@ function TaskDetailPanelBody({
                 />
               </div>
             ) : (
-              <div className="relative">
+              <div className="relative min-h-9 pr-12">
                 {form.description ? (
                   <RichTextMentionContent
                     html={form.description}
@@ -1429,16 +1429,7 @@ function TaskDetailPanelBody({
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>
                 )}
-                <div className="mt-3 flex justify-start opacity-0 transition-opacity group-hover/desc:opacity-100 group-focus-within/desc:opacity-100">
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                    onClick={beginDescriptionEditing}
-                  >
-                    <PencilEdit01Icon className="h-3 w-3" />
-                    Edit description
-                  </button>
-                </div>
+                <DetailDescriptionEditButton onClick={beginDescriptionEditing} />
               </div>
             )}
           </div>

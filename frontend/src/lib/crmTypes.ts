@@ -292,6 +292,36 @@ export interface CRMActivity {
   updated_at: string;
 }
 
+export type CRMCompanyTimelineFilter = 'all' | 'note' | 'email' | 'call' | 'meeting' | 'task';
+
+export interface CRMCompanyTimelineReference {
+  type: string;
+  id: string;
+  name: string;
+  display_id?: string;
+}
+
+export interface CRMCompanyTimelineItem {
+  id: string;
+  kind: CRMActivityType | 'task' | 'deal' | 'support' | 'enrichment';
+  event_type: string;
+  source_type: string;
+  source_id: string;
+  title: string;
+  description?: string;
+  occurred_at: string;
+  actor?: CRMCompanyTimelineReference;
+  contact?: CRMCompanyTimelineReference;
+  entity?: CRMCompanyTimelineReference;
+  can_edit: boolean;
+  can_delete: boolean;
+}
+
+export interface CRMCompanyTimelinePage {
+  data: CRMCompanyTimelineItem[];
+  next_cursor?: string;
+}
+
 export interface CreateCRMActivityRequest {
   workspace_id: string;
   activity_type: CRMActivityType;

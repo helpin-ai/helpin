@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
   ArrowLeft02Icon,
@@ -12,7 +12,6 @@ import {
   UserGroupIcon,
   LinkSquare01Icon,
   MapPinIcon,
-  PencilEdit01Icon,
   PlusSignIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -21,16 +20,19 @@ import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useCompany, useUpdateCompany, useDeleteCompany, useCompanyActivities, useCompanyAssociations } from '@/hooks/queries';
+import { useCompany, useUpdateCompany, useDeleteCompany, useCompanyTimeline, useCompanyAssociations } from '@/hooks/queries';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
 import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
+import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useTitle } from '@/hooks/useTitle';
-import type { UpdateCRMCompanyRequest } from '@/lib/crmTypes';
+import type { CRMCompanyTimelineFilter, CRMCompanyTimelineItem, UpdateCRMCompanyRequest } from '@/lib/crmTypes';
 
 interface FormState {
   name: string;
@@ -60,9 +62,11 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const wsId = currentWorkspace?.id ?? '';
   const wsSlug = currentWorkspace?.slug ?? '';
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { data: company, isLoading } = useCompany(wsId, companyId);
-  const { data: activitiesData, refetch: refetchActivities } = useCompanyActivities(wsId, companyId);
+  const [activityFilter, setActivityFilter] = useState<CRMCompanyTimelineFilter>('all');
+  const timeline = useCompanyTimeline(wsId, companyId, activityFilter);
   const { data: associations, refetch: refetchAssociations } = useCompanyAssociations(wsId, companyId);
   const updateCompany = useUpdateCompany(wsId);
   const deleteCompany = useDeleteCompany(wsId);
@@ -74,6 +78,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [createDealOpen, setCreateDealOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
+  const [timelinePreview, setTimelinePreview] = useState<CRMCompanyTimelineItem | null>(null);
   const descriptionEditStartRef = useRef('');
 
   useTitle(form?.name ?? 'Company');
@@ -143,6 +148,26 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
   };
 
   const goBack = () => navigate({ to: '/w/$slug/crm/companies', params: { slug: wsSlug } });
+
+  const openTimelineSource = (item: CRMCompanyTimelineItem) => {
+    const entity = item.entity;
+    if (!entity) {
+      setTimelinePreview(item);
+      return;
+    }
+    if (entity.type === 'task') {
+      openTaskRoute(navigate as never, location as never, wsSlug, entity.id);
+      return;
+    }
+    const routes: Record<string, { to: string; params: Record<string, string> }> = {
+      deal: { to: '/w/$slug/crm/deals/$dealId', params: { slug: wsSlug, dealId: entity.id } },
+      meeting: { to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: entity.id } },
+      support_conversation: { to: '/w/$slug/support/$conversationId', params: { slug: wsSlug, conversationId: entity.id } },
+    };
+    const route = routes[entity.type];
+    if (route) navigate(route as never);
+    else setTimelinePreview(item);
+  };
 
   if (isLoading) {
     return (
@@ -247,7 +272,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
                   />
                 </div>
               ) : (
-                <div className="relative">
+                <div className="relative min-h-9 pr-12">
                   {form.description ? (
                     <RichTextMentionContent
                       html={form.description}
@@ -258,16 +283,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
                   ) : (
                     <p className="text-sm text-muted-foreground">No description yet</p>
                   )}
-                  <div className="mt-3 flex justify-start opacity-0 transition-opacity group-hover/desc:opacity-100 group-focus-within/desc:opacity-100">
-                    <button
-                      type="button"
-                      className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                      onClick={beginDescriptionEditing}
-                    >
-                      <PencilEdit01Icon className="h-3 w-3" />
-                      Edit description
-                    </button>
-                  </div>
+                  <DetailDescriptionEditButton onClick={beginDescriptionEditing} />
                 </div>
               )}
             </div>
@@ -281,11 +297,18 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
           />
 
           <ActivityTimeline
-            activities={activitiesData?.data ?? []}
+            timelineItems={timeline.data?.pages.flatMap((page) => page.data) ?? []}
+            timelineFilter={activityFilter}
+            onTimelineFilterChange={setActivityFilter}
+            onTimelineItemOpen={openTimelineSource}
+            hasNextPage={timeline.hasNextPage}
+            isFetchingNextPage={timeline.isFetchingNextPage}
+            isTimelineLoading={timeline.isLoading}
+            onLoadMore={() => void timeline.fetchNextPage()}
             workspaceId={wsId}
             companyId={companyId}
-            onActivityCreated={() => refetchActivities()}
-            onActivityDeleted={() => refetchActivities()}
+            onActivityCreated={() => void timeline.refetch()}
+            onActivityDeleted={() => void timeline.refetch()}
             presentation="borderless"
           />
 
@@ -334,9 +357,28 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
         open={createDealOpen}
         onOpenChange={setCreateDealOpen}
         companyContext={{ id: companyId, name: form.name || 'this company' }}
+        onDealCreated={() => {
+          void timeline.refetch();
+          void refetchAssociations();
+        }}
       />
       <ConfirmDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen} title="Delete company"
         description="Are you sure? This action cannot be undone." confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} />
+      <Dialog open={!!timelinePreview} onOpenChange={(open) => !open && setTimelinePreview(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{timelinePreview?.title}</DialogTitle>
+            <DialogDescription>
+              {timelinePreview ? new Date(timelinePreview.occurred_at).toLocaleString() : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {timelinePreview?.description ? (
+            <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{timelinePreview.description}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">No additional details are available.</p>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

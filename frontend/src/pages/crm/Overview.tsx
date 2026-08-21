@@ -6,7 +6,7 @@ import {
   ArrowRight01Icon,
   Calendar01Icon,
   CheckmarkCircle02Icon,
-  CheckmarkSquare02Icon,
+  CheckListIcon,
   Clock03Icon,
   DollarCircleIcon,
   SparklesIcon,
@@ -174,7 +174,7 @@ export function CRMOverviewPage() {
           <MetricCard
             label="CRM follow-ups"
             value={accessLoading || tasksQuery.isLoading ? '-' : dueTasks.length}
-            icon={CheckmarkSquare02Icon}
+            icon={CheckListIcon}
             attention={dueTasks.length > 0}
           />
           <MetricCard
@@ -237,7 +237,7 @@ export function CRMOverviewPage() {
                       'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border',
                       timing === 'overdue' ? 'border-rose-500/20 bg-rose-500/10 text-rose-600' : 'bg-muted/30 text-muted-foreground',
                     )}>
-                      {timing === 'overdue' ? <Alert01Icon className="h-4 w-4" /> : <CheckmarkSquare02Icon className="h-4 w-4" />}
+                      {timing === 'overdue' ? <Alert01Icon className="h-4 w-4" /> : <CheckListIcon className="h-4 w-4" />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{task.name}</p>

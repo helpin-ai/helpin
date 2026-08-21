@@ -562,7 +562,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	if st, _ := s.workflowRepo.GetStateByID(ctx, newTask.WorkflowStateID); st != nil {
 		createdAction = "created this task in " + st.Name
 	}
-	if err := s.activityService.Log(ctx, newTask.WorkspaceID, "task", newTask.ID, optionalActor(actorID), createdAction, nil, nil, nil, nil); err != nil {
+	if err := s.activityService.LogEvent(ctx, newTask.WorkspaceID, "task", newTask.ID, optionalActor(actorID), "task.created", createdAction, nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task create", "error", err, "task_id", newTask.ID, "workspace_id", newTask.WorkspaceID)
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "task", EntityID: newTask.ID, WorkspaceID: newTask.WorkspaceID, ActorID: actorID, TaskKey: model.FormatTaskKey(s.getWorkspaceKey(ctx, newTask.WorkspaceID), newTask.DisplayID)})
@@ -1650,7 +1650,13 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			newName = st.Name
 		}
 		action := "moved this task to " + newName
-		if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+		eventType := "task.state_changed"
+		if !previousDetail.Task.Completed && updatedDetail.Task.Completed {
+			eventType = "task.completed"
+		} else if previousDetail.Task.Completed && !updatedDetail.Task.Completed {
+			eventType = "task.reopened"
+		}
+		if err := s.activityService.LogEvent(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), eventType, action, nil, nil, nil, nil); err != nil {
 			s.logger.ErrorContext(ctx, "failed to log activity for task state change", "error", err, "task_id", current.ID, "workspace_id", current.WorkspaceID)
 		}
 	}
@@ -1674,11 +1680,11 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	}
 	if req.Blocked != nil && *req.Blocked != oldBlocked {
 		if *req.Blocked {
-			if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "marked this task as blocked", nil, nil, nil, nil); err != nil {
+			if err := s.activityService.LogEvent(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "task.blocked", "marked this task as blocked", nil, nil, nil, nil); err != nil {
 				s.logger.ErrorContext(ctx, "failed to log activity for task blocked", "error", err, "task_id", current.ID)
 			}
 		} else {
-			if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "unblocked this task", nil, nil, nil, nil); err != nil {
+			if err := s.activityService.LogEvent(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "task.unblocked", "unblocked this task", nil, nil, nil, nil); err != nil {
 				s.logger.ErrorContext(ctx, "failed to log activity for task unblocked", "error", err, "task_id", current.ID)
 			}
 		}
@@ -1893,11 +1899,17 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 		s.automationService.OnStoryStateChange(ctx, current, req.StateID)
 	}
 	newStateName := req.StateID
+	eventType := "task.state_changed"
 	if st, _ := s.workflowRepo.GetStateByID(ctx, req.StateID); st != nil {
 		newStateName = st.Name
+		if !current.Completed && st.StateType == model.PMStateTypeDone {
+			eventType = "task.completed"
+		} else if current.Completed && st.StateType != model.PMStateTypeDone {
+			eventType = "task.reopened"
+		}
 	}
 	action := "moved this task to " + newStateName
-	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), action, nil, nil, nil, nil); err != nil {
+	if err := s.activityService.LogEvent(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), eventType, action, nil, nil, nil, nil); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for task move", "error", err, "task_id", current.ID, "workspace_id", current.WorkspaceID)
 	}
 	s.wsPublisher.Publish(websocket.Event{

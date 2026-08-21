@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -14,11 +15,18 @@ type CRMDealService struct {
 	productAnalyticsEmitter
 	dealRepo  *repository.CRMDealRepository
 	assocRepo *repository.CRMAssociationRepository
+	activity  *PMActivityService
 }
 
 // NewCRMDealService creates a new CRMDealService.
 func NewCRMDealService(dealRepo *repository.CRMDealRepository, assocRepo *repository.CRMAssociationRepository) *CRMDealService {
 	return &CRMDealService{dealRepo: dealRepo, assocRepo: assocRepo}
+}
+
+// SetActivityService enables durable user-facing deal milestone logging.
+func (s *CRMDealService) SetActivityService(activity *PMActivityService) *CRMDealService {
+	s.activity = activity
+	return s
 }
 
 // SeedWorkspaceDefaults creates a default sales pipeline for a new workspace.
@@ -182,6 +190,15 @@ func (s *CRMDealService) GetByID(ctx context.Context, id string) (*model.CRMDeal
 
 // Create creates a deal.
 func (s *CRMDealService) Create(ctx context.Context, req model.CreateCRMDealRequest) (*model.CRMDeal, error) {
+	return s.create(ctx, req, "")
+}
+
+// CreateWithActor creates a deal and attributes its timeline milestone to the actor.
+func (s *CRMDealService) CreateWithActor(ctx context.Context, req model.CreateCRMDealRequest, actorID string) (*model.CRMDeal, error) {
+	return s.create(ctx, req, actorID)
+}
+
+func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequest, actorID string) (*model.CRMDeal, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
@@ -253,6 +270,12 @@ func (s *CRMDealService) Create(ctx context.Context, req model.CreateCRMDealRequ
 	if err != nil {
 		return nil, err
 	}
+	if s.activity != nil {
+		action := "created this deal in " + stage.Name
+		if err := s.activity.LogEvent(ctx, deal.WorkspaceID, "deal", deal.ID, optionalActor(actorID), "deal.created", action, stringPtr("stage"), nil, &stage.ID, map[string]interface{}{"stage_name": stage.Name, "stage_type": stage.StageType}); err != nil {
+			slog.ErrorContext(ctx, "log deal creation milestone", "error", err, "deal_id", deal.ID, "workspace_id", deal.WorkspaceID)
+		}
+	}
 	s.trackProductEvent(ctx, ProductAnalyticsEvent{
 		SemanticKey: "crm_deal_created:" + deal.ID,
 		WorkspaceID: deal.WorkspaceID, Name: "crm_deal_created", Source: "api",
@@ -264,6 +287,15 @@ func (s *CRMDealService) Create(ctx context.Context, req model.CreateCRMDealRequ
 
 // Update updates a deal.
 func (s *CRMDealService) Update(ctx context.Context, id string, req model.UpdateCRMDealRequest) (*model.CRMDeal, error) {
+	return s.update(ctx, id, req, "")
+}
+
+// UpdateWithActor updates a deal and attributes timeline milestones to the actor.
+func (s *CRMDealService) UpdateWithActor(ctx context.Context, id string, req model.UpdateCRMDealRequest, actorID string) (*model.CRMDeal, error) {
+	return s.update(ctx, id, req, actorID)
+}
+
+func (s *CRMDealService) update(ctx context.Context, id string, req model.UpdateCRMDealRequest, actorID string) (*model.CRMDeal, error) {
 	deal, err := s.dealRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -273,6 +305,10 @@ func (s *CRMDealService) Update(ctx context.Context, id string, req model.Update
 	}
 
 	previousStageID := deal.StageID
+	previousStageName := previousStageID
+	if deal.Stage != nil {
+		previousStageName = deal.Stage.Name
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -326,8 +362,22 @@ func (s *CRMDealService) Update(ctx context.Context, id string, req model.Update
 	}
 	if previousStageID != updated.StageID {
 		stageType := ""
+		stageName := updated.StageID
 		if updated.Stage != nil {
 			stageType = updated.Stage.StageType
+			stageName = updated.Stage.Name
+		}
+		if s.activity != nil {
+			eventType := "deal.stage_changed"
+			if stageType == model.CRMStageTypeWon {
+				eventType = "deal.won"
+			} else if stageType == model.CRMStageTypeLost {
+				eventType = "deal.lost"
+			}
+			action := "moved this deal from " + previousStageName + " to " + stageName
+			if err := s.activity.LogEvent(ctx, updated.WorkspaceID, "deal", updated.ID, optionalActor(actorID), eventType, action, stringPtr("stage"), &previousStageID, &updated.StageID, map[string]interface{}{"previous_stage_name": previousStageName, "stage_name": stageName, "stage_type": stageType}); err != nil {
+				slog.ErrorContext(ctx, "log deal stage milestone", "error", err, "deal_id", updated.ID, "workspace_id", updated.WorkspaceID)
+			}
 		}
 		s.trackProductEvent(ctx, ProductAnalyticsEvent{
 			SemanticKey: fmt.Sprintf("crm_deal_stage_changed:%s:%s:%d", updated.ID, updated.StageID, updated.UpdatedAt.UnixNano()),
