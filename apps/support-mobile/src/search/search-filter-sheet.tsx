@@ -157,7 +157,7 @@ export function SearchFilterSheet({
     <Sheet open={open} onOpenChange={onOpenChange} title="Search filters" className="h-[90vh]">
       <div className="flex items-center justify-between border-b border-border/60 px-4 pb-3">
         <div>
-          <h2 className="text-title-3">Search filters</h2>
+          <h2 className="text-headline">Search filters</h2>
           <p className="text-footnote text-muted-foreground">Narrow the same fields available on web.</p>
         </div>
         <Pressable

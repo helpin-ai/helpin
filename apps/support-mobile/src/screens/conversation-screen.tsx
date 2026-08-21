@@ -445,7 +445,7 @@ export function ConversationScreen() {
                 onPress={() => setContextSheetOpen(true)}
                 className="mb-4 flex w-full flex-col items-start rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-left"
               >
-                <span className="line-clamp-2 text-title text-foreground">{conversationTitle}</span>
+                <span className="line-clamp-2 text-headline text-foreground">{conversationTitle}</span>
                 <span className="mt-2 flex max-w-full items-center gap-2 text-footnote text-muted-foreground">
                   <span className="flex min-w-0 items-center gap-1.5">
                     {visitorOnline && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />}

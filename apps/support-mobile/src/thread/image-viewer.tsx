@@ -256,7 +256,7 @@ export function ImageViewer({ images, initialIndex, open, onOpenChange }: ImageV
           <X className="h-6 w-6" />
         </Pressable>
         <div className="min-w-0 flex-1 text-center">
-          <p className="truncate text-sm font-medium">{image.file_name}</p>
+          <p className="truncate text-body font-medium">{image.file_name}</p>
           {images.length > 1 && (
             <p className="text-xs text-white/60">{activeIndex + 1} of {images.length}</p>
           )}

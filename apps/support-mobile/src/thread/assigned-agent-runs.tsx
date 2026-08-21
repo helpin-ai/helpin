@@ -132,7 +132,7 @@ function AgentRunDetailsSheet({ workspaceId, run, open, onOpenChange }: {
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Bot className="h-5 w-5" /></span>
           <div className="min-w-0 flex-1">
-            <h2 className="text-title font-semibold text-foreground">Agent run</h2>
+            <h2 className="text-headline text-foreground">Agent run</h2>
             <div className="mt-1 flex flex-wrap gap-1.5">
               <span className="rounded-full bg-muted px-2 py-0.5 text-caption font-medium">{agentRunStatusLabel(run.status)}</span>
               <span className="rounded-full bg-muted px-2 py-0.5 text-caption text-muted-foreground">{agentRunStatusLabel(run.approval_state)}</span>

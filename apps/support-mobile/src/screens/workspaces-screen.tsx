@@ -83,7 +83,7 @@ export function WorkspacesScreen() {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <TopBar title="Workspaces" large={Boolean(workspaces)} />
+      <TopBar title="Workspaces" />
 
       {isLoading && (
         <div className="flex flex-1 items-center justify-center">

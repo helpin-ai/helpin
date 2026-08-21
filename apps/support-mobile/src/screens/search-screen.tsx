@@ -259,7 +259,7 @@ export function SearchScreen() {
                     <div className="truncate text-footnote text-muted-foreground">
                       {displayName}{conversation.customer_name && conversation.customer_email ? ` · ${conversation.customer_email}` : ''}
                     </div>
-                    <p className="line-clamp-2 text-footnote leading-5 text-foreground/85">{resultHighlight(result)}</p>
+                    <p className="line-clamp-2 text-footnote text-foreground/85">{resultHighlight(result)}</p>
                     <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px] text-muted-foreground">
                       <span>{fieldSummary(result.matched_fields)}</span>
                       <span aria-hidden="true">·</span>

@@ -183,7 +183,7 @@ export function InboxFilterSheet({
     >
       <div className="flex items-center justify-between border-b border-border/60 px-4 pb-3">
         <div>
-          <h2 className="text-title-3">Filter conversations</h2>
+          <h2 className="text-headline">Filter conversations</h2>
           <p className="text-footnote text-muted-foreground">Match the same fields available on web.</p>
         </div>
         <Pressable

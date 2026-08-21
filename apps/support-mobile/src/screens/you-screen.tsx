@@ -120,7 +120,7 @@ export function SettingsScreen() {
   return (
     <div className="flex h-dvh flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <TopBar title="Settings" large />
+        <TopBar title="Settings" />
 
         <div className="px-4">
           <section className="flex items-center gap-3 border-b border-border/70 py-3">

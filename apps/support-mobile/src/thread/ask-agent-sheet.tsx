@@ -153,7 +153,7 @@ export function AskAgentSheet({ workspaceId, conversation, open, onOpenChange, c
           <header className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pb-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"><Sparkles className="h-5 w-5" /></span>
             <div className="min-w-0 flex-1">
-              <h2 className="text-title font-semibold text-foreground">Ask Agent</h2>
+              <h2 className="text-headline text-foreground">Ask Agent</h2>
               <p role="status" className="truncate text-caption text-muted-foreground">{supportAgentRunLabel(status)}</p>
             </div>
             <Pressable aria-label="Close Ask Agent" onPress={() => onOpenChange(false)} className="flex h-9 w-9 items-center justify-center rounded-full active:bg-muted"><X className="h-5 w-5" /></Pressable>
@@ -174,7 +174,7 @@ export function AskAgentSheet({ workspaceId, conversation, open, onOpenChange, c
               <div className="flex min-h-full flex-col justify-end pb-2">
                 <div className="mx-auto max-w-sm text-center">
                   <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary"><Bot className="h-6 w-6" /></span>
-                  <h3 className="mt-3 text-title font-semibold">What should I help with?</h3>
+                  <h3 className="mt-3 text-headline">What should I help with?</h3>
                   <p className="mt-1 text-footnote text-muted-foreground">I can use this conversation and your workspace context.</p>
                 </div>
                 <div className="mt-5 space-y-2">
