@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { CompanyTasksWorkspace } from '@/components/crm/CompanyTasksWorkspace';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { useTasks, useCreateTask } from '@/hooks/queries';
@@ -63,6 +64,7 @@ interface LinkedTasksPanelProps {
   companyId?: string;
   dealId?: string;
   presentation?: 'default' | 'borderless';
+  onTaskActivityChange?: () => void;
 }
 
 function resolveObject(props: LinkedTasksPanelProps): { id: string; type: CRMObjectType } | null {
@@ -94,12 +96,14 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
   const [linkingTaskId, setLinkingTaskId] = useState<string | null>(null);
 
   const { data, isLoading } = useTasks(workspaceId, {
+    per_page: 100,
     contact_id: props.contactId,
     company_id: props.companyId,
     deal_id: props.dealId,
   });
 
   const tasks: Task[] = data?.data ?? [];
+  const taskTotal = data?.total ?? tasks.length;
   const teamNameById = useMemo(
     () => new Map(allTeams.map((team) => [team.id, team.name])),
     [allTeams],
@@ -206,6 +210,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
       toast.success('Task linked');
       qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] });
       setLinkDialogOpen(false);
+      props.onTaskActivityChange?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to link task';
       toast.error(msg);
@@ -231,6 +236,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
         throw new Error(assoc.error);
       }
       qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] });
+      props.onTaskActivityChange?.();
       return created.task
         ? {
             id: created.task.id,
@@ -257,8 +263,8 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
           <div className="flex items-center gap-2 text-sm font-medium">
             <CheckListIcon className="h-4 w-4 text-muted-foreground" />
             <span>Tasks</span>
-            {tasks.length > 0 && (
-              <span className="text-xs text-muted-foreground">({tasks.length})</span>
+            {taskTotal > 0 && (
+              <span className="text-xs text-muted-foreground">({taskTotal})</span>
             )}
           </div>
         </div>
@@ -298,29 +304,40 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
         </div>
       </div>
 
-      <div className="divide-y divide-border/60">
-        {isLoading ? (
-          <div className="px-4 py-6 text-center text-xs text-muted-foreground">Loading…</div>
-        ) : tasks.length === 0 ? (
-          <div className={cn('flex flex-col items-center justify-center px-6 py-10 text-center', borderless && 'py-11')}>
-            <div className={cn(!borderless && 'rounded-full bg-muted p-2.5')}>
-              <CheckListIcon className={cn('h-5 w-5 text-muted-foreground', borderless && 'text-muted-foreground/45')} />
+      {isLoading ? (
+        <div className={cn(
+          'flex items-center justify-center text-xs text-muted-foreground',
+          associationTarget.type === 'company' ? 'h-28' : 'px-4 py-6',
+        )}>
+          <Loading01Icon className="mr-2 h-3.5 w-3.5 animate-spin" />
+          Loading tasks…
+        </div>
+      ) : associationTarget.type === 'company' ? (
+        <CompanyTasksWorkspace
+          workspaceId={workspaceId}
+          companyId={associationTarget.id}
+          onOpenTask={(task) => openTaskRoute(navigate as never, location as never, workspaceSlug, task.id)}
+          onTaskActivityChange={props.onTaskActivityChange}
+        />
+      ) : (
+        <div className="divide-y divide-border/60">
+          {tasks.length === 0 ? (
+            <div className={cn('flex flex-col items-center justify-center px-6 py-10 text-center', borderless && 'py-11')}>
+              <div className={cn(!borderless && 'rounded-full bg-muted p-2.5')}>
+                <CheckListIcon className={cn('h-5 w-5 text-muted-foreground', borderless && 'text-muted-foreground/45')} />
+              </div>
+              <p className="mt-3 text-sm font-medium">No linked tasks yet</p>
+              <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                {canCreateTask
+                  ? `Link or create a task to track follow-ups for this ${targetLabel}.`
+                  : (addTaskDisabledReason ?? 'No linked tasks yet.')}
+              </p>
             </div>
-            <p className="mt-3 text-sm font-medium">No linked tasks yet</p>
-            <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-              {canCreateTask
-                ? `Link or create a task to track follow-ups for this ${targetLabel}.`
-                : (addTaskDisabledReason ?? 'No linked tasks yet.')}
-            </p>
-          </div>
-        ) : (
-          tasks.map((task) => (
+          ) : tasks.map((task) => (
             <button
               key={task.id}
               type="button"
-              onClick={() =>
-                openTaskRoute(navigate as never, location as never, workspaceSlug, task.id)
-              }
+              onClick={() => openTaskRoute(navigate as never, location as never, workspaceSlug, task.id)}
               className={cn(
                 'flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40',
                 borderless && 'sm:px-6 lg:px-10',
@@ -344,9 +361,9 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
                 </div>
               </div>
             </button>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
       {createWorkflow && (
         <CreateTaskModal

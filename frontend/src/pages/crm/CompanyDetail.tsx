@@ -294,6 +294,7 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
             workspaceSlug={wsSlug}
             companyId={companyId}
             presentation="borderless"
+            onTaskActivityChange={() => void timeline.refetch()}
           />
 
           <ActivityTimeline

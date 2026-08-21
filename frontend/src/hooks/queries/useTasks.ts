@@ -12,11 +12,13 @@ import type {
 interface TaskQueryFilters {
   page?: number
   per_page?: number
+  search?: string
   team_id?: string
   epic_id?: string
   sprint_id?: string
   workflow_id?: string
   state_id?: string
+  state_type?: string
   task_type?: string
   owner_member_ids?: string
   requester_member_id?: string

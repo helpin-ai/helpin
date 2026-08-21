@@ -129,6 +129,7 @@ type PMTaskFilters struct {
 	IncludeSupport        bool
 	WorkflowID            *string
 	WorkflowStateID       *string
+	StateType             *string
 	TaskType              *string
 	OwnerMemberIDs        []string
 	RequesterID           *string

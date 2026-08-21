@@ -340,6 +340,12 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	query = applyTaskSupportConversationFilter(query, filters.SupportConversationID)
 	query = applyTaskStringFilter(query, "pm_tasks.workflow_id", filters.WorkflowID)
 	query = applyTaskStringFilter(query, "pm_tasks.workflow_state_id", filters.WorkflowStateID)
+	if filters.StateType != nil && strings.TrimSpace(*filters.StateType) != "" {
+		query = query.Where(
+			"pm_tasks.workflow_state_id IN (SELECT id FROM pm_workflow_states WHERE state_type = ?)",
+			strings.TrimSpace(*filters.StateType),
+		)
+	}
 	query = applyTaskStringFilter(query, "pm_tasks.task_type", filters.TaskType)
 	query = applyTaskOwnerMemberIDsFilter(query, filters.OwnerMemberIDs)
 	query = applyTaskStringFilter(query, "pm_tasks.priority", filters.Priority)
@@ -1477,6 +1483,12 @@ func (r *PMTaskRepository) applyBoardFilters(q *gorm.DB, filters model.PMTaskFil
 	q = applyTaskStringFilter(q, "pm_tasks.task_type", filters.TaskType)
 	q = applyTaskStringFilter(q, "pm_tasks.epic_id", filters.EpicID)
 	q = applyTaskStringFilter(q, "pm_tasks.sprint_id", filters.SprintID)
+	if filters.StateType != nil && strings.TrimSpace(*filters.StateType) != "" {
+		q = q.Where(
+			"pm_tasks.workflow_state_id IN (SELECT id FROM pm_workflow_states WHERE state_type = ?)",
+			strings.TrimSpace(*filters.StateType),
+		)
+	}
 	q = applyTaskAssociationFilter(q, model.CRMObjectContact, filters.ContactID)
 	q = applyTaskAssociationFilter(q, model.CRMObjectCompany, filters.CompanyID)
 	q = applyTaskAssociationFilter(q, model.CRMObjectDeal, filters.DealID)

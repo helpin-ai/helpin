@@ -33,7 +33,7 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	filters, err := taskListFilters(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid archived query param")
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	pagination := queryPagination(r)
@@ -65,6 +65,14 @@ func taskListFilters(r *http.Request) (model.PMTaskFilters, error) {
 	if err != nil {
 		return model.PMTaskFilters{}, err
 	}
+	stateType := queryStringPtr(r, "state_type")
+	if stateType != nil {
+		switch *stateType {
+		case model.PMStateTypeBacklog, model.PMStateTypeUnstarted, model.PMStateTypeStarted, model.PMStateTypeDone:
+		default:
+			return model.PMTaskFilters{}, errors.New("invalid state_type query param")
+		}
+	}
 	return model.PMTaskFilters{
 		Search:                queryStringPtr(r, "search"),
 		TeamID:                queryStringPtr(r, "team_id"),
@@ -80,6 +88,7 @@ func taskListFilters(r *http.Request) (model.PMTaskFilters, error) {
 		IncludeSupport:        r.URL.Query().Get("include_support") == "true",
 		WorkflowID:            queryStringPtr(r, "workflow_id"),
 		WorkflowStateID:       queryStringPtr(r, "state_id"),
+		StateType:             stateType,
 		TaskType:              queryStringPtr(r, "task_type"),
 		OwnerMemberIDs:        queryStringValues(r, "owner_member_ids"),
 		RequesterID:           queryStringPtr(r, "requester_id"),
@@ -217,6 +226,7 @@ func boardFilters(r *http.Request) model.PMTaskFilters {
 		CompanyID:             queryStringPtr(r, "company_id"),
 		DealID:                queryStringPtr(r, "deal_id"),
 		SupportConversationID: queryStringPtr(r, "support_conversation_id"),
+		StateType:             queryStringPtr(r, "state_type"),
 		IncludeContacts:       r.URL.Query().Get("include_contacts") == "true",
 		IncludeCompanies:      r.URL.Query().Get("include_companies") == "true",
 		IncludeDeals:          r.URL.Query().Get("include_deals") == "true",

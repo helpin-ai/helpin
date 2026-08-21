@@ -267,6 +267,21 @@ WITH company_contacts AS (
     WHERE pal.workspace_id = @workspace_id
       AND pal.entity_type = 'deal'
       AND COALESCE(NULLIF(pal.event_type, ''), pal.metadata->>'event_type') IN ('deal.created', 'deal.stage_changed', 'deal.won', 'deal.lost')
+      AND NOT (
+        COALESCE(pal.metadata->>'backfilled', 'false') = 'true'
+        AND EXISTS (
+          SELECT 1
+          FROM pm_activity_log canonical
+          WHERE canonical.workspace_id = pal.workspace_id
+            AND canonical.entity_type = pal.entity_type
+            AND canonical.entity_id = pal.entity_id
+            AND canonical.id <> pal.id
+            AND COALESCE(canonical.metadata->>'backfilled', 'false') <> 'true'
+            AND COALESCE(NULLIF(canonical.event_type, ''), canonical.metadata->>'event_type') = COALESCE(NULLIF(pal.event_type, ''), pal.metadata->>'event_type')
+            AND canonical.new_value IS NOT DISTINCT FROM pal.new_value
+            AND canonical.created_at BETWEEN pal.created_at - INTERVAL '5 minutes' AND pal.created_at + INTERVAL '5 minutes'
+        )
+      )
 
     UNION ALL
 

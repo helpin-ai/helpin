@@ -18,6 +18,10 @@ const linkedTasksSource = readFileSync(
   resolve(__dirname, '../LinkedTasksPanel.tsx'),
   'utf8',
 );
+const companyTasksWorkspaceSource = readFileSync(
+  resolve(__dirname, '../CompanyTasksWorkspace.tsx'),
+  'utf8',
+);
 
 describe('Company detail divider redesign', () => {
   it('uses the task-detail rail scale and scoped borderless surfaces', () => {
@@ -69,5 +73,18 @@ describe('Company detail divider redesign', () => {
     expect(linkedTasksSource).toContain("getOptionalSectionActionClass(canEdit ? 'available' : 'locked', 'borderless')");
     expect(linkedTasksSource).toContain("getOptionalSectionActionClass(canCreateTask && !teamsLoading && !openingCreate ? 'available' : 'locked', 'borderless')");
     expect(linkedTasksSource).not.toContain('<DropdownMenu>');
+  });
+
+  it('embeds a bounded customer-scoped task table and minimal board', () => {
+    expect(linkedTasksSource).toContain('<CompanyTasksWorkspace');
+    expect(linkedTasksSource).toContain("associationTarget.type === 'company'");
+    expect(companyTasksWorkspaceSource).toContain('company_id: companyId');
+    expect(companyTasksWorkspaceSource).toContain('max-h-[470px]');
+    expect(companyTasksWorkspaceSource).toContain('fitContent');
+    expect(companyTasksWorkspaceSource).toContain('<TaskListView');
+    expect(companyTasksWorkspaceSource).toContain('<CompanyTaskBoard');
+    expect(companyTasksWorkspaceSource).toContain("stateType: 'backlog'");
+    expect(companyTasksWorkspaceSource).toContain("stateType: 'done'");
+    expect(companyTasksWorkspaceSource).not.toContain('rounded-md border border-border/60 bg-muted/20');
   });
 });

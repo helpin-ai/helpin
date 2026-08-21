@@ -114,6 +114,7 @@ describe('CRM ActivityTimeline activity dialog', () => {
             title: 'Prepare renewal plan',
             description: 'moved this task to Done',
             occurred_at: new Date().toISOString(),
+            actor: { type: 'actor', id: 'user-1', name: 'Amad' },
             entity: { type: 'task', id: 'task-1', name: 'Prepare renewal plan', display_id: 'HLP-42' },
             can_edit: false,
             can_delete: false,
@@ -128,10 +129,84 @@ describe('CRM ActivityTimeline activity dialog', () => {
     });
 
     expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim()))
-      .toEqual(['All', 'Notes', 'Emails', 'Calls', 'Meetings', 'Tasks']);
+      .toEqual(['All', 'Notes', 'Emails', 'Calls', 'Meetings', 'Task activity']);
     expect(container.textContent).toContain('Prepare renewal plan');
     expect(container.textContent).toContain('HLP-42');
+    expect(container.textContent).toContain('Task HLP-42 · Prepare renewal plan moved to Done');
+    expect(container.textContent).toContain('by Amad');
     expect(container.textContent).toContain('Load more');
+  });
+
+  it('renders authored activity content with its entity icon and existing actions', () => {
+    act(() => {
+      root.render(
+        <ActivityTimeline
+          timelineItems={[{
+            id: 'activity:note-1',
+            kind: 'note',
+            event_type: 'activity.note',
+            source_type: 'crm_activity',
+            source_id: 'note-1',
+            title: 'Renewal discussion',
+            description: 'Send the revised pricing on Monday.',
+            occurred_at: new Date().toISOString(),
+            actor: { type: 'actor', id: 'member-1', name: 'Waqar' },
+            can_edit: true,
+            can_delete: true,
+          }]}
+          timelineFilter="all"
+          workspaceId="workspace-1"
+          companyId="company-1"
+          presentation="borderless"
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Note added');
+    expect(container.textContent).toContain('by Waqar');
+    expect(container.textContent).toContain('Renewal discussion');
+    expect(container.textContent).toContain('Send the revised pricing on Monday.');
+    expect(container.querySelector('[aria-label="Edit activity"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Delete activity"]')).not.toBeNull();
+  });
+
+  it('expands and collapses overflowing activity content inline', () => {
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(160);
+    const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(80);
+
+    act(() => {
+      root.render(
+        <ActivityTimeline
+          timelineItems={[{
+            id: 'activity:note-long',
+            kind: 'note',
+            event_type: 'activity.note',
+            source_type: 'crm_activity',
+            source_id: 'note-long',
+            title: 'Detailed account plan',
+            description: 'A long note with several decisions, risks, and next steps.',
+            occurred_at: new Date().toISOString(),
+            actor: { type: 'actor', id: 'member-1', name: 'Waqar' },
+            can_edit: true,
+            can_delete: true,
+          }]}
+          timelineFilter="all"
+          workspaceId="workspace-1"
+          companyId="company-1"
+        />,
+      );
+    });
+
+    const toggle = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent?.trim() === 'Show more');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+
+    act(() => toggle?.click());
+    expect(toggle?.textContent?.trim()).toBe('Show less');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+
+    scrollHeight.mockRestore();
+    clientHeight.mockRestore();
   });
 
   it('retains the draft when dismissed or switched and clears it only on request', () => {

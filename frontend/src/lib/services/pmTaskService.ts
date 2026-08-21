@@ -59,6 +59,7 @@ export const pmTaskService = {
       include_support?: boolean;
       workflow_id?: string;
       state_id?: string;
+      state_type?: string;
       task_type?: string;
       owner_member_ids?: string;
       requester_member_id?: string;

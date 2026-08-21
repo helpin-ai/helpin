@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Briefcase01Icon,
@@ -27,6 +27,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import {
+  EmphasizedActivityLabel,
+  UpdateActivityRow,
+} from '@/components/pm/UpdateActivityRow';
+import { compactUpdateTime } from '@/components/pm/updateActivityTime';
+import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { useCreateCRMActivity, useDeleteCRMActivity, useUpdateCRMActivity } from '@/hooks/queries/useCRM';
 import type {
@@ -36,6 +42,11 @@ import type {
   CRMCompanyTimelineItem,
 } from '@/lib/crmTypes';
 import { cn } from '@/lib/utils';
+import {
+  companyTimelinePresentation,
+  dedupeCompanyTimelineItems,
+  type CompanyTimelinePresentation,
+} from './companyTimelinePresentation';
 
 interface ActivityTimelineProps {
   activities?: CRMActivity[];
@@ -77,7 +88,7 @@ const companyFilterOptions: { value: CRMCompanyTimelineFilter; label: string }[]
   { value: 'email', label: 'Emails' },
   { value: 'call', label: 'Calls' },
   { value: 'meeting', label: 'Meetings' },
-  { value: 'task', label: 'Tasks' },
+  { value: 'task', label: 'Task activity' },
 ];
 
 const timelineIcons: Record<CRMCompanyTimelineItem['kind'], typeof Message01Icon> = {
@@ -90,6 +101,129 @@ const timelineIcons: Record<CRMCompanyTimelineItem['kind'], typeof Message01Icon
   support: Briefcase01Icon,
   enrichment: SparklesIcon,
 };
+
+function ContentTimelineEntry({
+  item,
+  presentation,
+  icon: Icon,
+  borderless,
+  onOpen,
+  onEdit,
+  onDelete,
+}: {
+  item: CRMCompanyTimelineItem;
+  presentation: CompanyTimelinePresentation;
+  icon: typeof Message01Icon;
+  borderless: boolean;
+  onOpen?: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [canExpand, setCanExpand] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content || expanded) return;
+    const measure = () => setCanExpand(content.scrollHeight > content.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [expanded, presentation.contentBody, presentation.contentTitle]);
+
+  const interactive = Boolean(onOpen);
+
+  return (
+    <div
+      className={cn(
+        'group grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3 py-3.5',
+        borderless && 'px-4 sm:px-6 lg:px-10',
+      )}
+    >
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+      </span>
+
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          {interactive ? (
+            <button
+              type="button"
+              className="min-w-0 flex-1 truncate text-left text-[13px] text-foreground/70 transition-colors hover:text-foreground"
+              onClick={onOpen}
+            >
+              <EmphasizedActivityLabel label={presentation.label} values={presentation.emphasizedValues} />
+            </button>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-[13px] text-foreground/70">
+              <EmphasizedActivityLabel label={presentation.label} values={presentation.emphasizedValues} />
+            </span>
+          )}
+          {presentation.attribution && (
+            <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+              by <span className="font-medium text-foreground/80">{presentation.attribution}</span>
+            </span>
+          )}
+          {(item.can_edit || item.can_delete) && (
+            <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              {item.can_edit && (
+                <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Edit activity" onClick={(event) => { event.stopPropagation(); onEdit(); }}>
+                  <PencilEdit01Icon className="h-3 w-3" />
+                </Button>
+              )}
+              {item.can_delete && (
+                <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Delete activity" onClick={(event) => { event.stopPropagation(); onDelete(); }}>
+                  <Delete01Icon className="h-3 w-3" />
+                </Button>
+              )}
+            </span>
+          )}
+          <time className="w-16 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">
+            {compactUpdateTime(item.occurred_at)}
+          </time>
+        </div>
+
+        <div
+          ref={contentRef}
+          className={cn('mt-1.5', !expanded && 'max-h-[6.75rem] overflow-hidden')}
+        >
+          {presentation.contentTitle && (
+            <p className="text-sm font-medium leading-5 text-foreground/90">{presentation.contentTitle}</p>
+          )}
+          {presentation.contentBody && presentation.contentFormat === 'markdown' ? (
+            <MarkdownContent
+              content={presentation.contentBody}
+              className={cn('text-[13px] leading-5 text-foreground/75', presentation.contentTitle && 'mt-1')}
+            />
+          ) : presentation.contentBody ? (
+            <p className={cn('whitespace-pre-wrap text-[13px] leading-5 text-foreground/75', presentation.contentTitle && 'mt-1')}>
+              {presentation.contentBody}
+            </p>
+          ) : null}
+        </div>
+
+        {canExpand && (
+          <button
+            type="button"
+            aria-expanded={expanded}
+            className="mt-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpanded((current) => !current);
+            }}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function ActivityTimeline({
   activities = [],
@@ -129,6 +263,7 @@ export function ActivityTimeline({
     : filterType === 'task'
       ? []
       : activities.filter((a) => a.activity_type === filterType);
+  const displayedTimelineItems = timelineItems ? dedupeCompanyTimelineItems(timelineItems) : undefined;
 
   const handleCreate = async () => {
     if (!workspaceId || !newSubject.trim()) return;
@@ -265,7 +400,7 @@ export function ActivityTimeline({
         <div className="flex items-center justify-center px-6 py-12">
           <Loading01Icon className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
-      ) : (timelineItems ?? filtered).length === 0 ? (
+      ) : (displayedTimelineItems ?? filtered).length === 0 ? (
         <div className={cn('flex flex-col items-center justify-center py-8 text-center', borderless && 'px-6 py-11')}>
           <div className={cn('flex h-12 w-12 items-center justify-center', !borderless && 'rounded-full bg-muted')}>
             <Message01Icon className={cn('h-6 w-6 text-muted-foreground/50', borderless && 'h-5 w-5')} />
@@ -275,55 +410,36 @@ export function ActivityTimeline({
         </div>
       ) : (
         <div className={cn(borderless ? 'divide-y divide-border/50' : 'space-y-4')}>
-          {timelineItems ? timelineItems.map((item) => {
+          {displayedTimelineItems ? displayedTimelineItems.map((item) => {
             const Icon = timelineIcons[item.kind] ?? Message01Icon;
-            const context = [item.actor?.name, item.contact?.name].filter(Boolean).join(' · ');
+            const itemPresentation = companyTimelinePresentation(item);
             const interactive = !item.can_edit && !!onTimelineItemOpen;
+
+            if (itemPresentation.mode === 'content') {
+              return (
+                <ContentTimelineEntry
+                  key={item.id}
+                  item={item}
+                  presentation={itemPresentation}
+                  icon={Icon}
+                  borderless={borderless}
+                  onOpen={interactive ? () => onTimelineItemOpen?.(item) : undefined}
+                  onEdit={() => beginTimelineEdit(item)}
+                  onDelete={() => setDeleteId(item.source_id)}
+                />
+              );
+            }
+
             return (
-              <div
-                key={item.id}
-                className={cn(
-                  'group flex gap-3 px-4 py-4 sm:px-6 lg:px-10',
-                  interactive && 'cursor-pointer transition-colors hover:bg-muted/25',
-                )}
-                role={interactive ? 'button' : undefined}
-                tabIndex={interactive ? 0 : undefined}
-                onClick={() => interactive && onTimelineItemOpen?.(item)}
-                onKeyDown={(event) => {
-                  if (interactive && (event.key === 'Enter' || event.key === ' ')) onTimelineItemOpen?.(item);
-                }}
-              >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
-                  <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-sm font-medium">{item.title}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(item.occurred_at), { addSuffix: true })}
-                    </span>
-                    {(item.can_edit || item.can_delete) && (
-                      <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                        {item.can_edit && (
-                          <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Edit activity" onClick={(event) => { event.stopPropagation(); beginTimelineEdit(item); }}>
-                            <PencilEdit01Icon className="h-3 w-3" />
-                          </Button>
-                        )}
-                        {item.can_delete && (
-                          <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Delete activity" onClick={(event) => { event.stopPropagation(); setDeleteId(item.source_id); }}>
-                            <Delete01Icon className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {item.description && <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{item.description}</p>}
-                  {(context || item.entity?.display_id) && (
-                    <p className="mt-1.5 text-xs text-muted-foreground/75">
-                      {[context, item.entity?.display_id].filter(Boolean).join(' · ')}
-                    </p>
-                  )}
-                </div>
+              <div key={item.id} className={cn(borderless && 'px-2 sm:px-4 lg:px-8')}>
+                <UpdateActivityRow
+                  label={itemPresentation.label}
+                  occurredAt={item.occurred_at}
+                  emphasizedValues={itemPresentation.emphasizedValues}
+                  fallbackIcon={<Icon className="h-3.5 w-3.5" />}
+                  actionLabel={itemPresentation.attribution ? `by ${itemPresentation.attribution}` : undefined}
+                  onClick={interactive ? () => onTimelineItemOpen?.(item) : undefined}
+                />
               </div>
             );
           }) : filtered.map((activity) => {
