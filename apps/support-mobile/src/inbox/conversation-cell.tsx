@@ -264,7 +264,11 @@ export function ConversationCell({
                     name={reviewer.display_name}
                     src={reviewer.avatar_url}
                     size={20}
-                    className={`${index === 0 ? '' : '-mr-1.5'} ring-2 ring-background`}
+                    className={cn(
+                      index !== 0 && '-mr-1.5',
+                      'ring-2 ring-background',
+                      getAvatarColor(reviewer.id || reviewer.display_name),
+                    )}
                   />
                 ))}
                 {reviewers.length > 3 && (

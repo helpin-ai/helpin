@@ -146,6 +146,8 @@ test('shows the teammates currently reviewing a read conversation', () => {
     />,
   )
   expect(screen.getByLabelText('Grace Hopper viewing')).toBeDefined()
+  const reviewerAvatar = screen.getByText('GH').parentElement
+  expect(reviewerAvatar?.className).toContain(getAvatarColor('member-2').split(' ')[0])
 })
 
 test('fires onPress when the cell is clicked', () => {
