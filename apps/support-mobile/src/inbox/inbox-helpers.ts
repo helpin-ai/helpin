@@ -1,7 +1,7 @@
 import type { SupportConversation } from '@helpin-ai/support-core'
 
 /** Fixed row height the virtualizer's `estimateSize` must match exactly. */
-export const CONVERSATION_CELL_HEIGHT = 84
+export const CONVERSATION_CELL_HEIGHT = 80
 
 const MS_PER_MINUTE = 60_000
 const MS_PER_HOUR = 60 * MS_PER_MINUTE

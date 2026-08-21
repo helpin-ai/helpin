@@ -75,10 +75,10 @@ export interface ComposerProps {
 }
 
 /**
- * `text-body` is 0.9375rem/1.25rem (20px line-height, see index.css) — the
+ * `text-body` is 0.875rem/1.1875rem (19px line-height, see index.css) — the
  * textarea grows from 1 to `MAX_LINES` of that, then scrolls internally.
  */
-const LINE_HEIGHT_PX = 20
+const LINE_HEIGHT_PX = 19
 const MAX_LINES = 6
 const TEXTAREA_VERTICAL_PADDING_PX = 16 // py-2 (8px top + 8px bottom)
 const MAX_TEXTAREA_HEIGHT_PX = LINE_HEIGHT_PX * MAX_LINES + TEXTAREA_VERTICAL_PADDING_PX
@@ -783,7 +783,7 @@ export function Composer({
             onSelect={(event) => setCursor(event.currentTarget.selectionStart ?? 0)}
             placeholder={isNote ? 'Internal note… (@ to mention)' : replyPlaceholder}
             style={{ minHeight: MIN_TEXTAREA_HEIGHT_PX, maxHeight: MAX_TEXTAREA_HEIGHT_PX }}
-            className="w-full resize-none overflow-y-auto bg-transparent px-4 py-2.5 text-body text-foreground outline-none placeholder:text-muted-foreground"
+            className="w-full resize-none overflow-y-auto bg-transparent px-3.5 py-2 text-body text-foreground outline-none placeholder:text-muted-foreground"
           />
           <div className="flex items-center gap-1 px-2.5 pb-2.5">
             <input

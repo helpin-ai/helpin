@@ -253,7 +253,7 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
       <div className="w-full">
         <div
           data-testid="message-bubble"
-          className="w-full rounded-[20px] border border-amber-300/60 bg-amber-100/55 px-4 py-3 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/30"
+          className="w-full rounded-[18px] border border-amber-300/60 bg-amber-100/55 px-3.5 py-2.5 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/30"
         >
           <div className="mb-1.5 flex items-center gap-1.5 text-caption uppercase text-amber-700 dark:text-amber-300">
             <StickyNote className="h-3 w-3 shrink-0" />
@@ -288,7 +288,7 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
         <div
           data-testid="message-bubble"
           className={cn(
-            'max-w-[92%] min-w-0 rounded-[20px] px-4 py-3 shadow-sm',
+            'max-w-[92%] min-w-0 rounded-[18px] px-3.5 py-2.5 shadow-sm',
             align === 'right' ? 'bg-primary/[0.09] dark:bg-primary/[0.13]' : 'bg-muted/80',
           )}
         >

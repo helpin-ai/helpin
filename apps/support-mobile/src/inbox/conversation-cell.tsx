@@ -73,7 +73,7 @@ export interface ConversationCellProps {
 }
 
 /**
- * Fixed 84px row — the virtualizer's `estimateSize` (inbox-screen.tsx) depends
+ * Fixed 80px row — the virtualizer's `estimateSize` (inbox-screen.tsx) depends
  * on this exact height, so the outer element must never grow or shrink based
  * on content (hence `overflow-hidden` + line clamps).
  *
@@ -155,7 +155,7 @@ export function ConversationCell({
       transition={{ duration: CELL_EXIT_DURATION_MS / 1000, ease: 'easeOut' }}
       style={{ height: CONVERSATION_CELL_HEIGHT }}
       className={cn(
-        'box-border flex w-full cursor-pointer items-center gap-3 overflow-hidden border-b border-border/60 px-4 text-left active:bg-muted/50',
+        'box-border flex w-full cursor-pointer items-center gap-2.5 overflow-hidden border-b border-border/60 px-4 text-left active:bg-muted/50',
         // "Needs team action" (open + unread/awaiting reply) gets a subtle tint, mirroring web.
         visual.needsTeamAction ? 'bg-primary/[0.06]' : 'bg-background',
       )}
@@ -163,7 +163,7 @@ export function ConversationCell({
       <div className="relative shrink-0">
         <Avatar
           name={displayName}
-          size={44}
+          size={40}
           className={getAvatarColor(
             conversation.customer_email || conversation.customer_name || conversation.id,
           )}

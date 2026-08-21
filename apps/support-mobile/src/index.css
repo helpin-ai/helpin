@@ -158,6 +158,8 @@ html, body, #root { height: 100%; }
 
 body {
   font-family: 'Inter Variable', system-ui, sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.1875rem;
   background: var(--background);
   color: var(--foreground);
   overscroll-behavior: none;               /* the app owns pull-to-refresh */
@@ -169,10 +171,10 @@ body {
 
 .selectable { user-select: text; -webkit-user-select: text; }
 
-@utility text-large-title { font-size: 1.75rem; line-height: 2.125rem; font-weight: 700; letter-spacing: -0.02em; }
-@utility text-title { font-size: 1.25rem; line-height: 1.5625rem; font-weight: 600; letter-spacing: -0.01em; }
-@utility text-headline { font-size: 1.0625rem; line-height: 1.375rem; font-weight: 600; }
-@utility text-body { font-size: 0.9375rem; line-height: 1.25rem; }
+@utility text-large-title { font-size: 1.625rem; line-height: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+@utility text-title { font-size: 1.125rem; line-height: 1.4375rem; font-weight: 600; letter-spacing: -0.01em; }
+@utility text-headline { font-size: 1rem; line-height: 1.3125rem; font-weight: 600; }
+@utility text-body { font-size: 0.875rem; line-height: 1.1875rem; }
 @utility text-footnote { font-size: 0.8125rem; line-height: 1.125rem; }
 @utility text-caption { font-size: 0.6875rem; line-height: 0.8125rem; font-weight: 500; letter-spacing: 0.06em; }
 @utility tnum { font-variant-numeric: tabular-nums; }
