@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { MoreHorizontal, Sparkles } from 'lucide-react'
 import type { SupportMessage } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
@@ -42,6 +42,8 @@ export interface MessageListHandle {
 
 export interface MessageListProps {
   items: ThreadItem[]
+  /** Conversation context rendered at the top of the thread so it scrolls away with message history. */
+  header?: ReactNode
   loading?: boolean
   typingIndicator?: TypingIndicatorState | null
   /** The id of the last outbound reply that carries a read receipt, and its status. */
@@ -197,6 +199,7 @@ function ClusterView({
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
   {
     items,
+    header,
     loading,
     typingIndicator,
     receiptMessageId,
@@ -377,6 +380,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
           container itself has a fixed height, so content growth is only
           observable on the child. */}
       <div ref={contentRef}>
+        {header}
         {items.map((item, index) =>
           item.kind === 'day' ? (
             <div key={`day-${index}`} className="my-3 flex justify-center">

@@ -35,6 +35,22 @@ function message(id: string, minute: string): SupportMessage {
 }
 
 describe('MessageList history pagination', () => {
+  it('renders conversation context inside the message scroller before history', () => {
+    const view = render(
+      <MessageList
+        header={<button type="button">Refund request details</button>}
+        items={groupMessages([message('msg-03', '03')])}
+      />,
+    )
+
+    const scroller = view.container.querySelector('.overflow-y-auto') as HTMLDivElement
+    const header = view.getByRole('button', { name: 'Refund request details' })
+    const messageText = view.getByText('msg-03')
+
+    expect(scroller.contains(header)).toBe(true)
+    expect(header.compareDocumentPosition(messageText) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('loads near the top and preserves the visible anchor when history joins the same cluster', () => {
     const loadEarlier = vi.fn()
     const onPillChange = vi.fn()

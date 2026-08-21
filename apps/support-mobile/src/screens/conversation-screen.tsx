@@ -21,6 +21,7 @@ import {
   type SupportMessage,
 } from '@helpin-ai/support-core'
 import { TopBar } from '@mobile/ui/top-bar'
+import { Avatar } from '@mobile/ui/avatar'
 import { OfflineBanner } from '@mobile/ui/offline-banner'
 import { Pressable } from '@mobile/ui/pressable'
 import { EmptyState } from '@mobile/ui/empty-state'
@@ -33,6 +34,7 @@ import type { ShortcutVariableContext } from '@/components/support/shortcutVaria
 import type { MentionMember } from '@mobile/thread/mentions'
 import { useResolvedTransitionStore } from '@mobile/stores/resolved-transition-store'
 import { displayNameFor } from '@mobile/inbox/conversation-cell'
+import { getAvatarColor } from '@/components/support/helpers'
 import { MessageList, type MessageListHandle, type TypingIndicatorState } from '@mobile/thread/message-list'
 import { computeSupportReceipt, groupMessages } from '@mobile/thread/thread-helpers'
 import { Composer } from '@mobile/thread/composer'
@@ -261,12 +263,10 @@ export function ConversationScreen() {
   }
 
   const customerName = conversation ? displayNameFor(conversation) : 'Conversation'
-  // Web-style: the subject is the title; the customer + status is the subtitle.
-  // Falls back to the customer name when there's no subject (common for chat).
+  // The compact app bar identifies the customer. The subject lives in the
+  // scrollable thread header below, avoiding a duplicated, permanently pinned
+  // conversation title.
   const conversationTitle = conversation?.subject?.trim() || customerName
-  const subtitle = conversation
-    ? [customerName, STATUS_LABELS[conversation.status]].filter(Boolean).join(' · ')
-    : undefined
   const isResolved = conversation?.status === 'resolved'
 
   const markResolved = useResolvedTransitionStore((s) => s.markResolved)
@@ -302,12 +302,30 @@ export function ConversationScreen() {
   return (
     <div className="flex h-dvh flex-col bg-background">
       <TopBar
-        title={conversationTitle}
-        subtitle={subtitle}
+        title={customerName}
         onBack={handleBack}
         titleAlign="left"
         onTitlePress={() => setContextSheetOpen(true)}
-        titleSlot={<span className="max-w-[200px] truncate text-headline">{conversationTitle}</span>}
+        titleSlot={
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="relative shrink-0">
+              <Avatar
+                name={customerName}
+                size={30}
+                className={getAvatarColor(
+                  conversation?.customer_email || conversation?.customer_name || conversation?.id || customerName,
+                )}
+              />
+              {visitorOnline && (
+                <span
+                  aria-label="Visitor online"
+                  className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background"
+                />
+              )}
+            </span>
+            <span className="min-w-0 truncate text-headline">{customerName}</span>
+          </span>
+        }
         trailing={
           conversation && canReadSupport && (
             <>
@@ -404,29 +422,6 @@ export function ConversationScreen() {
         />
       )}
 
-      {conversation && (
-        <Pressable
-          aria-label="Open conversation details"
-          onPress={() => setContextSheetOpen(true)}
-          className="flex w-full flex-col items-start border-b border-border/60 bg-background px-4 pb-3 pt-2 text-left"
-        >
-          <span className="line-clamp-2 text-title text-foreground">{conversationTitle}</span>
-          <span className="mt-2 flex max-w-full items-center gap-2 text-footnote text-muted-foreground">
-            <span className="flex min-w-0 items-center gap-1.5">
-              {visitorOnline && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />}
-              <span className="truncate font-medium text-foreground/80">{customerName}</span>
-            </span>
-            <span aria-hidden className="text-border">•</span>
-            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5">{STATUS_LABELS[conversation.status]}</span>
-          </span>
-          <ConversationReviewers
-            viewerIds={viewingAgentIds}
-            members={assignableQuery.data ?? []}
-            currentUserId={agentUser?.id}
-          />
-        </Pressable>
-      )}
-
       <div className="relative min-h-0 flex-1">
         {accessDenied ? (
           <EmptyState
@@ -444,6 +439,28 @@ export function ConversationScreen() {
           <MessageList
             ref={messageListRef}
             items={items}
+            header={conversation ? (
+              <Pressable
+                aria-label="Open conversation details"
+                onPress={() => setContextSheetOpen(true)}
+                className="mb-4 flex w-full flex-col items-start rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-left"
+              >
+                <span className="line-clamp-2 text-title text-foreground">{conversationTitle}</span>
+                <span className="mt-2 flex max-w-full items-center gap-2 text-footnote text-muted-foreground">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {visitorOnline && <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />}
+                    <span className="truncate font-medium text-foreground/80">{customerName}</span>
+                  </span>
+                  <span aria-hidden className="text-border">•</span>
+                  <span className="shrink-0 rounded-full bg-background px-2 py-0.5">{STATUS_LABELS[conversation.status]}</span>
+                </span>
+                <ConversationReviewers
+                  viewerIds={viewingAgentIds}
+                  members={assignableQuery.data ?? []}
+                  currentUserId={agentUser?.id}
+                />
+              </Pressable>
+            ) : undefined}
             loading={messagesQuery.isPending}
             hasEarlier={!!messagesQuery.hasNextPage}
             loadingEarlier={messagesQuery.isFetchingNextPage}
