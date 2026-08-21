@@ -1,6 +1,6 @@
 import { Check, UserMinus } from 'lucide-react'
 import { useConversationAssignees, useSupportTeammatePresence } from '@helpin-ai/support-core'
-import { Avatar } from '@mobile/ui/avatar'
+import { TeamMemberAvatar } from '@mobile/ui/team-member-avatar'
 import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
 import {
@@ -84,7 +84,7 @@ export function AssignList({ workspaceId, conversationId, currentUserId, onSelec
             className="flex h-auto min-h-0 w-full items-center gap-3 px-4 py-2 text-left"
           >
             <span className="relative shrink-0">
-              <Avatar name={member.display_name} src={member.avatar_url} size={36} />
+              <TeamMemberAvatar name={member.display_name} member={member} size={36} />
               <span aria-hidden className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background ${teammatePresenceDotClass(memberPresence?.status)}`} />
             </span>
             <span className="min-w-0 flex-1">

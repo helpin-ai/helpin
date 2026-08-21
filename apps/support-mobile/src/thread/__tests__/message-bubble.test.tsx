@@ -137,7 +137,7 @@ test('shows teammate joins as a plain activity row with the actor avatar and tim
   expect(surface.className).not.toContain('border')
   expect(surface.className).not.toContain('rounded')
   expect(surface.className).not.toContain('shadow')
-  expect(screen.getByText('EW')).toBeDefined()
+  expect(screen.getByText('E')).toBeDefined()
   expect(screen.getByText('Emma Wilson').tagName).toBe('STRONG')
   expect(screen.getByTestId('system-event-time').textContent).toMatch(/\d{1,2}:30/)
 })

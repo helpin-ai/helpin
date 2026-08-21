@@ -66,6 +66,23 @@ test('reply mode shows the "Reply…" placeholder; switching to Note tints the c
   expect(useDraftStore.getState().drafts['conv-1']?.mode).toBe('note')
 })
 
+test('tapping Reply expands and focuses the mobile writing area, while Note returns it to compact height', () => {
+  setupMutate(async () => ({}))
+  render(<Composer workspaceId="ws-1" conversationId="conv-1" />)
+
+  const replyButton = screen.getByRole('button', { name: 'Reply' })
+  const textarea = screen.getByPlaceholderText('Reply…') as HTMLTextAreaElement
+  expect(textarea.style.minHeight).toBe('56px')
+
+  fireEvent.click(replyButton)
+  expect(replyButton.getAttribute('aria-expanded')).toBe('true')
+  expect(textarea.style.minHeight).toBe('92px')
+  expect(document.activeElement).toBe(textarea)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Note' }))
+  expect((screen.getByPlaceholderText(/Internal note…/) as HTMLTextAreaElement).style.minHeight).toBe('56px')
+})
+
 test('note mode exposes the workspace teammate picker and inserts the selected mention', () => {
   setupMutate(async () => ({}))
   render(

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { Bot, CheckCheck, CheckCircle2, Mail, MoreHorizontal, Paperclip, StickyNote, User, XCircle, Zap } from 'lucide-react'
-import type { SupportMessage } from '@helpin-ai/support-core'
+import type { AssignableMember, SupportMessage } from '@helpin-ai/support-core'
 import {
   getSupportSystemEventBadge,
   getSupportSystemEventText,
@@ -10,8 +10,7 @@ import {
 } from '@/components/support/supportSystemEvent'
 import { cn } from '@mobile/lib/cn'
 import { riseIn } from '@mobile/lib/motion'
-import { Avatar } from '@mobile/ui/avatar'
-import { getAvatarColor } from '@/components/support/helpers'
+import { TeamMemberAvatar } from '@mobile/ui/team-member-avatar'
 import { EmailBody } from './email-body'
 import { Markdown } from './markdown'
 import { ImageViewer } from './image-viewer'
@@ -25,6 +24,8 @@ export interface MessageBubbleProps {
   receiptStatus?: SupportReceiptStatus | null
   /** Opens the action sheet from the compact control beside the message time. */
   onMessageActions?: () => void
+  /** Workspace identity used when a system event only carries sender_user_id. */
+  senderMember?: AssignableMember
 }
 
 function formatFileSize(bytes: number): string {
@@ -77,7 +78,15 @@ function SystemEventBadgeChip({ badge }: { badge: SystemEventBadge }) {
   )
 }
 
-function SystemEventBubble({ message, senderName }: { message: SupportMessage; senderName: string }) {
+function SystemEventBubble({
+  message,
+  senderName,
+  senderMember,
+}: {
+  message: SupportMessage
+  senderName: string
+  senderMember?: AssignableMember
+}) {
   const eventType = message.system_event_type
   const text = getSupportSystemEventText(eventType, message.content, senderName)
   const segments = toSupportSystemEventSegments(eventType, text, { extended: true })
@@ -92,11 +101,13 @@ function SystemEventBubble({ message, senderName }: { message: SupportMessage; s
   const leading = isResolved ? (
     <>
       <CheckCircle2 aria-label="Resolved" className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
-      <Avatar
+      <TeamMemberAvatar
         name={senderName}
         src={message.sender_avatar_url}
+        member={senderMember}
         size={20}
-        className={getAvatarColor(avatarSeed)}
+        initialCount={1}
+        fallbackSeed={avatarSeed}
       />
     </>
   ) : isClosed ? (
@@ -104,11 +115,13 @@ function SystemEventBubble({ message, senderName }: { message: SupportMessage; s
   ) : badge ? (
     <SystemEventBadgeChip badge={badge} />
   ) : (
-    <Avatar
+    <TeamMemberAvatar
       name={senderName}
       src={message.sender_avatar_url}
+      member={senderMember}
       size={20}
-      className={getAvatarColor(avatarSeed)}
+      initialCount={1}
+      fallbackSeed={avatarSeed}
     />
   )
 
@@ -241,7 +254,7 @@ function ImageThumbnails({ attachments }: { attachments: NonNullable<SupportMess
  * with message bodies rendered as Markdown (mirrors web). Internal notes and
  * system events ignore `align` and render their own distinct treatments.
  */
-export function MessageBubble({ message, align, receiptStatus, onMessageActions }: MessageBubbleProps) {
+export function MessageBubble({ message, align, receiptStatus, onMessageActions, senderMember }: MessageBubbleProps) {
   const imageAttachments = message.attachments?.filter((a) => a.file_type.startsWith('image/')) ?? []
   const fileAttachments = message.attachments?.filter((a) => !a.file_type.startsWith('image/')) ?? []
   const isEmail = message.via_channel === 'email' && !!message.html_body
@@ -253,7 +266,7 @@ export function MessageBubble({ message, align, receiptStatus, onMessageActions 
   // System events (assigned, resolved, escalated, routed, ...) are narration,
   // not a chat turn — a centered pill with humanized text + an optional badge.
   if (message.message_type === 'system') {
-    content = <SystemEventBubble message={message} senderName={senderName} />
+    content = <SystemEventBubble message={message} senderName={senderName} senderMember={senderMember} />
   } else if (message.is_internal) {
     // Internal note: right-aligned amber card with web's accent edge and highlighted @mentions.
     const mentionSegments = splitMentionSegments(message.content)

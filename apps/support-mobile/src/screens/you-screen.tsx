@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes'
 import { Bell } from 'lucide-react'
 import { toast } from 'sonner'
 import { TopBar } from '@mobile/ui/top-bar'
-import { Avatar } from '@mobile/ui/avatar'
+import { TeamMemberAvatar } from '@mobile/ui/team-member-avatar'
 import { Pressable } from '@mobile/ui/pressable'
 import { Spinner } from '@mobile/ui/spinner'
 import { SegmentedControl } from '@mobile/ui/segmented-control'
@@ -124,7 +124,7 @@ export function SettingsScreen() {
 
         <div className="px-4">
           <section className="flex items-center gap-3 border-b border-border/70 py-3">
-            <Avatar name={user?.full_name ?? ''} src={user?.avatar_url} size={44} />
+            <TeamMemberAvatar name={user?.full_name ?? ''} member={user} size={44} />
             <span className="flex flex-1 flex-col">
               <span className="text-headline">{user?.full_name}</span>
               <span className="text-footnote text-muted-foreground">{user?.email}</span>

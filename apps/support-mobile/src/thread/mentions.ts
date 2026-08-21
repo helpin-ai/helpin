@@ -11,6 +11,10 @@ export interface MentionMember {
   email: string
   display_name: string
   avatar_url?: string | null
+  avatar_style?: string | null
+  avatar_seed?: string | null
+  avatar_background_mode?: string | null
+  avatar_background_color?: string | null
   presence_status?: 'online' | 'away' | 'offline'
 }
 
@@ -20,6 +24,10 @@ export interface MentionSuggestion {
   label: string
   secondaryText: string
   avatarUrl?: string | null
+  avatarStyle?: string | null
+  avatarSeed?: string | null
+  avatarBackgroundMode?: string | null
+  avatarBackgroundColor?: string | null
   presenceStatus?: 'online' | 'away' | 'offline'
 }
 
@@ -58,6 +66,10 @@ export function mentionSuggestions(query: string, members: MentionMember[], limi
         label: member.display_name || member.email,
         secondaryText: member.email,
         avatarUrl: member.avatar_url,
+        avatarStyle: member.avatar_style,
+        avatarSeed: member.avatar_seed,
+        avatarBackgroundMode: member.avatar_background_mode,
+        avatarBackgroundColor: member.avatar_background_color,
         ...(member.presence_status ? { presenceStatus: member.presence_status } : {}),
       }
     })

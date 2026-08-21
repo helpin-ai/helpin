@@ -1,9 +1,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
-import type { SupportMessage } from '@helpin-ai/support-core'
-import { getAvatarColor } from '@/components/support/helpers'
+import type { AssignableMember, SupportMessage } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
-import { Avatar } from '@mobile/ui/avatar'
+import { TeamMemberAvatar } from '@mobile/ui/team-member-avatar'
 import { Skeleton } from '@mobile/ui/skeleton'
 import { Spinner } from '@mobile/ui/spinner'
 import { MessageBubble } from './message-bubble'
@@ -43,6 +42,8 @@ export interface MessageListHandle {
 
 export interface MessageListProps {
   items: ThreadItem[]
+  /** Workspace identities used to resolve generated teammate avatars. */
+  members?: AssignableMember[]
   /** Conversation context rendered at the top of the thread so it scrolls away with message history. */
   header?: ReactNode
   loading?: boolean
@@ -129,11 +130,13 @@ function ClusterView({
   receiptMessageId,
   receiptStatus,
   onMessageActions,
+  member,
 }: {
   cluster: Extract<ThreadItem, { kind: 'cluster' }>
   receiptMessageId?: string | null
   receiptStatus?: SupportReceiptStatus | null
   onMessageActions?: (message: SupportMessage) => void
+  member?: AssignableMember
 }) {
   const receiptFor = (id: string) => (id === receiptMessageId ? receiptStatus : undefined)
 
@@ -168,11 +171,13 @@ function ClusterView({
   return (
     <div className={cn('mb-4 flex items-end gap-2.5', align === 'right' && 'flex-row-reverse')}>
       <div title={cluster.senderName} className="relative shrink-0">
-        <Avatar
+        <TeamMemberAvatar
           name={cluster.senderName}
           src={cluster.senderAvatarUrl}
+          member={member}
           size={28}
-          className={getAvatarColor(avatarSeed)}
+          initialCount={1}
+          fallbackSeed={avatarSeed}
         />
         {isAI && (
           <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background ring-2 ring-background">
@@ -206,6 +211,7 @@ function ClusterView({
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
   {
     items,
+    members = [],
     header,
     loading,
     typingIndicator,
@@ -232,6 +238,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   const prevNewestMessageIdRef = useRef(newestMessageId)
   const loadEarlierRequestedRef = useRef(false)
   const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number; oldestMessageId?: string } | null>(null)
+  const memberByUserId = new Map(
+    members.filter((member) => member.user_id).map((member) => [member.user_id!, member]),
+  )
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = scrollRef.current
@@ -395,7 +404,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             </div>
           ) : item.kind === 'system' ? (
             <div key={`system-${index}`} className={items[index + 1]?.kind === 'cluster' ? 'mb-3' : undefined}>
-              <MessageBubble message={item.message} align="left" />
+              <MessageBubble
+                message={item.message}
+                align="left"
+                senderMember={item.message.sender_user_id ? memberByUserId.get(item.message.sender_user_id) : undefined}
+              />
             </div>
           ) : (
             <ClusterView
@@ -404,6 +417,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
               receiptMessageId={receiptMessageId}
               receiptStatus={receiptStatus}
               onMessageActions={onMessageActions}
+              member={item.messages[0]?.sender_user_id ? memberByUserId.get(item.messages[0].sender_user_id) : undefined}
             />
           ),
         )}

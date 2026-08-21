@@ -65,6 +65,10 @@ export default defineConfig(({ mode }) => {
           replacement: path.resolve(__dirname, '../../frontend/src/lib/favicon.ts'),
         },
         {
+          find: '@/lib/teamMemberAvatar',
+          replacement: path.resolve(__dirname, '../../frontend/src/lib/teamMemberAvatar.ts'),
+        },
+        {
           find: '@/lib/pmTypes',
           replacement: path.resolve(__dirname, '../../frontend/src/lib/pmTypes.ts'),
         },

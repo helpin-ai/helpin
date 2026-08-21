@@ -1,5 +1,5 @@
 import type { AssignableMember } from '@helpin-ai/support-core'
-import { Avatar } from '@mobile/ui/avatar'
+import { TeamMemberAvatar } from '@mobile/ui/team-member-avatar'
 
 interface ConversationReviewersProps {
   viewerIds: string[]
@@ -40,7 +40,13 @@ export function ConversationReviewers({ viewerIds, members, currentUserId }: Con
       <span className="flex shrink-0 flex-row-reverse justify-end pl-1">
         {reviewers.slice(0, 3).reverse().map((reviewer, index) => (
           <span key={reviewer.user_id ?? reviewer.id} className={index === 0 ? '' : '-mr-1.5'}>
-            <Avatar name={reviewer.display_name || reviewer.email || 'Teammate'} src={reviewer.avatar_url} size={22} className="ring-2 ring-background" />
+            <TeamMemberAvatar
+              name={reviewer.display_name || reviewer.email || 'Teammate'}
+              member={reviewer}
+              size={22}
+              initialCount={1}
+              className="ring-2 ring-background"
+            />
           </span>
         ))}
         {reviewers.length > 3 && (

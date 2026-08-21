@@ -166,6 +166,10 @@ export function ConversationScreen() {
         email: member.email,
         display_name: member.display_name,
         avatar_url: member.avatar_url,
+        avatar_style: member.avatar_style,
+        avatar_seed: member.avatar_seed,
+        avatar_background_mode: member.avatar_background_mode,
+        avatar_background_color: member.avatar_background_color,
         presence_status: member.user_id ? teammatePresenceByUserId.get(member.user_id) : undefined,
       })),
     [assignableQuery.data, teammatePresenceByUserId],
@@ -439,6 +443,7 @@ export function ConversationScreen() {
           <MessageList
             ref={messageListRef}
             items={items}
+            members={assignableQuery.data ?? []}
             header={conversation ? (
               <Pressable
                 aria-label="Open conversation details"

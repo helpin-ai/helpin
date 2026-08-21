@@ -23,7 +23,7 @@ import { DEFAULT_DRAFT, useDraftStore, type ComposerMode } from './draft-store'
 import type { FailedSend } from './failed-sends-reducer'
 import { SendButton, type SendButtonState } from './send-button'
 import { useTypingBroadcast } from './use-typing-broadcast'
-import { Avatar } from '@mobile/ui/avatar'
+import { TeamMemberAvatar } from '@mobile/ui/team-member-avatar'
 import { AIToolsSheet } from './ai-tools-sheet'
 import { CannedResponsesSheet } from './canned-responses-sheet'
 import { EmailConfirmSheet } from './email-confirm-sheet'
@@ -83,6 +83,7 @@ const MAX_LINES = 6
 const TEXTAREA_VERTICAL_PADDING_PX = 16 // py-2 (8px top + 8px bottom)
 const MAX_TEXTAREA_HEIGHT_PX = LINE_HEIGHT_PX * MAX_LINES + TEXTAREA_VERTICAL_PADDING_PX
 const MIN_TEXTAREA_HEIGHT_PX = 56
+const EXPANDED_REPLY_MIN_HEIGHT_PX = LINE_HEIGHT_PX * 4 + TEXTAREA_VERTICAL_PADDING_PX
 
 const SENT_STATE_MS = 400
 
@@ -156,6 +157,10 @@ export function Composer({
   const mountedRef = useRef(true)
 
   const isNote = draft.mode === 'note'
+  const [replyExpanded, setReplyExpanded] = useState(false)
+  const textareaMinHeight = !isNote && replyExpanded
+    ? EXPANDED_REPLY_MIN_HEIGHT_PX
+    : MIN_TEXTAREA_HEIGHT_PX
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed'
   const replyRecipient = variableContext.customer?.fullName?.trim().split(/\s+/)[0]
   const replyPlaceholder = replyRecipient ? `Reply to ${replyRecipient}…` : 'Reply…'
@@ -297,7 +302,7 @@ export function Composer({
     const el = textareaRef.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`
+    el.style.height = `${Math.max(textareaMinHeight, Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT_PX))}px`
     // Restore the caret after a programmatic insert (canned response), so the
     // cursor lands right after the inserted text instead of at the end.
     if (pendingCaretRef.current !== null) {
@@ -306,7 +311,19 @@ export function Composer({
       el.focus()
       el.setSelectionRange(caret, caret)
     }
-  }, [draft.text])
+  }, [draft.text, textareaMinHeight])
+
+  function activateReplyComposer() {
+    setMode(conversationId, 'reply')
+    setReplyExpanded(true)
+    textareaRef.current?.focus()
+  }
+
+  function activateNoteComposer() {
+    setMode(conversationId, 'note')
+    setReplyExpanded(false)
+    textareaRef.current?.focus()
+  }
 
   useEffect(
     () => () => {
@@ -640,7 +657,8 @@ export function Composer({
               haptic="selection"
               aria-label="Reply"
               aria-pressed={!isNote}
-              onPress={() => setMode(conversationId, 'reply')}
+              aria-expanded={!isNote && replyExpanded}
+              onPress={activateReplyComposer}
               className="flex h-10 min-h-0 min-w-[60px] items-center justify-center"
             >
               <span
@@ -656,7 +674,7 @@ export function Composer({
               haptic="selection"
               aria-label="Note"
               aria-pressed={isNote}
-              onPress={() => setMode(conversationId, 'note')}
+              onPress={activateNoteComposer}
               className="flex h-10 min-h-0 min-w-[60px] items-center justify-center"
             >
               <span
@@ -735,7 +753,20 @@ export function Composer({
                   className="flex w-full items-center gap-2.5 border-b border-border/40 px-3 py-2 text-left last:border-0 active:bg-muted"
                 >
                   <span className="relative shrink-0">
-                    <Avatar name={item.label} src={item.avatarUrl ?? undefined} size={28} />
+                    <TeamMemberAvatar
+                      name={item.label}
+                      src={item.avatarUrl}
+                      member={{
+                        id: item.id,
+                        user_id: item.id,
+                        avatar_style: item.avatarStyle,
+                        avatar_seed: item.avatarSeed,
+                        avatar_background_mode: item.avatarBackgroundMode,
+                        avatar_background_color: item.avatarBackgroundColor,
+                      }}
+                      size={28}
+                      initialCount={1}
+                    />
                     {item.presenceStatus && <span aria-hidden className={`absolute bottom-0 right-0 h-2 w-2 rounded-full border-2 border-background ${teammatePresenceDotClass(item.presenceStatus)}`} />}
                   </span>
                   <span className="min-w-0 flex-1">
@@ -782,8 +813,8 @@ export function Composer({
             }}
             onSelect={(event) => setCursor(event.currentTarget.selectionStart ?? 0)}
             placeholder={isNote ? 'Internal note… (@ to mention)' : replyPlaceholder}
-            style={{ minHeight: MIN_TEXTAREA_HEIGHT_PX, maxHeight: MAX_TEXTAREA_HEIGHT_PX }}
-            className="w-full resize-none overflow-y-auto bg-transparent px-3.5 py-2 text-body text-foreground outline-none placeholder:text-muted-foreground"
+            style={{ minHeight: textareaMinHeight, maxHeight: MAX_TEXTAREA_HEIGHT_PX }}
+            className="w-full resize-none overflow-y-auto bg-transparent px-3.5 py-2 text-body text-foreground outline-none transition-[height,min-height] duration-150 placeholder:text-muted-foreground"
           />
           <div className="flex items-center gap-1 px-2.5 pb-2.5">
             <input

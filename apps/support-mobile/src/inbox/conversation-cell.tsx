@@ -12,6 +12,7 @@ import {
 import { getAvatarColor } from '@/components/support/helpers'
 import { cn } from '@mobile/lib/cn'
 import { Avatar } from '@mobile/ui/avatar'
+import { TeamMemberAvatar } from '@mobile/ui/team-member-avatar'
 import { CONVERSATION_CELL_HEIGHT, formatRelativeTime, isUnread, previewText } from './inbox-helpers'
 
 const CHANNEL_ICONS: Partial<
@@ -260,16 +261,15 @@ export function ConversationCell({
                 className="flex flex-row-reverse justify-end pl-1"
               >
                 {reviewers.slice(0, 3).reverse().map((reviewer, index) => (
-                  <Avatar
+                  <TeamMemberAvatar
                     key={reviewer.id}
                     name={reviewer.display_name}
-                    src={reviewer.avatar_url}
+                    member={reviewer}
                     size={20}
                     initialCount={1}
                     className={cn(
                       index !== 0 && '-mr-1.5',
                       'ring-2 ring-background',
-                      getAvatarColor(reviewer.user_id || reviewer.id || reviewer.display_name),
                     )}
                   />
                 ))}

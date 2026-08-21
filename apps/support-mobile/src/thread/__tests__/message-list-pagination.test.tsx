@@ -209,6 +209,33 @@ describe('MessageList history pagination', () => {
     expect(avatar?.className).toContain(getAvatarColor('member-42').split(' ')[0])
   })
 
+  it('resolves a teammate generated avatar from the workspace member profile', async () => {
+    const item: SupportMessage = {
+      ...message('msg-03', '03'),
+      sender_type: 'user',
+      sender_user_id: 'user-42',
+      sender_display_name: 'Azhar',
+    }
+    const view = render(
+      <MessageList
+        items={groupMessages([item])}
+        members={[{
+          id: 'member-42',
+          user_id: 'user-42',
+          role: 'member',
+          email: 'azhar@example.com',
+          display_name: 'Azhar',
+          avatar_style: 'personas',
+          avatar_seed: 'azhar-mobile-avatar',
+          avatar_background_mode: 'color',
+          avatar_background_color: '#14b8a6',
+        }]}
+      />,
+    )
+
+    expect((await view.findByRole('img', { name: 'Azhar' })).getAttribute('src')).toMatch(/^data:image\/svg\+xml/)
+  })
+
   it('adds breathing room below a system event only when a message follows', () => {
     const joined: SupportMessage = {
       ...message('system-joined', '01'),
