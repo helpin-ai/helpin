@@ -34,6 +34,7 @@ import { useWorkspaceMembers } from '@/hooks/queries';
 import type { Agent, AgentRun, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
+import { openAgentRunInDock } from '@/lib/agentRunDock';
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -493,6 +494,7 @@ export function CodingSessionSurface({
     }
     if (res.data?.id) {
       setActiveSessionId(res.data.id);
+      openAgentRunInDock(res.data);
     }
   }, [session, workspaceId]);
 

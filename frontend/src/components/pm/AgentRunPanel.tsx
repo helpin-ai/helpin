@@ -26,6 +26,7 @@ import type { Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from './agentRunConstants';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
+import { openAgentRunInDock } from '@/lib/agentRunDock';
 import { queryKeys } from '@/lib/queryKeys';
 
 interface Props {
@@ -399,6 +400,7 @@ export function AgentRunPanel({
     await fetchRuns();
     if (res.data?.id) {
       setRunInUrl(res.data.id);
+      openAgentRunInDock(res.data);
     }
   }, [fetchRuns, setRunInUrl, taskId, workspaceId]);
 

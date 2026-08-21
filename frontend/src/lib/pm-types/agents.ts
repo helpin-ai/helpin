@@ -132,6 +132,7 @@ export interface AgentTriggerUsageSummary {
 
 export interface AgentRun {
   id: string;
+  dock_chat_id?: string;
   workspace_id: string;
   agent_id: string;
   task_id?: string;

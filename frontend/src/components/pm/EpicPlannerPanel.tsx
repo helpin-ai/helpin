@@ -23,6 +23,7 @@ import { agentService } from '@/lib/services/agentService';
 import { cn } from '@/lib/utils';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
+import { openAgentRunInDock } from '@/lib/agentRunDock';
 import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus } from './agentRunConstants';
 import {
   HISTORY_VISIBLE_ROW_LIMIT,
@@ -446,6 +447,7 @@ export function EpicPlannerPanel({
       if (res.data?.id) {
         setSelectedRunId(res.data.id);
         setDrawerOpen(true);
+        openAgentRunInDock(res.data);
       }
       setAdditionalContext('');
       setAdditionalContextOpen(false);

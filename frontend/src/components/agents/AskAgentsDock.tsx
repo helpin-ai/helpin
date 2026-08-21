@@ -628,7 +628,9 @@ export function AskAgentsDock({
     const onAsk = (event: Event) => {
       const detail = (event as CustomEvent<AskAgentsEventDetail>).detail ?? {};
       const query = detail.query?.trim();
-      if (detail.intent === 'new_chat') {
+      // A seeded query is a new request unless the caller explicitly identifies
+      // a chat/run (or asks to resume). Never append it to the persisted chat.
+      if (detail.intent === 'new_chat' || (query && !detail.chatId && !detail.runId && detail.intent !== 'resume')) {
         newChat();
         if (query) setPendingDraft(query);
         return;

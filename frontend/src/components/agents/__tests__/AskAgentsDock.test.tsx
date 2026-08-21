@@ -1417,6 +1417,10 @@ describe('AskAgentsDock', () => {
     useDockStore.setState({ collapsed: true });
     await renderDock();
     await act(async () => {
+      useDockStore.getState().setActiveChatId(CHAT.id);
+    });
+    expect(useDockStore.getState().activeChatId).toBe(CHAT.id);
+    await act(async () => {
       window.dispatchEvent(
         new CustomEvent('helpin:ask-agents', { detail: { query: 'enrich this contact' } }),
       );
@@ -1425,6 +1429,7 @@ describe('AskAgentsDock', () => {
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 0));
     });
+    expect(useDockStore.getState().activeChatId).toBeNull();
     expect(dockTextarea().value).toBe('enrich this contact');
   });
 

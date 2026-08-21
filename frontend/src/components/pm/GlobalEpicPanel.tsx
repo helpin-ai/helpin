@@ -23,6 +23,7 @@ import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { openAgentRunInDock } from '@/lib/agentRunDock';
 
 interface GlobalEpicPanelProps {
   workspaceId: string;
@@ -156,8 +157,9 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
     if (!activeEpicId || !epic?.epic.assigned_agent_id || startingAgentRun) return;
     setStartingAgentRun(true);
     try {
-      const { error } = await agentService.runEpic(workspaceId, activeEpicId, { agent_id: epic.epic.assigned_agent_id });
+      const { data, error } = await agentService.runEpic(workspaceId, activeEpicId, { agent_id: epic.epic.assigned_agent_id });
       if (error) throw new Error(error);
+      if (data?.id) openAgentRunInDock(data);
       toast.success('Agent run started');
       await refreshEpic();
     } catch (err) {

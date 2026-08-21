@@ -17,7 +17,7 @@ export function EnrichmentRailCard({ workspaceId, objectType, objectId }: Enrich
 
   const handleEnrich = () => {
     window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
-      detail: { query: enrichmentPromptFor(objectType) },
+      detail: { intent: 'new_chat', query: enrichmentPromptFor(objectType) },
     }));
   };
 
