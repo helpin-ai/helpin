@@ -183,4 +183,30 @@ describe('support infinite queries', () => {
     ])
     expect(result.current.hasNextPage).toBe(false)
   })
+
+  it('falls back to the legacy message route when pagination is not deployed yet', async () => {
+    api.get
+      .mockResolvedValueOnce({ data: null, error: 'not found', status: 404 })
+      .mockResolvedValueOnce({
+        data: [message('msg-01'), message('msg-02')],
+        error: null,
+        status: 200,
+      })
+
+    const { result } = renderHook(
+      () => useConversationMessages('ws-1', 'conv-1'),
+      { wrapper: wrapperFor(queryClient) },
+    )
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(flattenSupportMessagePages(result.current.data).map((item) => item.id)).toEqual([
+      'msg-01',
+      'msg-02',
+    ])
+    expect(result.current.hasNextPage).toBe(false)
+    expect(api.get.mock.calls.map(([path]) => path)).toEqual([
+      '/support/inbox/conversations/conv-1/message-pages?workspace_id=ws-1&limit=20',
+      '/support/inbox/conversations/conv-1/messages?workspace_id=ws-1',
+    ])
+  })
 })

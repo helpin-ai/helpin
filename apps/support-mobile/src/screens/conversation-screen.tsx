@@ -290,7 +290,8 @@ export function ConversationScreen() {
     !accessQuery.isPending &&
     (workspaceQuery.isError ||
       accessQuery.isError ||
-      (!conversationQuery.isPending && !conversation && conversationQuery.isError))
+      (!conversationQuery.isPending && !conversation && conversationQuery.isError) ||
+      (!messagesQuery.data && messagesQuery.isError))
 
   return (
     <div className="flex h-dvh flex-col bg-background">

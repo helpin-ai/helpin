@@ -373,7 +373,26 @@ export const supportService = {
     const cursorQuery = cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''
     return getApi().get<SupportMessagePage>(
       `/support/inbox/conversations/${conversationId}/message-pages${qs(workspaceId)}&limit=${limit}${cursorQuery}`,
-    )
+    ).then(async (response) => {
+      // During rolling deploys the mobile client can reach a backend that
+      // predates cursor pagination. Preserve thread availability by falling
+      // back to the established all-messages route for the initial page.
+      // Never do this for an older-page cursor: mixing a full legacy result
+      // into an existing paginated result would duplicate the transcript.
+      if (response.status !== 404 || cursor) return response
+
+      const legacy = await getApi().get<SupportMessage[]>(
+        `/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`,
+      )
+      if (legacy.error || !legacy.data) {
+        return { ...legacy, data: null } as ApiResponse<SupportMessagePage>
+      }
+      return {
+        data: { data: legacy.data, has_more: false },
+        error: null,
+        status: legacy.status,
+      }
+    })
   },
   getVisitorContext: (workspaceId: string, conversationId: string) =>
     getApi().get<VisitorContextResponse>(`/support/inbox/conversations/${conversationId}/visitor-context${qs(workspaceId)}`),
