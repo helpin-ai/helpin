@@ -110,8 +110,12 @@ export default defineConfig(({ mode }) => {
       port: 5176,
       strictPort: true,
       host: host || '0.0.0.0',
+      allowedHosts: ['mobile.azhar.dev.helpin.ai'],
       hmr: host ? { protocol: 'ws', host, port: 5177 } : undefined,
-      watch: { ignored: ['**/src-tauri/**'] },
+      // The push plugin's guest-js bridge is imported by the webview and
+      // must remain watchable. Ignore generated/native build output only;
+      // ignoring all of src-tauri leaves Vite serving stale bridge exports.
+      watch: { ignored: ['**/src-tauri/target/**', '**/src-tauri/gen/**'] },
       proxy: proxyTarget
         ? {
             '/api': {
