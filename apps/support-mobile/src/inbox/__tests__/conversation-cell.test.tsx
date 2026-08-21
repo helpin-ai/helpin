@@ -35,8 +35,11 @@ test('renders customer name, preview, and relative time', () => {
 test('uses the same deterministic support badge color as the web conversation list', () => {
   render(<ConversationCell conversation={conversation({ customer_email: 'ada@example.com' })} onPress={vi.fn()} />)
 
-  const avatar = screen.getByText('AL').parentElement
-  expect(avatar?.className).toContain(getAvatarColor('ada@example.com').split(' ')[0])
+  const avatar = screen.getByText('A').parentElement
+  const expectedClasses = getAvatarColor('ada@example.com').split(' ')
+  expect(avatar?.className).toContain(expectedClasses[0])
+  expect(avatar?.className).toContain(expectedClasses[2])
+  expect(avatar?.className).toContain(expectedClasses[3])
 })
 
 test('no unread count badge when the conversation is read', () => {
@@ -146,8 +149,8 @@ test('shows the teammates currently reviewing a read conversation', () => {
     />,
   )
   expect(screen.getByLabelText('Grace Hopper viewing')).toBeDefined()
-  const reviewerAvatar = screen.getByText('GH').parentElement
-  expect(reviewerAvatar?.className).toContain(getAvatarColor('member-2').split(' ')[0])
+  const reviewerAvatar = screen.getByText('G').parentElement
+  expect(reviewerAvatar?.className).toContain(getAvatarColor('user-2').split(' ')[0])
 })
 
 test('fires onPress when the cell is clicked', () => {

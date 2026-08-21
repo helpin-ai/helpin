@@ -110,7 +110,7 @@ export function ConversationCell({
   )
   const reviewers = viewingAgentIds
     .filter((id) => id !== currentUserId)
-    .map((id) => reviewerByUserId.get(id) ?? { id, display_name: 'Teammate', avatar_url: undefined })
+    .map((id) => reviewerByUserId.get(id) ?? { id, user_id: id, display_name: 'Teammate', avatar_url: undefined })
   const isVisitorOnline = useSupportPresenceStore((s) =>
     conversation.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false,
   )
@@ -163,7 +163,8 @@ export function ConversationCell({
       <div className="relative shrink-0">
         <Avatar
           name={displayName}
-          size={40}
+          size={36}
+          initialCount={1}
           className={getAvatarColor(
             conversation.customer_email || conversation.customer_name || conversation.id,
           )}
@@ -264,10 +265,11 @@ export function ConversationCell({
                     name={reviewer.display_name}
                     src={reviewer.avatar_url}
                     size={20}
+                    initialCount={1}
                     className={cn(
                       index !== 0 && '-mr-1.5',
                       'ring-2 ring-background',
-                      getAvatarColor(reviewer.id || reviewer.display_name),
+                      getAvatarColor(reviewer.user_id || reviewer.id || reviewer.display_name),
                     )}
                   />
                 ))}
