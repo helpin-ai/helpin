@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { motion } from 'motion/react'
-import { Bot, CheckCheck, Mail, Paperclip, StickyNote, User, Zap } from 'lucide-react'
+import { Bot, CheckCheck, CheckCircle2, Mail, Paperclip, StickyNote, User, XCircle, Zap } from 'lucide-react'
 import type { SupportMessage } from '@helpin-ai/support-core'
 import {
   getSupportSystemEventBadge,
@@ -10,6 +10,8 @@ import {
 } from '@/components/support/supportSystemEvent'
 import { cn } from '@mobile/lib/cn'
 import { riseIn } from '@mobile/lib/motion'
+import { Avatar } from '@mobile/ui/avatar'
+import { getAvatarColor } from '@/components/support/helpers'
 import { EmailBody } from './email-body'
 import { Markdown } from './markdown'
 import { ImageViewer } from './image-viewer'
@@ -55,24 +57,96 @@ function SystemEventBadgeChip({ badge }: { badge: SystemEventBadge }) {
     ) : (
       <Bot className="h-3 w-3" />
     )
-  // Routing events render a labelled pill; escalation events show just the icon
-  // (the narration text already spells out the escalation).
-  if (badge.kind === 'routing_rule' || badge.kind === 'ai_routing') {
-    return (
-      <span
+  return (
+    <span
+      aria-label={badge.label}
+      title={badge.label}
+      className={cn(
+        'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
+        badge.kind === 'routing_rule'
+          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+          : badge.kind === 'ai_routing'
+            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+      )}
+    >
+      {icon}
+    </span>
+  )
+}
+
+function SystemEventBubble({ message, senderName }: { message: SupportMessage; senderName: string }) {
+  const eventType = message.system_event_type
+  const text = getSupportSystemEventText(eventType, message.content, senderName)
+  const segments = toSupportSystemEventSegments(eventType, text, { extended: true })
+  const badge = getSupportSystemEventBadge(eventType, message.content)
+  const isEscalation = eventType === 'ai_escalated' || eventType === 'customer_requested_human'
+  const isResolved = eventType === 'resolved'
+  const isClosed = eventType === 'closed'
+  const time = formatMessageTime(message.created_at)
+  const avatarSeed = message.sender_user_id || message.sender_agent_id || senderName
+
+  const leading = isResolved ? (
+    <>
+      <CheckCircle2 aria-label="Resolved" className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
+      <Avatar
+        name={senderName}
+        src={message.sender_avatar_url}
+        size={20}
+        className={getAvatarColor(avatarSeed)}
+      />
+    </>
+  ) : isClosed ? (
+    <XCircle aria-label="Closed" className="h-4 w-4 shrink-0" />
+  ) : badge ? (
+    <SystemEventBadgeChip badge={badge} />
+  ) : (
+    <Avatar
+      name={senderName}
+      src={message.sender_avatar_url}
+      size={20}
+      className={getAvatarColor(avatarSeed)}
+    />
+  )
+
+  return (
+    <div
+      data-testid="system-event"
+      data-system-event-type={eventType}
+      className="flex flex-col items-center py-1"
+    >
+      <div
+        data-testid="system-event-surface"
+        aria-label={[text, time].filter(Boolean).join(', ')}
         className={cn(
-          'inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-          badge.kind === 'routing_rule'
-            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+          'inline-flex max-w-[92%] items-center gap-2 rounded-2xl border px-3 py-2 text-[12px] leading-snug shadow-sm [overflow-wrap:anywhere]',
+          isResolved
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200'
+            : isClosed
+              ? 'border-slate-700 bg-slate-700 text-white dark:border-slate-600 dark:bg-slate-800'
+              : isEscalation
+                ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200'
+                : 'border-border/60 bg-muted/60 text-muted-foreground',
         )}
       >
-        {icon}
-        {badge.label}
-      </span>
-    )
-  }
-  return <span className="shrink-0 text-muted-foreground">{icon}</span>
+        {leading}
+        <span className="min-w-0 max-w-full">
+          {segments.map((segment, index) =>
+            segment.bold ? (
+              <strong key={index} className="font-semibold text-current">{segment.text}</strong>
+            ) : (
+              <span key={index}>{segment.text}</span>
+            ),
+          )}
+        </span>
+      </div>
+      {time && (
+        <span data-testid="system-event-time" className="mt-1 text-[10px] text-muted-foreground/65">
+          {time}
+        </span>
+      )}
+    </div>
+  )
 }
 
 function receiptMeta(status: SupportReceiptStatus): { label: string; read: boolean } {
@@ -171,25 +245,7 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
   // System events (assigned, resolved, escalated, routed, ...) are narration,
   // not a chat turn — a centered pill with humanized text + an optional badge.
   if (message.message_type === 'system') {
-    const text = getSupportSystemEventText(message.system_event_type, message.content, senderName)
-    const segments = toSupportSystemEventSegments(message.system_event_type, text, { extended: true })
-    const badge = getSupportSystemEventBadge(message.system_event_type, message.content)
-    content = (
-      <div className="flex justify-center py-1">
-        <span className="selectable inline-flex max-w-[90%] items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-footnote text-muted-foreground">
-          {badge && <SystemEventBadgeChip badge={badge} />}
-          <span className="min-w-0">
-            {segments.map((segment, index) =>
-              segment.bold ? (
-                <strong key={index} className="font-medium text-foreground">{segment.text}</strong>
-              ) : (
-                <span key={index}>{segment.text}</span>
-              ),
-            )}
-          </span>
-        </span>
-      </div>
-    )
+    content = <SystemEventBubble message={message} senderName={senderName} />
   } else if (message.is_internal) {
     // Internal note: amber card, "{name} left a private note", @mentions highlighted.
     const mentionSegments = splitMentionSegments(message.content)

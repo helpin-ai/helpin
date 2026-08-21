@@ -88,3 +88,110 @@ test('previews image attachments in-app instead of opening their raw URL', () =>
   expect(open).not.toHaveBeenCalled()
   open.mockRestore()
 })
+
+test('shows teammate joins with the actor avatar, a surfaced background, and time', () => {
+  render(
+    <MessageBubble
+      message={message({
+        sender_type: 'user',
+        sender_user_id: 'member-1',
+        sender_display_name: 'Emma Wilson',
+        message_type: 'system',
+        system_event_type: 'teammate_joined',
+        content: 'Emma Wilson joined the conversation.',
+        created_at: '2026-08-20T14:30:00Z',
+      })}
+      align="left"
+    />,
+  )
+
+  const surface = screen.getByTestId('system-event-surface')
+  expect(surface.className).toContain('bg-muted/60')
+  expect(screen.getByText('EW')).toBeDefined()
+  expect(screen.getByText('Emma Wilson').tagName).toBe('STRONG')
+  expect(screen.getByTestId('system-event-time').textContent).toMatch(/\d{1,2}:30/)
+})
+
+test('uses distinct resolved, closed, and escalation treatments', () => {
+  const view = render(
+    <MessageBubble
+      message={message({
+        sender_type: 'user',
+        sender_display_name: 'Emma Wilson',
+        message_type: 'system',
+        system_event_type: 'resolved',
+        content: 'Emma Wilson resolved this conversation.',
+      })}
+      align="left"
+    />,
+  )
+
+  expect(screen.getByTestId('system-event-surface').className).toContain('bg-emerald-50')
+  expect(screen.getByLabelText('Resolved')).toBeDefined()
+
+  view.rerender(
+    <MessageBubble
+      message={message({
+        message_type: 'system',
+        system_event_type: 'closed',
+        content: 'Emma Wilson closed this conversation.',
+      })}
+      align="left"
+    />,
+  )
+  expect(screen.getByTestId('system-event-surface').className).toContain('bg-slate-700')
+  expect(screen.getByLabelText('Closed')).toBeDefined()
+
+  view.rerender(
+    <MessageBubble
+      message={message({
+        sender_type: 'ai',
+        message_type: 'system',
+        system_event_type: 'ai_escalated',
+        content: 'Let me find a teammate.',
+      })}
+      align="left"
+    />,
+  )
+  expect(screen.getByTestId('system-event-surface').className).toContain('bg-amber-50')
+  expect(screen.getByText('AI escalated to a human')).toBeDefined()
+  expect(screen.getByLabelText('AI')).toBeDefined()
+})
+
+test('renders every canonical audit event with the polished system surface', () => {
+  const eventTypes = [
+    'teammate_joined',
+    'assigned',
+    'unassigned',
+    'took',
+    'agent_assigned',
+    'mailbox_moved',
+    'triage_routed',
+    'triage_dismissed',
+    'ai_escalated',
+    'customer_requested_human',
+    'resolved',
+    'reopened',
+    'closed',
+    'email_recipients_updated',
+    'tag_added',
+    'tag_removed',
+    'task_created',
+  ]
+
+  for (const eventType of eventTypes) {
+    const view = render(
+      <MessageBubble
+        message={message({
+          message_type: 'system',
+          system_event_type: eventType,
+          content: `Emma Wilson recorded ${eventType}.`,
+        })}
+        align="left"
+      />,
+    )
+    expect(view.container.querySelector(`[data-system-event-type="${eventType}"]`)).not.toBeNull()
+    expect(view.getByTestId('system-event-surface')).toBeDefined()
+    view.unmount()
+  }
+})
