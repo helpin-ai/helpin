@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -22,16 +23,18 @@ import (
 
 // AuthHandler handles authentication HTTP requests.
 type AuthHandler struct {
-	authService *service.AuthService
-	googleOAuth *oauth2.Config
-	appBaseURL  string
+	authService      *service.AuthService
+	googleOAuth      *oauth2.Config
+	appBaseURL       string
+	mobileAppBaseURL string
 }
 
 type GoogleOAuthConfig struct {
-	ClientID     string
-	ClientSecret string
-	RedirectURL  string
-	AppBaseURL   string
+	ClientID         string
+	ClientSecret     string
+	RedirectURL      string
+	AppBaseURL       string
+	MobileAppBaseURL string
 }
 
 // NewAuthHandler creates a new AuthHandler.
@@ -40,6 +43,7 @@ func NewAuthHandler(authService *service.AuthService, googleConfig ...GoogleOAut
 	if len(googleConfig) > 0 {
 		cfg := googleConfig[0]
 		h.appBaseURL = strings.TrimRight(strings.TrimSpace(cfg.AppBaseURL), "/")
+		h.mobileAppBaseURL = strings.TrimRight(strings.TrimSpace(cfg.MobileAppBaseURL), "/")
 		if strings.TrimSpace(cfg.ClientID) != "" && strings.TrimSpace(cfg.ClientSecret) != "" && strings.TrimSpace(cfg.RedirectURL) != "" {
 			h.googleOAuth = &oauth2.Config{
 				ClientID:     strings.TrimSpace(cfg.ClientID),
@@ -119,6 +123,18 @@ func (h *AuthHandler) GoogleStart(w http.ResponseWriter, r *http.Request) {
 		Secure:   secureCookie(r),
 		SameSite: http.SameSiteLaxMode,
 	})
+	if client := googleOAuthClient(r.URL.Query().Get("client")); client != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "helpin_google_oauth_client",
+			Value:    client,
+			Path:     "/api/auth/google/callback",
+			MaxAge:   600,
+			Expires:  time.Now().Add(10 * time.Minute),
+			HttpOnly: true,
+			Secure:   secureCookie(r),
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 	if redirectPath := sanitizeGoogleRedirectPath(r.URL.Query().Get("redirect")); redirectPath != "" {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "helpin_google_oauth_redirect",
@@ -140,40 +156,72 @@ func (h *AuthHandler) GoogleCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "google sign-in is not configured")
 		return
 	}
+	client := googleOAuthClientFromCookie(r)
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	cookie, err := r.Cookie("helpin_google_oauth_state")
 	if err != nil || state == "" || cookie.Value != state {
 		clearGoogleOAuthCookies(w, r)
-		http.Redirect(w, r, h.authFailureRedirect("invalid_state"), http.StatusFound)
+		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "invalid_state"), http.StatusFound)
 		return
 	}
 	redirectPath := googleRedirectPathFromCookie(r)
 	clearGoogleOAuthCookies(w, r)
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if code == "" {
-		http.Redirect(w, r, h.authFailureRedirect("missing_code"), http.StatusFound)
+		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "missing_code"), http.StatusFound)
 		return
 	}
 	token, err := h.googleOAuth.Exchange(r.Context(), code)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "google oauth exchange failed", "error", err)
-		http.Redirect(w, r, h.authFailureRedirect("exchange_failed"), http.StatusFound)
+		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "exchange_failed"), http.StatusFound)
 		return
 	}
 	identity, err := googleIdentityFromToken(r, token)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "google userinfo failed", "error", err)
-		http.Redirect(w, r, h.authFailureRedirect("userinfo_failed"), http.StatusFound)
+		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "userinfo_failed"), http.StatusFound)
 		return
 	}
 	resp, err := h.authService.SignInWithGoogle(r.Context(), identity)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "google auth signin failed", "error", err)
-		http.Redirect(w, r, h.authFailureRedirect("signin_failed"), http.StatusFound)
+		http.Redirect(w, r, h.googleAuthFailureRedirect(client, "signin_failed"), http.StatusFound)
+		return
+	}
+	if client == "mobile_native" {
+		handoffCode, err := h.authService.CreateOAuthMobileHandoff(r.Context(), resp.User.ID)
+		if err != nil {
+			slog.ErrorContext(r.Context(), "google mobile handoff creation failed", "error", err, "user_id", resp.User.ID)
+			http.Redirect(w, r, h.googleAuthFailureRedirect(client, "handoff_failed"), http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, googleNativeRedirect("code", handoffCode), http.StatusFound)
 		return
 	}
 	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
+	if client == "mobile_web" {
+		http.Redirect(w, r, h.mobileAppRedirect("/login?google=success"), http.StatusFound)
+		return
+	}
 	http.Redirect(w, r, h.appRedirect(redirectPath), http.StatusFound)
+}
+
+// GoogleMobileExchange turns a single-use native deep-link code into the
+// normal JSON auth response consumed by the mobile session store.
+func (h *AuthHandler) GoogleMobileExchange(w http.ResponseWriter, r *http.Request) {
+	var req model.OAuthMobileExchangeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.authService.ExchangeOAuthMobileHandoff(r.Context(), req.Code)
+	if err != nil {
+		writeAuthError(w, err)
+		return
+	}
+	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // Signin handles POST /api/auth/signin.
@@ -396,6 +444,33 @@ func clearGoogleOAuthCookies(w http.ResponseWriter, r *http.Request) {
 		Secure:   secureCookie(r),
 		SameSite: http.SameSiteLaxMode,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "helpin_google_oauth_client",
+		Value:    "",
+		Path:     "/api/auth/google/callback",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		Secure:   secureCookie(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func googleOAuthClient(raw string) string {
+	switch strings.TrimSpace(raw) {
+	case "mobile_native", "mobile_web":
+		return strings.TrimSpace(raw)
+	default:
+		return ""
+	}
+}
+
+func googleOAuthClientFromCookie(r *http.Request) string {
+	cookie, err := r.Cookie("helpin_google_oauth_client")
+	if err != nil {
+		return ""
+	}
+	return googleOAuthClient(cookie.Value)
 }
 
 func googleRedirectPathFromCookie(r *http.Request) string {
@@ -427,6 +502,34 @@ func (h *AuthHandler) appRedirect(path string) string {
 		base = "http://localhost:5173"
 	}
 	return strings.TrimRight(base, "/") + path
+}
+
+func (h *AuthHandler) mobileAppRedirect(path string) string {
+	base := h.mobileAppBaseURL
+	if base == "" {
+		base = h.appBaseURL
+	}
+	if base == "" {
+		base = "http://localhost:5176"
+	}
+	return strings.TrimRight(base, "/") + path
+}
+
+func googleNativeRedirect(key, value string) string {
+	query := url.Values{}
+	query.Set(key, value)
+	return "helpin://auth/google?" + query.Encode()
+}
+
+func (h *AuthHandler) googleAuthFailureRedirect(client, reason string) string {
+	switch client {
+	case "mobile_native":
+		return googleNativeRedirect("error", reason)
+	case "mobile_web":
+		return h.mobileAppRedirect("/login?google_error=" + url.QueryEscape(reason))
+	default:
+		return h.authFailureRedirect(reason)
+	}
 }
 
 func (h *AuthHandler) authFailureRedirect(reason string) string {

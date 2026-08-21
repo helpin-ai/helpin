@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { memo, useMemo, useState, type KeyboardEvent } from 'react';
 import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, Mail01Icon, Message01Icon, MoreHorizontalIcon } from '@/lib/icons';
 import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -9,7 +9,22 @@ import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { timeAgo, getInitial, getAvatarColor } from './helpers';
+import {
+  getConversationRowVisualState,
+  getSupportTagPillStyle,
+  isNotePreview,
+  stripNotePrefix,
+} from './conversationRowVisual';
 import { ConversationActionsMenu, type ConversationActionMoveOption } from './ConversationActionsMenu';
+
+// Re-exported from the pure helper module so existing importers (tests, other
+// surfaces) keep resolving these from './ConversationRow'.
+export {
+  getConversationRowVisualState,
+  getSupportTagPillStyle,
+  getVisibleSupportTagCount,
+} from './conversationRowVisual';
+export type { ConversationRowVisualState } from './conversationRowVisual';
 
 const EMPTY_ARRAY: string[] = [];
 
@@ -163,72 +178,6 @@ interface ConversationRowProps {
   moveOptions: ConversationActionMoveOption[];
   onSelectConversation: (id: string, unreadCount?: number) => void;
   isTransitioningOut?: boolean;
-}
-
-export type ConversationRowVisualState = {
-  isUnread: boolean;
-  needsTeamAction: boolean;
-  usesActionBackground: boolean;
-  usesUnreadTypography: boolean;
-  usesSelectionBar: boolean;
-};
-
-export function getConversationRowVisualState(
-  conversation: Pick<SupportConversation, 'unread_count' | 'awaiting_reply' | 'status'>,
-  isSelected = false,
-): ConversationRowVisualState {
-  const isUnread = (conversation.unread_count ?? 0) > 0;
-  const needsTeamAction = conversation.status === 'open' && (isUnread || Boolean(conversation.awaiting_reply));
-  return {
-    isUnread,
-    needsTeamAction,
-    usesActionBackground: !isSelected && needsTeamAction,
-    usesUnreadTypography: isUnread,
-    usesSelectionBar: isSelected,
-  };
-}
-
-export function getVisibleSupportTagCount(tagWidths: number[], availableWidth: number, gap = 4) {
-  if (tagWidths.length === 0) return 0;
-  if (availableWidth <= 0) return tagWidths.length;
-
-  let usedWidth = 0;
-  let visibleCount = 0;
-  for (const width of tagWidths) {
-    const nextWidth = usedWidth + (visibleCount > 0 ? gap : 0) + Math.max(0, width);
-    if (nextWidth > availableWidth + 0.5) break;
-    usedWidth = nextWidth;
-    visibleCount += 1;
-  }
-
-  return visibleCount > 0 ? visibleCount : 1;
-}
-
-function parseHexColor(color: string | null | undefined) {
-  const normalized = color?.trim();
-  if (!normalized) return null;
-  const shortMatch = normalized.match(/^#([0-9a-f]{3})$/i);
-  const longMatch = normalized.match(/^#([0-9a-f]{6})$/i);
-  const hex = shortMatch
-    ? shortMatch[1].split('').map((char) => `${char}${char}`).join('')
-    : longMatch?.[1];
-  if (!hex) return null;
-  return {
-    r: Number.parseInt(hex.slice(0, 2), 16),
-    g: Number.parseInt(hex.slice(2, 4), 16),
-    b: Number.parseInt(hex.slice(4, 6), 16),
-  };
-}
-
-export function getSupportTagPillStyle(color: string | null | undefined): CSSProperties | undefined {
-  const rgb = parseHexColor(color);
-  if (!rgb) return undefined;
-  const value = `${rgb.r}, ${rgb.g}, ${rgb.b}`;
-  return {
-    backgroundColor: `rgba(${value}, 0.08)`,
-    borderColor: `rgba(${value}, 0.22)`,
-    color: `rgba(${value}, 0.82)`,
-  };
 }
 
 const AIHandoffIndicator = memo(function AIHandoffIndicator() {
@@ -530,10 +479,10 @@ export const ConversationRow = memo(function ConversationRow({
                   <span className="text-blue-600 dark:text-blue-400 font-medium">Draft: </span>
                   <span className="min-w-0 truncate text-muted-foreground">{draftContent}</span>
                 </>
-              ) : conversation.last_message?.startsWith('Note: ') ? (
+              ) : isNotePreview(conversation.last_message) ? (
                 <>
                   <span className="font-medium text-amber-600 dark:text-amber-400">Note: </span>
-                  <span className="min-w-0 truncate text-muted-foreground">{conversation.last_message.slice(6)}</span>
+                  <span className="min-w-0 truncate text-muted-foreground">{stripNotePrefix(conversation.last_message ?? '')}</span>
                 </>
               ) : (
                 <>

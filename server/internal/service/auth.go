@@ -27,18 +27,20 @@ import (
 )
 
 var (
-	ErrBadRequest         = errors.New("bad request")
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrTwoFAUnavailable   = errors.New("two-factor authentication is not available")
+	ErrBadRequest          = errors.New("bad request")
+	ErrInvalidCredentials  = errors.New("invalid credentials")
+	ErrInvalidOAuthHandoff = errors.New("oauth handoff is invalid, expired, or already used")
+	ErrTwoFAUnavailable    = errors.New("two-factor authentication is not available")
 )
 
 const (
-	passwordResetTTL     = time.Hour
-	emailVerificationTTL = 24 * time.Hour
-	twoFAIssuer          = "Helpin"
-	recoveryCodeCount    = 10
-	totpWindow           = 1
-	legacyRefreshFloor   = 30 * time.Minute
+	passwordResetTTL      = time.Hour
+	emailVerificationTTL  = 24 * time.Hour
+	oauthMobileHandoffTTL = 5 * time.Minute
+	twoFAIssuer           = "Helpin"
+	recoveryCodeCount     = 10
+	totpWindow            = 1
+	legacyRefreshFloor    = 30 * time.Minute
 )
 
 type authEmailSender interface {
@@ -56,19 +58,20 @@ type GoogleIdentity struct {
 
 // AuthService handles authentication business logic.
 type AuthService struct {
-	userRepo              *repository.UserRepository
-	passwordResetRepo     *repository.PasswordResetTokenRepository
-	emailVerificationRepo *repository.EmailVerificationTokenRepository
-	organizationRepo      *repository.OrganizationRepository
-	workspaceRepo         *repository.WorkspaceRepository
-	jwtManager            *auth.JWTManager
-	s3Client              *storage.S3Client
-	emailClient           authEmailSender
-	customerIOIdentity    *CustomerIOIdentityService
-	productAnalytics      *ProductAnalyticsService
-	appBaseURL            string
-	encryptionKey         []byte
-	logger                *slog.Logger
+	userRepo               *repository.UserRepository
+	passwordResetRepo      *repository.PasswordResetTokenRepository
+	emailVerificationRepo  *repository.EmailVerificationTokenRepository
+	oauthMobileHandoffRepo *repository.OAuthMobileHandoffRepository
+	organizationRepo       *repository.OrganizationRepository
+	workspaceRepo          *repository.WorkspaceRepository
+	jwtManager             *auth.JWTManager
+	s3Client               *storage.S3Client
+	emailClient            authEmailSender
+	customerIOIdentity     *CustomerIOIdentityService
+	productAnalytics       *ProductAnalyticsService
+	appBaseURL             string
+	encryptionKey          []byte
+	logger                 *slog.Logger
 }
 
 // NewAuthService creates a new AuthService.
@@ -105,6 +108,10 @@ func (s *AuthService) SetCustomerIOIdentityService(identity *CustomerIOIdentityS
 
 func (s *AuthService) SetProductAnalyticsService(analytics *ProductAnalyticsService) {
 	s.productAnalytics = analytics
+}
+
+func (s *AuthService) SetOAuthMobileHandoffRepository(repo *repository.OAuthMobileHandoffRepository) {
+	s.oauthMobileHandoffRepo = repo
 }
 
 // Signup creates a new user account and returns auth tokens.
@@ -244,6 +251,75 @@ func (s *AuthService) SignInWithGoogle(ctx context.Context, identity GoogleIdent
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
 	s.logger.InfoContext(ctx, "user signed in with google", "user_id", user.ID, "email", user.Email)
+	return &model.AuthResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		User:         toUserProfile(user),
+	}, nil
+}
+
+// CreateOAuthMobileHandoff creates a short-lived, single-use code for moving
+// an authenticated OAuth result from the system browser into the native app.
+// Only the raw code leaves the service; the database stores its SHA-256 hash.
+func (s *AuthService) CreateOAuthMobileHandoff(ctx context.Context, userID string) (string, error) {
+	if s.oauthMobileHandoffRepo == nil {
+		return "", fmt.Errorf("oauth mobile handoff is not configured")
+	}
+	if strings.TrimSpace(userID) == "" {
+		return "", fmt.Errorf("%w: user_id is required", ErrBadRequest)
+	}
+
+	rawCode, codeHash, err := generateOAuthMobileHandoffCode()
+	if err != nil {
+		return "", err
+	}
+	now := time.Now().UTC()
+	if err := s.oauthMobileHandoffRepo.Create(ctx, &model.OAuthMobileHandoff{
+		UserID:    userID,
+		CodeHash:  codeHash,
+		ExpiresAt: now.Add(oauthMobileHandoffTTL),
+	}); err != nil {
+		return "", err
+	}
+	if err := s.oauthMobileHandoffRepo.DeleteExpired(ctx, now); err != nil {
+		s.logger.WarnContext(ctx, "failed to prune expired oauth mobile handoffs", "error", err)
+	}
+	return rawCode, nil
+}
+
+// ExchangeOAuthMobileHandoff consumes a native OAuth handoff and issues a
+// regular session. Google authentication satisfies MFA in the same way as the
+// existing browser callback.
+func (s *AuthService) ExchangeOAuthMobileHandoff(ctx context.Context, rawCode string) (*model.AuthResponse, error) {
+	if s.oauthMobileHandoffRepo == nil {
+		return nil, fmt.Errorf("oauth mobile handoff is not configured")
+	}
+	rawCode = strings.TrimSpace(rawCode)
+	if rawCode == "" {
+		return nil, ErrInvalidOAuthHandoff
+	}
+
+	handoff, err := s.oauthMobileHandoffRepo.Consume(ctx, hashOAuthMobileHandoffCode(rawCode), time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if handoff == nil {
+		return nil, ErrInvalidOAuthHandoff
+	}
+
+	user, err := s.userRepo.GetByID(ctx, handoff.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrInvalidOAuthHandoff
+	}
+
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, true, true)
+	if err != nil {
+		return nil, fmt.Errorf("generate oauth mobile session: %w", err)
+	}
+	s.logger.InfoContext(ctx, "oauth mobile handoff exchanged", "user_id", user.ID)
 	return &model.AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -1219,6 +1295,15 @@ func generateEmailVerificationToken() (string, string, error) {
 	return rawToken, hashEmailVerificationToken(rawToken), nil
 }
 
+func generateOAuthMobileHandoffCode() (string, string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", fmt.Errorf("generate oauth mobile handoff: %w", err)
+	}
+	rawCode := hex.EncodeToString(b)
+	return rawCode, hashOAuthMobileHandoffCode(rawCode), nil
+}
+
 func hashPasswordResetToken(token string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
 	return hex.EncodeToString(sum[:])
@@ -1226,6 +1311,11 @@ func hashPasswordResetToken(token string) string {
 
 func hashEmailVerificationToken(token string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
+}
+
+func hashOAuthMobileHandoffCode(code string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(code)))
 	return hex.EncodeToString(sum[:])
 }
 

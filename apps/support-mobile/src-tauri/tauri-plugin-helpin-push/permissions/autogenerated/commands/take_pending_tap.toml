@@ -1,0 +1,15 @@
+# Hand-written to mirror the shape `tauri-plugin`'s build script normally
+# autogenerates from `COMMANDS` in `build.rs` (this could not be verified by
+# an actual `cargo build` in this environment — no Rust toolchain here).
+# SPIKE-VERIFY: run `cargo build` once on a real machine and diff this file
+# against whatever gets regenerated; commit the real output if it differs.
+
+[[permission]]
+identifier = "allow-take-pending-tap"
+description = "Enables the take_pending_tap command without any pre-configured scope."
+commands.allow = ["take_pending_tap"]
+
+[[permission]]
+identifier = "deny-take-pending-tap"
+description = "Denies the take_pending_tap command without any pre-configured scope."
+commands.deny = ["take_pending_tap"]

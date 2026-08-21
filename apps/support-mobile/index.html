@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+    <title>Helpin</title>
+    <style>
+      html, body, #root { min-height: 100%; margin: 0; }
+      .launch-screen {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #ffffff;
+      }
+      .launch-lockup {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        color: #0a0a0a;
+        font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 32px;
+        font-weight: 600;
+        letter-spacing: -0.04em;
+      }
+      .launch-lockup img { width: 52px; height: 52px; }
+      .launch-screen .launch-logo-dark { display: none; }
+      @media (prefers-color-scheme: dark) {
+        .launch-screen { background: #0a0a0a; }
+        .launch-lockup { color: #ffffff; }
+        .launch-screen .launch-logo-light { display: none; }
+        .launch-screen .launch-logo-dark { display: block; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="launch-screen">
+        <div class="launch-lockup" aria-label="Helpin">
+          <img class="launch-logo-light" src="/src/ui/helpin-icon-black.svg" alt="" />
+          <img class="launch-logo-dark" src="/src/ui/helpin-icon-white.svg" alt="" />
+          <span>Helpin</span>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

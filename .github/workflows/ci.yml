@@ -30,6 +30,7 @@ jobs:
       packages: ${{ steps.filter.outputs.packages }}
       helpcenter: ${{ steps.filter.outputs.helpcenter }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      mobile: ${{ steps.filter.outputs.mobile }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +51,7 @@ jobs:
             echo "packages=true" >> "$GITHUB_OUTPUT"
             echo "helpcenter=true" >> "$GITHUB_OUTPUT"
             echo "desktop=true" >> "$GITHUB_OUTPUT"
+            echo "mobile=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -68,6 +70,7 @@ jobs:
           PACKAGES=false
           HELPCENTER=false
           DESKTOP=false
+          MOBILE=false
 
           if echo "$CHANGED" | grep -qE '^server/|^\.github/workflows/ci\.yml$'; then
             SERVER=true
@@ -90,6 +93,14 @@ jobs:
           if echo "$CHANGED" | grep -qE '^apps/support-desktop/|^frontend/|^packages/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
             DESKTOP=true
           fi
+          # Mobile depends on its own app dir plus packages/support-core and
+          # packages/shared directly (no frontend/ dependency, unlike
+          # desktop) — gate on those, not all of packages/*, so an unrelated
+          # package change doesn't force a mobile run. Root/workspace config
+          # changes still gate everything, same as the other jobs.
+          if echo "$CHANGED" | grep -qE '^apps/support-mobile/|^packages/support-core/|^packages/shared/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
+            MOBILE=true
+          fi
 
           echo "server=$SERVER" >> "$GITHUB_OUTPUT"
           echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
@@ -97,7 +108,8 @@ jobs:
           echo "packages=$PACKAGES" >> "$GITHUB_OUTPUT"
           echo "helpcenter=$HELPCENTER" >> "$GITHUB_OUTPUT"
           echo "desktop=$DESKTOP" >> "$GITHUB_OUTPUT"
-          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER desktop=$DESKTOP"
+          echo "mobile=$MOBILE" >> "$GITHUB_OUTPUT"
+          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER desktop=$DESKTOP mobile=$MOBILE"
 
   # ------------------------- Server -------------------------
   server:
@@ -314,3 +326,61 @@ jobs:
         run: pnpm --filter @helpin-ai/widget-core build
       - name: Build support-desktop (tsc -b && vite build)
         run: pnpm --dir apps/support-desktop run build
+
+  # ------------------- Support Mobile (Tauri) ---------------
+  # Validates the web/TS side of the mobile shell (typecheck + vitest for
+  # both the app and packages/support-core, which it consumes from source
+  # via a Vite/tsconfig alias — see apps/support-mobile/vite.config.ts — so
+  # no package build step is needed before those run, unlike the desktop
+  # job's widget-core dependency), PLUS a `cargo check` of `src-tauri/`.
+  #
+  # The cargo check compiles the DESKTOP (linux host) target only — the
+  # mobile shell and the vendored tauri-plugin-helpin-push were written
+  # without a local Rust toolchain, so this is their only compile gate.
+  # Android/iOS targets need SDK/NDK/Xcode setups and stay release-pipeline
+  # scope, not per-PR scope. The webkit2gtk/gtk apt packages below are
+  # tauri v2's Linux build prerequisites (sys crates resolve them via
+  # pkg-config at build time), per https://v2.tauri.app/start/prerequisites/.
+  mobile-check:
+    name: Support Mobile CI
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: arc-runners-helpin-ai
+    # cargo check of the tauri stack is heavy on a cold cache (rust-cache
+    # keeps warm runs fast); generous timeout so a cache miss doesn't fail
+    # the run for the wrong reason.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck support-mobile
+        run: pnpm --dir apps/support-mobile run typecheck
+      - name: Test support-mobile
+        run: pnpm --dir apps/support-mobile run test
+      - name: Test support-core
+        run: pnpm --dir packages/support-core run test
+      - name: Install Tauri Linux build deps (webkit2gtk/gtk via pkg-config)
+        # Same sudo-or-not fallback pattern as server-tests' gcc step — ARC
+        # runner images may or may not ship sudo.
+        run: |
+          PKGS="pkg-config build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev"
+          (command -v sudo >/dev/null 2>&1 && sudo apt-get update && sudo apt-get install -y $PKGS) \
+            || (apt-get update && apt-get install -y $PKGS) \
+            || echo "::error::could not install Tauri Linux build deps — cargo check will fail"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/support-mobile/src-tauri
+      - name: Build frontend dist (tauri::generate_context! embeds frontendDist)
+        # The generate_context! proc macro reads tauri.conf.json and embeds
+        # the frontendDist ("../dist") assets at compile time, so ../dist
+        # must exist before cargo check expands it. cargo check itself never
+        # invokes tauri-cli, so beforeBuildCommand does not run here.
+        run: pnpm --dir apps/support-mobile run build
+      - name: Cargo check (desktop target — see job comment)
+        run: cargo check --manifest-path apps/support-mobile/src-tauri/Cargo.toml

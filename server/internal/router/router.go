@@ -68,6 +68,7 @@ type Handlers struct {
 	TLSAsk              *handler.TLSAskHandler
 	Notification        *handler.NotificationHandler
 	UserNotifSettings   *handler.UserNotificationSettingsHandler
+	PushDevice          *handler.PushDeviceHandler
 	CRMContact          *handler.CRMContactHandler
 	CRMCompany          *handler.CRMCompanyHandler
 	CRMDeal             *handler.CRMDealHandler
@@ -265,6 +266,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/auth/verify-email", h.Auth.VerifyEmail)
 		r.Get("/auth/google/start", h.Auth.GoogleStart)
 		r.Get("/auth/google/callback", h.Auth.GoogleCallback)
+		r.Post("/auth/google/mobile-exchange", h.Auth.GoogleMobileExchange)
 		r.Post("/auth/signin", h.Auth.Signin)
 		r.Post("/auth/passkey/authentication-options", h.Passkey.AuthenticationOptions)
 		r.Post("/auth/passkey/authenticate", h.Passkey.Authenticate)
@@ -517,6 +519,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// User notification settings (account-level, no workspace scope)
 			r.Get("/user/notification-settings", h.UserNotifSettings.Get)
 			r.Put("/user/notification-settings", h.UserNotifSettings.Update)
+
+			// Push device registration (account-level, no workspace scope)
+			r.Post("/user/push-devices", h.PushDevice.Register)
+			r.Delete("/user/push-devices", h.PushDevice.Unregister)
 
 			// Organizations
 			r.Get("/organizations", h.Organization.List)
