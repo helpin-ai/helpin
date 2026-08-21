@@ -63,6 +63,7 @@ type Agent struct {
 	Role                       string          `json:"role"`
 	Status                     string          `json:"status" gorm:"not null;default:'idle'"`
 	RuntimeKind                string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
+	ModelTier                  string          `json:"model_tier" gorm:"not null;default:''"`
 	Skills                     AgentSkillRefs  `json:"skills" gorm:"type:jsonb;not null;default:'[]'"`
 	TriggerMode                string          `json:"trigger_mode" gorm:"not null;default:'manual'"`
 	Provider                   *string         `json:"provider"`
@@ -122,6 +123,7 @@ type WorkspaceAgentPresetVersion struct {
 	Description                *string         `json:"description"`
 	SourceVersionKey           *string         `json:"source_version_key"`
 	RuntimeKind                string          `json:"runtime_kind" gorm:"not null"`
+	ModelTier                  string          `json:"model_tier" gorm:"not null;default:''"`
 	Provider                   *string         `json:"provider"`
 	Model                      *string         `json:"model"`
 	ExecutionConfig            JSONBlob        `json:"execution_config" gorm:"type:jsonb;not null;default:'{}'"`
@@ -153,6 +155,7 @@ type AgentVersion struct {
 	Label                 string          `json:"label" gorm:"not null"`
 	Description           *string         `json:"description"`
 	RuntimeKind           string          `json:"runtime_kind" gorm:"not null"`
+	ModelTier             string          `json:"model_tier" gorm:"not null;default:''"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
 	ExecutionConfig       JSONBlob        `json:"execution_config" gorm:"type:jsonb;not null;default:'{}'"`
@@ -181,6 +184,7 @@ type AgentRun struct {
 	TargetType        string                  `json:"target_type" gorm:"not null;default:'task';index"`
 	TargetID          string                  `json:"target_id" gorm:"type:uuid;not null;index"`
 	RuntimeKind       string                  `json:"runtime_kind" gorm:"not null;default:'opencode'"`
+	ModelTier         string                  `json:"model_tier" gorm:"not null;default:''"`
 	InvocationMode    string                  `json:"invocation_mode" gorm:"not null;default:'autonomous'"`
 	ParentRunID       *string                 `json:"parent_run_id" gorm:"type:uuid;index"`
 	DockChatID        *string                 `json:"dock_chat_id,omitempty" gorm:"type:uuid;index"`
@@ -287,6 +291,7 @@ type CreateAgentRequest struct {
 	PresetVersionKey      *string         `json:"preset_version_key"`
 	Role                  string          `json:"role"`
 	RuntimeKind           *string         `json:"runtime_kind"`
+	ModelTier             *string         `json:"model_tier"`
 	Skills                AgentSkillRefs  `json:"skills"`
 	TriggerMode           *string         `json:"trigger_mode"`
 	Provider              *string         `json:"provider"`
@@ -317,9 +322,7 @@ type CustomAgentDraft struct {
 	AllowedTools          []string       `json:"allowed_tools"`
 	Skills                AgentSkillRefs `json:"skills"`
 	ApprovalMode          string         `json:"approval_mode"`
-	RuntimeKind           string         `json:"runtime_kind"`
-	Provider              string         `json:"provider"`
-	Model                 string         `json:"model,omitempty"`
+	ModelTier             string         `json:"model_tier"`
 	DefaultInvocationMode string         `json:"default_invocation_mode"`
 	MaxConcurrentRuns     int            `json:"max_concurrent_runs"`
 }
@@ -350,6 +353,7 @@ type UpdateAgentRequest struct {
 	Role                  *string         `json:"role"`
 	Status                *string         `json:"status"`
 	RuntimeKind           *string         `json:"runtime_kind"`
+	ModelTier             *string         `json:"model_tier"`
 	Skills                AgentSkillRefs  `json:"skills"`
 	TriggerMode           *string         `json:"trigger_mode"`
 	Provider              *string         `json:"provider"`
@@ -395,6 +399,7 @@ type UpdateWorkspaceAgentPresetVersionRequest struct {
 	Label                 *string         `json:"label"`
 	Description           *string         `json:"description"`
 	RuntimeKind           *string         `json:"runtime_kind"`
+	ModelTier             *string         `json:"model_tier"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
 	ExecutionConfig       json.RawMessage `json:"execution_config"`
@@ -415,6 +420,7 @@ type CreateAgentVersionRequest struct {
 	Description           *string         `json:"description"`
 	SourceVersionID       *string         `json:"source_version_id"`
 	RuntimeKind           *string         `json:"runtime_kind"`
+	ModelTier             *string         `json:"model_tier"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
 	ExecutionConfig       json.RawMessage `json:"execution_config"`
@@ -430,6 +436,7 @@ type UpdateAgentVersionRequest struct {
 	Label                 *string         `json:"label"`
 	Description           *string         `json:"description"`
 	RuntimeKind           *string         `json:"runtime_kind"`
+	ModelTier             *string         `json:"model_tier"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
 	ExecutionConfig       json.RawMessage `json:"execution_config"`
@@ -795,6 +802,7 @@ type AgentPresetDefinition struct {
 	Description                string     `json:"description"`
 	DefaultRole                string     `json:"default_role"`
 	RuntimeKind                string     `json:"runtime_kind"`
+	ModelTier                  string     `json:"model_tier"`
 	DefaultTriggerMode         string     `json:"default_trigger_mode"`
 	AllowedTriggerModes        []string   `json:"allowed_trigger_modes"`
 	AllowedTools               []string   `json:"allowed_tools"`

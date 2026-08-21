@@ -54,6 +54,77 @@ func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
 	}
 }
 
+func TestCreateAgentModelTierResolvesInternalExecution(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	svc := &AgentService{agentRepo: repository.NewAgentRepository(db)}
+	svc.SetModelProviderConfig("", "", "test-openrouter-key", "", false, "", "")
+	tier := "medium"
+	providerOverride := "anthropic"
+	modelOverride := "claude-sonnet-5"
+	runtimeOverride := "codex"
+	req := modelCreateAgentRequest(nil)
+	req.ModelTier = &tier
+	req.Provider = &providerOverride
+	req.Model = &modelOverride
+	req.RuntimeKind = &runtimeOverride
+
+	created, err := svc.CreateAgent(context.Background(), req, "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgent returned error: %v", err)
+	}
+	if created.ModelTier != "medium" || derefString(created.Provider) != "openrouter" || derefString(created.Model) != "google/gemini-3.7-flash" {
+		t.Fatalf("resolved execution = %#v", created)
+	}
+	if created.RuntimeKind != "native_sdk" {
+		t.Fatalf("runtime = %q, want backend-owned native_sdk", created.RuntimeKind)
+	}
+}
+
+func TestCustomAgentVersionCanChangeModelTierWithoutMutatingPriorSnapshot(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	if err := db.Exec(`CREATE TABLE agent_versions (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, agent_id TEXT NOT NULL,
+		version_key TEXT NOT NULL, label TEXT NOT NULL, description TEXT,
+		runtime_kind TEXT NOT NULL, model_tier TEXT NOT NULL DEFAULT '', provider TEXT, model TEXT,
+		execution_config BLOB NOT NULL DEFAULT '{}', system_prompt TEXT, skills BLOB NOT NULL DEFAULT '[]',
+		allowed_tools BLOB NOT NULL DEFAULT '[]', allowed_targets BLOB NOT NULL DEFAULT '[]',
+		supported_modes BLOB NOT NULL DEFAULT '[]', default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+		created_by TEXT, updated_by TEXT, deleted_at DATETIME, created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := &AgentService{agentRepo: repository.NewAgentRepository(db)}
+	svc.SetModelProviderConfig("", "", "test-openrouter-key", "", false, "", "")
+	small := "small"
+	req := modelCreateAgentRequest(nil)
+	req.ModelTier = &small
+	agent, err := svc.CreateAgent(context.Background(), req, "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := agentVersionRepoFromAgentRepo(svc.agentRepo).GetActive(context.Background(), agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	large := "large"
+	created, err := svc.CreateAgentVersion(context.Background(), agent.WorkspaceID, agent.ID, model.CreateAgentVersionRequest{
+		Label: "Large", ModelTier: &large,
+	}, "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.ModelTier != "small" || created.ModelTier != "large" || derefString(created.Model) != "openai/gpt-5.6-terra" {
+		t.Fatalf("original=%#v created=%#v", original, created)
+	}
+	activated, err := svc.ActivateAgentVersion(context.Background(), agent.WorkspaceID, agent.ID, created.ID, "user-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activated.ModelTier != "large" {
+		t.Fatalf("activated tier = %q", activated.ModelTier)
+	}
+}
+
 func TestCustomAgentIconCanBeCreatedAndUpdated(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	svc := &AgentService{agentRepo: repository.NewAgentRepository(db)}
@@ -1879,8 +1950,8 @@ func TestEnsureBuiltInAgent_AppliesDefaultExecutionConfigForForgeAndLens(t *test
 		if err != nil {
 			t.Fatalf("ensureBuiltInAgent(%s) returned error: %v", presetKey, err)
 		}
-		if strings.TrimSpace(string(agent.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
-			t.Fatalf("expected %s execution config to default to fast+high, got %s", presetKey, agent.ExecutionConfig)
+		if strings.TrimSpace(string(agent.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"standard"}` {
+			t.Fatalf("expected %s execution config to default to standard+high, got %s", presetKey, agent.ExecutionConfig)
 		}
 	}
 }
@@ -1983,6 +2054,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,
+			model_tier TEXT NOT NULL DEFAULT '',
 			skills BLOB NOT NULL DEFAULT '[]',
 			trigger_mode TEXT NOT NULL,
 			provider TEXT,
@@ -2023,6 +2095,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			source_version_key TEXT,
 			runtime_kind TEXT NOT NULL,
+			model_tier TEXT NOT NULL DEFAULT '',
 			provider TEXT,
 			model TEXT,
 			execution_config BLOB NOT NULL DEFAULT x'7b7d',

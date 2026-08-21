@@ -295,7 +295,7 @@ func TestDockChatListHydratesActiveRunStatus(t *testing.T) {
 		t.Fatalf("create dock chats: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE agent_runs (
-		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT,
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, model_tier TEXT NOT NULL DEFAULT '', status TEXT,
 		pause_reason TEXT, approval_state TEXT, execution_stage TEXT,
 		created_at DATETIME
 	)`).Error; err != nil {

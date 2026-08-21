@@ -110,9 +110,7 @@ func validateCustomAgentDraft(
 		AllowedTools:          []string{},
 		Skills:                model.AgentSkillRefs{},
 		ApprovalMode:          normalizeDraftApprovalMode(raw.ApprovalMode),
-		RuntimeKind:           normalizeDraftRuntimeKind(raw.RuntimeKind),
-		Provider:              normalizeDraftProvider(raw.Provider),
-		Model:                 strings.TrimSpace(raw.Model),
+		ModelTier:             normalizeDraftModelTier(raw.ModelTier),
 		DefaultInvocationMode: normalizeDraftInvocationMode(raw.DefaultInvocationMode),
 		MaxConcurrentRuns:     raw.MaxConcurrentRuns,
 	}
@@ -128,10 +126,6 @@ func validateCustomAgentDraft(
 	if draft.MaxConcurrentRuns <= 0 {
 		draft.MaxConcurrentRuns = 1
 	}
-	if draft.Provider != strings.TrimSpace(raw.Provider) {
-		draft.Model = ""
-	}
-
 	for _, target := range raw.AllowedTargets {
 		target = strings.TrimSpace(target)
 		if !isSupportedCustomAgentTarget(target) {
@@ -194,12 +188,6 @@ func validateCustomAgentDraft(
 	if raw.ApprovalMode != draft.ApprovalMode && strings.TrimSpace(raw.ApprovalMode) != "" {
 		warnings = append(warnings, fmt.Sprintf("Changed unsupported approval mode %q to %q.", raw.ApprovalMode, draft.ApprovalMode))
 	}
-	if raw.RuntimeKind != draft.RuntimeKind && strings.TrimSpace(raw.RuntimeKind) != "" {
-		warnings = append(warnings, fmt.Sprintf("Changed unsupported runtime %q to %q.", raw.RuntimeKind, draft.RuntimeKind))
-	}
-	if raw.Provider != draft.Provider && strings.TrimSpace(raw.Provider) != "" {
-		warnings = append(warnings, fmt.Sprintf("Changed unsupported provider %q to %q.", raw.Provider, draft.Provider))
-	}
 	if raw.DefaultInvocationMode != draft.DefaultInvocationMode && strings.TrimSpace(raw.DefaultInvocationMode) != "" {
 		warnings = append(warnings, fmt.Sprintf("Changed unsupported run mode %q to %q.", raw.DefaultInvocationMode, draft.DefaultInvocationMode))
 	}
@@ -215,21 +203,12 @@ func normalizeDraftApprovalMode(value string) string {
 	}
 }
 
-func normalizeDraftRuntimeKind(value string) string {
-	switch strings.TrimSpace(value) {
-	case "opencode", "native_sdk", "codex":
-		return strings.TrimSpace(value)
+func normalizeDraftModelTier(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "small", "medium", "large", "flagship":
+		return strings.ToLower(strings.TrimSpace(value))
 	default:
-		return "codex"
-	}
-}
-
-func normalizeDraftProvider(value string) string {
-	switch strings.TrimSpace(value) {
-	case "anthropic", "openai", "openrouter":
-		return strings.TrimSpace(value)
-	default:
-		return "anthropic"
+		return "small"
 	}
 }
 
@@ -263,8 +242,7 @@ func filterCustomAgentDraftReasons(reasons []model.CustomAgentDraftReason, draft
 		allowedValues[ref.Key] = true
 	}
 	allowedValues[draft.Name] = true
-	allowedValues[draft.RuntimeKind] = true
-	allowedValues[draft.Provider] = true
+	allowedValues[draft.ModelTier] = true
 	allowedValues[draft.ApprovalMode] = true
 	allowedValues[draft.DefaultInvocationMode] = true
 
@@ -317,9 +295,7 @@ Choose only these skills:
 Defaults:
 - role: Custom Agent
 - approval_mode: mutating_tools unless the user explicitly asks to approve before any work or to execute writes without approval
-- runtime_kind: native_sdk
-- provider: anthropic
-- model: empty string unless the user explicitly names a model
+- model_tier: small unless the request clearly needs more complex reasoning
 - default_invocation_mode: interactive
 - max_concurrent_runs: 1
 
@@ -337,7 +313,7 @@ func customAgentDraftJSONSchema() map[string]any {
 				"additionalProperties": false,
 				"required": []string{
 					"name", "role", "system_prompt", "allowed_targets", "allowed_tools", "skills",
-					"approval_mode", "runtime_kind", "provider", "model", "default_invocation_mode", "max_concurrent_runs",
+					"approval_mode", "model_tier", "default_invocation_mode", "max_concurrent_runs",
 				},
 				"properties": map[string]any{
 					"name":                    map[string]any{"type": "string"},
@@ -347,9 +323,7 @@ func customAgentDraftJSONSchema() map[string]any {
 					"allowed_tools":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 					"skills":                  map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"key"}, "additionalProperties": false, "properties": map[string]any{"key": map[string]any{"type": "string"}, "skill_id": map[string]any{"type": "string"}, "version_key": map[string]any{"type": "string"}}}},
 					"approval_mode":           map[string]any{"type": "string"},
-					"runtime_kind":            map[string]any{"type": "string"},
-					"provider":                map[string]any{"type": "string"},
-					"model":                   map[string]any{"type": "string"},
+					"model_tier":              map[string]any{"type": "string", "enum": []string{"small", "medium", "large", "flagship"}},
 					"default_invocation_mode": map[string]any{"type": "string"},
 					"max_concurrent_runs":     map[string]any{"type": "integer"},
 				},

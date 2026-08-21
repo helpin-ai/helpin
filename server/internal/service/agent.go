@@ -19,6 +19,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/agentskills"
+	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -747,6 +748,7 @@ type AgentService struct {
 	codexChatGPTAccountID      string
 	skillPackageStore          skillPackageStore
 	agentDraftLLM              agentDraftLLM
+	modelTierResolver          *AgentModelTierResolver
 	entitlementSvc             *EntitlementService
 	aiUsageMeter               *AIUsageMeter
 	agentRuntimeClient         agentRuntimeSignalClient
@@ -754,6 +756,20 @@ type AgentService struct {
 	agentRuntimeLaunchEnabled  bool
 	mcpRepo                    *repository.MCPRepository
 	externalMCPService         *ExternalMCPService
+}
+
+func (s *AgentService) SetModelTierResolver(resolver *AgentModelTierResolver) *AgentService {
+	if s != nil {
+		s.modelTierResolver = resolver
+	}
+	return s
+}
+
+func (s *AgentService) agentTierResolver() *AgentModelTierResolver {
+	if s != nil && s.modelTierResolver != nil {
+		return s.modelTierResolver
+	}
+	return loadDefaultAgentModelTierResolver()
 }
 
 type agentRuntimeSignalClient interface {
@@ -1197,6 +1213,10 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.RuntimeKind = preset.RuntimeKind
 			changed = true
 		}
+		if strings.TrimSpace(existing.ModelTier) != strings.TrimSpace(preset.ModelTier) {
+			existing.ModelTier = strings.TrimSpace(preset.ModelTier)
+			changed = true
+		}
 		if strings.TrimSpace(existing.DefaultInvocationMode) != strings.TrimSpace(preset.DefaultInvocationMode) {
 			existing.DefaultInvocationMode = preset.DefaultInvocationMode
 			changed = true
@@ -1236,6 +1256,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		Role:                       preset.DefaultRole,
 		Status:                     "idle",
 		RuntimeKind:                preset.RuntimeKind,
+		ModelTier:                  preset.ModelTier,
 		Skills:                     model.AgentSkillRefs{},
 		TriggerMode:                preset.DefaultTriggerMode,
 		Provider:                   trimPtr(preset.Provider),
@@ -1333,6 +1354,7 @@ func applyAgentVersionToAgent(agent *model.Agent, version *model.AgentVersion) {
 	}
 	agent.ActiveVersionID = &version.ID
 	agent.RuntimeKind = version.RuntimeKind
+	agent.ModelTier = version.ModelTier
 	agent.Provider = version.Provider
 	agent.Model = version.Model
 	agent.ExecutionConfig = version.ExecutionConfig
@@ -1346,6 +1368,36 @@ func applyAgentVersionToAgent(agent *model.Agent, version *model.AgentVersion) {
 	}
 }
 
+func modelTierExecutionConfig(serviceTier string) model.JSONBlob {
+	serviceTier = strings.TrimSpace(serviceTier)
+	if serviceTier == "" || serviceTier == defaultAICompletionServiceTier {
+		return model.JSONBlob("{}")
+	}
+	return model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{ServiceTier: &serviceTier})
+}
+
+func applyModelTierSnapshotToAgent(agent *model.Agent, snapshot AgentModelTierSnapshot) {
+	if agent == nil {
+		return
+	}
+	agent.ModelTier = snapshot.ModelTier
+	agent.RuntimeKind = snapshot.RuntimeKind
+	agent.Provider = trimPtr(&snapshot.Provider)
+	agent.Model = trimPtr(&snapshot.Model)
+	agent.ExecutionConfig = modelTierExecutionConfig(snapshot.ServiceTier)
+}
+
+func applyModelTierSnapshotToVersion(version *model.AgentVersion, snapshot AgentModelTierSnapshot) {
+	if version == nil {
+		return
+	}
+	version.ModelTier = snapshot.ModelTier
+	version.RuntimeKind = snapshot.RuntimeKind
+	version.Provider = trimPtr(&snapshot.Provider)
+	version.Model = trimPtr(&snapshot.Model)
+	version.ExecutionConfig = modelTierExecutionConfig(snapshot.ServiceTier)
+}
+
 func agentVersionFromAgent(agent *model.Agent, actorID string) *model.AgentVersion {
 	if agent == nil {
 		return nil
@@ -1356,6 +1408,7 @@ func agentVersionFromAgent(agent *model.Agent, actorID string) *model.AgentVersi
 		VersionKey:            "default",
 		Label:                 "Default",
 		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
+		ModelTier:             strings.TrimSpace(agent.ModelTier),
 		Provider:              agent.Provider,
 		Model:                 agent.Model,
 		ExecutionConfig:       normalizeExecutionConfigJSON(agent.ExecutionConfig),
@@ -2182,6 +2235,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		Description:                trimPtr(req.Description),
 		SourceVersionKey:           trimPtr(req.SourceVersionKey),
 		RuntimeKind:                runtimeKind,
+		ModelTier:                  strings.TrimSpace(basePreset.ModelTier),
 		Provider:                   trimPtr(req.Provider),
 		Model:                      nil,
 		ExecutionConfig:            normalizeExecutionConfigJSON(req.ExecutionConfig),
@@ -2252,6 +2306,9 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	}
 	if string(version.ExecutionConfig) == "{}" {
 		version.ExecutionConfig = normalizeExecutionConfigJSON(basePreset.ExecutionConfig)
+	}
+	if strings.TrimSpace(version.ModelTier) == "" {
+		version.ModelTier = deriveAgentModelTier(version.Provider, version.Model, version.ExecutionConfig)
 	}
 	versionValidationAgent := &model.Agent{
 		IsSystem:         true,
@@ -2413,6 +2470,22 @@ func (s *AgentService) CreateAgentVersion(ctx context.Context, workspaceID, agen
 		version.UpdatedBy = &actorID
 	}
 	applyAgentVersionCreateRequest(&version, req)
+	if req.ModelTier != nil {
+		resolver := s.agentTierResolver()
+		if resolver == nil {
+			return nil, fmt.Errorf("model size temporarily unavailable")
+		}
+		snapshot, resolveErr := resolver.ResolveCustom(
+			aiusage.Tier(strings.ToLower(strings.TrimSpace(*req.ModelTier))),
+			parseJSONStringSlice(version.AllowedTargets),
+			parseJSONStringSlice(version.AllowedTools),
+			version.RuntimeKind,
+		)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		applyModelTierSnapshotToVersion(&version, snapshot)
+	}
 	if err := validateAgentVersion(&version); err != nil {
 		return nil, err
 	}
@@ -2442,6 +2515,22 @@ func (s *AgentService) UpdateAgentVersion(ctx context.Context, workspaceID, agen
 		return nil, fmt.Errorf("agent version not found")
 	}
 	applyAgentVersionUpdateRequest(version, req)
+	if req.ModelTier != nil {
+		resolver := s.agentTierResolver()
+		if resolver == nil {
+			return nil, fmt.Errorf("model size temporarily unavailable")
+		}
+		snapshot, resolveErr := resolver.ResolveCustom(
+			aiusage.Tier(strings.ToLower(strings.TrimSpace(*req.ModelTier))),
+			parseJSONStringSlice(version.AllowedTargets),
+			parseJSONStringSlice(version.AllowedTools),
+			version.RuntimeKind,
+		)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		applyModelTierSnapshotToVersion(version, snapshot)
+	}
 	if actorID != "" {
 		version.UpdatedBy = &actorID
 	}
@@ -2531,6 +2620,9 @@ func (s *AgentService) DeleteAgentVersion(ctx context.Context, workspaceID, agen
 }
 
 func applyAgentVersionCreateRequest(version *model.AgentVersion, req model.CreateAgentVersionRequest) {
+	if req.ModelTier != nil {
+		version.ModelTier = strings.TrimSpace(*req.ModelTier)
+	}
 	if req.RuntimeKind != nil {
 		version.RuntimeKind = strings.TrimSpace(*req.RuntimeKind)
 	}
@@ -2572,6 +2664,7 @@ func applyAgentVersionUpdateRequest(version *model.AgentVersion, req model.Updat
 	}
 	applyAgentVersionCreateRequest(version, model.CreateAgentVersionRequest{
 		RuntimeKind:           req.RuntimeKind,
+		ModelTier:             req.ModelTier,
 		Provider:              req.Provider,
 		Model:                 req.Model,
 		ExecutionConfig:       req.ExecutionConfig,
@@ -2687,6 +2780,7 @@ func (s *AgentService) applyPresetToSystemAgent(agent *model.Agent, preset model
 	} else {
 		agent.RuntimeKind = defaultRuntimeKindForPresetKey(systemPresetKey)
 	}
+	agent.ModelTier = strings.TrimSpace(preset.ModelTier)
 	if strings.TrimSpace(preset.DefaultTriggerMode) != "" {
 		agent.TriggerMode = preset.DefaultTriggerMode
 	} else {
@@ -2848,6 +2942,7 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 			version.Description = trimPtr(&currentPreset.Description)
 		}
 		version.RuntimeKind = runtimeKind
+		version.ModelTier = strings.TrimSpace(currentPreset.ModelTier)
 		if req.Provider != nil {
 			version.Provider = trimPtr(req.Provider)
 		} else {
@@ -2866,6 +2961,10 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 			version.ExecutionConfig = normalizeExecutionConfigJSON(req.ExecutionConfig)
 		} else {
 			version.ExecutionConfig = normalizeExecutionConfigJSON(currentPreset.ExecutionConfig)
+		}
+		version.ModelTier = strings.TrimSpace(currentPreset.ModelTier)
+		if version.ModelTier == "" {
+			version.ModelTier = deriveAgentModelTier(version.Provider, version.Model, version.ExecutionConfig)
 		}
 		if req.AllowedTools != nil {
 			version.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
@@ -3160,6 +3259,7 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 		Role:                       role,
 		Status:                     "idle",
 		RuntimeKind:                runtimeKind,
+		ModelTier:                  strings.TrimSpace(stringOrDefault(req.ModelTier, "")),
 		Skills:                     skills,
 		TriggerMode:                triggerMode,
 		Provider:                   trimPtr(req.Provider),
@@ -3177,6 +3277,22 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 		ApprovalMode:               approvalMode,
 		MaxConcurrentRuns:          maxConcurrentRuns,
 		DefaultInvocationMode:      stringOrDefault(req.DefaultInvocationMode, model.InvocationModeInteractive),
+	}
+	if req.ModelTier != nil {
+		resolver := s.agentTierResolver()
+		if resolver == nil {
+			return nil, fmt.Errorf("model size temporarily unavailable")
+		}
+		snapshot, err := resolver.ResolveCustom(
+			aiusage.Tier(strings.ToLower(strings.TrimSpace(*req.ModelTier))),
+			parseJSONStringSlice(agent.AllowedTargets),
+			parseJSONStringSlice(agent.AllowedTools),
+			"",
+		)
+		if err != nil {
+			return nil, err
+		}
+		applyModelTierSnapshotToAgent(agent, snapshot)
 	}
 	if sourceTemplate != nil {
 		agent.SourceTemplateID = &sourceTemplate.ID
@@ -3237,6 +3353,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		return nil, fmt.Errorf("team_ids and legacy team_id cannot both be set")
 	}
 	if agent.IsSystem {
+		if req.ModelTier != nil {
+			return nil, fmt.Errorf("built-in model size is Helpin-managed")
+		}
 		systemPresetKey := normalizePresetKey(agent.PresetKey)
 		if systemPresetKey == "" {
 			systemPresetKey = model.AgentPresetEpicPlanner
@@ -3323,6 +3442,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		} else {
 			agent.RuntimeKind = "opencode"
 		}
+	}
+	if req.ModelTier != nil {
+		agent.ModelTier = strings.TrimSpace(*req.ModelTier)
 	}
 	if req.Skills != nil {
 		agent.Skills = req.Skills.Normalize()
@@ -3437,6 +3559,22 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		agent.InstructionTemplateVersion = ""
 		if resolvedPresetKey != model.AgentPresetEpicPlanner {
 			agent.PlanningNotes = nil
+		}
+		if req.ModelTier != nil {
+			resolver := s.agentTierResolver()
+			if resolver == nil {
+				return nil, fmt.Errorf("model size temporarily unavailable")
+			}
+			snapshot, resolveErr := resolver.ResolveCustom(
+				aiusage.Tier(strings.ToLower(strings.TrimSpace(*req.ModelTier))),
+				parseJSONStringSlice(agent.AllowedTargets),
+				parseJSONStringSlice(agent.AllowedTools),
+				agent.RuntimeKind,
+			)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			applyModelTierSnapshotToAgent(agent, snapshot)
 		}
 	}
 	normalizeAgentRecord(agent)
@@ -6138,6 +6276,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		ParentRunID:       params.parentRunID,
 		DockChatID:        params.dockChatID,
 		RuntimeKind:       params.agent.RuntimeKind,
+		ModelTier:         params.agent.ModelTier,
 		InvocationMode:    defaultString(params.invocationMode, model.InvocationModeAutonomous),
 		ApprovalState:     approvalState,
 		PauseReason:       model.AgentRunPauseReasonNone,
