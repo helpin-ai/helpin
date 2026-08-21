@@ -383,7 +383,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
               <span className="rounded-full bg-muted px-2.5 py-1 text-caption text-muted-foreground">{item.label}</span>
             </div>
           ) : item.kind === 'system' ? (
-            <MessageBubble key={`system-${index}`} message={item.message} align="left" />
+            <div key={`system-${index}`} className={items[index + 1]?.kind === 'cluster' ? 'mb-3' : undefined}>
+              <MessageBubble message={item.message} align="left" />
+            </div>
           ) : (
             <ClusterView
               key={`cluster-${index}`}

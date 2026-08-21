@@ -178,4 +178,22 @@ describe('MessageList history pagination', () => {
     fireEvent.click(view.getByRole('button', { name: 'Message actions' }))
     expect(onMessageActions).toHaveBeenCalledWith(item)
   })
+
+  it('adds breathing room below a system event only when a message follows', () => {
+    const joined: SupportMessage = {
+      ...message('system-joined', '01'),
+      sender_type: 'user',
+      message_type: 'system',
+      system_event_type: 'teammate_joined',
+      content: 'Azhar joined the conversation.',
+    }
+    const reply = message('msg-02', '02')
+    const view = render(<MessageList items={groupMessages([joined, reply])} />)
+
+    const eventText = view.getByText('joined the conversation.')
+    expect(eventText.closest('.mb-3')).not.toBeNull()
+
+    view.rerender(<MessageList items={groupMessages([joined])} />)
+    expect(view.getByText('joined the conversation.').closest('.mb-3')).toBeNull()
+  })
 })
