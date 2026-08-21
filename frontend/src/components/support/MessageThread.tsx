@@ -670,7 +670,6 @@ export function MessageThread({
 
     let cancelled = false;
     const frames: number[] = [];
-    const timeouts: number[] = [];
     const shouldUseInitialTarget = pendingInitialScrollRef.current && initialScrollTargetMessageId && initialScrollTargetMessageId !== lastMessageId;
 
     const scrollToTarget = () => {
@@ -707,9 +706,6 @@ export function MessageThread({
 
     scrollToTarget();
     scheduleFrame();
-    timeouts.push(window.setTimeout(scheduleFrame, 0));
-    timeouts.push(window.setTimeout(scheduleFrame, 80));
-    timeouts.push(window.setTimeout(scheduleFrame, 180));
 
     if (pendingInitialScrollRef.current) {
       pendingInitialScrollRef.current = false;
@@ -718,7 +714,6 @@ export function MessageThread({
     return () => {
       cancelled = true;
       frames.forEach((frame) => window.cancelAnimationFrame(frame));
-      timeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
   }, [conversationId, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
 

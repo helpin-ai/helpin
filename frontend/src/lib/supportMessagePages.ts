@@ -48,11 +48,43 @@ export function appendMessageToNewestPage(
     }
   }
 
+  // The backend creates this event immediately before a teammate's first
+  // reply. The reply itself is optimistic in the UI, though, so its WebSocket
+  // event can arrive after that reply is already on screen. Insert the event
+  // in front of the pending reply instead of briefly rendering it below the
+  // reply and then correcting the order on a later refetch.
+  const shouldPrecedeOptimisticReply = message.message_type === 'system'
+    && message.system_event_type === 'teammate_joined'
+    && !!message.sender_user_id;
+
   return {
     ...data,
-    pages: data.pages.map((page, index) => index === 0
-      ? { ...page, data: [...page.data, message] }
-      : page),
+    pages: data.pages.map((page, index) => {
+      if (index !== 0) return page;
+
+      const pendingReplyIndex = shouldPrecedeOptimisticReply
+        ? page.data.findIndex((item) =>
+          item.id.startsWith('optimistic-')
+          && item.sender_type === 'user'
+          && item.sender_user_id === message.sender_user_id
+          && !item.is_internal
+          && (item.message_type === undefined || item.message_type === 'reply'),
+        )
+        : -1;
+
+      if (pendingReplyIndex < 0) {
+        return { ...page, data: [...page.data, message] };
+      }
+
+      return {
+        ...page,
+        data: [
+          ...page.data.slice(0, pendingReplyIndex),
+          message,
+          ...page.data.slice(pendingReplyIndex),
+        ],
+      };
+    }),
   }
 }
 
