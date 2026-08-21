@@ -1,6 +1,11 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
 
+/* The deterministic support avatar palette is shared with web. Tailwind's
+   mobile scan does not otherwise see literal classes outside this app, which
+   caused only incidentally-used colors (blue/amber) to render. */
+@source '../../../frontend/src/components/support/helpers.ts';
+
 @custom-variant dark (&:is(.dark *));
 
 /* ── Design tokens copied verbatim from frontend/src/index.css ──────────────
