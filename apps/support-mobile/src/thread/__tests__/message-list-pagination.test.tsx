@@ -209,6 +209,25 @@ describe('MessageList history pagination', () => {
     expect(avatar?.className).toContain(getAvatarColor('member-42').split(' ')[0])
   })
 
+  it('shows a team member name when their message avatar is tapped', () => {
+    const item: SupportMessage = {
+      ...message('msg-03', '03'),
+      sender_type: 'user',
+      sender_user_id: 'member-42',
+      sender_display_name: 'Azhar Mahmood',
+    }
+    const view = render(<MessageList items={groupMessages([item])} />)
+    const avatarButton = view.getByRole('button', { name: 'Show sender name for Azhar Mahmood' })
+
+    expect(view.queryByRole('tooltip')).toBeNull()
+    fireEvent.click(avatarButton)
+    expect(view.getByRole('tooltip').textContent).toBe('Azhar Mahmood')
+    expect(avatarButton.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.click(avatarButton)
+    expect(view.queryByRole('tooltip')).toBeNull()
+  })
+
   it('resolves a teammate generated avatar from the workspace member profile', async () => {
     const item: SupportMessage = {
       ...message('msg-03', '03'),

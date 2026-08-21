@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import type { AssignableMember, SupportMessage } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
@@ -125,6 +125,77 @@ function TypingBubble({ align, label }: TypingIndicatorState) {
   )
 }
 
+function MessageSenderAvatar({
+  name,
+  src,
+  member,
+  fallbackSeed,
+  isAI,
+  showNameOnTap,
+  align,
+}: {
+  name: string
+  src?: string
+  member?: AssignableMember
+  fallbackSeed: string
+  isAI: boolean
+  showNameOnTap: boolean
+  align: 'left' | 'right'
+}) {
+  const [nameVisible, setNameVisible] = useState(false)
+
+  useEffect(() => {
+    if (!nameVisible) return
+    const timeout = window.setTimeout(() => setNameVisible(false), 2500)
+    return () => window.clearTimeout(timeout)
+  }, [nameVisible])
+
+  const avatar = (
+    <>
+      <TeamMemberAvatar
+        name={name}
+        src={src}
+        member={member}
+        size={28}
+        initialCount={1}
+        fallbackSeed={fallbackSeed}
+      />
+      {isAI && (
+        <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background ring-2 ring-background">
+          <Sparkles className="h-2.5 w-2.5 text-primary" aria-hidden />
+        </span>
+      )}
+    </>
+  )
+
+  if (!showNameOnTap) {
+    return <div title={name} className="relative shrink-0">{avatar}</div>
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={`Show sender name for ${name}`}
+      aria-expanded={nameVisible}
+      onClick={() => setNameVisible((visible) => !visible)}
+      className="relative shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+    >
+      {avatar}
+      {nameVisible && (
+        <span
+          role="tooltip"
+          className={cn(
+            'absolute bottom-full z-20 mb-2 max-w-48 whitespace-nowrap rounded-lg bg-foreground px-2.5 py-1.5 text-caption font-medium text-background',
+            align === 'right' ? 'right-0' : 'left-0',
+          )}
+        >
+          {name}
+        </span>
+      )}
+    </button>
+  )
+}
+
 function ClusterView({
   cluster,
   receiptMessageId,
@@ -161,30 +232,24 @@ function ClusterView({
   const align = cluster.senderType === 'customer' ? 'left' : 'right'
   const isAI = cluster.senderType === 'ai'
   const firstMessage = cluster.messages[0]
+  const isTeamMember = Boolean(firstMessage?.sender_user_id)
   const avatarSeed = firstMessage?.sender_user_id
     ?? firstMessage?.sender_agent_id
     ?? firstMessage?.sender_display_name
     ?? cluster.senderName
-  // Crisp-style: one avatar per group, sitting inline at the bottom of the
-  // bubble column (customer on the left, our side on the right). No visible
-  // sender-name header — the name is the avatar's native tooltip, like web.
+  // One avatar per group, sitting inline at the bottom of the bubble column.
+  // Desktop can expose the name on hover; mobile team avatars expose it on tap.
   return (
     <div className={cn('mb-4 flex items-end gap-2.5', align === 'right' && 'flex-row-reverse')}>
-      <div title={cluster.senderName} className="relative shrink-0">
-        <TeamMemberAvatar
-          name={cluster.senderName}
-          src={cluster.senderAvatarUrl}
-          member={member}
-          size={28}
-          initialCount={1}
-          fallbackSeed={avatarSeed}
-        />
-        {isAI && (
-          <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background ring-2 ring-background">
-            <Sparkles className="h-2.5 w-2.5 text-primary" aria-hidden />
-          </span>
-        )}
-      </div>
+      <MessageSenderAvatar
+        name={cluster.senderName}
+        src={cluster.senderAvatarUrl}
+        member={member}
+        fallbackSeed={avatarSeed}
+        isAI={isAI}
+        showNameOnTap={isTeamMember}
+        align={align}
+      />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         {cluster.messages.map((message) => (
           <ActionableMessage
