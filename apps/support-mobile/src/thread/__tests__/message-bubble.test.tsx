@@ -29,6 +29,7 @@ test('shows a persistent clock time below a customer message card', () => {
   expect(bubble.contains(meta)).toBe(false)
   expect(bubble.className).toContain('bg-muted')
   expect(bubble.className).toContain('border-border/40')
+  expect(bubble.className).not.toContain('shadow')
 })
 
 test('uses the web blue tint for outbound replies and keeps actions beside the time', () => {
@@ -46,6 +47,7 @@ test('uses the web blue tint for outbound replies and keeps actions beside the t
   const actions = screen.getByRole('button', { name: 'Message actions' })
   expect(bubble.className).toContain('bg-blue-50')
   expect(bubble.className).toContain('dark:bg-blue-950/40')
+  expect(bubble.className).not.toContain('shadow')
   expect(meta.contains(actions)).toBe(true)
   fireEvent.click(actions)
   expect(onMessageActions).toHaveBeenCalledOnce()
@@ -68,6 +70,7 @@ test('gives internal notes a distinct sender label and timestamp', () => {
   expect(screen.getByTestId('message-meta')).toBeDefined()
   expect(screen.getByTestId('message-bubble').className).toContain('bg-amber-50')
   expect(screen.getByTestId('message-bubble').className).toContain('border-r-amber-400')
+  expect(screen.getByTestId('message-bubble').className).not.toContain('shadow')
 })
 
 test('shows email and read state below an outbound bubble', () => {
@@ -113,7 +116,7 @@ test('previews image attachments in-app instead of opening their raw URL', () =>
   open.mockRestore()
 })
 
-test('shows teammate joins with the actor avatar, a surfaced background, and time', () => {
+test('shows teammate joins as a plain activity row with the actor avatar and time', () => {
   render(
     <MessageBubble
       message={message({
@@ -130,7 +133,10 @@ test('shows teammate joins with the actor avatar, a surfaced background, and tim
   )
 
   const surface = screen.getByTestId('system-event-surface')
-  expect(surface.className).toContain('bg-muted/60')
+  expect(surface.className).not.toContain('bg-')
+  expect(surface.className).not.toContain('border')
+  expect(surface.className).not.toContain('rounded')
+  expect(surface.className).not.toContain('shadow')
   expect(screen.getByText('EW')).toBeDefined()
   expect(screen.getByText('Emma Wilson').tagName).toBe('STRONG')
   expect(screen.getByTestId('system-event-time').textContent).toMatch(/\d{1,2}:30/)

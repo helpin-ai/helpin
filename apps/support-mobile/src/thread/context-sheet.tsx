@@ -280,7 +280,7 @@ export function ContextSheet({
               <Pressable
                 onPress={handleToggleStatus}
                 disabled={updateStatus.isPending}
-                className="flex h-12 min-h-12 items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-background px-2 text-footnote font-medium text-foreground shadow-sm"
+                className="flex h-12 min-h-12 items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-background px-2 text-footnote font-medium text-foreground"
               >
                 {isResolved
                   ? <RotateCcw className="h-4 w-4 shrink-0" />
@@ -291,7 +291,7 @@ export function ContextSheet({
                 haptic="selection"
                 onPress={() => setAssignExpanded((value) => !value)}
                 aria-expanded={assignExpanded}
-                className="flex h-12 min-h-12 items-center justify-center gap-1 rounded-xl border border-border/70 bg-background px-2 text-footnote font-medium text-foreground shadow-sm"
+                className="flex h-12 min-h-12 items-center justify-center gap-1 rounded-xl border border-border/70 bg-background px-2 text-footnote font-medium text-foreground"
               >
                 <UserRoundPlus className="h-4 w-4 shrink-0" />
                 Assign
@@ -302,7 +302,7 @@ export function ContextSheet({
                 onPress={() => setTagsExpanded((value) => !value)}
                 aria-label="Tags"
                 aria-expanded={tagsExpanded}
-                className="flex h-12 min-h-12 items-center justify-center gap-1 rounded-xl border border-border/70 bg-background px-2 text-footnote font-medium text-foreground shadow-sm"
+                className="flex h-12 min-h-12 items-center justify-center gap-1 rounded-xl border border-border/70 bg-background px-2 text-footnote font-medium text-foreground"
               >
                 <Tag className="h-4 w-4 shrink-0" />
                 Tags

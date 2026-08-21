@@ -312,7 +312,7 @@ export function ViewsDrawer({
           <motion.aside
             role="navigation"
             aria-label="Inbox views"
-            className="absolute inset-y-0 left-0 flex w-[82%] max-w-[360px] flex-col border-r border-border bg-background shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
+            className="absolute inset-y-0 left-0 flex w-[82%] max-w-[360px] flex-col border-r border-border bg-background"
             initial={reduced ? { opacity: 0 } : { x: '-100%' }}
             animate={reduced ? { opacity: 1 } : { x: 0 }}
             exit={reduced ? { opacity: 0 } : { x: '-100%' }}

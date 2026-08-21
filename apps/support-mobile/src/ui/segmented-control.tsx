@@ -52,7 +52,7 @@ export function SegmentedControl<T extends string>({
             {selected && (
               <motion.div
                 layoutId="segment-thumb"
-                className={cn('absolute inset-0 -z-10 bg-background shadow-sm', thumbRadius)}
+                className={cn('absolute inset-0 -z-10 bg-background', thumbRadius)}
                 transition={{ type: 'spring', bounce: 0.2, duration: 0.3 }}
               />
             )}

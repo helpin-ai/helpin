@@ -486,7 +486,7 @@ export function ConversationScreen() {
               <Pressable
                 haptic="selection"
                 onPress={() => messageListRef.current?.scrollToBottom('smooth')}
-                className="pointer-events-auto flex h-auto min-h-0 w-auto min-w-0 items-center rounded-full bg-primary px-4 py-1.5 text-footnote font-medium text-primary-foreground shadow-lg"
+                className="pointer-events-auto flex h-auto min-h-0 w-auto min-w-0 items-center rounded-full bg-primary px-4 py-1.5 text-footnote font-medium text-primary-foreground"
               >
                 New message
               </Pressable>

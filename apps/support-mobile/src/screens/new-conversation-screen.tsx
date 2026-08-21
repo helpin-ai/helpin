@@ -299,7 +299,7 @@ export function NewConversationScreen() {
                 )}
               </div>
               {showContacts && deferredRecipient && (
-                <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-lg">
+                <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-popover p-1">
                   {contactsQuery.isPending && <div className="flex justify-center py-4"><Spinner size={16} /></div>}
                   {(contactsQuery.data ?? []).map((contact) => (
                     <Pressable

@@ -94,7 +94,7 @@ function InteractionCard({ interaction, onResolve, resolving }: {
   const title = interaction.title || interaction.interaction_kind.replaceAll('_', ' ')
 
   return (
-    <section aria-label={title} className="rounded-2xl border border-amber-300/60 bg-background p-3 shadow-sm dark:border-amber-900/70">
+    <section aria-label={title} className="rounded-2xl border border-amber-300/60 bg-background p-3 dark:border-amber-900/70">
       <div className="flex items-start gap-2"><Bot className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><div className="min-w-0"><h3 className="text-footnote font-semibold capitalize">{title}</h3>{interaction.summary && <p className="mt-1 whitespace-pre-wrap text-footnote text-muted-foreground">{interaction.summary}</p>}</div></div>
 
       {interaction.interaction_kind === 'request_user_input' && questions.length > 0 && (

@@ -151,7 +151,7 @@ export function SearchScreen() {
 
         <div className="sticky top-[calc(52px+var(--safe-top))] z-20 border-b border-border/70 bg-background/95 px-4 pb-3 pt-3 backdrop-blur-sm">
           <div className="flex gap-2">
-            <label className="flex h-12 min-w-0 flex-1 items-center gap-2 rounded-2xl border border-input bg-muted/70 px-3.5 shadow-sm transition-[border-color,box-shadow,background-color] focus-within:border-primary/50 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/20">
+            <label className="flex h-12 min-w-0 flex-1 items-center gap-2 rounded-2xl border border-input bg-muted/70 px-3.5 transition-colors focus-within:border-primary/50 focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/20">
               <Search className="h-5 w-5 shrink-0 text-muted-foreground" />
               <input
                 autoFocus
@@ -177,7 +177,7 @@ export function SearchScreen() {
               aria-label={filterCount > 0 ? `Search filters, ${filterCount} active` : 'Search filters'}
               disabled={accessDenied || !workspaceId}
               onPress={() => setFiltersOpen(true)}
-              className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-input bg-background text-foreground shadow-sm active:bg-muted"
+              className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-input bg-background text-foreground active:bg-muted"
             >
               <SlidersHorizontal className="h-5 w-5" />
               {filterCount > 0 && (

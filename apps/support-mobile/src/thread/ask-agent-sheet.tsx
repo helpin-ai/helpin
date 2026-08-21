@@ -179,7 +179,7 @@ export function AskAgentSheet({ workspaceId, conversation, open, onOpenChange, c
                 </div>
                 <div className="mt-5 space-y-2">
                   {SUPPORT_AGENT_STARTERS.map((starter) => (
-                    <Pressable key={starter.label} disabled={sendMessage.isPending} onPress={() => void send(starter.prompt)} className="flex min-h-11 w-full items-center rounded-2xl border border-border/70 bg-background px-4 text-left text-footnote font-medium shadow-sm disabled:opacity-50">
+                    <Pressable key={starter.label} disabled={sendMessage.isPending} onPress={() => void send(starter.prompt)} className="flex min-h-11 w-full items-center rounded-2xl border border-border/70 bg-background px-4 text-left text-footnote font-medium disabled:opacity-50">
                       {starter.label}
                     </Pressable>
                   ))}
@@ -199,7 +199,7 @@ export function AskAgentSheet({ workspaceId, conversation, open, onOpenChange, c
                 {messages.map((message) => (
                   <div key={message.id} className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                     <div className={message.role === 'user'
-                      ? 'max-w-[86%] rounded-2xl rounded-br-sm border border-border/40 bg-blue-50 px-3 py-2 text-foreground/85 shadow-sm dark:bg-blue-950/40 dark:text-foreground'
+                      ? 'max-w-[86%] rounded-2xl rounded-br-sm border border-border/40 bg-blue-50 px-3 py-2 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground'
                       : 'max-w-[92%] rounded-2xl rounded-bl-sm border border-border/40 bg-muted px-3 py-2 text-foreground'}>
                       <Markdown className="selectable min-w-0 break-words text-body">{message.content}</Markdown>
                     </div>

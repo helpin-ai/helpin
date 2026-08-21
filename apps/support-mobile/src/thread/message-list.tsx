@@ -357,7 +357,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
       {(loadingEarlier || (loadEarlierError && hasEarlier)) && (
         <div className="sticky top-2 z-10 -mb-8 flex h-8 items-center justify-center">
           {loadingEarlier ? (
-            <span className="flex items-center gap-2 rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-caption text-muted-foreground shadow-sm backdrop-blur">
+            <span className="flex items-center gap-2 rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-caption text-muted-foreground backdrop-blur">
               <Spinner size={14} />
               Loading earlier messages
             </span>
@@ -365,7 +365,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
             <button
               type="button"
               onClick={requestEarlier}
-              className="rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-caption font-medium text-foreground shadow-sm backdrop-blur"
+              className="rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-caption font-medium text-foreground backdrop-blur"
             >
               Retry earlier messages
             </button>

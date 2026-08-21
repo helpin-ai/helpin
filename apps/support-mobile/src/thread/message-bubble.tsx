@@ -82,6 +82,7 @@ function SystemEventBubble({ message, senderName }: { message: SupportMessage; s
   const text = getSupportSystemEventText(eventType, message.content, senderName)
   const segments = toSupportSystemEventSegments(eventType, text, { extended: true })
   const badge = getSupportSystemEventBadge(eventType, message.content)
+  const isTeammateJoined = eventType === 'teammate_joined'
   const isEscalation = eventType === 'ai_escalated' || eventType === 'customer_requested_human'
   const isResolved = eventType === 'resolved'
   const isClosed = eventType === 'closed'
@@ -121,14 +122,19 @@ function SystemEventBubble({ message, senderName }: { message: SupportMessage; s
         data-testid="system-event-surface"
         aria-label={[text, time].filter(Boolean).join(', ')}
         className={cn(
-          'inline-flex max-w-[92%] items-center gap-2 rounded-2xl border px-3 py-2 text-[12px] leading-snug shadow-sm [overflow-wrap:anywhere]',
-          isResolved
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200'
-            : isClosed
-              ? 'border-slate-700 bg-slate-700 text-white dark:border-slate-600 dark:bg-slate-800'
-              : isEscalation
-                ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200'
-                : 'border-border/60 bg-muted/60 text-muted-foreground',
+          'inline-flex max-w-[92%] items-center gap-2 text-[12px] leading-snug [overflow-wrap:anywhere]',
+          isTeammateJoined
+            ? 'px-1 py-1 text-muted-foreground'
+            : cn(
+                'rounded-2xl border px-3 py-2',
+                isResolved
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200'
+                  : isClosed
+                    ? 'border-slate-700 bg-slate-700 text-white dark:border-slate-600 dark:bg-slate-800'
+                    : isEscalation
+                      ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200'
+                      : 'border-border/60 bg-muted/60 text-muted-foreground',
+              ),
         )}
       >
         {leading}
@@ -255,7 +261,7 @@ export function MessageBubble({ message, align, receiptStatus, onMessageActions 
       <div className="flex w-full flex-col items-end">
         <div
           data-testid="message-bubble"
-          className="w-full max-w-[92%] rounded-xl border-r-[3px] border-r-amber-400 bg-amber-50 px-3.5 py-2.5 shadow-sm dark:border-r-amber-500 dark:bg-amber-950/20"
+          className="w-full max-w-[92%] rounded-xl border-r-[3px] border-r-amber-400 bg-amber-50 px-3.5 py-2.5 dark:border-r-amber-500 dark:bg-amber-950/20"
         >
           <div className="mb-1.5 flex items-center gap-1.5 text-caption uppercase text-amber-700 dark:text-amber-300">
             <StickyNote className="h-3 w-3 shrink-0" />
@@ -300,7 +306,7 @@ export function MessageBubble({ message, align, receiptStatus, onMessageActions 
         <div
           data-testid="message-bubble"
           className={cn(
-            'max-w-[92%] min-w-0 rounded-2xl border border-border/40 px-3.5 py-2 text-foreground/85 shadow-sm dark:text-foreground',
+            'max-w-[92%] min-w-0 rounded-2xl border border-border/40 px-3.5 py-2 text-foreground/85 dark:text-foreground',
             align === 'right'
               ? 'rounded-br-sm bg-blue-50 dark:bg-blue-950/40'
               : 'rounded-bl-sm bg-muted',

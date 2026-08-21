@@ -78,7 +78,7 @@ export function AssignedAgentRuns({ workspaceId, conversationId, enabled, canApp
               key={run.id}
               aria-label={`Open ${agentRunStatusLabel(run.status)} agent run details`}
               onPress={() => setSelectedRun(run)}
-              className="flex min-h-12 w-full items-center gap-3 rounded-2xl border border-border/70 bg-background px-3 py-2 text-left shadow-sm"
+              className="flex min-h-12 w-full items-center gap-3 rounded-2xl border border-border/70 bg-background px-3 py-2 text-left"
             >
               <RunStatusIcon run={run} />
               <span className="min-w-0 flex-1">

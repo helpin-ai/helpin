@@ -601,7 +601,7 @@ export function Composer({
 
         <div
           className={cn(
-            'mx-3 overflow-hidden rounded-[24px] border shadow-[0_8px_30px_rgba(15,23,42,0.08)] transition-colors',
+            'mx-3 overflow-hidden rounded-[24px] border transition-colors',
             isNote
               ? 'border-amber-300/70 bg-amber-50 dark:border-amber-800/70 dark:bg-amber-950/30'
               : 'border-border/80 bg-card',
@@ -715,7 +715,7 @@ export function Composer({
                     aria-label={`Remove ${attachment.file.name}`}
                     disabled={phase === 'sending'}
                     onClick={() => removeAttachment(attachment)}
-                    className="absolute right-1.5 top-1.5 rounded-full bg-background/90 p-1 text-muted-foreground shadow-sm active:bg-muted disabled:opacity-40"
+                    className="absolute right-1.5 top-1.5 rounded-full bg-background/90 p-1 text-muted-foreground active:bg-muted disabled:opacity-40"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -725,7 +725,7 @@ export function Composer({
           )}
 
         {mentionToken ? (
-          <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-lg">
+          <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background">
             {mentionItems.length > 0 ? (
               mentionItems.map((item) => (
                 <button
@@ -751,7 +751,7 @@ export function Composer({
             )}
           </div>
         ) : activeToken && inlineSuggestions.length > 0 ? (
-          <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background shadow-lg">
+          <div className="mx-3 mb-1 max-h-44 overflow-y-auto rounded-xl border border-border/60 bg-background">
             {inlineSuggestions.map((response) => (
               <button
                 key={response.id}
