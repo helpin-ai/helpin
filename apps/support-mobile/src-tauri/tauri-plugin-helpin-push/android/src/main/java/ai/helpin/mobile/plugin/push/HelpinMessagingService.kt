@@ -1,6 +1,7 @@
 package ai.helpin.mobile.plugin.push
 
 import android.util.Log
+import app.tauri.plugin.JSObject
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -32,18 +33,19 @@ class HelpinMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
-        // Intentionally not surfaced as an in-app JS event: foreground data
-        // messages are suppressed per the task brief because in-app
-        // realtime (WebSocket) already covers "new message arrived while
-        // the app is open". Background/killed-state tray display is FCM's
-        // own default behavior when the message includes a `notification`
-        // block, so no manual NotificationCompat building happens here.
-        //
-        // SPIKE-VERIFY: confirm the backend (Task 18's FCM sender) always
-        // includes a `notification` block (not a data-only message) so the
-        // OS tray notification appears without any code in this method —
-        // a data-only message would arrive here silently with nothing
-        // shown to the user.
+        // FCM calls this for a notification received while the app is in the
+        // foreground. The OS does not draw its tray banner in that state, so
+        // forward both notification content and routing data to the webview
+        // for a Helpin-styled in-app banner. Background/killed-state display
+        // remains FCM's default behavior because the backend includes a
+        // `notification` block as well as `data`.
+        val payload = JSObject()
+        for ((key, value) in message.data) {
+            payload.put(key, value)
+        }
+        message.notification?.title?.let { payload.put("title", it) }
+        message.notification?.body?.let { payload.put("body", it) }
+        PushPlugin.instance?.emitPushReceived(payload)
     }
 
     companion object {

@@ -13,6 +13,9 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 /** The FCM/APNs data payload delivered on notification tap. */
 export type PushTapPayload = Record<string, string>
 
+/** Notification content + data delivered while the app is foregrounded. */
+export type PushReceivedPayload = Record<string, string>
+
 interface GetPushTokenResponse {
   token: string | null
 }
@@ -77,6 +80,22 @@ export async function onPushTokenChanged(cb: (token: string) => void): Promise<U
     'helpin-push',
     'push-token-changed',
     (payload) => cb(payload.token),
+  )
+  return toUnlistenFn(listener)
+}
+
+/**
+ * Subscribes to notifications received while the native app is in the
+ * foreground. Native code suppresses the operating-system banner and emits
+ * this event instead so the webview can show a Helpin-styled, tappable toast.
+ * The payload includes `title` and `body` alongside the same routing data as
+ * {@link onPushTapped}.
+ */
+export async function onPushReceived(cb: (data: PushReceivedPayload) => void): Promise<UnlistenFn> {
+  const listener = await addPluginListener<PushReceivedPayload>(
+    'helpin-push',
+    'push-received',
+    cb,
   )
   return toUnlistenFn(listener)
 }

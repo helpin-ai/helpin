@@ -185,4 +185,9 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         payload.put("token", token)
         trigger("push-token-changed", payload)
     }
+
+    /** Delivers a notification received while the app is foregrounded to JS. */
+    fun emitPushReceived(payload: JSObject) {
+        trigger("push-received", payload)
+    }
 }

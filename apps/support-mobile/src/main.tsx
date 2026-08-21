@@ -5,10 +5,11 @@ import { RouterProvider } from '@tanstack/react-router'
 import { Toaster, toast } from 'sonner'
 import { configureSessionStorage, createBrowserSessionStorage, writeSession } from '@helpin-ai/support-core'
 import { getCurrent as getCurrentDeepLink, onOpenUrl } from '@tauri-apps/plugin-deep-link'
-import { onPushTapped } from '@helpin/plugin-push'
+import { onPushReceived, onPushTapped } from '@helpin/plugin-push'
 import { setupVisibilityRefresh, startTokenRefreshTimer, stopTokenRefreshTimer } from '@mobile/lib/api'
 import { googleAuthErrorMessage, parseGoogleAuthDeepLink } from '@mobile/lib/google-auth'
 import { isTauri } from '@mobile/lib/host'
+import { getPushPrimingPref } from '@mobile/lib/prefs'
 import { authService } from '@mobile/lib/services/auth-service'
 import { queryClient } from '@mobile/lib/queryClient'
 import { createTauriSessionStorage } from '@mobile/lib/session-storage'
@@ -102,6 +103,26 @@ function routeExternalUrl(url: string) {
 if (isTauri()) {
   void onPushTapped((data) => {
     routePushTap(data, queueTapNavigation)
+  })
+
+  void onPushReceived(async (data) => {
+    const pref = await getPushPrimingPref()
+    const { user } = useAuthStore.getState()
+    if (pref?.decision !== 'enabled' || !user) return
+
+    let target: string | null = null
+    routePushTap(data, (to) => { target = to })
+    if (target && router.state.location.pathname === target) return
+
+    const title = data.title?.trim() || 'New support message'
+    const body = data.body?.trim()
+    toast(title, {
+      description: body || undefined,
+      duration: 6_000,
+      action: target
+        ? { label: 'Open', onClick: () => queueTapNavigation(target!) }
+        : undefined,
+    })
   })
 
   // `helpin://w/{slug}/support/{id}` opened from outside the app (OS deep

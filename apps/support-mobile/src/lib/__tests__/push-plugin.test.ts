@@ -1,5 +1,5 @@
 import { addPluginListener, invoke, type PluginListener } from '@tauri-apps/api/core'
-import { getPushToken, onPushTapped, onPushTokenChanged } from '@helpin/plugin-push'
+import { getPushToken, onPushReceived, onPushTapped, onPushTokenChanged } from '@helpin/plugin-push'
 
 // Mocked locally (not in a shared setup file), same rationale as
 // haptics.test.ts: this fake `@tauri-apps/api/core` module must never leak
@@ -78,6 +78,32 @@ describe('onPushTokenChanged', () => {
     expect(cb).toHaveBeenCalledWith('refreshed-token')
 
     // The returned UnlistenFn must be a plain () => void wrapping unregister().
+    unlisten()
+    expect(unregister).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('onPushReceived', () => {
+  test('registers the foreground listener and forwards notification content and routing data', async () => {
+    const { captured, unregister } = stubListener()
+    const cb = vi.fn()
+    const unlisten = await onPushReceived(cb)
+
+    expect(mockAddPluginListener).toHaveBeenCalledWith(
+      'helpin-push',
+      'push-received',
+      expect.any(Function),
+    )
+
+    const payload = {
+      title: 'Ada Lovelace',
+      body: 'Can you help with billing?',
+      conversation_id: 'conv_1',
+      workspace_slug: 'acme',
+    }
+    captured.handler?.(payload)
+    expect(cb).toHaveBeenCalledWith(payload)
+
     unlisten()
     expect(unregister).toHaveBeenCalledTimes(1)
   })

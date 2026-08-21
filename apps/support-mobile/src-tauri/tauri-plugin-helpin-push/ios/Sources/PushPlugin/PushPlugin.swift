@@ -153,14 +153,19 @@ class PushPlugin: Plugin, MessagingDelegate, UNUserNotificationCenterDelegate {
         completionHandler()
     }
 
-    // Foreground presentation: let the OS default apply (no banner
-    // override) — matches the Android side suppressing foreground display,
-    // since in-app realtime already covers the foreground case.
+    // Foreground presentation: suppress the OS banner and forward the
+    // notification into the webview so it can render a consistent,
+    // conversation-aware in-app banner.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let content = notification.request.content
+        var payload = Self.flattenUserInfo(content.userInfo)
+        if !content.title.isEmpty { payload["title"] = content.title }
+        if !content.body.isEmpty { payload["body"] = content.body }
+        try? trigger("push-received", data: payload.mapValues { $0 as JSValue })
         completionHandler([])
     }
 
