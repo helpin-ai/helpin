@@ -30,6 +30,7 @@ const (
 	BillingFeatureDocsArticleTranslation  = "docs_article_translation"
 	BillingFeatureDocsArticleGeneration   = "docs_article_generation"
 	BillingFeatureDocsImportConversion    = "docs_import_conversion"
+	BillingFeatureHelpcenterAnswer        = "helpcenter_answer_generation"
 	BillingFeatureBuiltInLightAgentRun    = "built_in_light_agent_run"
 	BillingFeatureAskChat                 = "ask_chat"
 	BillingFeatureScribeRun               = "scribe_run"
@@ -149,6 +150,7 @@ var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
 	BillingFeatureDocsArticleTranslation:  {FeatureKey: BillingFeatureDocsArticleTranslation, Label: "Help article translation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
 	BillingFeatureDocsArticleGeneration:   {FeatureKey: BillingFeatureDocsArticleGeneration, Label: "Help article generation", Category: "Docs AI", FloorUnits: 20, Chargeable: true},
 	BillingFeatureDocsImportConversion:    {FeatureKey: BillingFeatureDocsImportConversion, Label: "Help article import formatting", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
+	BillingFeatureHelpcenterAnswer:        {FeatureKey: BillingFeatureHelpcenterAnswer, Label: "Help-center answer generation", Category: "Docs AI", FloorUnits: 2, Chargeable: true},
 	BillingFeatureCRMAction:               {FeatureKey: BillingFeatureCRMAction, Label: "CRM / deal action", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
 	BillingFeatureBuiltInLightAgentRun:    {FeatureKey: BillingFeatureBuiltInLightAgentRun, Label: "Built-in agent run", Category: "Agents", FloorUnits: 40, Chargeable: true},
 	BillingFeatureAskChat:                 {FeatureKey: BillingFeatureAskChat, Label: "Ask Chat", Category: "Agents", FloorUnits: 40, Chargeable: true},
