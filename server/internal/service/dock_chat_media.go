@@ -10,8 +10,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 )
 
-const askMediaReaderModel = mediaEnrichmentRoute
-
 type dockChatMediaLLM interface {
 	ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error)
 }
@@ -103,7 +101,7 @@ func (s *DockChatService) analyzeDockChatMedia(ctx context.Context, workspaceID,
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	callCtx = WithAIUsageMetering(callCtx, AIUsageMeteringContext{
+	response, err := completeAI(callCtx, s.mediaLLM, AICompletionRequest{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureAskChat,
 		OperationKey:   AIUsageOperationMediaEnrichment,
@@ -112,13 +110,11 @@ func (s *DockChatService) analyzeDockChatMedia(ctx context.Context, workspaceID,
 			"source":           "dock_chat_media",
 			"attachment_count": len(mediaAttachments),
 		},
-	})
-	response, err := s.mediaLLM.ChatCompletion(callCtx, llm.ChatRequest{
-		Provider:    "openrouter",
-		Model:       askMediaReaderModel,
-		Messages:    []llm.Message{{Role: "user", ContentParts: parts}},
-		Temperature: 0,
-		MaxTokens:   700,
+		Chat: llm.ChatRequest{
+			Messages:    []llm.Message{{Role: "user", ContentParts: parts}},
+			Temperature: 0,
+			MaxTokens:   700,
+		},
 	})
 	if err != nil {
 		return "", fmt.Errorf("analyze Ask media: %w", err)

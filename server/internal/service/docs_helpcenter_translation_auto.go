@@ -183,7 +183,7 @@ func (s *DocsHelpcenterTranslationService) AutoTranslateMissing(
 	}
 
 	prompt := buildAutoTranslatePrompt(targets, normalizedLocale)
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureDocsArticleTranslation,
 		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureDocsArticleTranslation, "auto_translate_missing", normalizedLocale, fmt.Sprintf("%d", len(targets)), aiUsageStableHash(prompt)),
@@ -191,12 +191,13 @@ func (s *DocsHelpcenterTranslationService) AutoTranslateMissing(
 			"locale":       normalizedLocale,
 			"target_count": len(targets),
 		},
-	}), llm.ChatRequest{
-		Messages: []llm.Message{
-			{Role: "user", Content: prompt},
+		Chat: llm.ChatRequest{
+			Messages: []llm.Message{
+				{Role: "user", Content: prompt},
+			},
+			Temperature: 0.2,
+			JSONMode:    true,
 		},
-		Temperature: 0.2,
-		JSONMode:    true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("auto-translate llm call: %w", err)

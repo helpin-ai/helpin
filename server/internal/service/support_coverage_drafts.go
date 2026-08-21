@@ -321,21 +321,22 @@ func (s *SupportCoverageDraftService) generateDraftFromEvidence(ctx context.Cont
 	draftCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(draftCtx, AIUsageMeteringContext{
+	resp, err := completeAI(draftCtx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    detail.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleGeneration,
 		IdempotencyKey: aiUsageIdempotencyKey(detail.WorkspaceID, BillingFeatureDocsArticleGeneration, "gap_draft", detail.ID, aiUsageStableHash(prompt)),
 		Metadata: map[string]interface{}{
 			"gap_id": detail.ID,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: "You are a technical writer creating help center articles. Write clear, concise documentation that answers the customer's question. Output JSON only.",
-		Messages: []llm.Message{
-			{Role: "user", Content: prompt},
+		Chat: llm.ChatRequest{
+			SystemPrompt: "You are a technical writer creating help center articles. Write clear, concise documentation that answers the customer's question. Output JSON only.",
+			Messages: []llm.Message{
+				{Role: "user", Content: prompt},
+			},
+			Temperature: 0.3,
+			MaxTokens:   2000,
+			JSONMode:    true,
 		},
-		Temperature: 0.3,
-		MaxTokens:   2000,
-		JSONMode:    true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("LLM completion: %w", err)
@@ -366,7 +367,7 @@ func (s *SupportCoverageDraftService) generateUpdateFromEvidence(ctx context.Con
 	if existing != nil {
 		targetDocumentID = existing.DocumentID
 	}
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(updateCtx, AIUsageMeteringContext{
+	resp, err := completeAI(updateCtx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    detail.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleGeneration,
 		IdempotencyKey: aiUsageIdempotencyKey(detail.WorkspaceID, BillingFeatureDocsArticleGeneration, "gap_update", detail.ID, targetDocumentID, aiUsageStableHash(prompt)),
@@ -374,14 +375,15 @@ func (s *SupportCoverageDraftService) generateUpdateFromEvidence(ctx context.Con
 			"gap_id":             detail.ID,
 			"target_document_id": targetDocumentID,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: "You are a technical writer improving existing help center articles. Suggest changes that address the customer questions. Output JSON only.",
-		Messages: []llm.Message{
-			{Role: "user", Content: prompt},
+		Chat: llm.ChatRequest{
+			SystemPrompt: "You are a technical writer improving existing help center articles. Suggest changes that address the customer questions. Output JSON only.",
+			Messages: []llm.Message{
+				{Role: "user", Content: prompt},
+			},
+			Temperature: 0.3,
+			MaxTokens:   2000,
+			JSONMode:    true,
 		},
-		Temperature: 0.3,
-		MaxTokens:   2000,
-		JSONMode:    true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("LLM completion: %w", err)

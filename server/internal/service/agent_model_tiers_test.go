@@ -1,0 +1,91 @@
+package service
+
+import (
+	"testing"
+
+	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/model"
+)
+
+func TestAgentModelTierResolverResolvesSelectableTiers(t *testing.T) {
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewAgentModelTierResolver(catalog, func(provider string) bool { return provider == "openrouter" })
+	want := map[aiusage.Tier]string{
+		aiusage.TierSmall:    "deepseek/deepseek-v4-flash-0731",
+		aiusage.TierMedium:   "google/gemini-3.7-flash",
+		aiusage.TierLarge:    "openai/gpt-5.6-terra",
+		aiusage.TierFlagship: "anthropic/claude-sonnet-5",
+	}
+	for tier, model := range want {
+		snapshot, err := resolver.ResolveCustom(tier, nil, nil, "")
+		if err != nil {
+			t.Fatalf("ResolveCustom(%q): %v", tier, err)
+		}
+		if snapshot.ModelTier != string(tier) || snapshot.Provider != "openrouter" || snapshot.Model != model {
+			t.Errorf("ResolveCustom(%q) = %#v", tier, snapshot)
+		}
+	}
+}
+
+func TestAgentVersionActivationProjectsModelTier(t *testing.T) {
+	agent := &model.Agent{ModelTier: "small"}
+	version := &model.AgentVersion{ID: "version-large", ModelTier: "large", RuntimeKind: "codex"}
+	applyAgentVersionToAgent(agent, version)
+	if agent.ModelTier != "large" || agent.ActiveVersionID == nil || *agent.ActiveVersionID != version.ID {
+		t.Fatalf("activated agent = %#v", agent)
+	}
+}
+
+func TestAgentModelTierResolverRejectsUnavailableTierWithoutLeakingRoute(t *testing.T) {
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewAgentModelTierResolver(catalog, func(string) bool { return false })
+	_, err = resolver.ResolveCustom(aiusage.TierSmall, nil, nil, "")
+	if err == nil || err.Error() != "model size temporarily unavailable" {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestAgentModelTierResolverStartupValidationRejectsMissingProvider(t *testing.T) {
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewAgentModelTierResolver(catalog, func(string) bool { return false })
+	issues := resolver.ValidateSelectable()
+	if len(issues) != 4 {
+		t.Fatalf("ValidateSelectable() returned %d issues, want one per public tier: %v", len(issues), issues)
+	}
+}
+
+func TestAgentModelTierResolverDerivesTierFromStoredRoute(t *testing.T) {
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewAgentModelTierResolver(catalog, nil)
+	tier, err := resolver.Derive("openrouter", "openai/gpt-5.6-terra", "standard")
+	if err != nil || tier != aiusage.TierLarge {
+		t.Fatalf("Derive() = %q, %v", tier, err)
+	}
+}
+
+func TestBuiltInAgentPresetPricingRoutesHaveReadOnlyTier(t *testing.T) {
+	for _, preset := range ListAgentPresets() {
+		if preset.ModelTier == "" {
+			t.Errorf("preset %q route %s/%s has no model tier", preset.Key, tierTestStringValue(preset.Provider), tierTestStringValue(preset.Model))
+		}
+	}
+}
+
+func tierTestStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}

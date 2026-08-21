@@ -28,7 +28,6 @@ import {
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
-import { CuratedModelSelect } from '@/components/automation/CuratedModelSelect';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -42,16 +41,12 @@ import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import {
-  AGENT_RUNTIME_HELP_TEXT,
-  AGENT_RUNTIME_LABELS,
-  MAX_NATIVE_TOOL_STEPS,
-  MIN_NATIVE_TOOL_STEPS,
-  isValidNativeToolStepLimit,
   parseNativeToolStepLimit,
 } from '@/lib/agentRuntime';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { getAgentTokenUsageTotal } from '@/lib/agentTokenUsage';
+import { AGENT_MODEL_TIER_OPTIONS, agentModelTierLabel } from '@/lib/agentModelTier';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
@@ -66,6 +61,7 @@ import type {
   AgentApprovalMode,
   AgentInvocationMode,
   AgentModelProvider,
+  AgentModelTier,
   AgentModelProviderOption,
   AgentTemplate,
   AgentReasoningEffort,
@@ -168,9 +164,6 @@ const AgentRunNowDialog = lazy(async () => {
 // Constants
 // ---------------------------------------------------------------------------
 
-const RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_sdk'];
-const REASONING_EFFORT_OPTIONS: AgentReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-const SERVICE_TIER_OPTIONS: AgentServiceTier[] = ['fast', 'flex'];
 const DEFAULT_SYSTEM_PRESET_KEY: AgentPresetKey = 'code_builder';
 const DEFAULT_PRESET_MODEL = {
   provider: 'openai' as const,
@@ -429,6 +422,7 @@ interface AgentFormData {
   preset_key: AgentPresetKey;
   preset_version_key: string;
   runtime_kind: AgentRuntimeKind;
+  model_tier: AgentModelTier;
   supported_modes: AgentInvocationMode[];
   provider: AgentModelProvider;
   model: string;
@@ -517,87 +511,6 @@ const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
   'workspace',
   'support_conversation',
 ]);
-
-function ProviderIcon({ provider, className = 'h-4 w-4' }: { provider: string; className?: string }) {
-  switch (provider) {
-    case 'anthropic':
-      return (
-        <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M17.304 3.541h-3.672l6.696 16.918h3.672l-6.696-16.918zM6.696 3.541L0 20.459h3.672l1.344-3.541h6.86l1.344 3.541h3.672L10.196 3.541H6.696zm-.672 10.459l2.424-6.391 2.424 6.391H6.024z" />
-        </svg>
-      );
-    case 'openai':
-      return (
-        <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.998 5.998 0 0 0-3.992 2.9 6.042 6.042 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
-        </svg>
-      );
-    case 'openrouter':
-      return (
-        <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
-        </svg>
-      );
-    default:
-      return <BotIcon className={className} />;
-  }
-}
-
-const FALLBACK_PROVIDER_OPTIONS: AgentModelProviderOption[] = [
-  {
-    value: 'anthropic',
-    label: 'Anthropic',
-    default_model: 'claude-opus-4-8',
-    model_placeholder: 'claude-opus-4-8',
-    supports_reasoning_effort: false,
-    supports_service_tier: false,
-  },
-  {
-    value: 'openai',
-    label: 'OpenAI',
-    default_model: 'gpt-5.6-terra',
-    model_placeholder: 'gpt-5.6-terra',
-    supports_reasoning_effort: true,
-    supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
-    supports_service_tier: true,
-    supported_service_tiers: SERVICE_TIER_OPTIONS,
-  },
-  {
-    value: 'openrouter',
-    label: 'OpenRouter',
-    default_model: 'openai/gpt-5.6-terra',
-    model_placeholder: 'openai/gpt-5.6-terra',
-    supports_reasoning_effort: true,
-    supported_reasoning_efforts: REASONING_EFFORT_OPTIONS,
-    supports_service_tier: false,
-  },
-];
-
-// Shared pill used in the fleet card + list row. Legacy blank values display
-// the same explicit provider default that Agent Runtime will resolve.
-function AgentModelPill({ provider, model }: { provider?: AgentModelProvider | null; model?: string | null }) {
-  const effectiveProvider = provider ?? 'openai';
-  const displayedModel = model?.trim() || defaultModelForAgentProvider(effectiveProvider);
-  return (
-    <span className="inline-flex items-center gap-2 text-sm">
-      <ProviderIcon provider={effectiveProvider} className="h-4 w-4 shrink-0" />
-      <span className="font-mono text-xs text-foreground">
-        {displayedModel}
-      </span>
-    </span>
-  );
-}
-
-function allowedRuntimeKindsForPreset(presetKey: AgentPresetKey): AgentRuntimeKind[] {
-  switch (presetKey) {
-    case 'code_builder':
-      return ['opencode', 'codex', 'native_sdk'];
-    case 'review_agent':
-      return ['opencode', 'codex', 'native_sdk'];
-    default:
-      return ['codex', 'native_sdk'];
-  }
-}
 
 function normalizeProviderForRuntime(
   runtimeKind: AgentRuntimeKind,
@@ -924,9 +837,7 @@ function buildUpdatePayload(
     name: form.name.trim(),
     icon_key: form.icon_key,
     trigger_mode: 'manual',
-    provider: provider || undefined,
-    model: form.model.trim() || defaultModelForAgentProvider(provider),
-    execution_config: buildExecutionConfigPayload(form),
+    model_tier: form.model_tier,
     system_prompt: form.system_prompt.trim() || undefined,
     team_ids: teamIds,
     allowed_tools: normalizeToolList(form.allowed_tools),
@@ -935,7 +846,6 @@ function buildUpdatePayload(
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
     default_invocation_mode: form.default_invocation_mode,
-    ...advancedPayload,
   };
 }
 
@@ -959,6 +869,7 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     preset_key: presetKey,
     preset_version_key: agent.preset_version_key?.trim() || preset?.version_key || fallbackPresetVersionKey(presetKey),
     runtime_kind: agent.runtime_kind || runtimeKind,
+    model_tier: agent.model_tier ?? preset?.model_tier ?? 'large',
     supported_modes: supportedModes,
     provider,
     model: agent.model?.trim() || preset?.model?.trim() || defaultModelForAgentProvider(provider),
@@ -1001,6 +912,7 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
     preset_key: DEFAULT_SYSTEM_PRESET_KEY,
     preset_version_key: fallbackPresetVersionKey(DEFAULT_SYSTEM_PRESET_KEY),
     runtime_kind: runtimeKind,
+    model_tier: 'large',
     supported_modes: supportedModesForForm(runtimeKind),
     provider,
     model: defaultModelForAgentProvider(provider),
@@ -1032,6 +944,7 @@ function buildCustomAgentForm(agent: Agent): AgentFormData {
     preset_key: presetKey,
     preset_version_key: fallbackPresetVersionKey(presetKey),
     runtime_kind: runtimeKind,
+    model_tier: agent.model_tier ?? 'large',
     supported_modes: supportedModesForForm(runtimeKind),
     provider,
     model: agent.model?.trim() || defaultModelForAgentProvider(provider),
@@ -1063,6 +976,7 @@ function buildCustomAgentVersionForm(agent: Agent, version: AgentVersion): Agent
   return {
     ...buildCustomAgentForm(agent),
     runtime_kind: runtimeKind,
+    model_tier: version.model_tier ?? agent.model_tier ?? 'large',
     supported_modes: version.supported_modes?.length ? version.supported_modes : supportedModesForForm(runtimeKind),
     provider,
     model: version.model?.trim() || defaultModelForAgentProvider(provider),
@@ -1085,6 +999,7 @@ function comparableCustomAgentForm(form: AgentFormData) {
     : [];
   return {
     name: form.name.trim(),
+    model_tier: form.model_tier,
     icon_key: form.icon_key,
     runtime_kind: form.runtime_kind,
     provider,
@@ -1381,56 +1296,6 @@ function FieldLabel({ htmlFor, children, tooltip }: { htmlFor?: string; children
           </TooltipContent>
         </Tooltip>
       )}
-    </div>
-  );
-}
-
-function NativeToolStepLimitField({
-  id,
-  value,
-  disabled = false,
-  onChange,
-}: {
-  id: string;
-  value: string;
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  const valid = isValidNativeToolStepLimit('native_sdk', value);
-  const helpID = `${id}-help`;
-  return (
-    <div className="space-y-2">
-      <FieldLabel
-        htmlFor={id}
-        tooltip="Maximum model and tool-call rounds in one run. Leave empty to use the agent default."
-      >
-        Tool step limit
-      </FieldLabel>
-      <Input
-        id={id}
-        type="number"
-        min={MIN_NATIVE_TOOL_STEPS}
-        max={MAX_NATIVE_TOOL_STEPS}
-        step={1}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="Use agent default"
-        aria-invalid={!valid}
-        aria-describedby={helpID}
-        className="h-9 aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive/30"
-      />
-      <p
-        id={helpID}
-        className={cn(
-          'text-[11px] leading-relaxed',
-          valid ? 'text-muted-foreground' : 'text-destructive',
-        )}
-      >
-        {valid
-          ? `${MIN_NATIVE_TOOL_STEPS}–${MAX_NATIVE_TOOL_STEPS} rounds per run.`
-          : `Enter a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`}
-      </p>
     </div>
   );
 }
@@ -2169,8 +2034,8 @@ function AgentCard({
       <CardContent className="space-y-4 pt-0">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Model</p>
-            <AgentModelPill provider={agent.provider} model={agent.model} />
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Model size</p>
+            <p className="text-sm text-muted-foreground">{agentModelTierLabel(agent.model_tier)}</p>
           </div>
           <div className="space-y-1">
             <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Mode</p>
@@ -2451,8 +2316,7 @@ export function AgentRow({
 
       <div className="min-w-0 space-y-1">
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Config</p>
-        <p className="truncate text-sm font-medium text-foreground">{AGENT_RUNTIME_LABELS[agent.runtime_kind]}</p>
-        <AgentModelPill provider={agent.provider} model={agent.model} />
+        <p className="truncate text-sm font-medium text-foreground">{agentModelTierLabel(agent.model_tier)}</p>
         <p className="truncate text-xs text-muted-foreground">{invocationLabel}</p>
       </div>
 
@@ -2508,7 +2372,6 @@ export function AgentsPage() {
   const { canEdit } = usePermissions(access);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');
 
-  const [providerOptions, setProviderOptions] = useState<AgentModelProviderOption[]>(FALLBACK_PROVIDER_OPTIONS);
   const [presets, setPresets] = useState<AgentPresetDefinition[]>([]);
   const [toolCatalog, setToolCatalog] = useState<ToolCatalogResponse | null>(null);
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalogResponse | null>(null);
@@ -2654,14 +2517,6 @@ export function AgentsPage() {
     if (!workspaceId) return;
     await refetchAgentFleet();
   }, [refetchAgentFleet, workspaceId]);
-
-  const loadProviderOptions = useCallback(async () => {
-    if (!workspaceId) return;
-    const res = await agentService.listModelProviders(workspaceId);
-    if (!res.error && res.data && res.data.length > 0) {
-      setProviderOptions(res.data);
-    }
-  }, [workspaceId]);
 
   const loadPresets = useCallback(async () => {
     if (!workspaceId) return;
@@ -2918,7 +2773,7 @@ export function AgentsPage() {
   }, [agentAnalyticsRange, editingAgent?.id, loadAgentAnalytics, systemDrawerOpen, systemDrawerTab]);
 
   const openCreateDialog = () => {
-    void Promise.all([loadProviderOptions(), loadToolCatalog(), loadSkillCatalog()]);
+    void Promise.all([loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(null);
     setTemplateDraft(null);
     setAgentUsage(null);
@@ -2935,7 +2790,7 @@ export function AgentsPage() {
   };
 
   const openCreateFromTemplateDrawer = async (template: AgentTemplate) => {
-    void Promise.all([loadProviderOptions(), loadToolCatalog(), loadSkillCatalog()]);
+    void Promise.all([loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(null);
     const defaultStarterFlowEnabled = template.starter_flows?.some((flow) => flow.default_enabled) ?? false;
     setTemplateDraft({ template, createStarterFlow: defaultStarterFlowEnabled });
@@ -3126,7 +2981,7 @@ export function AgentsPage() {
   };
 
   const openEditDialog = (agent: Agent) => {
-    void Promise.all([loadProviderOptions(), loadToolCatalog(), loadSkillCatalog()]);
+    void Promise.all([loadToolCatalog(), loadSkillCatalog()]);
     setEditingAgent(agent);
     setTemplateDraft(null);
     setAgentUsage(null);
@@ -3386,10 +3241,7 @@ export function AgentsPage() {
         label: versionLabelDraft.trim(),
         description: versionDescriptionDraft.trim() || undefined,
         source_version_id: selectedCustomVersionID || undefined,
-        runtime_kind: form.runtime_kind,
-        provider: form.provider,
-        model: form.model.trim(),
-        execution_config: buildExecutionConfigPayload(form),
+        model_tier: form.model_tier,
         system_prompt: form.system_prompt.trim() || undefined,
         skills: form.skills,
         allowed_tools: normalizeToolList(form.allowed_tools),
@@ -3458,10 +3310,7 @@ export function AgentsPage() {
       const res = await automationService.updateAgentVersion(workspaceId, editingAgent.id, selectedCustomVersion.id, {
         label: selectedCustomVersion.label,
         description: selectedCustomVersion.description,
-        runtime_kind: form.runtime_kind,
-        provider: form.provider,
-        model: form.model.trim(),
-        execution_config: buildExecutionConfigPayload(form),
+        model_tier: form.model_tier,
         system_prompt: form.system_prompt.trim() || undefined,
         skills: form.skills,
         allowed_tools: normalizeToolList(form.allowed_tools),
@@ -3736,10 +3585,7 @@ export function AgentsPage() {
     form.default_invocation_mode !== selectedPreset.default_invocation_mode
   ));
   const hasCustomVersionChanges = Boolean(isEditingCustomVersion && selectedCustomVersion && (
-    form.runtime_kind !== selectedCustomVersion.runtime_kind ||
-    form.provider !== (selectedCustomVersion.provider ?? '') ||
-    form.model.trim() !== (selectedCustomVersion.model ?? '') ||
-    stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(selectedCustomVersion.execution_config) ||
+    form.model_tier !== (selectedCustomVersion.model_tier ?? editingAgent?.model_tier ?? 'large') ||
     form.system_prompt.trim() !== (selectedCustomVersion.system_prompt ?? '') ||
     stableJSON(form.skills) !== stableJSON(selectedCustomVersion.skills ?? []) ||
     stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(selectedCustomVersion.allowed_tools ?? [])) ||
@@ -3753,15 +3599,8 @@ export function AgentsPage() {
       ? (selectedPreset?.allowed_target_types ?? form.allowed_targets)
       : (form.allowed_targets.length > 0 ? form.allowed_targets : ['task']);
   const supportedModes = form.supported_modes.length > 0 ? form.supported_modes : supportedModesForForm(form.runtime_kind);
-  const availableRuntimeKinds = editingSystemAgent ? allowedRuntimeKindsForPreset(form.preset_key) : (['opencode', 'codex', 'native_sdk'] as AgentRuntimeKind[]);
-  const providerConfigState = getAgentProviderConfigState(form.runtime_kind, form.provider, providerOptions);
-  const visibleProviderOptions = providerConfigState.providerOptions;
-  const selectedProviderOption = providerConfigState.selectedProviderOption;
   const templateStarterFlow = templateDraft?.template.starter_flows?.find((flow) => flow.key === 'github_release_notes')
     ?? templateDraft?.template.starter_flows?.[0];
-  const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
-  const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
-  const maxToolStepsValid = isValidNativeToolStepLimit(form.runtime_kind, form.max_tool_steps);
   const versionToolEditingState = getVersionToolEditingState({ versionReadOnly, runtimeKind: form.runtime_kind });
   const isBlankCustomCreate = !editingAgent && !templateDraft;
   const isCustomEdit = Boolean(editingAgent && !editingAgent.is_system && !templateDraft);
@@ -3775,19 +3614,13 @@ export function AgentsPage() {
     ? 'Tune this custom agent directly. It is not tied to a product preset.'
     : templateDraft
       ? 'Start from a packaged template, review the defaults, and create the agent with an optional automation flow.'
-      : 'Define a reusable agent with its own instructions, runtime, tools, targets, and limits.';
+      : 'Define a reusable agent with its own instructions, tools, targets, and limits.';
   const selectedTeamName = visibleTeams.find((team) => team.id === form.team_id)?.name ?? 'Workspace-wide';
   const starterFlowEnabled = Boolean(templateDraft?.createStarterFlow);
   const createDrawerMissingRequirements = (() => {
     const missing: string[] = [];
     if (!form.name.trim()) {
       missing.push('agent name');
-    }
-    if (!providerConfigState.selectedProviderOption) {
-      missing.push('compatible AI provider');
-    }
-    if (!maxToolStepsValid) {
-      missing.push(`tool step limit from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}`);
     }
     if (starterFlowEnabled && templateDraft?.template.key === 'release_notes_writer') {
       if (!templateForm.repository_id) missing.push('repository');
@@ -4533,12 +4366,8 @@ export function AgentsPage() {
                   </div>
                   <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-5">
                     <div className="space-y-1 p-3">
-                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runtime</dt>
-                      <dd className="truncate text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</dd>
-                    </div>
-                    <div className="space-y-1 p-3">
-                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
-                      <dd className="truncate text-sm font-medium" title={form.model}>{form.model || defaultModelForAgentProvider(form.provider, providerOptions)}</dd>
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model size</dt>
+                      <dd className="truncate text-sm font-medium">{agentModelTierLabel(form.model_tier)}</dd>
                     </div>
                     <div className="space-y-1 p-3">
                       <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
@@ -4745,7 +4574,7 @@ export function AgentsPage() {
                     <Collapsible.Content>
                       <div className="space-y-3 border-t border-border/60 p-4">
                         <p className="text-xs text-muted-foreground">
-                          Allowed tools are the runtime actions and data sources this version may call. Skills can guide when to use tools, but tools control what the agent can actually do.
+                          Allowed tools are the actions and data sources this version may call. Skills can guide when to use tools, but tools control what the agent can actually do.
                         </p>
                         {versionToolEditingState.disabledReason ? (
                           <p className="text-xs text-amber-700 dark:text-amber-400">{versionToolEditingState.disabledReason}</p>
@@ -4913,202 +4742,34 @@ export function AgentsPage() {
                     <Collapsible.Trigger asChild>
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                        <span className="flex-1 text-sm font-medium">Execution</span>
-                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind} · {form.model || defaultModelForAgentProvider(form.provider, providerOptions)}</span>
+                        <span className="flex-1 text-sm font-medium">Model size</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{agentModelTierLabel(form.model_tier)}</span>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
                       <div className="border-t border-border/60 p-4">
-                        <div className="grid gap-5 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <FieldLabel>Execution Engine</FieldLabel>
-                            <Select
-                              value={form.runtime_kind}
-                              disabled={versionReadOnly}
-                              onValueChange={(value) =>
-                                setForm((current) => {
-                                  const runtimeKind = value as AgentRuntimeKind;
-                                  const nextSupportedModes = supportedModesForForm(runtimeKind);
-                                  const nextDefaultMode = nextSupportedModes.includes(current.default_invocation_mode)
-                                    ? current.default_invocation_mode
-                                    : nextSupportedModes[0];
-                                  const provider = normalizeProviderForRuntime(runtimeKind, current.provider);
-                                  const modelName = provider !== current.provider || !current.model.trim()
-                                    ? defaultModelForAgentProvider(provider, providerOptions)
-                                    : current.model;
-                                  return {
-                                    ...current,
-                                    runtime_kind: runtimeKind,
-                                    supported_modes: nextSupportedModes,
-                                    provider,
-                                    model: modelName,
-                                    ...deriveExecutionConfigFields(
-                                      runtimeKind,
-                                      provider,
-                                      buildExecutionConfigPayload(current),
-                                    ),
-                                    default_invocation_mode: nextDefaultMode,
-                                  };
-                                })
-                              }
-                            >
-                              <SelectTrigger className="h-9">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {RUNTIME_KIND_OPTIONS
-                                  .filter((runtimeKind) => availableRuntimeKinds.includes(runtimeKind))
-                                  .map((runtimeKind) => (
-                                    <SelectItem key={runtimeKind} value={runtimeKind}>
-                                      {AGENT_RUNTIME_LABELS[runtimeKind]}
-                                    </SelectItem>
-                                  ))}
-                              </SelectContent>
-                            </Select>
-                            <p className="text-[11px] leading-relaxed text-muted-foreground">{AGENT_RUNTIME_HELP_TEXT[form.runtime_kind]}</p>
-                            {versionReadOnly ? (
-                              <p className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">{versionReadOnlyHelperText('the execution engine')}</p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-2">
-                            <FieldLabel>AI Provider</FieldLabel>
-                            <Select
-                              value={selectedProviderOption ? form.provider : undefined}
-                              disabled={versionReadOnly || providerConfigState.providerDisabled}
-                              onValueChange={(value) =>
-                                setForm((current) => {
-                                  const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
-                                  return {
-                                    ...current,
-                                    provider,
-                                    model: defaultModelForAgentProvider(provider, providerOptions),
-                                    ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
-                                  };
-                                })
-                              }
-                            >
-                              <SelectTrigger className="h-9">
-                                <SelectValue placeholder={providerConfigState.providerDisabled ? 'No compatible provider configured' : 'Select provider'} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {visibleProviderOptions.map((provider) => (
-                                  <SelectItem key={provider.value} value={provider.value}>
-                                    <span className="flex items-center gap-2">
-                                      <ProviderIcon provider={provider.value} className="h-3.5 w-3.5 shrink-0" />
-                                      {provider.label}
-                                    </span>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <p className={cn(
-                              'text-[11px] leading-relaxed',
-                              providerConfigState.providerMessage || versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
-                            )}>
-                              {versionReadOnly
-                                ? versionReadOnlyHelperText('the AI provider')
-                                : providerConfigState.providerMessage || 'LLM vendor powering this engine.'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <Separator className="my-5" />
-
-                        <div className="grid gap-5 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <FieldLabel htmlFor="system-agent-model">Model</FieldLabel>
-                            <CuratedModelSelect
-                              id="system-agent-model"
-                              provider={form.provider}
-                              value={form.model}
-                              disabled
-                              onValueChange={(model) => setForm((current) => ({ ...current, model }))}
-                            />
-                            <p className={cn(
-                              'text-[11px] leading-relaxed',
-                              versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
-                            )}>
-                              Built-in model size and route are managed by Helpin so capability and pricing stay predictable.
-                            </p>
-                          </div>
-
-                          {form.runtime_kind === 'native_sdk' && (
-                            <NativeToolStepLimitField
-                              id="system-agent-tool-step-limit"
-                              value={form.max_tool_steps}
-                              disabled={versionReadOnly}
-                              onChange={(value) => setForm((current) => ({ ...current, max_tool_steps: value }))}
-                            />
-                          )}
-
-                          {supportsReasoningEffort && (
-                            <div className="space-y-2">
-                              <FieldLabel>Reasoning Effort</FieldLabel>
-                              <Select
-                                value={form.reasoning_effort || '_default'}
-                                disabled={versionReadOnly}
-                                onValueChange={(value) =>
-                                  setForm((current) => ({
-                                    ...current,
-                                    reasoning_effort: value === '_default' ? '' : value as AgentReasoningEffort,
-                                  }))
-                                }
-                              >
-                                <SelectTrigger className="h-9 capitalize">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="_default">Model default</SelectItem>
-                                  {(selectedProviderOption?.supported_reasoning_efforts ?? REASONING_EFFORT_OPTIONS).map((effort) => (
-                                    <SelectItem key={effort} value={effort} className="capitalize">
-                                      {effort}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <p className={cn(
-                                'text-[11px] leading-relaxed',
-                                versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
-                              )}>
-                                {versionReadOnly ? versionReadOnlyHelperText('reasoning effort') : 'How hard the model thinks before responding.'}
-                              </p>
-                            </div>
-                          )}
-
-                          {supportsServiceTier && (
-                            <div className="space-y-2">
-                              <FieldLabel>Service Tier</FieldLabel>
-                              <Select
-                                value={form.service_tier || '_default'}
-                                disabled={versionReadOnly}
-                                onValueChange={(value) =>
-                                  setForm((current) => ({
-                                    ...current,
-                                    service_tier: value === '_default' ? '' : value as AgentServiceTier,
-                                  }))
-                                }
-                              >
-                                <SelectTrigger className="h-9 capitalize">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="_default">Provider default</SelectItem>
-                                  {(selectedProviderOption?.supported_service_tiers ?? SERVICE_TIER_OPTIONS).map((tier) => (
-                                    <SelectItem key={tier} value={tier} className="capitalize">
-                                      {tier}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <p className={cn(
-                                'text-[11px] leading-relaxed',
-                                versionReadOnly ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
-                              )}>
-                                {versionReadOnly ? versionReadOnlyHelperText('service tier') : 'Fast lanes prioritize latency over cost.'}
-                              </p>
-                            </div>
-                          )}
+                        <div className="max-w-lg space-y-2">
+                          <FieldLabel>Model size</FieldLabel>
+                          <Select
+                            value={form.model_tier}
+                            disabled={editingSystemAgent || versionReadOnly}
+                            onValueChange={(value) => setForm((current) => ({ ...current, model_tier: value as AgentModelTier }))}
+                          >
+                            <SelectTrigger className="h-9" aria-label="Model size">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {AGENT_MODEL_TIER_OPTIONS.map((tier) => (
+                                <SelectItem key={tier.value} value={tier.value}>{tier.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[11px] leading-relaxed text-muted-foreground">
+                            {AGENT_MODEL_TIER_OPTIONS.find((tier) => tier.value === form.model_tier)?.description}
+                          </p>
+                          {editingSystemAgent ? (
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">Built-in model sizes are managed by Helpin.</p>
+                          ) : null}
                         </div>
                       </div>
                     </Collapsible.Content>
@@ -5128,8 +4789,6 @@ export function AgentsPage() {
             <div className="text-xs text-muted-foreground">
               {versionDraftOpen
                 ? 'Create the new version in the dialog.'
-                : !providerConfigState.selectedProviderOption
-                  ? 'Select a compatible AI provider before saving.'
 	                : isEditingWorkspaceVersion || isEditingCustomVersion
 	                  ? (hasVersionChanges ? `Editing ${selectedVersionLabel ?? 'version'}. Save changes to apply.` : 'No changes to save.')
 	                  : 'No changes to save.'}
@@ -5144,8 +4803,6 @@ export function AgentsPage() {
                   saving
                   || !(isEditingWorkspaceVersion || isEditingCustomVersion)
                   || !hasVersionChanges
-                  || !providerConfigState.selectedProviderOption
-                  || !maxToolStepsValid
                 }
                 onClick={() => handleSaveWorkspaceVersion()}
               >
@@ -5931,7 +5588,6 @@ export function AgentsPage() {
                 teams={visibleTeams}
                 tools={toolCatalogEntries}
                 skills={skillCatalogEntries}
-                providerOptions={visibleProviderOptions}
                 advancedOpen={advancedOpen}
                 onAdvancedOpenChange={setAdvancedOpen}
                 onCreate={handleSave}
@@ -5990,12 +5646,8 @@ export function AgentsPage() {
                 </div>
                 <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-4 lg:grid-cols-8">
                   <div className="space-y-1 p-3">
-                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runtime</dt>
-                    <dd className="truncate text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</dd>
-                  </div>
-                  <div className="space-y-1 p-3">
-                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model</dt>
-                    <dd className="truncate text-sm font-medium" title={form.model}>{form.model || defaultModelForAgentProvider(form.provider, providerOptions)}</dd>
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model size</dt>
+                    <dd className="truncate text-sm font-medium">{agentModelTierLabel(form.model_tier)}</dd>
                   </div>
                   <div className="space-y-1 p-3">
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
@@ -6494,55 +6146,23 @@ export function AgentsPage() {
             <div className="rounded-xl border border-border/60 bg-card p-5">
               <div className="grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <FieldLabel tooltip="The execution engine that runs this agent.">
-                    Execution engine
-                  </FieldLabel>
+                  <FieldLabel tooltip="Templates use a Helpin-managed model size so capability and billing remain predictable.">Model size</FieldLabel>
                   <Select
-                    value={form.runtime_kind}
-                    onValueChange={(value) =>
-                      setForm((current) => {
-                        const runtimeKind = value as AgentRuntimeKind;
-                        if (!availableRuntimeKinds.includes(runtimeKind)) {
-                          return current;
-                        }
-                        const provider = normalizeProviderForRuntime(runtimeKind, current.provider);
-                        const modelName = provider !== current.provider || !current.model.trim()
-                          ? defaultModelForAgentProvider(provider, providerOptions)
-                          : current.model;
-                        return {
-                          ...current,
-                          runtime_kind: runtimeKind,
-                          supported_modes: supportedModesForForm(runtimeKind),
-                          provider,
-                          model: modelName,
-                          ...deriveExecutionConfigFields(
-                            runtimeKind,
-                            provider,
-                            buildExecutionConfigPayload(current),
-                          ),
-                          default_invocation_mode: normalizeDefaultInvocationMode(
-                            current.default_invocation_mode,
-                            runtimeKind,
-                            'autonomous',
-                          ),
-                        };
-                      })
-                    }
+                    value={form.model_tier}
+                    disabled
                   >
-                    <SelectTrigger className="h-9">
+                    <SelectTrigger className="h-9" aria-label="Model size">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {RUNTIME_KIND_OPTIONS
-                        .filter((runtimeKind) => availableRuntimeKinds.includes(runtimeKind))
-                        .map((runtimeKind) => (
-                          <SelectItem key={runtimeKind} value={runtimeKind}>
-                            {AGENT_RUNTIME_LABELS[runtimeKind]}
-                          </SelectItem>
-                        ))}
+                      {AGENT_MODEL_TIER_OPTIONS.map((tier) => (
+                        <SelectItem key={tier.value} value={tier.value}>{tier.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">{AGENT_RUNTIME_HELP_TEXT[form.runtime_kind]}</p>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {AGENT_MODEL_TIER_OPTIONS.find((tier) => tier.value === form.model_tier)?.description}
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -6577,66 +6197,6 @@ export function AgentsPage() {
                 </div>
               </div>
 
-              <Separator className="my-5" />
-
-              <div className="grid gap-5 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <FieldLabel tooltip="The AI service that powers this agent.">AI Provider</FieldLabel>
-                  <Select
-                    value={selectedProviderOption ? form.provider : undefined}
-                    disabled={providerConfigState.providerDisabled}
-                    onValueChange={(value) =>
-                      setForm((current) => {
-                        const provider = normalizeProviderForRuntime(current.runtime_kind, value as AgentModelProvider);
-                        return {
-                          ...current,
-                          provider,
-                          model: defaultModelForAgentProvider(provider, providerOptions),
-                          ...deriveExecutionConfigFields(current.runtime_kind, provider, buildExecutionConfigPayload(current)),
-                        };
-                      })
-                    }
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder={providerConfigState.providerDisabled ? 'No compatible provider configured' : 'Select provider'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {visibleProviderOptions.map((provider) => (
-                        <SelectItem key={provider.value} value={provider.value}>
-                          <span className="flex items-center gap-2">
-                            <ProviderIcon provider={provider.value} className="h-3.5 w-3.5 shrink-0" />
-                            {provider.label}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className={cn(
-                    'text-[11px] leading-relaxed',
-                    providerConfigState.providerMessage ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground',
-                  )}>
-                    {providerConfigState.providerMessage || 'LLM vendor powering this engine.'}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <FieldLabel
-                    htmlFor="agent-model"
-                    tooltip="The provider default is selected automatically. Enter a different provider-compatible model only when needed."
-                  >
-                    Model
-                  </FieldLabel>
-                  <CuratedModelSelect
-                    id="agent-model"
-                    provider={form.provider}
-                    value={form.model}
-                    disabled={providerConfigState.modelDisabled}
-                    onValueChange={(model) => setForm((current) => ({ ...current, model }))}
-                  />
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    {providerConfigState.modelMessage || 'Choose from the approved catalog; model size and pricing are shown in the selector.'}
-                  </p>
-                </div>
-              </div>
             </div>
 
             <DrawerConfigSection title="Capabilities" description="Targets, tools, and supported modes" defaultOpen={false}>
@@ -6792,7 +6352,7 @@ export function AgentsPage() {
               />
             )}
 
-            {/* ---- Advanced (engine internals) ---- */}
+            {/* ---- Advanced limits ---- */}
             <Collapsible.Root open={advancedOpen} onOpenChange={setAdvancedOpen}>
               <Collapsible.Trigger asChild>
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
@@ -6806,69 +6366,6 @@ export function AgentsPage() {
                 </Button>
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
-                {supportsReasoningEffort && (
-                  <div className="space-y-2">
-                    <FieldLabel tooltip="Codex-only reasoning control for supported providers. Leave on model default unless you need a specific tradeoff.">
-                      Reasoning effort
-                    </FieldLabel>
-                    <Select
-                      value={form.reasoning_effort || '_default'}
-                      onValueChange={(value) =>
-                        setForm((current) => ({
-                          ...current,
-                          reasoning_effort: value === '_default' ? '' : value as AgentReasoningEffort,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_default">Model default</SelectItem>
-                        {(selectedProviderOption?.supported_reasoning_efforts ?? REASONING_EFFORT_OPTIONS).map((effort) => (
-                          <SelectItem key={effort} value={effort}>
-                            {effort}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                {supportsServiceTier && (
-                  <div className="space-y-2">
-                    <FieldLabel tooltip="OpenAI-only Codex service tier. Fast mode trades more plan usage for lower latency.">
-                      Service tier
-                    </FieldLabel>
-                    <Select
-                      value={form.service_tier || '_default'}
-                      onValueChange={(value) =>
-                        setForm((current) => ({
-                          ...current,
-                          service_tier: value === '_default' ? '' : value as AgentServiceTier,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_default">Provider default</SelectItem>
-                        {(selectedProviderOption?.supported_service_tiers ?? SERVICE_TIER_OPTIONS).map((tier) => (
-                          <SelectItem key={tier} value={tier}>
-                            {tier}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                {form.runtime_kind === 'native_sdk' && (
-                  <NativeToolStepLimitField
-                    id="agent-tool-step-limit"
-                    value={form.max_tool_steps}
-                    onChange={(value) => setForm((current) => ({ ...current, max_tool_steps: value }))}
-                  />
-                )}
                 <div className="space-y-2">
                   <FieldLabel
                     htmlFor="agent-budget"
@@ -7145,7 +6642,7 @@ export function AgentsPage() {
             <Button
               type="button"
               size="sm"
-              disabled={creatingVersion || !versionLabelDraft.trim() || !maxToolStepsValid}
+              disabled={creatingVersion || !versionLabelDraft.trim()}
               onClick={handleCreatePresetVersion}
             >
               {creatingVersion ? 'Creating…' : 'Create custom version'}

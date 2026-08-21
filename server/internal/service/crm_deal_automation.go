@@ -484,7 +484,7 @@ func (s *DealAutomationService) inferDealCreation(ctx context.Context, contact *
 		"signals": signalSummaries,
 	})
 
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    contact.WorkspaceID,
 		FeatureKey:     BillingFeatureDealAutomationInference,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, contact.WorkspaceID, BillingFeatureDealAutomationInference, "create_deal", contact.ID),
@@ -492,12 +492,13 @@ func (s *DealAutomationService) inferDealCreation(ctx context.Context, contact *
 			"action":     "create_deal",
 			"contact_id": contact.ID,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: dealCreationSystemPrompt,
-		Messages:     []llm.Message{{Role: "user", Content: string(payload)}},
-		Temperature:  0.1,
-		MaxTokens:    2048,
-		JSONMode:     true,
+		Chat: llm.ChatRequest{
+			SystemPrompt: dealCreationSystemPrompt,
+			Messages:     []llm.Message{{Role: "user", Content: string(payload)}},
+			Temperature:  0.1,
+			MaxTokens:    2048,
+			JSONMode:     true,
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -542,7 +543,7 @@ func (s *DealAutomationService) inferDealProgression(ctx context.Context, deal *
 		"signals": signalSummaries,
 	})
 
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    deal.WorkspaceID,
 		FeatureKey:     BillingFeatureDealAutomationInference,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, deal.WorkspaceID, BillingFeatureDealAutomationInference, "progress_deal", deal.ID),
@@ -550,12 +551,13 @@ func (s *DealAutomationService) inferDealProgression(ctx context.Context, deal *
 			"action":  "progress_deal",
 			"deal_id": deal.ID,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: dealProgressionSystemPrompt,
-		Messages:     []llm.Message{{Role: "user", Content: string(payload)}},
-		Temperature:  0.1,
-		MaxTokens:    2048,
-		JSONMode:     true,
+		Chat: llm.ChatRequest{
+			SystemPrompt: dealProgressionSystemPrompt,
+			Messages:     []llm.Message{{Role: "user", Content: string(payload)}},
+			Temperature:  0.1,
+			MaxTokens:    2048,
+			JSONMode:     true,
+		},
 	})
 	if err != nil {
 		return nil, err

@@ -20,7 +20,7 @@ func TestPublicShareSourceCanAccessAgentRun(t *testing.T) {
 	}
 	if err := db.Exec(`CREATE TABLE agent_runs (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, agent_id TEXT,
-		target_type TEXT, target_id TEXT, runtime_kind TEXT, invocation_mode TEXT,
+		target_type TEXT, target_id TEXT, runtime_kind TEXT, model_tier TEXT NOT NULL DEFAULT '', invocation_mode TEXT,
 		dock_chat_id TEXT, status TEXT, pause_reason TEXT, approval_state TEXT,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {

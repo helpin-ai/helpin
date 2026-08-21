@@ -3,14 +3,8 @@ import type { WorkspaceTeam } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentIconPicker } from '@/components/agents/AgentIconPicker';
-import {
-  AGENT_RUNTIME_HELP_TEXT,
-  AGENT_RUNTIME_LABELS,
-  MAX_NATIVE_TOOL_STEPS,
-  MIN_NATIVE_TOOL_STEPS,
-  isValidNativeToolStepLimit,
-} from '@/lib/agentRuntime';
 import { HelpCircleIcon } from '@/lib/icons';
+import { AGENT_MODEL_TIER_OPTIONS } from '@/lib/agentModelTier';
 import {
   Command,
   CommandEmpty,
@@ -39,20 +33,16 @@ import {
 } from '@/components/ui/tooltip';
 import type {
   AgentInvocationMode,
-  AgentModelProvider,
-  AgentModelProviderOption,
-  AgentRuntimeKind,
+  AgentModelTier,
   AgentSkillRef,
   AgentTargetType,
   SkillCatalogEntry,
   ToolCatalogEntry,
 } from '@/lib/pmTypes';
 import { automationService } from '@/lib/services/automationService';
-import { CuratedModelSelect } from '@/components/automation/CuratedModelSelect';
 import {
   applyCustomAgentDraftToForm,
   createDefaultCustomAgentForm,
-  defaultModelForAgentProvider,
   validateCustomAgentCreateForm,
   type CustomAgentFormData,
 } from './customAgentCreateModel';
@@ -69,7 +59,6 @@ const TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string }> = [
   { value: 'repository', label: 'Code repo' },
 ];
 
-const CUSTOM_RUNTIME_KIND_OPTIONS: AgentRuntimeKind[] = ['opencode', 'codex', 'native_sdk'];
 const DRAFT_PROGRESS_LABELS = [
   'Reading brief...',
   'Choosing targets...',
@@ -90,18 +79,6 @@ function skillIdentity(skill: Pick<SkillCatalogEntry, 'id' | 'key'> | AgentSkill
 
 function skillDisplayName(skill: Pick<SkillCatalogEntry, 'title' | 'key'> | undefined, fallbackKey: string) {
   return skill?.title?.trim() || fallbackKey;
-}
-
-function supportedModesForRuntime(runtimeKind: AgentRuntimeKind): AgentInvocationMode[] {
-  if (runtimeKind === 'native_sdk' || runtimeKind === 'codex') {
-    return ['autonomous', 'interactive'];
-  }
-  return ['autonomous'];
-}
-
-function normalizeInvocationMode(value: AgentInvocationMode, runtimeKind: AgentRuntimeKind): AgentInvocationMode {
-  const supportedModes = supportedModesForRuntime(runtimeKind);
-  return supportedModes.includes(value) ? value : 'autonomous';
 }
 
 function FieldLabel({ children, tooltip }: { children: ReactNode; tooltip?: string }) {
@@ -135,7 +112,6 @@ export interface CustomAgentCreatePanelProps {
   teams: WorkspaceTeam[];
   tools: ToolCatalogEntry[];
   skills: SkillCatalogEntry[];
-  providerOptions: AgentModelProviderOption[];
   advancedOpen: boolean;
   onAdvancedOpenChange: (open: boolean) => void;
   onCreate: () => void;
@@ -154,7 +130,6 @@ export function CustomAgentCreatePanel({
   teams,
   tools,
   skills,
-  providerOptions,
   advancedOpen,
   onAdvancedOpenChange,
   onCreate,
@@ -293,34 +268,10 @@ export function CustomAgentCreatePanel({
     setSkillPickerOpen(false);
   };
 
-  const updateRuntimeKind = (runtimeKind: AgentRuntimeKind) => {
-    if (!CUSTOM_RUNTIME_KIND_OPTIONS.includes(runtimeKind)) return;
-    const codexProvider = providerOptions.find((option) => option.value === 'openai' || option.value === 'openrouter')?.value
-      ?? 'openai';
-    const provider = runtimeKind === 'codex' && form.provider === 'anthropic'
-      ? codexProvider
-      : form.provider;
-    update({
-      runtime_kind: runtimeKind,
-      supported_modes: supportedModesForRuntime(runtimeKind),
-      provider,
-      model: provider !== form.provider || !form.model.trim()
-        ? defaultModelForAgentProvider(provider, providerOptions)
-        : form.model,
-      reasoning_effort: runtimeKind === 'codex' ? form.reasoning_effort : '',
-      service_tier: runtimeKind === 'codex' ? form.service_tier : '',
-      max_tool_steps: runtimeKind === 'native_sdk' ? form.max_tool_steps : '',
-      default_invocation_mode: normalizeInvocationMode(form.default_invocation_mode, runtimeKind),
-    });
-  };
-
   const availableTools = tools.filter((tool) => !form.allowed_tools.includes(tool.name));
   const selectedSkillIdentities = new Set(form.skills.map(skillIdentity));
   const availableSkills = skills.filter((skill) => !selectedSkillIdentities.has(skillIdentity(skill)));
-  const supportedModes = supportedModesForRuntime(form.runtime_kind);
-  const compatibleProviderOptions = form.runtime_kind === 'codex'
-    ? providerOptions.filter((option) => option.value === 'openai' || option.value === 'openrouter')
-    : providerOptions;
+  const supportedModes = form.supported_modes;
   const selectedSkills = form.skills
     .map((ref) => skills.find((skill) => skillIdentity(skill) === skillIdentity(ref)))
     .filter((skill): skill is SkillCatalogEntry => Boolean(skill));
@@ -349,12 +300,9 @@ export function CustomAgentCreatePanel({
     setToolRemovalMessage('');
     update({ allowed_tools: form.allowed_tools.filter((value) => value !== toolName) });
   };
-  const maxToolStepsValid = isValidNativeToolStepLimit(form.runtime_kind, form.max_tool_steps);
-  const saveDisabled = saving || missing.length > 0 || !maxToolStepsValid || canSave === false;
+  const saveDisabled = saving || missing.length > 0 || canSave === false;
   const primaryLabel = saving ? (isEditMode ? 'Saving...' : 'Creating...') : isEditMode ? 'Save changes' : 'Create agent';
-  const validationStatus = !maxToolStepsValid
-    ? `Tool step limit must be a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`
-    : missing.length > 0
+  const validationStatus = missing.length > 0
       ? `Missing: ${missing.join(', ')}`
       : '';
   const actionStatus = validationStatus ? '' : statusText;
@@ -521,7 +469,7 @@ export function CustomAgentCreatePanel({
             <div className="flex flex-col gap-5">
               <label className="order-2 block space-y-3">
                 <div>
-                  <FieldLabel tooltip="Tools are the runtime actions and data sources the agent is allowed to call.">Tools</FieldLabel>
+                  <FieldLabel tooltip="Tools are the actions and data sources the agent is allowed to call.">Tools</FieldLabel>
                   <p className="mt-1 text-xs text-muted-foreground">Choose what this agent can use.</p>
                 </div>
                 {tools.length > 0 ? (
@@ -820,91 +768,28 @@ export function CustomAgentCreatePanel({
             >
               <span>
                 <span className="block text-sm font-semibold">Advanced settings</span>
-                <span className="mt-1 block text-xs text-muted-foreground">Runtime, model, execution limits, and parallel tasks.</span>
+                <span className="mt-1 block text-xs text-muted-foreground">Model size and task limits.</span>
               </span>
               <span className="text-xs text-muted-foreground">{advancedOpen ? 'Hide' : 'Show'}</span>
             </button>
             {advancedOpen ? (
               <div className="grid gap-3 border-t border-border pt-3 md:grid-cols-2">
                     <label className="block space-y-2">
-                      <FieldLabel tooltip="Execution engine for this agent. These options match the original custom-agent form.">Runtime</FieldLabel>
-                      <Select value={form.runtime_kind} onValueChange={(value) => updateRuntimeKind(value as AgentRuntimeKind)}>
-                        <SelectTrigger className="h-9">
+                      <FieldLabel tooltip="Model sizes map to Helpin-managed models and billing rates. The underlying provider and model may change without changing this agent version.">Model size</FieldLabel>
+                      <Select value={form.model_tier} onValueChange={(value) => update({ model_tier: value as AgentModelTier })}>
+                        <SelectTrigger className="h-9" aria-label="Model size">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {CUSTOM_RUNTIME_KIND_OPTIONS.map((runtimeKind) => (
-                            <SelectItem key={runtimeKind} value={runtimeKind}>
-                              {AGENT_RUNTIME_LABELS[runtimeKind]}
-                            </SelectItem>
+                          {AGENT_MODEL_TIER_OPTIONS.map((tier) => (
+                            <SelectItem key={tier.value} value={tier.value}>{tier.label}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                       <p className="text-[11px] leading-relaxed text-muted-foreground">
-                        {AGENT_RUNTIME_HELP_TEXT[form.runtime_kind]}
+                        {AGENT_MODEL_TIER_OPTIONS.find((tier) => tier.value === form.model_tier)?.description}
                       </p>
                     </label>
-                    <label className="block space-y-2">
-                      <FieldLabel tooltip="The AI service that powers this agent. The list only includes providers configured for this workspace/server.">AI Provider</FieldLabel>
-                      <Select
-                        value={form.provider}
-                        onValueChange={(value) => {
-                          const provider = value as AgentModelProvider;
-                          update({
-                            provider,
-                            model: defaultModelForAgentProvider(provider, providerOptions),
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {compatibleProviderOptions.map((provider) => (
-                            <SelectItem key={provider.value} value={provider.value}>
-                              {provider.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </label>
-                    <label className="block space-y-2">
-                      <FieldLabel tooltip="The provider default is selected automatically. Enter a different provider-compatible model only when needed.">Model</FieldLabel>
-                      <CuratedModelSelect
-                        provider={form.provider}
-                        value={form.model}
-                        onValueChange={(model) => update({ model })}
-                      />
-                    </label>
-                    {form.runtime_kind === 'native_sdk' ? (
-                      <label className="block space-y-2">
-                        <FieldLabel tooltip="Maximum model and tool-call rounds in one run. Leave empty to use the agent default.">
-                          Tool step limit
-                        </FieldLabel>
-                        <input
-                          className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm aria-[invalid=true]:border-destructive aria-[invalid=true]:ring-1 aria-[invalid=true]:ring-destructive/30"
-                          type="number"
-                          min={MIN_NATIVE_TOOL_STEPS}
-                          max={MAX_NATIVE_TOOL_STEPS}
-                          step={1}
-                          value={form.max_tool_steps}
-                          onChange={(event) => update({ max_tool_steps: event.target.value })}
-                          placeholder="Use agent default"
-                          aria-invalid={!maxToolStepsValid}
-                          aria-describedby="custom-agent-tool-step-limit-help"
-                        />
-                        <p
-                          id="custom-agent-tool-step-limit-help"
-                          className={maxToolStepsValid
-                            ? 'text-[11px] leading-relaxed text-muted-foreground'
-                            : 'text-[11px] leading-relaxed text-destructive'}
-                        >
-                          {maxToolStepsValid
-                            ? `${MIN_NATIVE_TOOL_STEPS}–${MAX_NATIVE_TOOL_STEPS} rounds per run.`
-                            : `Enter a whole number from ${MIN_NATIVE_TOOL_STEPS} to ${MAX_NATIVE_TOOL_STEPS}.`}
-                        </p>
-                      </label>
-                    ) : null}
                     <label className="block space-y-2">
                       <FieldLabel tooltip="Coming soon: this will limit how many runs this agent can work on at the same time. It is saved as 1 today.">Parallel tasks</FieldLabel>
                       <div className="flex items-center gap-2">

@@ -234,3 +234,28 @@ func TestSupportEmailRouteVerificationBackfillMigrationContract(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentModelTierBackfillMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	for _, migration := range migrations {
+		if migration.Version != "202608210001" {
+			continue
+		}
+		sql := strings.ToLower(migration.SQL)
+		for _, table := range []string{"agents", "workspace_agent_preset_versions", "agent_versions", "agent_runs"} {
+			if !strings.Contains(sql, table) || !strings.Contains(sql, "model_tier") {
+				t.Fatalf("agent model tier migration is missing %s", table)
+			}
+		}
+		for _, clause := range []string{"gpt-5-mini", "then 'medium'", "haiku-4", "then 'large'", "deepseek", "then 'small'"} {
+			if !strings.Contains(sql, clause) {
+				t.Fatalf("agent model tier migration is missing catalog backfill clause %q", clause)
+			}
+		}
+		return
+	}
+	t.Fatal("expected agent model tier migration 202608210001 to be registered")
+}

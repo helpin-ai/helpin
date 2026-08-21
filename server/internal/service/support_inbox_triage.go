@@ -739,24 +739,23 @@ func (s *SupportInboxTriageService) evaluateAI(ctx context.Context, workspaceID 
 	if conversation != nil {
 		conversationID = conversation.ID
 	}
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     BillingFeatureAIRouting,
 		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureAIRouting, "triage", conversationID, aiUsageStableHash(inputContent)),
 		Metadata: map[string]interface{}{
 			"conversation_id": conversationID,
 		},
-	}), llm.ChatRequest{
-		Provider:     supportTriageProvider,
-		Model:        supportTriageModel,
-		SystemPrompt: supportTriageSystemPrompt,
-		Messages: []llm.Message{
-			{Role: "user", Content: prompt},
+		Chat: llm.ChatRequest{
+			SystemPrompt: supportTriageSystemPrompt,
+			Messages: []llm.Message{
+				{Role: "user", Content: prompt},
+			},
+			Temperature: 0.1,
+			MaxTokens:   400,
+			JSONMode:    true,
+			JSONSchema:  supportTriageJSONSchema(),
 		},
-		Temperature: 0.1,
-		MaxTokens:   400,
-		JSONMode:    true,
-		JSONSchema:  supportTriageJSONSchema(),
 	})
 	if err != nil {
 		return nil, err

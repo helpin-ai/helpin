@@ -930,7 +930,18 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
-	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, aiUsageMeter)
+	completionRoutes := service.DefaultAICompletionRouteRegistry()
+	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
+		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
+	}
+	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
+		fatalWithSentry("validate AI completion providers", errors.Join(issues...))
+	}
+	agentTierResolver := service.NewAgentModelTierResolver(pricingCatalog, supportLLMRouter.HasChatProvider)
+	if issues := agentTierResolver.ValidateSelectable(); len(issues) != 0 {
+		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
+	}
+	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes)
 	supportInboxTriageService := service.NewSupportInboxTriageService(
 		supportInboxService,
 		supportConversationTriageRepo,
@@ -1038,7 +1049,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	agentService.SetProductAnalyticsService(productAnalytics)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
@@ -1105,18 +1116,8 @@ func main() {
 		slog.Info("Anthropic API not configured — orchestration disabled")
 	}
 
-	// Initialize LLM provider for docs translation generation, signal detection, and deal automation.
-	var llmProvider llm.Provider
-	switch cfg.CRMLLMProvider {
-	case "openai":
-		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
-	default:
-		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
-	}
-	llmProvider = service.NewMeteredLLMProvider(llmProvider, aiUsageMeter)
-	if llmProvider != nil {
-		slog.Info("LLM provider configured for signal detection")
-	}
+	// Every product-owned direct completion shares the validated route registry.
+	var llmProvider llm.Provider = supportLLMProvider
 
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
 	docsAPIReferenceService := service.NewDocsAPIReferenceService(docsAPIReferenceRepo, docsSpaceRepo)
@@ -1743,7 +1744,7 @@ func main() {
 		helpcenterAnswerRepo,
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
-		supportLLMRouter,
+		supportLLMProvider,
 		helpcenterAnswerProvider,
 		helpcenterAnswerModel,
 		redisClient,

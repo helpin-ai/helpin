@@ -34,9 +34,7 @@ func TestValidateCustomAgentDraftDropsUnknownCatalogValuesAndAddsRequiredSkillTo
 		AllowedTools:          []string{"search_documents", "made_up_tool"},
 		Skills:                model.AgentSkillRefs{{Key: "support_style"}, {Key: "missing_skill"}},
 		ApprovalMode:          "banana",
-		RuntimeKind:           "banana_runtime",
-		Provider:              "banana_provider",
-		Model:                 "ignored-model",
+		ModelTier:             "banana_tier",
 		DefaultInvocationMode: "banana_mode",
 		MaxConcurrentRuns:     0,
 	}
@@ -68,14 +66,8 @@ func TestValidateCustomAgentDraftDropsUnknownCatalogValuesAndAddsRequiredSkillTo
 	if draft.ApprovalMode != "mutating_tools" {
 		t.Fatalf("expected safe approval default, got %q", draft.ApprovalMode)
 	}
-	if draft.RuntimeKind != "codex" {
-		t.Fatalf("expected codex runtime default, got %q", draft.RuntimeKind)
-	}
-	if draft.Provider != "anthropic" {
-		t.Fatalf("expected provider fallback, got %q", draft.Provider)
-	}
-	if draft.Model != "" {
-		t.Fatalf("expected model cleared when provider was invalid, got %q", draft.Model)
+	if draft.ModelTier != "small" {
+		t.Fatalf("expected small model tier default, got %q", draft.ModelTier)
 	}
 	if draft.DefaultInvocationMode != "interactive" {
 		t.Fatalf("expected interactive default, got %q", draft.DefaultInvocationMode)
@@ -128,8 +120,7 @@ func TestDraftCustomAgentReturnsValidatedDraftWithoutCreatingAgent(t *testing.T)
 			AllowedTargets:        []string{"document"},
 			AllowedTools:          []string{"search_documents", "unknown_tool"},
 			ApprovalMode:          "never",
-			RuntimeKind:           "native_sdk",
-			Provider:              "anthropic",
+			ModelTier:             "small",
 			DefaultInvocationMode: "interactive",
 			MaxConcurrentRuns:     2,
 		},

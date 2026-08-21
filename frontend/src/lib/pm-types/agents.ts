@@ -33,11 +33,12 @@ export type AgentTargetType = 'task' | 'support_conversation' | 'support_coverag
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
 export type AgentApprovalMode = 'preset_default' | 'never' | 'risk_based' | 'mutating_tools' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
+export type AgentModelTier = 'small' | 'medium' | 'large' | 'flagship';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
 export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message';
 export type CodexAuthStateStatus = 'required' | 'pending' | 'connected' | 'failed' | 'cancelled';
 export type AgentReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-export type AgentServiceTier = 'fast' | 'flex';
+export type AgentServiceTier = 'standard' | 'fast' | 'flex';
 
 export interface AgentExecutionConfig {
   reasoning_effort?: AgentReasoningEffort;
@@ -62,6 +63,7 @@ export interface Agent {
   role: string;
   status: AgentStatus;
   runtime_kind: AgentRuntimeKind;
+  model_tier?: AgentModelTier;
   skills: AgentSkillRef[];
   trigger_mode: AgentTriggerMode;
   provider?: AgentModelProvider;
@@ -138,6 +140,7 @@ export interface AgentRun {
   target_type: AgentTargetType;
   target_id: string;
   runtime_kind: AgentRuntimeKind;
+  model_tier?: AgentModelTier;
   invocation_mode: AgentInvocationMode;
   parent_run_id?: string;
   handoff_state?: string;
@@ -536,6 +539,7 @@ export interface CreateAgentRequest {
   preset_version_key?: string;
   role?: string;
   runtime_kind?: AgentRuntimeKind;
+  model_tier?: AgentModelTier;
   skills?: AgentSkillRef[];
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
@@ -569,9 +573,7 @@ export interface CustomAgentDraft {
   allowed_tools: string[];
   skills: AgentSkillRef[];
   approval_mode: AgentApprovalMode;
-  runtime_kind: AgentRuntimeKind;
-  provider: AgentModelProvider;
-  model?: string;
+  model_tier: AgentModelTier;
   default_invocation_mode: AgentInvocationMode;
   max_concurrent_runs: number;
 }
@@ -691,6 +693,7 @@ export interface UpdateAgentRequest {
   role?: string;
   status?: AgentStatus;
   runtime_kind?: AgentRuntimeKind;
+  model_tier?: AgentModelTier;
   skills?: AgentSkillRef[];
   trigger_mode?: AgentTriggerMode;
   provider?: AgentModelProvider;
@@ -721,6 +724,7 @@ export interface AgentVersion {
   label: string;
   description?: string;
   runtime_kind: AgentRuntimeKind;
+  model_tier?: AgentModelTier;
   provider?: AgentModelProvider;
   model?: string;
   execution_config?: AgentExecutionConfig;
@@ -742,6 +746,7 @@ export interface CreateAgentVersionRequest {
   description?: string;
   source_version_id?: string;
   runtime_kind?: AgentRuntimeKind;
+  model_tier?: AgentModelTier;
   provider?: AgentModelProvider;
   model?: string;
   execution_config?: AgentExecutionConfig;
@@ -757,6 +762,7 @@ export interface UpdateAgentVersionRequest {
   label?: string;
   description?: string;
   runtime_kind?: AgentRuntimeKind;
+  model_tier?: AgentModelTier;
   provider?: AgentModelProvider;
   model?: string;
   execution_config?: AgentExecutionConfig;
@@ -792,6 +798,7 @@ export interface AgentPresetDefinition {
   scope?: 'product' | 'workspace';
   workspace_id?: string;
   source_version_key?: string;
+  model_tier?: AgentModelTier;
   provider?: AgentModelProvider;
   model?: string;
   execution_config?: AgentExecutionConfig;

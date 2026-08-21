@@ -128,11 +128,8 @@ describe('CodingSessionHeader', () => {
     const runtimePill = container.querySelector('[data-coding-session-runtime-pill]');
     expect(tokenTrigger?.getAttribute('aria-label')).toBe('Token usage: 120k input (119k cached) / 722 output');
     expect(tokenTrigger?.hasAttribute('title')).toBe(false);
-    expect(runtimePill?.textContent).toBe('Codex');
-    expect(runtimePill?.closest('[data-coding-session-detail-row]')).toBeTruthy();
-    expect(
-      (tokenTrigger?.compareDocumentPosition(runtimePill as Node) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(runtimePill).toBeNull();
+    expect(tokenTrigger?.closest('[data-coding-session-detail-row]')).toBeTruthy();
   });
 
   it('keeps running session details visible after time passes', () => {
@@ -260,7 +257,7 @@ describe('CodingSessionHeader', () => {
     expect(pulse?.className).toContain('agent-working-chroma');
     expect(pulse?.getAttribute('aria-hidden')).toBe('true');
     expect(stage?.textContent).toContain('Agent working');
-    expect(stage?.textContent).toContain('Runtime is active');
+    expect(stage?.textContent).toContain('Agent is active');
     expect(stage?.textContent).not.toContain('Stage');
   });
 

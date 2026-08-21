@@ -79,24 +79,6 @@ function renderPanel(overrides: Partial<{
         required_tools: ['list_tasks'],
       },
     ],
-    providerOptions: [
-      {
-        value: 'anthropic',
-        label: 'Anthropic',
-        default_model: 'claude-opus-4-8',
-        model_placeholder: 'claude-opus-4-8',
-        supports_reasoning_effort: false,
-        supports_service_tier: false,
-      },
-      {
-        value: 'openai',
-        label: 'OpenAI',
-        default_model: 'gpt-5.6-terra',
-        model_placeholder: 'gpt-5.6-terra',
-        supports_reasoning_effort: true,
-        supports_service_tier: true,
-      },
-    ],
     advancedOpen: false,
     onAdvancedOpenChange: vi.fn(),
     onCreate: vi.fn(),
@@ -236,7 +218,7 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).toContain('Can ask follow-up questions or request approval.');
   });
 
-  it('keeps runtime options aligned with the old custom-agent drawer', () => {
+  it('shows billing model sizes without runtime choices', () => {
     renderPanel({
       form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
       advancedOpen: true,
@@ -245,20 +227,18 @@ describe('CustomAgentCreatePanel', () => {
     click('Start blank');
     click('Advanced settings');
 
-    expect(container?.textContent).toContain('Codex');
+    expect(container?.textContent).toContain('Model size');
+    expect(container?.textContent).toContain('Large');
     expect(container?.textContent).toContain('Interactive');
-    expect(container?.textContent).toContain('Best for code and repository work.');
-
-    click('Codex');
-    expect(document.body.textContent).toContain('OpenCode');
-    expect(document.body.textContent).toContain('Codex');
-    expect(document.body.textContent).toContain('Native SDK');
+    expect(container?.textContent).not.toContain('OpenCode');
+    expect(container?.textContent).not.toContain('Codex');
+    expect(container?.textContent).not.toContain('Native SDK');
 
     click('Interactive');
     expect(document.body.textContent).toContain('Autonomous');
   });
 
-  it('shows the explicit provider default model', () => {
+  it('shows the catalog model-size description without an exact model', () => {
     renderPanel({
       form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
       advancedOpen: true,
@@ -267,13 +247,14 @@ describe('CustomAgentCreatePanel', () => {
     click('Start blank');
     click('Advanced settings');
 
-    expect(container?.textContent).toContain('GPT-5.6 Terra');
     expect(container?.textContent).toContain('Large');
-    expect(container?.textContent).not.toContain('Use suggested');
+    expect(container?.textContent).toContain('Advanced models for planning, coding, review, and complex agent work');
+    expect(container?.textContent).not.toContain('GPT-5.6 Terra');
+    expect(container?.textContent).not.toContain('OpenAI');
     expect(container?.textContent).toContain('Coming soon');
   });
 
-  it('shows a bounded per-agent tool step limit for Native SDK agents', () => {
+  it('does not reveal legacy runtime-specific limits', () => {
     renderPanel({
       form: {
         ...createDefaultCustomAgentForm(),
@@ -288,13 +269,11 @@ describe('CustomAgentCreatePanel', () => {
 
     click('Start blank');
 
-    expect(container?.textContent).toContain('Tool step limit');
-    expect(container?.textContent).toContain('1–1000 rounds per run.');
+    expect(container?.textContent).not.toContain('Tool step limit');
+    expect(container?.textContent).not.toContain('Native SDK');
     const input = Array.from(container?.querySelectorAll('input') ?? [])
       .find((candidate) => candidate.value === '640');
-    expect(input).toBeTruthy();
-    expect(input?.min).toBe('1');
-    expect(input?.max).toBe('1000');
+    expect(input).toBeUndefined();
   });
 
   it('supports all-teams and multi-team access', () => {

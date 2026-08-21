@@ -557,6 +557,7 @@ func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
 		Name:                  "Mira",
 		PresetKey:             model.AgentPresetMarketer,
 		RuntimeKind:           "native_sdk",
+		ModelTier:             "large",
 		Provider:              &provider,
 		Model:                 &modelName,
 		SystemPrompt:          &prompt,
@@ -588,6 +589,9 @@ func TestCreateRunDelegatesMiraWorkspaceRunToAgentRuntime(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("createRun() error = %v", err)
+	}
+	if run.ModelTier != "large" {
+		t.Fatalf("run model tier = %q, want launch snapshot large", run.ModelTier)
 	}
 	if len(runtimeClient.upsertAgents) != 1 {
 		t.Fatalf("expected one runtime agent upsert, got %d", len(runtimeClient.upsertAgents))
@@ -1430,6 +1434,7 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			target_type TEXT NOT NULL DEFAULT 'task',
 			target_id TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
+			model_tier TEXT NOT NULL DEFAULT '',
 			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
 			parent_run_id TEXT,
 			dock_chat_id TEXT,
@@ -1525,6 +1530,7 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			role TEXT,
 			status TEXT NOT NULL DEFAULT 'idle',
 			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
+			model_tier TEXT NOT NULL DEFAULT '',
 			skills BLOB NOT NULL DEFAULT '[]',
 			trigger_mode TEXT NOT NULL DEFAULT 'manual',
 			provider TEXT,

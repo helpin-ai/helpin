@@ -214,6 +214,7 @@ func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 		icon_key TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'idle',
 		runtime_kind TEXT NOT NULL DEFAULT 'native_sdk',
+		model_tier TEXT NOT NULL DEFAULT '',
 		source_template_key TEXT NOT NULL DEFAULT '',
 		template_key TEXT,
 		template_instance_id TEXT,

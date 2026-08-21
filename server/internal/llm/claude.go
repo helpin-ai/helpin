@@ -30,7 +30,7 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 
 	resp, err := p.client.CreateMessage(ctx, apiReq)
 	if err != nil {
-		return nil, fmt.Errorf("claude completion: %w", err)
+		return nil, &ProviderError{Provider: "anthropic", Operation: "chat_completion", Err: err}
 	}
 
 	content := extractClaudeResponseContent(resp, req.JSONMode)
@@ -39,6 +39,7 @@ func (p *ClaudeProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		Content:    content,
 		TokensUsed: tokenUsageFromClaude(resp.Usage),
 		Provider:   "anthropic", Model: req.Model, Route: req.Model, ServiceTier: "standard",
+		FinishReason: resp.StopReason,
 	}, nil
 }
 

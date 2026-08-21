@@ -15,8 +15,6 @@ import (
 
 const workspaceContextMaxPageBytes = 256 * 1024
 const workspaceContextMaxPromptChars = 18000
-const workspaceContextProvider = "openrouter"
-const workspaceContextModel = "deepseek/deepseek-v4-flash-0731"
 
 type workspaceContextLLM interface {
 	ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error)
@@ -79,7 +77,7 @@ func (s *WorkspaceService) GenerateCompanyProductDescription(ctx context.Context
 		pageText = pageText[:workspaceContextMaxPromptChars]
 	}
 
-	meteringCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	completionInput := AICompletionRequest{
 		WorkspaceID:    strings.TrimSpace(req.WorkspaceID),
 		FeatureKey:     BillingFeatureCompanyProductContext,
 		IdempotencyKey: aiUsageIdempotencyKey(strings.TrimSpace(req.WorkspaceID), "company_product_context", aiUsageStableHash(strings.TrimSpace(req.WorkspaceName)+"|"+strings.TrimSpace(*websiteURL))),
@@ -87,11 +85,10 @@ func (s *WorkspaceService) GenerateCompanyProductDescription(ctx context.Context
 			"workspace_name": strings.TrimSpace(req.WorkspaceName),
 			"website_url":    strings.TrimSpace(*websiteURL),
 		},
-	})
+		RequireComplete: true,
+	}
 
 	chatRequest := llm.ChatRequest{
-		Provider:     workspaceContextProvider,
-		Model:        workspaceContextModel,
 		SystemPrompt: "You draft compact, factual company/product context for AI agents. Use only the provided website text. Return plain text only.",
 		Messages: []llm.Message{{
 			Role: "user",
@@ -110,9 +107,10 @@ Website text:
 %s`, strings.TrimSpace(req.WorkspaceName), pageText),
 		}},
 		Temperature: 0.2,
-		MaxTokens:   1200,
+		MaxTokens:   2400,
 	}
-	resp, err := s.contextLLM.ChatCompletion(meteringCtx, chatRequest)
+	completionInput.Chat = chatRequest
+	resp, err := completeAI(ctx, s.contextLLM, completionInput)
 	if err != nil {
 		return nil, fmt.Errorf("generate company/product context: %w", err)
 	}

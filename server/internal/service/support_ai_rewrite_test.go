@@ -45,11 +45,15 @@ func TestRewriteSupportDraftUsesSmallTierModelAndReturnsContent(t *testing.T) {
 	if resp.Model != supportRewriteModel {
 		t.Fatalf("model = %q, want %q", resp.Model, supportRewriteModel)
 	}
-	if fakeLLM.lastReq.Provider != supportRewriteProvider {
-		t.Fatalf("chat provider = %q, want %q", fakeLLM.lastReq.Provider, supportRewriteProvider)
+	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureSupportReplyRewrite, "")
+	if !ok {
+		t.Fatal("support rewrite route policy is missing")
 	}
-	if fakeLLM.lastReq.Model != supportRewriteModel {
-		t.Fatalf("chat model = %q, want %q", fakeLLM.lastReq.Model, supportRewriteModel)
+	if fakeLLM.lastReq.Provider != policy.Primary.Provider {
+		t.Fatalf("chat provider = %q, want %q", fakeLLM.lastReq.Provider, policy.Primary.Provider)
+	}
+	if fakeLLM.lastReq.Model != policy.Primary.Model {
+		t.Fatalf("chat model = %q, want %q", fakeLLM.lastReq.Model, policy.Primary.Model)
 	}
 	if !fakeLLM.lastReq.JSONMode {
 		t.Fatal("expected JSONMode to be enabled")

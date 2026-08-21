@@ -74,8 +74,12 @@ func TestDocsImportAIConversionUsesConfiguredModelAndPreservesStructure(t *testi
 	if provider.calls != 1 {
 		t.Fatalf("provider calls = %d, want 1", provider.calls)
 	}
-	if provider.request.Provider != "openrouter" ||
-		provider.request.Model != "deepseek/deepseek-v4-flash-0731" {
+	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureDocsImportConversion, "")
+	if !ok {
+		t.Fatal("docs import route policy is missing")
+	}
+	if provider.request.Provider != policy.Primary.Provider ||
+		provider.request.Model != policy.Primary.Model {
 		t.Fatalf("unexpected routing: provider=%q model=%q", provider.request.Provider, provider.request.Model)
 	}
 	if !provider.request.JSONMode || provider.request.Temperature != 0.1 {

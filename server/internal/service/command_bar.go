@@ -112,9 +112,7 @@ func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.Custo
 	if len(req.AllowedTargets) > 0 {
 		allowedTargets = normalizeStringSlice(req.AllowedTargets)
 	}
-	runtimeKind := firstNonEmptyString(strings.TrimSpace(draft.RuntimeKind), "native_sdk")
-	provider := strings.TrimSpace(draft.Provider)
-	modelName := strings.TrimSpace(draft.Model)
+	modelTier := firstNonEmptyString(strings.TrimSpace(draft.ModelTier), "small")
 	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "mutating_tools")
 	invocationMode := firstNonEmptyString(strings.TrimSpace(draft.DefaultInvocationMode), "interactive")
 	maxRuns := draft.MaxConcurrentRuns
@@ -127,9 +125,7 @@ func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.Custo
 		WorkspaceID:           workspaceID,
 		Name:                  firstNonEmptyString(name, "Custom Agent"),
 		Role:                  role,
-		RuntimeKind:           &runtimeKind,
-		Provider:              &provider,
-		Model:                 &modelName,
+		ModelTier:             &modelTier,
 		SystemPrompt:          &systemPrompt,
 		Skills:                draft.Skills,
 		TriggerMode:           &triggerMode,
