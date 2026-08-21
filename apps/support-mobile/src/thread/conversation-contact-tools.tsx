@@ -320,8 +320,8 @@ export function ConversationContactTools({
   return (
     <>
       {(recipients.primary.length > 0 || recipients.cc.length > 0 || recipients.alsoOnThread.length > 0 || canEdit) && (
-        <section className="border-t border-border/60 px-4 py-3">
-          <div className="mb-2 flex items-center gap-2 text-footnote font-semibold">
+        <section className="border-t border-border/60 px-4 py-4">
+          <div className="mb-3 flex items-center gap-2 text-footnote font-semibold">
             <Mail className="h-4 w-4 text-muted-foreground" />
             Email recipients
           </div>
@@ -397,8 +397,8 @@ export function ConversationContactTools({
       )}
 
       {canReadCRM && (conversation.crm_contact_id || canEdit) && (
-        <section className="border-t border-border/60 px-4 py-3">
-          <div className="mb-2 flex items-center gap-2 text-footnote font-semibold">
+        <section className="border-t border-border/60 px-4 py-4">
+          <div className="mb-3 flex items-center gap-2 text-footnote font-semibold">
             <UserRoundCheck className="h-4 w-4 text-muted-foreground" />
             CRM contact
           </div>

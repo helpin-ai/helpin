@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from '@tanstack/react-router'
-import { Check, ChevronRight, Copy, Pencil, X } from 'lucide-react'
+import {
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Copy,
+  Pencil,
+  RotateCcw,
+  Tag,
+  UserRoundPlus,
+  X,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import {
   useAssignConversationUser,
@@ -32,15 +42,6 @@ export interface ContextSheetProps {
   canReadCRM?: boolean
   canEditCRM?: boolean
 }
-
-/**
- * Two detents (55% / 92%) per the design spec — vaul supports fractional
- * `snapPoints` uncontrolled (it manages the active snap point itself when
- * `activeSnapPoint`/`setActiveSnapPoint` aren't passed), so the existing
- * `Sheet` wrapper's `detents` prop already covers this; no fallback to a
- * single tall sheet was needed. See src/ui/sheet.tsx.
- */
-const CONTEXT_SHEET_DETENTS = [0.55, 0.92]
 
 const STATUS_LABELS: Record<ConversationStatus, string> = {
   open: 'Open',
@@ -155,8 +156,18 @@ export function ContextSheet({
 
   if (!conversation) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange} detents={CONTEXT_SHEET_DETENTS} title="Conversation options">
-        <div className="flex flex-1 items-center justify-center px-4 pb-10">
+      <Sheet open={open} onOpenChange={onOpenChange} fullScreen title="Conversation details">
+        <header className="flex h-[56px] shrink-0 items-center justify-between border-b border-border/60 px-4">
+          <h2 className="text-headline">Details</h2>
+          <Pressable
+            aria-label="Close conversation details"
+            onPress={() => onOpenChange(false)}
+            className="flex h-10 min-h-10 w-10 min-w-10 items-center justify-center rounded-full bg-muted/70 text-muted-foreground"
+          >
+            <X className="h-5 w-5" />
+          </Pressable>
+        </header>
+        <div className="flex min-h-0 flex-1 items-center justify-center px-4 pb-10">
           <Spinner size={20} />
         </div>
       </Sheet>
@@ -174,16 +185,30 @@ export function ContextSheet({
     <Sheet
       open={open}
       onOpenChange={onOpenChange}
-      detents={CONTEXT_SHEET_DETENTS}
-      className="overflow-y-auto"
-      title="Conversation options"
+      fullScreen
+      className="overflow-hidden"
+      title="Conversation details"
     >
-      <div className="flex flex-1 flex-col overflow-y-auto pb-4">
-        <div className="flex items-start gap-3 px-4 pb-4">
-          <Avatar name={customerName} size={44} />
-          <div className="min-w-0 flex-1">
+      <header className="flex h-[56px] shrink-0 items-center justify-between border-b border-border/60 px-4">
+        <div className="min-w-0">
+          <h2 className="text-headline">Details</h2>
+          <p className="text-caption text-muted-foreground">Conversation #{conversation.display_id}</p>
+        </div>
+        <Pressable
+          aria-label="Close conversation details"
+          onPress={() => onOpenChange(false)}
+          className="flex h-10 min-h-10 w-10 min-w-10 items-center justify-center rounded-full bg-muted/70 text-muted-foreground"
+        >
+          <X className="h-5 w-5" />
+        </Pressable>
+      </header>
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-6">
+        <section className="flex items-start gap-3.5 px-4 py-5">
+          <Avatar name={customerName} size={52} />
+          <div className="min-w-0 flex-1 space-y-1">
             {editingCustomerName ? (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 <input
                   autoFocus
                   aria-label="Customer name"
@@ -193,28 +218,32 @@ export function ContextSheet({
                     if (event.key === 'Enter') handleSaveCustomerName()
                     if (event.key === 'Escape') setEditingCustomerName(false)
                   }}
-                  className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-body outline-none"
+                  className="h-10 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-body outline-none"
                 />
                 <Pressable
                   aria-label="Save customer name"
                   disabled={!customerNameDraft.trim() || updateCustomerName.isPending}
                   onPress={handleSaveCustomerName}
-                  className="flex items-center justify-center rounded-full text-primary disabled:opacity-40"
+                  className="flex h-10 min-h-10 w-10 min-w-10 items-center justify-center rounded-full bg-primary/10 text-primary disabled:opacity-40"
                 >
                   <Check className="h-4 w-4" />
                 </Pressable>
                 <Pressable
                   aria-label="Cancel editing customer name"
                   onPress={() => setEditingCustomerName(false)}
-                  className="flex items-center justify-center rounded-full text-muted-foreground"
+                  className="flex h-10 min-h-10 w-10 min-w-10 items-center justify-center rounded-full bg-muted/70 text-muted-foreground"
                 >
                   <X className="h-4 w-4" />
                 </Pressable>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <p className="min-w-0 flex-1 truncate text-headline">{customerName}</p>
-                <Badge tone={STATUS_TONES[conversation.status]}>{STATUS_LABELS[conversation.status]}</Badge>
+              <div className="flex items-start gap-1.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-headline">{customerName}</p>
+                  <div className="mt-1 flex">
+                    <Badge tone={STATUS_TONES[conversation.status]}>{STATUS_LABELS[conversation.status]}</Badge>
+                  </div>
+                </div>
                 {canEdit && (
                   <Pressable
                     aria-label="Edit customer name"
@@ -222,7 +251,7 @@ export function ContextSheet({
                       setCustomerNameDraft(customerName)
                       setEditingCustomerName(true)
                     }}
-                    className="flex items-center justify-center rounded-full text-muted-foreground"
+                    className="flex h-9 min-h-9 w-9 min-w-9 items-center justify-center rounded-full text-muted-foreground"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </Pressable>
@@ -234,7 +263,7 @@ export function ContextSheet({
                 haptic="selection"
                 onPress={handleCopyEmail}
                 aria-label="Copy email"
-                className="flex h-auto min-h-0 w-auto min-w-0 items-center gap-1 text-footnote text-muted-foreground"
+                className="flex h-auto min-h-8 w-auto min-w-0 items-center gap-1.5 text-footnote text-muted-foreground"
               >
                 <span className="truncate">{conversation.customer_email}</span>
                 <Copy className="h-3 w-3 shrink-0" />
@@ -242,40 +271,50 @@ export function ContextSheet({
             )}
             {lastActive && <p className="text-footnote text-muted-foreground">{lastActive}</p>}
           </div>
-        </div>
+        </section>
 
         {canEdit ? (
-          <div className="flex items-center gap-2 border-t border-border/60 px-4 py-3">
-            <Pressable
-              onPress={handleToggleStatus}
-              disabled={updateStatus.isPending}
-              className="flex h-9 flex-1 items-center justify-center rounded-lg bg-muted text-body font-medium text-foreground"
-            >
-              {isResolved ? 'Reopen' : 'Resolve'}
-            </Pressable>
-            <Pressable
-              haptic="selection"
-              onPress={() => setAssignExpanded((value) => !value)}
-              aria-expanded={assignExpanded}
-              className="flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-muted text-body font-medium text-foreground"
-            >
-              Assign
-              <ChevronRight className={cn('h-4 w-4 transition-transform', assignExpanded && 'rotate-90')} />
-            </Pressable>
-            <Pressable
-              haptic="selection"
-              onPress={() => setTagsExpanded((value) => !value)}
-              aria-label="Tags"
-              aria-expanded={tagsExpanded}
-              className="flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-muted text-body font-medium text-foreground"
-            >
-              Tags
-              {(conversation.tags?.length ?? 0) > 0 && <span className="text-caption">{conversation.tags?.length}</span>}
-              <ChevronRight className={cn('h-4 w-4 transition-transform', tagsExpanded && 'rotate-90')} />
-            </Pressable>
-          </div>
+          <section className="border-y border-border/60 bg-muted/20 px-4 py-4">
+            <p className="mb-2.5 text-caption font-semibold uppercase tracking-wide text-muted-foreground">Quick actions</p>
+            <div className="grid grid-cols-3 gap-2.5">
+              <Pressable
+                onPress={handleToggleStatus}
+                disabled={updateStatus.isPending}
+                className="flex h-12 min-h-12 items-center justify-center gap-1.5 rounded-xl border border-border/70 bg-background px-2 text-footnote font-medium text-foreground shadow-sm"
+              >
+                {isResolved
+                  ? <RotateCcw className="h-4 w-4 shrink-0" />
+                  : <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                {isResolved ? 'Reopen' : 'Resolve'}
+              </Pressable>
+              <Pressable
+                haptic="selection"
+                onPress={() => setAssignExpanded((value) => !value)}
+                aria-expanded={assignExpanded}
+                className="flex h-12 min-h-12 items-center justify-center gap-1 rounded-xl border border-border/70 bg-background px-2 text-footnote font-medium text-foreground shadow-sm"
+              >
+                <UserRoundPlus className="h-4 w-4 shrink-0" />
+                Assign
+                <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', assignExpanded && 'rotate-90')} />
+              </Pressable>
+              <Pressable
+                haptic="selection"
+                onPress={() => setTagsExpanded((value) => !value)}
+                aria-label="Tags"
+                aria-expanded={tagsExpanded}
+                className="flex h-12 min-h-12 items-center justify-center gap-1 rounded-xl border border-border/70 bg-background px-2 text-footnote font-medium text-foreground shadow-sm"
+              >
+                <Tag className="h-4 w-4 shrink-0" />
+                Tags
+                {(conversation.tags?.length ?? 0) > 0 && (
+                  <span className="text-caption text-muted-foreground">{conversation.tags?.length}</span>
+                )}
+                <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', tagsExpanded && 'rotate-90')} />
+              </Pressable>
+            </div>
+          </section>
         ) : (
-          <div className="border-t border-border/60 px-4 py-3 text-footnote text-muted-foreground">
+          <div className="border-y border-border/60 bg-muted/20 px-4 py-4 text-footnote text-muted-foreground">
             Read-only access
           </div>
         )}

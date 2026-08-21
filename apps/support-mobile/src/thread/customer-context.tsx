@@ -123,8 +123,8 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="border-t border-border/60 px-4 py-3">
-      <div className="mb-2 flex items-center gap-2 text-footnote font-semibold text-foreground">
+    <section className="border-t border-border/60 px-4 py-4">
+      <div className="mb-3 flex items-center gap-2 text-footnote font-semibold text-foreground">
         <span className="text-muted-foreground">{icon}</span>
         {title}
       </div>
@@ -183,7 +183,7 @@ export function CustomerContext({
   }
   if (contextQuery.isError || !visitor) {
     return (
-      <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-4">
         <span className="text-footnote text-muted-foreground">Customer context could not be loaded.</span>
         <Pressable
           onPress={() => void contextQuery.refetch()}

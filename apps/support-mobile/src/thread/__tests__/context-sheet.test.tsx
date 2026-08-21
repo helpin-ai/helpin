@@ -110,8 +110,25 @@ test('renders the customer name and email from the conversation', () => {
   setup()
   render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={() => {}} canEdit />)
 
+  expect(screen.getByRole('heading', { name: 'Details' })).toBeDefined()
+  expect(screen.getByText('Conversation #42')).toBeDefined()
   expect(screen.getByText('Ada Lovelace')).toBeDefined()
   expect(screen.getByText('ada@example.com')).toBeDefined()
+
+  const dialog = screen.getByRole('dialog')
+  expect(dialog.className).toContain('inset-0')
+  expect(dialog.className).toContain('h-dvh')
+  expect(dialog.className).not.toContain('max-h-[90vh]')
+})
+
+test('closes the full-screen details view from its header', () => {
+  setup()
+  const onOpenChange = vi.fn()
+  render(<ContextSheet workspaceId="ws-1" conversationId="conv-1" open onOpenChange={onOpenChange} canEdit />)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Close conversation details' }))
+
+  expect(onOpenChange).toHaveBeenCalledWith(false)
 })
 
 test('edits the customer name through the existing conversation mutation', () => {

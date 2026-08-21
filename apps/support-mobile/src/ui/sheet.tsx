@@ -7,6 +7,8 @@ export interface SheetProps {
   onOpenChange: (open: boolean) => void
   children: ReactNode
   detents?: number[]
+  /** Fill the viewport and let the caller render its own app-style header. */
+  fullScreen?: boolean
   className?: string
   /**
    * Accessible name for the sheet, read by screen readers only (visually
@@ -18,14 +20,25 @@ export interface SheetProps {
 }
 
 /** Thin wrapper around vaul's Drawer, styled to the app's bottom-sheet look. */
-export function Sheet({ open, onOpenChange, children, detents, className, title = 'Sheet' }: SheetProps) {
+export function Sheet({
+  open,
+  onOpenChange,
+  children,
+  detents,
+  fullScreen = false,
+  className,
+  title = 'Sheet',
+}: SheetProps) {
   return (
-    <Drawer.Root open={open} onOpenChange={onOpenChange} snapPoints={detents}>
+    <Drawer.Root open={open} onOpenChange={onOpenChange} snapPoints={fullScreen ? undefined : detents}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Drawer.Content
           className={cn(
-            'fixed inset-x-0 bottom-0 z-50 flex max-h-[90vh] flex-col rounded-t-[20px] bg-background pb-[max(var(--safe-bottom),16px)] outline-none',
+            'fixed z-50 flex flex-col bg-background outline-none',
+            fullScreen
+              ? 'inset-0 h-dvh max-h-none rounded-none pb-[var(--safe-bottom)] pt-[var(--safe-top)]'
+              : 'inset-x-0 bottom-0 max-h-[90vh] rounded-t-[20px] pb-[max(var(--safe-bottom),16px)]',
             className,
           )}
         >
@@ -33,9 +46,11 @@ export function Sheet({ open, onOpenChange, children, detents, className, title 
           {/* Radix also warns about a missing Description/aria-describedby once
               a Title is present; a visually-hidden one silences that too. */}
           <Drawer.Description className="sr-only">{title}</Drawer.Description>
-          <div className="flex shrink-0 justify-center py-2">
-            <div className="h-[5px] w-9 rounded-full bg-muted-foreground/30" />
-          </div>
+          {!fullScreen && (
+            <div className="flex shrink-0 justify-center py-2">
+              <div className="h-[5px] w-9 rounded-full bg-muted-foreground/30" />
+            </div>
+          )}
           {children}
         </Drawer.Content>
       </Drawer.Portal>
