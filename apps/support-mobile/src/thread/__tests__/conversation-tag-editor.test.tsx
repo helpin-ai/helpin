@@ -71,3 +71,25 @@ test('filters the existing tag list by name', () => {
   expect(screen.getByRole('button', { name: 'Add tag VIP' })).toBeDefined()
   expect(screen.queryByRole('button', { name: 'Add tag Billing' })).toBeNull()
 })
+
+test('shows one useful empty state when the workspace has no tags', () => {
+  setup()
+  mockUseSupportTags.mockReturnValue({
+    data: [], isPending: false, isError: false, refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useSupportTags>)
+
+  render(<ConversationTagEditor workspaceId="ws-1" conversationId="conv-1" selectedTags={[]} />)
+
+  expect(screen.getByText('No tags available')).toBeDefined()
+  expect(screen.queryByText('No tags yet')).toBeNull()
+  expect(screen.queryByText('No matching tags')).toBeNull()
+  expect(screen.queryByPlaceholderText('Search tags')).toBeNull()
+})
+
+test('uses the search query in the no-match state', () => {
+  setup()
+  render(<ConversationTagEditor workspaceId="ws-1" conversationId="conv-1" selectedTags={[]} />)
+
+  fireEvent.change(screen.getByPlaceholderText('Search tags'), { target: { value: 'refund' } })
+  expect(screen.getByText('No tags match “refund”')).toBeDefined()
+})
