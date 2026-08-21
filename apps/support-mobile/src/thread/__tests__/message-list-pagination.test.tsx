@@ -2,6 +2,7 @@ import { fireEvent, render } from '@testing-library/react'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { SupportMessage } from '@helpin-ai/support-core'
+import { getAvatarColor } from '@/components/support/helpers'
 import { MessageList } from '../message-list'
 import { groupMessages } from '../thread-helpers'
 
@@ -193,6 +194,19 @@ describe('MessageList history pagination', () => {
 
     fireEvent.click(view.getByRole('button', { name: 'Message actions' }))
     expect(onMessageActions).toHaveBeenCalledWith(item)
+  })
+
+  it('uses the deterministic web avatar color for message clusters', () => {
+    const item: SupportMessage = {
+      ...message('msg-03', '03'),
+      sender_type: 'user',
+      sender_user_id: 'member-42',
+      sender_display_name: 'Azhar',
+    }
+    const view = render(<MessageList items={groupMessages([item])} />)
+
+    const avatar = view.getByText('A').parentElement
+    expect(avatar?.className).toContain(getAvatarColor('member-42').split(' ')[0])
   })
 
   it('adds breathing room below a system event only when a message follows', () => {

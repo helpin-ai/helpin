@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import type { SupportMessage } from '@helpin-ai/support-core'
+import { getAvatarColor } from '@/components/support/helpers'
 import { cn } from '@mobile/lib/cn'
 import { Avatar } from '@mobile/ui/avatar'
 import { Skeleton } from '@mobile/ui/skeleton'
@@ -156,13 +157,23 @@ function ClusterView({
 
   const align = cluster.senderType === 'customer' ? 'left' : 'right'
   const isAI = cluster.senderType === 'ai'
+  const firstMessage = cluster.messages[0]
+  const avatarSeed = firstMessage?.sender_user_id
+    ?? firstMessage?.sender_agent_id
+    ?? firstMessage?.sender_display_name
+    ?? cluster.senderName
   // Crisp-style: one avatar per group, sitting inline at the bottom of the
   // bubble column (customer on the left, our side on the right). No visible
   // sender-name header — the name is the avatar's native tooltip, like web.
   return (
     <div className={cn('mb-4 flex items-end gap-2.5', align === 'right' && 'flex-row-reverse')}>
       <div title={cluster.senderName} className="relative shrink-0">
-        <Avatar name={cluster.senderName} src={cluster.senderAvatarUrl} size={28} />
+        <Avatar
+          name={cluster.senderName}
+          src={cluster.senderAvatarUrl}
+          size={28}
+          className={getAvatarColor(avatarSeed)}
+        />
         {isAI && (
           <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background ring-2 ring-background">
             <Sparkles className="h-2.5 w-2.5 text-primary" aria-hidden />
