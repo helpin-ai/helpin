@@ -487,7 +487,7 @@ function InterruptionOverlay({
   const authDescription = hasDeviceCode
     ? 'Complete device sign-in to continue this session.'
     : hasBrowserAuth
-      ? 'Continue sign-in in your browser. This Codex runtime returned browser-based auth instead of a device code.'
+      ? 'Continue sign-in in your browser to resume this session.'
       : authState?.state === 'pending'
         ? 'Preparing sign-in. This can take a few seconds.'
         : 'Start sign-in to continue this session.';

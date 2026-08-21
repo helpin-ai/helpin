@@ -4,7 +4,6 @@ import { ArrowReloadHorizontalIcon, CancelCircleIcon, Folder01Icon, GitBranchIco
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { formatSessionTokenUsage, formatSessionTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { buildAutomationActivityPath } from '@/lib/automationUi';
 import type { CodingSession } from '@/lib/pmTypes';
@@ -17,10 +16,6 @@ import {
   codingSessionStatusLabel,
   formatCodingSessionElapsed,
 } from './codingSessionPresentation';
-
-function capitalize(text: string) {
-  return text.replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 function resolveSessionAgentName(session: CodingSession | null) {
   const title = session?.title?.trim();
@@ -101,9 +96,9 @@ function currentLifecycleStagePresentation(session: CodingSession) {
   const activeKey = normalizedLifecycleStage(session);
   if (activeKey === 'queued') return { label: 'Queued', detail: 'Waiting to start', tone: 'working' };
   if (activeKey === 'preparing') return { label: 'Preparing', detail: 'Loading run context', tone: 'working' };
-  if (activeKey === 'starting') return { label: 'Starting agent', detail: 'Connecting runtime', tone: 'working' };
+  if (activeKey === 'starting') return { label: 'Starting agent', detail: 'Preparing session', tone: 'working' };
   if (activeKey === 'resuming') return { label: 'Resuming', detail: 'Continuing after your response', tone: 'working' };
-  if (activeKey === 'working') return { label: 'Agent working', detail: 'Runtime is active', tone: 'working' };
+  if (activeKey === 'working') return { label: 'Agent working', detail: 'Agent is active', tone: 'working' };
   if (activeKey === 'waiting') {
     if (session.execution_stage === 'awaiting_review') return { label: 'Review', detail: 'Waiting for your review', tone: 'waiting' };
     if (session.pause_reason === 'human_approval') return { label: 'Approval', detail: 'Waiting for your decision', tone: 'waiting' };
@@ -315,17 +310,6 @@ export function CodingSessionHeader({
             <div className="flex min-w-0 items-center gap-1.5">
               {hasTokenUsage ? (
                 <CodingSessionTokenSummary session={session} />
-              ) : null}
-              {hasTokenUsage ? (
-                <span className="h-3 w-px bg-muted-foreground/25" aria-hidden="true" />
-              ) : null}
-              {session ? (
-                <span
-                  className="inline-flex h-5 items-center rounded-md px-1.5 text-[11px] font-medium text-muted-foreground"
-                  data-coding-session-runtime-pill
-                >
-                  {AGENT_RUNTIME_LABELS[session.runtime_kind] ?? capitalize(session.runtime_kind)}
-                </span>
               ) : null}
             </div>
           </div>
