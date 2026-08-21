@@ -597,7 +597,7 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
     role: 'user',
     content,
     message_type: 'approval_request_resolution',
-    timestamp: event.timestamp,
+    timestamp: asString(payload.resolved_at) ?? event.timestamp,
     sequence_no: event.sequence_no,
     resolver_user_id: resolverUserId,
   };
@@ -701,6 +701,49 @@ function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
 
 const TASK_PLAN_DOC_PUBLISH_TOOLS = new Set(['publish_task_plan_doc', 'publish_story_plan_doc']);
 const APPROVAL_TOOLS = new Set(['request_approval', 'request_review_checkpoint', 'request_human_approval']);
+
+function settleResolvedInteractionToolCalls(
+  event: CodingSessionEvent,
+  liveAssistantMessage: CodingSessionLiveAssistantMessage | null,
+  liveTurnSegments: CodingSessionLiveTurnSegment[],
+) {
+  if (event.type !== 'interaction.resolved') return;
+  const payload = asRecord(event.payload);
+  const interactionKind = asString(payload?.interaction_kind);
+  if (interactionKind !== 'approval_request' && interactionKind !== 'review_checkpoint') return;
+
+  const explicitToolIDs = new Set([
+    asString(payload?.item_id),
+    asString(payload?.approval_id),
+    asString(payload?.request_id),
+  ].filter((value): value is string => Boolean(value)));
+  const matchesApprovalTool = (toolCall: CodingSessionLiveToolCall) => (
+    toolCall.status === 'running'
+    && (
+      explicitToolIDs.has(toolCall.tool_call_id)
+      || APPROVAL_TOOLS.has(canonicalToolName(toolCall.tool_name))
+    )
+  );
+  const completedAt = asString(payload?.resolved_at) ?? event.timestamp;
+
+  const toolSegment = [...liveTurnSegments].reverse().find((segment) => (
+    segment.kind === 'tool_call' && matchesApprovalTool(segment.tool_call)
+  ));
+  let settledToolCallID: string | undefined;
+  if (toolSegment?.kind === 'tool_call') {
+    toolSegment.tool_call.status = 'completed';
+    toolSegment.tool_call.completed_at = completedAt;
+    settledToolCallID = toolSegment.tool_call.tool_call_id;
+  }
+
+  const assistantTool = liveAssistantMessage?.tool_calls.find(
+    (toolCall) => toolCall.tool_call_id === settledToolCallID,
+  ) ?? [...(liveAssistantMessage?.tool_calls ?? [])].reverse().find(matchesApprovalTool);
+  if (assistantTool) {
+    assistantTool.status = 'completed';
+    assistantTool.completed_at = completedAt;
+  }
+}
 
 function parsePlanArtifactValue(value: unknown): RunPlanArtifact | null {
   if (typeof value === 'string') return parsePlanArtifact(value);
@@ -915,6 +958,7 @@ export function buildCodingSessionStreamState(
     if (transcriptMessage) {
       if (event.type === 'interaction.resolved') {
         removeDuplicateResolvedInteractionResumeMessage(transcriptMessages, event);
+        settleResolvedInteractionToolCalls(event, liveAssistantMessage, liveTurnSegments);
       }
       transcriptMessages.push(transcriptMessage);
       continue;

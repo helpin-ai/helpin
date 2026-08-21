@@ -435,11 +435,44 @@ func (s *AgentService) publishResolvedInteractionEvent(run *model.AgentRun, inte
 	if s == nil || run == nil || interaction == nil {
 		return
 	}
-	eventType, payload, _ := codingSessionEventFromInteraction(*interaction)
-	if strings.TrimSpace(eventType) == "" {
+	event, ok := codingSessionRealtimeEventFromInteraction(run, interaction)
+	if !ok {
 		return
 	}
-	s.publishCodingSessionEvent(run, eventType, payload, actorID)
+	s.publishCodingSessionModelEvent(run, event, actorID)
+}
+
+func codingSessionRealtimeEventFromInteraction(
+	run *model.AgentRun,
+	interaction *model.AgentRunInteraction,
+) (model.CodingSessionEvent, bool) {
+	if run == nil || interaction == nil {
+		return model.CodingSessionEvent{}, false
+	}
+	status := strings.TrimSpace(interaction.Status)
+	if status == "" {
+		status = model.AgentRunInteractionStatusPending
+	}
+	eventType, payload, runtimeMetadata := codingSessionEventFromInteractionWithStatus(
+		*interaction,
+		status,
+	)
+	if strings.TrimSpace(eventType) == "" {
+		return model.CodingSessionEvent{}, false
+	}
+	timestamp := codingSessionInteractionEventTimestamp(*interaction, status)
+	runtimeMetadata["source"] = "agent_run_interaction_realtime"
+	return model.CodingSessionEvent{
+		ID:              fmt.Sprintf("interaction:%s:%s", interaction.ID, status),
+		SessionID:       run.ID,
+		RunID:           run.ID,
+		SequenceNo:      int(timestamp.UnixMilli()),
+		Timestamp:       timestamp,
+		Type:            eventType,
+		RuntimeKind:     run.RuntimeKind,
+		Payload:         payload,
+		RuntimeMetadata: runtimeMetadata,
+	}, true
 }
 
 func resumeRequestForResolvedInteraction(interaction *model.AgentRunInteraction, responsePayload json.RawMessage, followupMessage string) (model.ResumeAgentRunRequest, error) {
@@ -547,17 +580,14 @@ func codingSessionInteractionEventTimestamp(interaction model.AgentRunInteractio
 		return interaction.CreatedAt.UTC()
 	default:
 		createdAt := interaction.CreatedAt.UTC()
-		latest := createdAt
-		if interaction.UpdatedAt.After(latest) {
-			latest = interaction.UpdatedAt.UTC()
+		lifecycleAt := interaction.UpdatedAt.UTC()
+		if interaction.ResolvedAt != nil {
+			lifecycleAt = interaction.ResolvedAt.UTC()
 		}
-		if interaction.ResolvedAt != nil && interaction.ResolvedAt.After(latest) {
-			latest = interaction.ResolvedAt.UTC()
+		if !lifecycleAt.After(createdAt) {
+			lifecycleAt = createdAt.Add(time.Nanosecond)
 		}
-		if !latest.After(createdAt) {
-			latest = createdAt.Add(time.Nanosecond)
-		}
-		return latest
+		return lifecycleAt
 	}
 }
 
@@ -1211,6 +1241,17 @@ func (s *AgentService) publishCodingSessionEvent(run *model.AgentRun, eventType 
 		Type:        eventType,
 		RuntimeKind: run.RuntimeKind,
 		Payload:     payload,
+	}
+	s.publishCodingSessionModelEvent(run, event, actorID)
+}
+
+func (s *AgentService) publishCodingSessionModelEvent(
+	run *model.AgentRun,
+	event model.CodingSessionEvent,
+	actorID string,
+) {
+	if s.wsPublisher == nil || run == nil || strings.TrimSpace(event.ID) == "" {
+		return
 	}
 	data, _ := json.Marshal(event)
 	s.wsPublisher.Publish(websocket.Event{

@@ -43,6 +43,7 @@ export function isPersistedCodingSessionEvent(event: CodingSessionEvent) {
     || source === 'agent_run_interaction'
     || source === 'agent_run'
   ) return true;
+  if (source) return false;
   return (
     event.id.startsWith('msg:')
     || event.id.startsWith('artifact:')
@@ -77,9 +78,41 @@ export function maxPersistedCodingSessionSequence(events: CodingSessionEvent[]) 
 export function upsertCodingSessionEvents(current: CodingSessionEvent[], incoming: CodingSessionEvent[]) {
   const byId = new Map(current.map((event) => [event.id, event]));
   for (const event of incoming) {
-    byId.set(event.id, event);
+    const existing = byId.get(event.id);
+    if (!existing || shouldReplaceCodingSessionEvent(existing, event)) {
+      byId.set(event.id, event);
+    }
   }
-  return sortCodingSessionEvents([...byId.values()]);
+
+  // Realtime interaction events from older servers used a transient ID while
+  // the REST projection used interaction:<id>:<status>. Collapse both shapes
+  // by lifecycle identity and let the durable projection win.
+  const bySemanticIdentity = new Map<string, CodingSessionEvent>();
+  for (const event of byId.values()) {
+    const identity = codingSessionEventSemanticIdentity(event) ?? `event:${event.id}`;
+    const existing = bySemanticIdentity.get(identity);
+    if (!existing || shouldReplaceCodingSessionEvent(existing, event)) {
+      bySemanticIdentity.set(identity, event);
+    }
+  }
+  return sortCodingSessionEvents([...bySemanticIdentity.values()]);
+}
+
+function codingSessionEventSemanticIdentity(event: CodingSessionEvent) {
+  if (!event.type.startsWith('interaction.')) return null;
+  const interactionId = asString(event.payload?.interaction_id);
+  if (!interactionId) return null;
+  const status = asString(event.payload?.status) ?? event.type.slice('interaction.'.length);
+  return `interaction:${interactionId}:${status}`;
+}
+
+function shouldReplaceCodingSessionEvent(
+  existing: CodingSessionEvent,
+  candidate: CodingSessionEvent,
+) {
+  const existingPersisted = isPersistedCodingSessionEvent(existing);
+  const candidatePersisted = isPersistedCodingSessionEvent(candidate);
+  return candidatePersisted || !existingPersisted;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

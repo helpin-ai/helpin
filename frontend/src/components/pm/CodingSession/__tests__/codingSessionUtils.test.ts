@@ -4,6 +4,7 @@ import {
   codingSessionApprovalStatesByPreviewKey,
   isPersistedCodingSessionEvent,
   maxPersistedCodingSessionSequence,
+  upsertCodingSessionEvents,
 } from '../codingSessionUtils';
 import type { CodingSessionEvent } from '@/lib/pmTypes';
 
@@ -112,5 +113,76 @@ describe('persisted coding-session event cursors', () => {
       event('runtime-delta', 1_700_000_123, 'agent_runtime'),
       event('artifact:1', 15, 'agent_run_artifact'),
     ])).toBe(15);
+  });
+
+  it('does not advance the REST cursor for a canonical realtime interaction ID', () => {
+    const realtime = event(
+      'interaction:approval-1:resolved',
+      1_787_341_992_000,
+      'agent_run_interaction_realtime',
+    );
+    realtime.type = 'interaction.resolved';
+    realtime.payload = { interaction_id: 'approval-1', status: 'resolved' };
+
+    expect(isPersistedCodingSessionEvent(realtime)).toBe(false);
+    expect(maxPersistedCodingSessionSequence([
+      event('msg:1', 32, 'agent_run_message'),
+      realtime,
+    ])).toBe(32);
+  });
+});
+
+describe('coding-session event reconciliation', () => {
+  it('replaces a transient interaction resolution with its persisted projection', () => {
+    const payload = {
+      interaction_id: 'approval-1',
+      interaction_kind: 'approval_request',
+      status: 'resolved',
+      request_schema_version: 'helpin.v1',
+      request_payload: { title: 'Approve task planning document' },
+      response_payload: { decision: 'approve' },
+      resolved_at: '2026-08-21T19:52:13Z',
+    };
+    const transient: CodingSessionEvent = {
+      id: 'run-1:1787341992000000000',
+      session_id: 'run-1',
+      run_id: 'run-1',
+      sequence_no: 1_787_341_992_000,
+      timestamp: '2026-08-21T19:52:13Z',
+      type: 'interaction.resolved',
+      runtime_kind: 'native_sdk',
+      payload,
+      runtime_metadata: { source: 'websocket' },
+    };
+    const persisted: CodingSessionEvent = {
+      ...transient,
+      id: 'interaction:approval-1:resolved',
+      sequence_no: 33,
+      runtime_metadata: { source: 'agent_run_interaction' },
+    };
+
+    const reconciled = upsertCodingSessionEvents([transient], [persisted]);
+
+    expect(reconciled).toEqual([persisted]);
+  });
+
+  it('does not let a delayed realtime copy replace a persisted interaction event', () => {
+    const persisted = interactionEvent(4, {
+      interaction_id: 'approval-2',
+      interaction_kind: 'approval_request',
+      status: 'resolved',
+      request_schema_version: 'helpin.v1',
+      request_payload: { title: 'Approve delivery' },
+      response_payload: { decision: 'approve' },
+    });
+    persisted.id = 'interaction:approval-2:resolved';
+    persisted.runtime_metadata = { source: 'agent_run_interaction' };
+    const delayedRealtime = {
+      ...persisted,
+      sequence_no: 1_787_341_992_000,
+      runtime_metadata: { source: 'agent_run_interaction_realtime' },
+    };
+
+    expect(upsertCodingSessionEvents([persisted], [delayedRealtime])).toEqual([persisted]);
   });
 });
