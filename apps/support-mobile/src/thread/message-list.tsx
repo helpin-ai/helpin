@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from 'react'
-import { MoreHorizontal, Sparkles } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import type { SupportMessage } from '@helpin-ai/support-core'
 import { cn } from '@mobile/lib/cn'
 import { Avatar } from '@mobile/ui/avatar'
@@ -75,35 +75,28 @@ function ActionableMessage({
 }) {
   const showActions = !!onMessageActions && !message.pending && message.message_type !== 'system'
   return (
-    <div className={cn('flex min-w-0 items-center gap-1', align === 'right' && 'flex-row-reverse')}>
-      <div className="min-w-0 flex-1">
-        <MessageBubble message={message} align={align} receiptStatus={receiptStatus} />
-      </div>
-      {showActions && (
-        <button
-          type="button"
-          aria-label="Message actions"
-          onClick={() => onMessageActions(message)}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 active:bg-muted"
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </button>
-      )}
+    <div className="min-w-0">
+      <MessageBubble
+        message={message}
+        align={align}
+        receiptStatus={receiptStatus}
+        onMessageActions={showActions ? () => onMessageActions!(message) : undefined}
+      />
     </div>
   )
 }
 
 function ThreadSkeleton() {
-  const rows: Array<{ width: string; align: 'justify-start' | 'justify-end' }> = [
+  const rows: Array<{ width: string; align: 'justify-start' | 'justify-end'; outgoing?: boolean }> = [
     { width: 'w-40', align: 'justify-start' },
-    { width: 'w-56', align: 'justify-end' },
+    { width: 'w-56', align: 'justify-end', outgoing: true },
     { width: 'w-32', align: 'justify-start' },
   ]
   return (
     <div className="flex h-full flex-col justify-end gap-3 px-3 pb-4">
       {rows.map((row, index) => (
         <div key={index} className={cn('flex', row.align)}>
-          <Skeleton className={cn('h-9 rounded-[16px]', row.width)} />
+          <Skeleton className={cn('h-9 rounded-2xl', row.width, row.outgoing && 'bg-blue-50 dark:bg-blue-950/40')} />
         </div>
       ))}
     </div>
@@ -114,7 +107,10 @@ function TypingBubble({ align, label }: TypingIndicatorState) {
   return (
     <div className={cn('mb-3 flex flex-col gap-1', align === 'right' ? 'items-end' : 'items-start')}>
       <span className="px-1 text-footnote text-muted-foreground">{label}</span>
-      <div className={cn('flex items-center gap-1 rounded-[16px] px-3 py-2.5', align === 'right' ? 'bg-primary/10' : 'bg-muted')}>
+      <div className={cn(
+        'flex items-center gap-1 rounded-2xl border border-border/40 px-3 py-2.5',
+        align === 'right' ? 'rounded-br-sm bg-blue-50 dark:bg-blue-950/40' : 'rounded-bl-sm bg-muted',
+      )}>
         {[0, 1, 2].map((dot) => (
           <span
             key={dot}
@@ -140,7 +136,7 @@ function ClusterView({
 }) {
   const receiptFor = (id: string) => (id === receiptMessageId ? receiptStatus : undefined)
 
-  // Internal notes render as a full-width amber card with no avatar (mirrors
+  // Internal notes render as a right-aligned amber card with no avatar (mirrors
   // web, where the note branch has no avatar column). A cluster is homogeneous
   // in `is_internal`, so the first message decides.
   if (cluster.messages[0]?.is_internal) {

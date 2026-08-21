@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { motion } from 'motion/react'
-import { Bot, CheckCheck, CheckCircle2, Mail, Paperclip, StickyNote, User, XCircle, Zap } from 'lucide-react'
+import { Bot, CheckCheck, CheckCircle2, Mail, MoreHorizontal, Paperclip, StickyNote, User, XCircle, Zap } from 'lucide-react'
 import type { SupportMessage } from '@helpin-ai/support-core'
 import {
   getSupportSystemEventBadge,
@@ -23,6 +23,8 @@ export interface MessageBubbleProps {
   align: 'left' | 'right'
   /** Read-receipt state for the last outbound reply; only passed to that one message. */
   receiptStatus?: SupportReceiptStatus | null
+  /** Opens the action sheet from the compact control beside the message time. */
+  onMessageActions?: () => void
 }
 
 function formatFileSize(bytes: number): string {
@@ -182,8 +184,8 @@ function AttachmentRows({ attachments, tone }: { attachments: NonNullable<Suppor
           className={cn(
             'flex w-full min-w-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-footnote',
             tone === 'note'
-              ? 'border-amber-300/70 bg-amber-100/40 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100'
-              : 'border-border/60 text-foreground',
+              ? 'border-amber-200/80 bg-background/70 text-amber-900 dark:border-amber-900/60 dark:bg-background/70 dark:text-amber-100'
+              : 'border-border/60 bg-background/80 text-foreground',
           )}
         >
           <Paperclip className="h-3 w-3 shrink-0 opacity-60" />
@@ -231,9 +233,9 @@ function ImageThumbnails({ attachments }: { attachments: NonNullable<SupportMess
  * A single chat bubble. Customer messages align left on a muted surface;
  * our-side messages (user/agent/ai) align right on a primary-tinted surface,
  * with message bodies rendered as Markdown (mirrors web). Internal notes and
- * system events ignore `align` and render their own full-width treatments.
+ * system events ignore `align` and render their own distinct treatments.
  */
-export function MessageBubble({ message, align, receiptStatus }: MessageBubbleProps) {
+export function MessageBubble({ message, align, receiptStatus, onMessageActions }: MessageBubbleProps) {
   const imageAttachments = message.attachments?.filter((a) => a.file_type.startsWith('image/')) ?? []
   const fileAttachments = message.attachments?.filter((a) => !a.file_type.startsWith('image/')) ?? []
   const isEmail = message.via_channel === 'email' && !!message.html_body
@@ -247,13 +249,13 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
   if (message.message_type === 'system') {
     content = <SystemEventBubble message={message} senderName={senderName} />
   } else if (message.is_internal) {
-    // Internal note: amber card, "{name} left a private note", @mentions highlighted.
+    // Internal note: right-aligned amber card with web's accent edge and highlighted @mentions.
     const mentionSegments = splitMentionSegments(message.content)
     content = (
-      <div className="w-full">
+      <div className="flex w-full flex-col items-end">
         <div
           data-testid="message-bubble"
-          className="w-full rounded-[18px] border border-amber-300/60 bg-amber-100/55 px-3.5 py-2.5 shadow-sm dark:border-amber-800/60 dark:bg-amber-950/30"
+          className="w-full max-w-[92%] rounded-xl border-r-[3px] border-r-amber-400 bg-amber-50 px-3.5 py-2.5 shadow-sm dark:border-r-amber-500 dark:bg-amber-950/20"
         >
           <div className="mb-1.5 flex items-center gap-1.5 text-caption uppercase text-amber-700 dark:text-amber-300">
             <StickyNote className="h-3 w-3 shrink-0" />
@@ -275,8 +277,18 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
           <ImageThumbnails attachments={imageAttachments} />
           <AttachmentRows attachments={fileAttachments} tone="note" />
         </div>
-        <div data-testid="message-meta" className="mt-1 px-2 text-[11px] text-amber-700/70 dark:text-amber-300/70">
-          {formatMessageTime(message.created_at)}
+        <div data-testid="message-meta" className="mt-0.5 flex items-center justify-end gap-0.5 px-1 text-[11px] text-amber-700/70 dark:text-amber-300/70">
+          <span>{formatMessageTime(message.created_at)}</span>
+          {onMessageActions && (
+            <button
+              type="button"
+              aria-label="Message actions"
+              onClick={onMessageActions}
+              className="-my-1.5 flex h-8 w-8 items-center justify-center rounded-full text-current active:bg-amber-100 dark:active:bg-amber-900/40"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
     )
@@ -288,8 +300,10 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
         <div
           data-testid="message-bubble"
           className={cn(
-            'max-w-[92%] min-w-0 rounded-[18px] px-3.5 py-2.5 shadow-sm',
-            align === 'right' ? 'bg-primary/[0.09] dark:bg-primary/[0.13]' : 'bg-muted/80',
+            'max-w-[92%] min-w-0 rounded-2xl border border-border/40 px-3.5 py-2 text-foreground/85 shadow-sm dark:text-foreground',
+            align === 'right'
+              ? 'rounded-br-sm bg-blue-50 dark:bg-blue-950/40'
+              : 'rounded-bl-sm bg-muted',
           )}
         >
           {isEmail ? (
@@ -303,11 +317,21 @@ export function MessageBubble({ message, align, receiptStatus }: MessageBubblePr
         <div
           data-testid="message-meta"
           className={cn(
-            'mt-1 flex items-center gap-1 px-1 text-[11px] text-muted-foreground/80',
+            'mt-0.5 flex items-center gap-1 px-1 text-[11px] text-muted-foreground/80',
             align === 'right' ? 'justify-end' : 'justify-start',
           )}
         >
           <span>{formatMessageTime(message.created_at)}</span>
+          {onMessageActions && (
+            <button
+              type="button"
+              aria-label="Message actions"
+              onClick={onMessageActions}
+              className="-my-1.5 flex h-8 w-8 items-center justify-center rounded-full text-current active:bg-muted"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          )}
           {showEmailReceived && (
             <>
               <span>·</span>

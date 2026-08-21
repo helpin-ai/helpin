@@ -27,6 +27,28 @@ test('shows a persistent clock time below a customer message card', () => {
   const meta = screen.getByTestId('message-meta')
   expect(meta.textContent).toMatch(/\d{1,2}:30/)
   expect(bubble.contains(meta)).toBe(false)
+  expect(bubble.className).toContain('bg-muted')
+  expect(bubble.className).toContain('border-border/40')
+})
+
+test('uses the web blue tint for outbound replies and keeps actions beside the time', () => {
+  const onMessageActions = vi.fn()
+  render(
+    <MessageBubble
+      message={message({ sender_type: 'user' })}
+      align="right"
+      onMessageActions={onMessageActions}
+    />,
+  )
+
+  const bubble = screen.getByTestId('message-bubble')
+  const meta = screen.getByTestId('message-meta')
+  const actions = screen.getByRole('button', { name: 'Message actions' })
+  expect(bubble.className).toContain('bg-blue-50')
+  expect(bubble.className).toContain('dark:bg-blue-950/40')
+  expect(meta.contains(actions)).toBe(true)
+  fireEvent.click(actions)
+  expect(onMessageActions).toHaveBeenCalledOnce()
 })
 
 test('gives internal notes a distinct sender label and timestamp', () => {
@@ -44,6 +66,8 @@ test('gives internal notes a distinct sender label and timestamp', () => {
 
   expect(screen.getByText('Note · Marcus Bell')).toBeDefined()
   expect(screen.getByTestId('message-meta')).toBeDefined()
+  expect(screen.getByTestId('message-bubble').className).toContain('bg-amber-50')
+  expect(screen.getByTestId('message-bubble').className).toContain('border-r-amber-400')
 })
 
 test('shows email and read state below an outbound bubble', () => {
