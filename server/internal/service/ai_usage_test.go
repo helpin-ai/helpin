@@ -52,16 +52,27 @@ func TestAIUsageServiceResolvesCompanyContextRoute(t *testing.T) {
 	}
 }
 
-func TestAIUsageServiceRejectsUnsupportedOrWrongTierModel(t *testing.T) {
+func TestAIUsageServiceResolvesCataloguedRouteRegardlessOfTaskNature(t *testing.T) {
 	service := newTestAIUsageService(t, &fakeAIUsageStore{})
 	for _, request := range []MeteringRequest{
-		{TaskNature: "custom", Provider: "openai", Model: "unknown", Route: "unknown"},
 		{TaskNature: "planning", Provider: "openai", Model: "gpt-5.6-luna", Route: "gpt-5.6-luna"},
+		{TaskNature: "support", Provider: "openai", Model: "gpt-5-mini", Route: "gpt-5-mini"},
+		{TaskNature: "support", Provider: "openai", Model: "gpt-5.6-terra", Route: "gpt-5.6-terra"},
+		{TaskNature: "support", Provider: "openai", Model: "gpt-5.5", Route: "gpt-5.5"},
 	} {
-		_, err := service.ResolveMeteringContext(request)
-		if !errors.Is(err, model.ErrModelUnavailableUnderPricing) {
-			t.Fatalf("ResolveMeteringContext() error = %v, want model unavailable", err)
+		if _, err := service.ResolveMeteringContext(request); err != nil {
+			t.Fatalf("ResolveMeteringContext(%s/%s) error = %v", request.Provider, request.Model, err)
 		}
+	}
+}
+
+func TestAIUsageServiceRejectsUnknownRoute(t *testing.T) {
+	service := newTestAIUsageService(t, &fakeAIUsageStore{})
+	_, err := service.ResolveMeteringContext(MeteringRequest{
+		TaskNature: "custom", Provider: "openai", Model: "unknown", Route: "unknown",
+	})
+	if !errors.Is(err, model.ErrModelUnavailableUnderPricing) {
+		t.Fatalf("ResolveMeteringContext() error = %v, want model unavailable", err)
 	}
 }
 
