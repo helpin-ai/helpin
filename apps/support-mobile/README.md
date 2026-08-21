@@ -89,6 +89,10 @@ pnpm tauri android build
 pnpm tauri ios build
 ```
 
+TestFlight releases run through the protected macOS GitHub Actions workflow.
+See [TESTFLIGHT.md](./TESTFLIGHT.md) for the Apple account, signing-secret, and
+release instructions.
+
 ## Device handoff checklist
 
 This machine has no Rust toolchain, no Android SDK/NDK, and is Linux (no
