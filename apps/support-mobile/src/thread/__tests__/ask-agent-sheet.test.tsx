@@ -82,6 +82,27 @@ test('renders persisted messages and resolves structured agent input', async () 
   )
 })
 
+test('renders Ask Agent transcript messages as GitHub-flavoured Markdown', async () => {
+  vi.mocked(useSupportDockChatMessages).mockReturnValue({ data: { messages: [
+    {
+      id: 'msg-markdown',
+      role: 'assistant',
+      content: '## Suggested reply\n\n- **Confirm** the refund\n- Share `REF-123`\n\n[Open policy](https://example.com/policy)',
+      created_at: '2026-08-20T10:02:00Z',
+    },
+  ] }, isPending: false } as never)
+
+  render(<AskAgentSheet workspaceId="ws-1" conversation={conversation} open onOpenChange={vi.fn()} canResolveInteractions />)
+
+  expect(await screen.findByRole('heading', { name: 'Suggested reply', level: 2 })).toBeTruthy()
+  expect(screen.getAllByRole('listitem')).toHaveLength(2)
+  expect(screen.getByText('Confirm').tagName).toBe('STRONG')
+  expect(screen.getByText('REF-123').tagName).toBe('CODE')
+  const link = screen.getByRole('link', { name: 'Open policy' })
+  expect(link.getAttribute('href')).toBe('https://example.com/policy')
+  expect(link.getAttribute('target')).toBe('_blank')
+})
+
 test('converts AI usage failures into the mobile upgrade sheet', async () => {
   sendMutateAsync.mockRejectedValue(new Error('AI usage exhausted'))
   render(<AskAgentSheet workspaceId="ws-1" conversation={conversation} open onOpenChange={vi.fn()} canResolveInteractions />)
