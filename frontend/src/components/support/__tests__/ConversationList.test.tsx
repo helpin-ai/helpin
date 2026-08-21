@@ -30,10 +30,12 @@ vi.mock('../ConversationRow', () => ({
   ConversationRow: ({
     conversation,
     isTransitioningOut,
+    onSelectConversation,
   }: {
-    conversation: { id: string };
+    conversation: { id: string; unread_count?: number };
     isTransitioningOut?: boolean;
-  }) => <div data-conversation-id={conversation.id} data-transitioning-out={isTransitioningOut ? 'true' : undefined} />,
+    onSelectConversation: (id: string, unreadCount?: number) => void;
+  }) => <button type="button" data-conversation-id={conversation.id} data-transitioning-out={isTransitioningOut ? 'true' : undefined} onClick={() => onSelectConversation(conversation.id, conversation.unread_count)} />,
 }))
 
 import { ConversationList } from '../ConversationList'
@@ -151,6 +153,34 @@ describe('ConversationList presence resync', () => {
 
     expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-2')
     expect(useSupportInboxStore.getState().activePanel).toBe('thread')
+
+    act(() => root.unmount())
+  })
+
+  it('marks an unread conversation as read when selected', async () => {
+    const markRead = vi.fn()
+    mockUseMarkConversationRead.mockReturnValue({ mutate: markRead })
+    mockUseInfiniteConversations.mockReturnValue({
+      data: { pages: [{ data: [{ id: 'conv-unread', status: 'open', unread_count: 1, updated_at: '2026-03-27T20:02:00Z' }] }] },
+      isLoading: false,
+      isFetching: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      error: null,
+    })
+    useSupportInboxStore.setState({ selectedConversationId: 'conv-existing' })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => root.render(<ConversationList workspaceId="ws-1" userId="user-1" />))
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-conversation-id="conv-unread"]')?.click()
+      await new Promise((resolve) => window.setTimeout(resolve, 25))
+    })
+    expect(markRead).toHaveBeenCalledWith('conv-unread')
 
     act(() => root.unmount())
   })

@@ -60,6 +60,7 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
   useRegisterPageContext(deal ? {
     entity_type: 'crm_deal',
     entity_id: deal.id,
+    display_id: deal.display_id,
     display_title: deal.name,
   } : null, 20);
   const { data: activitiesData, refetch: refetchActivities } = useDealActivities(wsId, dealId);

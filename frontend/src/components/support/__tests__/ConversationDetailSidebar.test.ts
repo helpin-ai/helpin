@@ -12,8 +12,17 @@ import {
   getConversationEmailRecipients,
   getLatestEmailRecipients,
   getLastActiveTooltipLabel,
+  shouldShowConversationDetailLoading,
   shouldShowLastActiveIndicator,
 } from '../ConversationDetailSidebar'
+
+describe('conversation detail loading state', () => {
+  it('shows loading only while the selected conversation has no data yet', () => {
+    expect(shouldShowConversationDetailLoading('conv-1', undefined, true)).toBe(true)
+    expect(shouldShowConversationDetailLoading(null, undefined, false)).toBe(false)
+    expect(shouldShowConversationDetailLoading('conv-1', {} as SupportConversation, true)).toBe(false)
+  })
+})
 
 describe('details sidebar scrolling', () => {
   it('constrains the sidebar to its panel height so the inner content can scroll', () => {

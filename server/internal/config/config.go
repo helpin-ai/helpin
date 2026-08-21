@@ -76,8 +76,9 @@ type Config struct {
 	CloudflareAPIBaseURL               string
 
 	// Website content crawler (optional — controls crawl engine and proxy)
-	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
-	CrawlerProxyURLs string // comma-separated proxy URLs for local crawler and agent fetch/crawl tools (e.g. Decodo/Smartproxy)
+	CrawlerMode         string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
+	CrawlerProxyURLs    string // comma-separated proxy URLs for local crawler and agent fetch/crawl tools (e.g. Decodo/Smartproxy)
+	GoogleWebRiskAPIKey string // optional; enables support-link reputation lookups
 
 	// GitHub App (optional — required for shared-runner repo mutation).
 	// GITHUB_APP_PRIVATE_KEY should be provided as a base64-encoded PEM value.
@@ -320,6 +321,7 @@ func Load() (*Config, error) {
 		CloudflareAPIBaseURL:                   strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
 		CrawlerMode:                            strings.TrimSpace(firstNonEmpty(os.Getenv("CRAWLER_MODE"), "cloudflare_with_fallback")),
 		CrawlerProxyURLs:                       strings.TrimSpace(os.Getenv("CRAWLER_PROXY_URLS")),
+		GoogleWebRiskAPIKey:                    strings.TrimSpace(os.Getenv("GOOGLE_WEB_RISK_API_KEY")),
 		GitHubAppID:                            os.Getenv("GITHUB_APP_ID"),
 		GitHubAppSlug:                          os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:                    os.Getenv("GITHUB_APP_PRIVATE_KEY"),

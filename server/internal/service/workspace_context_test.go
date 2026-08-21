@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -19,13 +20,43 @@ func (f fakeWorkspaceContextFetcher) FetchText(ctx context.Context, rawURL strin
 
 type fakeWorkspaceContextLLM struct {
 	lastRequest llm.ChatRequest
+	requests    []llm.ChatRequest
+	failures    map[string]error
 }
 
 func (f *fakeWorkspaceContextLLM) ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	f.lastRequest = req
+	f.requests = append(f.requests, req)
+	if err := f.failures[req.Provider]; err != nil {
+		return nil, err
+	}
 	return &llm.ChatResponse{
 		Content: "Product: **Acme** helps support and product teams understand customers.\nCustomers:\n- Support teams\nKey capabilities:\n1. Support answers\n",
 	}, nil
+}
+
+func TestWorkspaceServiceGenerateCompanyProductDescriptionReturnsOpenRouterFailureWithoutChangingModels(t *testing.T) {
+	llmProvider := &fakeWorkspaceContextLLM{failures: map[string]error{
+		"openrouter": errors.New("openrouter unavailable"),
+	}}
+	svc := NewWorkspaceService(nil, nil, nil).
+		SetContextGeneratorDependencies(llmProvider, fakeWorkspaceContextFetcher{pages: map[string]string{
+			"https://acme.com": "Acme is a customer intelligence platform.",
+		}})
+
+	_, err := svc.GenerateCompanyProductDescription(context.Background(), model.GenerateWorkspaceContextDescriptionRequest{
+		WorkspaceName: "Acme",
+		WebsiteURL:    "https://acme.com",
+	})
+	if err == nil || !strings.Contains(err.Error(), "openrouter unavailable") {
+		t.Fatalf("GenerateCompanyProductDescription() error = %v, want OpenRouter failure", err)
+	}
+	if len(llmProvider.requests) != 1 {
+		t.Fatalf("LLM requests = %d, want one OpenRouter attempt", len(llmProvider.requests))
+	}
+	if got := llmProvider.requests[0]; got.Provider != "openrouter" || got.Model != "deepseek/deepseek-v4-flash-0731" {
+		t.Fatalf("route = %q/%q, want openrouter/deepseek/deepseek-v4-flash-0731", got.Provider, got.Model)
+	}
 }
 
 func TestWorkspaceServiceGenerateCompanyProductDescriptionUsesDirectWebsiteFetch(t *testing.T) {
@@ -60,6 +91,9 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionUsesDirectWebsiteFetch
 	}
 	if len(llmProvider.lastRequest.Messages) != 1 || !strings.Contains(llmProvider.lastRequest.Messages[0].Content, "support answers") {
 		t.Fatalf("LLM prompt did not include fetched website text: %#v", llmProvider.lastRequest.Messages)
+	}
+	if llmProvider.lastRequest.Provider != "openrouter" || llmProvider.lastRequest.Model != "deepseek/deepseek-v4-flash-0731" {
+		t.Fatalf("LLM route = %q/%q, want openrouter/deepseek/deepseek-v4-flash-0731", llmProvider.lastRequest.Provider, llmProvider.lastRequest.Model)
 	}
 	promptText := strings.ToLower(llmProvider.lastRequest.SystemPrompt + "\n" + llmProvider.lastRequest.Messages[0].Content)
 	if strings.Contains(promptText, "markdown") {

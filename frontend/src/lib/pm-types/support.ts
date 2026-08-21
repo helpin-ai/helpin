@@ -515,6 +515,16 @@ export interface SupportLinkPreview {
   host: string;
 }
 
+export type SupportLinkSecurityStatus = 'no_match' | 'malicious' | 'unknown';
+
+export interface SupportLinkSecurity {
+  url: string;
+  status: SupportLinkSecurityStatus;
+  threat_types?: Array<'MALWARE' | 'SOCIAL_ENGINEERING' | 'UNWANTED_SOFTWARE'>;
+  checked_at: string;
+  expires_at: string;
+}
+
 /**
  * Canonical set of system_event_type values the backend emits on
  * message_type='system' rows. Renderers branch on this instead of
@@ -545,6 +555,7 @@ export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number]
 
 export interface SupportMessage {
   id: string;
+  client_message_id?: string;
   workspace_id: string;
   conversation_id: string;
   sender_type: MessageSenderType;
@@ -954,6 +965,7 @@ export interface CreateConversationRequest {
 
 export interface CreateMessageRequest {
   content: string;
+  client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
   channels?: ('chat' | 'email')[];

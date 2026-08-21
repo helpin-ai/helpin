@@ -10,6 +10,9 @@ import type {
   DockRunListResponse,
   SendDockChatMessageRequest,
   UpdateDockChatRequest,
+	PublicShareLink,
+	PublicShareResourceType,
+	PublicSharedResource,
 } from '../dockTypes';
 import type {
   AgentRun,
@@ -24,10 +27,22 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const dockChatService = {
+	getPublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>
+		api.get<PublicShareLink | null>(`/dock/shares/${resourceType}/${encodeURIComponent(resourceId)}${qs(workspaceId)}`),
+	createPublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>
+		api.post<PublicShareLink>(`/dock/shares/${resourceType}/${encodeURIComponent(resourceId)}${qs(workspaceId)}`, {}),
+	revokePublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>
+		api.del<void>(`/dock/shares/${resourceType}/${encodeURIComponent(resourceId)}${qs(workspaceId)}`),
+	getPublicSharedResource: (token: string) =>
+		api.get<PublicSharedResource>(`/public/shares/${encodeURIComponent(token)}`),
   listChats: (workspaceId: string, cursor?: string | null, limit = 30) => {
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
     if (cursor) query.set('cursor', cursor);
     return api.get<DockChatListResponse>(`/dock/chats?${query.toString()}`);
+  },
+  findSupportConversationChat: (workspaceId: string, conversationId: string) => {
+    const query = new URLSearchParams({ workspace_id: workspaceId, conversation_id: conversationId });
+    return api.get<DockChat | null>(`/dock/chats/support-conversation?${query.toString()}`);
   },
   createChat: (workspaceId: string, title = '', supportConversationId?: string, moduleId?: DockChatModule | null) =>
     api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, {
@@ -76,8 +91,11 @@ export const dockChatService = {
     ),
   cancelChatRun: (workspaceId: string, chatId: string) =>
     api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/cancel${qs(workspaceId)}`),
-  listRuns: (workspaceId: string) =>
-    api.get<DockRunListResponse>(`/dock/runs${qs(workspaceId)}`),
+  listRuns: (workspaceId: string, cursor?: string | null, limit = 30) => {
+    const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
+    if (cursor) query.set('cursor', cursor);
+    return api.get<DockRunListResponse>(`/dock/runs?${query.toString()}`);
+  },
   getRunSnapshot: (workspaceId: string, runId: string) =>
     api.get<CodingSession>(`/dock/runs/${encodeURIComponent(runId)}/snapshot${qs(workspaceId)}`),
   listRunEvents: (workspaceId: string, runId: string, after = 0) =>

@@ -20,12 +20,12 @@ const (
 // chain rather than a heuristic match.
 type DockChat struct {
 	ID                    string             `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID           string             `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1;uniqueIndex:idx_dock_chats_support_conversation,priority:1"`
-	UserID                string             `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2;uniqueIndex:idx_dock_chats_support_conversation,priority:2"`
+	WorkspaceID           string             `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1;uniqueIndex:idx_dock_chats_support_conversation,priority:1,where:archived_at IS NULL"`
+	UserID                string             `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2;uniqueIndex:idx_dock_chats_support_conversation,priority:2,where:archived_at IS NULL"`
 	Title                 string             `json:"title"`
 	Visibility            DockChatVisibility `json:"visibility" gorm:"type:text;not null;default:'private';index"`
 	ModuleID              *ModuleID          `json:"module_id,omitempty" gorm:"type:text;index"`
-	SupportConversationID *string            `json:"support_conversation_id,omitempty" gorm:"type:uuid;index;uniqueIndex:idx_dock_chats_support_conversation,priority:3"`
+	SupportConversationID *string            `json:"support_conversation_id,omitempty" gorm:"type:uuid;index;uniqueIndex:idx_dock_chats_support_conversation,priority:3,where:archived_at IS NULL"`
 	ActiveRunID           *string            `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
 	NextMessageSequence   int64              `json:"-" gorm:"->"`
 	// ActiveRunStatus is a read-only projection used by chat roster surfaces.

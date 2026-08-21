@@ -1998,6 +1998,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0 {
 		return nil, fmt.Errorf("content is required")
 	}
+	clientMessageID := strings.TrimSpace(req.ClientMessageID)
+	if len(clientMessageID) > 128 {
+		return nil, fmt.Errorf("client_message_id is too long")
+	}
 	conv, err := s.loadConversationAccessible(ctx, workspaceID, ticketID)
 	if err != nil {
 		return nil, err
@@ -2060,6 +2064,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		Content:           strings.TrimSpace(req.Content),
 		IsInternal:        req.IsInternal,
 		MessageType:       messageType,
+		ClientMessageID:   clientMessageID,
 	}
 
 	if len(mentionedUserIDs) > 0 {
@@ -2200,6 +2205,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 				ActorType:      model.SupportEventActorAgent,
 				Channel:        "inbox",
 			})
+		}
+	}
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" {
+		if err := s.conversationRepo.MarkInternalRead(ctx, ticketID); err != nil {
+			slog.ErrorContext(ctx, "mark support conversation read after teammate reply", "error", err, "conversation_id", ticketID)
 		}
 	}
 

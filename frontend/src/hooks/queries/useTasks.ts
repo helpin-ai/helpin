@@ -29,6 +29,9 @@ interface TaskQueryFilters {
   contact_id?: string
   company_id?: string
   deal_id?: string
+  include_contacts?: boolean
+  include_companies?: boolean
+  include_deals?: boolean
 }
 
 type TaskFilters = TaskQueryFilters

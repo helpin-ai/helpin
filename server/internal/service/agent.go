@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -44,6 +45,8 @@ var (
 	ErrAssignedAgentNotFound = errors.New("assigned agent not found")
 	// ErrDockRunNotFound hides missing and non-owned runs behind one safe error.
 	ErrDockRunNotFound = errors.New("dock agent run not found")
+	// ErrDockRunInvalidCursor is returned for malformed run pagination cursors.
+	ErrDockRunInvalidCursor = errors.New("invalid dock run cursor")
 )
 
 const supportAutoTriggerType = "support.auto"
@@ -3668,13 +3671,36 @@ func (s *AgentService) ListRecentRunsForActor(ctx context.Context, workspaceID, 
 	return normalized, nil
 }
 
-// ListDockRunsForActor returns the current user's live and recently-settled
-// non-chat runs, enriched for compact roster presentation.
+type dockRunCursor struct {
+	ActivityAt time.Time `json:"activity_at"`
+	ID         string    `json:"id"`
+}
+
+func encodeDockRunCursor(activityAt time.Time, id string) string {
+	payload, _ := json.Marshal(dockRunCursor{ActivityAt: activityAt, ID: id})
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeDockRunCursor(value string) (time.Time, string, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return time.Time{}, "", ErrDockRunInvalidCursor
+	}
+	var cursor dockRunCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.ActivityAt.IsZero() || strings.TrimSpace(cursor.ID) == "" {
+		return time.Time{}, "", ErrDockRunInvalidCursor
+	}
+	return cursor.ActivityAt, cursor.ID, nil
+}
+
+// ListDockRunsForActor returns the current user's active runs followed by one
+// stable cursor page of settled non-chat runs.
 func (s *AgentService) ListDockRunsForActor(
 	ctx context.Context,
 	workspaceID string,
 	actorID string,
-	recentSince time.Time,
+	limit int,
+	encodedCursor string,
 ) (*model.DockRunListResponse, error) {
 	if strings.TrimSpace(workspaceID) == "" {
 		return nil, fmt.Errorf("workspace_id is required")
@@ -3682,10 +3708,42 @@ func (s *AgentService) ListDockRunsForActor(
 	if strings.TrimSpace(actorID) == "" {
 		return &model.DockRunListResponse{Runs: []model.DockRunSummary{}}, nil
 	}
-	runs, err := s.runRepo.ListDockRunsForActor(ctx, workspaceID, actorID, recentSince, 100)
+	if limit <= 0 {
+		limit = 30
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	var before *time.Time
+	var beforeID string
+	if encodedCursor != "" {
+		decodedAt, decodedID, err := decodeDockRunCursor(encodedCursor)
+		if err != nil {
+			return nil, err
+		}
+		before = &decodedAt
+		beforeID = decodedID
+	}
+	var runs []model.AgentRun
+	if encodedCursor == "" {
+		active, err := s.runRepo.ListActiveDockRunsForActor(ctx, workspaceID, actorID)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, active...)
+	}
+	settled, err := s.runRepo.ListSettledDockRunsForActor(ctx, workspaceID, actorID, limit+1, before, beforeID)
 	if err != nil {
 		return nil, err
 	}
+	response := &model.DockRunListResponse{}
+	if len(settled) > limit {
+		settled = settled[:limit]
+		last := settled[len(settled)-1]
+		next := encodeDockRunCursor(last.UpdatedAt, last.ID)
+		response.NextCursor = &next
+	}
+	runs = append(runs, settled...)
 	normalized := s.normalizeRunCollection(s.reconcileStuckRuns(ctx, runs))
 	s.enrichRunTargets(ctx, workspaceID, normalized)
 
@@ -3707,7 +3765,7 @@ func (s *AgentService) ListDockRunsForActor(
 		agentsByID[agent.ID] = agent
 	}
 
-	response := &model.DockRunListResponse{Runs: make([]model.DockRunSummary, 0, len(normalized))}
+	response.Runs = make([]model.DockRunSummary, 0, len(normalized))
 	for _, run := range normalized {
 		agent := agentsByID[run.AgentID]
 		agentID := run.AgentID

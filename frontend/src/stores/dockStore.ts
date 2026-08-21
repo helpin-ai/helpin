@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { DockChat } from '@/lib/dockTypes';
+import type { DockChat, DockChatDetail } from '@/lib/dockTypes';
+import type { AgentRunMessage } from '@/lib/pmTypes';
 
 const COLLAPSED_KEY = 'helpin:ask-agents-dock-collapsed';
 const SELECTION_KEY_PREFIX = 'helpin:agent-dock-selection:';
@@ -13,6 +14,12 @@ interface PersistedSelection {
   runId?: string | null;
 }
 
+export interface DockTranscriptCacheEntry {
+  detail: DockChatDetail;
+  messages: AgentRunMessage[];
+  nextBefore: number | null;
+}
+
 interface DockState {
   collapsed: boolean;
   view: DockView;
@@ -21,6 +28,7 @@ interface DockState {
   activeChatId: string | null;
   activeRunId: string | null;
   chats: DockChat[];
+  transcripts: Record<string, DockTranscriptCacheEntry>;
   drafts: Record<string, string>;
   lastAttentionIds: string[];
   activateWorkspace: (workspaceId: string) => void;
@@ -30,6 +38,7 @@ interface DockState {
   setActiveChatId: (chatId: string | null) => void;
   setActiveRunId: (runId: string | null) => void;
   setChats: (chats: DockChat[]) => void;
+  cacheTranscript: (chatId: string, transcript: DockTranscriptCacheEntry) => void;
   upsertChat: (chat: DockChat) => void;
   setDraft: (key: string, value: string) => void;
   clearDraft: (key: string) => void;
@@ -74,6 +83,7 @@ export const useDockStore = create<DockState>((set, get) => ({
   activeChatId: null,
   activeRunId: null,
   chats: [],
+  transcripts: {},
   drafts: {},
   lastAttentionIds: [],
   activateWorkspace: (workspaceId) => {
@@ -86,6 +96,7 @@ export const useDockStore = create<DockState>((set, get) => ({
       activeChatId: selection.chatId ?? null,
       activeRunId: selection.runId ?? null,
       chats: [],
+      transcripts: {},
       drafts: {},
       lastAttentionIds: [],
     });
@@ -120,6 +131,7 @@ export const useDockStore = create<DockState>((set, get) => ({
     return { activeRunId };
   }),
   setChats: (chats) => set({ chats }),
+  cacheTranscript: (chatId, transcript) => set({ transcripts: { [chatId]: transcript } }),
   upsertChat: (chat) => set((state) => {
     const index = state.chats.findIndex((candidate) => candidate.id === chat.id);
     if (index < 0) return { chats: [chat, ...state.chats] };

@@ -786,6 +786,30 @@ func TestSupportConversationRepository(t *testing.T) {
 	})
 }
 
+func TestSupportConversationRepositoryGetByIDIncludesUnreadCount(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-detail-unread"
+	seedWorkspace(t, db, workspaceID, "Detail Unread", "detail-unread", "user-detail-unread")
+	repo := repository.NewSupportConversationRepository(db)
+	conversation := &model.SupportConversation{WorkspaceID: workspaceID, Subject: "Unread detail", Status: model.SupportConversationStatusOpen}
+	if err := repo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	message := &model.SupportMessage{WorkspaceID: workspaceID, ConversationID: conversation.ID, SenderType: "customer", MessageType: "reply", Content: "Unread customer reply"}
+	if err := db.Create(message).Error; err != nil {
+		t.Fatalf("create customer message: %v", err)
+	}
+
+	fetched, err := repo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if fetched.UnreadCount != 1 {
+		t.Fatalf("UnreadCount = %d, want 1", fetched.UnreadCount)
+	}
+}
+
 func TestSupportInboxServiceCreateConversationWithMessageAssignsCreatorAndStoresEmailRecipients(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
@@ -1065,14 +1089,18 @@ func TestSupportInboxServiceCreateConversationMessageBlocksEmailReplyUntilPrimar
 	}
 
 	aiAssisted, err := svc.CreateConversationMessage(ctx, workspaceID, conversation.ID, model.CreateMessageRequest{
-		Content:    "Here is the AI-polished response.",
-		AIAssisted: true,
+		Content:         "Here is the AI-polished response.",
+		ClientMessageID: "optimistic-conversation-1",
+		AIAssisted:      true,
 	}, "user", &actorID, nil, nil)
 	if err != nil {
 		t.Fatalf("AI-assisted reply: %v", err)
 	}
 	if !strings.Contains(aiAssisted.Metadata, `"ai_assisted":true`) {
 		t.Fatalf("AI-assisted reply metadata = %q", aiAssisted.Metadata)
+	}
+	if aiAssisted.ClientMessageID != "optimistic-conversation-1" {
+		t.Fatalf("client_message_id = %q, want optimistic-conversation-1", aiAssisted.ClientMessageID)
 	}
 }
 

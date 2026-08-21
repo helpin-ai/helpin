@@ -52,6 +52,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     return {
       entity_type: 'task' as const,
       entity_id: detail.task.id,
+      display_id: detail.task.task_key,
       display_title: detail.task.name,
       related_ids: detail.task.epic_id ? { epicIds: [detail.task.epic_id] } : undefined,
     };

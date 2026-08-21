@@ -344,6 +344,20 @@ func TestAgentRunRepositoryListDockRunsForActorScopesAndRetainsActiveRuns(t *tes
 	if want := []string{"terminal-recent", "active-old"}; !slices.Equal(got, want) {
 		t.Fatalf("dock run ids = %v, want %v", got, want)
 	}
+
+	active, err := repo.ListActiveDockRunsForActor(context.Background(), "workspace-1", "user-1")
+	if err != nil || len(active) != 1 || active[0].ID != "active-old" {
+		t.Fatalf("active dock runs = %#v, err=%v", active, err)
+	}
+	settled, err := repo.ListSettledDockRunsForActor(context.Background(), "workspace-1", "user-1", 1, nil, "")
+	if err != nil || len(settled) != 1 || settled[0].ID != "terminal-recent" {
+		t.Fatalf("first settled page = %#v, err=%v", settled, err)
+	}
+	before := settled[0].UpdatedAt
+	settled, err = repo.ListSettledDockRunsForActor(context.Background(), "workspace-1", "user-1", 1, &before, settled[0].ID)
+	if err != nil || len(settled) != 1 || settled[0].ID != "terminal-old" {
+		t.Fatalf("second settled page = %#v, err=%v", settled, err)
+	}
 }
 
 func TestAgentRunListPagination(t *testing.T) {

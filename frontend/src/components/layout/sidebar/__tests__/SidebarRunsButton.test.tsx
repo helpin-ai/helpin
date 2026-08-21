@@ -26,7 +26,7 @@ describe('SidebarRunsButton', () => {
     document.body.innerHTML = '';
   });
 
-  it('opens the global Ask Agents dock', () => {
+  it('starts a fresh global Ask Agent chat', () => {
     const dispatch = vi.spyOn(window, 'dispatchEvent');
     act(() => {
       root.render(<TooltipProvider><SidebarRunsButton /></TooltipProvider>);
@@ -34,8 +34,10 @@ describe('SidebarRunsButton', () => {
 
     act(() => container.querySelector<HTMLButtonElement>('button')?.click());
 
-    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'helpin:ask-agents' }));
-    expect(useDockStore.getState()).toMatchObject({ collapsed: false, tab: 'agents' });
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'helpin:ask-agents',
+      detail: { mode: 'compose', intent: 'new_chat' },
+    }));
   });
 
   it('labels the sidebar action as Ask Agents', () => {

@@ -1780,7 +1780,20 @@ func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
 	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
-	if err := query.Select(fmt.Sprintf("support_conversations.*, %s AS country_code, %s AS country_name, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon",
+	if err := query.Select(fmt.Sprintf(`support_conversations.*,
+		(SELECT COUNT(*)
+		 FROM support_messages unread_messages
+		 WHERE unread_messages.conversation_id = support_conversations.id
+		   AND unread_messages.deleted_at IS NULL
+		   AND unread_messages.is_internal = false
+		   AND unread_messages.sender_type = 'customer'
+		   AND unread_messages.message_type = 'reply'
+		   AND unread_messages.system_event_type IS NULL
+		   AND unread_messages.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
+		) AS unread_count,
+		%s AS country_code, %s AS country_name,
+		sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon`,
+		r.epochExpr(),
 		r.latestSessionCountryExpr("country_code", "support_conversations"),
 		r.latestSessionCountryExpr("country_name", "support_conversations"),
 	)).First(&conversation).Error; err != nil {
@@ -1963,12 +1976,21 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 	return conversations, nil
 }
 
-// MarkInternalRead sets team_last_seen_at = NOW() if unread messages exist beyond the current cursor.
+// MarkInternalRead advances team_last_seen_at to the latest readable customer message.
 // Uses raw SQL to avoid GORM's autoUpdateTime touching updated_at (which would re-sort the conversation).
 func (r *SupportConversationRepository) MarkInternalRead(ctx context.Context, conversationID string) error {
 	result := r.db.WithContext(ctx).Exec(fmt.Sprintf(`
 		UPDATE support_conversations
-		SET team_last_seen_at = %s
+		SET team_last_seen_at = (
+			SELECT MAX(read_messages.created_at)
+			FROM support_messages read_messages
+			WHERE read_messages.conversation_id = support_conversations.id
+			  AND read_messages.deleted_at IS NULL
+			  AND read_messages.is_internal = false
+			  AND read_messages.sender_type = 'customer'
+			  AND read_messages.message_type = 'reply'
+			  AND read_messages.system_event_type IS NULL
+		)
 		WHERE id = ?
 		  AND EXISTS (
 			SELECT 1 FROM support_messages sm
@@ -1977,9 +1999,10 @@ func (r *SupportConversationRepository) MarkInternalRead(ctx context.Context, co
 			  AND sm.is_internal = false
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
+			  AND sm.system_event_type IS NULL
 			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
 		  )
-	`, r.nowExpr(), r.epochExpr()), conversationID)
+	`, r.epochExpr()), conversationID)
 	if result.Error != nil {
 		return fmt.Errorf("mark internal read: %w", result.Error)
 	}

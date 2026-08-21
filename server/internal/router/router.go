@@ -54,6 +54,7 @@ type Handlers struct {
 	Search              *handler.SearchHandler
 	CommandBar          *handler.CommandBarHandler
 	DockChat            *handler.DockChatHandler
+	PublicShare         *handler.PublicShareHandler
 	Agent               *handler.AgentHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
 	MCP                 *handler.MCPHandler
@@ -359,6 +360,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		})
 		// ---- Public shared document route (no JWT) ----
 		r.Get("/docs/shared/{shareToken}", h.Docs.PublicGetSharedDoc)
+		if h.PublicShare != nil {
+			r.Get("/public/shares/{token}", h.PublicShare.GetPublic)
+		}
 
 		// ---- Public widget routes (no JWT, open CORS) ----
 		r.Route("/widget/support", func(r chi.Router) {
@@ -806,6 +810,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(wsActive)
 				r.With(requireCommandBarRead()).Get("/chats", h.DockChat.ListChats)
 				r.With(requireCommandBarRead()).Post("/chats", h.DockChat.CreateChat)
+				r.With(requireCommandBarRead()).Get("/chats/support-conversation", h.DockChat.FindSupportConversationChat)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}", h.DockChat.GetChat)
 				r.With(requireCommandBarRead()).Patch("/chats/{chatID}", h.DockChat.UpdateChat)
 				r.With(requireCommandBarRead()).Get("/chats/{chatID}/messages", h.DockChat.ListMessages)
@@ -819,6 +824,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarEdit()).Post("/chats/{chatID}/run/cancel", h.DockChat.CancelChatRun)
 				r.With(requireCommandBarRead()).Get("/runs", h.DockChat.ListRuns)
 				r.With(requireCommandBarRead()).Get("/runs/{runID}/snapshot", h.DockChat.GetRunSnapshot)
+				if h.PublicShare != nil {
+					r.With(requireCommandBarRead()).Get("/shares/{resourceType}/{resourceID}", h.PublicShare.GetLink)
+					r.With(requireCommandBarRead()).Post("/shares/{resourceType}/{resourceID}", h.PublicShare.Create)
+					r.With(requireCommandBarRead()).Delete("/shares/{resourceType}/{resourceID}", h.PublicShare.Revoke)
+				}
 				r.With(requireCommandBarRead()).Get("/runs/{runID}/events", h.DockChat.ListRunEvents)
 				r.With(requireCommandBarRead()).Get("/runs/{runID}/interactions", h.DockChat.ListRunInteractions)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/interactions/{interactionID}/resolve", h.DockChat.ResolveRunInteraction)

@@ -15,6 +15,7 @@ import { groupAdjacentDockTools } from './dockTranscriptGrouping';
 import { buildDockWorkingTimeline } from './dockWorkingGroups';
 import { DockWorkingGroup } from './DockWorkingGroup';
 import { mergePersistedChatMessages } from './dockChatTimeline';
+import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
 const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'review_decision', 'status'] as const);
 const DOCK_WORKING_SEGMENT_KINDS = new Set([...DOCK_CHAT_SEGMENT_KINDS, 'reasoning'] as const);
 const dockWorkDetailCache = new Map<string, AgentRunMessage[]>();
@@ -167,11 +168,12 @@ function DockWorkDisclosure({
     <section className="py-1" data-dock-work-disclosure>
       <button
         type="button"
-        className="text-xs font-medium text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
         aria-expanded={open}
         onClick={toggle}
       >
-        {open ? '▾' : '▸'} Worked for {formatCodingSessionElapsed(summary.duration_ms)}
+        <span>Worked for {formatCodingSessionElapsed(summary.duration_ms)}</span>
+        <DisclosureChevron open={open} />
       </button>
       {open ? (
         <div className="mt-2 border-l border-border/70 pl-3">

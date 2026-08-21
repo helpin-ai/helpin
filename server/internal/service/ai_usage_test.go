@@ -36,6 +36,22 @@ func TestAIUsageServiceResolvesBuiltInTaskTiers(t *testing.T) {
 	}
 }
 
+func TestAIUsageServiceResolvesCompanyContextRoute(t *testing.T) {
+	usageService := newTestAIUsageService(t, &fakeAIUsageStore{})
+	resolved, err := usageService.ResolveMeteringContext(MeteringRequest{
+		WorkspaceID: "ws", TaskNature: taskNatureForFeature(BillingFeatureCompanyProductContext),
+		FeatureKey: BillingFeatureCompanyProductContext, Provider: workspaceContextProvider,
+		Model: workspaceContextModel, Route: workspaceContextModel, FundingMode: aiusage.FundingHelpinHosted,
+		Promotional: true,
+	})
+	if err != nil {
+		t.Fatalf("ResolveMeteringContext() error = %v", err)
+	}
+	if resolved.Route.Tier != aiusage.TierSmall {
+		t.Fatalf("company context tier = %q, want %q", resolved.Route.Tier, aiusage.TierSmall)
+	}
+}
+
 func TestAIUsageServiceRejectsUnsupportedOrWrongTierModel(t *testing.T) {
 	service := newTestAIUsageService(t, &fakeAIUsageStore{})
 	for _, request := range []MeteringRequest{

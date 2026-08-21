@@ -43,6 +43,39 @@ func TestSupportMessageEventIncludesMessageType(t *testing.T) {
 	}
 }
 
+func TestSupportMessageEventIncludesClientMessageID(t *testing.T) {
+	msg := &model.SupportMessage{
+		ID:              "msg-1",
+		ConversationID:  "conv-1",
+		SenderType:      "user",
+		MessageType:     "reply",
+		Content:         "Hello",
+		ClientMessageID: "client-msg-1",
+		CreatedAt:       time.Date(2026, 8, 19, 14, 0, 0, 0, time.UTC),
+	}
+
+	event := SupportMessageEvent("ws-1", msg, "user-1")
+	var payload model.WidgetMessageReceivedPayload
+	if err := json.Unmarshal(event.Data, &payload); err != nil {
+		t.Fatalf("unmarshal widget payload: %v", err)
+	}
+	if payload.ClientMessageID != "client-msg-1" {
+		t.Fatalf("client_message_id = %q, want client-msg-1", payload.ClientMessageID)
+	}
+}
+
+func TestWidgetSafeSupportMessageEventDataRemovesLinkSecurity(t *testing.T) {
+	data := json.RawMessage(`{"id":"msg-1","metadata":"{\"link_previews\":[{\"url\":\"http://example.com\"}],\"link_security\":[{\"status\":\"malicious\"}]}"}`)
+
+	got := widgetSafeSupportMessageEventData(data)
+	if strings.Contains(string(got), "link_security") {
+		t.Fatalf("widget event leaked link security: %s", got)
+	}
+	if !strings.Contains(string(got), "link_previews") {
+		t.Fatalf("widget event lost previews: %s", got)
+	}
+}
+
 // TestSupportMessageEventOmitsSystemEventTypeForReplies ensures only system
 // messages carry the event type on the wire — regular replies do not.
 func TestSupportMessageEventOmitsSystemEventTypeForReplies(t *testing.T) {

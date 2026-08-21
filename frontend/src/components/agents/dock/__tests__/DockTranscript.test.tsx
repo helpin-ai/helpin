@@ -205,6 +205,8 @@ describe('DockTranscript', () => {
 
     const disclosure = Array.from(container.querySelectorAll('button'))
       .find((button) => button.textContent?.includes('Worked for 9s'))!;
+    expect(disclosure.textContent).not.toContain('▸');
+    expect(disclosure.querySelector('[data-disclosure-chevron]')).not.toBeNull();
     await act(async () => {
       disclosure.click();
       await Promise.resolve();
@@ -380,8 +382,8 @@ describe('DockTranscript', () => {
     expect(groups[0]?.querySelectorAll('button')).toHaveLength(1);
     expect(container.textContent).not.toContain('conversation-1');
     expect(container.textContent).not.toContain('"messages":12');
-    expect(groups[0]?.querySelector('[data-working-group-label]')?.nextElementSibling)
-      .toBe(groups[0]?.querySelector('[data-working-group-chevron]'));
+    expect(groups[0]?.querySelector('button')?.lastElementChild)
+      .toBe(groups[0]?.querySelector('[data-disclosure-chevron]'));
   });
 
   it('uses retained runtime chronology after completion instead of the final durable tool aggregate', () => {

@@ -47,6 +47,7 @@ func supportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID,
 
 	payload, err := json.Marshal(model.WidgetMessageReceivedPayload{
 		ID:                        msg.ID,
+		ClientMessageID:           msg.ClientMessageID,
 		ConversationID:            msg.ConversationID,
 		Content:                   msg.Content,
 		SenderType:                msg.SenderType,
@@ -68,6 +69,24 @@ func supportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID,
 		event.Data = payload
 	}
 	return event
+}
+
+func widgetSafeSupportMessageEventData(data json.RawMessage) json.RawMessage {
+	if len(data) == 0 {
+		return data
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil
+	}
+	if metadata, ok := payload["metadata"].(string); ok {
+		payload["metadata"] = model.StripSupportLinkSecurityMetadata(metadata)
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	return encoded
 }
 
 // SupportMessageDeletedEvent builds the standard websocket event for a support

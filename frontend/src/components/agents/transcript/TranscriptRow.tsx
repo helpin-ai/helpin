@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { DisclosureChevron } from './DisclosureChevron';
 
 export interface TranscriptRowProps {
   icon: ReactNode;
@@ -58,13 +59,9 @@ export function TranscriptRow({
       >
         {label}
       </span>
-      {canExpand ? (
-        <span data-transcript-row-chevron aria-hidden className="shrink-0 text-[10px] text-muted-foreground">
-          {open ? '▾' : '▸'}
-        </span>
-      ) : null}
       <span className="min-w-0 flex-1" />
       {meta ? <span className="shrink-0 text-[10px] text-muted-foreground">{meta}</span> : null}
+      {canExpand ? <DisclosureChevron open={open} className="h-3.5 w-3.5" /> : null}
     </div>
   );
 

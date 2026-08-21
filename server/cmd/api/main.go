@@ -232,6 +232,7 @@ func main() {
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarPlanDismissal{},
 			&model.DockChat{},
+			&model.PublicShare{},
 			&model.SupportRunEvidence{},
 			&model.HelpcenterAnswer{},
 			&model.CodingSessionStateSnapshot{},
@@ -873,6 +874,7 @@ func main() {
 	supportInboxService.SetCRMCompanyRepository(crmCompanyRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)
 	supportLinkPreviewService := service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs)
+	supportLinkPreviewService.SetLinkScanner(service.NewGoogleWebRiskClient(cfg.GoogleWebRiskAPIKey))
 	emailFallbackService := service.NewEmailFallbackService(
 		redisClient,
 		wsHub,
@@ -1633,6 +1635,9 @@ func main() {
 		SetPMAttachmentRepository(pmAttachmentRepo).
 		SetMediaSourceService(supportInboxService).
 		SetMediaAnalyzer(pmAttachmentService, supportLLMProvider)
+	publicShareRepo := repository.NewPublicShareRepository(db)
+	publicShareSource := service.NewPublicShareSource(dockChatService, agentService, dockChatRepo, agentRunMessageRepo, workspaceRepo)
+	publicShareService := service.NewPublicShareService(publicShareRepo, publicShareSource, cfg.AppBaseURL)
 	if runFinalizers != nil {
 		// Immediate delivery of settled child-plan results into dock chats;
 		// the sweep below retries chats that were mid-turn at that moment.
@@ -1784,6 +1789,7 @@ func main() {
 		Search:              handler.NewSearchHandler(searchService),
 		CommandBar:          handler.NewCommandBarHandler(commandBarService, authzService),
 		DockChat:            handler.NewDockChatHandler(dockChatService, agentService),
+		PublicShare:         handler.NewPublicShareHandler(publicShareService),
 		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
 		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),

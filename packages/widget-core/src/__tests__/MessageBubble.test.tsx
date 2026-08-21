@@ -198,12 +198,24 @@ describe('MessageBubble', () => {
           title: 'Pricing',
           description: 'Compare plans and limits.',
           host: 'example.com',
+          image_url: 'https://example.com/pricing.png',
         },
       ],
     });
     const { container, getByRole } = render(<MessageBubble message={message} />);
     expect(container.textContent).toContain('Pricing');
+    expect(container.textContent).not.toContain('Compare plans and limits.');
+    expect(container.querySelector('img[src="https://example.com/pricing.png"]')).toBeNull();
     expect((getByRole('link', { name: /pricing/i }) as HTMLAnchorElement).href).toContain('https://example.com/pricing');
+  });
+
+  it('labels HTTP preview cards as not secure', () => {
+    const message = createMessage({
+      role: 'agent',
+      linkPreviews: [{ url: 'http://example.com/pricing', title: 'Pricing', host: 'example.com' }],
+    });
+    const { container } = render(<MessageBubble message={message} />);
+    expect(container.querySelector('.helpin-link-preview-security')?.textContent).toBe('Not secure');
   });
 
   it('uses outgoing preview styling for customer links and incoming styling for agent links', () => {

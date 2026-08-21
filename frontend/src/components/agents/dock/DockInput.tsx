@@ -30,6 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { PageContextScopeOption } from '@/components/command-bar/pageContext';
 import { DockReferencePicker, type DockReferencePickerHandle } from './DockReferencePicker';
 
@@ -281,24 +282,31 @@ export function DockInput({
         }}
       />
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button type="button" title="Attach files" aria-label="Attach files" disabled={disabled || busy} className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
-            <AttachmentIcon className="h-3.5 w-3.5" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="top" className="w-52">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <DropdownMenuTrigger asChild>
+                <button type="button" aria-label="Attach files" disabled={disabled || busy} className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50">
+                  <AttachmentIcon className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="z-[70]">Attach files</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="start" side="top" className="z-[70] w-80">
           <DropdownMenuItem onSelect={() => mediaInputRef.current?.click()} className="gap-2">
             <Image01Icon className="h-4 w-4" />
             <span className="flex flex-col">
               <span>Images &amp; videos</span>
-              <span className="text-[10px] text-muted-foreground">PNG, JPG, GIF, WebP, MP4, MOV</span>
+              <span className="whitespace-nowrap text-[10px] text-muted-foreground">PNG, JPG, GIF, WebP, MP4, MOV</span>
             </span>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => documentInputRef.current?.click()} className="gap-2">
             <File01Icon className="h-4 w-4" />
             <span className="flex flex-col">
               <span>Documents</span>
-              <span className="text-[10px] text-muted-foreground">PDF, DOCX, TXT, Markdown, CSV, JSON</span>
+              <span className="whitespace-nowrap text-[10px] text-muted-foreground">PDF, DOCX, TXT, Markdown, CSV, JSON</span>
             </span>
           </DropdownMenuItem>
         </DropdownMenuContent>
