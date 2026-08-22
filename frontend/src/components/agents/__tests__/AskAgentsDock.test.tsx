@@ -1433,6 +1433,20 @@ describe('AskAgentsDock', () => {
     expect(dockTextarea().value).toBe('enrich this contact');
   });
 
+  it('opens an explicitly identified chat even when a caller also requests a new chat', async () => {
+    useDockStore.setState({ collapsed: true });
+    await renderDock();
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
+        detail: { intent: 'new_chat', chatId: CHAT.id },
+      }));
+    });
+
+    expect(useDockStore.getState().activeChatId).toBe(CHAT.id);
+    expect(useDockStore.getState().collapsed).toBe(false);
+  });
+
   it('switches to the chat list and back', async () => {
     await renderDock();
     await waitForText('Sprint questions');

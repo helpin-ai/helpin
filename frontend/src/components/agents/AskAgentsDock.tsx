@@ -630,11 +630,6 @@ export function AskAgentsDock({
       const query = detail.query?.trim();
       // A seeded query is a new request unless the caller explicitly identifies
       // a chat/run (or asks to resume). Never append it to the persisted chat.
-      if (detail.intent === 'new_chat' || (query && !detail.chatId && !detail.runId && detail.intent !== 'resume')) {
-        newChat();
-        if (query) setPendingDraft(query);
-        return;
-      }
       if (detail.runId) {
         setActiveRunId(detail.runId);
         openDock('agents', 'selection');
@@ -643,6 +638,10 @@ export function AskAgentsDock({
       if (detail.chatId) {
         setActiveChatId(detail.chatId);
         openDock('chats', 'composer');
+      } else if (detail.intent === 'new_chat' || (query && detail.intent !== 'resume')) {
+        newChat();
+        if (query) setPendingDraft(query);
+        return;
       } else {
         openDock(detail.mode === 'runs' ? 'agents' : 'chats', detail.mode === 'runs' ? 'selection' : 'composer');
       }
