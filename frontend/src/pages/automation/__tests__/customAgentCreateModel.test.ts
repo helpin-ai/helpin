@@ -9,7 +9,7 @@ import {
 } from '../customAgentCreateModel';
 
 describe('custom agent create model', () => {
-  it('uses explicit OpenAI custom-agent defaults', () => {
+  it('uses a public model-size default without exposing a technical route', () => {
     const form = createDefaultCustomAgentForm();
 
     expect(form.name).toBe('');
@@ -23,8 +23,7 @@ describe('custom agent create model', () => {
     expect(form.max_concurrent_runs).toBe('1');
     expect(form.preset_key).toBe('code_builder');
     expect(form.preset_version_key).toBe('code_builder_default');
-    expect(form.provider).toBe('openai');
-    expect(form.model).toBe('gpt-5.6-terra');
+    expect(form.model_tier).toBe('large');
     expect(form.instruction_preamble).toBe('');
     expect(form.instruction_skills).toEqual([]);
     expect(form.max_tool_steps).toBe('');
@@ -40,9 +39,7 @@ describe('custom agent create model', () => {
       allowed_tools: ['search_documents'],
       skills: [{ key: 'support_style' }],
       approval_mode: 'mutating_tools',
-      runtime_kind: 'native_sdk',
-      provider: 'anthropic',
-      model: '',
+      model_tier: 'medium',
       default_invocation_mode: 'interactive',
       max_concurrent_runs: 1,
     });
@@ -54,9 +51,7 @@ describe('custom agent create model', () => {
       allowed_tools: ['search_documents'],
       skills: [{ key: 'support_style' }],
       approval_mode: 'mutating_tools',
-      runtime_kind: 'native_sdk',
-      provider: 'anthropic',
-      model: 'claude-opus-4-8',
+      model_tier: 'medium',
       default_invocation_mode: 'interactive',
       max_concurrent_runs: '1',
     });
@@ -78,8 +73,7 @@ describe('custom agent create model', () => {
       workspace_id: 'workspace-1',
       name: 'Support Helper',
       icon_key: 'violet_star',
-      provider: 'openai',
-      model: 'gpt-5.6-terra',
+      model_tier: 'large',
       system_prompt: 'Help triage support conversations.',
       trigger_mode: 'manual',
       team_ids: ['team-1', 'team-2'],
@@ -97,6 +91,10 @@ describe('custom agent create model', () => {
     expect(payload).not.toHaveProperty('create_flow');
     expect(payload).not.toHaveProperty('flow');
     expect(payload).not.toHaveProperty('overrides');
+    expect(payload).not.toHaveProperty('provider');
+    expect(payload).not.toHaveProperty('model');
+    expect(payload).not.toHaveProperty('runtime_kind');
+    expect(payload).not.toHaveProperty('execution_config');
   });
 
   it('uses explicit provider defaults for model routing', () => {
@@ -135,7 +133,7 @@ describe('custom agent create model', () => {
     expect(buildCustomAgentCreatePayload('workspace-1', { ...base, max_concurrent_runs: '3' }, false).max_concurrent_runs).toBe(3);
   });
 
-  it('includes a per-agent tool step limit only for the Native SDK runtime', () => {
+  it('does not submit hidden runtime execution controls', () => {
     const nativeForm = {
       ...createDefaultCustomAgentForm(),
       name: 'Native agent',
@@ -143,30 +141,30 @@ describe('custom agent create model', () => {
       max_tool_steps: '640',
     };
 
-    expect(buildCustomAgentCreatePayload('workspace-1', nativeForm, true).execution_config).toEqual({
-      max_tool_steps: 640,
-    });
+    const payload = buildCustomAgentCreatePayload('workspace-1', nativeForm, true);
+    expect(payload).not.toHaveProperty('execution_config');
+    expect(payload).not.toHaveProperty('runtime_kind');
+    expect(payload).not.toHaveProperty('provider');
+    expect(payload).not.toHaveProperty('model');
 
     const codexForm = {
       ...nativeForm,
       runtime_kind: 'codex' as const,
     };
-    expect(buildCustomAgentCreatePayload('workspace-1', codexForm, true).execution_config).toBeUndefined();
+    expect(buildCustomAgentCreatePayload('workspace-1', codexForm, true).model_tier).toBe('large');
   });
 
-  it('preserves advancedOpen payload semantics for runtime and leaves token limit unwired', () => {
+  it('keeps technical routing hidden regardless of advanced panel state', () => {
     const base = { ...createDefaultCustomAgentForm(), name: 'Agent' };
 
     expect(buildCustomAgentCreatePayload('workspace-1', base, false)).not.toHaveProperty('runtime_kind');
     expect(buildCustomAgentCreatePayload('workspace-1', base, false)).not.toHaveProperty('monthly_token_budget');
 
     const advancedClosedOpenCode = { ...base, runtime_kind: 'opencode' as const };
-    expect(buildCustomAgentCreatePayload('workspace-1', advancedClosedOpenCode, false)).toMatchObject({ runtime_kind: 'opencode' });
+    expect(buildCustomAgentCreatePayload('workspace-1', advancedClosedOpenCode, false)).not.toHaveProperty('runtime_kind');
 
     const advancedOpen = { ...base, monthly_token_budget: '5000' };
-    expect(buildCustomAgentCreatePayload('workspace-1', advancedOpen, true)).toMatchObject({
-      runtime_kind: 'codex',
-    });
+    expect(buildCustomAgentCreatePayload('workspace-1', advancedOpen, true)).toMatchObject({ model_tier: 'large' });
     expect(buildCustomAgentCreatePayload('workspace-1', advancedOpen, true)).not.toHaveProperty('monthly_token_budget');
   });
 

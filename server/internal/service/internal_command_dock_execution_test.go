@@ -24,7 +24,7 @@ func setupDockExecutionGuardTest(t *testing.T) (*InternalCommandService, *gorm.D
 	}
 	if err := db.Exec(`CREATE TABLE agent_runs (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, agent_id TEXT NOT NULL, task_id TEXT, conversation_id TEXT,
-		target_type TEXT NOT NULL, target_id TEXT NOT NULL, runtime_kind TEXT NOT NULL, invocation_mode TEXT NOT NULL,
+		target_type TEXT NOT NULL, target_id TEXT NOT NULL, runtime_kind TEXT NOT NULL, model_tier TEXT NOT NULL DEFAULT '', invocation_mode TEXT NOT NULL,
 		parent_run_id TEXT, dock_chat_id TEXT, handoff_state TEXT, approval_state TEXT NOT NULL DEFAULT 'not_required',
 		pause_reason TEXT NOT NULL DEFAULT 'none', triggered_by_user_id TEXT, status TEXT NOT NULL, workflow_id TEXT,
 		workflow_run_id TEXT, external_runtime TEXT, external_runtime_id TEXT, task_queue TEXT, runner_pool TEXT,
@@ -132,7 +132,7 @@ func TestRiskBasedDockMutationExecutesWithoutLegacyApprovalFailure(t *testing.T)
 	if err := db.Exec(`CREATE TABLE agents (
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL,
 		preset_key TEXT, preset_version_key TEXT, source_preset_key TEXT, source_preset_version_key TEXT,
-		status TEXT, runtime_kind TEXT, approval_mode TEXT, allowed_tools BLOB, allowed_commands BLOB,
+		status TEXT, runtime_kind TEXT, model_tier TEXT NOT NULL DEFAULT '', approval_mode TEXT, allowed_tools BLOB, allowed_commands BLOB,
 		allowed_targets BLOB, skills BLOB, execution_config BLOB, default_invocation_mode TEXT,
 		created_at DATETIME, updated_at DATETIME
 	)`).Error; err != nil {

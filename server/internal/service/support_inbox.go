@@ -58,6 +58,7 @@ type SupportInboxService struct {
 	supportAIService        *SupportAIService
 	emailFallbackService    *EmailFallbackService
 	notificationService     *NotificationService
+	pushSenderService       *PushSenderService
 	workspaceRepo           *repository.WorkspaceRepository
 	authzService            *authorization.AuthzService
 	attachmentService       *SupportAttachmentService
@@ -781,6 +782,18 @@ func (s *SupportInboxService) SetNotificationService(ns *NotificationService, wr
 	}
 	s.notificationService = ns
 	s.workspaceRepo = wr
+	return s
+}
+
+// SetPushSenderService injects the push sender used to fan out mobile push
+// notifications for support mentions and customer replies. Safe to leave
+// unset (nil) — ProcessSupportMentions/ProcessSupportCustomerReplyNotification
+// tolerate a nil *PushSenderService.
+func (s *SupportInboxService) SetPushSenderService(ps *PushSenderService) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.pushSenderService = ps
 	return s
 }
 
@@ -2096,7 +2109,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	// Emit mention notifications after message creation.
 	if len(mentionedUserIDs) > 0 {
-		ProcessSupportMentions(ctx, s.notificationService, conv, msg.Content, derefString(senderUserID), mentionedUserIDs)
+		ProcessSupportMentions(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, derefString(senderUserID), mentionedUserIDs)
 	}
 
 	previousOwnerID := ""
@@ -2106,7 +2119,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "customer" {
 		senderName := derefString(msg.SenderDisplayName)
-		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, senderName)
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, msg.Content, senderName)
 		if conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved {
 			conv.Status = model.SupportConversationStatusOpen
 			if conv.HumanTakeover != nil && *conv.HumanTakeover {

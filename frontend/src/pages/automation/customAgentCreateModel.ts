@@ -1,10 +1,10 @@
 import type {
   AgentApprovalMode,
-  AgentExecutionConfig,
   AgentIconKey,
   AgentInvocationMode,
   AgentModelProvider,
   AgentModelProviderOption,
+  AgentModelTier,
   AgentPresetKey,
   AgentReasoningEffort,
   AgentRuntimeKind,
@@ -14,7 +14,6 @@ import type {
   CreateAgentRequest,
   CustomAgentDraft,
 } from '@/lib/pmTypes';
-import { parseNativeToolStepLimit } from '@/lib/agentRuntime';
 
 const FALLBACK_DEFAULT_MODELS: Record<AgentModelProvider, string> = {
   anthropic: 'claude-opus-4-8',
@@ -36,6 +35,7 @@ export interface CustomAgentFormData {
   preset_key: AgentPresetKey;
   preset_version_key: string;
   runtime_kind: AgentRuntimeKind;
+  model_tier: AgentModelTier;
   supported_modes: AgentInvocationMode[];
   provider: AgentModelProvider;
   model: string;
@@ -65,6 +65,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     preset_key: 'code_builder',
     preset_version_key: 'code_builder_default',
     runtime_kind: 'codex',
+    model_tier: 'large',
     supported_modes: ['autonomous', 'interactive'],
     provider: 'openai',
     model: defaultModelForAgentProvider('openai'),
@@ -95,12 +96,7 @@ export function applyCustomAgentDraftToForm(
   return {
     ...form,
     name: draft.name,
-    runtime_kind: draft.runtime_kind,
-    supported_modes: draft.runtime_kind === 'native_sdk' || draft.runtime_kind === 'codex'
-      ? ['autonomous', 'interactive']
-      : ['autonomous'],
-    provider: draft.provider,
-    model: draft.model?.trim() || defaultModelForAgentProvider(draft.provider),
+    model_tier: draft.model_tier,
     system_prompt: draft.system_prompt,
     allowed_targets: [...draft.allowed_targets],
     allowed_tools: [...draft.allowed_tools],
@@ -109,25 +105,6 @@ export function applyCustomAgentDraftToForm(
     max_concurrent_runs: String(draft.max_concurrent_runs || 1),
     default_invocation_mode: draft.default_invocation_mode,
   };
-}
-
-function buildExecutionConfigPayload(form: CustomAgentFormData): AgentExecutionConfig | undefined {
-  const config: AgentExecutionConfig = {};
-  if (form.runtime_kind === 'codex') {
-    if (form.reasoning_effort) {
-      config.reasoning_effort = form.reasoning_effort;
-    }
-    if (form.provider === 'openai' && form.service_tier) {
-      config.service_tier = form.service_tier;
-    }
-  }
-  if (form.runtime_kind === 'native_sdk') {
-    const maxToolSteps = parseNativeToolStepLimit(form.max_tool_steps);
-    if (maxToolSteps !== undefined) {
-      config.max_tool_steps = maxToolSteps;
-    }
-  }
-  return Object.keys(config).length > 0 ? config : undefined;
 }
 
 function normalizeMaxConcurrentRuns(value: string) {
@@ -142,17 +119,14 @@ function normalizeStringList(values: string[]) {
 export function buildCustomAgentCreatePayload(
   workspaceId: string,
   form: CustomAgentFormData,
-  advancedOpen: boolean,
+  _advancedOpen: boolean,
 ): CreateAgentRequest {
-  const defaultRuntimeKind: AgentRuntimeKind = 'codex';
   const teamIds = form.teamAccessMode === 'specific_teams' ? normalizeStringList(form.team_ids) : [];
   return {
     workspace_id: workspaceId,
     name: form.name.trim(),
     icon_key: form.icon_key,
-    provider: form.provider,
-    model: form.model.trim() || defaultModelForAgentProvider(form.provider),
-    execution_config: buildExecutionConfigPayload(form),
+    model_tier: form.model_tier,
     system_prompt: form.system_prompt.trim() || undefined,
     trigger_mode: 'manual',
     team_ids: teamIds,
@@ -162,13 +136,6 @@ export function buildCustomAgentCreatePayload(
     approval_mode: form.approval_mode,
     max_concurrent_runs: normalizeMaxConcurrentRuns(form.max_concurrent_runs),
     default_invocation_mode: form.default_invocation_mode,
-    ...(advancedOpen
-      ? {
-          runtime_kind: form.runtime_kind,
-        }
-      : form.runtime_kind !== defaultRuntimeKind
-        ? { runtime_kind: form.runtime_kind }
-        : {}),
   };
 }
 

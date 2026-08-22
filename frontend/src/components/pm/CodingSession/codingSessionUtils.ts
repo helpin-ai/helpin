@@ -25,6 +25,14 @@ export function codingSessionEventContent(payload: Record<string, unknown>) {
 
 export function sortCodingSessionEvents(events: CodingSessionEvent[]) {
   return [...events].sort((a, b) => {
+    // REST projections share one global sequence. Live events do not: message
+    // sequence numbers are run-message-local while interaction/runtime events
+    // use their own counters. Across those streams, timestamps are the only
+    // common chronology until the next REST reconciliation arrives.
+    if (!hasPersistedProjectionSource(a) || !hasPersistedProjectionSource(b)) {
+      const timestampDelta = Date.parse(a.timestamp) - Date.parse(b.timestamp);
+      if (Number.isFinite(timestampDelta) && timestampDelta !== 0) return timestampDelta;
+    }
     const sequenceDelta = codingSessionEventSortSequence(a) - codingSessionEventSortSequence(b);
     if (sequenceDelta !== 0) return sequenceDelta;
     return a.sequence_no - b.sequence_no;
@@ -43,6 +51,7 @@ export function isPersistedCodingSessionEvent(event: CodingSessionEvent) {
     || source === 'agent_run_interaction'
     || source === 'agent_run'
   ) return true;
+  if (source) return false;
   return (
     event.id.startsWith('msg:')
     || event.id.startsWith('artifact:')
@@ -52,11 +61,26 @@ export function isPersistedCodingSessionEvent(event: CodingSessionEvent) {
 }
 
 function codingSessionEventSortSequence(event: CodingSessionEvent) {
+  if (hasPersistedProjectionSource(event)) {
+    return event.sequence_no;
+  }
   const payloadSequence = event.payload?.sequence_no;
   if (isRunMessageShapedEvent(event) && typeof payloadSequence === 'number' && Number.isFinite(payloadSequence)) {
     return payloadSequence;
   }
   return event.sequence_no;
+}
+
+function hasPersistedProjectionSource(event: CodingSessionEvent) {
+  const source = typeof event.runtime_metadata?.source === 'string'
+    ? event.runtime_metadata.source.trim()
+    : '';
+  return (
+    source === 'agent_run_message'
+    || source === 'agent_run_artifact'
+    || source === 'agent_run_interaction'
+    || source === 'agent_run'
+  );
 }
 
 function isRunMessageShapedEvent(event: CodingSessionEvent) {
@@ -77,9 +101,41 @@ export function maxPersistedCodingSessionSequence(events: CodingSessionEvent[]) 
 export function upsertCodingSessionEvents(current: CodingSessionEvent[], incoming: CodingSessionEvent[]) {
   const byId = new Map(current.map((event) => [event.id, event]));
   for (const event of incoming) {
-    byId.set(event.id, event);
+    const existing = byId.get(event.id);
+    if (!existing || shouldReplaceCodingSessionEvent(existing, event)) {
+      byId.set(event.id, event);
+    }
   }
-  return sortCodingSessionEvents([...byId.values()]);
+
+  // Realtime interaction events from older servers used a transient ID while
+  // the REST projection used interaction:<id>:<status>. Collapse both shapes
+  // by lifecycle identity and let the durable projection win.
+  const bySemanticIdentity = new Map<string, CodingSessionEvent>();
+  for (const event of byId.values()) {
+    const identity = codingSessionEventSemanticIdentity(event) ?? `event:${event.id}`;
+    const existing = bySemanticIdentity.get(identity);
+    if (!existing || shouldReplaceCodingSessionEvent(existing, event)) {
+      bySemanticIdentity.set(identity, event);
+    }
+  }
+  return sortCodingSessionEvents([...bySemanticIdentity.values()]);
+}
+
+function codingSessionEventSemanticIdentity(event: CodingSessionEvent) {
+  if (!event.type.startsWith('interaction.')) return null;
+  const interactionId = asString(event.payload?.interaction_id);
+  if (!interactionId) return null;
+  const status = asString(event.payload?.status) ?? event.type.slice('interaction.'.length);
+  return `interaction:${interactionId}:${status}`;
+}
+
+function shouldReplaceCodingSessionEvent(
+  existing: CodingSessionEvent,
+  candidate: CodingSessionEvent,
+) {
+  const existingPersisted = isPersistedCodingSessionEvent(existing);
+  const candidatePersisted = isPersistedCodingSessionEvent(candidate);
+  return candidatePersisted || !existingPersisted;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

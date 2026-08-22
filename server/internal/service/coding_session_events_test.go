@@ -11,6 +11,57 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
+func TestCodingSessionResolvedInteractionTimestampUsesResolvedAt(t *testing.T) {
+	createdAt := time.Date(2026, time.August, 21, 19, 50, 0, 0, time.UTC)
+	resolvedAt := createdAt.Add(2 * time.Minute)
+	interaction := model.AgentRunInteraction{
+		Status:     model.AgentRunInteractionStatusResolved,
+		CreatedAt:  createdAt,
+		ResolvedAt: &resolvedAt,
+		UpdatedAt:  resolvedAt.Add(75 * time.Second),
+	}
+
+	got := codingSessionInteractionEventTimestamp(
+		interaction,
+		model.AgentRunInteractionStatusResolved,
+	)
+	if !got.Equal(resolvedAt) {
+		t.Fatalf("resolved interaction timestamp = %s, want resolved_at %s", got, resolvedAt)
+	}
+}
+
+func TestCodingSessionRealtimeInteractionEventMatchesPersistedIdentity(t *testing.T) {
+	resolvedAt := time.Date(2026, time.August, 21, 19, 52, 13, 0, time.UTC)
+	run := &model.AgentRun{ID: "run-1", RuntimeKind: "native_sdk"}
+	interaction := &model.AgentRunInteraction{
+		ID:                   "approval-1",
+		RunID:                run.ID,
+		RuntimeKind:          run.RuntimeKind,
+		InteractionKind:      model.AgentRunInteractionKindApprovalRequest,
+		Status:               model.AgentRunInteractionStatusResolved,
+		RequestSchemaVersion: model.AgentRunInteractionSchemaVersionHelpinV1,
+		RequestPayload:       json.RawMessage(`{"title":"Approve task planning document"}`),
+		ResponsePayload:      json.RawMessage(`{"decision":"approve"}`),
+		ResolvedAt:           &resolvedAt,
+		CreatedAt:            resolvedAt.Add(-time.Minute),
+		UpdatedAt:            resolvedAt.Add(time.Minute),
+	}
+
+	event, ok := codingSessionRealtimeEventFromInteraction(run, interaction)
+	if !ok {
+		t.Fatal("expected a realtime interaction event")
+	}
+	if event.ID != "interaction:approval-1:resolved" {
+		t.Fatalf("event ID = %q, want canonical persisted ID", event.ID)
+	}
+	if !event.Timestamp.Equal(resolvedAt) {
+		t.Fatalf("event timestamp = %s, want %s", event.Timestamp, resolvedAt)
+	}
+	if event.RuntimeMetadata["source"] != "agent_run_interaction_realtime" {
+		t.Fatalf("event source = %#v, want realtime interaction source", event.RuntimeMetadata["source"])
+	}
+}
+
 func TestListCodingSessionEventsSkipsLegacyInteractionArtifactsWhenInteractionsExist(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 

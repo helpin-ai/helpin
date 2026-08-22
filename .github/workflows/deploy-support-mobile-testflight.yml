@@ -1,0 +1,211 @@
+name: Deploy Support Mobile to TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: Optional iOS build number override (positive integer)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: support-mobile-testflight
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-and-upload:
+    name: Build and upload iOS app
+    runs-on: macos-15
+    timeout-minutes: 90
+    environment: testflight
+    env:
+      IOS_BUILD_NUMBER: ${{ inputs.build_number || github.run_number }}
+      VITE_API_URL: ${{ vars.SUPPORT_MOBILE_API_URL || 'https://stage.helpin.ai/api' }}
+      VITE_WEB_APP_URL: ${{ vars.SUPPORT_MOBILE_WEB_APP_URL || 'https://stage.helpin.ai' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate TestFlight credentials
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
+        shell: bash
+        run: |
+          missing=()
+          for name in \
+            APPLE_API_ISSUER \
+            APPLE_API_KEY_ID \
+            APPLE_API_PRIVATE_KEY \
+            IOS_CERTIFICATE \
+            IOS_CERTIFICATE_PASSWORD \
+            IOS_MOBILE_PROVISION; do
+            if [[ -z "${!name}" ]]; then
+              missing+=("$name")
+            fi
+          done
+
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing secrets in the testflight GitHub environment: ${missing[*]}"
+            exit 1
+          fi
+
+          if [[ ! "$IOS_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::The iOS build number must be a positive integer"
+            exit 1
+          fi
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Set up Rust for iOS
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/support-mobile/src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck support-mobile
+        run: pnpm --dir apps/support-mobile run typecheck
+
+      - name: Test support-mobile
+        env:
+          TZ: UTC
+        run: pnpm --dir apps/support-mobile run test
+
+      - name: Test support-core
+        env:
+          TZ: UTC
+        run: pnpm --dir packages/support-core run test
+
+      - name: Prepare App Store Connect API key
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          key_directory="$HOME/.appstoreconnect/private_keys"
+          key_path="$key_directory/AuthKey_${APPLE_API_KEY_ID}.p8"
+          install -d -m 700 "$key_directory"
+          printf '%s\n' "$APPLE_API_PRIVATE_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Show Apple build tools
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Initialize iOS project
+        working-directory: apps/support-mobile
+        run: |
+          if [[ ! -d src-tauri/gen/apple ]]; then
+            pnpm tauri ios init --ci
+          fi
+
+      - name: Build signed App Store IPA
+        working-directory: apps/support-mobile
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_MOBILE_PROVISION: ${{ secrets.IOS_MOBILE_PROVISION }}
+        run: |
+          pnpm tauri ios build \
+            --ci \
+            --export-method app-store-connect \
+            --build-number "$IOS_BUILD_NUMBER"
+
+      - name: Locate IPA
+        id: ipa
+        shell: bash
+        run: |
+          ipa_path=""
+          while IFS= read -r -d '' candidate; do
+            ipa_path="$candidate"
+            break
+          done < <(find apps/support-mobile/src-tauri/gen/apple/build -type f -name '*.ipa' -print0)
+
+          if [[ -z "$ipa_path" ]]; then
+            echo "::error::Tauri completed without producing an IPA"
+            exit 1
+          fi
+
+          echo "path=$ipa_path" >> "$GITHUB_OUTPUT"
+          echo "Found IPA: $ipa_path"
+
+      - name: Validate IPA with App Store Connect
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          IPA_PATH: ${{ steps.ipa.outputs.path }}
+        run: |
+          xcrun altool \
+            --validate-app \
+            --type ios \
+            --file "$IPA_PATH" \
+            --apiKey "$APPLE_API_KEY_ID" \
+            --apiIssuer "$APPLE_API_ISSUER"
+
+      - name: Upload IPA to TestFlight
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          IPA_PATH: ${{ steps.ipa.outputs.path }}
+        run: |
+          xcrun altool \
+            --upload-app \
+            --type ios \
+            --file "$IPA_PATH" \
+            --apiKey "$APPLE_API_KEY_ID" \
+            --apiIssuer "$APPLE_API_ISSUER"
+
+          {
+            echo "## TestFlight upload submitted"
+            echo
+            echo "- Git ref: \`$GITHUB_REF_NAME\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- iOS build number: \`$IOS_BUILD_NUMBER\`"
+            echo "- API: \`$VITE_API_URL\`"
+            echo
+            echo "Apple will process the build before it appears in App Store Connect."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain signed IPA
+        if: ${{ always() && steps.ipa.outputs.path != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: helpin-ios-${{ github.run_number }}
+          path: ${{ steps.ipa.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove App Store Connect private key
+        if: ${{ always() }}
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"

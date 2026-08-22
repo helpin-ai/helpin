@@ -3,7 +3,7 @@ import { File01Icon, FileCodeIcon, CheckmarkCircle02Icon, GitPullRequestIcon, Bo
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { AgentRunArtifact } from '@/lib/pmTypes';
-import { ARTIFACT_TYPE_LABELS } from './agentRunConstants';
+import { agentRunArtifactLabel } from './agentRunConstants';
 import { automationService } from '@/lib/services/automationService';
 
 const ARTIFACT_ICONS: Record<string, React.ReactNode> = {
@@ -41,7 +41,7 @@ interface Props {
 }
 
 export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, maxContentHeight = 'max-h-32' }: Props) {
-  const label = ARTIFACT_TYPE_LABELS[artifact.artifact_type] ?? artifact.artifact_type.replace(/_/g, ' ');
+  const label = agentRunArtifactLabel(artifact.artifact_type);
   const runPlan = artifact.artifact_type === 'run_plan' ? parseRunPlanArtifact(artifact.inline_content) : null;
   const reviewFindings = artifact.artifact_type === 'review_findings' ? parseReviewFindingsArtifact(artifact.inline_content) : null;
   const reviewDecision = artifact.artifact_type === 'review_decision' ? parseReviewDecisionArtifact(artifact.inline_content) : null;

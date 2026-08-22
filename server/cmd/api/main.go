@@ -14,12 +14,14 @@ import (
 	"syscall"
 	"time"
 
+	firebase "firebase.google.com/go/v4"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"go.temporal.io/api/serviceerror"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	tclient "go.temporal.io/sdk/client"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/api/option"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -156,6 +158,7 @@ func main() {
 			&model.UserPasskey{},
 			&model.PasswordResetToken{},
 			&model.EmailVerificationToken{},
+			&model.OAuthMobileHandoff{},
 			&model.Organization{},
 			&model.OrganizationMember{},
 			&model.Workspace{},
@@ -318,6 +321,7 @@ func main() {
 			&model.NotificationPreference{},
 			&model.UserNotificationSettings{},
 			&model.EntityFollower{},
+			&model.PushDevice{},
 			// CRM module
 			&model.CRMContact{},
 			&model.CRMCompany{},
@@ -766,6 +770,7 @@ func main() {
 	notificationPrefRepo := repository.NewNotificationPreferenceRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
 	userNotifSettingsRepo := repository.NewUserNotificationSettingsRepository(db)
+	pushDeviceRepo := repository.NewPushDeviceRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
 	crmCompanyTimelineRepo := repository.NewCRMCompanyTimelineRepository(db)
@@ -799,12 +804,14 @@ func main() {
 	// Initialize services.
 	passwordResetRepo := repository.NewPasswordResetTokenRepository(db)
 	emailVerificationRepo := repository.NewEmailVerificationTokenRepository(db)
+	oauthMobileHandoffRepo := repository.NewOAuthMobileHandoffRepository(db)
 	passkeySessionCache := newPasskeySessionCache(redisClient, podID)
 	passkeyWebAuthnClient, err := appwebauthn.NewClient(cfg.WebAuthnRPID, cfg.WebAuthnRPOrigins, passkeySessionCache)
 	if err != nil {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService.SetOAuthMobileHandoffRepository(oauthMobileHandoffRepo)
 	authService.SetCustomerIOIdentityService(customerIOIdentityService)
 	authService.SetProductAnalyticsService(productAnalytics)
 	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
@@ -819,6 +826,20 @@ func main() {
 	pmAutomationService.SetHealthObserver(automationHealthService)
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, appEmailClient, cfg.AppBaseURL)
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
+	pushDeviceService := service.NewPushDeviceService(pushDeviceRepo)
+	var fcmClient service.FCMClient
+	if cfg.FCMServiceAccountJSON != "" {
+		fbApp, err := firebase.NewApp(context.Background(), nil, option.WithCredentialsJSON([]byte(cfg.FCMServiceAccountJSON)))
+		if err != nil {
+			slog.Error("failed to initialize firebase app, mobile push disabled", "error", err)
+		} else if msgClient, err := fbApp.Messaging(context.Background()); err != nil {
+			slog.Error("failed to initialize firebase messaging client, mobile push disabled", "error", err)
+		} else {
+			fcmClient = service.NewFirebaseFCMClient(msgClient)
+			slog.Info("firebase cloud messaging initialized")
+		}
+	}
+	pushSenderService := service.NewPushSenderService(pushDeviceRepo, fcmClient)
 	followerService := service.NewFollowerService(followerRepo)
 	pmTaskService := service.NewPMTaskService(pmTaskRepo, workspaceRepo, pmWorkflowRepo, pmEpicRepo, pmSprintRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmAttachmentRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
 	pmTaskService.SetProductAnalyticsService(productAnalytics)
@@ -910,7 +931,18 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
-	supportLLMProvider := service.NewMeteredLLMProvider(supportLLMRouter, aiUsageMeter)
+	completionRoutes := service.DefaultAICompletionRouteRegistry()
+	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
+		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
+	}
+	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
+		fatalWithSentry("validate AI completion providers", errors.Join(issues...))
+	}
+	agentTierResolver := service.NewAgentModelTierResolver(pricingCatalog, supportLLMRouter.HasChatProvider)
+	if issues := agentTierResolver.ValidateSelectable(); len(issues) != 0 {
+		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
+	}
+	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes)
 	supportInboxTriageService := service.NewSupportInboxTriageService(
 		supportInboxService,
 		supportConversationTriageRepo,
@@ -1018,7 +1050,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	agentService.SetProductAnalyticsService(productAnalytics)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
@@ -1028,7 +1060,9 @@ func main() {
 		SetWebsocketPublisher(wsPublisher)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
+	supportInboxService.SetPushSenderService(pushSenderService)
 	emailFallbackService.SetNotificationService(notificationService)
+	emailFallbackService.SetPushSenderService(pushSenderService)
 
 	// Automation Rule Engine — wired after agent + story services to break circular deps.
 	ruleEngine := service.NewAutomationRuleEngine(
@@ -1083,18 +1117,8 @@ func main() {
 		slog.Info("Anthropic API not configured — orchestration disabled")
 	}
 
-	// Initialize LLM provider for docs translation generation, signal detection, and deal automation.
-	var llmProvider llm.Provider
-	switch cfg.CRMLLMProvider {
-	case "openai":
-		llmProvider = llm.NewOpenAIProvider(cfg.CRMLLMAPIKey, cfg.CRMLLMBaseURL, cfg.CRMLLMModel)
-	default:
-		llmProvider = llm.NewClaudeProvider(cfg.AnthropicAPIKey)
-	}
-	llmProvider = service.NewMeteredLLMProvider(llmProvider, aiUsageMeter)
-	if llmProvider != nil {
-		slog.Info("LLM provider configured for signal detection")
-	}
+	// Every product-owned direct completion shares the validated route registry.
+	var llmProvider llm.Provider = supportLLMProvider
 
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
 	docsAPIReferenceService := service.NewDocsAPIReferenceService(docsAPIReferenceRepo, docsSpaceRepo)
@@ -1725,7 +1749,7 @@ func main() {
 		helpcenterAnswerRepo,
 		supportEmbeddingProvider,
 		cfg.OpenAIEmbeddingModel,
-		supportLLMRouter,
+		supportLLMProvider,
 		helpcenterAnswerProvider,
 		helpcenterAnswerModel,
 		redisClient,
@@ -1739,10 +1763,11 @@ func main() {
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
 		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
-			ClientID:     cfg.GoogleAuthClientID,
-			ClientSecret: cfg.GoogleAuthClientSecret,
-			RedirectURL:  cfg.GoogleAuthRedirectURL,
-			AppBaseURL:   cfg.AppBaseURL,
+			ClientID:         cfg.GoogleAuthClientID,
+			ClientSecret:     cfg.GoogleAuthClientSecret,
+			RedirectURL:      cfg.GoogleAuthRedirectURL,
+			AppBaseURL:       cfg.AppBaseURL,
+			MobileAppBaseURL: cfg.MobileAppBaseURL,
 		}),
 		Passkey:             handler.NewPasskeyHandler(passkeyService),
 		Organization:        handler.NewOrganizationHandler(orgService),
@@ -1792,6 +1817,7 @@ func main() {
 		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
+		PushDevice:          handler.NewPushDeviceHandler(pushDeviceService),
 		CRMContact:          handler.NewCRMContactHandler(crmContactService),
 		CRMCompany:          handler.NewCRMCompanyHandler(crmCompanyService),
 		CRMDeal:             handler.NewCRMDealHandler(crmDealService),

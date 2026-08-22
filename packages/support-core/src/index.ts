@@ -1,6 +1,7 @@
 export * from './auth-api'
 export * from './session'
 export * from './support-presence-store'
+export * from './support-pages'
 export * from './support-query-cache'
 export * from './support-query-keys'
 export * from './support-realtime-store'

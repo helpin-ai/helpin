@@ -503,6 +503,7 @@ type EmailFallbackService struct {
 	attachmentDownloader   supportEmailAttachmentDownloader
 	inboundAttachmentStore supportEmailInboundAttachmentStore
 	notificationService    *NotificationService
+	pushSenderService      *PushSenderService
 	replyDomain            string
 	appBaseURL             string
 	logger                 *slog.Logger
@@ -537,6 +538,18 @@ func (s *EmailFallbackService) SetNotificationService(notificationService *Notif
 		return nil
 	}
 	s.notificationService = notificationService
+	return s
+}
+
+// SetPushSenderService injects the push sender used to fan out mobile push
+// notifications for customer replies routed through the email fallback
+// path. Safe to leave unset (nil) — ProcessSupportCustomerReplyNotification
+// tolerates a nil *PushSenderService.
+func (s *EmailFallbackService) SetPushSenderService(ps *PushSenderService) *EmailFallbackService {
+	if s == nil {
+		return nil
+	}
+	s.pushSenderService = ps
 	return s
 }
 
@@ -1184,7 +1197,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		return txErr
 	}
 
-	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, content, senderName)
+	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, content, senderName)
 
 	s.logger.InfoContext(ctx, "postmark inbound created support message",
 		"message_id", strings.TrimSpace(payload.MessageID),
@@ -3513,7 +3526,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		}
 	}
 
-	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conversation, content, customerName)
+	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conversation, content, customerName)
 
 	if s.wsPublisher != nil {
 		s.wsPublisher.Publish(websocket.Event{

@@ -812,6 +812,149 @@ describe('buildCodingSessionStreamState', () => {
     expect(renderedText).not.toContain('approval request');
   });
 
+  it('timestamps an approval decision at resolved_at instead of a later projection update', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'interaction:approval-1:resolved',
+        type: 'interaction.resolved',
+        sequence_no: 13,
+        timestamp: '2026-08-21T19:53:28Z',
+        payload: {
+          interaction_id: 'approval-1',
+          interaction_kind: 'approval_request',
+          status: 'resolved',
+          request_schema_version: 'helpin.v1',
+          request_payload: { title: 'Approve task planning document' },
+          response_payload: { decision: 'approve' },
+          resolved_at: '2026-08-21T19:52:13Z',
+        },
+        runtime_metadata: { source: 'agent_run_interaction' },
+      }),
+    ]);
+
+    expect(state.transcript_messages).toHaveLength(1);
+    expect(state.transcript_messages[0].timestamp).toBe('2026-08-21T19:52:13Z');
+  });
+
+  it('keeps an approval decision before the assistant messages resumed by that decision', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'interaction:approval-1:resolved',
+        type: 'interaction.resolved',
+        sequence_no: 23,
+        timestamp: '2026-08-21T19:52:13Z',
+        payload: {
+          interaction_id: 'approval-1',
+          interaction_kind: 'approval_request',
+          status: 'resolved',
+          request_schema_version: 'helpin.v1',
+          summary: 'Approve task planning document',
+          response_payload: { decision: 'approve' },
+          resolved_at: '2026-08-21T19:52:13Z',
+        },
+        runtime_metadata: { source: 'agent_run_interaction' },
+      }),
+      buildEvent({
+        id: 'msg:approval-resume',
+        type: 'user.message.completed',
+        sequence_no: 24,
+        timestamp: '2026-08-21T19:52:14Z',
+        payload: {
+          message_id: 'approval-resume',
+          role: 'user',
+          message_type: 'approval',
+          sequence_no: 13,
+          content: 'Approved task planning document.',
+        },
+        runtime_metadata: { source: 'agent_run_message' },
+      }),
+      buildEvent({
+        id: 'msg:assistant-resumed',
+        type: 'assistant.message.completed',
+        sequence_no: 27,
+        timestamp: '2026-08-21T19:52:34Z',
+        payload: {
+          message_id: 'assistant-resumed',
+          role: 'assistant',
+          sequence_no: 14,
+          content: 'Approved. I will persist the plan now.',
+        },
+        runtime_metadata: { source: 'agent_run_message' },
+      }),
+      buildEvent({
+        id: 'msg:assistant-final',
+        type: 'assistant.message.completed',
+        sequence_no: 33,
+        timestamp: '2026-08-21T19:53:22Z',
+        payload: {
+          message_id: 'assistant-final',
+          role: 'assistant',
+          sequence_no: 16,
+          content: 'Persisted the approved planning document.',
+        },
+        runtime_metadata: { source: 'agent_run_message' },
+      }),
+    ]);
+
+    expect(state.transcript_messages.map((message) => [message.message_type, message.content])).toEqual([
+      ['approval_request_resolution', 'Approved:\nApprove task planning document'],
+      [undefined, 'Approved. I will persist the plan now.'],
+      [undefined, 'Persisted the approved planning document.'],
+    ]);
+  });
+
+  it('settles the active approval tool as soon as its interaction resolves', () => {
+    const approvalTool = {
+      tool_call_id: 'tool-approval-1',
+      tool_name: 'mcp__helpin__request_approval',
+      args_text: '{"title":"Approve task planning document"}',
+      status: 'running' as const,
+    };
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'interaction:approval-1:resolved',
+        type: 'interaction.resolved',
+        sequence_no: 13,
+        timestamp: '2026-08-21T19:52:13Z',
+        payload: {
+          interaction_id: 'approval-1',
+          interaction_kind: 'approval_request',
+          status: 'resolved',
+          request_schema_version: 'helpin.v1',
+          request_payload: { title: 'Approve task planning document' },
+          response_payload: { decision: 'approve' },
+          resolved_at: '2026-08-21T19:52:13Z',
+        },
+      }),
+    ], {
+      live_assistant_message: {
+        message_id: 'assistant-approval-1',
+        content: '',
+        status: 'streaming',
+        tool_calls: [approvalTool],
+      },
+      live_turn_segments: [{
+        segment_id: approvalTool.tool_call_id,
+        kind: 'tool_call',
+        tool_call: approvalTool,
+      }],
+    });
+
+    expect(state.live_assistant_message?.tool_calls[0]).toMatchObject({
+      tool_call_id: approvalTool.tool_call_id,
+      status: 'completed',
+      completed_at: '2026-08-21T19:52:13Z',
+    });
+    expect(state.live_turn_segments[0]).toMatchObject({
+      kind: 'tool_call',
+      tool_call: {
+        tool_call_id: approvalTool.tool_call_id,
+        status: 'completed',
+        completed_at: '2026-08-21T19:52:13Z',
+      },
+    });
+  });
+
   it('falls back to tool_input for persisted historical tool segments', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({

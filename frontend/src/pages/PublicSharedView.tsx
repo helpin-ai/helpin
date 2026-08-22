@@ -77,7 +77,7 @@ export function PublicSharedContent({ resource }: { resource: PublicSharedResour
 		<div className="mb-8 border-b border-[#ece9e2] pb-6 dark:border-[#37352f]">
 			<p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Agent run</p>
 			<div className="mt-2 flex items-start gap-4"><h1 className="min-w-0 flex-1 text-2xl font-semibold tracking-tight">{run.title || 'Shared agent run'}</h1>{user && openPath ? <a href={openPath} className="shrink-0 rounded-full bg-[#1c1b19] px-4 py-2 text-sm font-medium text-white dark:bg-[#eeeae1] dark:text-[#1c1b19]">Open in Helpin</a> : null}</div>
-			{run.session ? <p className="mt-2 text-sm text-muted-foreground">{run.session.status}{run.session.runtime_kind ? ` · ${run.session.runtime_kind}` : ''}</p> : null}
+			{run.session ? <p className="mt-2 text-sm text-muted-foreground">{run.session.status}</p> : null}
 		</div>
 		<div className="space-y-5">
 			{run.events.map((event) => {

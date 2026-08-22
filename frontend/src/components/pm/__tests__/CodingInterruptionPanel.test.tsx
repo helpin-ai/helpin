@@ -269,7 +269,8 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(container.textContent).toContain('browser-based auth instead of a device code');
+    expect(container.textContent).toContain('Continue sign-in in your browser to resume this session.');
+    expect(container.textContent).not.toContain('Codex');
     expect(container.textContent).toContain('Continue in browser');
     expect(container.textContent).toContain('Cancel sign-in');
     expect(container.textContent).not.toContain('Open verification page');

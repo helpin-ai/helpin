@@ -207,7 +207,6 @@ function RunningRunHero({
 }) {
   const accent = AGENT_ACCENTS[normalizeAgentName(agentNameForRun(run))] ?? DEFAULT_ACCENT;
   const agentName = agentNameForRun(run);
-  const role = run.runtime_kind === 'native_sdk' ? 'default role' : (run.runtime_kind || '').replaceAll('_', ' ') || 'default role';
   const targetTag = targetTypeLabel(run.target_type);
   const activity = (run.execution_stage?.trim()) || 'working';
   const elapsed = runDuration(run) ?? 'running';
@@ -219,7 +218,6 @@ function RunningRunHero({
           <div className="flex min-w-0 items-baseline gap-1.5 text-[13px] leading-5">
             <span className={cn('font-medium', accent.text)}>{agentName}</span>
             <span className="text-muted-foreground">·</span>
-            <span className="font-medium text-foreground">{role}</span>
             <span className="text-[11px] font-normal text-muted-foreground">{targetTag}</span>
           </div>
         </div>

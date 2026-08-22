@@ -63,10 +63,14 @@ func TestMeetingIntelligenceFallsBackAfterReasoningOnlyResponse(t *testing.T) {
 		t.Fatalf("requests = %d, want primary and fallback", len(provider.requests))
 	}
 	primary, fallback := provider.requests[0], provider.requests[1]
-	if primary.Provider != meetingIntelligenceLLMProvider || primary.Model != meetingIntelligenceLLMModel {
+	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureMeetingIntelligence, "")
+	if !ok {
+		t.Fatal("meeting intelligence route policy is missing")
+	}
+	if primary.Provider != policy.Primary.Provider || primary.Model != policy.Primary.Model {
 		t.Fatalf("primary route = %s/%s", primary.Provider, primary.Model)
 	}
-	if fallback.Provider != meetingIntelligenceFallbackProvider || fallback.Model != meetingIntelligenceFallbackModel {
+	if fallback.Provider != policy.Fallbacks[0].Provider || fallback.Model != policy.Fallbacks[0].Model {
 		t.Fatalf("fallback route = %s/%s", fallback.Provider, fallback.Model)
 	}
 	for index, request := range provider.requests {
@@ -84,8 +88,8 @@ func TestMeetingIntelligenceFallsBackAfterReasoningOnlyResponse(t *testing.T) {
 		}
 	}
 	if len(provider.metering) != 2 ||
-		!strings.HasSuffix(provider.metering[0].IdempotencyKey, ":v3:primary") ||
-		!strings.HasSuffix(provider.metering[1].IdempotencyKey, ":v3:fallback") {
+		!strings.HasSuffix(provider.metering[0].IdempotencyKey, ":v3:route:0") ||
+		!strings.HasSuffix(provider.metering[1].IdempotencyKey, ":v3:route:1") {
 		t.Fatalf("metering = %#v", provider.metering)
 	}
 }

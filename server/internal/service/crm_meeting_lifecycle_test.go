@@ -430,8 +430,12 @@ func TestMeetingProcessingPersistsCanonicalArtifactsAndDeletesProviderCopy(t *te
 	if err := processor.Process(context.Background(), meeting.WorkspaceID, meeting.ID); err != nil {
 		t.Fatalf("process meeting: %v", err)
 	}
-	if intelligenceRequest.Provider != meetingIntelligenceLLMProvider || intelligenceRequest.Model != meetingIntelligenceLLMModel {
-		t.Fatalf("meeting intelligence route = %s/%s, want %s/%s", intelligenceRequest.Provider, intelligenceRequest.Model, meetingIntelligenceLLMProvider, meetingIntelligenceLLMModel)
+	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureMeetingIntelligence, "")
+	if !ok {
+		t.Fatal("meeting intelligence route policy is missing")
+	}
+	if intelligenceRequest.Provider != policy.Primary.Provider || intelligenceRequest.Model != policy.Primary.Model {
+		t.Fatalf("meeting intelligence route = %s/%s, want %s/%s", intelligenceRequest.Provider, intelligenceRequest.Model, policy.Primary.Provider, policy.Primary.Model)
 	}
 	detailMeeting, err := repo.GetByID(context.Background(), meeting.WorkspaceID, meeting.ID)
 	if err != nil || detailMeeting.Status != model.CRMMeetingStatusReady || detailMeeting.SummaryStatus != model.CRMMeetingSummaryReady {

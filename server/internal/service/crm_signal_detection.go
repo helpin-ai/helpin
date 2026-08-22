@@ -61,7 +61,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 	}
 
 	payload := payloads[0]
-	ctx = WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    payload.WorkspaceID,
 		FeatureKey:     BillingFeatureCRMSignalDetection,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(payloadJSON, payload.WorkspaceID, BillingFeatureCRMSignalDetection, payload.SourceType, payload.SourceID, derefString(payload.SourceThreadID)),
@@ -70,15 +70,15 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 			"source_id":   payload.SourceID,
 			"thread_id":   derefString(payload.SourceThreadID),
 		},
-	})
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
-		SystemPrompt: signalDetectionSystemPrompt,
-		Messages: []llm.Message{
-			{Role: "user", Content: string(payloadJSON)},
+		Chat: llm.ChatRequest{
+			SystemPrompt: signalDetectionSystemPrompt,
+			Messages: []llm.Message{
+				{Role: "user", Content: string(payloadJSON)},
+			},
+			Temperature: 0.1,
+			MaxTokens:   4096,
+			JSONMode:    true,
 		},
-		Temperature: 0.1,
-		MaxTokens:   4096,
-		JSONMode:    true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("LLM signal detection: %w", err)

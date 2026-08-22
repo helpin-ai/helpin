@@ -507,7 +507,7 @@ func (s *DocsHelpcenterTranslationService) GenerateArticleTranslationDraft(ctx c
 		return nil, fmt.Errorf("marshal translation segment payload: %w", err)
 	}
 
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    doc.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleTranslation,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(sourceJSON, doc.WorkspaceID, BillingFeatureDocsArticleTranslation, documentID, locale),
@@ -515,8 +515,8 @@ func (s *DocsHelpcenterTranslationService) GenerateArticleTranslationDraft(ctx c
 			"document_id": documentID,
 			"locale":      locale,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: `You translate structured help-center article segments for a requested locale.
+		Chat: llm.ChatRequest{
+			SystemPrompt: `You translate structured help-center article segments for a requested locale.
 Return strict JSON with shape {"segments":[{"id":"...","translated_text":"..."}]}.
 Rules:
 - Preserve every segment id exactly.
@@ -526,11 +526,12 @@ Rules:
 - Keep URLs, code-like tokens, and technical placeholders untouched.
 - Do not translate proper nouns, brand names, product names, or widely recognized technical terms (e.g., API, webhook, OAuth, SDK, JSON, REST, URL, HTTP).
 - Do not include markdown fences or commentary.`,
-		Messages: []llm.Message{
-			{Role: "user", Content: string(sourceJSON)},
+			Messages: []llm.Message{
+				{Role: "user", Content: string(sourceJSON)},
+			},
+			Temperature: 0.2,
+			JSONMode:    true,
 		},
-		Temperature: 0.2,
-		JSONMode:    true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate article translation draft: %w", err)
@@ -1086,7 +1087,7 @@ func (s *DocsHelpcenterTranslationService) GenerateSpaceTranslation(ctx context.
 		"name":          space.Name,
 	})
 
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    space.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleTranslation,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, space.WorkspaceID, BillingFeatureDocsArticleTranslation, "space", spaceID, locale),
@@ -1094,17 +1095,18 @@ func (s *DocsHelpcenterTranslationService) GenerateSpaceTranslation(ctx context.
 			"space_id": spaceID,
 			"locale":   locale,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: `You translate metadata for a public help center / knowledge base.
+		Chat: llm.ChatRequest{
+			SystemPrompt: `You translate metadata for a public help center / knowledge base.
 Return strict JSON with shape {"name":"...","description":"..."}.
 Rules:
 - Translate the name and description into the target locale.
 - If description is empty, generate a short helpful description (1-2 sentences) based on the name, suitable for a public help center space.
 - Do not translate proper nouns, brand names, product names, or widely recognized technical terms.
 - Do not include markdown fences or commentary.`,
-		Messages:    []llm.Message{{Role: "user", Content: string(payload)}},
-		Temperature: 0.2,
-		JSONMode:    true,
+			Messages:    []llm.Message{{Role: "user", Content: string(payload)}},
+			Temperature: 0.2,
+			JSONMode:    true,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate space translation: %w", err)
@@ -1194,7 +1196,7 @@ func (s *DocsHelpcenterTranslationService) GenerateCollectionTranslation(ctx con
 		"space_name":    space.Name,
 	})
 
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    space.WorkspaceID,
 		FeatureKey:     BillingFeatureDocsArticleTranslation,
 		IdempotencyKey: aiUsagePayloadIdempotencyKey(payload, space.WorkspaceID, BillingFeatureDocsArticleTranslation, "collection", collectionID, locale),
@@ -1202,17 +1204,18 @@ func (s *DocsHelpcenterTranslationService) GenerateCollectionTranslation(ctx con
 			"collection_id": collectionID,
 			"locale":        locale,
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: `You translate metadata for a public help center / knowledge base.
+		Chat: llm.ChatRequest{
+			SystemPrompt: `You translate metadata for a public help center / knowledge base.
 Return strict JSON with shape {"name":"...","description":"..."}.
 Rules:
 - Translate the name and description into the target locale.
 - If description is empty, generate a short helpful description (1-2 sentences) based on the name and parent space name, suitable for a public help center collection.
 - Do not translate proper nouns, brand names, product names, or widely recognized technical terms.
 - Do not include markdown fences or commentary.`,
-		Messages:    []llm.Message{{Role: "user", Content: string(payload)}},
-		Temperature: 0.2,
-		JSONMode:    true,
+			Messages:    []llm.Message{{Role: "user", Content: string(payload)}},
+			Temperature: 0.2,
+			JSONMode:    true,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generate collection translation: %w", err)

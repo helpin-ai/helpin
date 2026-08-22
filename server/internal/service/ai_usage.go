@@ -373,23 +373,9 @@ func (s *AIUsageService) toolRate(key string) (int64, bool) {
 	return 0, false
 }
 
-func requiredBuiltInTier(taskNature string) (aiusage.Tier, bool) {
-	switch strings.ToLower(strings.TrimSpace(taskNature)) {
-	case "planning", "coding", "review":
-		return aiusage.TierLarge, true
-	case "custom", "custom_agent":
-		return "", false
-	default:
-		return aiusage.TierSmall, true
-	}
-}
-
 func validateAIUsageOperation(operationKey, taskNature string, resolved aiusage.ResolvedRoute) error {
 	switch strings.ToLower(strings.TrimSpace(operationKey)) {
 	case "":
-		if required, enforced := requiredBuiltInTier(taskNature); enforced && resolved.Tier != required {
-			return fmt.Errorf("%w: %s tasks require %s", model.ErrModelUnavailableUnderPricing, taskNature, required)
-		}
 		return nil
 	case AIUsageOperationMediaEnrichment:
 		if resolved.Provider != mediaEnrichmentProvider || resolved.CanonicalModel != mediaEnrichmentCanonicalModel || resolved.Route != mediaEnrichmentRoute || resolved.Tier != aiusage.TierMedium {

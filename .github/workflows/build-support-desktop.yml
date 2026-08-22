@@ -1,0 +1,113 @@
+name: Build Support Desktop Artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - develop
+    paths:
+      - ".github/workflows/build-support-desktop.yml"
+      - "apps/support-desktop/**"
+      - "packages/support-core/**"
+      - "packages/widget-core/**"
+      - "packages/shared/**"
+      - "frontend/src/components/support/**"
+      - "frontend/src/hooks/queries/useSupport.ts"
+      - "frontend/src/lib/supportInboxFilters.ts"
+      - "frontend/src/stores/supportInboxStore.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: support-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  VITE_API_URL: ${{ vars.SUPPORT_DESKTOP_API_URL || 'https://api.helpin.ai/api' }}
+  VITE_WEB_BASE_URL: ${{ vars.SUPPORT_DESKTOP_WEB_BASE_URL || 'https://app.helpin.ai' }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            label: macOS-arm64
+            artifact: helpin-support-macos-arm64
+          - os: windows-latest
+            label: Windows-x64
+            artifact: helpin-support-windows-x64
+          - os: ubuntu-24.04
+            label: Linux-x64
+            artifact: helpin-support-linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/support-desktop/src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared desktop dependencies
+        run: pnpm --filter @helpin-ai/widget-core build
+
+      - name: Verify desktop frontend
+        run: pnpm --dir apps/support-desktop run build
+
+      - name: Build native desktop bundles
+        env:
+          # Internal macOS test builds use an ad-hoc identity. Production
+          # distribution will replace this with Developer ID + notarization.
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
+        run: pnpm --dir apps/support-desktop run tauri:build
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-${{ github.run_number }}
+          path: |
+            apps/support-desktop/src-tauri/target/release/bundle/**/*.dmg
+            apps/support-desktop/src-tauri/target/release/bundle/**/*.msi
+            apps/support-desktop/src-tauri/target/release/bundle/**/*-setup.exe
+            apps/support-desktop/src-tauri/target/release/bundle/**/*.deb
+            apps/support-desktop/src-tauri/target/release/bundle/**/*.AppImage
+            apps/support-desktop/src-tauri/target/release/bundle/**/*.rpm
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

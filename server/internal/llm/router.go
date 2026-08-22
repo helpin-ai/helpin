@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -29,6 +30,30 @@ func NewRouter(
 	}
 }
 
+// ConfiguredChatProviders returns the normalized configured provider names in stable order.
+func (r *Router) ConfiguredChatProviders() []string {
+	if r == nil {
+		return nil
+	}
+	providers := make([]string, 0, len(r.chatProviders))
+	for provider, implementation := range r.chatProviders {
+		if implementation != nil {
+			providers = append(providers, normalizeProviderName(provider))
+		}
+	}
+	sort.Strings(providers)
+	return providers
+}
+
+// HasChatProvider reports whether a normalized provider is configured.
+func (r *Router) HasChatProvider(provider string) bool {
+	if r == nil {
+		return false
+	}
+	implementation := r.chatProviders[normalizeProviderName(provider)]
+	return implementation != nil
+}
+
 // ChatCompletion routes a chat completion request to the requested provider.
 func (r *Router) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
 	if r == nil {
@@ -40,7 +65,10 @@ func (r *Router) ChatCompletion(ctx context.Context, req ChatRequest) (*ChatResp
 	}
 	provider, ok := r.chatProviders[providerName]
 	if !ok || provider == nil {
-		return nil, fmt.Errorf("chat provider %q is not configured", providerName)
+		return nil, &ProviderError{
+			Provider: providerName, Operation: "chat_completion", Kind: ProviderErrorUnavailable,
+			Message: "chat provider is not configured",
+		}
 	}
 	req.Provider = providerName
 	return provider.ChatCompletion(ctx, req)
@@ -57,7 +85,10 @@ func (r *Router) ResolvePricingIdentity(req ChatRequest) (ChatPricingIdentity, e
 	}
 	provider, ok := r.chatProviders[providerName]
 	if !ok || provider == nil {
-		return ChatPricingIdentity{}, fmt.Errorf("chat provider %q is not configured", providerName)
+		return ChatPricingIdentity{}, &ProviderError{
+			Provider: providerName, Operation: "pricing_identity", Kind: ProviderErrorUnavailable,
+			Message: "chat provider is not configured",
+		}
 	}
 	req.Provider = providerName
 	resolver, ok := provider.(PricingIdentityResolver)

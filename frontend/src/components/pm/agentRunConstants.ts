@@ -70,6 +70,7 @@ export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   file_bundle: 'File Bundle',
   handoff_note: 'Handoff Note',
   opencode_config: 'Config',
+  opencode_prompt: 'Prompt',
   opencode_stdout: 'Output (stdout)',
   opencode_stderr: 'Output (stderr)',
   codex_config: 'Config',
@@ -87,3 +88,8 @@ export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
   browser_screenshot: 'Browser Screenshot',
   browser_recording: 'Browser Recording',
 };
+
+export function agentRunArtifactLabel(artifactType: string): string {
+  const publicType = artifactType.replace(/^(?:codex|opencode)_/, '');
+  return ARTIFACT_TYPE_LABELS[artifactType] ?? publicType.replace(/_/g, ' ');
+}

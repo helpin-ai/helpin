@@ -111,6 +111,7 @@ func TestApproveEpicSpecIsIdempotentForAlreadyApprovedSpec(t *testing.T) {
 			agent_id TEXT NOT NULL,
 			target_type TEXT NOT NULL,
 			target_id TEXT NOT NULL,
+			model_tier TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL,
 			pause_reason TEXT,
 			output_summary BLOB,

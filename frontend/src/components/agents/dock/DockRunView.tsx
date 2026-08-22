@@ -5,11 +5,15 @@ import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
 import { PendingInteractionCard } from './PendingInteractionCard';
 import { ApprovalAttentionBanner } from './ApprovalAttentionBanner';
-import { StreamingStatusText } from '@/components/agents/StreamingStatusText';
-import { deriveLiveStatusLabel, ScrollToLatestButton } from '@/components/agents/transcript';
+import { ScrollToLatestButton } from '@/components/agents/transcript';
+import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { dockChatService } from '@/lib/services/dockChatService';
 import type { CodingSessionInteraction } from '@/lib/pmTypes';
 import type { DockRunSummary } from '@/lib/dockTypes';
+import { AgentLiveStatus } from './AgentLiveStatus';
+import { resolveAgentLiveProgress } from './agentProgress';
+import { hasAuthoritativeDockRuntimeTimeline } from './dockChatTimeline';
+import { isDockTranscriptStreaming } from './dockChatState';
 import { useAgentRunStream, type AgentRunStreamFetchers } from './useAgentRunStream';
 
 interface DockRunViewProps {
@@ -21,8 +25,6 @@ interface DockRunViewProps {
   onRunContinued: (runId: string) => void;
 }
 
-const ACTIVE_STATUSES = new Set(['queued', 'running', 'paused']);
-
 export function DockRunView({
   workspaceId,
   summary,
@@ -32,7 +34,6 @@ export function DockRunView({
   onRunContinued,
 }: DockRunViewProps) {
   const run = summary.run;
-  const active = ACTIVE_STATUSES.has(run.status);
   const [fallbackInteraction, setFallbackInteraction] = useState<CodingSessionInteraction | null>(null);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -52,26 +53,47 @@ export function DockRunView({
     getSnapshot: (ws, runId) => dockChatService.getRunSnapshot(ws, runId),
     listEvents: (ws, runId, after) => dockChatService.listRunEvents(ws, runId, after),
   }), []);
-  const { streamState, pendingInteraction, refetch, clearPendingInteraction, loading } =
-    useAgentRunStream(workspaceId, run.id, true, active ? 5_000 : 0, fetchers);
+  const {
+    session,
+    currentPlan,
+    streamState,
+    pendingInteraction,
+    refetch,
+    clearPendingInteraction,
+    loading,
+  } = useAgentRunStream(workspaceId, run.id, true, 5_000, fetchers);
+  const effectiveRun = session ?? run;
+  const transcriptStreaming = isDockTranscriptStreaming(effectiveRun);
+  const showRuntimeTimeline = transcriptStreaming || (
+    effectiveRun.status !== 'cancelled'
+    && streamState !== null
+    && hasAuthoritativeDockRuntimeTimeline(streamState)
+  );
+  const completedRun = effectiveRun.status === 'completed';
+  const liveProgress = useMemo(() => completedRun ? null : resolveAgentLiveProgress({
+    run: effectiveRun,
+    stream: streamState,
+    currentPlan,
+    sending: false,
+  }), [completedRun, currentPlan, effectiveRun, streamState]);
 
   const refreshInteractions = useCallback(async () => {
-    if (run.status !== 'paused') return;
+    if (effectiveRun.status !== 'paused') return;
     const result = await dockChatService.listRunInteractions(workspaceId, run.id);
     if (!result.data) return;
     const pending = result.data.interactions.filter((interaction) => interaction.status === 'pending');
     const latest = pending[pending.length - 1] as (CodingSessionInteraction & { id?: string }) | undefined;
     setFallbackInteraction(latest ? { ...latest, interaction_id: latest.interaction_id ?? latest.id ?? '' } : null);
-  }, [run.id, run.status, workspaceId]);
+  }, [effectiveRun.status, run.id, workspaceId]);
 
   useEffect(() => {
-    if (run.status === 'paused') {
+    if (effectiveRun.status === 'paused') {
       const timer = window.setTimeout(() => void refreshInteractions(), 0);
       return () => window.clearTimeout(timer);
     }
     const timer = window.setTimeout(() => setFallbackInteraction(null), 0);
     return () => window.clearTimeout(timer);
-  }, [refreshInteractions, run.status]);
+  }, [effectiveRun.status, refreshInteractions]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -101,7 +123,7 @@ export function DockRunView({
 
   const interaction = pendingInteraction ?? fallbackInteraction;
   const needsApproval = (
-    (run.status === 'paused' && run.pause_reason === 'human_approval')
+    (effectiveRun.status === 'paused' && effectiveRun.pause_reason === 'human_approval')
     || interaction?.interaction_kind.includes('approval') === true
   );
   const resolveInteraction = useCallback(async (
@@ -124,7 +146,7 @@ export function DockRunView({
     setSending(true);
     setSendError(null);
     try {
-      if (run.status === 'failed' || run.status === 'cancelled') {
+      if (effectiveRun.status === 'failed' || effectiveRun.status === 'cancelled') {
         const result = await dockChatService.continueRun(workspaceId, run.id, content);
         if (result.error || !result.data) throw new Error(result.error ?? 'Failed to continue agent run');
         onDraftChange('');
@@ -185,12 +207,11 @@ export function DockRunView({
     setAuthBusy(false);
   };
 
-  const composerEnabled = run.status === 'failed'
-    || run.status === 'cancelled'
-    || (run.status === 'paused' && (run.pause_reason === 'human_input' || run.pause_reason === 'awaiting_user_message') && !interaction);
-  const canStop = run.status === 'queued' || run.status === 'running';
-  const cancellationPending = stopping || run.execution_stage === 'cancelling';
-  const liveLabel = run.status === 'running' ? deriveLiveStatusLabel(streamState, run.status) : null;
+  const composerEnabled = effectiveRun.status === 'failed'
+    || effectiveRun.status === 'cancelled'
+    || (effectiveRun.status === 'paused' && (effectiveRun.pause_reason === 'human_input' || effectiveRun.pause_reason === 'awaiting_user_message') && !interaction);
+  const canStop = effectiveRun.status === 'queued' || effectiveRun.status === 'running';
+  const cancellationPending = stopping || effectiveRun.execution_stage === 'cancelling';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -199,21 +220,31 @@ export function DockRunView({
           {loading && !streamState ? (
             <div className="grid min-h-28 place-items-center text-[#8a8781]"><Loading01Icon className="h-4 w-4 animate-spin" /></div>
           ) : null}
-          <DockTranscript stream={streamState} active={active} />
+          <DockTranscript
+            stream={streamState}
+            active={transcriptStreaming}
+            useRuntimeTimeline={showRuntimeTimeline}
+            workspaceId={workspaceId}
+            fallbackActor={session?.triggered_by_user}
+            compactAssistantProgress
+            completedRun={completedRun}
+          />
           {!loading && !streamState ? (
             <p className="py-8 text-center text-[13px] text-[#8a8781]">No activity has been recorded for this run yet.</p>
           ) : null}
-          {liveLabel ? <StreamingStatusText className="mt-2 text-[12.5px]">{liveLabel}</StreamingStatusText> : null}
-          {run.error_message ? (
+          {currentPlan ? (
+            <CodingPlanPanel plan={currentPlan} runStatus={effectiveRun.status} title="Work plan" />
+          ) : null}
+          {effectiveRun.error_message ? (
             <div className="mt-3 rounded-xl border border-[#f2c9c5] bg-[#fdf6f5] p-3 text-[12.5px] text-[#8e2525] dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200">
               <p className="font-semibold">Run failed</p>
-              <p className="mt-1 break-words leading-5">{run.error_message}</p>
+              <p className="mt-1 break-words leading-5">{effectiveRun.error_message}</p>
               <button type="button" onClick={() => void retry()} disabled={sending} className="mt-2 rounded-[9px] border border-[#e4b8b3] bg-[#fffefa] px-3 py-1.5 font-semibold text-[#7f1d1d] hover:bg-[#fff5f3] disabled:opacity-50 dark:bg-[#292420]">
                 Retry
               </button>
             </div>
           ) : null}
-          {run.status === 'paused' && run.pause_reason === 'authentication' ? (
+          {effectiveRun.status === 'paused' && effectiveRun.pause_reason === 'authentication' ? (
             <div className="mt-3 rounded-xl border border-[#f0c98a] bg-[#fffaf1] p-3 text-[13px] text-[#1c1b19] dark:border-amber-900/70 dark:bg-amber-950/20 dark:text-amber-100">
               <p className="text-[10.5px] font-bold uppercase tracking-[.1em] text-[#b45309]">Sign-in required</p>
               <p className="mt-1.5 leading-5">Connect the agent runtime to continue this run.</p>
@@ -247,13 +278,18 @@ export function DockRunView({
               <button type="button" onClick={() => setSendError(null)} className="shrink-0 font-semibold hover:underline">Dismiss</button>
             </div>
           ) : null}
+          {liveProgress ? (
+            <div className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2" data-agent-live-status-region>
+              <AgentLiveStatus progress={liveProgress} />
+            </div>
+          ) : null}
         </div>
         {!atBottom ? <ScrollToLatestButton onClick={scrollToLatest} /> : null}
       </div>
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}
-      {(composerEnabled || canStop || run.status === 'running' || run.status === 'queued') ? (
+      {(composerEnabled || canStop || effectiveRun.status === 'running' || effectiveRun.status === 'queued') ? (
         <div className="border-t border-[#f1efea] dark:border-[#302f2b]">
           <DockInput
             mode="conversation"
@@ -265,7 +301,7 @@ export function DockRunView({
             disabled={!composerEnabled}
             onStop={canStop ? () => void stop() : undefined}
             stopping={cancellationPending}
-            placeholder={cancellationPending ? 'Stopping agent…' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : run.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
+            placeholder={cancellationPending ? 'Stopping agent…' : composerEnabled ? `Answer ${summary.agent.name || 'agent'}…` : effectiveRun.status === 'queued' ? 'Agent is starting…' : 'Agent is working…'}
           />
         </div>
       ) : null}

@@ -82,12 +82,30 @@ function invalidateSupportRealtimeQueries(
   }
 }
 
+/** Announce the selected conversation over the shared support websocket. */
+export function useConversationViewingPresence(
+  workspaceId: string,
+  selectedConversationId?: string | null,
+) {
+  const wsSend = useSupportPresenceStore((state) => state.wsSend)
+  const wsConnected = useSupportPresenceStore((state) => state.wsConnected)
+
+  useEffect(() => {
+    if (!workspaceId || !selectedConversationId || !wsSend || !wsConnected) return
+    wsSend('support:viewing:start', { conversation_id: selectedConversationId })
+    return () => {
+      wsSend('support:viewing:stop', { conversation_id: selectedConversationId })
+    }
+  }, [selectedConversationId, workspaceId, wsConnected, wsSend])
+}
+
 export function useSupportRealtime({
   apiBase,
   workspaceId,
   selectedConversationId,
   onEvent,
 }: SupportRealtimeOptions) {
+  useConversationViewingPresence(workspaceId, selectedConversationId)
   const queryClient = useQueryClient()
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)

@@ -1,0 +1,13 @@
+{
+  "name": "tauri-plugin-helpin-push-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "guest-js bindings for tauri-plugin-helpin-push (consumed via source alias, not a built package — see README)",
+  "type": "module",
+  "types": "./guest-js/index.ts",
+  "main": "./guest-js/index.ts",
+  "module": "./guest-js/index.ts",
+  "peerDependencies": {
+    "@tauri-apps/api": "^2.8.0"
+  }
+}

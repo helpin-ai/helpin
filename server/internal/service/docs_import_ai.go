@@ -161,7 +161,10 @@ func (s *DocsImportService) convertHelpScoutHTMLWithAI(
 		title,
 		rawHTML,
 	)
-	callCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	callCtx, cancel := context.WithTimeout(ctx, defaultDocsImportAIRequestTimeout)
+	defer cancel()
+	var markdown string
+	_, err = completeAI(callCtx, s.llmProvider, AICompletionRequest{
 		WorkspaceID: workspaceID,
 		FeatureKey:  BillingFeatureDocsImportConversion,
 		IdempotencyKey: aiUsageIdempotencyKey(
@@ -170,31 +173,32 @@ func (s *DocsImportService) convertHelpScoutHTMLWithAI(
 			sourceID,
 			aiUsageStableHash(rawHTML),
 		),
-	})
-	callCtx, cancel := context.WithTimeout(callCtx, defaultDocsImportAIRequestTimeout)
-	defer cancel()
-	response, err := s.llmProvider.ChatCompletion(callCtx, llm.ChatRequest{
-		SystemPrompt: docsImportAISystemPrompt,
-		Messages: []llm.Message{{
-			Role:    "user",
-			Content: userPrompt,
-		}},
-		Provider:    s.aiConversion.Provider,
-		Model:       s.aiConversion.Model,
-		Temperature: 0.1,
-		MaxTokens:   s.aiConversion.MaxTokens,
-		JSONMode:    true,
+		RequireComplete:    true,
+		RetryInvalidOutput: true,
+		ValidateResponse: func(response *llm.ChatResponse) error {
+			parsed, parseErr := parseDocsImportAIResponse(response.Content)
+			if parseErr != nil {
+				return parseErr
+			}
+			if validateErr := validateDocsImportAIMarkdown(facts, parsed); validateErr != nil {
+				return fmt.Errorf("validate AI article: %w", validateErr)
+			}
+			markdown = parsed
+			return nil
+		},
+		Chat: llm.ChatRequest{
+			SystemPrompt: docsImportAISystemPrompt,
+			Messages: []llm.Message{{
+				Role:    "user",
+				Content: userPrompt,
+			}},
+			Temperature: 0.1,
+			MaxTokens:   s.aiConversion.MaxTokens,
+			JSONMode:    true,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("format article with AI: %w", err)
-	}
-
-	markdown, err := parseDocsImportAIResponse(response.Content)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateDocsImportAIMarkdown(facts, markdown); err != nil {
-		return nil, fmt.Errorf("validate AI article: %w", err)
 	}
 
 	var doc docsimport.Node

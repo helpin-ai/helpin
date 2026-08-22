@@ -313,6 +313,7 @@ func createProductToolAgentRunTables(t *testing.T, db *gorm.DB) {
 			agent_id TEXT NOT NULL,
 			target_type TEXT NOT NULL DEFAULT 'task',
 			target_id TEXT NOT NULL,
+			model_tier TEXT NOT NULL DEFAULT '',
 			approval_state TEXT NOT NULL DEFAULT 'not_required',
 			status TEXT NOT NULL DEFAULT 'queued',
 			external_runtime TEXT,

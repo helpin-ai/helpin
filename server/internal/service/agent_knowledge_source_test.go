@@ -161,6 +161,7 @@ func newAgentKnowledgeSourceTestDB(t *testing.T) *gorm.DB {
 			is_system boolean DEFAULT false,
 			status text DEFAULT 'idle',
 			runtime_kind text DEFAULT 'opencode',
+			model_tier text NOT NULL DEFAULT '',
 			trigger_mode text DEFAULT 'manual',
 			created_at datetime,
 			updated_at datetime

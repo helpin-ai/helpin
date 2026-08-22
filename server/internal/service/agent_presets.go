@@ -99,6 +99,9 @@ func ListAgentPresets() []model.AgentPresetDefinition {
 		if strings.TrimSpace(out[idx].Scope) == "" {
 			out[idx].Scope = "product"
 		}
+		if strings.TrimSpace(out[idx].ModelTier) == "" {
+			out[idx].ModelTier = deriveAgentModelTier(out[idx].Provider, out[idx].Model, out[idx].ExecutionConfig)
+		}
 	}
 	return out
 }
@@ -133,6 +136,9 @@ func agentPresetVersionDefinition(key, versionKey string) (model.AgentPresetDefi
 	}
 	for _, preset := range agentPresetDefinitions() {
 		if preset.Key == familyKey && preset.VersionKey == effectiveVersionKey {
+			if strings.TrimSpace(preset.ModelTier) == "" {
+				preset.ModelTier = deriveAgentModelTier(preset.Provider, preset.Model, preset.ExecutionConfig)
+			}
 			return preset, true
 		}
 	}
@@ -258,6 +264,7 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	definition.SourceVersionKey = version.SourceVersionKey
 	definition.CreatedAt = &version.CreatedAt
 	definition.UpdatedAt = &version.UpdatedAt
+	definition.ModelTier = strings.TrimSpace(version.ModelTier)
 	if version.Provider != nil {
 		definition.Provider = trimPtr(version.Provider)
 	}
@@ -266,6 +273,9 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 		definition.Model = &modelValue
 	}
 	definition.ExecutionConfig = normalizeExecutionConfigJSON(version.ExecutionConfig)
+	if definition.ModelTier == "" {
+		definition.ModelTier = deriveAgentModelTier(definition.Provider, definition.Model, definition.ExecutionConfig)
+	}
 	if prompt := trimPtr(version.SystemPrompt); prompt != nil {
 		definition.SystemPrompt = prompt
 	}
@@ -397,10 +407,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	openAIPresetProvider := model.AgentModelProviderOpenAI
 	openAIPresetModel := defaultOpenAIAgentModel
 	highReasoning := "high"
-	fastServiceTier := "fast"
+	standardServiceTier := defaultAICompletionServiceTier
 	codexOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
 		ReasoningEffort: &highReasoning,
-		ServiceTier:     &fastServiceTier,
+		ServiceTier:     &standardServiceTier,
 	})
 
 	epicPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)

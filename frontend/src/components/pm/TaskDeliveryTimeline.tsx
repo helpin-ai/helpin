@@ -10,7 +10,6 @@ import {
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { formatRunTokenUsageBreakdown, formatRunTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { gitBranchURL, gitCommitURL } from '@/lib/gitUrls';
 import type { Agent, AgentRun, TaskDeliveryTarget, TaskGitLink } from '@/lib/pmTypes';
@@ -98,7 +97,6 @@ function RunTimelineItem({
   const tokenBreakdown = formatRunTokenUsageBreakdown(run);
   const duration = runDuration(run);
   const detail = [
-    AGENT_RUNTIME_LABELS[run.runtime_kind],
     run.execution_stage,
     tokenTotal !== '-' ? tokenTotal : null,
     duration,

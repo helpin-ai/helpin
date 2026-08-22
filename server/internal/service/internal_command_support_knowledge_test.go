@@ -64,6 +64,7 @@ func setupSupportKnowledgeTestDB(t *testing.T) *gorm.DB {
 		agent_id TEXT NOT NULL,
 		target_type TEXT NOT NULL,
 		target_id TEXT NOT NULL,
+		model_tier TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL,
 		external_runtime TEXT,
 		external_runtime_id TEXT,

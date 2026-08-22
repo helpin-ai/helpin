@@ -1,0 +1,251 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/* The deterministic support avatar palette is shared with web. Tailwind's
+   mobile scan does not otherwise see literal classes outside this app, which
+   caused only incidentally-used colors (blue/amber) to render. */
+@source '../../../frontend/src/components/support/helpers.ts';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── Design tokens copied verbatim from frontend/src/index.css ──────────────
+   (Tailwind v4 --color-* mapping block, then the :root / .dark oklch value
+   blocks). Only the color/radius token system is ported — web-app component
+   styles, prose/tiptap rules, and unrelated layers are intentionally left
+   out. */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --text-ui: 0.8125rem;
+  --text-ui--line-height: 1.25rem;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-heading: var(--font-sans);
+  --font-sans: 'Inter Variable', sans-serif;
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.24 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: var(--brand-500);
+  --chart-1: oklch(0.845 0.143 164.978);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.596 0.145 163.225);
+  --chart-4: oklch(0.508 0.118 165.612);
+  --chart-5: oklch(0.432 0.095 166.913);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.96 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --brand-300: #8aabff;
+  --brand-400: #638cff;
+  --brand-500: #3e63dd;
+  --brand-600: #294adc;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.88 0 0);
+  --card: oklch(0.25 0 0);
+  --card-foreground: oklch(0.88 0 0);
+  --popover: oklch(0.25 0 0);
+  --popover-foreground: oklch(0.88 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.88 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.88 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: var(--brand-400);
+  --chart-1: oklch(0.845 0.143 164.978);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.596 0.145 163.225);
+  --chart-4: oklch(0.508 0.118 165.612);
+  --chart-5: oklch(0.432 0.095 166.913);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.88 0 0);
+  --sidebar-primary: oklch(0.985 0 0);
+  --sidebar-primary-foreground: oklch(0.205 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.88 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --brand-300: #8aabff;
+  --brand-400: #638cff;
+  --brand-500: #3e63dd;
+  --brand-600: #294adc;
+}
+
+/* ── Mobile foundation: safe areas, keyboard inset, type scale ─────────────── */
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --keyboard-inset: 0px;
+  --surface-raised: var(--card);
+  --overlay-scrim: rgb(0 0 0 / 0.4);
+  --unread-dot: var(--primary);
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  font-family: 'Inter Variable', system-ui, sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.1875rem;
+  background: var(--background);
+  color: var(--foreground);
+  overscroll-behavior: none;               /* the app owns pull-to-refresh */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;                        /* re-enabled per message body */
+  -webkit-user-select: none;
+}
+
+.selectable { user-select: text; -webkit-user-select: text; }
+
+@utility text-title { font-size: 1.125rem; line-height: 1.4375rem; font-weight: 600; letter-spacing: -0.01em; }
+@utility text-headline { font-size: 1rem; line-height: 1.3125rem; font-weight: 600; }
+@utility text-body { font-size: 0.875rem; line-height: 1.1875rem; }
+@utility text-footnote { font-size: 0.8125rem; line-height: 1.125rem; }
+@utility text-caption { font-size: 0.6875rem; line-height: 0.8125rem; font-weight: 500; letter-spacing: 0.06em; }
+@utility tnum { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.12s !important; transition-duration: 0.12s !important; }
+}
+
+/* Skeleton shimmer sweep, referenced by src/ui/skeleton.tsx via animate-[skeleton-shimmer_...]. */
+@keyframes skeleton-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* Typing-indicator dot pulse, referenced by src/thread/message-list.tsx via
+   animate-[typing-dot-bounce_...]. Mirrors packages/widget-core's
+   helpin-typing-bounce keyframe so the native app and the embeddable widget
+   feel the same. */
+@keyframes typing-dot-bounce {
+  0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* @mention highlight inside internal notes — mirrors the web thread. */
+.mention-highlight {
+  color: oklch(0.45 0.2 260);
+  font-weight: 500;
+  background: oklch(0.55 0.15 260 / 0.1);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.25em;
+}
+.dark .mention-highlight {
+  color: oklch(0.75 0.16 260);
+  background: oklch(0.55 0.15 260 / 0.15);
+}
+
+/* Markdown message bodies (react-markdown output) — mirrors the web thread's
+   `.prose-chat` so bold/lists/code/tables render identically. */
+.prose-chat { font-size: inherit; line-height: 1.45; }
+.prose-chat p { margin: 0 0 0.5em; }
+.prose-chat p:last-child { margin-bottom: 0; }
+.prose-chat strong { font-weight: 600; }
+.prose-chat strong, .prose-chat em { color: inherit; }
+.prose-chat code {
+  background: var(--muted);
+  border-radius: 0.25rem;
+  padding: 0.1em 0.3em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+.prose-chat pre {
+  background: oklch(0.145 0 0);
+  color: oklch(0.93 0 0);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  overflow-x: auto;
+  margin: 0.4em 0;
+}
+.prose-chat pre code { background: transparent; padding: 0; color: inherit; font-size: 0.85em; }
+.prose-chat ul, .prose-chat ol { padding-left: 1.2em; margin: 0.3em 0; }
+.prose-chat ul { list-style: disc; }
+.prose-chat ol { list-style: decimal; }
+.prose-chat li + li { margin-top: 0.15em; }
+.prose-chat blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75rem;
+  color: var(--muted-foreground);
+  margin: 0.3em 0;
+}
+.prose-chat a { text-decoration: underline; }
+.chat-markdown-table-wrap { overflow-x: auto; margin: 0.4em 0; }
+.chat-markdown-table-wrap table { border-collapse: collapse; font-size: 0.9em; }
+.chat-markdown-table-wrap th, .chat-markdown-table-wrap td {
+  border: 1px solid var(--border);
+  padding: 0.25em 0.5em;
+  text-align: left;
+}

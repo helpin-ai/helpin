@@ -101,6 +101,7 @@ type Config struct {
 	PostmarkRouteInboundWebhookSecret string
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
+	MobileAppBaseURL                  string
 	MCPServerEnabled                  bool
 	MCPOAuthEnabled                   bool
 	MCPServiceTokensEnabled           bool
@@ -193,6 +194,9 @@ type Config struct {
 	UsermavenEndpoint    string
 
 	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
+	// Firebase Cloud Messaging (optional — mobile push notifications disabled if unset)
+	FCMServiceAccountJSON string
+
 	AgentPreviewDebug bool
 
 	// Docs ordering: when true, reads/writes use fractional sort_key
@@ -333,6 +337,7 @@ func Load() (*Config, error) {
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
 		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
 		AppBaseURL:                             appBaseURL,
+		MobileAppBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("MOBILE_APP_BASE_URL")), "/"),
 		MCPServerEnabled:                       parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVER_ENABLED")),
 		MCPOAuthEnabled:                        parseBoolEnvDefaultTrue(os.Getenv("MCP_OAUTH_ENABLED")),
 		MCPServiceTokensEnabled:                parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVICE_TOKENS_ENABLED")),
@@ -401,6 +406,7 @@ func Load() (*Config, error) {
 		UsermavenAPIKey:                        strings.TrimSpace(os.Getenv("USERMAVEN_API_KEY")),
 		UsermavenServerToken:                   strings.TrimSpace(os.Getenv("USERMAVEN_SERVER_TOKEN")),
 		UsermavenEndpoint:                      strings.TrimSpace(os.Getenv("USERMAVEN_ENDPOINT")),
+		FCMServiceAccountJSON:                  strings.TrimSpace(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 		TLSAskExtraAllowedDomains:              parseCSV(os.Getenv("TLS_ASK_EXTRA_ALLOWED_DOMAINS")),

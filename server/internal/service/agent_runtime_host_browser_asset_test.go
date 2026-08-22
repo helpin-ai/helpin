@@ -178,6 +178,7 @@ func createAgentRuntimeBrowserAssetTables(t *testing.T, db *gorm.DB) {
 		`CREATE TABLE agent_runs (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
+			model_tier TEXT NOT NULL DEFAULT '',
 			external_runtime TEXT,
 			external_runtime_id TEXT
 		)`,

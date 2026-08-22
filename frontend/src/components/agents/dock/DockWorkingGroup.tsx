@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { canonicalToolName } from '@/lib/toolNames';
 import type { TranscriptSegment } from '@/components/agents/transcript';
 import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
+import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 
 function groupPresentation(segments: TranscriptSegment[]): {
   label: string;
@@ -32,14 +33,19 @@ export function DockWorkingGroup({
   id,
   segments,
   active,
+  completedDurationMs,
   children,
 }: {
   id: string;
   segments: TranscriptSegment[];
   active: boolean;
+  completedDurationMs?: number;
   children: ReactNode;
 }) {
   const presentation = groupPresentation(segments);
+  const completedLabel = completedDurationMs === undefined
+    ? null
+    : `Worked for ${formatCodingSessionElapsed(completedDurationMs)}`;
   const [open, setOpen] = useState(active);
   const [manuallyToggled, setManuallyToggled] = useState(false);
   const [previousActive, setPreviousActive] = useState(active);
@@ -71,10 +77,10 @@ export function DockWorkingGroup({
           {active ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <Tick01Icon className="h-3.5 w-3.5" />}
         </span>
         <span data-working-group-label className="min-w-0 truncate font-mono text-[11px] font-medium text-foreground/80" title={presentation.title}>
-          {presentation.label}
+          {completedLabel ?? presentation.label}
         </span>
         <span className="min-w-0 flex-1" />
-        <span className="shrink-0 text-[10px] text-muted-foreground">{presentation.meta}</span>
+        {completedLabel ? null : <span className="shrink-0 text-[10px] text-muted-foreground">{presentation.meta}</span>}
         <DisclosureChevron open={open} className="h-3.5 w-3.5" />
       </button>
       {open ? (

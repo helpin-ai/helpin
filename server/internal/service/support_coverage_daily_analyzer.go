@@ -821,7 +821,7 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal analyzer input: %w", err)
 	}
-	resp, err := s.llmProvider.ChatCompletion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    input.WorkspaceID,
 		FeatureKey:     BillingFeatureCoverageGapAnalysis,
 		IdempotencyKey: aiUsageIdempotencyKey(input.WorkspaceID, BillingFeatureCoverageGapAnalysis, "analyze", input.ConversationID, input.TranscriptHash),
@@ -829,18 +829,17 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 			"conversation_id": input.ConversationID,
 			"action":          "analyze",
 		},
-	}), llm.ChatRequest{
-		SystemPrompt: coverageConversationAnalysisSystemPrompt(),
-		Messages: []llm.Message{{
-			Role:    "user",
-			Content: string(inputJSON),
-		}},
-		Provider:    s.providerName,
-		Model:       s.modelName,
-		Temperature: 0.1,
-		MaxTokens:   1800,
-		JSONMode:    true,
-		JSONSchema:  coverageConversationAnalysisJSONSchema(),
+		Chat: llm.ChatRequest{
+			SystemPrompt: coverageConversationAnalysisSystemPrompt(),
+			Messages: []llm.Message{{
+				Role:    "user",
+				Content: string(inputJSON),
+			}},
+			Temperature: 0.1,
+			MaxTokens:   1800,
+			JSONMode:    true,
+			JSONSchema:  coverageConversationAnalysisJSONSchema(),
+		},
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("coverage conversation analyzer llm: %w", err)
@@ -873,18 +872,21 @@ func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.
 	if err != nil {
 		return nil, fmt.Errorf("marshal fix bundle refinement input: %w", err)
 	}
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
-		SystemPrompt: coverageFixBundleRefinementSystemPrompt(),
-		Messages: []llm.Message{{
-			Role:    "user",
-			Content: string(payloadJSON),
-		}},
-		Provider:    s.providerName,
-		Model:       s.modelName,
-		Temperature: 0.1,
-		MaxTokens:   1400,
-		JSONMode:    true,
-		JSONSchema:  coverageFixBundleDecisionJSONSchema(),
+	metering, _ := AIUsageMeteringFromContext(ctx)
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
+		WorkspaceID: metering.WorkspaceID, FeatureKey: BillingFeatureCoverageGapAnalysis,
+		IdempotencyKey: metering.IdempotencyKey, Metadata: metering.Metadata,
+		Chat: llm.ChatRequest{
+			SystemPrompt: coverageFixBundleRefinementSystemPrompt(),
+			Messages: []llm.Message{{
+				Role:    "user",
+				Content: string(payloadJSON),
+			}},
+			Temperature: 0.1,
+			MaxTokens:   1400,
+			JSONMode:    true,
+			JSONSchema:  coverageFixBundleDecisionJSONSchema(),
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("coverage fix bundle refinement llm: %w", err)
@@ -917,18 +919,21 @@ func (s *SupportCoverageDailyAnalyzer) GenerateKnowledgeSuggestion(ctx context.C
 	if err != nil {
 		return "", nil, fmt.Errorf("marshal knowledge suggestion input: %w", err)
 	}
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
-		SystemPrompt: coverageKnowledgeSuggestionSystemPrompt(),
-		Messages: []llm.Message{{
-			Role:    "user",
-			Content: string(payloadJSON),
-		}},
-		Provider:    s.providerName,
-		Model:       s.modelName,
-		Temperature: 0.1,
-		MaxTokens:   1200,
-		JSONMode:    true,
-		JSONSchema:  coverageKnowledgeSuggestionJSONSchema(),
+	metering, _ := AIUsageMeteringFromContext(ctx)
+	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
+		WorkspaceID: metering.WorkspaceID, FeatureKey: BillingFeatureDocsArticleGeneration,
+		IdempotencyKey: metering.IdempotencyKey, Metadata: metering.Metadata,
+		Chat: llm.ChatRequest{
+			SystemPrompt: coverageKnowledgeSuggestionSystemPrompt(),
+			Messages: []llm.Message{{
+				Role:    "user",
+				Content: string(payloadJSON),
+			}},
+			Temperature: 0.1,
+			MaxTokens:   1200,
+			JSONMode:    true,
+			JSONSchema:  coverageKnowledgeSuggestionJSONSchema(),
+		},
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("coverage knowledge suggestion llm: %w", err)

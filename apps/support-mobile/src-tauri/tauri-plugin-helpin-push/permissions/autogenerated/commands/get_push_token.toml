@@ -1,0 +1,15 @@
+# Hand-written to mirror the shape `tauri-plugin`'s build script normally
+# autogenerates from `COMMANDS` in `build.rs` (this could not be verified by
+# an actual `cargo build` in this environment — no Rust toolchain here).
+# SPIKE-VERIFY: run `cargo build` once on a real machine and diff this file
+# against whatever gets regenerated; commit the real output if it differs.
+
+[[permission]]
+identifier = "allow-get-push-token"
+description = "Enables the get_push_token command without any pre-configured scope."
+commands.allow = ["get_push_token"]
+
+[[permission]]
+identifier = "deny-get-push-token"
+description = "Denies the get_push_token command without any pre-configured scope."
+commands.deny = ["get_push_token"]

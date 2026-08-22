@@ -47,7 +47,7 @@ func normalizeJSONSlice(raw json.RawMessage) json.RawMessage {
 }
 
 var supportedAgentReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
-var supportedAgentServiceTiers = []string{"fast", "flex"}
+var supportedAgentServiceTiers = []string{"standard", "fast", "flex"}
 
 var supportedAgentIconKeys = []string{
 	"violet_star", "ocean_orbit", "forest_cap", "sunset_flame",
@@ -201,6 +201,11 @@ func normalizeAgentRecord(agent *model.Agent) {
 	} else if agent.Model != nil && strings.TrimSpace(*agent.Model) != "" {
 		legacyProvider := model.AgentModelProviderAnthropic
 		agent.Provider = &legacyProvider
+	}
+	if agent.IsSystem && hasPreset && strings.TrimSpace(preset.ModelTier) != "" {
+		agent.ModelTier = strings.TrimSpace(preset.ModelTier)
+	} else if strings.TrimSpace(agent.ModelTier) == "" {
+		agent.ModelTier = deriveAgentModelTier(agent.Provider, agent.Model, agent.ExecutionConfig)
 	}
 	if strings.TrimSpace(agent.TriggerMode) == "" || validateTriggerModeForAgent(agent.TriggerMode, agent) != nil {
 		if hasPreset && preset.DefaultTriggerMode != "" {

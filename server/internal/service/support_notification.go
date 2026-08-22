@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func buildSupportConversationEntitySnapshot(conv *model.SupportConversation) model.JSONB {
@@ -33,9 +34,51 @@ func buildSupportActorSnapshot(name string) model.JSONB {
 	return model.JSONB{"name": trimmed}
 }
 
+// resolveSupportActorPushTitle resolves a display name for actorID to use as
+// a push notification title. Falls back to the given fallback when the
+// actor cannot be resolved (deleted user, lookup failure, missing repo,
+// etc) so the push is never dropped over a missing name.
+func resolveSupportActorPushTitle(ctx context.Context, notifService *NotificationService, actorID, fallback string) string {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" || notifService == nil || notifService.userRepo == nil {
+		return fallback
+	}
+	actor, err := notifService.userRepo.GetByID(ctx, actorID)
+	if err != nil || actor == nil || strings.TrimSpace(actor.FullName) == "" {
+		return fallback
+	}
+	return actor.FullName
+}
+
+// buildSupportPushData resolves the workspace slug for conv and returns the
+// push Data payload (workspace_slug, conversation_id, deep_link). conv only
+// carries WorkspaceID, so the slug is looked up through workspaceRepo. If
+// the lookup fails, this logs a warning and returns conversation_id alone —
+// the mobile client's routePushTap falls back to the app's default screen
+// rather than the notification being dropped.
+func buildSupportPushData(ctx context.Context, workspaceRepo *repository.WorkspaceRepository, conv *model.SupportConversation) map[string]string {
+	data := map[string]string{"conversation_id": conv.ID}
+	if workspaceRepo == nil {
+		return data
+	}
+	ws, err := workspaceRepo.GetByID(ctx, conv.WorkspaceID)
+	if err != nil || ws == nil {
+		slog.WarnContext(ctx, "resolve workspace slug for push notification failed",
+			"error", err,
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conv.ID,
+		)
+		return data
+	}
+	data["workspace_slug"] = ws.Slug
+	data["deep_link"] = fmt.Sprintf("helpin://w/%s/support/%s", ws.Slug, conv.ID)
+	return data
+}
+
 func ProcessSupportMentions(
 	ctx context.Context,
 	notifService *NotificationService,
+	pushSender *PushSenderService,
 	conv *model.SupportConversation,
 	messageContent,
 	actorID string,
@@ -66,11 +109,18 @@ func ProcessSupportMentions(
 	}); err != nil {
 		slog.ErrorContext(ctx, "emit support mention notification", "error", err, "conversation_id", conv.ID)
 	}
+
+	pushSender.NotifyUsers(ctx, mentionedUserIDs, PushNotification{
+		Title: resolveSupportActorPushTitle(ctx, notifService, actorID, conv.Subject),
+		Body:  truncate(messageContent, 140),
+		Data:  buildSupportPushData(ctx, notifService.workspaceRepo, conv),
+	})
 }
 
 func ProcessSupportCustomerReplyNotification(
 	ctx context.Context,
 	notifService *NotificationService,
+	pushSender *PushSenderService,
 	conv *model.SupportConversation,
 	content,
 	senderName string,
@@ -130,4 +180,14 @@ func ProcessSupportCustomerReplyNotification(
 	}); err != nil {
 		slog.ErrorContext(ctx, "emit support customer reply notification", "error", err, "conversation_id", conv.ID)
 	}
+
+	pushTitle := strings.TrimSpace(senderName)
+	if pushTitle == "" {
+		pushTitle = "Customer replied"
+	}
+	pushSender.NotifyUsers(ctx, []string{recipientID}, PushNotification{
+		Title: pushTitle,
+		Body:  truncate(content, 140),
+		Data:  buildSupportPushData(ctx, notifService.workspaceRepo, conv),
+	})
 }

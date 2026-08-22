@@ -1,0 +1,626 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useRouter } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { Check, Inbox as InboxIcon, ListFilter, Mail, MailOpen, PanelLeft, Plus } from 'lucide-react'
+import {
+  flattenConversationPages,
+  useInfiniteConversations,
+  useMarkConversationRead,
+  useMarkConversationUnread,
+  useUnreadStats,
+  useSupportPresenceStore,
+  useUpdateConversationStatus,
+} from '@helpin-ai/support-core'
+import { cn } from '@mobile/lib/cn'
+import { filterChangeCountFromBaseline } from '@/lib/supportInboxFilters'
+import { haptic } from '@mobile/lib/haptics'
+import { isTauri } from '@mobile/lib/host'
+import { useWorkspacePermissions } from '@mobile/lib/use-workspace-permissions'
+import { getPushPrimingPref, setLastWorkspaceSlug, shouldShowPriming } from '@mobile/lib/prefs'
+import { PermissionPrimingSheet } from '@mobile/push/permission-priming-sheet'
+import { useAuthStore } from '@mobile/stores/auth-store'
+import { TopBar } from '@mobile/ui/top-bar'
+import { OfflineBanner } from '@mobile/ui/offline-banner'
+import { Skeleton } from '@mobile/ui/skeleton'
+import { EmptyState } from '@mobile/ui/empty-state'
+import { Pressable } from '@mobile/ui/pressable'
+import { Spinner } from '@mobile/ui/spinner'
+import { workspacesService } from '@mobile/lib/services/workspaces-service'
+import type { Workspace } from '@mobile/lib/types'
+import { toast } from 'sonner'
+import { useWorkspaceStore } from '@mobile/stores/workspace-store'
+import { useSupportViewStore } from '@mobile/stores/support-view-store'
+import { useResolvedTransitionStore } from '@mobile/stores/resolved-transition-store'
+import { CELL_EXIT_DURATION_MS, ConversationCell } from '@mobile/inbox/conversation-cell'
+import { ViewsDrawer } from '@mobile/inbox/views-drawer'
+import {
+  selectionFilterContext,
+  selectionListFilters,
+  selectionTitle,
+  selectionToConversationFilters,
+} from '@mobile/inbox/use-inbox-filters'
+import { InboxFilterSheet } from '@mobile/inbox/filter-sheet'
+import { SwipeableRow, type SwipeAction } from '@mobile/inbox/swipeable-row'
+import { PULL_ARM_THRESHOLD, usePullToRefresh } from '@mobile/inbox/use-pull-to-refresh'
+import { CONVERSATION_CELL_HEIGHT, isUnread } from '@mobile/inbox/inbox-helpers'
+import { useResetScrollOnChange } from '@mobile/inbox/use-reset-scroll-on-change'
+import { PrimaryNavigation } from '@mobile/navigation/primary-navigation'
+
+function InboxSkeletonList() {
+  return (
+    <div>
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div
+          key={index}
+          style={{ height: CONVERSATION_CELL_HEIGHT }}
+          className="box-border flex w-full items-center gap-2.5 border-b border-border/60 px-4"
+        >
+          <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <Skeleton className="h-3.5 w-32" />
+              <Skeleton className="h-3 w-8" />
+            </div>
+            <Skeleton className="h-3.5 w-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function InboxScreen() {
+  const { slug } = useParams({ strict: false })
+  const router = useRouter()
+  const setCurrentWorkspace = useWorkspaceStore((s) => s.setCurrentWorkspace)
+
+  const workspaceQuery = useQuery({
+    queryKey: ['workspace', slug],
+    queryFn: async () => {
+      const { data, error } = await workspacesService.getBySlug(slug ?? '')
+      if (error || !data) throw new Error(error ?? 'Failed to load workspace')
+      return data
+    },
+    enabled: !!slug,
+  })
+  const workspace = workspaceQuery.data
+  const workspaceId = workspace?.id ?? ''
+  const { accessQuery, canReadSupport, canEditSupport } = useWorkspacePermissions(workspaceId)
+  const supportWorkspaceId = canReadSupport ? workspaceId : ''
+
+  useEffect(() => {
+    if (workspace) {
+      setCurrentWorkspace({ id: workspace.id, slug: workspace.slug, name: workspace.name })
+    }
+  }, [workspace, setCurrentWorkspace])
+
+  const selection = useSupportViewStore((s) => s.selection)
+  const setSelection = useSupportViewStore((s) => s.setSelection)
+  const filterOverrides = useSupportViewStore((s) => s.filterOverrides)
+  const setFilterOverrides = useSupportViewStore((s) => s.setFilterOverrides)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const edgeStart = useRef<{ x: number; y: number } | null>(null)
+  const workspacesQuery = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: async () => {
+      const { data, error } = await workspacesService.list()
+      if (error || !data) throw new Error(error ?? 'Failed to load workspaces')
+      return data
+    },
+    enabled: drawerOpen,
+  })
+
+  // Push-notification permission priming: first time a signed-in user lands
+  // on Inbox (after the workspace has resolved), show the priming sheet —
+  // but only inside the native shell, and only when `shouldShowPriming`
+  // says we haven't already asked recently / gotten an answer. Checked once
+  // per screen mount rather than on a live subscription: the decision only
+  // changes as a result of THIS sheet's own actions, which close the sheet
+  // and don't need to re-open it within the same mount.
+  const user = useAuthStore((s) => s.user)
+  const [primingSheetOpen, setPrimingSheetOpen] = useState(false)
+  useEffect(() => {
+    if (!workspace || !user || !canReadSupport || !isTauri()) return
+    let cancelled = false
+    void getPushPrimingPref().then((pref) => {
+      if (!cancelled && shouldShowPriming(pref, new Date())) setPrimingSheetOpen(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [workspace, user, canReadSupport])
+
+  const unreadStats = useUnreadStats(supportWorkspaceId)
+  // Reuse the web's own filter rulebook so each view returns identical
+  // conversations to the web app (see use-inbox-filters).
+  const baselineFilters = useMemo(() => selectionListFilters(selection), [selection])
+  const filterContext = useMemo(() => selectionFilterContext(selection), [selection])
+  const activeListFilters = filterOverrides ?? baselineFilters
+  const filterCount = filterChangeCountFromBaseline({
+    searchQuery: '',
+    listFilters: activeListFilters,
+    baselineSearchQuery: '',
+    baselineFilters,
+  })
+  const filters = useMemo(
+    () => selectionToConversationFilters(selection, activeListFilters),
+    [activeListFilters, selection],
+  )
+  const conversationListResetKey = useMemo(
+    () => `${supportWorkspaceId}:${JSON.stringify(filters ?? {})}`,
+    [filters, supportWorkspaceId],
+  )
+  // `keepPrevious` avoids a skeleton flash when switching views — the previous
+  // view's data stays on screen (dimmed below) until the new one loads instead
+  // of getting torn down first.
+  const conversationsQuery = useInfiniteConversations(supportWorkspaceId, filters, true)
+  const rawConversations = useMemo(
+    () => flattenConversationPages(conversationsQuery.data),
+    [conversationsQuery.data],
+  )
+  const reviewerMembersQuery = useQuery({
+    queryKey: ['workspace', workspaceId, 'assignable-members'],
+    queryFn: async () => {
+      const { data, error } = await workspacesService.listAssignableMembers(workspaceId)
+      if (error || !data) throw new Error(error ?? 'Failed to load teammates')
+      return data
+    },
+    enabled: !!supportWorkspaceId,
+    staleTime: 60_000,
+  })
+  const wsSend = useSupportPresenceStore((state) => state.wsSend)
+  const wsConnected = useSupportPresenceStore((state) => state.wsConnected)
+  const visibleConversationIds = useMemo(
+    () => rawConversations.map((conversation) => conversation.id),
+    [rawConversations],
+  )
+  useEffect(() => {
+    if (!wsSend || !wsConnected || visibleConversationIds.length === 0) return
+    wsSend('support:presence:sync', { conversation_ids: visibleConversationIds })
+  }, [visibleConversationIds, wsConnected, wsSend])
+  const markRead = useMarkConversationRead(workspaceId)
+  const markUnread = useMarkConversationUnread(workspaceId)
+  const updateStatus = useUpdateConversationStatus(workspaceId)
+
+  // Resolve-swipe lifecycle per conversation id:
+  //   'fading'  — still rendered, cell fading out (CELL_EXIT_DURATION_MS)
+  //   'removed' — filtered out of the rendered list (no ghost full-height row
+  //               while the mutation/refetch is still in flight)
+  // Ids are dropped from the map when (a) the mutation errors (row reappears +
+  // error haptic), (b) the refetched list no longer contains the row, or
+  // (c) the refetched row is confirmed resolved server-side (e.g. the "All"
+  // segment keeps resolved conversations — show it again with its badge).
+  const [resolving, setResolving] = useState<Map<string, 'fading' | 'removed'>>(new Map())
+  const resolveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  useEffect(() => {
+    const timers = resolveTimersRef.current
+    return () => timers.forEach((timer) => clearTimeout(timer))
+  }, [])
+
+  useEffect(() => {
+    setResolving((prev) => {
+      if (prev.size === 0) return prev
+      const byId = new Map(rawConversations.map((c) => [c.id, c]))
+      const next = new Map(prev)
+      let changed = false
+      prev.forEach((stage, id) => {
+        const conversation = byId.get(id)
+        if (!conversation || (stage === 'removed' && conversation.status === 'resolved')) {
+          next.delete(id)
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+  }, [rawConversations])
+
+  const conversations = useMemo(
+    () => rawConversations.filter((c) => resolving.get(c.id) !== 'removed'),
+    [rawConversations, resolving],
+  )
+
+  // Seed the fade-out → remove lifecycle for a row (shared by swipe-resolve and
+  // the "resolved from the thread" transition).
+  const beginExit = useCallback((conversationId: string) => {
+    setResolving((prev) => new Map(prev).set(conversationId, 'fading'))
+    const timer = setTimeout(() => {
+      resolveTimersRef.current.delete(conversationId)
+      setResolving((prev) => {
+        if (prev.get(conversationId) !== 'fading') return prev
+        return new Map(prev).set(conversationId, 'removed')
+      })
+    }, CELL_EXIT_DURATION_MS)
+    resolveTimersRef.current.set(conversationId, timer)
+  }, [])
+
+  // Cancel a pending exit (mutation error, or Undo) so the row reappears.
+  const cancelExit = useCallback((conversationId: string) => {
+    const pending = resolveTimersRef.current.get(conversationId)
+    if (pending !== undefined) {
+      clearTimeout(pending)
+      resolveTimersRef.current.delete(conversationId)
+    }
+    setResolving((prev) => {
+      if (!prev.has(conversationId)) return prev
+      const next = new Map(prev)
+      next.delete(conversationId)
+      return next
+    })
+  }, [])
+
+  const handleResolve = (conversationId: string) => {
+    if (!canEditSupport) return
+    beginExit(conversationId)
+    updateStatus.mutate(
+      { conversationId, status: 'resolved' },
+      {
+        onError: () => {
+          cancelExit(conversationId)
+          haptic('notificationError')
+        },
+      },
+    )
+  }
+
+  const handleUndoResolve = useCallback(
+    (conversationId: string) => {
+      if (!canEditSupport) return
+      cancelExit(conversationId)
+      updateStatus.mutate({ conversationId, status: 'open' })
+      haptic('impactLight')
+    },
+    [canEditSupport, cancelExit, updateStatus],
+  )
+
+  // A conversation resolved from the thread screen: animate it out of the list
+  // and offer Undo (the status change already happened server-side).
+  const pendingResolvedId = useResolvedTransitionStore((s) => s.pendingResolvedId)
+  const consumeResolvedTransition = useResolvedTransitionStore((s) => s.consumeResolved)
+  useEffect(() => {
+    if (!pendingResolvedId || !canEditSupport) return
+    const id = consumeResolvedTransition()
+    if (!id) return
+    beginExit(id)
+    toast.success('Resolved', {
+      id: `resolved-${id}`,
+      action: { label: 'Undo', onClick: () => handleUndoResolve(id) },
+    })
+  }, [pendingResolvedId, canEditSupport, consumeResolvedTransition, beginExit, handleUndoResolve])
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  useResetScrollOnChange(scrollRef, conversationListResetKey)
+  const virtualizer = useVirtualizer({
+    count: conversations.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => CONVERSATION_CELL_HEIGHT,
+    overscan: 8,
+  })
+  const loadNextPageIfNeeded = useCallback((element: HTMLDivElement) => {
+    if (
+      !conversationsQuery.hasNextPage ||
+      conversationsQuery.isFetchingNextPage ||
+      conversationsQuery.isPlaceholderData
+    ) {
+      return
+    }
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+    if (distanceFromBottom <= CONVERSATION_CELL_HEIGHT * 4) {
+      void conversationsQuery.fetchNextPage()
+    }
+  }, [
+    conversationsQuery.fetchNextPage,
+    conversationsQuery.hasNextPage,
+    conversationsQuery.isFetchingNextPage,
+    conversationsQuery.isPlaceholderData,
+  ])
+
+  // If a page does not fill the viewport (small screens, restrictive views),
+  // continue until the list becomes scrollable or the server reports no more.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const element = scrollRef.current
+      if (element) loadNextPageIfNeeded(element)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [loadNextPageIfNeeded, rawConversations.length])
+
+  const pull = usePullToRefresh({
+    scrollRef,
+    onRefresh: async () => {
+      await Promise.all([conversationsQuery.refetch(), unreadStats.refetch()])
+    },
+  })
+  const pullSpinning = pull.refreshing || pull.pullDistance >= PULL_ARM_THRESHOLD
+
+  const currentTitle = selectionTitle(selection)
+
+  const isWorkspaceLoading = workspaceQuery.isPending || (!!workspaceId && accessQuery.isPending)
+  const isWorkspaceError = workspaceQuery.isError || accessQuery.isError
+  const accessDenied = accessQuery.isSuccess && !canReadSupport
+  const hasConversationData = conversationsQuery.data !== undefined
+  const showSkeleton =
+    isWorkspaceLoading ||
+    (!!supportWorkspaceId && !hasConversationData && !conversationsQuery.isError)
+  const showError =
+    !isWorkspaceLoading &&
+    (isWorkspaceError || (!hasConversationData && conversationsQuery.isError))
+  const showEmpty =
+    !showSkeleton && !showError && !accessDenied && conversations.length === 0
+
+  const handleRetry = () => {
+    if (workspaceQuery.isError) {
+      void workspaceQuery.refetch()
+    } else if (accessQuery.isError) {
+      void accessQuery.refetch()
+    } else {
+      void conversationsQuery.refetch()
+    }
+  }
+
+  const handleSelectConversation = (conversationId: string) => {
+    router.navigate({ to: '/w/$slug/support/$conversationId', params: { slug: slug ?? '', conversationId } })
+  }
+
+  const handleSelectWorkspace = (nextWorkspace: Workspace) => {
+    void setLastWorkspaceSlug(nextWorkspace.slug)
+    setCurrentWorkspace({ id: nextWorkspace.id, slug: nextWorkspace.slug, name: nextWorkspace.name })
+    setSelection({ kind: 'builtin', navFilter: 'inbox', mailboxId: 'all' })
+    router.navigate({ to: '/w/$slug/support', params: { slug: nextWorkspace.slug } })
+  }
+
+  return (
+    <div className="flex h-dvh flex-col">
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          onScroll={(event) => loadNextPageIfNeeded(event.currentTarget)}
+          onPointerDown={pull.handlers.onPointerDown}
+          onPointerMove={pull.handlers.onPointerMove}
+          onPointerUp={pull.handlers.onPointerUp}
+          onPointerCancel={pull.handlers.onPointerCancel}
+          className="h-full overflow-y-auto"
+        >
+        <TopBar
+          title={currentTitle}
+          subtitle={workspace?.name}
+          leading={
+            <Pressable
+              aria-label="Open inbox views"
+              haptic="selection"
+              onPress={() => setDrawerOpen(true)}
+              className="flex items-center justify-center rounded-full"
+            >
+              <PanelLeft className="h-5 w-5" />
+            </Pressable>
+          }
+          trailing={
+            <>
+              {canEditSupport && (
+                <Pressable
+                  aria-label="New conversation"
+                  haptic="selection"
+                  onPress={() => router.navigate({
+                    to: '/w/$slug/support/new',
+                    params: { slug: slug ?? '' },
+                  })}
+                  className="flex items-center justify-center rounded-full"
+                >
+                  <Plus className="h-5 w-5" />
+                </Pressable>
+              )}
+              <Pressable
+                aria-label="Filter conversations"
+                haptic="selection"
+                onPress={() => setFilterOpen(true)}
+                className="relative flex items-center justify-center rounded-full"
+              >
+                <ListFilter className="h-5 w-5" />
+                {filterCount > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                    {filterCount}
+                  </span>
+                )}
+              </Pressable>
+            </>
+          }
+        />
+
+        <OfflineBanner />
+
+        <div
+          style={{ height: pull.pullDistance }}
+          className="flex items-end justify-center overflow-hidden"
+        >
+          {(pull.pullDistance > 0 || pull.refreshing) && (
+            <div
+              className="pb-2"
+              style={pullSpinning ? undefined : { transform: `rotate(${pull.pullDistance * 2.6}deg)` }}
+            >
+              <Spinner className={pullSpinning ? undefined : 'animate-none'} />
+            </div>
+          )}
+        </div>
+
+        {showSkeleton && <InboxSkeletonList />}
+
+        {showError && (
+          <EmptyState
+            icon={<InboxIcon className="h-6 w-6" />}
+            title="Couldn't load conversations"
+            body="Check your connection and try again."
+            action={
+              <Pressable
+                haptic="impactLight"
+                onPress={handleRetry}
+                className="rounded-full bg-primary px-4 py-2 text-body font-medium text-primary-foreground"
+              >
+                {conversationsQuery.isFetching || workspaceQuery.isFetching ? <Spinner /> : 'Retry'}
+              </Pressable>
+            }
+          />
+        )}
+
+        {accessDenied && (
+          <EmptyState
+            icon={<InboxIcon className="h-6 w-6" />}
+            title="Support access unavailable"
+            body="Ask a workspace admin to grant you access to the Support module."
+          />
+        )}
+
+        {showEmpty && (
+          <EmptyState
+            icon={<InboxIcon className="h-6 w-6" />}
+            title="Inbox zero"
+            body="New conversations will appear here."
+          />
+        )}
+
+        {!showSkeleton && !showError && !accessDenied && !showEmpty && (
+          <div
+            style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+            className={cn(
+              'transition-opacity duration-200',
+              conversationsQuery.isPlaceholderData && 'opacity-60',
+            )}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const conversation = conversations[virtualRow.index]
+              const unread = isUnread(conversation)
+              const leadingAction: SwipeAction | undefined = unread
+                ? {
+                    label: 'Read',
+                    icon: MailOpen,
+                    tone: 'primary',
+                    onCommit: () => markRead.mutate(conversation.id),
+                  }
+                : canEditSupport
+                  ? {
+                      label: 'Unread',
+                      icon: Mail,
+                      tone: 'primary',
+                      onCommit: () => markUnread.mutate(conversation.id),
+                    }
+                  : undefined
+              const trailingAction: SwipeAction | undefined = canEditSupport
+                ? {
+                    label: 'Resolve',
+                    icon: Check,
+                    tone: 'success',
+                    onCommit: () => handleResolve(conversation.id),
+                  }
+                : undefined
+              return (
+                <div
+                  key={conversation.id}
+                  data-index={virtualRow.index}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: virtualRow.size,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <SwipeableRow leading={leadingAction} trailing={trailingAction}>
+                    <ConversationCell
+                      conversation={conversation}
+                      onPress={() => handleSelectConversation(conversation.id)}
+                      isExiting={resolving.get(conversation.id) === 'fading'}
+                      reviewerMembers={reviewerMembersQuery.data}
+                      currentUserId={user?.id}
+                    />
+                  </SwipeableRow>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        {!showSkeleton && !showError && !accessDenied && conversationsQuery.isFetchingNextPage && (
+          <div className="flex h-14 items-center justify-center" aria-label="Loading more conversations">
+            <Spinner size={18} />
+          </div>
+        )}
+        {!showSkeleton && !showError && !accessDenied && conversationsQuery.isFetchNextPageError && (
+          <div className="flex h-14 items-center justify-center">
+            <Pressable
+              haptic="impactLight"
+              onPress={() => void conversationsQuery.fetchNextPage()}
+              className="rounded-full px-4 py-2 text-footnote font-medium text-primary active:bg-primary/10"
+            >
+              Retry loading more
+            </Pressable>
+          </div>
+        )}
+      </div>
+
+      {/* Left-edge strip: swipe in from the very edge to open the views drawer.
+          A dedicated 16px zone so it never competes with the list's vertical
+          pull-to-refresh or the rows' horizontal swipe actions. */}
+      <button
+        type="button"
+        aria-hidden
+        tabIndex={-1}
+        className="absolute inset-y-0 left-0 z-20 w-4"
+        onPointerDown={(e) => {
+          edgeStart.current = { x: e.clientX, y: e.clientY }
+        }}
+        onPointerMove={(e) => {
+          const start = edgeStart.current
+          if (!start) return
+          const dx = e.clientX - start.x
+          const dy = e.clientY - start.y
+          if (dx > 24 && dx > Math.abs(dy)) {
+            edgeStart.current = null
+            haptic('selection')
+            setDrawerOpen(true)
+          }
+        }}
+        onPointerUp={() => {
+          edgeStart.current = null
+        }}
+        onPointerCancel={() => {
+          edgeStart.current = null
+        }}
+      />
+
+      <ViewsDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        workspaceId={workspaceId}
+        workspace={workspace}
+        workspaces={workspacesQuery.data}
+        workspacesLoading={workspacesQuery.isPending}
+        workspacesError={workspacesQuery.isError}
+        onRetryWorkspaces={() => void workspacesQuery.refetch()}
+        onSelectWorkspace={handleSelectWorkspace}
+        onOpenSettings={() => router.navigate({ to: '/w/$slug/settings', params: { slug: slug ?? '' } })}
+        activeSelection={selection}
+        onSelect={setSelection}
+      />
+
+      <InboxFilterSheet
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        workspaceId={workspaceId}
+        navFilter={filterContext.navFilter}
+        selectedMailboxId={filterContext.selectedMailboxId}
+        filters={activeListFilters}
+        baseline={baselineFilters}
+        onApply={setFilterOverrides}
+      />
+
+        <PermissionPrimingSheet open={primingSheetOpen} onOpenChange={setPrimingSheetOpen} />
+      </div>
+
+      <PrimaryNavigation
+        activeTab={selection.kind === 'builtin' && selection.navFilter === 'mine' ? 'mine' : 'inbox'}
+        workspaceId={workspaceId}
+        workspaceSlug={slug ?? ''}
+      />
+    </div>
+  )
+}

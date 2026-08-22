@@ -4,7 +4,6 @@ import { Badge } from '@/components/ui/badge';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { formatRunTokenUsageBreakdown, formatRunTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { TABLE_HEADER, TABLE_HEADER_CELL, TABLE_ROW, TABLE_CELL } from '@/lib/tableStyles';
 import { getAgentRunDisplayStatus, STATUS_META } from './agentRunConstants';
@@ -82,7 +81,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
         const branch = run.working_branch ? `task ${run.working_branch}` : run.base_branch ? `base ${run.base_branch}` : '';
         const branchDisplay = branch ? truncateMiddle(branch, BRANCH_MAX_CHARS) : '-';
         const agent = agentsById.get(run.agent_id);
-        const agentName = agent?.name ?? AGENT_RUNTIME_LABELS[run.runtime_kind] ?? run.runtime_kind;
+        const agentName = agent?.name ?? 'Agent';
         const totalTokens = formatRunTokenUsageTotal(run);
         const tokenBreakdown = formatRunTokenUsageBreakdown(run).filter((line) => !line.startsWith('Total:'));
 
