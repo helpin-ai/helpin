@@ -316,6 +316,16 @@ export function useDealActivities(wsId: string, dealId: string) {
   })
 }
 
+export function useDealTimeline(wsId: string, dealId: string, filter: CRMTimelineFilter) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.crm.dealTimeline(wsId, dealId, filter),
+    queryFn: async ({ pageParam }) => unwrap(await crmDealService.listTimeline(wsId, dealId, filter, pageParam)),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage?.next_cursor,
+    enabled: !!wsId && !!dealId,
+  })
+}
+
 export function useDealAssociations(wsId: string, dealId: string) {
   return useQuery({
     queryKey: queryKeys.crm.dealAssociations(wsId, dealId),

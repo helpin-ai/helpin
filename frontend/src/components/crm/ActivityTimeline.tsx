@@ -72,6 +72,17 @@ const companyFilterOptions: { value: CRMTimelineFilter; label: string }[] = [
   { value: 'support', label: 'Support' },
 ];
 
+const dealFilterOptions: { value: CRMTimelineFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'note', label: 'Notes' },
+  { value: 'email', label: 'Emails' },
+  { value: 'call', label: 'Calls' },
+  { value: 'meeting', label: 'Meetings' },
+  { value: 'task', label: 'Tasks' },
+  { value: 'deal', label: 'Deal changes' },
+  { value: 'support', label: 'Support' },
+];
+
 const timelineIcons: Record<CRMTimelineItem['kind'], typeof Message01Icon> = {
   note: Message01Icon,
   email: Mail01Icon,
@@ -248,6 +259,7 @@ export function ActivityTimeline({
   const selectedFilter = timelineItems ? (timelineFilter ?? filterType) : filterType;
   const filtered = filterType === 'all' ? activities : filterType === 'task' || filterType === 'deal' || filterType === 'support' ? [] : activities.filter((a) => a.activity_type === filterType);
   const displayedTimelineItems = timelineItems ? dedupeCRMTimelineItems(timelineItems) : undefined;
+  const timelineFilterOptions = dealId ? dealFilterOptions : companyFilterOptions;
 
   const handleCreate = async () => {
     if (!workspaceId || !newSubject.trim()) return;
@@ -351,7 +363,7 @@ export function ActivityTimeline({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {companyFilterOptions.map((option) => (
+                  {timelineFilterOptions.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
@@ -369,7 +381,7 @@ export function ActivityTimeline({
       {filterControl === 'tabs' && (
         <div role="tablist" aria-label="Activity type" className={cn('flex items-center gap-0.5 overflow-x-auto border-b border-border/60', borderless ? 'px-4 sm:px-6 lg:px-10' : 'mb-3')}>
           {(timelineItems
-            ? companyFilterOptions
+            ? timelineFilterOptions
             : filterOptions.map((value) => ({
                 value,
                 label: value === 'all' ? 'All' : `${value.charAt(0).toUpperCase()}${value.slice(1)}s`,
@@ -395,7 +407,7 @@ export function ActivityTimeline({
         </div>
       )}
 
-      {timelineItems && selectedFilter === 'email' && workspaceId ? (
+      {timelineItems && selectedFilter === 'email' && workspaceId && !dealId ? (
         <EmailTimeline workspaceId={workspaceId} contactId={contactId} companyId={companyId} dealId={dealId} defaultRecipient={emailRecipient} showComposeAction={false} />
       ) : isTimelineLoading ? (
         <div className="flex items-center justify-center px-6 py-12">

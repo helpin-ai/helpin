@@ -13,9 +13,10 @@ import (
 // CRMDealService contains CRM deal and pipeline business logic.
 type CRMDealService struct {
 	productAnalyticsEmitter
-	dealRepo  *repository.CRMDealRepository
-	assocRepo *repository.CRMAssociationRepository
-	activity  *PMActivityService
+	dealRepo     *repository.CRMDealRepository
+	assocRepo    *repository.CRMAssociationRepository
+	activity     *PMActivityService
+	timelineRepo *repository.CRMCompanyTimelineRepository
 }
 
 // NewCRMDealService creates a new CRMDealService.
@@ -27,6 +28,77 @@ func NewCRMDealService(dealRepo *repository.CRMDealRepository, assocRepo *reposi
 func (s *CRMDealService) SetActivityService(activity *PMActivityService) *CRMDealService {
 	s.activity = activity
 	return s
+}
+
+// SetTimelineRepository enables the unified deal timeline read model.
+func (s *CRMDealService) SetTimelineRepository(
+	repo *repository.CRMCompanyTimelineRepository,
+) *CRMDealService {
+	s.timelineRepo = repo
+	return s
+}
+
+// ListTimeline returns one cursor-paginated page of events directly related to a deal.
+func (s *CRMDealService) ListTimeline(
+	ctx context.Context,
+	workspaceID, dealID, filter, cursor string,
+	limit int,
+) (*model.CRMTimelinePage, error) {
+	if workspaceID == "" || dealID == "" {
+		return nil, fmt.Errorf("workspace_id and deal_id are required")
+	}
+	if s.timelineRepo == nil {
+		return nil, fmt.Errorf("deal timeline is not configured")
+	}
+	deal, err := s.GetByID(ctx, dealID)
+	if err != nil {
+		return nil, err
+	}
+	if deal.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("deal not found")
+	}
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		filter = model.CRMTimelineFilterAll
+	}
+	if !validCRMTimelineFilter(filter) {
+		return nil, fmt.Errorf("invalid timeline filter")
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	query := model.CRMTimelineQuery{Filter: filter, Limit: limit + 1}
+	if cursor != "" {
+		decoded, err := decodeCRMTimelineCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		query.CursorAt = &decoded.At
+		query.CursorID = decoded.ID
+	}
+	items, err := s.timelineRepo.ListDeal(ctx, workspaceID, dealID, query)
+	if err != nil {
+		return nil, err
+	}
+	page := &model.CRMTimelinePage{Data: items}
+	if len(items) > limit {
+		page.Data = items[:limit]
+		last := page.Data[len(page.Data)-1]
+		next, err := encodeCRMTimelineCursor(crmTimelineCursor{
+			Version: 1,
+			At:      last.OccurredAt,
+			ID:      last.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.NextCursor = &next
+	}
+	return page, nil
 }
 
 // SeedWorkspaceDefaults creates a default sales pipeline for a new workspace.

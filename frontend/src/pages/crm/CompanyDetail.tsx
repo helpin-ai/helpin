@@ -31,6 +31,7 @@ import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptio
 import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
@@ -196,11 +197,11 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
       openTaskRoute(navigate as never, location as never, wsSlug, entity.id);
       return;
     }
+    if (entity.type === 'deal') {
+      openDealRoute(navigate as never, location, wsSlug, entity.id);
+      return;
+    }
     const routes: Record<string, { to: string; params: Record<string, string> }> = {
-      deal: {
-        to: '/w/$slug/crm/deals/$dealId',
-        params: { slug: wsSlug, dealId: entity.id },
-      },
       meeting: {
         to: '/w/$slug/crm/meetings/$meetingId',
         params: { slug: wsSlug, meetingId: entity.id },

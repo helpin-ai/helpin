@@ -1271,7 +1271,8 @@ func main() {
 	crmContactService.SetProductAnalyticsService(productAnalytics)
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
-		SetActivityService(pmActivityService)
+		SetActivityService(pmActivityService).
+		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)

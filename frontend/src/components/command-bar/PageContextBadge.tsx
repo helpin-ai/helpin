@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   BookOpen01Icon,
   Briefcase01Icon,
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 
 interface PageContextBadgeProps {
   context: CommandBarPageContext;
@@ -56,6 +57,7 @@ function isBlockScopedDocument(context: CommandBarPageContext) {
 
 export function PageContextBadge({ context, onClear, onNavigate }: PageContextBadgeProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const Icon = iconFor(context.entity_type);
   const isFallback = context.entity_type === 'workspace';
@@ -89,10 +91,7 @@ export function PageContextBadge({ context, onClear, onNavigate }: PageContextBa
         });
         return;
       case 'crm_deal':
-        navigate({
-          to: '/w/$slug/crm/deals/$dealId',
-          params: { slug: workspace.slug, dealId: context.entity_id },
-        });
+        openDealRoute(navigate as never, location, workspace.slug, context.entity_id);
         return;
       default:
         return;

@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
 import {
@@ -31,6 +31,7 @@ import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
 import type { CRMContact, CRMDeal, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { SupportConversation } from '@/lib/pmTypes';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 
 function CollectionHeader({
   title,
@@ -338,6 +339,7 @@ export function CompanyDealsView({
   companyName: string;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search.trim());
   const [createOpen, setCreateOpen] = useState(false);
@@ -352,11 +354,7 @@ export function CompanyDealsView({
     [members],
   );
   const deals = query.data?.data ?? [];
-  const openDeal = (deal: CRMDeal) =>
-    navigate({
-      to: '/w/$slug/crm/deals/$dealId',
-      params: { slug: workspaceSlug, dealId: deal.id },
-    });
+  const openDeal = (deal: CRMDeal) => openDealRoute(navigate as never, location, workspaceSlug, deal.id);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <CollectionHeader
@@ -660,6 +658,7 @@ export function ContactDealsView({
   onChanged?: () => void;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search.trim());
   const [createOpen, setCreateOpen] = useState(false);
@@ -723,12 +722,7 @@ export function ContactDealsView({
               <button
                 key={deal.id}
                 type="button"
-                onClick={() =>
-                  navigate({
-                    to: '/w/$slug/crm/deals/$dealId',
-                    params: { slug: workspaceSlug, dealId: deal.id },
-                  })
-                }
+                onClick={() => openDealRoute(navigate as never, location, workspaceSlug, deal.id)}
                 className="grid w-full grid-cols-[minmax(220px,1fr)_180px_130px_160px_140px] items-center gap-3 border-b border-border/50 px-4 py-3 text-left hover:bg-muted/25 sm:px-6 lg:px-8"
               >
                 <span className="min-w-0">

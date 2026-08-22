@@ -191,3 +191,54 @@ func TestCRMContactTimelinePortableScopesActivitiesDirectlyToContact(t *testing.
 		t.Fatalf("contact timeline = %#v, want only direct note", items)
 	}
 }
+
+func TestCRMDealTimelinePortableScopesActivitiesDirectlyToDeal(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:deal-timeline?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE crm_activities (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        activity_type TEXT NOT NULL,
+        contact_id TEXT,
+        company_id TEXT,
+        deal_id TEXT,
+        owner_member_id TEXT,
+        subject TEXT,
+        body TEXT,
+        occurred_at DATETIME NOT NULL,
+        metadata TEXT,
+        created_at DATETIME,
+        updated_at DATETIME
+    )`).Error; err != nil {
+		t.Fatalf("create activities table: %v", err)
+	}
+
+	workspaceID := "workspace-1"
+	dealID := "deal-1"
+	otherDealID := "deal-2"
+	contactID := "contact-1"
+	base := time.Date(2026, time.August, 22, 10, 0, 0, 0, time.UTC)
+	directSubject := "Direct deal note"
+	otherDealSubject := "Other deal note"
+	contactSubject := "Contact note"
+	for _, activity := range []model.CRMActivity{
+		{ID: "direct-deal", WorkspaceID: workspaceID, DealID: &dealID, ActivityType: model.CRMActivityNote, Subject: &directSubject, OccurredAt: base},
+		{ID: "other-deal", WorkspaceID: workspaceID, DealID: &otherDealID, ActivityType: model.CRMActivityNote, Subject: &otherDealSubject, OccurredAt: base.Add(-time.Hour)},
+		{ID: "contact", WorkspaceID: workspaceID, ContactID: &contactID, ActivityType: model.CRMActivityNote, Subject: &contactSubject, OccurredAt: base.Add(-2 * time.Hour)},
+	} {
+		if err := db.Create(&activity).Error; err != nil {
+			t.Fatalf("create activity: %v", err)
+		}
+	}
+
+	repo := NewCRMCompanyTimelineRepository(db)
+	items, err := repo.ListDeal(context.Background(), workspaceID, dealID, model.CRMTimelineQuery{Filter: model.CRMTimelineFilterAll, Limit: 10})
+	if err != nil {
+		t.Fatalf("list deal timeline: %v", err)
+	}
+	if len(items) != 1 || items[0].Title != directSubject {
+		t.Fatalf("deal timeline = %#v, want only direct deal note", items)
+	}
+}

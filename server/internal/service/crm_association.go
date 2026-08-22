@@ -222,10 +222,81 @@ func (s *CRMAssociationService) ListByObjectEnriched(ctx context.Context, worksp
 	if err != nil {
 		return nil, err
 	}
-	if objectType != model.CRMObjectCompany || objectID == "" {
+	if objectID == "" {
 		return assocs, nil
 	}
-	return s.appendInferredCompanyContactAssociations(ctx, workspaceID, objectID, assocs)
+	switch objectType {
+	case model.CRMObjectCompany:
+		return s.appendInferredCompanyContactAssociations(ctx, workspaceID, objectID, assocs)
+	case model.CRMObjectDeal:
+		return s.appendInferredDealContactCompanies(ctx, workspaceID, objectID, assocs)
+	default:
+		return assocs, nil
+	}
+}
+
+func (s *CRMAssociationService) appendInferredDealContactCompanies(
+	ctx context.Context,
+	workspaceID, dealID string,
+	assocs []model.CRMAssociationEnriched,
+) ([]model.CRMAssociationEnriched, error) {
+	if len(assocs) == 0 {
+		return assocs, nil
+	}
+
+	seen := make(map[string]struct{}, len(assocs))
+	enriched := append([]model.CRMAssociationEnriched(nil), assocs...)
+	for _, assoc := range assocs {
+		otherType, otherID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectDeal, dealID)
+		seen[otherType+":"+otherID] = struct{}{}
+	}
+
+	for _, assoc := range assocs {
+		otherType, contactID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectDeal, dealID)
+		if otherType != model.CRMObjectContact {
+			continue
+		}
+
+		contactAssocs, err := s.assocRepo.ListByObjectEnriched(ctx, workspaceID, model.CRMObjectContact, contactID)
+		if err != nil {
+			return nil, err
+		}
+		contextName := strings.TrimSpace(assoc.LinkedObjectName)
+		if contextName == "" {
+			contextName = "contact"
+		}
+		contextLabel := "via " + contextName
+
+		for _, contactAssoc := range contactAssocs {
+			inferredType, companyID := otherAssociationSide(contactAssoc.CRMAssociation, model.CRMObjectContact, contactID)
+			if inferredType != model.CRMObjectCompany {
+				continue
+			}
+			key := inferredType + ":" + companyID
+			if _, exists := seen[key]; exists {
+				continue
+			}
+
+			enriched = append(enriched, model.CRMAssociationEnriched{
+				CRMAssociation: model.CRMAssociation{
+					WorkspaceID:    workspaceID,
+					FromObjectType: model.CRMObjectDeal,
+					FromObjectID:   dealID,
+					ToObjectType:   model.CRMObjectCompany,
+					ToObjectID:     companyID,
+				},
+				LinkedObjectName:        contactAssoc.LinkedObjectName,
+				LinkedObjectDisplayID:   contactAssoc.LinkedObjectDisplayID,
+				LinkedObjectStatus:      contactAssoc.LinkedObjectStatus,
+				LinkedObjectStatusColor: contactAssoc.LinkedObjectStatusColor,
+				Inferred:                true,
+				ContextLabel:            &contextLabel,
+			})
+			seen[key] = struct{}{}
+		}
+	}
+
+	return enriched, nil
 }
 
 func (s *CRMAssociationService) appendInferredCompanyContactAssociations(

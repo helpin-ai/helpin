@@ -38,6 +38,7 @@ interface EmailTimelineProps {
   showComposeAction?: boolean;
   selectedThreadId?: string;
   onSelectedThreadChange?: (threadId?: string) => void;
+  focusThreadOnly?: boolean;
 }
 
 type Scope = 'all' | 'direct' | 'needs_reply';
@@ -128,7 +129,7 @@ function MessageBlock({ message }: { message: CRMEmailMessage }) {
 
 export function EmailTimeline({
   workspaceId, contactId, companyId, dealId, defaultRecipient, showComposeAction = true,
-  selectedThreadId: controlledThreadId, onSelectedThreadChange,
+  selectedThreadId: controlledThreadId, onSelectedThreadChange, focusThreadOnly = false,
 }: EmailTimelineProps) {
   const { currentWorkspace } = useWorkspaceStore();
   const userId = useAuthStore((state) => state.user?.id);
@@ -216,7 +217,11 @@ export function EmailTimeline({
 
   return (
     <div className="@container/email flex h-full min-h-0 overflow-hidden bg-background">
-      <section className={cn('flex min-h-0 w-full shrink-0 flex-col border-r border-border/60 @[820px]/email:w-[clamp(320px,38%,456px)]', mobileReading && 'hidden @[820px]/email:flex')}>
+      <section className={cn(
+        'flex min-h-0 w-full shrink-0 flex-col border-r border-border/60 @[820px]/email:w-[clamp(320px,38%,456px)]',
+        mobileReading && 'hidden @[820px]/email:flex',
+        focusThreadOnly && '!hidden',
+      )}>
         <div className="flex items-center gap-2 border-b border-border/50 px-4 py-2.5">
           <Search01Icon className="h-4 w-4 text-muted-foreground" />
           <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search conversations…" className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground" />
@@ -235,15 +240,18 @@ export function EmailTimeline({
         <div className="flex items-center gap-2 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground"><Mail01Icon className="h-3.5 w-3.5" /><span>{selected?.mailbox_last_synced_at ? `Synced ${format(new Date(selected.mailbox_last_synced_at), 'MMM d, h:mm a')}` : 'Mailbox sync status'}</span><button type="button" onClick={openSettings} className="ml-auto inline-flex items-center gap-1 hover:text-foreground"><Setting07Icon className="h-3.5 w-3.5" /> Settings</button></div>
       </section>
 
-      <section className={cn('min-h-0 min-w-0 flex-1 flex-col', mobileReading ? 'flex' : 'hidden @[820px]/email:flex')}>
+      <section className={cn(
+        'min-h-0 min-w-0 flex-1 flex-col',
+        focusThreadOnly ? 'flex' : mobileReading ? 'flex' : 'hidden @[820px]/email:flex',
+      )}>
         {!selectedThreadId ? <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Select a conversation</div>
           : selectedThread.isLoading ? <div className="flex h-full items-center justify-center"><Loading01Icon className="h-5 w-5 animate-spin text-muted-foreground" /></div>
             : !detail ? <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Conversation unavailable</div>
               : <>
                 <header className="border-b border-border/50 px-5 py-2.5 sm:px-7 @[820px]/email:py-4">
-                  <button type="button" onClick={() => setMobileReading(false)} className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground @[820px]/email:hidden"><ArrowLeft02Icon className="h-3.5 w-3.5" /> Conversations</button>
+                  {!focusThreadOnly ? <button type="button" onClick={() => setMobileReading(false)} className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground @[820px]/email:hidden"><ArrowLeft02Icon className="h-3.5 w-3.5" /> Conversations</button> : null}
                   <div className="flex flex-wrap items-start gap-2 @[820px]/email:gap-3"><div className="min-w-0 flex-1"><h2 className="text-base font-semibold tracking-tight text-foreground @[820px]/email:text-lg">{detail.thread.subject || '(no subject)'}</h2><div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden text-xs text-muted-foreground @[820px]/email:mt-1.5"><span className="shrink-0">{detail.thread.message_count} messages</span><span className="h-2.5 w-px shrink-0 bg-border" /><span className="shrink-0">{dateRange(detail.messages)}</span><span className="h-2.5 w-px shrink-0 bg-border" /><Mail01Icon className="h-3 w-3 shrink-0" /><span className="shrink-0 capitalize">{detail.thread.mailbox_provider}</span><span className="truncate">{detail.thread.mailbox_email}</span></div></div>
-                    <div className="flex flex-wrap items-center gap-3 text-xs">{detail.thread.can_reply ? <button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => document.getElementById('crm-thread-reply')?.scrollIntoView({ behavior: 'smooth' })}><MailReply01Icon className="h-3.5 w-3.5" /> Reply</button> : null}<button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => void openCreateTask()}><CheckListIcon className="h-3.5 w-3.5" /> Create task</button><button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => setDealOpen(true)}><DollarCircleIcon className="h-3.5 w-3.5" /> Link deal</button>{detail.thread.needs_reply ? <button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => void dismiss.mutateAsync({ threadId: detail.thread.id, dismissed: true })}><Tick01Icon className="h-3.5 w-3.5" /> Dismiss</button> : null}</div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs">{detail.thread.can_reply ? <button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => document.getElementById('crm-thread-reply')?.scrollIntoView({ behavior: 'smooth' })}><MailReply01Icon className="h-3.5 w-3.5" /> Reply</button> : null}<button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => void openCreateTask()}><CheckListIcon className="h-3.5 w-3.5" /> Create task</button>{!dealId ? <button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => setDealOpen(true)}><DollarCircleIcon className="h-3.5 w-3.5" /> Link deal</button> : null}{detail.thread.needs_reply ? <button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => void dismiss.mutateAsync({ threadId: detail.thread.id, dismissed: true })}><Tick01Icon className="h-3.5 w-3.5" /> Dismiss</button> : null}</div>
                   </div>
                 </header>
                 <div className="flex flex-wrap items-start gap-x-5 gap-y-1.5 border-b border-border/50 px-5 py-2 sm:px-7 @[820px]/email:py-3"><span className="w-14 shrink-0 pt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">People</span><div className="flex min-w-0 flex-1 flex-wrap gap-x-5 gap-y-1.5">{detail.participants.map((participant) => <div key={participant.email} className="flex min-w-0 items-center gap-2"><UserAvatar name={participantLabel(participant)} className="h-5 w-5" fallbackClassName="text-[8px]" /><span className="text-xs font-medium">{participantLabel(participant)}</span><span className="text-[10px] uppercase tracking-wide text-muted-foreground">{participant.role}</span>{participant.contact_id ? <Link01Icon className="h-3 w-3 text-teal-700 dark:text-teal-400" /> : <span className="max-w-44 truncate text-[11px] text-muted-foreground">{participant.email}</span>}</div>)}</div></div>

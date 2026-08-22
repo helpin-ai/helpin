@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { format, isSameDay } from 'date-fns';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   Alert01Icon,
   ArrowRight01Icon,
@@ -27,6 +27,7 @@ import { detectMeetingPlatform } from '@/lib/meetingPresentation';
 import { cn, timeAgo } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMSuggestionType } from '@/lib/crmTypes';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 
 const suggestionLabels: Record<CRMSuggestionType, string> = {
   follow_up: 'Follow up',
@@ -76,6 +77,7 @@ function LoadingRows({ count = 3 }: { count?: number }) {
 export function CRMOverviewPage() {
   useTitle('CRM Overview');
   const navigate = useNavigate();
+  const location = useLocation();
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
   const workspaceSlug = workspace?.slug ?? '';
@@ -319,7 +321,7 @@ export function CRMOverviewPage() {
                     key={deal.id}
                     type="button"
                     className="flex w-full items-start gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-muted/40"
-                    onClick={() => navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug: workspaceSlug, dealId: deal.id } })}
+                    onClick={() => openDealRoute(navigate as never, location, workspaceSlug, deal.id)}
                   >
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300">
                       <DollarCircleIcon className="h-4 w-4" />

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCreateAssociation, useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
 import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
 import type { CRMDeal } from '@/lib/crmTypes';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 
 interface CreateDealDialogProps {
   open: boolean;
@@ -23,6 +24,7 @@ const currencyOptions = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
 
 export function CreateDealDialog({ open, onOpenChange, companyContext, contactContext, onDealCreated }: CreateDealDialogProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const createDeal = useCreateDeal(wsId);
@@ -85,10 +87,7 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, contactCo
 
     const openDeal = () => {
       if (!currentWorkspace?.slug) return;
-      navigate({
-        to: '/w/$slug/crm/deals/$dealId',
-        params: { slug: currentWorkspace.slug, dealId: deal.id },
-      });
+      openDealRoute(navigate as never, location, currentWorkspace.slug, deal.id);
     };
 
     if (companyContext) {

@@ -40,6 +40,7 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import {
   useContact,
@@ -921,7 +922,7 @@ export function ContactDetailPage({
       return;
     }
     if (entity.type === 'deal') {
-      navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug: wsSlug, dealId: entity.id } } as never);
+      openDealRoute(navigate as never, location, wsSlug, entity.id);
       return;
     }
     if (entity.type === 'meeting') {
@@ -1667,12 +1668,7 @@ export function ContactDetailPage({
                         <button
                           type="button"
                           className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                          onClick={() =>
-                            navigate({
-                              to: '/w/$slug/crm/deals/$dealId',
-                              params: { slug: wsSlug, dealId: assoc.linkedId },
-                            } as never)
-                          }
+                          onClick={() => openDealRoute(navigate as never, location, wsSlug, assoc.linkedId)}
                         >
                           <DollarCircleIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
                           <span className="truncate font-medium">{assoc.linked_object_name || 'Untitled'}</span>

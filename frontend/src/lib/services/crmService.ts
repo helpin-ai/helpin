@@ -151,6 +151,8 @@ export const crmDealService = {
   remove: (workspaceId: string, id: string) => api.del(`/crm/deals/${id}${qs(workspaceId)}`),
   listActivities: (workspaceId: string, dealId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMActivity[]>>(`/crm/deals/${dealId}/activities${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listTimeline: (workspaceId: string, dealId: string, filter: CRMTimelineFilter, cursor?: string) =>
+    api.get<CRMTimelinePage>(`/crm/deals/${dealId}/timeline${qs(workspaceId)}${filterQuery({ filter, cursor, limit: 25 })}`),
   listAssociations: (workspaceId: string, dealId: string) => api.get<CRMAssociationEnriched[]>(`/crm/deals/${dealId}/associations${qs(workspaceId)}`),
 };
 
