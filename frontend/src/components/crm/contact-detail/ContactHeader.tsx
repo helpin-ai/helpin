@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { cn } from '@/lib/utils';
 import type { LifecycleStage } from '@/lib/crmTypes';
@@ -11,6 +11,8 @@ interface ContactHeaderProps {
   companyHref?: string;
   lifecycleStage: LifecycleStage;
   lifecycleLabel: string;
+  displayId?: string;
+  actions?: ReactNode;
   onNameChange: (first: string, last: string) => void;
 }
 
@@ -24,9 +26,9 @@ const STAGE_DOT: Record<LifecycleStage, string> = {
   evangelist: 'bg-pink-500',
 };
 
-export const contactHeaderAvatarClassName = 'h-14 w-14 shrink-0';
-export const contactHeaderNameClassName = '-ml-1 block min-w-0 truncate rounded-md px-1 text-left text-[24px] font-semibold leading-[1.08] text-foreground transition-colors hover:bg-muted/50';
-export const contactHeaderNameInputClassName = '-ml-1 block w-full min-w-0 rounded-md bg-transparent px-1 text-[24px] font-semibold leading-[1.08] text-foreground outline-none ring-1 ring-inset ring-transparent focus:ring-border';
+export const contactHeaderAvatarClassName = 'h-10 w-10 shrink-0';
+export const contactHeaderNameClassName = '-ml-1 block min-w-0 truncate rounded-md px-1 text-left text-2xl font-bold tracking-tight text-foreground transition-colors hover:bg-muted/50';
+export const contactHeaderNameInputClassName = '-ml-1 block w-full min-w-0 rounded-md bg-transparent px-1 text-2xl font-bold tracking-tight text-foreground outline-none ring-1 ring-inset ring-transparent focus:ring-border';
 export const contactHeaderLifecycleBadgeClassName = 'inline-flex h-5 items-center gap-1.5 rounded-full border border-border/60 px-2 text-[11px] font-medium text-muted-foreground';
 
 function splitFullName(value: string): [string, string] {
@@ -46,19 +48,17 @@ export function ContactHeader({
   lastName,
   jobTitle,
   companyName,
-  companyHref: _companyHref,
+  companyHref,
   lifecycleStage,
   lifecycleLabel,
+  displayId,
+  actions,
   onNameChange,
 }: ContactHeaderProps) {
   const initialName = `${firstName ?? ''} ${lastName ?? ''}`.trim();
   const [draft, setDraft] = useState(initialName);
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!editing) setDraft(initialName);
-  }, [editing, initialName]);
 
   const commit = () => {
     const [nextFirst, nextLast] = splitFullName(draft);
@@ -73,12 +73,12 @@ export function ContactHeader({
   const subtitleParts = getContactHeaderSubtitleParts(jobTitle, companyName);
 
   return (
-    <div className="px-8 pb-5 pt-6">
-      <div className="flex items-center gap-4">
+    <section className="border-b border-border/60 px-4 pb-3 pt-5 sm:px-6 lg:px-10">
+      <div className="flex items-start gap-3">
         <UserAvatar
           name={initialName || 'Untitled'}
           className={contactHeaderAvatarClassName}
-          fallbackClassName="text-lg font-semibold"
+          fallbackClassName="text-sm font-semibold"
         />
 
         <div className="min-w-0 flex-1">
@@ -106,22 +106,34 @@ export function ContactHeader({
           ) : (
             <button
               type="button"
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                setDraft(initialName);
+                setEditing(true);
+              }}
               className={contactHeaderNameClassName}
             >
               {display}
             </button>
           )}
 
-          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
             {subtitleParts.length > 0 ? (
               <span className="min-w-0 truncate">
-                {subtitleParts.map((part, index) => (
+                {subtitleParts.map((part, index) => {
+                  const isCompany = part === companyName?.trim();
+                  return (
                   <span key={`${part}-${index}`}>
                     {index > 0 && <span className="mx-1.5 text-muted-foreground/60">at</span>}
-                    <span className={index > 0 ? 'text-foreground/75' : undefined}>{part}</span>
+                    {isCompany && companyHref ? (
+                      <a href={companyHref} className="text-foreground/75 transition-colors hover:text-foreground hover:underline">
+                        {part}
+                      </a>
+                    ) : (
+                      <span className={isCompany ? 'text-foreground/75' : undefined}>{part}</span>
+                    )}
                   </span>
-                ))}
+                  );
+                })}
               </span>
             ) : (
               <span className="text-muted-foreground/70">No title or company</span>
@@ -130,10 +142,11 @@ export function ContactHeader({
               <span className={cn('size-1.5 rounded-full', stageDot)} />
               {lifecycleLabel}
             </span>
+            {displayId && <span className="font-mono text-xs text-muted-foreground/80">{displayId}</span>}
           </div>
         </div>
-
+        {actions && <div className="shrink-0">{actions}</div>}
       </div>
-    </div>
+    </section>
   );
 }

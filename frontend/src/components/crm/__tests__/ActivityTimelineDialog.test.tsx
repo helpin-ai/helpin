@@ -14,10 +14,23 @@ vi.mock('@/hooks/queries/useCRM', () => ({
   useCreateCRMActivity: () => ({ mutateAsync: createActivity, isPending: false }),
   useUpdateCRMActivity: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteCRMActivity: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEmailAccounts: () => ({ data: [] }),
 }));
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock('../CRMEmailComposerDialog', () => ({
+  CRMEmailComposerDialog: ({ open, draft }: { open: boolean; draft?: { to?: string[] } }) => open
+    ? <div data-testid="email-composer">{draft?.to?.join(', ')}</div>
+    : null,
+}));
+
+vi.mock('../EmailTimeline', () => ({
+  EmailTimeline: ({ contactId, companyId }: { contactId?: string; companyId?: string }) => (
+    <div data-testid="rich-email-timeline">{contactId ?? companyId}</div>
+  ),
 }));
 
 vi.mock('@/components/ui/dialog', () => ({
@@ -82,6 +95,23 @@ afterEach(() => {
 });
 
 describe('CRM ActivityTimeline activity dialog', () => {
+  it('offers the shared email composer when the record has an email address', () => {
+    act(() => {
+      root.render(
+        <ActivityTimeline
+          timelineItems={[]}
+          workspaceId="workspace-1"
+          contactId="contact-1"
+          emailRecipient="buyer@example.com"
+          presentation="borderless"
+        />,
+      );
+    });
+
+    clickButton('Email');
+    expect(container.querySelector('[data-testid="email-composer"]')?.textContent).toBe('buyer@example.com');
+  });
+
   it('matches the contact-detail tab selector for borderless activity filters', () => {
     act(() => {
       root.render(
@@ -101,7 +131,7 @@ describe('CRM ActivityTimeline activity dialog', () => {
     expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
   });
 
-  it('shows the six canonical company timeline filters and a paginated system event', () => {
+  it('shows the canonical CRM timeline filters and a paginated system event', () => {
     act(() => {
       root.render(
         <ActivityTimeline
@@ -129,12 +159,29 @@ describe('CRM ActivityTimeline activity dialog', () => {
     });
 
     expect([...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim()))
-      .toEqual(['All', 'Notes', 'Emails', 'Calls', 'Meetings', 'Task activity']);
+      .toEqual(['All', 'Notes', 'Emails', 'Calls', 'Meetings', 'Tasks', 'Deals', 'Support']);
     expect(container.textContent).toContain('Prepare renewal plan');
     expect(container.textContent).toContain('HLP-42');
     expect(container.textContent).toContain('Task HLP-42 · Prepare renewal plan moved to Done');
     expect(container.textContent).toContain('by Amad');
     expect(container.textContent).toContain('Load more');
+  });
+
+  it('uses the rich email timeline for the Emails filter on contacts and companies', () => {
+    act(() => {
+      root.render(
+        <ActivityTimeline
+          timelineItems={[]}
+          timelineFilter="email"
+          workspaceId="workspace-1"
+          companyId="company-1"
+          presentation="borderless"
+        />,
+      );
+    });
+
+    expect(container.querySelector('[data-testid="rich-email-timeline"]')?.textContent).toBe('company-1');
+    expect(container.textContent).not.toContain('No activities yet');
   });
 
   it('renders authored activity content with its entity icon and existing actions', () => {
@@ -204,6 +251,49 @@ describe('CRM ActivityTimeline activity dialog', () => {
     act(() => toggle?.click());
     expect(toggle?.textContent?.trim()).toBe('Show less');
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+
+    scrollHeight.mockRestore();
+    clientHeight.mockRestore();
+  });
+
+  it('starts email descriptions at two lines and retains the show-more control', () => {
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(100);
+    const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(40);
+
+    act(() => {
+      root.render(
+        <ActivityTimeline
+          timelineItems={[{
+            id: 'email:message-1',
+            kind: 'email',
+            event_type: 'email.inbound',
+            source_type: 'crm_email_message',
+            source_id: 'message-1',
+            title: 'Renewal details',
+            description: 'A longer email preview that initially occupies no more than two lines in the activity feed.',
+            occurred_at: new Date().toISOString(),
+            entity: { type: 'email_thread', id: 'thread-1', name: 'Renewal details' },
+            can_edit: false,
+            can_delete: false,
+          }]}
+          timelineFilter="all"
+          workspaceId="workspace-1"
+          contactId="contact-1"
+          presentation="borderless"
+        />,
+      );
+    });
+
+    const description = [...container.querySelectorAll('p')]
+      .find((paragraph) => paragraph.textContent?.startsWith('A longer email preview'));
+    expect(description?.parentElement?.className).toContain('max-h-10');
+
+    const toggle = [...container.querySelectorAll('button')]
+      .find((button) => button.textContent?.trim() === 'Show more');
+    expect(toggle).toBeDefined();
+    act(() => toggle?.click());
+    expect(description?.parentElement?.className).not.toContain('max-h-10');
+    expect(toggle?.textContent?.trim()).toBe('Show less');
 
     scrollHeight.mockRestore();
     clientHeight.mockRestore();

@@ -2,12 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
-import type {
-  CreateTaskRequest,
-  UpdateTaskRequest,
-  TaskUserLinkRequest,
-  TaskLabelLinkRequest,
-} from '@/lib/pmTypes'
+import type { CreateTaskRequest, UpdateTaskRequest, TaskUserLinkRequest, TaskLabelLinkRequest } from '@/lib/pmTypes'
 
 interface TaskQueryFilters {
   page?: number
@@ -30,6 +25,7 @@ interface TaskQueryFilters {
   archived?: boolean
   contact_id?: string
   company_id?: string
+  company_rollup_id?: string
   deal_id?: string
   include_contacts?: boolean
   include_companies?: boolean
@@ -81,7 +77,9 @@ export function useCreateTask(wsId: string) {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'tasks'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
-      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(wsId) })
+      qc.invalidateQueries({
+        queryKey: queryKeys.pm.sprintPreviewTasksRoot(wsId),
+      })
     },
   })
 }
@@ -96,7 +94,9 @@ export function useUpdateTask(wsId: string) {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'tasks'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
-      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(wsId) })
+      qc.invalidateQueries({
+        queryKey: queryKeys.pm.sprintPreviewTasksRoot(wsId),
+      })
     },
   })
 }
@@ -109,7 +109,9 @@ export function useDeleteTask(wsId: string) {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'tasks'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })
       qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(wsId) })
-      qc.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(wsId) })
+      qc.invalidateQueries({
+        queryKey: queryKeys.pm.sprintPreviewTasksRoot(wsId),
+      })
     },
   })
 }
@@ -184,7 +186,15 @@ export function useRemoveTaskLabel(wsId: string) {
 export function useSyncTaskLabels(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ taskId, currentIds, nextIds }: { taskId: string; currentIds: string[]; nextIds: string[] }) => {
+    mutationFn: async ({
+      taskId,
+      currentIds,
+      nextIds,
+    }: {
+      taskId: string
+      currentIds: string[]
+      nextIds: string[]
+    }) => {
       await pmTaskService.syncLabels(wsId, taskId, currentIds, nextIds)
     },
     onSuccess: (_, { taskId }) => {

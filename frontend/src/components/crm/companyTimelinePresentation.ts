@@ -1,6 +1,6 @@
-import type { CRMCompanyTimelineItem } from '@/lib/crmTypes';
+import type { CRMTimelineItem } from '@/lib/crmTypes';
 
-export interface CompanyTimelinePresentation {
+export interface CRMTimelinePresentation {
   mode: 'compact' | 'content';
   label: string;
   emphasizedValues: string[];
@@ -15,19 +15,19 @@ function clean(value?: string) {
   return value?.replace(/\s+/g, ' ').trim() ?? '';
 }
 
-function actorName(item: CRMCompanyTimelineItem) {
+function actorName(item: CRMTimelineItem) {
   return clean(item.actor?.name);
 }
 
-function creditedActorName(item: CRMCompanyTimelineItem) {
+function creditedActorName(item: CRMTimelineItem) {
   return clean(item.actor?.id) ? actorName(item) : '';
 }
 
-function entityName(item: CRMCompanyTimelineItem) {
+function entityName(item: CRMTimelineItem) {
   return clean(item.entity?.name) || clean(item.title);
 }
 
-function entityLabel(item: CRMCompanyTimelineItem, noun: string) {
+function entityLabel(item: CRMTimelineItem, noun: string) {
   const displayId = clean(item.entity?.display_id);
   const name = entityName(item);
   const label = `${noun.charAt(0).toUpperCase()}${noun.slice(1)}`;
@@ -37,7 +37,7 @@ function entityLabel(item: CRMCompanyTimelineItem, noun: string) {
   return label;
 }
 
-function dealLabel(item: CRMCompanyTimelineItem) {
+function dealLabel(item: CRMTimelineItem) {
   const displayId = clean(item.entity?.display_id);
   const name = entityName(item);
   if (displayId && name) return `${displayId} · ${name}`;
@@ -50,18 +50,18 @@ function actionWithoutEntity(description: string, noun: string, fallback: string
   return clean(description.replace(new RegExp(`\\bthis ${noun}\\b`, 'i'), ''));
 }
 
-function dealStageDestination(item: CRMCompanyTimelineItem) {
+function dealStageDestination(item: CRMTimelineItem) {
   if (item.kind !== 'deal' || item.event_type !== 'deal.stage_changed') return '';
   const description = clean(item.description);
   const match = description.match(/\bmoved(?: this deal)?(?: from .+)? to (.+)$/i);
   return clean(match?.[1]).toLocaleLowerCase();
 }
 
-function isDetailedDealStageChange(item: CRMCompanyTimelineItem) {
+function isDetailedDealStageChange(item: CRMTimelineItem) {
   return /\bmoved(?: this deal)? from .+ to .+$/i.test(clean(item.description));
 }
 
-function sameTimelineEntity(left: CRMCompanyTimelineItem, right: CRMCompanyTimelineItem) {
+function sameTimelineEntity(left: CRMTimelineItem, right: CRMTimelineItem) {
   const leftID = clean(left.entity?.id) || clean(left.entity?.display_id);
   const rightID = clean(right.entity?.id) || clean(right.entity?.display_id);
   if (leftID || rightID) return leftID !== '' && leftID === rightID;
@@ -74,7 +74,7 @@ function sameTimelineEntity(left: CRMCompanyTimelineItem, right: CRMCompanyTimel
  * The tight time window prevents unrelated transitions to the same stage from
  * being collapsed.
  */
-export function dedupeCompanyTimelineItems(items: CRMCompanyTimelineItem[]) {
+export function dedupeCRMTimelineItems(items: CRMTimelineItem[]) {
   return items.filter((item) => {
     const destination = dealStageDestination(item);
     if (!destination || isDetailedDealStageChange(item)) return true;
@@ -92,7 +92,7 @@ export function dedupeCompanyTimelineItems(items: CRMCompanyTimelineItem[]) {
   });
 }
 
-function compactPresentation(item: CRMCompanyTimelineItem): CompanyTimelinePresentation {
+function compactPresentation(item: CRMTimelineItem): CRMTimelinePresentation {
   const actor = creditedActorName(item);
   const description = clean(item.description);
   const humanActor = Boolean(actor);
@@ -137,7 +137,7 @@ function compactPresentation(item: CRMCompanyTimelineItem): CompanyTimelinePrese
   return { ...base, label: `${entity} ${action}`, attribution: actor, emphasizedValues: [entityName(item)] };
 }
 
-export function companyTimelinePresentation(item: CRMCompanyTimelineItem): CompanyTimelinePresentation {
+export function crmTimelinePresentation(item: CRMTimelineItem): CRMTimelinePresentation {
   const isAuthoredContent = ['crm_activity', 'crm_email_message', 'crm_calendar_event'].includes(item.source_type)
     && ['note', 'call', 'meeting', 'email'].includes(item.kind);
   if (!isAuthoredContent) return compactPresentation(item);
@@ -146,7 +146,7 @@ export function companyTimelinePresentation(item: CRMCompanyTimelineItem): Compa
   const contact = clean(item.contact?.name);
   const subject = clean(item.title);
   let label = 'Activity logged';
-  let actorKind: CompanyTimelinePresentation['actorKind'] = actor ? 'human' : 'unknown';
+  let actorKind: CRMTimelinePresentation['actorKind'] = actor ? 'human' : 'unknown';
   let contentTitle: string | undefined;
   let attribution = actor;
 
@@ -184,3 +184,7 @@ export function companyTimelinePresentation(item: CRMCompanyTimelineItem): Compa
     contentFormat: item.event_type === 'meeting.captured' ? 'markdown' : 'plain',
   };
 }
+
+export type CompanyTimelinePresentation = CRMTimelinePresentation;
+export const dedupeCompanyTimelineItems = dedupeCRMTimelineItems;
+export const companyTimelinePresentation = crmTimelinePresentation;

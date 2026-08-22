@@ -30,7 +30,7 @@ func (s *CRMCompanyService) SetTimelineRepository(repo *repository.CRMCompanyTim
 	return s
 }
 
-type crmCompanyTimelineCursor struct {
+type crmTimelineCursor struct {
 	Version int       `json:"v"`
 	At      time.Time `json:"at"`
 	ID      string    `json:"id"`
@@ -59,7 +59,7 @@ func (s *CRMCompanyService) ListTimeline(
 	if filter == "" {
 		filter = model.CRMCompanyTimelineFilterAll
 	}
-	if !validCompanyTimelineFilter(filter) {
+	if !validCRMTimelineFilter(filter) {
 		return nil, fmt.Errorf("invalid timeline filter")
 	}
 	if limit <= 0 {
@@ -71,7 +71,7 @@ func (s *CRMCompanyService) ListTimeline(
 
 	query := model.CRMCompanyTimelineQuery{Filter: filter, Limit: limit + 1}
 	if cursor != "" {
-		decoded, err := decodeCompanyTimelineCursor(cursor)
+		decoded, err := decodeCRMTimelineCursor(cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -86,7 +86,7 @@ func (s *CRMCompanyService) ListTimeline(
 	if len(items) > limit {
 		page.Data = items[:limit]
 		last := page.Data[len(page.Data)-1]
-		next, err := encodeCompanyTimelineCursor(crmCompanyTimelineCursor{Version: 1, At: last.OccurredAt, ID: last.ID})
+		next, err := encodeCRMTimelineCursor(crmTimelineCursor{Version: 1, At: last.OccurredAt, ID: last.ID})
 		if err != nil {
 			return nil, err
 		}
@@ -95,34 +95,36 @@ func (s *CRMCompanyService) ListTimeline(
 	return page, nil
 }
 
-func validCompanyTimelineFilter(filter string) bool {
+func validCRMTimelineFilter(filter string) bool {
 	switch filter {
 	case model.CRMCompanyTimelineFilterAll,
 		model.CRMCompanyTimelineFilterNote,
 		model.CRMCompanyTimelineFilterEmail,
 		model.CRMCompanyTimelineFilterCall,
 		model.CRMCompanyTimelineFilterMeeting,
-		model.CRMCompanyTimelineFilterTask:
+		model.CRMCompanyTimelineFilterTask,
+		model.CRMCompanyTimelineFilterDeal,
+		model.CRMCompanyTimelineFilterSupport:
 		return true
 	default:
 		return false
 	}
 }
 
-func encodeCompanyTimelineCursor(cursor crmCompanyTimelineCursor) (string, error) {
+func encodeCRMTimelineCursor(cursor crmTimelineCursor) (string, error) {
 	payload, err := json.Marshal(cursor)
 	if err != nil {
-		return "", fmt.Errorf("encode company timeline cursor: %w", err)
+		return "", fmt.Errorf("encode CRM timeline cursor: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(payload), nil
 }
 
-func decodeCompanyTimelineCursor(value string) (*crmCompanyTimelineCursor, error) {
+func decodeCRMTimelineCursor(value string) (*crmTimelineCursor, error) {
 	payload, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
 		return nil, fmt.Errorf("invalid timeline cursor")
 	}
-	var cursor crmCompanyTimelineCursor
+	var cursor crmTimelineCursor
 	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.Version != 1 || cursor.At.IsZero() || cursor.ID == "" {
 		return nil, fmt.Errorf("invalid timeline cursor")
 	}
@@ -135,6 +137,34 @@ func (s *CRMCompanyService) List(ctx context.Context, workspaceID string, filter
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
 	return s.companyRepo.List(ctx, workspaceID, filters, pagination)
+}
+
+func (s *CRMCompanyService) ListContacts(ctx context.Context, workspaceID, companyID, search string, pagination model.PMPagination) ([]model.CRMContact, int64, error) {
+	if err := s.requireCompanyWorkspace(ctx, workspaceID, companyID); err != nil {
+		return nil, 0, err
+	}
+	return s.companyRepo.ListContacts(ctx, workspaceID, companyID, search, pagination)
+}
+
+func (s *CRMCompanyService) ListDeals(ctx context.Context, workspaceID, companyID, search string, pagination model.PMPagination) ([]model.CRMDeal, int64, error) {
+	if err := s.requireCompanyWorkspace(ctx, workspaceID, companyID); err != nil {
+		return nil, 0, err
+	}
+	return s.companyRepo.ListDeals(ctx, workspaceID, companyID, search, pagination)
+}
+
+func (s *CRMCompanyService) requireCompanyWorkspace(ctx context.Context, workspaceID, companyID string) error {
+	if workspaceID == "" || companyID == "" {
+		return fmt.Errorf("workspace_id and company_id are required")
+	}
+	company, err := s.companyRepo.GetByID(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	if company == nil || company.WorkspaceID != workspaceID {
+		return fmt.Errorf("company not found")
+	}
+	return nil
 }
 
 // GetByID returns a company by ID.

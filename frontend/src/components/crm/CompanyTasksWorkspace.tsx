@@ -1,26 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  DndContext,
-  DragOverlay,
-  MeasuringStrategy,
-  PointerSensor,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core';
+import { DndContext, DragOverlay, MeasuringStrategy, PointerSensor, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
 
-import {
-  Cancel01Icon,
-  LayoutTable01Icon,
-  LayoutTwoColumnIcon,
-  Loading01Icon,
-  Search01Icon,
-} from '@/lib/icons';
+import { Cancel01Icon, LayoutTable01Icon, LayoutTwoColumnIcon, Loading01Icon, Search01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -29,12 +13,7 @@ import { BoardDisplayMenu } from '@/components/pm/BoardDisplayMenu';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import { TaskCard } from '@/components/pm/TaskCard';
 import { TaskListView } from '@/components/pm/TaskListView';
-import {
-  TaskFilterBar,
-  TaskFilterProvider,
-  TaskFilterTrigger,
-  TaskOwnerAvatarFilterRow,
-} from '@/components/pm/TaskFilters';
+import { TaskFilterBar, TaskFilterProvider, TaskFilterTrigger, TaskOwnerAvatarFilterRow } from '@/components/pm/TaskFilters';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { getVisibleTaskListGroupOptions, type TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
@@ -51,28 +30,26 @@ import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDis
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import type { EpicWithStats, Label, SprintWithStats, StateType, Task, WorkflowWithStates } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
-import {
-  COMPANY_TASK_STATE_GROUPS,
-  companyTaskDropStates,
-  companyTaskStateMap,
-  groupCompanyTasksByStateType,
-} from './companyTaskBoard';
+import { COMPANY_TASK_STATE_GROUPS, companyTaskDropStates, companyTaskStateMap, groupCompanyTasksByStateType } from './companyTaskBoard';
 
 const STATE_DROP_PREFIX = 'company-task-state:';
-const COMPANY_FILTER_EXCLUSIONS = ['company_id'];
-const COMPANY_LIST_DISABLED_KEYS = new Set<DisplayPropertyKey>(['companies']);
 const DND_MEASURING = { droppable: { strategy: MeasuringStrategy.Always } };
 
-interface CompanyTasksWorkspaceProps {
+type CRMTasksWorkspaceObjectType = 'company' | 'contact';
+
+interface CRMTasksWorkspaceProps {
   workspaceId: string;
-  companyId: string;
+  objectType: CRMTasksWorkspaceObjectType;
+  objectId: string;
   onOpenTask: (task: Task) => void;
   onTaskActivityChange?: () => void;
+  fullHeight?: boolean;
 }
 
 interface CompanyTaskQueryOptions {
   workspaceId: string;
-  companyId: string;
+  objectType: CRMTasksWorkspaceObjectType;
+  objectId: string;
   userFilters: BoardFilters;
   search: string;
   teamId: string;
@@ -81,43 +58,27 @@ interface CompanyTaskQueryOptions {
   pageSize: number;
 }
 
-function useCompanyTaskQuery({
-  workspaceId,
-  companyId,
-  userFilters,
-  search,
-  teamId,
-  stateType,
-  enabled,
-  pageSize,
-}: CompanyTaskQueryOptions) {
+function useCompanyTaskQuery({ workspaceId, objectType, objectId, userFilters, search, teamId, stateType, enabled, pageSize }: CompanyTaskQueryOptions) {
   return useInfiniteQuery({
-    queryKey: [
-      'pm',
-      workspaceId,
-      'tasks',
-      'company-workspace',
-      companyId,
-      stateType ?? 'all',
-      teamId || 'all-teams',
-      search,
-      userFilters,
-    ],
-    queryFn: async ({ pageParam }) => unwrap(await pmTaskService.list(workspaceId, {
-      ...userFilters,
-      archived: userFilters.archived ? userFilters.archived === 'true' : false,
-      page: pageParam,
-      per_page: pageSize,
-      search: search || undefined,
-      team_id: teamId || undefined,
-      company_id: companyId,
-      state_type: stateType,
-    } as Parameters<typeof pmTaskService.list>[1])),
+    queryKey: ['pm', workspaceId, 'tasks', 'crm-workspace', objectType, objectId, stateType ?? 'all', teamId || 'all-teams', search, userFilters],
+    queryFn: async ({ pageParam }) => {
+      const associationFilter = objectType === 'company' ? { company_rollup_id: objectId } : { contact_id: objectId };
+      return unwrap(
+        await pmTaskService.list(workspaceId, {
+          ...userFilters,
+          ...associationFilter,
+          archived: userFilters.archived ? userFilters.archived === 'true' : false,
+          page: pageParam,
+          per_page: pageSize,
+          search: search || undefined,
+          team_id: teamId || undefined,
+          state_type: stateType,
+        } as Parameters<typeof pmTaskService.list>[1]),
+      );
+    },
     initialPageParam: 1,
-    getNextPageParam: (lastPage) => (
-      lastPage.page < lastPage.total_pages ? lastPage.page + 1 : undefined
-    ),
-    enabled: enabled && !!workspaceId && !!companyId,
+    getNextPageParam: (lastPage) => (lastPage.page < lastPage.total_pages ? lastPage.page + 1 : undefined),
+    enabled: enabled && !!workspaceId && !!objectId,
   });
 }
 
@@ -125,13 +86,7 @@ function queryTasks(query: ReturnType<typeof useCompanyTaskQuery>) {
   return query.data?.pages.flatMap((page) => page.data) ?? [];
 }
 
-function StateDropBlock({
-  state,
-  currentStateId,
-}: {
-  state: WorkflowWithStates['states'][number];
-  currentStateId: string;
-}) {
+function StateDropBlock({ state, currentStateId }: { state: WorkflowWithStates['states'][number]; currentStateId: string }) {
   const isCurrent = state.id === currentStateId;
   const { setNodeRef, isOver } = useDroppable({
     id: `${STATE_DROP_PREFIX}${state.id}`,
@@ -143,9 +98,7 @@ function StateDropBlock({
       ref={setNodeRef}
       className={cn(
         'flex min-h-12 flex-1 items-center justify-center rounded-md border border-dashed px-3 text-center text-xs font-medium transition-[background-color,border-color,color,opacity] duration-150',
-        isCurrent
-          ? 'border-border/50 bg-muted/45 text-muted-foreground/60'
-          : 'border-border bg-background/90 text-foreground/80',
+        isCurrent ? 'border-border/50 bg-muted/45 text-muted-foreground/60' : 'border-border bg-background/90 text-foreground/80',
         isOver && 'border-primary bg-primary/10 text-primary ring-1 ring-primary/20',
       )}
     >
@@ -174,6 +127,7 @@ function CompanyTaskBoard({
   assignableMembers,
   onOpenTask,
   onMoveComplete,
+  fullHeight,
 }: {
   columns: BoardColumnData[];
   workflows: WorkflowWithStates[];
@@ -182,6 +136,7 @@ function CompanyTaskBoard({
   assignableMembers: ReturnType<typeof useAssignableWorkspaceMembers>['members'];
   onOpenTask: (task: Task) => void;
   onMoveComplete: () => void;
+  fullHeight: boolean;
 }) {
   const queryClient = useQueryClient();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -204,25 +159,29 @@ function CompanyTaskBoard({
     }
     return tasks;
   }, [columns]);
-  const displayedTasks = useMemo(() => allRawTasks.map((task) => {
-    const state = optimisticState[task.id];
-    if (!state) return task;
-    return {
-      ...task,
-      workflow_state_id: state.id,
-      state_name: state.name,
-      state_type: state.state_type as StateType,
-      state_color: state.color ?? undefined,
-      completed: state.state_type === 'done',
-    };
-  }), [allRawTasks, optimisticState]);
+  const displayedTasks = useMemo(
+    () =>
+      allRawTasks.map((task) => {
+        const state = optimisticState[task.id];
+        if (!state) return task;
+        return {
+          ...task,
+          workflow_state_id: state.id,
+          state_name: state.name,
+          state_type: state.state_type as StateType,
+          state_color: state.color ?? undefined,
+          completed: state.state_type === 'done',
+        };
+      }),
+    [allRawTasks, optimisticState],
+  );
   const displayedByType = useMemo(() => {
     return groupCompanyTasksByStateType(displayedTasks, workflows);
   }, [displayedTasks, workflows]);
 
   const invalidateWorkspace = async () => {
     await queryClient.invalidateQueries({
-      queryKey: ['pm', workspaceId, 'tasks', 'company-workspace'],
+      queryKey: ['pm', workspaceId, 'tasks', 'crm-workspace'],
     });
   };
 
@@ -242,7 +201,10 @@ function CompanyTaskBoard({
 
     setOptimisticState((current) => ({ ...current, [moving.id]: targetState }));
     try {
-      const response = await pmTaskService.move(workspaceId, moving.id, { state_id: targetState.id, position: 0 });
+      const response = await pmTaskService.move(workspaceId, moving.id, {
+        state_id: targetState.id,
+        position: 0,
+      });
       if (response.error) throw new Error(response.error);
       await invalidateWorkspace();
       onMoveComplete();
@@ -266,16 +228,29 @@ function CompanyTaskBoard({
       sensors={sensors}
       measuring={DND_MEASURING}
       onDragStart={handleDragStart}
-      onDragEnd={(event) => { void handleDragEnd(event); }}
+      onDragEnd={(event) => {
+        void handleDragEnd(event);
+      }}
       onDragCancel={() => setActiveTask(null)}
     >
-      <div className="min-h-0 max-h-[410px] overflow-x-auto overflow-y-hidden px-3 pb-3">
-        <div className="flex min-w-max items-stretch gap-1.5">
+      <div
+        className={cn(
+          'min-h-0 overflow-x-auto overflow-y-hidden px-3 pb-3',
+          fullHeight ? 'flex-1' : 'max-h-[410px]',
+        )}
+      >
+        <div className={cn('flex min-w-max items-stretch gap-1.5', fullHeight && 'h-full')}>
           {columns.map((column) => {
             const tasks = displayedByType.get(column.type) ?? [];
             const targetStates = companyTaskDropStates(activeTask, workflows, column.type);
             return (
-              <section key={column.type} className="relative flex max-h-[398px] w-[276px] shrink-0 flex-col">
+              <section
+                key={column.type}
+                className={cn(
+                  'relative flex w-[276px] shrink-0 flex-col overflow-hidden',
+                  fullHeight ? 'h-full min-h-0' : 'max-h-[398px]',
+                )}
+              >
                 <header className="flex h-11 shrink-0 items-center gap-2 px-3">
                   <StateTypeIcon stateType={column.type} className="h-4 w-4" />
                   <span className="text-sm font-semibold">{column.label}</span>
@@ -283,41 +258,39 @@ function CompanyTaskBoard({
                 </header>
 
                 <SortableContext items={tasks.map((task) => task.id)} strategy={verticalListSortingStrategy}>
-                  <div className="min-h-0 max-h-[342px] space-y-2 overflow-y-auto p-2 [scrollbar-gutter:stable]">
+                  <div
+                    className={cn(
+                      'min-h-0 space-y-2 overflow-y-auto p-2 [scrollbar-gutter:stable]',
+                      fullHeight ? 'flex-1' : 'max-h-[342px]',
+                    )}
+                  >
                     {column.isLoading ? (
                       <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
                         <Loading01Icon className="mr-2 h-3.5 w-3.5 animate-spin" />
                         Loading…
                       </div>
-                    ) : tasks.length > 0 ? tasks.map((task) => (
-                      <TaskCard
-                        key={task.id}
-                        task={task}
-                        workspaceId={workspaceId}
-                        assignableMembers={assignableMembers}
-                        ownerNameMap={ownerNameMap}
-                        teamName={task.team_id ? teamNameMap.get(task.team_id) : undefined}
-                        onOpen={onOpenTask}
-                        onOwnerChanged={handleCardPatched}
-                        onPriorityChanged={handleCardPatched}
-                        onSeverityChanged={handleCardPatched}
-                        onEstimateChanged={handleCardPatched}
-                        showStateBadge
-                      />
-                    )) : (
-                      <div className="flex h-24 items-center justify-center text-xs text-muted-foreground/70">
-                        No tasks
-                      </div>
+                    ) : tasks.length > 0 ? (
+                      tasks.map((task) => (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          workspaceId={workspaceId}
+                          assignableMembers={assignableMembers}
+                          ownerNameMap={ownerNameMap}
+                          teamName={task.team_id ? teamNameMap.get(task.team_id) : undefined}
+                          onOpen={onOpenTask}
+                          onOwnerChanged={handleCardPatched}
+                          onPriorityChanged={handleCardPatched}
+                          onSeverityChanged={handleCardPatched}
+                          onEstimateChanged={handleCardPatched}
+                          showStateBadge
+                        />
+                      ))
+                    ) : (
+                      <div className="flex h-24 items-center justify-center text-xs text-muted-foreground/70">No tasks</div>
                     )}
                     {column.hasNextPage && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="w-full text-xs text-muted-foreground"
-                        disabled={column.isFetchingNextPage}
-                        onClick={column.fetchNextPage}
-                      >
+                      <Button type="button" variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" disabled={column.isFetchingNextPage} onClick={column.fetchNextPage}>
                         {column.isFetchingNextPage && <Loading01Icon className="h-3.5 w-3.5 animate-spin" />}
                         Load more
                       </Button>
@@ -327,9 +300,9 @@ function CompanyTaskBoard({
 
                 {activeTask && (
                   <div className="absolute inset-x-1 bottom-2 top-[44px] z-20 flex flex-col gap-2 bg-background/94 p-2 backdrop-blur-[1px]">
-                    {targetStates.length > 0 ? targetStates.map((state) => (
-                      <StateDropBlock key={state.id} state={state} currentStateId={activeTask.workflow_state_id} />
-                    )) : (
+                    {targetStates.length > 0 ? (
+                      targetStates.map((state) => <StateDropBlock key={state.id} state={state} currentStateId={activeTask.workflow_state_id} />)
+                    ) : (
                       <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border/60 px-4 text-center text-xs text-muted-foreground">
                         No {column.label.toLowerCase()} states in this workflow
                       </div>
@@ -362,14 +335,10 @@ function CompanyTaskBoard({
   );
 }
 
-export function CompanyTasksWorkspace({
-  workspaceId,
-  companyId,
-  onOpenTask,
-  onTaskActivityChange,
-}: CompanyTasksWorkspaceProps) {
+export function CRMTasksWorkspace({ workspaceId, objectType, objectId, onOpenTask, onTaskActivityChange, fullHeight = false }: CRMTasksWorkspaceProps) {
   const queryClient = useQueryClient();
-  const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
+  const scopedListDisabledKeys = useMemo(() => new Set<DisplayPropertyKey>([objectType === 'company' ? 'companies' : 'contacts']), [objectType]);
+  const [viewMode, setViewMode] = useState<'list' | 'board'>('board');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [teamId, setTeamId] = useState('');
@@ -384,42 +353,76 @@ export function CompanyTasksWorkspace({
   const { data: workflows = [] } = useWorkflows(workspaceId);
   const displayInit = useBoardDisplayStore((state) => state.init);
 
-  useEffect(() => { displayInit(workspaceId); }, [displayInit, workspaceId]);
+  useEffect(() => {
+    displayInit(workspaceId);
+  }, [displayInit, workspaceId]);
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(searchInput.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
   useEffect(() => {
-    void Promise.all([
-      pmLabelService.list(workspaceId),
-      pmEpicService.list(workspaceId, { archived: false }),
-      pmSprintService.list(workspaceId),
-    ]).then(([labelResponse, epicResponse, sprintResponse]) => {
-      setLabels(labelResponse.data ?? []);
-      setEpics(epicResponse.data ?? []);
-      setSprints(sprintResponse.data ?? []);
-    });
+    void Promise.all([pmLabelService.list(workspaceId), pmEpicService.list(workspaceId, { archived: false }), pmSprintService.list(workspaceId)]).then(
+      ([labelResponse, epicResponse, sprintResponse]) => {
+        setLabels(labelResponse.data ?? []);
+        setEpics(epicResponse.data ?? []);
+        setSprints(sprintResponse.data ?? []);
+      },
+    );
   }, [workspaceId]);
 
   const tableQuery = useCompanyTaskQuery({
-    workspaceId, companyId, userFilters, search, teamId,
-    enabled: viewMode === 'list', pageSize: 50,
+    workspaceId,
+    objectType,
+    objectId,
+    userFilters,
+    search,
+    teamId,
+    enabled: viewMode === 'list',
+    pageSize: 50,
   });
   const backlogQuery = useCompanyTaskQuery({
-    workspaceId, companyId, userFilters, search, teamId,
-    stateType: 'backlog', enabled: viewMode === 'board', pageSize: 25,
+    workspaceId,
+    objectType,
+    objectId,
+    userFilters,
+    search,
+    teamId,
+    stateType: 'backlog',
+    enabled: viewMode === 'board',
+    pageSize: 25,
   });
   const unstartedQuery = useCompanyTaskQuery({
-    workspaceId, companyId, userFilters, search, teamId,
-    stateType: 'unstarted', enabled: viewMode === 'board', pageSize: 25,
+    workspaceId,
+    objectType,
+    objectId,
+    userFilters,
+    search,
+    teamId,
+    stateType: 'unstarted',
+    enabled: viewMode === 'board',
+    pageSize: 25,
   });
   const startedQuery = useCompanyTaskQuery({
-    workspaceId, companyId, userFilters, search, teamId,
-    stateType: 'started', enabled: viewMode === 'board', pageSize: 25,
+    workspaceId,
+    objectType,
+    objectId,
+    userFilters,
+    search,
+    teamId,
+    stateType: 'started',
+    enabled: viewMode === 'board',
+    pageSize: 25,
   });
   const doneQuery = useCompanyTaskQuery({
-    workspaceId, companyId, userFilters, search, teamId,
-    stateType: 'done', enabled: viewMode === 'board', pageSize: 25,
+    workspaceId,
+    objectType,
+    objectId,
+    userFilters,
+    search,
+    teamId,
+    stateType: 'done',
+    enabled: viewMode === 'board',
+    pageSize: 25,
   });
 
   const boardQueries = [backlogQuery, unstartedQuery, startedQuery, doneQuery];
@@ -427,9 +430,7 @@ export function CompanyTasksWorkspace({
   const columns: BoardColumnData[] = COMPANY_TASK_STATE_GROUPS.map((group, index) => {
     const query = boardQueries[index]!;
     const rawTasks = queryTasks(query);
-    const tasks = rawTasks.filter((task) => (
-      workflowStates.get(task.workflow_state_id)?.state_type ?? task.state_type
-    ) === group.type);
+    const tasks = rawTasks.filter((task) => (workflowStates.get(task.workflow_state_id)?.state_type ?? task.state_type) === group.type);
     // Older servers ignore state_type. Keep this view correct while the API rolls out,
     // then use the server total once every returned task matches the requested group.
     const containsOtherStateTypes = tasks.length !== rawTasks.length;
@@ -440,7 +441,9 @@ export function CompanyTasksWorkspace({
       isLoading: query.isLoading,
       isFetchingNextPage: query.isFetchingNextPage,
       hasNextPage: !containsOtherStateTypes && !!query.hasNextPage,
-      fetchNextPage: () => { void query.fetchNextPage(); },
+      fetchNextPage: () => {
+        void query.fetchNextPage();
+      },
     };
   });
   const tableTasks = queryTasks(tableQuery);
@@ -452,13 +455,11 @@ export function CompanyTasksWorkspace({
     epic: true,
     sprint: true,
   });
-  const queryError = viewMode === 'list'
-    ? tableQuery.error
-    : boardQueries.find((query) => query.error)?.error;
+  const queryError = viewMode === 'list' ? tableQuery.error : boardQueries.find((query) => query.error)?.error;
 
   const refreshWorkspace = async () => {
     await queryClient.invalidateQueries({
-      queryKey: ['pm', workspaceId, 'tasks', 'company-workspace'],
+      queryKey: ['pm', workspaceId, 'tasks', 'crm-workspace'],
     });
   };
 
@@ -473,18 +474,13 @@ export function CompanyTasksWorkspace({
       sprints={sprints}
       onChange={setUserFilters}
       externalFilters={userFilters}
-      excludedKeys={COMPANY_FILTER_EXCLUSIONS}
+      excludedKeys={[objectType === 'company' ? 'company_id' : 'contact_id']}
     >
-      <div className="flex max-h-[470px] min-h-0 flex-col overflow-hidden bg-background">
+      <div className={cn('flex min-h-0 flex-col overflow-hidden bg-background', fullHeight ? 'flex-1' : 'max-h-[470px]')}>
         <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2">
           <div className="relative min-w-[150px] flex-1 sm:max-w-[220px]">
             <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search customer tasks"
-              className="h-7 pl-8 pr-7 text-xs"
-            />
+            <Input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search customer tasks" className="h-7 pl-8 pr-7 text-xs" />
             {searchInput && (
               <button
                 type="button"
@@ -508,7 +504,11 @@ export function CompanyTasksWorkspace({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all__">All teams</SelectItem>
-                {teams.map((team) => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={team.id}>
+                    {team.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           )}
@@ -522,7 +522,9 @@ export function CompanyTasksWorkspace({
                 </SelectTrigger>
                 <SelectContent>
                   {groupOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -557,9 +559,7 @@ export function CompanyTasksWorkspace({
               </QuickTooltip>
             </span>
 
-            {viewMode === 'list'
-              ? <ListDisplayMenu disabledKeys={COMPANY_LIST_DISABLED_KEYS} />
-              : <BoardDisplayMenu />}
+            {viewMode === 'list' ? <ListDisplayMenu disabledKeys={scopedListDisabledKeys} /> : <BoardDisplayMenu />}
           </div>
         </div>
 
@@ -570,9 +570,7 @@ export function CompanyTasksWorkspace({
             {queryError instanceof Error ? queryError.message : 'Unable to load customer tasks.'}
           </div>
         ) : !primaryWorkflow ? (
-          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
-            No task workflow is available.
-          </div>
+          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">No task workflow is available.</div>
         ) : viewMode === 'list' ? (
           tableQuery.isLoading ? (
             <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -588,28 +586,35 @@ export function CompanyTasksWorkspace({
               assignableMembers={assignableMembers}
               epics={epics}
               sprints={sprints}
-              filters={{ ...userFilters, company_id: companyId }}
+              filters={{
+                ...userFilters,
+                ...(objectType === 'company' ? { company_id: objectId } : { contact_id: objectId }),
+              }}
               externalTasks={tableTasks}
               listenForCreatedTasks={false}
-              fitContent
+              fitContent={!fullHeight}
               onOpenTask={onOpenTask}
               groupBy={listGroupBy}
               onGroupByChange={setListGroupBy}
               showToolbar={false}
               onBulkOperationComplete={refreshWorkspace}
-              footer={tableQuery.hasNextPage ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-muted-foreground"
-                  disabled={tableQuery.isFetchingNextPage}
-                  onClick={() => { void tableQuery.fetchNextPage(); }}
-                >
-                  {tableQuery.isFetchingNextPage && <Loading01Icon className="h-3.5 w-3.5 animate-spin" />}
-                  Load more tasks
-                </Button>
-              ) : undefined}
+              footer={
+                tableQuery.hasNextPage ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground"
+                    disabled={tableQuery.isFetchingNextPage}
+                    onClick={() => {
+                      void tableQuery.fetchNextPage();
+                    }}
+                  >
+                    {tableQuery.isFetchingNextPage && <Loading01Icon className="h-3.5 w-3.5 animate-spin" />}
+                    Load more tasks
+                  </Button>
+                ) : undefined
+              }
             />
           )
         ) : (
@@ -623,6 +628,7 @@ export function CompanyTasksWorkspace({
             onMoveComplete={() => {
               onTaskActivityChange?.();
             }}
+            fullHeight={fullHeight}
           />
         )}
       </div>

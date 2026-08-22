@@ -53,8 +53,25 @@ func (r *CRMCompanyTimelineRepository) List(
 	workspaceID, companyID string,
 	query model.CRMCompanyTimelineQuery,
 ) ([]model.CRMCompanyTimelineItem, error) {
+	return r.list(ctx, workspaceID, "company", companyID, query)
+}
+
+// ListContact returns one page of timeline items directly related to a contact.
+func (r *CRMCompanyTimelineRepository) ListContact(
+	ctx context.Context,
+	workspaceID, contactID string,
+	query model.CRMTimelineQuery,
+) ([]model.CRMTimelineItem, error) {
+	return r.list(ctx, workspaceID, "contact", contactID, query)
+}
+
+func (r *CRMCompanyTimelineRepository) list(
+	ctx context.Context,
+	workspaceID, scopeType, scopeID string,
+	query model.CRMTimelineQuery,
+) ([]model.CRMTimelineItem, error) {
 	if r.db.Dialector.Name() != "postgres" {
-		return r.listPortable(ctx, workspaceID, companyID, query)
+		return r.listPortable(ctx, workspaceID, scopeType, scopeID, query)
 	}
 
 	filter := strings.TrimSpace(query.Filter)
@@ -67,43 +84,64 @@ func (r *CRMCompanyTimelineRepository) List(
 	}
 
 	raw := `
-WITH company_contacts AS (
+WITH timeline_contacts AS (
+    SELECT CAST(@scope_id AS uuid) AS id
+    WHERE @scope_type = 'contact'
+
+    UNION
+
     SELECT DISTINCT CASE
         WHEN ca.from_object_type = 'contact' THEN ca.from_object_id
         ELSE ca.to_object_id
     END AS id
     FROM crm_associations ca
-    WHERE ca.workspace_id = @workspace_id
+    WHERE @scope_type = 'company'
+      AND ca.workspace_id = @workspace_id
       AND (
-        (ca.from_object_type = 'company' AND ca.from_object_id = @company_id AND ca.to_object_type = 'contact')
+        (ca.from_object_type = 'company' AND ca.from_object_id = @scope_id AND ca.to_object_type = 'contact')
         OR
-        (ca.to_object_type = 'company' AND ca.to_object_id = @company_id AND ca.from_object_type = 'contact')
+        (ca.to_object_type = 'company' AND ca.to_object_id = @scope_id AND ca.from_object_type = 'contact')
       )
 ), related_tasks AS (
     SELECT DISTINCT CASE WHEN ca.from_object_type = 'task' THEN ca.from_object_id ELSE ca.to_object_id END AS id
     FROM crm_associations ca
     WHERE ca.workspace_id = @workspace_id
       AND (
-        (ca.from_object_type = 'task' AND ca.to_object_type = 'company' AND ca.to_object_id = @company_id)
-        OR (ca.to_object_type = 'task' AND ca.from_object_type = 'company' AND ca.from_object_id = @company_id)
-        OR (ca.from_object_type = 'task' AND ca.to_object_type = 'contact' AND ca.to_object_id IN (SELECT id FROM company_contacts))
-        OR (ca.to_object_type = 'task' AND ca.from_object_type = 'contact' AND ca.from_object_id IN (SELECT id FROM company_contacts))
+        (@scope_type = 'company' AND ca.from_object_type = 'task' AND ca.to_object_type = 'company' AND ca.to_object_id = @scope_id)
+        OR (@scope_type = 'company' AND ca.to_object_type = 'task' AND ca.from_object_type = 'company' AND ca.from_object_id = @scope_id)
+        OR (ca.from_object_type = 'task' AND ca.to_object_type = 'contact' AND ca.to_object_id IN (SELECT id FROM timeline_contacts))
+        OR (ca.to_object_type = 'task' AND ca.from_object_type = 'contact' AND ca.from_object_id IN (SELECT id FROM timeline_contacts))
       )
 ), related_deals AS (
     SELECT DISTINCT CASE WHEN ca.from_object_type = 'deal' THEN ca.from_object_id ELSE ca.to_object_id END AS id
     FROM crm_associations ca
     WHERE ca.workspace_id = @workspace_id
       AND (
-        (ca.from_object_type = 'deal' AND ca.to_object_type = 'company' AND ca.to_object_id = @company_id)
-        OR (ca.to_object_type = 'deal' AND ca.from_object_type = 'company' AND ca.from_object_id = @company_id)
-        OR (ca.from_object_type = 'deal' AND ca.to_object_type = 'contact' AND ca.to_object_id IN (SELECT id FROM company_contacts))
-        OR (ca.to_object_type = 'deal' AND ca.from_object_type = 'contact' AND ca.from_object_id IN (SELECT id FROM company_contacts))
+        (@scope_type = 'company' AND ca.from_object_type = 'deal' AND ca.to_object_type = 'company' AND ca.to_object_id = @scope_id)
+        OR (@scope_type = 'company' AND ca.to_object_type = 'deal' AND ca.from_object_type = 'company' AND ca.from_object_id = @scope_id)
+        OR (ca.from_object_type = 'deal' AND ca.to_object_type = 'contact' AND ca.to_object_id IN (SELECT id FROM timeline_contacts))
+        OR (ca.to_object_type = 'deal' AND ca.from_object_type = 'contact' AND ca.from_object_id IN (SELECT id FROM timeline_contacts))
       )
 ), related_support AS (
     SELECT sc.id
     FROM support_conversations sc
     WHERE sc.workspace_id = @workspace_id
-      AND (sc.crm_company_id = @company_id OR sc.crm_contact_id IN (SELECT id FROM company_contacts))
+      AND ((@scope_type = 'company' AND sc.crm_company_id = @scope_id) OR sc.crm_contact_id IN (SELECT id FROM timeline_contacts))
+
+    UNION
+
+    SELECT DISTINCT CASE
+        WHEN ca.from_object_type = 'support_conversation' THEN ca.from_object_id
+        ELSE ca.to_object_id
+    END AS id
+    FROM crm_associations ca
+    WHERE ca.workspace_id = @workspace_id
+      AND (
+        (@scope_type = 'company' AND ca.from_object_type = 'support_conversation' AND ca.to_object_type = 'company' AND ca.to_object_id = @scope_id)
+        OR (@scope_type = 'company' AND ca.to_object_type = 'support_conversation' AND ca.from_object_type = 'company' AND ca.from_object_id = @scope_id)
+        OR (ca.from_object_type = 'support_conversation' AND ca.to_object_type = 'contact' AND ca.to_object_id IN (SELECT id FROM timeline_contacts))
+        OR (ca.to_object_type = 'support_conversation' AND ca.from_object_type = 'contact' AND ca.from_object_id IN (SELECT id FROM timeline_contacts))
+      )
 ), candidates AS (
     SELECT
       'activity:' || a.id AS id,
@@ -133,7 +171,7 @@ WITH company_contacts AS (
     LEFT JOIN workspace_members wm ON wm.id = a.owner_member_id
     LEFT JOIN users eu ON eu.id::text = a.metadata->>'actor_user_id'
     WHERE a.workspace_id = @workspace_id
-      AND (a.company_id = @company_id OR a.contact_id IN (SELECT id FROM company_contacts))
+      AND ((@scope_type = 'company' AND a.company_id = @scope_id) OR a.contact_id IN (SELECT id FROM timeline_contacts))
 
     UNION ALL
 
@@ -159,7 +197,7 @@ WITH company_contacts AS (
       'email'
     FROM crm_email_messages m
     JOIN crm_email_message_contacts mc ON mc.message_id = m.id AND mc.workspace_id = m.workspace_id
-    JOIN company_contacts cc ON cc.id = mc.contact_id
+    JOIN timeline_contacts cc ON cc.id = mc.contact_id
     LEFT JOIN crm_contacts c ON c.id = mc.contact_id
     WHERE m.workspace_id = @workspace_id
 
@@ -186,7 +224,7 @@ WITH company_contacts AS (
       false,
       'meeting'
     FROM crm_calendar_events ce
-    JOIN company_contacts cc ON jsonb_exists(ce.contact_ids, cc.id::text)
+    JOIN timeline_contacts cc ON jsonb_exists(ce.contact_ids, cc.id::text)
     LEFT JOIN crm_contacts c ON c.id = cc.id
     WHERE ce.workspace_id = @workspace_id
       AND ce.status <> 'cancelled'
@@ -259,7 +297,7 @@ WITH company_contacts AS (
       d.display_id,
       false,
       false,
-      'system'
+      'deal'
     FROM pm_activity_log pal
     JOIN related_deals rd ON rd.id = pal.entity_id
     JOIN crm_deals d ON d.id = pal.entity_id
@@ -304,7 +342,7 @@ WITH company_contacts AS (
       d.display_id,
       false,
       false,
-      'system'
+      'deal'
     FROM related_deals rd
     JOIN crm_deals d ON d.id = rd.id AND d.workspace_id = @workspace_id
     LEFT JOIN crm_pipeline_stages s ON s.id = d.stage_id
@@ -346,7 +384,7 @@ WITH company_contacts AS (
       sc.display_id::text,
       false,
       false,
-      'system'
+      'support'
     FROM support_events se
     JOIN related_support rs ON rs.id = se.conversation_id
     JOIN support_conversations sc ON sc.id = se.conversation_id
@@ -356,6 +394,39 @@ WITH company_contacts AS (
         'conversation_created', 'customer_message_created', 'human_reply_sent',
         'ai_answer_sent', 'conversation_resolved', 'conversation_status_changed'
       )
+
+    UNION ALL
+
+    SELECT
+      'support-conversation:' || sc.id,
+      'support',
+      'support.conversation_created',
+      'support_conversation',
+      sc.id,
+      COALESCE(NULLIF(sc.subject, ''), 'Support conversation'),
+      'Support conversation opened',
+      sc.created_at,
+      NULL::text,
+      NULL::text,
+      c.id::text,
+      NULLIF(TRIM(CONCAT(c.first_name, ' ', c.last_name)), ''),
+      'support_conversation',
+      sc.id::text,
+      COALESCE(NULLIF(sc.subject, ''), 'Support conversation'),
+      sc.display_id::text,
+      false,
+      false,
+      'support'
+    FROM related_support rs
+    JOIN support_conversations sc ON sc.id = rs.id AND sc.workspace_id = @workspace_id
+    LEFT JOIN crm_contacts c ON c.id = sc.crm_contact_id
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM support_events se
+      WHERE se.workspace_id = sc.workspace_id
+        AND se.conversation_id = sc.id
+        AND se.event_type = 'conversation_created'
+    )
 )
 SELECT id, kind, event_type, source_type, source_id, title, description, occurred_at,
        actor_id, actor_name, contact_id, contact_name, entity_type, entity_id,
@@ -373,7 +444,8 @@ LIMIT @limit`
 	}
 	args := map[string]interface{}{
 		"workspace_id": workspaceID,
-		"company_id":   companyID,
+		"scope_type":   scopeType,
+		"scope_id":     scopeID,
 		"filter":       filter,
 		"cursor_at":    cursorAt,
 		"cursor_id":    query.CursorID,
@@ -381,7 +453,7 @@ LIMIT @limit`
 	}
 	var rows []crmCompanyTimelineRow
 	if err := r.db.WithContext(ctx).Raw(raw, args).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list company timeline: %w", err)
+		return nil, fmt.Errorf("list CRM timeline: %w", err)
 	}
 	return mapCRMCompanyTimelineRows(rows), nil
 }
@@ -414,15 +486,19 @@ func mapCRMCompanyTimelineRows(rows []crmCompanyTimelineRow) []model.CRMCompanyT
 
 func (r *CRMCompanyTimelineRepository) listPortable(
 	ctx context.Context,
-	workspaceID, companyID string,
-	query model.CRMCompanyTimelineQuery,
+	workspaceID, scopeType, scopeID string,
+	query model.CRMTimelineQuery,
 ) ([]model.CRMCompanyTimelineItem, error) {
 	limit := query.Limit
 	if limit <= 0 {
 		limit = 25
 	}
-	dbQuery := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND company_id = ?", workspaceID, companyID)
+	dbQuery := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
+	if scopeType == "contact" {
+		dbQuery = dbQuery.Where("contact_id = ?", scopeID)
+	} else {
+		dbQuery = dbQuery.Where("company_id = ?", scopeID)
+	}
 	if query.Filter != "" && query.Filter != model.CRMCompanyTimelineFilterAll {
 		dbQuery = dbQuery.Where("activity_type = ?", query.Filter)
 	}

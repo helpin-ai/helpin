@@ -1772,7 +1772,7 @@ export function TaskListView({
   const { rows } = table.getRowModel();
   const selectWidth = table.getColumn('select')?.getSize() ?? CHECKBOX_COL_SIZE;
   const displayIdWidth = table.getColumn('displayId')?.getSize() ?? 90;
-  const typeIconColumn = table.getColumn('typeIcon');
+  const typeIconColumn = table.getAllLeafColumns().find((column) => column.id === 'typeIcon');
   const typeIconWidth = typeIconColumn?.getSize() ?? 40;
   const showTypeIcon = typeIconColumn?.getIsVisible() ?? false;
   const pinnedOffsets = useMemo(() => {

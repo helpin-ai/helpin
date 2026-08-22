@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,12 +15,13 @@ interface CreateDealDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   companyContext?: { id: string; name: string };
+  contactContext?: { id: string; name: string };
   onDealCreated?: (deal: CRMDeal) => void;
 }
 
 const currencyOptions = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
 
-export function CreateDealDialog({ open, onOpenChange, companyContext, onDealCreated }: CreateDealDialogProps) {
+export function CreateDealDialog({ open, onOpenChange, companyContext, contactContext, onDealCreated }: CreateDealDialogProps) {
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
@@ -38,6 +39,8 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, onDealCre
   const [closeDate, setCloseDate] = useState('');
   const [probability, setProbability] = useState('');
 
+  const selectedContactId = contactContext?.id ?? contactId;
+
   const selectedPipeline = pipelines?.find((p) => p.id === pipelineId);
   const stages = selectedPipeline?.stages ?? [];
 
@@ -51,7 +54,7 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, onDealCre
 
   const resetForm = () => {
     setName('');
-    setContactId('');
+    setContactId(contactContext?.id ?? '');
     setAmount('');
     setCurrency('USD');
     setCloseDate('');
@@ -60,14 +63,14 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, onDealCre
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !contactId || !pipelineId || !stageId) return;
+    if (!name.trim() || !selectedContactId || !pipelineId || !stageId) return;
 
     let deal: CRMDeal;
     try {
       deal = await createDeal.mutateAsync({
         workspace_id: wsId,
         name: name.trim(),
-        contact_id: contactId,
+        contact_id: selectedContactId,
         pipeline_id: pipelineId,
         stage_id: stageId,
         amount: amount ? parseFloat(amount) : undefined,
@@ -126,6 +129,9 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, onDealCre
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create Deal</DialogTitle>
+          <DialogDescription className="sr-only">
+            Create a deal linked to the selected CRM contact.
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -134,7 +140,7 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, onDealCre
           </div>
           <div className="space-y-2">
             <Label>Contact *</Label>
-            <Select value={contactId} onValueChange={setContactId}>
+            <Select value={selectedContactId} onValueChange={setContactId} disabled={!!contactContext}>
               <SelectTrigger><SelectValue placeholder="Select contact" /></SelectTrigger>
               <SelectContent>
                 {contacts?.data?.map((c) => (
@@ -200,7 +206,7 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, onDealCre
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={createDeal.isPending || createAssociation.isPending || !name.trim() || !contactId || !pipelineId || !stageId}>
+            <Button type="submit" disabled={createDeal.isPending || createAssociation.isPending || !name.trim() || !selectedContactId || !pipelineId || !stageId}>
               {createDeal.isPending || createAssociation.isPending ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>

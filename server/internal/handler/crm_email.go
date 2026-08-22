@@ -51,6 +51,10 @@ func (h *CRMEmailHandler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	if accounts == nil {
 		accounts = []model.CRMEmailAccount{}
 	}
+	userID := middleware.GetUserID(r.Context())
+	for i := range accounts {
+		accounts[i].CanSend = accounts[i].MemberID == userID && accounts[i].IsActive && accounts[i].Status == model.CRMEmailAccountStatusConnected && accounts[i].Provider == model.CRMEmailProviderGmail
+	}
 	writeJSON(w, http.StatusOK, accounts)
 }
 
@@ -300,9 +304,7 @@ func (h *CRMEmailHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actor := authorization.GetActor(r.Context())
-	isAdmin := actor != nil && authorization.NewRBACEngine().Can(actor.Role, authorization.PermCRMAdmin)
-	message, err := h.emailService.SendEmail(r.Context(), workspaceID, req.AccountID, middleware.GetUserID(r.Context()), isAdmin, req.To, req.CC, req.Subject, req.BodyHTML)
+	message, err := h.emailService.SendEmail(r.Context(), workspaceID, req.AccountID, middleware.GetUserID(r.Context()), false, req.To, req.CC, req.Subject, req.BodyHTML)
 	if err != nil {
 		if err.Error() == "not authorized to send from this email account" {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -325,12 +327,15 @@ func (h *CRMEmailHandler) ListThreads(w http.ResponseWriter, r *http.Request) {
 	filters := model.CRMEmailThreadListFilters{
 		EmailAccountID: queryStringPtr(r, "email_account_id"),
 		ContactID:      queryStringPtr(r, "contact_id"),
+		CompanyID:      queryStringPtr(r, "company_id"),
 		DealID:         queryStringPtr(r, "deal_id"),
 		Search:         queryStringPtr(r, "search"),
+		Scope:          queryStringPtr(r, "scope"),
+		Sort:           queryStringPtr(r, "sort"),
 	}
 	pagination := queryPagination(r)
 
-	threads, total, err := h.emailService.ListThreads(r.Context(), workspaceID, filters, pagination)
+	threads, total, err := h.emailService.ListThreads(r.Context(), workspaceID, middleware.GetUserID(r.Context()), filters, pagination)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -345,6 +350,64 @@ func (h *CRMEmailHandler) ListThreads(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetThread handles GET /api/crm/email/threads/{id}.
+func (h *CRMEmailHandler) GetThread(w http.ResponseWriter, r *http.Request) {
+	detail, err := h.emailService.GetThreadDetail(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+// ReplyToThread handles POST /api/crm/email/threads/{id}/reply.
+func (h *CRMEmailHandler) ReplyToThread(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Mode     string `json:"mode"`
+		BodyHTML string `json:"body_html"`
+	}
+	if err := decodeJSON(r, &req); err != nil || (req.Mode != "reply" && req.Mode != "reply_all") || req.BodyHTML == "" {
+		writeError(w, http.StatusBadRequest, "mode and body_html are required")
+		return
+	}
+	message, err := h.emailService.ReplyToThread(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req.Mode, req.BodyHTML)
+	if err != nil {
+		if err.Error() == "only the connected mailbox owner can reply to this thread" {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, message)
+}
+
+// SetThreadDismissal handles PUT/DELETE /api/crm/email/threads/{id}/needs-reply-dismissal.
+func (h *CRMEmailHandler) SetThreadDismissal(w http.ResponseWriter, r *http.Request) {
+	dismissed := r.Method != http.MethodDelete
+	if err := h.emailService.SetThreadDismissed(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), dismissed); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "needs reply state updated"})
+}
+
+// LinkThreadDeal handles PATCH /api/crm/email/threads/{id}/deal.
+func (h *CRMEmailHandler) LinkThreadDeal(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DealID *string `json:"deal_id"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.emailService.LinkThreadDeal(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), req.DealID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "email thread deal updated"})
+}
+
 // ListMessages handles GET /api/crm/email/messages.
 func (h *CRMEmailHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -356,6 +419,7 @@ func (h *CRMEmailHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
 		ThreadID:       queryStringPtr(r, "thread_id"),
 		EmailAccountID: queryStringPtr(r, "email_account_id"),
 		ContactID:      queryStringPtr(r, "contact_id"),
+		CompanyID:      queryStringPtr(r, "company_id"),
 		DealID:         queryStringPtr(r, "deal_id"),
 		Direction:      queryStringPtr(r, "direction"),
 	}
@@ -400,6 +464,30 @@ func (h *CRMEmailHandler) ListByContact(w http.ResponseWriter, r *http.Request) 
 
 	filters := model.CRMEmailMessageListFilters{
 		ContactID: &contactID,
+	}
+	messages, total, err := h.emailService.ListMessages(r.Context(), workspaceID, filters, pagination)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if messages == nil {
+		messages = []model.CRMEmailMessage{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data":  messages,
+		"total": total,
+		"page":  pagination.Page,
+	})
+}
+
+// ListByCompany handles GET /api/crm/companies/{id}/emails.
+func (h *CRMEmailHandler) ListByCompany(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	companyID := chi.URLParam(r, "id")
+	pagination := queryPagination(r)
+
+	filters := model.CRMEmailMessageListFilters{
+		CompanyID: &companyID,
 	}
 	messages, total, err := h.emailService.ListMessages(r.Context(), workspaceID, filters, pagination)
 	if err != nil {

@@ -10,9 +10,10 @@ interface EnrichmentRailCardProps {
   objectType: CRMObjectType;
   objectId: string;
   presentation?: 'default' | 'borderless';
+  fullWidth?: boolean;
 }
 
-export function EnrichmentRailCard({ workspaceId, objectType, objectId, presentation = 'default' }: EnrichmentRailCardProps) {
+export function EnrichmentRailCard({ workspaceId, objectType, objectId, presentation = 'default', fullWidth = false }: EnrichmentRailCardProps) {
   const { data } = useEnrichments(workspaceId, { object_type: objectType, object_id: objectId });
   const borderless = presentation === 'borderless';
 
@@ -30,7 +31,10 @@ export function EnrichmentRailCard({ workspaceId, objectType, objectId, presenta
     return (
       <div className={cn(
         borderless
-          ? '-mx-4 mt-4 border-y border-border/60 px-4 py-4 sm:-mx-6 sm:px-6 lg:-mx-5 lg:px-5'
+          ? cn(
+              'border-y border-border/60 px-4 py-4',
+              !fullWidth && '-mx-4 mt-4 sm:-mx-6 sm:px-6 lg:-mx-5 lg:px-5',
+            )
           : 'flex flex-col items-center gap-2 rounded-md border border-dashed border-border/70 px-4 py-5 text-center',
       )}>
         {borderless ? (
@@ -65,7 +69,10 @@ export function EnrichmentRailCard({ workspaceId, objectType, objectId, presenta
   return (
     <div className={cn(
       borderless
-        ? '-mx-4 mt-4 border-y border-border/60 px-4 py-4 sm:-mx-6 sm:px-6 lg:-mx-5 lg:px-5'
+        ? cn(
+            'border-y border-border/60 px-4 py-4',
+            !fullWidth && '-mx-4 mt-4 sm:-mx-6 sm:px-6 lg:-mx-5 lg:px-5',
+          )
         : 'space-y-2.5',
     )}>
       <div className="flex items-center justify-between gap-2">

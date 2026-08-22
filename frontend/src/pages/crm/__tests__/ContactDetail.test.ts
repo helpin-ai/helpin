@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import {
   buyerSignalsSectionClassName,
   contactDetailDefaultFieldKeys,
   contactDetailExpandedFieldKeys,
+  contactDetailCollapsedGridClassName,
   contactDetailOverviewGridClassName,
   contactDetailOverviewContentClassName,
   contactDetailOverviewSectionOrder,
@@ -16,10 +19,57 @@ import {
   sidebarPopoverSelectTriggerClassName,
 } from '../ContactDetail';
 import { SOCIAL_PLATFORM_META } from '@/components/docs/helpcenter/SocialPlatformIcon';
+import { normalizeContactDetailTab } from '@/lib/contactDetailTabs';
+
+const contactDetailSource = readFileSync(resolve(__dirname, '../ContactDetail.tsx'), 'utf8');
+const detailCollectionsSource = readFileSync(resolve(__dirname, '../../../components/crm/CompanyDetailCollections.tsx'), 'utf8');
+const contactRouteSource = readFileSync(resolve(__dirname, '../../../routes/_authenticated/w/$slug/crm/contacts/$contactId.tsx'), 'utf8');
 
 describe('contactDetailOverviewGridClassName', () => {
   it('uses a wider right rail for the overview contact profile', () => {
     expect(contactDetailOverviewGridClassName).toContain('lg:grid-cols-[1fr_360px]');
+  });
+
+  it('reserves only the vertical toggle bar when the desktop rail is minimized', () => {
+    expect(contactDetailCollapsedGridClassName).toContain('lg:grid-cols-[minmax(0,1fr)_40px]');
+  });
+});
+
+describe('contact detail navigation', () => {
+  it('normalizes missing and invalid tab values to overview', () => {
+    expect(normalizeContactDetailTab('tasks')).toBe('tasks');
+    expect(normalizeContactDetailTab('companies')).toBe('overview');
+    expect(normalizeContactDetailTab(undefined)).toBe('overview');
+  });
+
+  it('uses URL-backed specialist tabs with a persistent detail rail', () => {
+    for (const tab of ['Overview', 'Tasks', 'Emails', 'Meetings', 'Calls', 'Deals', 'Support', 'Notes']) {
+      expect(contactDetailSource).toContain(`label: '${tab}'`);
+    }
+    expect(contactRouteSource).toContain('normalizeContactDetailTab');
+    expect(contactRouteSource).toContain('validateSearch');
+    expect(contactDetailSource).toContain('<ContactMeetingsView');
+    expect(contactDetailSource).toContain('<ContactDealsView');
+    expect(contactDetailSource).toContain('<ContactSupportView');
+    expect(contactDetailSource).toContain('<EmailTimeline');
+    expect(contactDetailSource).toContain('fullHeight');
+    expect(contactDetailSource).toContain('filterControl="dropdown"');
+    expect(contactDetailSource).toContain("mobileDetailsOpen");
+    expect(contactDetailSource).toContain("'hidden lg:flex'");
+    expect(contactDetailSource).toContain("setDesktopDetailsCollapsed(activeTab !== 'overview')");
+    expect(contactDetailSource).toContain('aria-label="Open contact details"');
+    expect(contactDetailSource).toContain('aria-label="Minimize contact details"');
+    expect(contactDetailSource).toContain('emailRecipient={contact.email}');
+  });
+
+  it('uses the shared borderless treatment for contact tab actions', () => {
+    expect(detailCollectionsSource).toContain('export function ContactDealsView');
+    expect(detailCollectionsSource).toContain('export function ContactMeetingsView');
+    expect(detailCollectionsSource).toContain('export function ContactSupportView');
+    expect(detailCollectionsSource).toContain(
+      "getOptionalSectionActionClass(linkOpen ? 'open' : 'available', 'borderless')",
+    );
+    expect(detailCollectionsSource).toContain('<PlusSignIcon className="h-[15px] w-[15px]" />');
   });
 });
 
@@ -28,16 +78,16 @@ describe('contact profile rail fields', () => {
     expect(buyerSignalsSectionClassName).not.toContain('pb-14');
   });
 
-  it('leaves bottom space in the main overview content area', () => {
-    expect(contactDetailOverviewContentClassName).toContain('pb-28');
+  it('lets the unified overview sections own their spacing', () => {
+    expect(contactDetailOverviewContentClassName).toBe('mt-0');
   });
 
   it('does not duplicate buyer signals in the sidebar', () => {
     expect(contactDetailSidebarSectionTitles).not.toContain('Signals');
   });
 
-  it('places recent activity at the bottom of the overview flow', () => {
-    expect(contactDetailOverviewSectionOrder.at(-1)).toBe('recent_activity');
+  it('places the unified activity stream at the bottom of the overview flow', () => {
+    expect(contactDetailOverviewSectionOrder).toEqual(['summary_signals', 'activity']);
   });
 
   it('keeps high-signal profile attributes visible by default', () => {

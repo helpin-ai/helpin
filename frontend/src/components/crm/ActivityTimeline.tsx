@@ -1,59 +1,30 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import {
-  Briefcase01Icon,
-  Calendar01Icon,
-  CheckListIcon,
-  Delete01Icon,
-  DollarCircleIcon,
-  PencilEdit01Icon,
-  Loading01Icon,
-  Mail01Icon,
-  Message01Icon,
-  SparklesIcon,
-  TelephoneIcon,
-} from '@/lib/icons';
+import { Briefcase01Icon, Calendar01Icon, CheckListIcon, Delete01Icon, DollarCircleIcon, PencilEdit01Icon, Loading01Icon, Mail01Icon, Message01Icon, SparklesIcon, TelephoneIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Tabs } from '@/components/ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import {
-  EmphasizedActivityLabel,
-  UpdateActivityRow,
-} from '@/components/pm/UpdateActivityRow';
+import { EmphasizedActivityLabel, UpdateActivityRow } from '@/components/pm/UpdateActivityRow';
 import { compactUpdateTime } from '@/components/pm/updateActivityTime';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
-import { useCreateCRMActivity, useDeleteCRMActivity, useUpdateCRMActivity } from '@/hooks/queries/useCRM';
-import type {
-  CRMActivity,
-  CRMActivityType,
-  CRMCompanyTimelineFilter,
-  CRMCompanyTimelineItem,
-} from '@/lib/crmTypes';
+import { useCreateCRMActivity, useDeleteCRMActivity, useEmailAccounts, useUpdateCRMActivity } from '@/hooks/queries/useCRM';
+import type { CRMActivity, CRMActivityType, CRMTimelineFilter, CRMTimelineItem } from '@/lib/crmTypes';
 import { cn } from '@/lib/utils';
-import {
-  companyTimelinePresentation,
-  dedupeCompanyTimelineItems,
-  type CompanyTimelinePresentation,
-} from './companyTimelinePresentation';
+import { crmTimelinePresentation, dedupeCRMTimelineItems, type CRMTimelinePresentation } from './companyTimelinePresentation';
+import { CRMEmailComposerDialog } from './CRMEmailComposerDialog';
+import { EmailTimeline } from './EmailTimeline';
 
 interface ActivityTimelineProps {
   activities?: CRMActivity[];
-  timelineItems?: CRMCompanyTimelineItem[];
-  timelineFilter?: CRMCompanyTimelineFilter;
-  onTimelineFilterChange?: (filter: CRMCompanyTimelineFilter) => void;
-  onTimelineItemOpen?: (item: CRMCompanyTimelineItem) => void;
+  timelineItems?: CRMTimelineItem[];
+  timelineFilter?: CRMTimelineFilter;
+  onTimelineFilterChange?: (filter: CRMTimelineFilter) => void;
+  onTimelineItemOpen?: (item: CRMTimelineItem) => void;
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
   isTimelineLoading?: boolean;
@@ -62,9 +33,13 @@ interface ActivityTimelineProps {
   contactId?: string;
   companyId?: string;
   dealId?: string;
+  emailRecipient?: string;
   onActivityCreated?: () => void;
   onActivityDeleted?: () => void;
   presentation?: 'default' | 'borderless';
+  filterControl?: 'tabs' | 'dropdown' | 'hidden';
+  actionTypes?: Array<CRMActivityType | 'email'>;
+  heading?: string;
 }
 
 const activityIcons: Record<CRMActivityType, typeof Mail01Icon> = {
@@ -74,7 +49,11 @@ const activityIcons: Record<CRMActivityType, typeof Mail01Icon> = {
   email: Mail01Icon,
 };
 
-const activityTypes: { type: CRMActivityType; icon: typeof Message01Icon; label: string }[] = [
+const activityTypes: {
+  type: CRMActivityType;
+  icon: typeof Message01Icon;
+  label: string;
+}[] = [
   { type: 'note', icon: Message01Icon, label: 'Note' },
   { type: 'call', icon: TelephoneIcon, label: 'Call' },
   { type: 'meeting', icon: Calendar01Icon, label: 'Meeting' },
@@ -82,16 +61,18 @@ const activityTypes: { type: CRMActivityType; icon: typeof Message01Icon; label:
 
 const filterOptions = ['all', 'note', 'call', 'meeting', 'email'] as const;
 
-const companyFilterOptions: { value: CRMCompanyTimelineFilter; label: string }[] = [
+const companyFilterOptions: { value: CRMTimelineFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'note', label: 'Notes' },
   { value: 'email', label: 'Emails' },
   { value: 'call', label: 'Calls' },
   { value: 'meeting', label: 'Meetings' },
-  { value: 'task', label: 'Task activity' },
+  { value: 'task', label: 'Tasks' },
+  { value: 'deal', label: 'Deals' },
+  { value: 'support', label: 'Support' },
 ];
 
-const timelineIcons: Record<CRMCompanyTimelineItem['kind'], typeof Message01Icon> = {
+const timelineIcons: Record<CRMTimelineItem['kind'], typeof Message01Icon> = {
   note: Message01Icon,
   email: Mail01Icon,
   call: TelephoneIcon,
@@ -111,8 +92,8 @@ function ContentTimelineEntry({
   onEdit,
   onDelete,
 }: {
-  item: CRMCompanyTimelineItem;
-  presentation: CompanyTimelinePresentation;
+  item: CRMTimelineItem;
+  presentation: CRMTimelinePresentation;
   icon: typeof Message01Icon;
   borderless: boolean;
   onOpen?: () => void;
@@ -122,6 +103,7 @@ function ContentTimelineEntry({
   const [expanded, setExpanded] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const isEmailPreview = item.kind === 'email';
 
   useLayoutEffect(() => {
     const content = contentRef.current;
@@ -132,17 +114,12 @@ function ContentTimelineEntry({
     const observer = new ResizeObserver(measure);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [expanded, presentation.contentBody, presentation.contentTitle]);
+  }, [expanded, isEmailPreview, presentation.contentBody, presentation.contentTitle]);
 
   const interactive = Boolean(onOpen);
 
   return (
-    <div
-      className={cn(
-        'group grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3 py-3.5',
-        borderless && 'px-4 sm:px-6 lg:px-10',
-      )}
-    >
+    <div className={cn('group grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3 py-3.5', borderless && (isEmailPreview ? 'pl-4 pr-2 sm:pl-6 sm:pr-3 lg:pl-10 lg:pr-4' : 'px-4 sm:px-6 lg:px-10'))}>
       <span className="flex h-7 w-7 shrink-0 items-center justify-center">
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <Icon className="h-3.5 w-3.5" />
@@ -152,11 +129,7 @@ function ContentTimelineEntry({
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           {interactive ? (
-            <button
-              type="button"
-              className="min-w-0 flex-1 truncate text-left text-[13px] text-foreground/70 transition-colors hover:text-foreground"
-              onClick={onOpen}
-            >
+            <button type="button" className="min-w-0 flex-1 truncate text-left text-[13px] text-foreground/70 transition-colors hover:text-foreground" onClick={onOpen}>
               <EmphasizedActivityLabel label={presentation.label} values={presentation.emphasizedValues} />
             </button>
           ) : (
@@ -172,38 +145,44 @@ function ContentTimelineEntry({
           {(item.can_edit || item.can_delete) && (
             <span className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
               {item.can_edit && (
-                <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Edit activity" onClick={(event) => { event.stopPropagation(); onEdit(); }}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  aria-label="Edit activity"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onEdit();
+                  }}
+                >
                   <PencilEdit01Icon className="h-3 w-3" />
                 </Button>
               )}
               {item.can_delete && (
-                <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Delete activity" onClick={(event) => { event.stopPropagation(); onDelete(); }}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  aria-label="Delete activity"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete();
+                  }}
+                >
                   <Delete01Icon className="h-3 w-3" />
                 </Button>
               )}
             </span>
           )}
-          <time className="w-16 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">
-            {compactUpdateTime(item.occurred_at)}
-          </time>
+          <time className="w-16 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">{compactUpdateTime(item.occurred_at)}</time>
         </div>
 
-        <div
-          ref={contentRef}
-          className={cn('mt-1.5', !expanded && 'max-h-[6.75rem] overflow-hidden')}
-        >
-          {presentation.contentTitle && (
-            <p className="text-sm font-medium leading-5 text-foreground/90">{presentation.contentTitle}</p>
-          )}
+        <div ref={contentRef} className={cn('mt-1.5', !expanded && (isEmailPreview ? 'max-h-10 overflow-hidden' : 'max-h-[6.75rem] overflow-hidden'))}>
+          {presentation.contentTitle && <p className="text-sm font-medium leading-5 text-foreground/90">{presentation.contentTitle}</p>}
           {presentation.contentBody && presentation.contentFormat === 'markdown' ? (
-            <MarkdownContent
-              content={presentation.contentBody}
-              className={cn('text-[13px] leading-5 text-foreground/75', presentation.contentTitle && 'mt-1')}
-            />
+            <MarkdownContent content={presentation.contentBody} className={cn('text-[13px] leading-5 text-foreground/75', presentation.contentTitle && 'mt-1')} />
           ) : presentation.contentBody ? (
-            <p className={cn('whitespace-pre-wrap text-[13px] leading-5 text-foreground/75', presentation.contentTitle && 'mt-1')}>
-              {presentation.contentBody}
-            </p>
+            <p className={cn('whitespace-pre-wrap text-[13px] leading-5 text-foreground/75', presentation.contentTitle && 'mt-1')}>{presentation.contentBody}</p>
           ) : null}
         </div>
 
@@ -239,31 +218,36 @@ export function ActivityTimeline({
   contactId,
   companyId,
   dealId,
+  emailRecipient,
   onActivityCreated,
   onActivityDeleted,
   presentation = 'default',
+  filterControl = 'tabs',
+  actionTypes,
+  heading = 'Activity',
 }: ActivityTimelineProps) {
   const borderless = presentation === 'borderless';
   const activityFormId = useId();
-  const [filterType, setFilterType] = useState<CRMCompanyTimelineFilter>('all');
+  const [filterType, setFilterType] = useState<CRMTimelineFilter>('all');
   const [activityDialogOpen, setActivityDialogOpen] = useState(false);
   const [draftType, setDraftType] = useState<CRMActivityType>('note');
   const [newSubject, setNewSubject] = useState('');
   const [newBody, setNewBody] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editingSourceId, setEditingSourceId] = useState<string | null>(null);
+  const [emailComposerOpen, setEmailComposerOpen] = useState(false);
 
   const createActivity = useCreateCRMActivity(workspaceId ?? '');
   const updateActivity = useUpdateCRMActivity(workspaceId ?? '');
   const deleteActivity = useDeleteCRMActivity(workspaceId ?? '');
+  const emailEnabled = Boolean(timelineItems && (contactId || companyId || dealId));
+  const emailAccounts = useEmailAccounts(emailEnabled ? (workspaceId ?? '') : '');
+  const visibleActivityTypes = activityTypes.filter(({ type }) => !actionTypes || actionTypes.includes(type));
+  const showEmailAction = emailEnabled && (!actionTypes || actionTypes.includes('email'));
 
   const selectedFilter = timelineItems ? (timelineFilter ?? filterType) : filterType;
-  const filtered = filterType === 'all'
-    ? activities
-    : filterType === 'task'
-      ? []
-      : activities.filter((a) => a.activity_type === filterType);
-  const displayedTimelineItems = timelineItems ? dedupeCompanyTimelineItems(timelineItems) : undefined;
+  const filtered = filterType === 'all' ? activities : filterType === 'task' || filterType === 'deal' || filterType === 'support' ? [] : activities.filter((a) => a.activity_type === filterType);
+  const displayedTimelineItems = timelineItems ? dedupeCRMTimelineItems(timelineItems) : undefined;
 
   const handleCreate = async () => {
     if (!workspaceId || !newSubject.trim()) return;
@@ -315,7 +299,7 @@ export function ActivityTimeline({
     }
   };
 
-  const beginTimelineEdit = (item: CRMCompanyTimelineItem) => {
+  const beginTimelineEdit = (item: CRMTimelineItem) => {
     setEditingSourceId(item.source_id);
     setDraftType(item.kind as CRMActivityType);
     setNewSubject(item.title);
@@ -325,14 +309,11 @@ export function ActivityTimeline({
 
   const creationButtons = workspaceId ? (
     <div className={cn('flex flex-wrap items-center gap-[18px]', !borderless && 'mb-4')}>
-      {activityTypes.map(({ type, icon: Icon, label }) => (
+      {visibleActivityTypes.map(({ type, icon: Icon, label }) => (
         <button
           key={type}
           type="button"
-          className={getOptionalSectionActionClass(
-            activityDialogOpen && draftType === type ? 'open' : 'available',
-            'borderless',
-          )}
+          className={getOptionalSectionActionClass(activityDialogOpen && draftType === type ? 'open' : 'available', 'borderless')}
           onClick={() => {
             setEditingSourceId(null);
             setDraftType(type);
@@ -343,6 +324,12 @@ export function ActivityTimeline({
           {label}
         </button>
       ))}
+      {showEmailAction && (
+        <button type="button" className={getOptionalSectionActionClass(emailComposerOpen ? 'open' : 'available', 'borderless')} onClick={() => setEmailComposerOpen(true)}>
+          <Mail01Icon className="h-[15px] w-[15px]" />
+          Email
+        </button>
+      )}
     </div>
   ) : null;
 
@@ -350,30 +337,44 @@ export function ActivityTimeline({
     <div>
       {borderless ? (
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-3 pt-5 sm:px-6 lg:px-10">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/75">Activity</h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/75">{heading}</h3>
+            {filterControl === 'dropdown' && timelineItems && (
+              <Select
+                value={selectedFilter}
+                onValueChange={(value) => {
+                  setFilterType(value as CRMTimelineFilter);
+                  onTimelineFilterChange?.(value as CRMTimelineFilter);
+                }}
+              >
+                <SelectTrigger aria-label="Filter activity" className="h-7 w-[148px] border-0 bg-muted/50 px-2.5 text-xs shadow-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {companyFilterOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
           {creationButtons}
         </div>
-      ) : creationButtons}
+      ) : (
+        creationButtons
+      )}
 
-      <Tabs
-        value={selectedFilter}
-        onValueChange={(value) => setFilterType(value as CRMCompanyTimelineFilter)}
-        className="gap-0"
-      >
-        <div
-          role="tablist"
-          aria-label="Activity type"
-          className={cn(
-            'flex items-center gap-0.5 overflow-x-auto border-b border-border/60',
-            borderless ? 'px-4 sm:px-6 lg:px-10' : 'mb-3',
-          )}
-        >
+      {filterControl === 'tabs' && (
+        <div role="tablist" aria-label="Activity type" className={cn('flex items-center gap-0.5 overflow-x-auto border-b border-border/60', borderless ? 'px-4 sm:px-6 lg:px-10' : 'mb-3')}>
           {(timelineItems
             ? companyFilterOptions
             : filterOptions.map((value) => ({
                 value,
                 label: value === 'all' ? 'All' : `${value.charAt(0).toUpperCase()}${value.slice(1)}s`,
-              }))).map(({ value, label }) => (
+              }))
+          ).map(({ value, label }) => (
             <button
               key={value}
               type="button"
@@ -381,9 +382,7 @@ export function ActivityTimeline({
               aria-selected={selectedFilter === value}
               className={cn(
                 '-mb-px inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-1.5 text-[13px] font-medium transition-colors',
-                selectedFilter === value
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
+                selectedFilter === value ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
               )}
               onClick={() => {
                 setFilterType(value);
@@ -394,9 +393,11 @@ export function ActivityTimeline({
             </button>
           ))}
         </div>
-      </Tabs>
+      )}
 
-      {isTimelineLoading ? (
+      {timelineItems && selectedFilter === 'email' && workspaceId ? (
+        <EmailTimeline workspaceId={workspaceId} contactId={contactId} companyId={companyId} dealId={dealId} defaultRecipient={emailRecipient} showComposeAction={false} />
+      ) : isTimelineLoading ? (
         <div className="flex items-center justify-center px-6 py-12">
           <Loading01Icon className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
@@ -410,78 +411,69 @@ export function ActivityTimeline({
         </div>
       ) : (
         <div className={cn(borderless ? 'divide-y divide-border/50' : 'space-y-4')}>
-          {displayedTimelineItems ? displayedTimelineItems.map((item) => {
-            const Icon = timelineIcons[item.kind] ?? Message01Icon;
-            const itemPresentation = companyTimelinePresentation(item);
-            const interactive = !item.can_edit && !!onTimelineItemOpen;
+          {displayedTimelineItems
+            ? displayedTimelineItems.map((item) => {
+                const Icon = timelineIcons[item.kind] ?? Message01Icon;
+                const itemPresentation = crmTimelinePresentation(item);
+                const interactive = !item.can_edit && !!onTimelineItemOpen;
 
-            if (itemPresentation.mode === 'content') {
-              return (
-                <ContentTimelineEntry
-                  key={item.id}
-                  item={item}
-                  presentation={itemPresentation}
-                  icon={Icon}
-                  borderless={borderless}
-                  onOpen={interactive ? () => onTimelineItemOpen?.(item) : undefined}
-                  onEdit={() => beginTimelineEdit(item)}
-                  onDelete={() => setDeleteId(item.source_id)}
-                />
-              );
-            }
+                if (itemPresentation.mode === 'content') {
+                  return (
+                    <ContentTimelineEntry
+                      key={item.id}
+                      item={item}
+                      presentation={itemPresentation}
+                      icon={Icon}
+                      borderless={borderless}
+                      onOpen={interactive ? () => onTimelineItemOpen?.(item) : undefined}
+                      onEdit={() => beginTimelineEdit(item)}
+                      onDelete={() => setDeleteId(item.source_id)}
+                    />
+                  );
+                }
 
-            return (
-              <div key={item.id} className={cn(borderless && 'px-2 sm:px-4 lg:px-8')}>
-                <UpdateActivityRow
-                  label={itemPresentation.label}
-                  occurredAt={item.occurred_at}
-                  emphasizedValues={itemPresentation.emphasizedValues}
-                  fallbackIcon={<Icon className="h-3.5 w-3.5" />}
-                  actionLabel={itemPresentation.attribution ? `by ${itemPresentation.attribution}` : undefined}
-                  onClick={interactive ? () => onTimelineItemOpen?.(item) : undefined}
-                />
-              </div>
-            );
-          }) : filtered.map((activity) => {
-            const Icon = activityIcons[activity.activity_type] ?? Message01Icon;
-            return (
-              <div key={activity.id} className={cn(
-                'group flex gap-3',
-                borderless && 'px-4 py-4 sm:px-6 lg:px-10',
-              )}>
-                <div className={cn(
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted',
-                  borderless && 'h-7 w-7',
-                )}>
-                  <Icon className={cn('h-4 w-4 text-muted-foreground', borderless && 'h-3.5 w-3.5')} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium capitalize">{activity.activity_type}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(activity.occurred_at), { addSuffix: true })}
-                    </span>
-                    {workspaceId && (
-                      <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => setDeleteId(activity.id)}
-                        >
-                          <Delete01Icon className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
+                return (
+                  <div key={item.id} className={cn(borderless && 'px-2 sm:px-4 lg:px-8')}>
+                    <UpdateActivityRow
+                      label={itemPresentation.label}
+                      occurredAt={item.occurred_at}
+                      emphasizedValues={itemPresentation.emphasizedValues}
+                      fallbackIcon={<Icon className="h-3.5 w-3.5" />}
+                      actionLabel={itemPresentation.attribution ? `by ${itemPresentation.attribution}` : undefined}
+                      onClick={interactive ? () => onTimelineItemOpen?.(item) : undefined}
+                    />
                   </div>
-                  {activity.subject && <p className="mt-0.5 text-sm">{activity.subject}</p>}
-                  {activity.body && (
-                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{activity.body}</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                );
+              })
+            : filtered.map((activity) => {
+                const Icon = activityIcons[activity.activity_type] ?? Message01Icon;
+                return (
+                  <div key={activity.id} className={cn('group flex gap-3', borderless && 'px-4 py-4 sm:px-6 lg:px-10')}>
+                    <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted', borderless && 'h-7 w-7')}>
+                      <Icon className={cn('h-4 w-4 text-muted-foreground', borderless && 'h-3.5 w-3.5')} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium capitalize">{activity.activity_type}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDistanceToNow(new Date(activity.occurred_at), {
+                            addSuffix: true,
+                          })}
+                        </span>
+                        {workspaceId && (
+                          <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDeleteId(activity.id)}>
+                              <Delete01Icon className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                      {activity.subject && <p className="mt-0.5 text-sm">{activity.subject}</p>}
+                      {activity.body && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{activity.body}</p>}
+                    </div>
+                  </div>
+                );
+              })}
           {timelineItems && hasNextPage && (
             <div className="flex justify-center px-6 py-4">
               <Button variant="outline" size="sm" disabled={isFetchingNextPage} onClick={onLoadMore}>
@@ -497,11 +489,7 @@ export function ActivityTimeline({
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingSourceId ? 'Edit activity' : 'Log activity'}</DialogTitle>
-            <DialogDescription>
-              {editingSourceId
-                ? 'Update this manual activity.'
-                : 'Add a note, call, or meeting to this record. Closing this dialog keeps your draft.'}
-            </DialogDescription>
+            <DialogDescription>{editingSourceId ? 'Update this manual activity.' : 'Add a note, call, or meeting to this record. Closing this dialog keeps your draft.'}</DialogDescription>
           </DialogHeader>
 
           <form
@@ -511,41 +499,34 @@ export function ActivityTimeline({
               void handleCreate();
             }}
           >
-            <fieldset className="space-y-2">
-              <legend className="text-xs font-medium text-muted-foreground">Activity type</legend>
-              <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/60 p-1" role="radiogroup" aria-label="Activity type">
-                {activityTypes.map(({ type, icon: Icon, label }) => (
-                  <Button
-                    key={type}
-                    type="button"
-                    role="radio"
-                    aria-checked={draftType === type}
-                    variant="ghost"
-                    size="sm"
-                    className={cn(
-                      'gap-1.5 text-muted-foreground hover:text-foreground',
-                      draftType === type && 'bg-background text-foreground shadow-xs hover:bg-background',
-                    )}
-                    onClick={() => setDraftType(type)}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {label}
-                  </Button>
-                ))}
-              </div>
-            </fieldset>
+            {visibleActivityTypes.length > 1 && (
+              <fieldset className="space-y-2">
+                <legend className="text-xs font-medium text-muted-foreground">Activity type</legend>
+                <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/60 p-1" role="radiogroup" aria-label="Activity type">
+                  {visibleActivityTypes.map(({ type, icon: Icon, label }) => (
+                    <Button
+                      key={type}
+                      type="button"
+                      role="radio"
+                      aria-checked={draftType === type}
+                      variant="ghost"
+                      size="sm"
+                      className={cn('gap-1.5 text-muted-foreground hover:text-foreground', draftType === type && 'bg-background text-foreground shadow-xs hover:bg-background')}
+                      onClick={() => setDraftType(type)}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </fieldset>
+            )}
 
             <div className="space-y-2">
               <label htmlFor={`${activityFormId}-subject`} className="text-xs font-medium text-muted-foreground">
                 Subject
               </label>
-              <Input
-                id={`${activityFormId}-subject`}
-                autoFocus
-                placeholder="What happened?"
-                value={newSubject}
-                onChange={(event) => setNewSubject(event.target.value)}
-              />
+              <Input id={`${activityFormId}-subject`} autoFocus placeholder="What happened?" value={newSubject} onChange={(event) => setNewSubject(event.target.value)} />
             </div>
 
             <div className="space-y-2">
@@ -563,13 +544,7 @@ export function ActivityTimeline({
             </div>
 
             <DialogFooter className="gap-3 sm:items-center sm:justify-between">
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-muted-foreground"
-                disabled={!newSubject && !newBody}
-                onClick={clearDraft}
-              >
+              <Button type="button" variant="ghost" className="text-muted-foreground" disabled={!newSubject && !newBody} onClick={clearDraft}>
                 Clear draft
               </Button>
               <div className="flex flex-col-reverse gap-2 sm:flex-row">
@@ -584,6 +559,19 @@ export function ActivityTimeline({
           </form>
         </DialogContent>
       </Dialog>
+
+      {emailEnabled && (
+        <CRMEmailComposerDialog
+          workspaceId={workspaceId ?? ''}
+          accounts={emailAccounts.data ?? []}
+          open={emailComposerOpen}
+          draft={{
+            title: 'New email',
+            to: emailRecipient ? [emailRecipient] : undefined,
+          }}
+          onOpenChange={setEmailComposerOpen}
+        />
+      )}
 
       <ConfirmDialog
         open={!!deleteId}

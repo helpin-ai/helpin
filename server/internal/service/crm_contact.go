@@ -18,6 +18,7 @@ type CRMContactService struct {
 	productAnalyticsEmitter
 	contactRepo    *repository.CRMContactRepository
 	activityRepo   *repository.CRMActivityRepository
+	timelineRepo   *repository.CRMCompanyTimelineRepository
 	entitlementSvc *EntitlementService
 	wsPublisher    websocket.EventPublisher
 }
@@ -35,6 +36,12 @@ func (s *CRMContactService) SetIdentitySync(
 ) *CRMContactService {
 	s.activityRepo = activityRepo
 	s.wsPublisher = wsPublisher
+	return s
+}
+
+// SetTimelineRepository enables the unified contact timeline read model.
+func (s *CRMContactService) SetTimelineRepository(repo *repository.CRMCompanyTimelineRepository) *CRMContactService {
+	s.timelineRepo = repo
 	return s
 }
 
@@ -78,6 +85,65 @@ func (s *CRMContactService) requireContactViewEntitlement(ctx context.Context, w
 		return err
 	}
 	return s.entitlementSvc.RequireLimitUsage(ctx, workspaceID, EntitlementLimitContacts, count, 0)
+}
+
+// ListTimeline returns one cursor-paginated page of events directly related to a contact.
+func (s *CRMContactService) ListTimeline(
+	ctx context.Context,
+	workspaceID, contactID, filter, cursor string,
+	limit int,
+) (*model.CRMTimelinePage, error) {
+	if workspaceID == "" || contactID == "" {
+		return nil, fmt.Errorf("workspace_id and contact_id are required")
+	}
+	if s.timelineRepo == nil {
+		return nil, fmt.Errorf("contact timeline is not configured")
+	}
+	contact, err := s.GetByID(ctx, contactID)
+	if err != nil {
+		return nil, err
+	}
+	if contact.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("contact not found")
+	}
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		filter = model.CRMTimelineFilterAll
+	}
+	if !validCRMTimelineFilter(filter) {
+		return nil, fmt.Errorf("invalid timeline filter")
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	query := model.CRMTimelineQuery{Filter: filter, Limit: limit + 1}
+	if cursor != "" {
+		decoded, err := decodeCRMTimelineCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		query.CursorAt = &decoded.At
+		query.CursorID = decoded.ID
+	}
+	items, err := s.timelineRepo.ListContact(ctx, workspaceID, contactID, query)
+	if err != nil {
+		return nil, err
+	}
+	page := &model.CRMTimelinePage{Data: items}
+	if len(items) > limit {
+		page.Data = items[:limit]
+		last := page.Data[len(page.Data)-1]
+		next, err := encodeCRMTimelineCursor(crmTimelineCursor{Version: 1, At: last.OccurredAt, ID: last.ID})
+		if err != nil {
+			return nil, err
+		}
+		page.NextCursor = &next
+	}
+	return page, nil
 }
 
 // Create creates a contact.

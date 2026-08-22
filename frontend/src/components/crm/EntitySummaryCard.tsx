@@ -20,6 +20,7 @@ interface EntitySummaryCardProps {
   workspaceId: string;
   contactId?: string;
   dealId?: string;
+  presentation?: 'default' | 'compact';
 }
 
 const highlightIcons: Record<SummaryHighlight['kind'], ElementType> = {
@@ -30,9 +31,9 @@ const highlightIcons: Record<SummaryHighlight['kind'], ElementType> = {
   signal: ZapIcon,
 };
 
-function SummaryHeading() {
+function SummaryHeading({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+    <div className={cn('flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground', compact ? 'mb-2' : 'mb-3')}>
       <AiMagicIcon className="h-3.5 w-3.5 text-foreground/70" />
       Summary
     </div>
@@ -93,17 +94,18 @@ function SummaryBody({ summary }: { summary: CRMEntitySummary }) {
   );
 }
 
-export function EntitySummaryCard({ workspaceId, contactId, dealId }: EntitySummaryCardProps) {
+export function EntitySummaryCard({ workspaceId, contactId, dealId, presentation = 'default' }: EntitySummaryCardProps) {
   const contactQuery = useContactSummary(workspaceId, contactId ?? '');
   const dealQuery = useDealSummary(workspaceId, dealId ?? '');
   const query = contactId ? contactQuery : dealQuery;
   const summary = query.data;
+  const compact = presentation === 'compact';
 
   if (query.isLoading) {
     return (
       <div>
-        <SummaryHeading />
-        <DashedShell>
+        <SummaryHeading compact={compact} />
+        <DashedShell className={cn(compact && 'rounded-md px-4 py-3 sm:px-4 sm:py-3')}>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
             Loading latest summary…
@@ -118,9 +120,9 @@ export function EntitySummaryCard({ workspaceId, contactId, dealId }: EntitySumm
   if (!hasBody) {
     return (
       <div>
-        <SummaryHeading />
-        <DashedShell>
-          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <SummaryHeading compact={compact} />
+        <DashedShell className={cn(compact && 'rounded-md px-4 py-3 sm:px-4 sm:py-3')}>
+          <div className={cn('flex flex-col items-start sm:flex-row sm:items-center sm:justify-between', compact ? 'gap-3 sm:gap-3' : 'gap-4 sm:gap-6')}>
             <div className="min-w-0">
               <h3 className="text-[14px] font-semibold leading-snug text-foreground">
                 Not enough signal yet
@@ -147,7 +149,7 @@ export function EntitySummaryCard({ workspaceId, contactId, dealId }: EntitySumm
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className={cn('flex items-center justify-between', compact ? 'mb-2' : 'mb-3')}>
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           <AiMagicIcon className="h-3.5 w-3.5 text-foreground/70" />
           Summary
@@ -168,7 +170,7 @@ export function EntitySummaryCard({ workspaceId, contactId, dealId }: EntitySumm
           Regenerate
         </Button>
       </div>
-      <DashedShell className="border-solid bg-muted/20">
+      <DashedShell className={cn('border-solid bg-muted/20', compact && 'rounded-md px-4 py-3 sm:px-4 sm:py-3')}>
         <SummaryBody summary={summary!} />
       </DashedShell>
     </div>

@@ -11,17 +11,24 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useCreateCRMMeeting, useCRMMeetingSettings } from '@/hooks/queries/useCRMMeetings';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { associationsService } from '@/lib/services/associationsService';
+import type { CRMObjectType } from '@/lib/crmTypes';
 
 export function CreateMeetingDialog({
   open,
   onOpenChange,
   workspaceId,
   workspaceSlug,
+  associationContext,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspaceId: string;
   workspaceSlug: string;
+  associationContext?: {
+    type: Extract<CRMObjectType, 'contact' | 'company' | 'deal'>;
+    id: string;
+  };
 }) {
   const navigate = useNavigate();
   const createMeeting = useCreateCRMMeeting(workspaceId);
@@ -60,6 +67,16 @@ export function CreateMeetingDialog({
         },
         idempotencyKey: idempotencyKey.current,
       });
+      if (associationContext) {
+        const association = await associationsService.createAssociation({
+          workspace_id: workspaceId,
+          from_object_type: 'meeting',
+          from_object_id: detail.meeting.id,
+          to_object_type: associationContext.type,
+          to_object_id: associationContext.id,
+        });
+        if (association.error) throw new Error(association.error);
+      }
       handleOpenChange(false);
       toast.success(startNow ? 'Helpin is joining the meeting' : 'Meeting scheduled');
       void navigate({
@@ -81,57 +98,70 @@ export function CreateMeetingDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Add meeting</DialogTitle>
-          <DialogDescription>Paste a supported Google Meet, Zoom, Teams, or Webex URL.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          {!settingsEnabled && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
-              Meeting notes are turned off. An admin must enable them before the notetaker can join.
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="meeting-title">Title</Label>
-            <Input id="meeting-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Discovery call with Acme" autoFocus />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="meeting-url">Meeting URL</Label>
-            <Input id="meeting-url" type="url" value={meetingUrl} onChange={(event) => setMeetingUrl(event.target.value)} placeholder="https://meet.google.com/abc-defg-hij" />
-            {detectedPlatform && <div className="flex items-center gap-2 text-xs text-muted-foreground"><MeetingPlatformLabel platform={detectedPlatform} compact /><span>link detected</span></div>}
-          </div>
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <Label>Join now</Label>
-              <p className="text-xs text-muted-foreground">Start a capture attempt as soon as the meeting is created.</p>
-            </div>
-            <Switch checked={startNow} onCheckedChange={setStartNow} />
-          </div>
-          {!startNow && (
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add meeting</DialogTitle>
+            <DialogDescription>Paste a supported Google Meet, Zoom, Teams, or Webex URL.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {!settingsEnabled && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
+                Meeting notes are turned off. An admin must enable them before the notetaker can join.
+              </div>
+            )}
             <div className="space-y-2">
-              <Label htmlFor="meeting-start">Scheduled start</Label>
-              <Input id="meeting-start" type="datetime-local" value={scheduledStart} onChange={(event) => setScheduledStart(event.target.value)} />
-              <p className="text-xs text-muted-foreground">Meetings added from your connected calendar can join automatically.</p>
+              <Label htmlFor="meeting-title">Title</Label>
+              <Input id="meeting-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Discovery call with Acme" autoFocus />
             </div>
-          )}
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <Label>Save meeting recording</Label>
-              <p className="mt-1 text-xs text-muted-foreground">Keep video and audio for private playback in Helpin.</p>
+            <div className="space-y-2">
+              <Label htmlFor="meeting-url">Meeting URL</Label>
+              <Input id="meeting-url" type="url" value={meetingUrl} onChange={(event) => setMeetingUrl(event.target.value)} placeholder="https://meet.google.com/abc-defg-hij" />
+              {detectedPlatform && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <MeetingPlatformLabel platform={detectedPlatform} compact />
+                  <span>link detected</span>
+                </div>
+              )}
             </div>
-            <Switch checked={recordAudio} onCheckedChange={setRecordAudioOverride} />
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <Label>Join now</Label>
+                <p className="text-xs text-muted-foreground">Start a capture attempt as soon as the meeting is created.</p>
+              </div>
+              <Switch checked={startNow} onCheckedChange={setStartNow} />
+            </div>
+            {!startNow && (
+              <div className="space-y-2">
+                <Label htmlFor="meeting-start">Scheduled start</Label>
+                <Input id="meeting-start" type="datetime-local" value={scheduledStart} onChange={(event) => setScheduledStart(event.target.value)} />
+                <p className="text-xs text-muted-foreground">Meetings added from your connected calendar can join automatically.</p>
+              </div>
+            )}
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <Label>Save meeting recording</Label>
+                <p className="mt-1 text-xs text-muted-foreground">Keep video and audio for private playback in Helpin.</p>
+              </div>
+              <Switch checked={recordAudio} onCheckedChange={setRecordAudioOverride} />
+            </div>
           </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={createMeeting.isPending || !title.trim() || !meetingUrl.trim() || (startNow && !settingsEnabled)}>
-            {createMeeting.isPending ? 'Creating…' : startNow ? 'Create & join' : 'Schedule meeting'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => handleOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submit} disabled={createMeeting.isPending || !title.trim() || !meetingUrl.trim() || (startNow && !settingsEnabled)}>
+              {createMeeting.isPending ? 'Creating…' : startNow ? 'Create & join' : 'Schedule meeting'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
-      <UpgradeRequiredDialog open={upgradeReason !== null} onOpenChange={(dialogOpen) => { if (!dialogOpen) setUpgradeReason(null); }} reason={upgradeReason} />
+      <UpgradeRequiredDialog
+        open={upgradeReason !== null}
+        onOpenChange={(dialogOpen) => {
+          if (!dialogOpen) setUpgradeReason(null);
+        }}
+        reason={upgradeReason}
+      />
     </>
   );
 }

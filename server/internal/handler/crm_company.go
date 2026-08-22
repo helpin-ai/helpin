@@ -103,6 +103,32 @@ func (h *CRMCompanyHandler) ListTimeline(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, page)
 }
 
+func (h *CRMCompanyHandler) ListContacts(w http.ResponseWriter, r *http.Request) {
+	workspaceID, companyID := getWorkspaceID(r), chi.URLParam(r, "id")
+	items, total, err := h.companyService.ListContacts(r.Context(), workspaceID, companyID, r.URL.Query().Get("search"), queryPagination(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if items == nil {
+		items = []model.CRMContact{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": total, "page": queryPagination(r).Page})
+}
+
+func (h *CRMCompanyHandler) ListDeals(w http.ResponseWriter, r *http.Request) {
+	workspaceID, companyID := getWorkspaceID(r), chi.URLParam(r, "id")
+	items, total, err := h.companyService.ListDeals(r.Context(), workspaceID, companyID, r.URL.Query().Get("search"), queryPagination(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if items == nil {
+		items = []model.CRMDeal{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": total, "page": queryPagination(r).Page})
+}
+
 // Update handles PUT /api/crm/companies/{id}.
 func (h *CRMCompanyHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

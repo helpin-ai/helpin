@@ -42,6 +42,33 @@ func TestCRMCompanyTimelineCursorClauseBindsNilPostgresCursor(t *testing.T) {
 	}
 }
 
+func TestCRMTimelineScopeClauseBindsPostgresNamedParameters(t *testing.T) {
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=test dbname=test sslmode=disable",
+	}), &gorm.Config{
+		DisableAutomaticPing: true,
+		DryRun:               true,
+	})
+	if err != nil {
+		t.Fatalf("open dry-run postgres database: %v", err)
+	}
+
+	result := db.Raw(
+		"SELECT CAST(@scope_id AS uuid) WHERE @scope_type = 'contact'",
+		map[string]interface{}{"scope_id": "711ab62e-f941-4a4c-b188-7e22e129a07c", "scope_type": "contact"},
+	)
+	if result.Error != nil {
+		t.Fatalf("build timeline scope query: %v", result.Error)
+	}
+	sql := result.Statement.SQL.String()
+	if strings.Contains(sql, "@scope_") {
+		t.Fatalf("scope placeholder was not bound: %q", sql)
+	}
+	if !strings.Contains(sql, "CAST($1 AS uuid)") {
+		t.Fatalf("scope SQL does not use bind-safe PostgreSQL cast: %q", sql)
+	}
+}
+
 func TestCRMCompanyTimelinePortableOrderingFilteringAndCursor(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:company-timeline?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -111,5 +138,56 @@ func TestCRMCompanyTimelinePortableOrderingFilteringAndCursor(t *testing.T) {
 	}
 	if len(notes) != 2 {
 		t.Fatalf("note count = %d, want 2", len(notes))
+	}
+}
+
+func TestCRMContactTimelinePortableScopesActivitiesDirectlyToContact(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:contact-timeline?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE crm_activities (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        activity_type TEXT NOT NULL,
+        contact_id TEXT,
+        company_id TEXT,
+        deal_id TEXT,
+        owner_member_id TEXT,
+        subject TEXT,
+        body TEXT,
+        occurred_at DATETIME NOT NULL,
+        metadata TEXT,
+        created_at DATETIME,
+        updated_at DATETIME
+    )`).Error; err != nil {
+		t.Fatalf("create activities table: %v", err)
+	}
+
+	workspaceID := "workspace-1"
+	contactID := "contact-1"
+	otherContactID := "contact-2"
+	companyID := "company-1"
+	base := time.Date(2026, time.August, 21, 10, 0, 0, 0, time.UTC)
+	directSubject := "Direct note"
+	siblingSubject := "Sibling note"
+	companySubject := "Company note"
+	for _, activity := range []model.CRMActivity{
+		{ID: "direct", WorkspaceID: workspaceID, ContactID: &contactID, ActivityType: model.CRMActivityNote, Subject: &directSubject, OccurredAt: base},
+		{ID: "sibling", WorkspaceID: workspaceID, ContactID: &otherContactID, ActivityType: model.CRMActivityNote, Subject: &siblingSubject, OccurredAt: base.Add(-time.Hour)},
+		{ID: "company", WorkspaceID: workspaceID, CompanyID: &companyID, ActivityType: model.CRMActivityNote, Subject: &companySubject, OccurredAt: base.Add(-2 * time.Hour)},
+	} {
+		if err := db.Create(&activity).Error; err != nil {
+			t.Fatalf("create activity: %v", err)
+		}
+	}
+
+	repo := NewCRMCompanyTimelineRepository(db)
+	items, err := repo.ListContact(context.Background(), workspaceID, contactID, model.CRMTimelineQuery{Filter: model.CRMTimelineFilterAll, Limit: 10})
+	if err != nil {
+		t.Fatalf("list contact timeline: %v", err)
+	}
+	if len(items) != 1 || items[0].Title != "Direct note" {
+		t.Fatalf("contact timeline = %#v, want only direct note", items)
 	}
 }

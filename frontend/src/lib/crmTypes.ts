@@ -292,16 +292,16 @@ export interface CRMActivity {
   updated_at: string;
 }
 
-export type CRMCompanyTimelineFilter = 'all' | 'note' | 'email' | 'call' | 'meeting' | 'task';
+export type CRMTimelineFilter = 'all' | 'note' | 'email' | 'call' | 'meeting' | 'task' | 'deal' | 'support';
 
-export interface CRMCompanyTimelineReference {
+export interface CRMTimelineReference {
   type: string;
   id: string;
   name: string;
   display_id?: string;
 }
 
-export interface CRMCompanyTimelineItem {
+export interface CRMTimelineItem {
   id: string;
   kind: CRMActivityType | 'task' | 'deal' | 'support' | 'enrichment';
   event_type: string;
@@ -310,17 +310,22 @@ export interface CRMCompanyTimelineItem {
   title: string;
   description?: string;
   occurred_at: string;
-  actor?: CRMCompanyTimelineReference;
-  contact?: CRMCompanyTimelineReference;
-  entity?: CRMCompanyTimelineReference;
+  actor?: CRMTimelineReference;
+  contact?: CRMTimelineReference;
+  entity?: CRMTimelineReference;
   can_edit: boolean;
   can_delete: boolean;
 }
 
-export interface CRMCompanyTimelinePage {
-  data: CRMCompanyTimelineItem[];
+export interface CRMTimelinePage {
+  data: CRMTimelineItem[];
   next_cursor?: string;
 }
+
+export type CRMCompanyTimelineFilter = CRMTimelineFilter;
+export type CRMCompanyTimelineReference = CRMTimelineReference;
+export type CRMCompanyTimelineItem = CRMTimelineItem;
+export type CRMCompanyTimelinePage = CRMTimelinePage;
 
 export interface CreateCRMActivityRequest {
   workspace_id: string;
@@ -416,6 +421,7 @@ export interface CRMEmailAccount {
   status: CRMEmailAccountStatus;
   disconnected_at?: string;
   has_synced_data: boolean;
+  can_send?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -494,6 +500,14 @@ export interface CRMEmailThread {
   deal_id?: string;
   created_at: string;
   updated_at: string;
+  latest_message?: CRMEmailMessage;
+  mailbox_email?: string;
+  mailbox_provider?: CRMEmailProvider;
+  mailbox_status?: CRMEmailAccountStatus;
+  mailbox_last_synced_at?: string;
+  can_reply?: boolean;
+  needs_reply?: boolean;
+  needs_reply_dismissed?: boolean;
 }
 
 export interface CRMEmailMessage {
@@ -502,6 +516,9 @@ export interface CRMEmailMessage {
   email_account_id: string;
   thread_id?: string;
   message_external_id: string;
+  rfc_message_id?: string;
+  in_reply_to?: string;
+  references_header?: string;
   from_address: string;
   from_name?: string;
   to_addresses: string[];
@@ -515,6 +532,22 @@ export interface CRMEmailMessage {
   contact_ids: string[];
   deal_id?: string;
   created_at: string;
+}
+
+export interface CRMEmailParticipant {
+  email: string;
+  name?: string;
+  role: 'from' | 'to' | 'cc' | 'manual';
+  contact_id?: string;
+  contact_name?: string;
+  company_id?: string;
+  company_name?: string;
+}
+
+export interface CRMEmailThreadDetail {
+  thread: CRMEmailThread;
+  messages: CRMEmailMessage[];
+  participants: CRMEmailParticipant[];
 }
 
 export interface CreateCRMEmailMessageRequest {

@@ -3,23 +3,12 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 
-import {
-  CheckListIcon,
-  Link01Icon,
-  Loading01Icon,
-  PlusSignIcon,
-  Search01Icon,
-} from '@/lib/icons';
+import { CheckListIcon, Link01Icon, Loading01Icon, PlusSignIcon, Search01Icon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
-import { CompanyTasksWorkspace } from '@/components/crm/CompanyTasksWorkspace';
+import { CRMTasksWorkspace } from '@/components/crm/CompanyTasksWorkspace';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { useTasks, useCreateTask } from '@/hooks/queries';
@@ -65,6 +54,7 @@ interface LinkedTasksPanelProps {
   dealId?: string;
   presentation?: 'default' | 'borderless';
   onTaskActivityChange?: () => void;
+  fullHeight?: boolean;
 }
 
 function resolveObject(props: LinkedTasksPanelProps): { id: string; type: CRMObjectType } | null {
@@ -98,35 +88,19 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
   const { data, isLoading } = useTasks(workspaceId, {
     per_page: 100,
     contact_id: props.contactId,
-    company_id: props.companyId,
+    company_rollup_id: props.companyId,
     deal_id: props.dealId,
   });
 
-  const tasks: Task[] = data?.data ?? [];
+  const tasks: Task[] = useMemo(() => data?.data ?? [], [data?.data]);
   const taskTotal = data?.total ?? tasks.length;
-  const teamNameById = useMemo(
-    () => new Map(allTeams.map((team) => [team.id, team.name])),
-    [allTeams],
-  );
+  const teamNameById = useMemo(() => new Map(allTeams.map((team) => [team.id, team.name])), [allTeams]);
   const canCreateTask = canEdit && teams.length > 0;
   const targetLabel = target?.type === 'company' ? 'company' : target?.type === 'deal' ? 'deal' : 'contact';
-  const addTaskDisabledReason = !canEdit
-    ? 'You need PM edit access to create linked tasks.'
-    : teams.length === 0
-      ? 'Join a team to create linked tasks from CRM.'
-      : null;
+  const addTaskDisabledReason = !canEdit ? 'You need PM edit access to create linked tasks.' : teams.length === 0 ? 'Join a team to create linked tasks from CRM.' : null;
 
   useEffect(() => {
-    if (!linkDialogOpen) {
-      setLinkQuery('');
-      setLinkResults([]);
-      setLinkSearching(false);
-      return;
-    }
-    if (linkQuery.trim().length < 2) {
-      setLinkResults([]);
-      return;
-    }
+    if (!linkDialogOpen || linkQuery.trim().length < 2) return;
     const handle = window.setTimeout(async () => {
       setLinkSearching(true);
       const response = await searchService.search(workspaceId, linkQuery.trim());
@@ -137,25 +111,29 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
     return () => window.clearTimeout(handle);
   }, [linkDialogOpen, linkQuery, workspaceId, tasks]);
 
-  useEffect(() => {
-    if (teams.length === 0) {
-      setSelectedTeamId('');
-      return;
+  const storedDefaultTeamId = readStoredDefaultTeamId(workspaceId);
+  const effectiveSelectedTeamId = teams.some((team) => team.id === selectedTeamId)
+    ? selectedTeamId
+    : teams.some((team) => team.id === storedDefaultTeamId)
+      ? (storedDefaultTeamId ?? '')
+      : (teams[0]?.id ?? '');
+
+  const handleLinkDialogOpenChange = (open: boolean) => {
+    setLinkDialogOpen(open);
+    if (!open) {
+      setLinkQuery('');
+      setLinkResults([]);
+      setLinkSearching(false);
     }
+  };
 
-    setSelectedTeamId((current) => {
-      if (current && teams.some((team) => team.id === current)) {
-        return current;
-      }
-
-      const stored = readStoredDefaultTeamId(workspaceId);
-      if (stored && teams.some((team) => team.id === stored)) {
-        return stored;
-      }
-
-      return teams[0]?.id ?? '';
-    });
-  }, [teams, workspaceId]);
+  const handleLinkQueryChange = (value: string) => {
+    setLinkQuery(value);
+    if (value.trim().length < 2) {
+      setLinkResults([]);
+      setLinkSearching(false);
+    }
+  };
 
   if (!target) {
     return null;
@@ -165,10 +143,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
   async function handleStartCreate(teamId?: string) {
     if (!canCreateTask || teamsLoading) return;
 
-    const nextTeamId =
-      teamId && teams.some((team) => team.id === teamId)
-        ? teamId
-        : selectedTeamId || teams[0]?.id || '';
+    const nextTeamId = teamId && teams.some((team) => team.id === teamId) ? teamId : effectiveSelectedTeamId;
 
     if (!nextTeamId) {
       toast.error('No team available for task creation');
@@ -209,7 +184,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
       }
       toast.success('Task linked');
       qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] });
-      setLinkDialogOpen(false);
+      handleLinkDialogOpenChange(false);
       props.onTaskActivityChange?.();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to link task';
@@ -254,18 +229,21 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
   }
 
   return (
-    <div className={cn(borderless ? 'border-y border-border/60' : 'rounded-md border border-border/60')}>
-      <div className={cn(
-        'flex items-center justify-between border-b border-border/60 px-4 py-3',
-        borderless && 'px-4 sm:px-6 lg:px-10',
-      )}>
+    <div
+      className={cn(
+        'flex min-h-0 flex-col',
+        props.fullHeight && 'h-full',
+        borderless
+          ? !props.fullHeight && 'border-y border-border/60'
+          : 'rounded-md border border-border/60',
+      )}
+    >
+      <div className={cn('flex items-center justify-between border-b border-border/60 px-4 py-3', borderless && 'px-4 sm:px-6 lg:px-10')}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-medium">
             <CheckListIcon className="h-4 w-4 text-muted-foreground" />
             <span>Tasks</span>
-            {taskTotal > 0 && (
-              <span className="text-xs text-muted-foreground">({taskTotal})</span>
-            )}
+            {taskTotal > 0 && <span className="text-xs text-muted-foreground">({taskTotal})</span>}
           </div>
         </div>
         <div className="flex items-center gap-[18px]">
@@ -281,9 +259,14 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
           </button>
           <div className="flex items-center" title={addTaskDisabledReason ?? undefined}>
             <SidebarPopoverSelect
-              value={selectedTeamId}
-              options={teams.map((team) => ({ value: team.id, label: team.name }))}
-              onChange={(teamId) => { void handleStartCreate(teamId); }}
+              value={effectiveSelectedTeamId}
+              options={teams.map((team) => ({
+                value: team.id,
+                label: team.name,
+              }))}
+              onChange={(teamId) => {
+                void handleStartCreate(teamId);
+              }}
               width="w-56"
               searchPlaceholder="Search teams..."
               disabled={!canCreateTask || teamsLoading || openingCreate}
@@ -291,12 +274,8 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
               triggerClassName={getOptionalSectionActionClass(canCreateTask && !teamsLoading && !openingCreate ? 'available' : 'locked', 'borderless')}
               renderTrigger={() => (
                 <>
-                  {openingCreate
-                    ? <Loading01Icon className="h-[15px] w-[15px] shrink-0 animate-spin" />
-                    : <PlusSignIcon className="h-[15px] w-[15px] shrink-0" />}
-                  <span className="truncate text-left">
-                    {openingCreate ? 'Opening...' : 'Add task'}
-                  </span>
+                  {openingCreate ? <Loading01Icon className="h-[15px] w-[15px] shrink-0 animate-spin" /> : <PlusSignIcon className="h-[15px] w-[15px] shrink-0" />}
+                  <span className="truncate text-left">{openingCreate ? 'Opening...' : 'Add task'}</span>
                 </>
               )}
             />
@@ -305,19 +284,18 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
       </div>
 
       {isLoading ? (
-        <div className={cn(
-          'flex items-center justify-center text-xs text-muted-foreground',
-          associationTarget.type === 'company' ? 'h-28' : 'px-4 py-6',
-        )}>
+        <div className={cn('flex items-center justify-center text-xs text-muted-foreground', associationTarget.type === 'company' || associationTarget.type === 'contact' ? 'h-28' : 'px-4 py-6')}>
           <Loading01Icon className="mr-2 h-3.5 w-3.5 animate-spin" />
           Loading tasks…
         </div>
-      ) : associationTarget.type === 'company' ? (
-        <CompanyTasksWorkspace
+      ) : associationTarget.type === 'company' || associationTarget.type === 'contact' ? (
+        <CRMTasksWorkspace
           workspaceId={workspaceId}
-          companyId={associationTarget.id}
+          objectType={associationTarget.type}
+          objectId={associationTarget.id}
           onOpenTask={(task) => openTaskRoute(navigate as never, location as never, workspaceSlug, task.id)}
           onTaskActivityChange={props.onTaskActivityChange}
+          fullHeight={props.fullHeight}
         />
       ) : (
         <div className="divide-y divide-border/60">
@@ -328,40 +306,35 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
               </div>
               <p className="mt-3 text-sm font-medium">No linked tasks yet</p>
               <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-                {canCreateTask
-                  ? `Link or create a task to track follow-ups for this ${targetLabel}.`
-                  : (addTaskDisabledReason ?? 'No linked tasks yet.')}
+                {canCreateTask ? `Link or create a task to track follow-ups for this ${targetLabel}.` : (addTaskDisabledReason ?? 'No linked tasks yet.')}
               </p>
             </div>
-          ) : tasks.map((task) => (
-            <button
-              key={task.id}
-              type="button"
-              onClick={() => openTaskRoute(navigate as never, location as never, workspaceSlug, task.id)}
-              className={cn(
-                'flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40',
-                borderless && 'sm:px-6 lg:px-10',
-              )}
-            >
-              <CheckListIcon
-                className={`h-4 w-4 shrink-0 ${task.completed ? 'text-emerald-500' : 'text-muted-foreground'}`}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start gap-2">
-                  <div className="min-w-0 flex-1 truncate font-medium text-foreground">{task.name}</div>
-                  {(task.team_name || (task.team_id ? teamNameById.get(task.team_id) : null)) && (
-                    <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-foreground/80">
-                      {task.team_name || (task.team_id ? teamNameById.get(task.team_id) : null)}
-                    </span>
-                  )}
+          ) : (
+            tasks.map((task) => (
+              <button
+                key={task.id}
+                type="button"
+                onClick={() => openTaskRoute(navigate as never, location as never, workspaceSlug, task.id)}
+                className={cn('flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-muted/40', borderless && 'sm:px-6 lg:px-10')}
+              >
+                <CheckListIcon className={`h-4 w-4 shrink-0 ${task.completed ? 'text-emerald-500' : 'text-muted-foreground'}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start gap-2">
+                    <div className="min-w-0 flex-1 truncate font-medium text-foreground">{task.name}</div>
+                    {(task.team_name || (task.team_id ? teamNameById.get(task.team_id) : null)) && (
+                      <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-foreground/80">
+                        {task.team_name || (task.team_id ? teamNameById.get(task.team_id) : null)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{task.task_key}</span>
+                    {task.state_name && <span>· {task.state_name}</span>}
+                  </div>
                 </div>
-                <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{task.task_key}</span>
-                  {task.state_name && <span>· {task.state_name}</span>}
-                </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            ))
+          )}
         </div>
       )}
 
@@ -371,18 +344,13 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
           onOpenChange={setCreateTaskOpen}
           workspaceId={workspaceId}
           workflow={createWorkflow}
-          initialStateId={
-            createWorkflow.workflow.default_state_id ??
-            createWorkflow.states.find((state) => state.is_default)?.id ??
-            createWorkflow.states[0]?.id ??
-            ''
-          }
-          initialTeamId={selectedTeamId || createWorkflow.workflow.team_id}
+          initialStateId={createWorkflow.workflow.default_state_id ?? createWorkflow.states.find((state) => state.is_default)?.id ?? createWorkflow.states[0]?.id ?? ''}
+          initialTeamId={effectiveSelectedTeamId || createWorkflow.workflow.team_id}
           onCreate={handleCreateAndLinkTask}
         />
       )}
 
-      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+      <Dialog open={linkDialogOpen} onOpenChange={handleLinkDialogOpenChange}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-sm">Link existing task</DialogTitle>
@@ -390,13 +358,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
           <div className="space-y-3">
             <div className="relative">
               <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={linkQuery}
-                onChange={(event) => setLinkQuery(event.target.value)}
-                placeholder="Search tasks by name or key"
-                className="pl-9"
-                autoFocus
-              />
+              <Input value={linkQuery} onChange={(event) => handleLinkQueryChange(event.target.value)} placeholder="Search tasks by name or key" className="pl-9" autoFocus />
             </div>
             <div className="max-h-64 space-y-1 overflow-y-auto">
               {linkSearching && (
@@ -405,34 +367,27 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
                   Searching…
                 </div>
               )}
-              {!linkSearching && linkResults.map((result) => (
-                <button
-                  key={result.id}
-                  type="button"
-                  disabled={linkingTaskId !== null}
-                  className="flex w-full items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-60"
-                  onClick={() => void handleLinkExistingTask(result.id)}
-                >
-                  <CheckListIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate font-medium">{result.name}</span>
-                  {result.display_id && (
-                    <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[10px]">
-                      #{result.display_id}
-                    </Badge>
-                  )}
-                  {linkingTaskId === result.id && (
-                    <Loading01Icon className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-                  )}
-                </button>
-              ))}
-              {!linkSearching && linkQuery.trim().length >= 2 && linkResults.length === 0 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">No tasks found</p>
-              )}
-              {!linkSearching && linkQuery.trim().length < 2 && (
-                <p className="py-4 text-center text-sm text-muted-foreground">
-                  Type at least 2 characters to search
-                </p>
-              )}
+              {!linkSearching &&
+                linkResults.map((result) => (
+                  <button
+                    key={result.id}
+                    type="button"
+                    disabled={linkingTaskId !== null}
+                    className="flex w-full items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-60"
+                    onClick={() => void handleLinkExistingTask(result.id)}
+                  >
+                    <CheckListIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate font-medium">{result.name}</span>
+                    {result.display_id && (
+                      <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[10px]">
+                        #{result.display_id}
+                      </Badge>
+                    )}
+                    {linkingTaskId === result.id && <Loading01Icon className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />}
+                  </button>
+                ))}
+              {!linkSearching && linkQuery.trim().length >= 2 && linkResults.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No tasks found</p>}
+              {!linkSearching && linkQuery.trim().length < 2 && <p className="py-4 text-center text-sm text-muted-foreground">Type at least 2 characters to search</p>}
             </div>
           </div>
         </DialogContent>

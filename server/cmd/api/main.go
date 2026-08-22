@@ -1264,7 +1264,8 @@ func main() {
 	)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo).
-		SetIdentitySync(crmActivityRepo, wsPublisher)
+		SetIdentitySync(crmActivityRepo, wsPublisher).
+		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo).
 		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmContactService.SetProductAnalyticsService(productAnalytics)

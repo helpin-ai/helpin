@@ -1477,6 +1477,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/contacts/{id}", h.CRMContact.Update)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/contacts/{id}", h.CRMContact.Delete)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/activities", h.CRMActivity.ListByContact)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/timeline", h.CRMContact.ListTimeline)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/associations", h.CRMAssociation.ListContactAssociations)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/support-conversations", h.SupportInbox.ListContactConversations)
 
@@ -1489,6 +1490,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}/activities", h.CRMActivity.ListByCompany)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}/timeline", h.CRMCompany.ListTimeline)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}/associations", h.CRMAssociation.ListCompanyAssociations)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}/contacts", h.CRMCompany.ListContacts)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}/deals", h.CRMCompany.ListDeals)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}/support-conversations", h.SupportInbox.ListCompanyConversations)
 
 				// Deals — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals", h.CRMDeal.List)
@@ -1556,10 +1560,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMAdmin)).Delete("/email/accounts/{id}/data", h.CRMEmail.PurgeAccountData)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts/{id}/oauth-callback", h.CRMEmail.OAuthCallback)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/threads", h.CRMEmail.ListThreads)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/threads/{id}", h.CRMEmail.GetThread)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/threads/{id}/reply", h.CRMEmail.ReplyToThread)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/email/threads/{id}/needs-reply-dismissal", h.CRMEmail.SetThreadDismissal)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/email/threads/{id}/needs-reply-dismissal", h.CRMEmail.SetThreadDismissal)
+				r.With(requirePerm(authorization.PermCRMEdit)).Patch("/email/threads/{id}/deal", h.CRMEmail.LinkThreadDeal)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/messages", h.CRMEmail.ListMessages)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/messages", h.CRMEmail.CreateMessage)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/send", h.CRMEmail.SendEmail)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/emails", h.CRMEmail.ListByContact)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}/emails", h.CRMEmail.ListByCompany)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/emails", h.CRMEmail.ListByDeal)
 
 				// Email Sync Settings — crm.admin

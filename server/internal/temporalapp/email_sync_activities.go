@@ -383,6 +383,14 @@ func syncStateString(state model.JSONB, key string) string {
 	return strings.TrimSpace(value)
 }
 
+func optionalSyncString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 func historicalSyncStart(settings *model.CRMEmailSyncSettings) time.Time {
 	syncDays := 90
 	if settings != nil && settings.HistoricalSyncDays > 0 {
@@ -520,6 +528,9 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 		EmailAccountID:    account.ID,
 		ThreadID:          threadID,
 		MessageExternalID: msg.ID,
+		RFCMessageID:      optionalSyncString(msg.RFCMessageID),
+		InReplyTo:         optionalSyncString(msg.InReplyTo),
+		ReferencesHeader:  optionalSyncString(msg.ReferencesHeader),
 		FromAddress:       resolution.From.Email,
 		FromName:          fromNamePtr,
 		ToAddresses:       json.RawMessage(toJSON),

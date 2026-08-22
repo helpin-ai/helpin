@@ -18,6 +18,7 @@ interface BuyerSignalsProps {
   workspaceId: string;
   contactId?: string;
   dealId?: string;
+  presentation?: 'default' | 'compact';
 }
 
 function formatSource(signal: CRMBuyerSignal) {
@@ -35,7 +36,7 @@ function formatSource(signal: CRMBuyerSignal) {
   }
 }
 
-export function BuyerSignals({ workspaceId, contactId, dealId }: BuyerSignalsProps) {
+export function BuyerSignals({ workspaceId, contactId, dealId, presentation = 'default' }: BuyerSignalsProps) {
   const contactQuery = useContactSignals(workspaceId, contactId ?? '');
   const dealQuery = useDealSignals(workspaceId, dealId ?? '');
 
@@ -43,7 +44,7 @@ export function BuyerSignals({ workspaceId, contactId, dealId }: BuyerSignalsPro
   const signals = (query.data?.data ?? []) as CRMBuyerSignal[];
 
   if (signals.length === 0) {
-    return <BuyerSignalsEmptyState />;
+    return <BuyerSignalsEmptyState compact={presentation === 'compact'} />;
   }
 
   return (
@@ -52,7 +53,7 @@ export function BuyerSignals({ workspaceId, contactId, dealId }: BuyerSignalsPro
         const config = signalConfig[signal.signal_type] || signalConfig.buying_intent;
         const Icon = config.icon;
         return (
-          <div key={signal.id} className="flex items-start gap-2 rounded-md border p-2.5">
+          <div key={signal.id} className={`flex items-start gap-2 rounded-md border ${presentation === 'compact' ? 'border-border/60 p-2.5' : 'p-2.5'}`}>
             <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${config.color}`} />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -89,13 +90,13 @@ export function BuyerSignals({ workspaceId, contactId, dealId }: BuyerSignalsPro
   );
 }
 
-function BuyerSignalsEmptyState() {
+function BuyerSignalsEmptyState({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-4 py-8 text-center">
-      <div className="rounded-full bg-muted p-2.5">
-        <ZapIcon className="h-5 w-5 text-muted-foreground" />
+    <div className={`flex flex-col items-center justify-center border border-dashed border-border/60 px-4 text-center ${compact ? 'rounded-md py-5' : 'rounded-lg py-8'}`}>
+      <div className={compact ? '' : 'rounded-full bg-muted p-2.5'}>
+        <ZapIcon className={compact ? 'h-4 w-4 text-muted-foreground/70' : 'h-5 w-5 text-muted-foreground'} />
       </div>
-      <p className="mt-3 text-sm font-medium">No signals yet</p>
+      <p className={`${compact ? 'mt-2' : 'mt-3'} text-sm font-medium`}>No signals yet</p>
       <p className="mt-1 max-w-xs text-xs text-muted-foreground">
         Buyer signals surface automatically as AI analyzes emails, meetings, and support threads.
       </p>

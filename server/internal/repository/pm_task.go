@@ -139,6 +139,33 @@ func applyTaskAssociationFilter(q *gorm.DB, objectType string, value *string) *g
 	)
 }
 
+func applyTaskCompanyRollupFilter(q *gorm.DB, value *string) *gorm.DB {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return q
+	}
+	companyID := strings.TrimSpace(*value)
+	return q.Where(`EXISTS (
+		SELECT 1 FROM crm_associations ca
+		WHERE ca.workspace_id = pm_tasks.workspace_id
+		  AND (
+		    (ca.from_object_type = 'task' AND ca.from_object_id = pm_tasks.id AND ca.to_object_type = 'company' AND ca.to_object_id = ?)
+		    OR (ca.to_object_type = 'task' AND ca.to_object_id = pm_tasks.id AND ca.from_object_type = 'company' AND ca.from_object_id = ?)
+		    OR (ca.from_object_type = 'task' AND ca.from_object_id = pm_tasks.id AND ca.to_object_type = 'contact' AND ca.to_object_id IN (
+		      SELECT CASE WHEN cca.from_object_type = 'contact' THEN cca.from_object_id ELSE cca.to_object_id END
+		      FROM crm_associations cca WHERE cca.workspace_id = pm_tasks.workspace_id
+		        AND ((cca.from_object_type = 'contact' AND cca.to_object_type = 'company' AND cca.to_object_id = ?)
+		          OR (cca.to_object_type = 'contact' AND cca.from_object_type = 'company' AND cca.from_object_id = ?))
+		    ))
+		    OR (ca.to_object_type = 'task' AND ca.to_object_id = pm_tasks.id AND ca.from_object_type = 'contact' AND ca.from_object_id IN (
+		      SELECT CASE WHEN cca.from_object_type = 'contact' THEN cca.from_object_id ELSE cca.to_object_id END
+		      FROM crm_associations cca WHERE cca.workspace_id = pm_tasks.workspace_id
+		        AND ((cca.from_object_type = 'contact' AND cca.to_object_type = 'company' AND cca.to_object_id = ?)
+		          OR (cca.to_object_type = 'contact' AND cca.from_object_type = 'company' AND cca.from_object_id = ?))
+		    ))
+		  )
+	)`, companyID, companyID, companyID, companyID, companyID, companyID)
+}
+
 func applyTaskSupportConversationFilter(q *gorm.DB, value *string) *gorm.DB {
 	values := splitFilterValues(value)
 	if len(values) == 0 {
@@ -336,6 +363,7 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	query = applyTaskStringFilter(query, "pm_tasks.sprint_id", filters.SprintID)
 	query = applyTaskAssociationFilter(query, model.CRMObjectContact, filters.ContactID)
 	query = applyTaskAssociationFilter(query, model.CRMObjectCompany, filters.CompanyID)
+	query = applyTaskCompanyRollupFilter(query, filters.CompanyRollupID)
 	query = applyTaskAssociationFilter(query, model.CRMObjectDeal, filters.DealID)
 	query = applyTaskSupportConversationFilter(query, filters.SupportConversationID)
 	query = applyTaskStringFilter(query, "pm_tasks.workflow_id", filters.WorkflowID)
@@ -1491,6 +1519,7 @@ func (r *PMTaskRepository) applyBoardFilters(q *gorm.DB, filters model.PMTaskFil
 	}
 	q = applyTaskAssociationFilter(q, model.CRMObjectContact, filters.ContactID)
 	q = applyTaskAssociationFilter(q, model.CRMObjectCompany, filters.CompanyID)
+	q = applyTaskCompanyRollupFilter(q, filters.CompanyRollupID)
 	q = applyTaskAssociationFilter(q, model.CRMObjectDeal, filters.DealID)
 	q = applyTaskSupportConversationFilter(q, filters.SupportConversationID)
 	q = applyTaskOwnerMemberIDsFilter(q, filters.OwnerMemberIDs)

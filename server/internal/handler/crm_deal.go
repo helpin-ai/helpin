@@ -108,6 +108,7 @@ func (h *CRMDealHandler) List(w http.ResponseWriter, r *http.Request) {
 		PipelineID:    queryStringPtr(r, "pipeline_id"),
 		StageID:       queryStringPtr(r, "stage_id"),
 		OwnerMemberID: queryStringPtr(r, "owner_member_id"),
+		ContactID:     queryStringPtr(r, "contact_id"),
 		Search:        queryStringPtr(r, "search"),
 	}
 	pagination := queryPagination(r)

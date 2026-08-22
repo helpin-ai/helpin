@@ -1,435 +1,289 @@
-import { useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { differenceInCalendarDays, format, isToday, isYesterday } from 'date-fns';
+import { useEffect, useMemo, useState } from 'react';
+import { format, isThisMonth } from 'date-fns';
+import { toast } from 'sonner';
 import {
-  ArrowDown02Icon,
-  ArrowUp02Icon,
-  Forward01Icon,
-  Mail01Icon,
-  ArrowTurnBackwardIcon,
+  ArrowDown02Icon, ArrowLeft02Icon, ArrowTurnBackwardIcon, CheckListIcon,
+  DollarCircleIcon, Forward01Icon, Link01Icon, Loading01Icon, Mail01Icon,
+  MailReply01Icon, PlusSignIcon, Search01Icon, SentIcon, Setting07Icon, Tick01Icon,
 } from '@/lib/icons';
-// ArrowDownLeft/ArrowUpRight kept for email detail dialog direction badge
-import { useInfiniteContactEmails, useInfiniteDealEmails, useEmailAccounts } from '@/hooks/queries/useCRM';
-import { CRMEmailComposerDialog, type EmailDraft } from './CRMEmailComposerDialog';
-import { UserAvatar } from '@/components/pm/UserAvatar';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  useEmailAccounts, useEmailThread, useInfiniteEmailThreads, useLinkEmailThreadDeal,
+  useReplyToEmailThread, useSetEmailThreadDismissed,
+} from '@/hooks/queries/useCRM';
+import { useCreateTask } from '@/hooks/queries';
+import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
+import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { CRMEmailComposerDialog, type EmailDraft } from './CRMEmailComposerDialog';
+import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { UserAvatar } from '@/components/pm/UserAvatar';
+import { TiptapEditor } from '@/components/ui/tiptap-editor';
+import { EmailBodyRenderer } from '@/components/support/EmailBodyRenderer';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { crmSearchService } from '@/lib/services/crmService';
+import { associationsService } from '@/lib/services/associationsService';
+import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { cn } from '@/lib/utils';
-import type { CRMEmailMessage } from '@/lib/crmTypes';
+import type { CRMEmailMessage, CRMEmailParticipant, CRMEmailThread, CRMObjectType } from '@/lib/crmTypes';
+import type { CreateTaskRequest, WorkflowWithStates } from '@/lib/pmTypes';
 
 interface EmailTimelineProps {
   workspaceId: string;
   contactId?: string;
+  companyId?: string;
   dealId?: string;
   defaultRecipient?: string;
+  showComposeAction?: boolean;
+  selectedThreadId?: string;
+  onSelectedThreadChange?: (threadId?: string) => void;
 }
 
-type EmailBucket = 'Today' | 'Yesterday' | 'Last Week' | 'Older';
+type Scope = 'all' | 'direct' | 'needs_reply';
+type Sort = 'newest' | 'oldest';
 
-interface AddressParts {
-  primary: string;
-  secondary?: string;
-}
-
-const bucketOrder: EmailBucket[] = ['Today', 'Yesterday', 'Last Week', 'Older'];
-
-function humanizeLocalPart(email: string) {
-  const localPart = email.split('@')[0] ?? email;
-  return localPart
-    .replace(/[._-]+/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function parseAddress(value: string, fallbackName?: string): AddressParts {
-  const trimmed = value.trim();
-  const match = trimmed.match(/^(?:"?([^"]*)"?\s*)?<([^>]+)>$/);
-  if (match) {
-    const name = match[1]?.trim();
-    const email = match[2]?.trim();
-    if (email) {
-      return {
-        primary: name || fallbackName || humanizeLocalPart(email),
-        secondary: email,
-      };
-    }
-  }
-
-  if (fallbackName && trimmed.includes('@')) {
-    return { primary: fallbackName, secondary: trimmed };
-  }
-
-  if (trimmed.includes('@')) {
-    return {
-      primary: humanizeLocalPart(trimmed),
-      secondary: trimmed,
-    };
-  }
-
-  return { primary: trimmed || fallbackName || 'Unknown sender' };
-}
-
-function getMessageText(message: CRMEmailMessage) {
-  if (message.body_text?.trim()) {
-    return message.body_text.trim();
-  }
-
-  if (!message.body_html?.trim()) {
-    return '';
-  }
-
-  if (typeof window === 'undefined') {
-    return message.body_html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  }
-
+function messageText(message?: CRMEmailMessage) {
+  if (!message) return '';
+  if (message.body_text?.trim()) return message.body_text.replace(/\s+/g, ' ').trim();
+  if (!message.body_html?.trim()) return '';
+  if (typeof window === 'undefined') return message.body_html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   const doc = new window.DOMParser().parseFromString(message.body_html, 'text/html');
-  return doc.body.textContent?.replace(/\u00a0/g, ' ').trim() ?? '';
+  return doc.body.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 }
 
-function getPreview(message: CRMEmailMessage) {
-  return getMessageText(message).replace(/\s+/g, ' ').trim();
+function addressName(value?: string) {
+  if (!value) return 'Unknown sender';
+  const local = value.split('@')[0] ?? value;
+  return local.replace(/[._-]+/g, ' ').replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function splitQuotedReply(text: string) {
-  const normalized = text.replace(/\r\n/g, '\n').trim();
-  if (!normalized) {
-    return { mainBody: '', quotedBody: '' };
-  }
-
-  const markers = [
-    /^On .+wrote:$/m,
-    /^From:\s.+$/m,
-    /^-{2,}\s*Original Message\s*-{2,}$/m,
-  ];
-
-  for (const marker of markers) {
-    const match = normalized.match(marker);
-    if (!match?.index) {
-      continue;
-    }
-
-    return {
-      mainBody: normalized.slice(0, match.index).trim(),
-      quotedBody: normalized.slice(match.index).trim(),
-    };
-  }
-
-  return { mainBody: normalized, quotedBody: '' };
+function relativeDate(value: string) {
+  const date = new Date(value);
+  return date.toDateString() === new Date().toDateString() ? format(date, 'h:mm a') : format(date, 'MMM d');
 }
 
-function getBucket(sentAt: string): EmailBucket {
-  const date = new Date(sentAt);
-  if (isToday(date)) {
-    return 'Today';
-  }
-  if (isYesterday(date)) {
-    return 'Yesterday';
-  }
-  if (differenceInCalendarDays(new Date(), date) <= 7) {
-    return 'Last Week';
-  }
-  return 'Older';
+function dateRange(messages: CRMEmailMessage[]) {
+  if (messages.length === 0) return '';
+  const timestamps = messages.map((message) => new Date(message.sent_at).getTime()).sort((a, b) => a - b);
+  const first = new Date(timestamps[0]);
+  const last = new Date(timestamps[timestamps.length - 1]);
+  return first.toDateString() === last.toDateString()
+    ? format(last, 'MMM d, yyyy')
+    : `${format(first, 'MMM d')} – ${format(last, 'MMM d, yyyy')}`;
 }
 
-function formatListTimestamp(sentAt: string) {
-  return format(new Date(sentAt), 'MMM d, yyyy, h:mm a');
+function participantLabel(participant: CRMEmailParticipant) {
+  return participant.contact_name || participant.name || addressName(participant.email);
 }
 
-function formatDetailTimestamp(sentAt: string) {
-  return format(new Date(sentAt), "EEE, MMM d, yyyy 'at' h:mm a");
-}
-
-function EmailHeaderLine({ label, addresses }: { label: string; addresses: AddressParts[] }) {
-  if (addresses.length === 0) {
-    return null;
-  }
-
+function ThreadRow({ thread, selected, onSelect }: { thread: CRMEmailThread; selected: boolean; onSelect: () => void }) {
+  const latest = thread.latest_message;
+  const sender = latest?.from_name || addressName(latest?.from_address);
   return (
-    <div className="grid grid-cols-[40px_1fr] gap-3 text-sm">
-      <span className="pt-0.5 text-muted-foreground">{label}</span>
-      <div className="min-w-0 text-foreground">
-        {addresses.map((address, index) => (
-          <span key={`${address.primary}-${address.secondary ?? index}`} className="inline">
-            <span className="font-medium">{address.primary}</span>
-            {address.secondary ? (
-              <span className="text-muted-foreground">{` <${address.secondary}>`}</span>
-            ) : null}
-            {index < addresses.length - 1 ? <span className="text-muted-foreground">, </span> : null}
-          </span>
-        ))}
-      </div>
-    </div>
+    <button type="button" onClick={onSelect} className={cn(
+      'group relative flex w-full items-start gap-3 border-t border-border/45 px-5 py-3 text-left transition-colors hover:bg-muted/30',
+      selected && 'bg-muted/35',
+    )}>
+      <span className={cn('absolute inset-y-0 left-0 w-[3px]', selected ? 'bg-foreground' : thread.needs_reply ? 'bg-orange-600' : 'bg-transparent')} />
+      <UserAvatar name={sender} className="mt-0.5 h-7 w-7 shrink-0" fallbackClassName="text-[10px]" />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className={cn('truncate text-foreground/75', thread.needs_reply ? 'font-semibold' : 'font-medium')}>{sender}</span>
+          {thread.contact_ids.length > 0 ? <Link01Icon className="h-3 w-3 shrink-0 text-teal-700 dark:text-teal-400" /> : null}
+          <span className="ml-auto shrink-0 text-[11px]">{thread.message_count > 1 ? thread.message_count : ''}</span>
+          <span className="shrink-0 text-[11px]">{relativeDate(thread.last_message_at)}</span>
+        </span>
+        <span className={cn('mt-0.5 block truncate text-[13px] leading-5 text-foreground', thread.needs_reply && 'font-semibold')}>{thread.subject || '(no subject)'}</span>
+        <span className="mt-0.5 block truncate text-xs leading-5 text-muted-foreground">{messageText(latest) || 'No message preview'}</span>
+        <span className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+          {latest?.direction === 'inbound' ? <ArrowDown02Icon className="h-3 w-3 text-teal-700 dark:text-teal-400" /> : <SentIcon className="h-3 w-3" />}
+          <span>{latest?.direction === 'inbound' ? 'Received' : 'Sent'}</span>
+          <span className="h-2.5 w-px bg-border" /><Mail01Icon className="h-3 w-3" />
+          <span className="capitalize">{thread.mailbox_provider || 'mail'}</span>
+        </span>
+      </span>
+    </button>
   );
 }
 
-function LoadingState() {
+function MessageBlock({ message }: { message: CRMEmailMessage }) {
+  const sender = message.from_name || addressName(message.from_address);
+  const recipients = [...message.to_addresses, ...message.cc_addresses].map(addressName).join(', ');
   return (
-    <div>
-      {Array.from({ length: 4 }).map((_, index) => (
-        <div
-          key={index}
-          className="flex animate-pulse items-center gap-2.5 border-b border-border/60 px-5 py-2"
-        >
-          <div className="h-7 w-7 shrink-0 rounded-full bg-muted" />
-          <div className="h-2.5 w-24 rounded bg-muted" />
-          <div className="h-3 flex-1 rounded bg-muted" />
-          <div className="h-3 w-32 rounded bg-muted" />
+    <article className="flex gap-3 border-b border-border/45 px-5 py-5 sm:px-7">
+      <UserAvatar name={sender} className="h-8 w-8 shrink-0" fallbackClassName="text-[10px]" />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-start gap-2">
+          <div className="min-w-0 flex-1"><span className="text-[13px] font-semibold text-foreground">{sender}</span><span className="ml-2 truncate text-xs text-muted-foreground">to {recipients || 'undisclosed recipients'}</span></div>
+          <time className="shrink-0 text-[11px] text-muted-foreground">{format(new Date(message.sent_at), 'MMM d, yyyy · h:mm a')}</time>
         </div>
-      ))}
-    </div>
+        <div className="mt-2 max-w-[680px] text-[0.9333rem] leading-7 text-foreground">
+          {message.body_html ? <EmailBodyRenderer html={message.body_html} collapsedByDefault constrainHeight={false} /> : <p className="whitespace-pre-wrap break-words">{message.body_text || 'No message body'}</p>}
+        </div>
+      </div>
+    </article>
   );
 }
 
-export function EmailTimeline({ workspaceId, contactId, dealId, defaultRecipient }: EmailTimelineProps) {
-  const contactQuery = useInfiniteContactEmails(workspaceId, contactId ?? '');
-  const dealQuery = useInfiniteDealEmails(workspaceId, dealId ?? '');
-  const accountsQuery = useEmailAccounts(workspaceId);
-  const navigate = useNavigate();
+export function EmailTimeline({
+  workspaceId, contactId, companyId, dealId, defaultRecipient, showComposeAction = true,
+  selectedThreadId: controlledThreadId, onSelectedThreadChange,
+}: EmailTimelineProps) {
   const { currentWorkspace } = useWorkspaceStore();
-
-  const query = contactId ? contactQuery : dealQuery;
-  const sourceMessages = (query.data?.pages.flatMap((page) => page.data) ?? []) as CRMEmailMessage[];
-  const messages = [...sourceMessages].sort(
-    (left, right) => new Date(right.sent_at).getTime() - new Date(left.sent_at).getTime(),
-  );
-  const groupedMessages = bucketOrder
-    .map((bucket) => ({
-      bucket,
-      messages: messages.filter((message) => getBucket(message.sent_at) === bucket),
-    }))
-    .filter((group) => group.messages.length > 0);
-  const [selectedMessage, setSelectedMessage] = useState<CRMEmailMessage | null>(null);
+  const userId = useAuthStore((state) => state.user?.id);
+  const [scope, setScope] = useState<Scope>('all');
+  const [sort, setSort] = useState<Sort>('newest');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [internalThreadId, setInternalThreadId] = useState<string>();
+  const [mobileReading, setMobileReading] = useState(false);
   const [composeDraft, setComposeDraft] = useState<EmailDraft | null>(null);
+  const [replyMode, setReplyMode] = useState<'reply' | 'reply_all'>('reply');
+  const [replyHTML, setReplyHTML] = useState('');
+  const [taskOpen, setTaskOpen] = useState(false);
+  const [taskWorkflow, setTaskWorkflow] = useState<WorkflowWithStates | null>(null);
+  const [taskTeamId, setTaskTeamId] = useState('');
+  const [dealOpen, setDealOpen] = useState(false);
+  const [dealQuery, setDealQuery] = useState('');
+  const [dealResults, setDealResults] = useState<Array<{ id: string; name: string }>>([]);
+  const accounts = useEmailAccounts(workspaceId);
+  const sendableAccounts = (accounts.data ?? []).filter((account) => account.can_send === true || (account.member_id === userId && account.is_active && account.status === 'connected' && account.provider === 'gmail'));
+  const { teams } = useAccessibleTeams(workspaceId);
+  const createTask = useCreateTask(workspaceId);
+  const reply = useReplyToEmailThread(workspaceId);
+  const dismiss = useSetEmailThreadDismissed(workspaceId);
+  const linkDeal = useLinkEmailThreadDeal(workspaceId);
 
-  const connectedAccounts = (accountsQuery.data ?? []).filter(
-    (account) => account.is_active && account.status !== 'pending_oauth' && account.status !== 'disconnected',
-  );
-  const hasConnectedAccounts = connectedAccounts.length > 0;
-  const openNewEmail = () => {
-    setComposeDraft({
-      title: 'New email',
-      to: defaultRecipient ? [defaultRecipient] : undefined,
-    });
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  const filters = useMemo(() => ({ contact_id: contactId, company_id: companyId, deal_id: dealId, search, scope, sort }), [companyId, contactId, dealId, scope, search, sort]);
+  const threadsQuery = useInfiniteEmailThreads(workspaceId, filters);
+  const threads = useMemo(() => threadsQuery.data?.pages.flatMap((page) => page?.data ?? []) ?? [], [threadsQuery.data]);
+  const selectedThreadId = controlledThreadId ?? internalThreadId ?? threads[0]?.id;
+  const selectedThread = useEmailThread(workspaceId, selectedThreadId);
+
+  useEffect(() => {
+    if (!dealOpen || dealQuery.trim().length < 2) return;
+    const timer = window.setTimeout(async () => {
+      const response = await crmSearchService.search(workspaceId, dealQuery.trim());
+      setDealResults((response.data ?? []).filter((result) => result.type === 'deal').map((result) => ({ id: result.id, name: result.name })));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [dealOpen, dealQuery, workspaceId]);
+
+  const selectThread = (threadId: string) => {
+    setInternalThreadId(threadId); onSelectedThreadChange?.(threadId); setMobileReading(true); setReplyHTML('');
   };
-
-  const openEmailSettings = () => {
-    if (!currentWorkspace?.slug) {
-      return;
+  const openSettings = () => { if (currentWorkspace?.slug) window.location.href = `/w/${currentWorkspace.slug}/settings/crm-email`; };
+  const sendReply = async () => {
+    if (!selectedThreadId || !replyHTML.replace(/<[^>]+>/g, '').trim()) return;
+    try { await reply.mutateAsync({ threadId: selectedThreadId, mode: replyMode, body_html: replyHTML }); setReplyHTML(''); toast.success('Reply sent'); }
+    catch (error) { toast.error(error instanceof Error ? error.message : 'Reply could not be sent'); }
+  };
+  const openCreateTask = async () => {
+    const team = teams[0];
+    if (!team) { toast.error('Join a team before creating a task'); return; }
+    const workflow = await pmWorkflowService.resolveTeamWorkflow(workspaceId, team.id);
+    if (workflow.error || !workflow.data) { toast.error(workflow.error || 'Could not resolve team workflow'); return; }
+    setTaskTeamId(team.id); setTaskWorkflow(workflow.data); setTaskOpen(true);
+  };
+  const createAndLinkTask = async (payload: CreateTaskRequest) => {
+    const result = await createTask.mutateAsync(payload);
+    const target: { type: CRMObjectType; id: string } | null = contactId ? { type: 'contact', id: contactId } : companyId ? { type: 'company', id: companyId } : dealId ? { type: 'deal', id: dealId } : null;
+    if (target && result.task?.id) {
+      const association = await associationsService.createAssociation({ workspace_id: workspaceId, from_object_type: 'task', from_object_id: result.task.id, to_object_type: target.type, to_object_id: target.id });
+      if (association.error) throw new Error(association.error);
     }
-
-    navigate({
-      to: '/w/$slug/settings/$section',
-      params: {
-        slug: currentWorkspace.slug,
-        section: 'crm-email',
-      },
-    });
+    return result.task ? { id: result.task.id, task: result.task } : undefined;
   };
 
-  const accountEmails = new Set(connectedAccounts.map((account) => account.email_address.toLowerCase()));
-  const externalAddresses = (message: CRMEmailMessage) => {
-    const addresses = [message.from_address, ...(message.to_addresses ?? []), ...(message.cc_addresses ?? [])];
-    return [...new Set(addresses.map((address) => parseAddress(address).secondary ?? address).filter((address) => !accountEmails.has(address.toLowerCase())))];
-  };
-  const subjectWithPrefix = (subject: string, prefix: 'Re:' | 'Fwd:') =>
-    subject.toLowerCase().startsWith(prefix.toLowerCase()) ? subject : `${prefix} ${subject || '(no subject)'}`;
-  const openReply = (message: CRMEmailMessage, replyAll: boolean) => {
-    const recipients = externalAddresses(message);
-    setComposeDraft({
-      title: replyAll ? 'Reply all' : 'Reply',
-      to: replyAll ? recipients : recipients.slice(0, 1),
-      subject: subjectWithPrefix(message.subject, 'Re:'),
-    });
-  };
-  const openForward = (message: CRMEmailMessage) => {
-    setComposeDraft({
-      title: 'Forward email',
-      subject: subjectWithPrefix(message.subject, 'Fwd:'),
-      body: `\n\n---------- Forwarded message ----------\nFrom: ${message.from_address}\nDate: ${formatDetailTimestamp(message.sent_at)}\nSubject: ${message.subject}\n\n${getMessageText(message)}`,
-    });
-  };
-
-  const composerDialog = composeDraft ? (
-    <CRMEmailComposerDialog
-      workspaceId={workspaceId}
-      accounts={connectedAccounts}
-      open
-      draft={composeDraft}
-      onOpenChange={(nextOpen) => !nextOpen && setComposeDraft(null)}
-    />
-  ) : null;
-
-  if (query.isLoading) {
-    return <LoadingState />;
-  }
-
-  if (messages.length === 0) {
-    return (
-      <>
-        <div className="px-6 py-6">
-          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-12 text-center">
-            <div className="rounded-full bg-muted p-3">
-              <Mail01Icon className="h-7 w-7 text-muted-foreground" />
-            </div>
-            <p className="mt-4 text-base font-medium text-foreground">No emails tracked</p>
-            <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-              {hasConnectedAccounts
-                ? 'This contact does not have any synced messages yet.'
-                : 'Connect Gmail to sync conversations, show all participants, and open full message threads here.'}
-            </p>
-            <Button variant="outline" className="mt-5" onClick={openEmailSettings}>
-              {hasConnectedAccounts ? 'Manage email accounts' : 'Set up email sending'}
-            </Button>
-            {hasConnectedAccounts && (
-              <Button className="mt-2" onClick={openNewEmail}>Compose email</Button>
-            )}
-          </div>
-        </div>
-        {composerDialog}
-      </>
-    );
-  }
+  const detail = selectedThread.data;
+  const selected = detail?.thread;
+  const visibleDealResults = dealQuery.trim().length >= 2 ? dealResults : [];
+  const messageGroups = useMemo(() => {
+    const needsReply = threads.filter((thread) => thread.needs_reply);
+    const remaining = threads.filter((thread) => !thread.needs_reply);
+    return [
+      { label: 'Needs reply', items: needsReply },
+      { label: 'This month', items: remaining.filter((thread) => isThisMonth(new Date(thread.last_message_at))) },
+      { label: 'Earlier', items: remaining.filter((thread) => !isThisMonth(new Date(thread.last_message_at))) },
+    ].filter((group) => group.items.length > 0);
+  }, [threads]);
 
   return (
-    <>
-      <div>
-        {hasConnectedAccounts && (
-          <div className="flex justify-end border-b border-border/60 px-5 py-3">
-            <Button size="sm" onClick={openNewEmail}>Compose email</Button>
-          </div>
-        )}
-        {groupedMessages.map((group) => (
-          <section key={group.bucket}>
-            <div className="px-5 py-2 text-sm font-medium text-muted-foreground">
-              {group.bucket}
-            </div>
-            {group.messages.map((message) => {
-              const sender = parseAddress(message.from_address, message.from_name);
-              const preview = getPreview(message);
+    <div className="@container/email flex h-full min-h-0 overflow-hidden bg-background">
+      <section className={cn('flex min-h-0 w-full shrink-0 flex-col border-r border-border/60 @[820px]/email:w-[clamp(320px,38%,456px)]', mobileReading && 'hidden @[820px]/email:flex')}>
+        <div className="flex items-center gap-2 border-b border-border/50 px-4 py-2.5">
+          <Search01Icon className="h-4 w-4 text-muted-foreground" />
+          <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search conversations…" className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground" />
+          {showComposeAction ? <Button size="sm" className="h-7 gap-1.5 px-2.5 text-xs" onClick={() => setComposeDraft({ to: defaultRecipient ? [defaultRecipient] : [] })} disabled={sendableAccounts.length === 0}><PlusSignIcon className="h-3.5 w-3.5" /> Compose</Button> : null}
+        </div>
+        <div className="flex items-center gap-4 border-b border-border/60 px-5 py-2.5 text-xs">
+          {(['all', 'direct', 'needs_reply'] as Scope[]).map((value) => <button key={value} type="button" onClick={() => setScope(value)} className={cn('capitalize text-muted-foreground transition-colors hover:text-foreground', scope === value && 'font-semibold text-foreground')}>{value === 'needs_reply' ? 'Needs reply' : value}</button>)}
+          <button type="button" className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground" onClick={() => setSort((current) => current === 'newest' ? 'oldest' : 'newest')}>{sort === 'newest' ? 'Newest' : 'Oldest'} <ArrowDown02Icon className={cn('h-3 w-3 transition-transform', sort === 'oldest' && 'rotate-180')} /></button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {threadsQuery.isLoading ? <div className="space-y-px p-4">{Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[92px] animate-pulse rounded bg-muted/45" />)}</div>
+            : threadsQuery.isError ? <div className="flex h-full flex-col items-center justify-center px-6 text-center"><Mail01Icon className="h-5 w-5 text-muted-foreground" /><p className="mt-3 text-sm font-medium">Unable to load emails</p><Button variant="ghost" size="sm" className="mt-2" onClick={() => void threadsQuery.refetch()}>Try again</Button></div>
+              : threads.length === 0 ? <div className="flex h-full flex-col items-center justify-center px-6 text-center"><Mail01Icon className="h-5 w-5 text-muted-foreground/60" /><p className="mt-3 text-sm font-medium">No conversations found</p><p className="mt-1 max-w-xs text-xs text-muted-foreground">Synced conversations for this record will appear here.</p></div>
+                : <>{messageGroups.map((group) => <div key={group.label}><div className="px-5 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{group.label}</div>{group.items.map((thread) => <ThreadRow key={thread.id} thread={thread} selected={thread.id === selectedThreadId} onSelect={() => selectThread(thread.id)} />)}</div>)}{threadsQuery.hasNextPage ? <div className="flex justify-center border-t border-border/50 p-3"><Button variant="ghost" size="sm" disabled={threadsQuery.isFetchingNextPage} onClick={() => void threadsQuery.fetchNextPage()}>{threadsQuery.isFetchingNextPage ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : null}Load more</Button></div> : null}</>}
+        </div>
+        <div className="flex items-center gap-2 border-t border-border/60 px-5 py-3 text-xs text-muted-foreground"><Mail01Icon className="h-3.5 w-3.5" /><span>{selected?.mailbox_last_synced_at ? `Synced ${format(new Date(selected.mailbox_last_synced_at), 'MMM d, h:mm a')}` : 'Mailbox sync status'}</span><button type="button" onClick={openSettings} className="ml-auto inline-flex items-center gap-1 hover:text-foreground"><Setting07Icon className="h-3.5 w-3.5" /> Settings</button></div>
+      </section>
 
-              return (
-                <button
-                  key={message.id}
-                  type="button"
-                  onClick={() => setSelectedMessage(message)}
-                  className="flex w-full items-center gap-2.5 border-b border-border/60 px-5 py-2 text-left transition-colors hover:bg-muted/30"
-                >
-                  <UserAvatar
-                    name={sender.primary}
-                    className="h-7 w-7 shrink-0"
-                    fallbackClassName="text-[10px]"
-                  />
-                  <span className="w-24 shrink-0 truncate text-xs font-medium text-foreground">
-                    {sender.primary}
-                  </span>
-                  <p className="min-w-0 flex-1 truncate text-xs">
-                    <span className="text-foreground">{message.subject || '(no subject)'}</span>
-                    <span className="ml-1 font-normal text-muted-foreground">{preview}</span>
-                  </p>
-                  <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
-                    {formatListTimestamp(message.sent_at)}
-                  </span>
-                </button>
-              );
-            })}
-          </section>
-        ))}
-        {query.hasNextPage && (
-          <div className="flex justify-center px-5 py-4">
-            <Button variant="outline" size="sm" onClick={() => query.fetchNextPage()} disabled={query.isFetchingNextPage}>
-              {query.isFetchingNextPage ? 'Loading…' : 'Load older messages'}
-            </Button>
-          </div>
-        )}
-      </div>
-
-      <Dialog open={!!selectedMessage} onOpenChange={(open) => !open && setSelectedMessage(null)}>
-        {selectedMessage ? (
-          <DialogContent
-            className="max-h-[92vh] w-[min(960px,calc(100vw-2rem))] max-w-none sm:max-w-none gap-0 overflow-hidden p-0"
-          >
-            {(() => {
-              const fromAddress = parseAddress(selectedMessage.from_address, selectedMessage.from_name);
-              const toAddresses = (selectedMessage.to_addresses ?? []).map((address) => parseAddress(address));
-              const ccAddresses = (selectedMessage.cc_addresses ?? []).map((address) => parseAddress(address));
-              const { mainBody, quotedBody } = splitQuotedReply(getMessageText(selectedMessage));
-              const DirectionIcon = selectedMessage.direction === 'inbound' ? ArrowDown02Icon : ArrowUp02Icon;
-
-              return (
-                <>
-                  <div className="border-b border-border/60 px-6 py-5">
-                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                      <span
-                        className={cn(
-                          'inline-flex h-7 w-7 items-center justify-center rounded-full border',
-                          selectedMessage.direction === 'inbound'
-                            ? 'border-sky-200 bg-sky-50 text-sky-600'
-                            : 'border-emerald-200 bg-emerald-50 text-emerald-600',
-                        )}
-                      >
-                        <DirectionIcon className="h-4 w-4" />
-                      </span>
-                      {selectedMessage.direction === 'inbound' ? 'Inbound message' : 'Sent message'}
-                    </div>
-                    <DialogTitle className="mt-4 pr-10 text-xl font-semibold text-foreground">
-                      {selectedMessage.subject || '(no subject)'}
-                    </DialogTitle>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {formatDetailTimestamp(selectedMessage.sent_at)}
-                    </p>
-                    <div className="mt-5 space-y-2 border-t border-border/60 pt-4">
-                      <EmailHeaderLine label="From" addresses={[fromAddress]} />
-                      <EmailHeaderLine label="To" addresses={toAddresses} />
-                      <EmailHeaderLine label="CC" addresses={ccAddresses} />
-                    </div>
+      <section className={cn('min-h-0 min-w-0 flex-1 flex-col', mobileReading ? 'flex' : 'hidden @[820px]/email:flex')}>
+        {!selectedThreadId ? <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Select a conversation</div>
+          : selectedThread.isLoading ? <div className="flex h-full items-center justify-center"><Loading01Icon className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+            : !detail ? <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Conversation unavailable</div>
+              : <>
+                <header className="border-b border-border/50 px-5 py-2.5 sm:px-7 @[820px]/email:py-4">
+                  <button type="button" onClick={() => setMobileReading(false)} className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground @[820px]/email:hidden"><ArrowLeft02Icon className="h-3.5 w-3.5" /> Conversations</button>
+                  <div className="flex flex-wrap items-start gap-2 @[820px]/email:gap-3"><div className="min-w-0 flex-1"><h2 className="text-base font-semibold tracking-tight text-foreground @[820px]/email:text-lg">{detail.thread.subject || '(no subject)'}</h2><div className="mt-1 flex min-w-0 items-center gap-2 overflow-hidden text-xs text-muted-foreground @[820px]/email:mt-1.5"><span className="shrink-0">{detail.thread.message_count} messages</span><span className="h-2.5 w-px shrink-0 bg-border" /><span className="shrink-0">{dateRange(detail.messages)}</span><span className="h-2.5 w-px shrink-0 bg-border" /><Mail01Icon className="h-3 w-3 shrink-0" /><span className="shrink-0 capitalize">{detail.thread.mailbox_provider}</span><span className="truncate">{detail.thread.mailbox_email}</span></div></div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs">{detail.thread.can_reply ? <button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => document.getElementById('crm-thread-reply')?.scrollIntoView({ behavior: 'smooth' })}><MailReply01Icon className="h-3.5 w-3.5" /> Reply</button> : null}<button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => void openCreateTask()}><CheckListIcon className="h-3.5 w-3.5" /> Create task</button><button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => setDealOpen(true)}><DollarCircleIcon className="h-3.5 w-3.5" /> Link deal</button>{detail.thread.needs_reply ? <button type="button" className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground" onClick={() => void dismiss.mutateAsync({ threadId: detail.thread.id, dismissed: true })}><Tick01Icon className="h-3.5 w-3.5" /> Dismiss</button> : null}</div>
                   </div>
-
-                  <ScrollArea className="max-h-[58vh] bg-background">
-                    <div className="space-y-8 px-6 py-6">
-                      {mainBody ? (
-                        <div className="whitespace-pre-wrap text-[15px] leading-7 text-foreground">
-                          {mainBody}
+                </header>
+                <div className="flex flex-wrap items-start gap-x-5 gap-y-1.5 border-b border-border/50 px-5 py-2 sm:px-7 @[820px]/email:py-3"><span className="w-14 shrink-0 pt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">People</span><div className="flex min-w-0 flex-1 flex-wrap gap-x-5 gap-y-1.5">{detail.participants.map((participant) => <div key={participant.email} className="flex min-w-0 items-center gap-2"><UserAvatar name={participantLabel(participant)} className="h-5 w-5" fallbackClassName="text-[8px]" /><span className="text-xs font-medium">{participantLabel(participant)}</span><span className="text-[10px] uppercase tracking-wide text-muted-foreground">{participant.role}</span>{participant.contact_id ? <Link01Icon className="h-3 w-3 text-teal-700 dark:text-teal-400" /> : <span className="max-w-44 truncate text-[11px] text-muted-foreground">{participant.email}</span>}</div>)}</div></div>
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {detail.messages.map((message) => <MessageBlock key={message.id} message={message} />)}
+                </div>
+                <div id="crm-thread-reply" className="z-10 max-h-[48%] shrink-0 overflow-y-auto border-t border-border/60 bg-background px-5 py-2.5 sm:px-7 @[820px]/email:py-4">
+                  {detail.thread.can_reply ? (
+                    <div className="flex gap-3">
+                      <UserAvatar name={detail.thread.mailbox_email} className="h-7 w-7 shrink-0" fallbackClassName="text-[9px]" />
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-2 flex items-center gap-4 text-xs">
+                          <button type="button" onClick={() => setReplyMode('reply')} className={cn('text-muted-foreground', replyMode === 'reply' && 'font-semibold text-foreground')}>Reply</button>
+                          <button type="button" onClick={() => setReplyMode('reply_all')} className={cn('text-muted-foreground', replyMode === 'reply_all' && 'font-semibold text-foreground')}>Reply all</button>
+                          <button type="button" onClick={() => setComposeDraft({ title: 'Forward email', subject: `Fwd: ${detail.thread.subject}`, body: messageText(detail.messages[0]) })} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><Forward01Icon className="h-3 w-3" /> Forward</button>
+                          <span className="ml-auto truncate text-[11px] text-muted-foreground">Sends from {detail.thread.mailbox_email}</span>
                         </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No message body available.</p>
-                      )}
-
-                      {quotedBody ? (
-                        <div className="border-l-2 border-border/80 pl-5 text-sm leading-7 text-muted-foreground">
-                          <div className="whitespace-pre-wrap">{quotedBody}</div>
+                        <div className="relative">
+                          <TiptapEditor
+                            content={replyHTML}
+                            onChange={setReplyHTML}
+                            placeholder="Write a reply…"
+                            variant="divider"
+                            contentVariant="pm"
+                            className="border-t-2 border-border/60 focus-within:border-foreground/70 [&>div:first-child]:flex-nowrap [&>div:first-child]:overflow-x-auto [&>div:first-child]:[scrollbar-width:none] [&_.tiptap]:min-h-24 [&_.tiptap]:px-0 [&_.tiptap]:py-2.5 [&_.tiptap]:pr-28"
+                          />
+                          <Button size="sm" className="absolute bottom-1.5 right-0 h-8 gap-1.5" disabled={reply.isPending || !replyHTML.replace(/<[^>]+>/g, '').trim()} onClick={() => void sendReply()}>{reply.isPending ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <ArrowTurnBackwardIcon className="h-3.5 w-3.5" />}Send reply</Button>
                         </div>
-                      ) : null}
+                      </div>
                     </div>
-                  </ScrollArea>
+                  ) : (
+                    <div className="flex items-start gap-3 py-2"><Mail01Icon className="mt-0.5 h-4 w-4 text-muted-foreground" /><div><p className="text-sm font-medium">Read-only conversation</p><p className="mt-1 text-xs leading-5 text-muted-foreground">This mailbox belongs to another workspace member. You can view the thread, but only the person who connected {detail.thread.mailbox_email || 'this mailbox'} can reply.</p></div></div>
+                  )}
+                </div>
+              </>}
+      </section>
 
-                  <div className="flex flex-col gap-3 border-t border-border/60 bg-muted/20 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm" disabled={!hasConnectedAccounts} onClick={() => { openReply(selectedMessage, false); setSelectedMessage(null); }}>
-                        <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5 -scale-y-100" />
-                        Reply
-                      </Button>
-                      <Button variant="outline" size="sm" disabled={!hasConnectedAccounts} onClick={() => { openReply(selectedMessage, true); setSelectedMessage(null); }}>
-                        <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5 -scale-y-100" />
-                        Reply all
-                      </Button>
-                      <Button variant="outline" size="sm" disabled={!hasConnectedAccounts} onClick={() => { openForward(selectedMessage); setSelectedMessage(null); }}>
-                        <Forward01Icon className="mr-2 h-3.5 w-3.5" />
-                        Forward
-                      </Button>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      {!hasConnectedAccounts && <Button variant="ghost" size="sm" className="text-primary hover:text-primary" onClick={openEmailSettings}>Set up email sending</Button>}
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </DialogContent>
-        ) : null}
-      </Dialog>
-      {composerDialog}
-    </>
+      <CRMEmailComposerDialog workspaceId={workspaceId} accounts={sendableAccounts} open={Boolean(composeDraft)} draft={composeDraft ?? undefined} onOpenChange={(open) => !open && setComposeDraft(null)} />
+      <CreateTaskModal open={taskOpen} onOpenChange={setTaskOpen} workspaceId={workspaceId} workflow={taskWorkflow ?? undefined} initialTeamId={taskTeamId} initialName={selected ? `Follow up: ${selected.subject}` : 'Email follow-up'} onCreate={createAndLinkTask} />
+      <Dialog open={dealOpen} onOpenChange={setDealOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Link deal to conversation</DialogTitle></DialogHeader><div className="relative"><Search01Icon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={dealQuery} onChange={(event) => setDealQuery(event.target.value)} placeholder="Search deals" className="pl-9" /></div><div className="max-h-64 overflow-y-auto border-t border-border/50 pt-2">{visibleDealResults.map((deal) => <button key={deal.id} type="button" className="flex w-full items-center gap-2 px-2 py-2 text-left text-sm hover:bg-muted/40" onClick={async () => { if (!selectedThreadId) return; await linkDeal.mutateAsync({ threadId: selectedThreadId, dealId: deal.id }); setDealOpen(false); setDealQuery(''); toast.success('Deal linked'); }}><DollarCircleIcon className="h-4 w-4 text-muted-foreground" /><span className="truncate">{deal.name}</span></button>)}{dealQuery.trim().length < 2 ? <p className="py-5 text-center text-xs text-muted-foreground">Type at least two characters</p> : visibleDealResults.length === 0 ? <p className="py-5 text-center text-xs text-muted-foreground">No deals found</p> : null}</div></DialogContent></Dialog>
+    </div>
   );
 }
