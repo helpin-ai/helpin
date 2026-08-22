@@ -17,3 +17,4 @@ export type { RenderSegmentOptions } from './segmentRenderers';
 export { toolStatusChrome, formatToolDuration } from './toolRowChrome';
 export { deriveLiveStatusLabel } from './liveStatus';
 export { ScrollToLatestButton } from './ScrollToLatestButton';
+export { segmentTimestamp, transcriptSegmentTimes } from './segmentTiming';

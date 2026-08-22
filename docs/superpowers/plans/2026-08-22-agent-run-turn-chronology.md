@@ -51,3 +51,16 @@
 - [ ] Run `pnpm --dir frontend exec tsc -b`.
 - [ ] Run `pnpm --dir frontend build`.
 - [ ] Run `git diff --check` and inspect the final diff for unrelated changes.
+
+### Task 4: Automation Activity transcript parity
+
+**Files:**
+- Modify: `frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx`
+- Modify: shared completed-work timeline/presentation modules only if needed
+- Test: `frontend/src/components/pm/CodingSession/__tests__/CodingTranscriptPane.test.tsx`
+
+- [x] Add a failing completed-session test proving progress and tool activity render behind the chat-style collapsed `Worked for …` disclosure while the final assistant response stays visible.
+- [x] Run the focused test and confirm it fails because `CodingTranscriptPane` still renders a flat list.
+- [x] Reuse the existing completed-work timeline and `DockWorkingGroup` presentation in `CodingTranscriptPane`; do not create a second visual variant.
+- [x] Keep active sessions flat/live and preserve the transcript's chronological segment order.
+- [x] Rerun the focused test, existing Coding Session tests, and Dock transcript tests.

@@ -157,6 +157,55 @@ function buildReviewArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRu
 }
 
 describe('CodingTranscriptPane', () => {
+  it('uses the chat Worked for disclosure for completed agent-run work', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[
+            buildTranscriptMessage({
+              event_id: 'user-prompt',
+              message_id: 'user-prompt',
+              role: 'user',
+              message_type: 'prompt',
+              content: 'Investigate the transcript ordering.',
+              timestamp: '2026-05-07T08:00:00Z',
+              sequence_no: 1,
+            }),
+            buildTranscriptMessage({
+              event_id: 'assistant-progress',
+              message_id: 'assistant-progress',
+              content: 'I am reviewing the persisted events.',
+              timestamp: '2026-05-07T08:03:00Z',
+              sequence_no: 2,
+            }),
+            buildTranscriptMessage({
+              event_id: 'assistant-final',
+              message_id: 'assistant-final',
+              content: 'The transcript now follows event chronology.',
+              timestamp: '2026-05-07T08:10:00Z',
+              sequence_no: 3,
+            }),
+          ]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'completed', pause_reason: 'none' })}
+        />,
+      );
+    });
+
+    const disclosure = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('Worked for 10m'));
+    expect(disclosure).toBeTruthy();
+    expect(disclosure?.getAttribute('aria-expanded')).toBe('false');
+    expect(container.textContent).toContain('The transcript now follows event chronology.');
+    expect(container.textContent).not.toContain('I am reviewing the persisted events.');
+
+    act(() => disclosure?.click());
+    expect(container.textContent).toContain('I am reviewing the persisted events.');
+  });
+
   it('opens an existing run with breathing room after the latest activity', () => {
     act(() => {
       root.render(

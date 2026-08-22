@@ -30,9 +30,15 @@ import {
   collectSegments,
   deriveLiveStatusLabel,
   ScrollToLatestButton,
+  segmentTimestamp,
+  transcriptSegmentTimes,
   TranscriptSegmentView,
-  type TranscriptSegment,
 } from '@/components/agents/transcript';
+import { DockWorkingGroup } from '@/components/agents/dock/DockWorkingGroup';
+import {
+  buildDockWorkingTimeline,
+  type DockWorkingTimelineEntry,
+} from '@/components/agents/dock/dockWorkingGroups';
 
 export function CodingTranscriptPane({
   promptArtifact,
@@ -146,19 +152,27 @@ export function CodingTranscriptPane({
     session?.status,
   );
 
-  // Build a flat list of virtual items: transcript segments plus the local
-  // scroll affordances (streaming status, empty state, spacer).
+  const transcriptTimes = useMemo(() => transcriptSegmentTimes({
+    transcript_messages: transcriptMessages,
+    live_turn_segments: visibleLiveSegments,
+    live_reasoning_message: liveReasoningMessage,
+  }), [transcriptMessages, visibleLiveSegments, liveReasoningMessage]);
+
+  // Completed runs use the same compact work disclosure as Ask Agent chats.
+  // Active and interrupted runs remain flat so incoming work stays visible.
   type VirtualItem =
-    | { kind: 'segment'; segment: TranscriptSegment }
+    | DockWorkingTimelineEntry
     | { kind: 'streaming-status' }
     | { kind: 'empty' }
     | { kind: 'bottom-spacer' };
 
   const items = useMemo((): VirtualItem[] => {
-    const list: VirtualItem[] = [];
-    for (const segment of segments) {
-      list.push({ kind: 'segment', segment });
-    }
+    const list: VirtualItem[] = session?.status === 'completed'
+      ? buildDockWorkingTimeline(segments, false, {
+        collapseCompletedWork: true,
+        timestampForSegment: (segment) => segmentTimestamp(segment, transcriptTimes),
+      })
+      : segments.map((segment) => ({ kind: 'segment', key: segment.id, segment }));
     if (showStreamingStatus) {
       list.push({ kind: 'streaming-status' });
     }
@@ -171,8 +185,10 @@ export function CodingTranscriptPane({
     return list;
   }, [
     segments,
+    session?.status,
     showStreamingStatus,
     loading,
+    transcriptTimes,
   ]);
 
   const virtualizer = useVirtualizer({
@@ -181,7 +197,7 @@ export function CodingTranscriptPane({
     getItemKey: (index) => {
       const item = items[index];
       if (!item) return `missing:${index}`;
-      if (item.kind === 'segment') return `segment:${item.segment.kind}:${item.segment.id}`;
+      if (item.kind === 'segment' || item.kind === 'working_group') return item.key;
       return item.kind;
     },
     estimateSize: () => 120,
@@ -300,6 +316,23 @@ export function CodingTranscriptPane({
             segment={item.segment}
             options={{ expandable: true, resolveActor: actorForMessage }}
           />
+        );
+      case 'working_group':
+        return (
+          <DockWorkingGroup
+            id={item.key}
+            segments={item.segments}
+            active={item.active}
+            completedDurationMs={item.durationMs}
+          >
+            {item.segments.map((segment) => (
+              <TranscriptSegmentView
+                key={`${segment.kind}:${segment.id}`}
+                segment={segment}
+                options={{ expandable: true, resolveActor: actorForMessage }}
+              />
+            ))}
+          </DockWorkingGroup>
         );
       case 'streaming-status':
         return (
