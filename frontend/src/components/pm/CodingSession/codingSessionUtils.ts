@@ -25,6 +25,14 @@ export function codingSessionEventContent(payload: Record<string, unknown>) {
 
 export function sortCodingSessionEvents(events: CodingSessionEvent[]) {
   return [...events].sort((a, b) => {
+    // REST projections share one global sequence. Live events do not: message
+    // sequence numbers are run-message-local while interaction/runtime events
+    // use their own counters. Across those streams, timestamps are the only
+    // common chronology until the next REST reconciliation arrives.
+    if (!hasPersistedProjectionSource(a) || !hasPersistedProjectionSource(b)) {
+      const timestampDelta = Date.parse(a.timestamp) - Date.parse(b.timestamp);
+      if (Number.isFinite(timestampDelta) && timestampDelta !== 0) return timestampDelta;
+    }
     const sequenceDelta = codingSessionEventSortSequence(a) - codingSessionEventSortSequence(b);
     if (sequenceDelta !== 0) return sequenceDelta;
     return a.sequence_no - b.sequence_no;
@@ -53,11 +61,26 @@ export function isPersistedCodingSessionEvent(event: CodingSessionEvent) {
 }
 
 function codingSessionEventSortSequence(event: CodingSessionEvent) {
+  if (hasPersistedProjectionSource(event)) {
+    return event.sequence_no;
+  }
   const payloadSequence = event.payload?.sequence_no;
   if (isRunMessageShapedEvent(event) && typeof payloadSequence === 'number' && Number.isFinite(payloadSequence)) {
     return payloadSequence;
   }
   return event.sequence_no;
+}
+
+function hasPersistedProjectionSource(event: CodingSessionEvent) {
+  const source = typeof event.runtime_metadata?.source === 'string'
+    ? event.runtime_metadata.source.trim()
+    : '';
+  return (
+    source === 'agent_run_message'
+    || source === 'agent_run_artifact'
+    || source === 'agent_run_interaction'
+    || source === 'agent_run'
+  );
 }
 
 function isRunMessageShapedEvent(event: CodingSessionEvent) {

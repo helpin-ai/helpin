@@ -154,6 +154,35 @@ function assistantTurn(id: string, content: string): CodingSessionLiveTurnSegmen
 }
 
 describe('DockTranscript', () => {
+  it('collapses already-loaded standalone run work and keeps the final response visible', () => {
+    act(() => {
+      root.render(
+        <DockTranscript
+          stream={streamWithMessages([
+            userMessage('user-1', 'Investigate this.', 1),
+            assistantMessage('progress-1', 'I will inspect the repository.', 2),
+            assistantMessage('final-1', 'The issue is in the event sorter.', 9),
+          ])}
+          active={false}
+          workspaceId="ws-1"
+          compactAssistantProgress
+          completedRun
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Worked for 8s');
+    expect(container.textContent).toContain('The issue is in the event sorter.');
+    expect(container.textContent).not.toContain('I will inspect the repository.');
+    expect(mocks.getMessageWorkDetail).not.toHaveBeenCalled();
+
+    const disclosure = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Worked for 8s'))!;
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+    act(() => disclosure.click());
+    expect(container.textContent).toContain('I will inspect the repository.');
+  });
+
   it('loads completed turn work only when Worked for is expanded and reuses it', async () => {
     mocks.getMessageWorkDetail.mockResolvedValue({
       data: {

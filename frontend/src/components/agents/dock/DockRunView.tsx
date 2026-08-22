@@ -69,12 +69,13 @@ export function DockRunView({
     && streamState !== null
     && hasAuthoritativeDockRuntimeTimeline(streamState)
   );
-  const liveProgress = useMemo(() => resolveAgentLiveProgress({
+  const completedRun = effectiveRun.status === 'completed';
+  const liveProgress = useMemo(() => completedRun ? null : resolveAgentLiveProgress({
     run: effectiveRun,
     stream: streamState,
     currentPlan,
     sending: false,
-  }), [currentPlan, effectiveRun, streamState]);
+  }), [completedRun, currentPlan, effectiveRun, streamState]);
 
   const refreshInteractions = useCallback(async () => {
     if (effectiveRun.status !== 'paused') return;
@@ -226,6 +227,7 @@ export function DockRunView({
             workspaceId={workspaceId}
             fallbackActor={session?.triggered_by_user}
             compactAssistantProgress
+            completedRun={completedRun}
           />
           {!loading && !streamState ? (
             <p className="py-8 text-center text-[13px] text-[#8a8781]">No activity has been recorded for this run yet.</p>

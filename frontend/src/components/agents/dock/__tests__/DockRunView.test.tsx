@@ -39,6 +39,7 @@ vi.mock('../DockTranscript', () => ({
       data-active={String(props.active)}
       data-runtime={String(props.useRuntimeTimeline)}
       data-compact={String(props.compactAssistantProgress)}
+      data-completed-run={String(props.completedRun)}
       data-actor={(props.fallbackActor as { full_name?: string } | undefined)?.full_name ?? ''}
     />
   ),
@@ -195,11 +196,42 @@ describe('DockRunView timeline parity', () => {
     expect(transcript?.getAttribute('data-active')).toBe('true');
     expect(transcript?.getAttribute('data-runtime')).toBe('true');
     expect(transcript?.getAttribute('data-compact')).toBe('true');
+    expect(transcript?.getAttribute('data-completed-run')).toBe('false');
     expect(transcript?.getAttribute('data-actor')).toBe('Waqar Azeem');
     expect(container.querySelector('[data-testid="run-plan"]')?.getAttribute('data-status')).toBe('running');
     expect(container.textContent).toContain('Work plan');
     expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-disabled')).toBe('true');
     expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-can-stop')).toBe('true');
     expect(container.textContent).toContain('Agent is working…');
+  });
+
+  it('delegates completed work disclosure to the transcript instead of adding a passive footer', () => {
+    mocks.session = codingSession({
+      status: 'completed',
+      started_at: '2026-08-21T19:50:00Z',
+      updated_at: '2026-08-21T19:53:00Z',
+    });
+    mocks.streamState = streamState();
+    const summary: DockRunSummary = {
+      run: agentRun({ status: 'completed' }),
+      agent: { id: 'agent-1', name: 'Scribe' },
+      last_activity_at: '2026-08-21T19:53:00Z',
+    };
+
+    act(() => {
+      root.render(
+        <DockRunView
+          workspaceId="ws-1"
+          summary={summary}
+          draft=""
+          onDraftChange={vi.fn()}
+          onRunChanged={vi.fn()}
+          onRunContinued={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.querySelector('[data-testid="dock-transcript"]')?.getAttribute('data-completed-run')).toBe('true');
+    expect(container.querySelector('[data-agent-live-status-region]')).toBeNull();
   });
 });

@@ -32,6 +32,68 @@ function user(id: string, content: string): TranscriptSegment {
 }
 
 describe('buildDockWorkingTimeline', () => {
+  it('collapses completed standalone work before the final response with its turn duration', () => {
+    const timestamps = new Map([
+      ['user-1', 1_000],
+      ['progress-1', 2_000],
+      ['tool-1', 5_000],
+      ['final', 10_000],
+    ]);
+    const timeline = buildDockWorkingTimeline([
+      user('user-1', 'Investigate it.'),
+      assistant('progress-1', 'I will inspect the repository.'),
+      tool('tool-1'),
+      assistant('final', 'The issue is in the event sorter.'),
+    ], false, {
+      collapseCompletedWork: true,
+      timestampForSegment: (segment) => timestamps.get(segment.id) ?? null,
+    });
+
+    expect(timeline).toHaveLength(3);
+    expect(timeline[1]).toMatchObject({
+      kind: 'working_group',
+      durationMs: 9_000,
+      segments: [
+        { kind: 'assistant', id: 'progress-1' },
+        { kind: 'tool', id: 'tool-1' },
+      ],
+    });
+    expect(timeline[2]).toMatchObject({ kind: 'segment', segment: { kind: 'assistant', id: 'final' } });
+  });
+
+  it('leaves a completed direct answer flat', () => {
+    const timeline = buildDockWorkingTimeline([
+      user('user-1', 'Answer directly.'),
+      assistant('answer', 'Here is the answer.'),
+    ], false, { collapseCompletedWork: true });
+
+    expect(timeline).toHaveLength(2);
+    expect(timeline.some((entry) => entry.kind === 'working_group')).toBe(false);
+  });
+
+  it('collapses completed work independently for each user turn', () => {
+    const timeline = buildDockWorkingTimeline([
+      user('user-1', 'Investigate the first issue.'),
+      assistant('progress-1', 'Checking the first issue.'),
+      tool('tool-1'),
+      assistant('final-1', 'The first issue is fixed.'),
+      user('user-2', 'Now inspect the second issue.'),
+      assistant('progress-2', 'Checking the second issue.'),
+      tool('tool-2'),
+      assistant('final-2', 'The second issue is fixed.'),
+    ], false, { collapseCompletedWork: true });
+
+    expect(timeline.map((entry) => entry.kind)).toEqual([
+      'segment',
+      'working_group',
+      'segment',
+      'segment',
+      'working_group',
+      'segment',
+    ]);
+    expect(timeline.filter((entry) => entry.kind === 'working_group')).toHaveLength(2);
+  });
+
   it('keeps every assistant message flat and groups only the tool phases between them', () => {
     const timeline = buildDockWorkingTimeline([
       user('user-1', 'Investigate it.'),
