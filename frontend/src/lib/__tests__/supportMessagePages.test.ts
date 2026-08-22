@@ -109,6 +109,31 @@ describe('support message page cache', () => {
     ])
   })
 
+  it('places a teammate-joined event before a reconciled optimistic first reply', () => {
+    const reconciledReply = {
+      ...message('reply-1'),
+      client_message_id: 'optimistic-conv-1-1',
+      sender_type: 'user' as const,
+      sender_user_id: 'user-1',
+      message_type: 'reply' as const,
+    }
+    const joinedEvent = {
+      ...message('joined-1'),
+      sender_type: 'user' as const,
+      sender_user_id: 'user-1',
+      message_type: 'system' as const,
+      system_event_type: 'teammate_joined' as const,
+    }
+
+    const updated = appendMessageToNewestPage(seedSupportMessagePages([message('msg-01'), reconciledReply]), joinedEvent)
+
+    expect(flattenSupportMessagePages(updated).map((item) => item.id)).toEqual([
+      'msg-01',
+      'joined-1',
+      'reply-1',
+    ])
+  })
+
   it('does not move a joined event ahead of another teammate\'s pending reply', () => {
     const optimisticReply = {
       ...message('optimistic-conv-1-1'),

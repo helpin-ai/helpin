@@ -64,7 +64,7 @@ export function appendMessageToNewestPage(
 
       const pendingReplyIndex = shouldPrecedeOptimisticReply
         ? page.data.findIndex((item) =>
-          item.id.startsWith('optimistic-')
+          (item.id.startsWith('optimistic-') || item.client_message_id?.startsWith('optimistic-'))
           && item.sender_type === 'user'
           && item.sender_user_id === message.sender_user_id
           && !item.is_internal
