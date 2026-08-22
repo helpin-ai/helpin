@@ -4,6 +4,7 @@ import {
   codingSessionApprovalStatesByPreviewKey,
   isPersistedCodingSessionEvent,
   maxPersistedCodingSessionSequence,
+  sortCodingSessionEvents,
   upsertCodingSessionEvents,
 } from '../codingSessionUtils';
 import type { CodingSessionEvent } from '@/lib/pmTypes';
@@ -130,9 +131,109 @@ describe('persisted coding-session event cursors', () => {
       realtime,
     ])).toBe(32);
   });
+
+  it('does not treat a realtime message projection as a REST pagination cursor', () => {
+    const realtime = event('msg:live-assistant', 14, 'agent_run_message_realtime');
+    realtime.type = 'assistant.message.completed';
+    realtime.payload = {
+      message_id: 'live-assistant',
+      role: 'assistant',
+      sequence_no: 14,
+    };
+
+    expect(isPersistedCodingSessionEvent(realtime)).toBe(false);
+  });
 });
 
 describe('coding-session event reconciliation', () => {
+  it('uses the canonical projection sequence across persisted messages and interactions', () => {
+    const approval = interactionEvent(23, {
+      interaction_id: 'approval-1',
+      interaction_kind: 'approval_request',
+      status: 'resolved',
+    });
+    approval.runtime_metadata = { source: 'agent_run_interaction' };
+
+    const resumedAssistant: CodingSessionEvent = {
+      id: 'msg:assistant-resumed',
+      session_id: 'session-1',
+      run_id: 'run-1',
+      sequence_no: 27,
+      timestamp: '2026-08-21T19:52:34Z',
+      type: 'assistant.message.completed',
+      runtime_kind: 'codex',
+      payload: {
+        message_id: 'assistant-resumed',
+        role: 'assistant',
+        sequence_no: 14,
+      },
+      runtime_metadata: { source: 'agent_run_message' },
+    };
+
+    expect(sortCodingSessionEvents([resumedAssistant, approval])).toEqual([
+      approval,
+      resumedAssistant,
+    ]);
+  });
+
+  it('retains payload sequence ordering for legacy message events without a projection source', () => {
+    const persistedUser: CodingSessionEvent = {
+      id: 'msg:user',
+      session_id: 'session-1',
+      run_id: 'run-1',
+      sequence_no: 2,
+      timestamp: '2026-05-08T07:00:01Z',
+      type: 'user.message.completed',
+      runtime_kind: 'codex',
+      payload: { message_id: 'user', role: 'user', sequence_no: 2 },
+      runtime_metadata: { source: 'agent_run_message' },
+    };
+    const legacyStatus: CodingSessionEvent = {
+      ...persistedUser,
+      id: 'legacy-status',
+      sequence_no: 1_700_000_001,
+      type: 'assistant.message.completed',
+      payload: { message_id: 'status', role: 'assistant', sequence_no: 1 },
+      runtime_metadata: undefined,
+    };
+
+    expect(sortCodingSessionEvents([persistedUser, legacyStatus])).toEqual([
+      legacyStatus,
+      persistedUser,
+    ]);
+  });
+
+  it('uses timestamps when realtime interaction and message sequences come from different streams', () => {
+    const resolution = interactionEvent(1_787_341_933_639, {
+      interaction_id: 'approval-1',
+      interaction_kind: 'approval_request',
+      status: 'resolved',
+    });
+    resolution.timestamp = '2026-08-21T19:52:13.639Z';
+    resolution.runtime_metadata = { source: 'agent_run_interaction_realtime' };
+
+    const resumedAssistant: CodingSessionEvent = {
+      id: 'msg:assistant-resumed',
+      session_id: 'session-1',
+      run_id: 'run-1',
+      sequence_no: 14,
+      timestamp: '2026-08-21T19:52:14.008Z',
+      type: 'assistant.message.completed',
+      runtime_kind: 'codex',
+      payload: {
+        message_id: 'assistant-resumed',
+        role: 'assistant',
+        sequence_no: 14,
+      },
+      runtime_metadata: { source: 'agent_run_message_realtime' },
+    };
+
+    expect(sortCodingSessionEvents([resumedAssistant, resolution])).toEqual([
+      resolution,
+      resumedAssistant,
+    ]);
+  });
+
   it('replaces a transient interaction resolution with its persisted projection', () => {
     const payload = {
       interaction_id: 'approval-1',

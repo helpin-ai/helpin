@@ -1270,7 +1270,7 @@ func (s *AgentService) publishCodingSessionMessageEvent(run *model.AgentRun, mes
 	if s.wsPublisher == nil || run == nil || message == nil {
 		return
 	}
-	event := model.CodingSessionEventFromAgentRunMessage(run, message)
+	event := codingSessionRealtimeMessageEvent(run, message)
 	data, _ := json.Marshal(event)
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",
@@ -1282,6 +1282,15 @@ func (s *AgentService) publishCodingSessionMessageEvent(run *model.AgentRun, mes
 		ParentID:    run.ID,
 		Data:        data,
 	})
+}
+
+func codingSessionRealtimeMessageEvent(run *model.AgentRun, message *model.AgentRunMessage) model.CodingSessionEvent {
+	event := model.CodingSessionEventFromAgentRunMessage(run, message)
+	if event.RuntimeMetadata == nil {
+		event.RuntimeMetadata = make(map[string]any)
+	}
+	event.RuntimeMetadata["source"] = "agent_run_message_realtime"
+	return event
 }
 
 func parseChangedFilesFromOutputSummary(raw json.RawMessage) []model.CodingSessionRepoFile {

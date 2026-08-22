@@ -218,6 +218,7 @@ export function DockTranscript({
   fallbackActor,
   showUserMessages = true,
   compactAssistantProgress = false,
+  completedRun = false,
   historyWorkOnly = false,
   subAgentRuns = [],
   className,
@@ -237,6 +238,8 @@ export function DockTranscript({
   showUserMessages?: boolean;
   /** Root Ask chat groups full progress into independently expandable work. */
   compactAssistantProgress?: boolean;
+  /** Collapse already-loaded standalone run activity before each final response. */
+  completedRun?: boolean;
   /** Render progress and tools without repeating the completed final answer. */
   historyWorkOnly?: boolean;
   /** Delegated work inserted between the messages surrounding its launch. */
@@ -268,7 +271,13 @@ export function DockTranscript({
   });
   if (segments.length === 0 && subAgentRuns.length === 0) return null;
   const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;
-  const workingTimeline = compactAssistantProgress ? buildDockWorkingTimeline(segments, active) : null;
+  const times = transcriptSegmentTimes(stream);
+  const workingTimeline = compactAssistantProgress
+    ? buildDockWorkingTimeline(segments, active, {
+        collapseCompletedWork: completedRun,
+        timestampForSegment: (segment) => segmentTimestamp(segment, times),
+      })
+    : null;
   const entries = workingTimeline
     ? workingTimeline.map((entry) => entry.kind === 'working_group'
       ? { key: entry.key, segment: entry.segments[0], workingGroup: entry }
@@ -306,7 +315,6 @@ export function DockTranscript({
     if (segment.kind === 'assistant') intervalAssistantIndexes.push(index);
   }
   finalizeInterval(entries.length, !active);
-  const times = transcriptSegmentTimes(stream);
   const sequences = transcriptSegmentSequences(stream);
   const runsByBoundary = new Map<number, DockSubAgentTimelineItem[]>();
   for (const item of [...subAgentRuns].sort((left, right) => {
@@ -377,6 +385,7 @@ export function DockTranscript({
                   id={workingGroup.key}
                   segments={workingGroup.segments}
                   active={workingGroup.active}
+                  completedDurationMs={workingGroup.durationMs}
                 >
                   {workingGroup.segments.map((segment) => (
                     <TranscriptSegmentView

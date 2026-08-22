@@ -649,6 +649,17 @@ function removeDuplicateResolvedInteractionResumeMessage(
   }
 }
 
+function followsSynthesizedApprovalResolution(
+  transcriptMessages: CodingSessionTranscriptMessage[],
+  message: CodingSessionTranscriptMessage,
+) {
+  if (
+    message.role !== 'user'
+    || (message.message_type !== 'approval' && message.message_type !== 'request_changes')
+  ) return false;
+  return transcriptMessages.at(-1)?.message_type === 'approval_request_resolution';
+}
+
 function approvalRequestResolutionTranscriptContent(
   requestPayload: Record<string, unknown> | null,
   responsePayload: Record<string, unknown> | null,
@@ -960,6 +971,7 @@ export function buildCodingSessionStreamState(
         removeDuplicateResolvedInteractionResumeMessage(transcriptMessages, event);
         settleResolvedInteractionToolCalls(event, liveAssistantMessage, liveTurnSegments);
       }
+      if (followsSynthesizedApprovalResolution(transcriptMessages, transcriptMessage)) continue;
       transcriptMessages.push(transcriptMessage);
       continue;
     }

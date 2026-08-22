@@ -836,6 +836,73 @@ describe('buildCodingSessionStreamState', () => {
     expect(state.transcript_messages[0].timestamp).toBe('2026-08-21T19:52:13Z');
   });
 
+  it('keeps an approval decision before the assistant messages resumed by that decision', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'interaction:approval-1:resolved',
+        type: 'interaction.resolved',
+        sequence_no: 23,
+        timestamp: '2026-08-21T19:52:13Z',
+        payload: {
+          interaction_id: 'approval-1',
+          interaction_kind: 'approval_request',
+          status: 'resolved',
+          request_schema_version: 'helpin.v1',
+          summary: 'Approve task planning document',
+          response_payload: { decision: 'approve' },
+          resolved_at: '2026-08-21T19:52:13Z',
+        },
+        runtime_metadata: { source: 'agent_run_interaction' },
+      }),
+      buildEvent({
+        id: 'msg:approval-resume',
+        type: 'user.message.completed',
+        sequence_no: 24,
+        timestamp: '2026-08-21T19:52:14Z',
+        payload: {
+          message_id: 'approval-resume',
+          role: 'user',
+          message_type: 'approval',
+          sequence_no: 13,
+          content: 'Approved task planning document.',
+        },
+        runtime_metadata: { source: 'agent_run_message' },
+      }),
+      buildEvent({
+        id: 'msg:assistant-resumed',
+        type: 'assistant.message.completed',
+        sequence_no: 27,
+        timestamp: '2026-08-21T19:52:34Z',
+        payload: {
+          message_id: 'assistant-resumed',
+          role: 'assistant',
+          sequence_no: 14,
+          content: 'Approved. I will persist the plan now.',
+        },
+        runtime_metadata: { source: 'agent_run_message' },
+      }),
+      buildEvent({
+        id: 'msg:assistant-final',
+        type: 'assistant.message.completed',
+        sequence_no: 33,
+        timestamp: '2026-08-21T19:53:22Z',
+        payload: {
+          message_id: 'assistant-final',
+          role: 'assistant',
+          sequence_no: 16,
+          content: 'Persisted the approved planning document.',
+        },
+        runtime_metadata: { source: 'agent_run_message' },
+      }),
+    ]);
+
+    expect(state.transcript_messages.map((message) => [message.message_type, message.content])).toEqual([
+      ['approval_request_resolution', 'Approved:\nApprove task planning document'],
+      [undefined, 'Approved. I will persist the plan now.'],
+      [undefined, 'Persisted the approved planning document.'],
+    ]);
+  });
+
   it('settles the active approval tool as soon as its interaction resolves', () => {
     const approvalTool = {
       tool_call_id: 'tool-approval-1',
