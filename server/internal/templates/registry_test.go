@@ -175,6 +175,48 @@ func TestEmbeddedSystemRegistryLoads(t *testing.T) {
 	}
 }
 
+func TestBuyingSignalToTaskUsesCanonicalSignalTaxonomy(t *testing.T) {
+	registry, err := LoadSystemRegistry()
+	if err != nil {
+		t.Fatalf("LoadSystemRegistry returned error: %v", err)
+	}
+	tmpl, ok := registry.Get("buying_signal_to_task")
+	if !ok {
+		t.Fatal("buying_signal_to_task template not found")
+	}
+	canonical := map[string]bool{
+		model.CRMSignalBuyingIntent: true, model.CRMSignalObjection: true,
+		model.CRMSignalCompetitorMention: true, model.CRMSignalBudgetSignal: true,
+		model.CRMSignalTimelineSignal: true, model.CRMSignalChampionSignal: true,
+		model.CRMSignalRiskSignal: true,
+	}
+	var signalInput *Input
+	for index := range tmpl.Inputs {
+		if tmpl.Inputs[index].Key == "signal_types" {
+			signalInput = &tmpl.Inputs[index]
+			break
+		}
+	}
+	if signalInput == nil {
+		t.Fatal("signal_types input not found")
+	}
+	for _, option := range signalInput.Options {
+		if !canonical[option.Value] {
+			t.Fatalf("signal_types option %q is not a canonical CRM signal", option.Value)
+		}
+	}
+	defaults, ok := signalInput.Default.([]interface{})
+	if !ok {
+		t.Fatalf("signal_types default = %#v, want a list", signalInput.Default)
+	}
+	for _, value := range defaults {
+		name, ok := value.(string)
+		if !ok || !canonical[name] {
+			t.Fatalf("signal_types default %q is not a canonical CRM signal", name)
+		}
+	}
+}
+
 func TestEmbeddedDependencyAuditorAllowsGuardedRegistryFetches(t *testing.T) {
 	registry, err := LoadSystemRegistry()
 	if err != nil {

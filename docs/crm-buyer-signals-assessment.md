@@ -1,6 +1,8 @@
 # CRM Buyer Signals — Competitive Assessment
 
-Assessed: 2026-08-23. Scope: the buyer-signal feature (`crm_buyer_signals`) and, secondarily, CRM entity summaries (`crm_entity_summaries`).
+Assessed: 2026-08-23. Scope: the buyer-signal feature (`crm_buyer_signals`) and, secondarily, CRM entity summaries (`crm_entity_summaries`). §5 also covers the events pipeline (`events-pipeline/`) as an unused signal source.
+
+Implementation update (2026-08-23): the four concrete defects called out by this assessment have been fixed. `buying_signal_to_task` now uses the canonical taxonomy; deterministic, periodically refreshed deal-health scores now have a producer; linked calendar events enqueue versioned signal analysis on create, update, and cancellation; and email HTML is converted to stable plain text before both prompting and evidence verification. The observations below preserve the assessment context that led to those changes.
 
 This is an **assessment**, not a specification. It describes what is implemented today, judges it against the current AI-CRM market, and proposes directions. Proposed signal names, weights, and half-lives in this document are illustrative starting points, not decisions.
 
@@ -93,7 +95,7 @@ The reference set: [Clarify](https://www.clarify.ai/signals), [Common Room](http
 | Cross-module data (support + product + PM) | **Unique** | None | Community only | None | None |
 | Market signals (funding, hiring, job changes) | **None** | Strong | Strong | Strong | Partial |
 | Category / intent data | **None** | Strong | Strong | Strong | None |
-| First-party behavior (site, product, opens) | **None** | Strong | Strong | Strong | Partial |
+| First-party behavior (site, product, opens) | **Captured, unused** | Strong | Strong | Strong | Partial |
 | Absence / time-based detection | **None** | None | None | Partial | Partial |
 | Signal scoring, weighting, decay | **None** | Not stated | Not stated | **Strong** | Strong |
 | Composite account score | **None** (table exists, no producer) | Not stated | Partial | Strong | Strong |
@@ -101,9 +103,9 @@ The reference set: [Clarify](https://www.clarify.ai/signals), [Common Room](http
 | Signal → action routing / plays | **One broken template** | Strong | Strong | Strong | Strong |
 | Feedback loop on signal quality | **None** | None stated | None stated | Partial | Partial |
 
-The pattern is clear. Helpin has built one signal family — LLM-extracted sales semantics from conversations — and built it more carefully than anyone. It has built none of the other three families the market treats as standard, has no ranking model, and has almost no path from a detected signal to an action.
+The pattern is clear. Helpin has built one signal family — LLM-extracted sales semantics from conversations — and built it more carefully than anyone. It has built none of the other families the market treats as standard, has no ranking model, and has almost no path from a detected signal to an action.
 
-Clarify's framing is the cleanest articulation of what is missing. It organizes signals into three families: **market signals** (funding, hiring, champion moves), **category engagement** (intent), and **first-party behavior** (website visits, email opens, product usage). Helpin has zero coverage of the first two and near-zero of the third. Clarify's thesis — *"A single signal rarely changes anything. But together, they tell a story"* — is precisely the capability Helpin lacks, because it has only one kind of signal to combine.
+Clarify's framing is the cleanest articulation of what is missing. It organizes signals into three families: **market signals** (funding, hiring, champion moves), **category engagement** (intent), and **first-party behavior** (website visits, email opens, product usage). Helpin has zero coverage of the first two. The third is the interesting case: the data is **already being captured and stored** by the events pipeline, and the CRM simply cannot read it. That is a connection problem, not a collection problem — see §5. Clarify's thesis — *"A single signal rarely changes anything. But together, they tell a story"* — is precisely the capability Helpin lacks, because it has only one kind of signal to combine.
 
 One market note worth internalizing: by mid-2026, signal-only outbound is plateauing as the third-party signal stack commoditizes. Everyone can buy funding and hiring data from the same vendors. Differentiation is moving toward **proprietary signal sources** and **composition**. That should shape the priority order below.
 
@@ -161,11 +163,82 @@ Whatever produces this score is the natural producer for `crm_deal_health_scores
 
 **This is the highest-leverage gap and the strategic centerpiece of this assessment.**
 
-### Observation
+### Observation: the data is already captured
 
-Clarify, Common Room, and Unify all treat first-party behavior as a core signal family: website visits, email opens, product usage. Helpin captures none of it as signals.
+Clarify, Common Room, and Unify all treat first-party behavior as a core signal family: website visits, email opens, product usage. Helpin **already captures this data and already stores it** — it is simply unreachable from the CRM.
 
-But the framing "Helpin is behind on first-party behavior" understates the situation, because Helpin is not a standalone CRM. It is a single product with a single Postgres database containing:
+`events-pipeline/` is a vendored Usermaven pipeline, deployed to both stage and prod (`k8s/{stage,prod}/events-pipeline/`, ingress `client.prod.helpin.ai`):
+
+```
+JS SDK  →  Rust capture (/api/v1/event)  →  Kafka helpin.events.raw
+        →  enrichment (geo, IP2Proxy, bot, UA, privacy)  →  helpin.events.enriched
+        →  Java KStreams sessionization (30-min gap)      →  helpin.events.sessionized
+        →  ClickHouse  usermaven.events
+```
+
+**What the pixel emits** (`packages/sdk-js/src`): `pageview`, `$pageleave`, `user_identify`, `group` (company identify), `lead` (requires email), `raw`, arbitrary custom `track()` calls, plus widget-emitted `support_ai_answer_feedback` and `support_conversation_csat`. Note there is **no `event_type` enum** — it is a free-form string on the wire (`rust-capture/src/events/event.rs:38`), so new event names need no pipeline change.
+
+**What each row carries** (`rust-capture/src/events/transform_event.rs`) is close to ideal for buyer signals:
+
+| Group | Columns |
+|---|---|
+| Identity | `user_anonymous_id`, `user_hashed_anonymous_id`, `user_id`, **`user_email`**, `user_first_name`, `user_last_name`, `user_created_at`, `user_custom` |
+| Account | `company_id`, `company_name`, `company_created_at`, `company_custom` |
+| Page | `url`, `doc_host`, `doc_path`, `doc_search`, `page_title`, `referer` |
+| Acquisition | `utm_source/medium/campaign/term/content`, `click_id_gclid`, `click_id_fbclid` |
+| Session | `session_id` (KStreams, 30-min inactivity gap, keyed `project_id:user_anonymous_id`) |
+| Context | geo (`location_country/city/region/lat/lon`), device/OS/browser (`parsed_ua_*`), `screen_resolution`, `vp_size`, `user_language` |
+| Quality | `parsed_ua_bot` (bot + VPN/TOR/datacenter/proxy classification) |
+| Time | `timestamp`, `utc_time`, `_timestamp`, `_kafka_timestamp_ms` |
+| Payload | `event_attributes`, `autocapture_attributes`, `_is_deleted`, `ver` |
+
+`user_email` is a first-class column. `company_id`/`company_name` mean account-level attribution is native. Bot and proxy traffic is already classified, which is the single most common source of garbage in website-intent signals.
+
+**Retroactive identity stitching already works.** `eventpipeline-retroactive/main.py:141-188` runs on a checkpointed schedule: when a `user_identify` arrives, it re-inserts that visitor's prior anonymous rows from the last **6 months** with the resolved `user_id` and `ver + 1`, and the ReplacingMergeTree collapses them. So the moment someone identifies, their entire prior browsing history becomes attributable. Most competitors cannot do this at all. It is a significant and already-paid-for asset.
+
+**The identity chain to the CRM is also already built**, and it is Postgres-side and shipping:
+
+```
+helpin_aid_{widget_key} cookie
+  → user_anonymous_id            (ClickHouse events)
+  → support_conversations.anonymous_id
+  → crm_contact_id / crm_company_id
+```
+
+`UpdateIdentityByAnonymousID` (`repository/support_inbox.go:2250`) backfills every prior anonymous conversation on identify; `matchOrCreateCRMContactIdentityTx` (`service/support_inbox.go:3333`) creates the CRM contact as a lead with `source=live_chat`; a parallel company path resolves `crm_companies`. There is a second, simpler join available too: `usermaven.events.user_email` directly against `crm_contacts.email`.
+
+So the join keys exist, the identity resolution exists, the enrichment exists, and the storage exists.
+
+### The actual blocker
+
+**The Go server has no ClickHouse read path.** `server/go.mod` has zero ClickHouse dependencies. There is no analytics repository, service, or handler. The only working ClickHouse client in the entire repo is Python, in the retroactive worker, over the native protocol on port 9000.
+
+The CRM therefore surfaces exactly one page-level datum anywhere in the product: `last_page_url` in the support sidebar (`frontend/src/components/support/SidebarVisitorContext.tsx:197`), read from the Postgres widget-session row — not from the pipeline. There is no visitor timeline, no pageview list, no analytics route.
+
+Three secondary gaps worth knowing before scoping this:
+
+- **No `workspace_id` on events.** Tenant scoping is `project_id`, derived as the `api_key` prefix (`enrichment/handler.rs:152`). Going from a ClickHouse row to a Helpin workspace requires joining back through `widget_installations.widget_key` in Postgres. Any query path must inject a mandatory `project_id` predicate — tenant isolation is the caller's responsibility, not the schema's.
+- **No DDL, TTL, or materialized views in this repo.** The `eventpipeline-upsert` worker that writes to ClickHouse is listed in `events-pipeline/README.md` and `docker-compose.yaml` but its directory **is not vendored here**, so the table definition and retention policy live elsewhere. Confirm actual retention before assuming a 6-month or longer lookback is available.
+- **Two specced capture features are not implemented.** `$form` submission capture has a full payload spec (`packages/sdk-js/docs/form-tracking-payload-example.md`) and a dedicated `autocapture_attributes` column waiting for it, but no SDK implementation. `ScrollDepth` (`$scroll`) exists as a class and is never instantiated — dead code. Click autocapture does not exist. Demo-request and pricing-form submissions are the highest-intent web events there are, and they are currently the ones not captured.
+
+### What this unlocks
+
+With a read path, the classic intent signals become available immediately from data already on disk:
+
+| Candidate signal | Derived from |
+|---|---|
+| Pricing page viewed, repeatedly | `doc_path` matching + `session_id` count |
+| Security / compliance / docs page viewed | `doc_path` — a strong late-stage procurement indicator |
+| Return visit after dormancy | Gap between `session_id` groups for a `user_anonymous_id` |
+| Session depth / dwell spike | `pageview` count per `session_id`, `$pageleave` timing |
+| New stakeholder at a known account | Unseen `user_anonymous_id` resolving to a known `company_id` |
+| Anonymous account traffic | `company_id` present, `user_id` empty — the dark funnel |
+| Campaign-attributed return | `utm_*` / `click_id_gclid` on a known contact |
+| Pre-identification history | The 6-month retroactive backfill, surfaced at the moment a lead converts |
+
+### Cross-module signals — Postgres only, no ClickHouse needed
+
+Separately from the pipeline, Helpin's cross-module data — which no competitor has — is equally unmined, and needs no new infrastructure at all:
 
 - **Support conversations** (`support_conversations`) already carrying `crm_contact_id` and `crm_company_id` foreign keys, plus `priority`, `ai_escalated_at`, CSAT ratings in `metadata`, and full visitor context (device, location, company linkage status).
 - **PM tasks**, joinable to accounts via `CompanyRollupID` — already used as company-summary evidence.
@@ -173,11 +246,7 @@ But the framing "Helpin is behind on first-party behavior" understates the situa
 - **An embeddable widget** with visitor identity resolution (`VisitorContactData`, `VisitorCompanyContextStatus`, and the work described in `docs/PRD-widget-identify-crm-leads.md`).
 - **Calendar events** (`model/crm_calendar.go`) with `status`, `attendees[].response_status`, `contact_ids`, and `deal_id`.
 
-Clarify and Attio structurally cannot see any of this. They are CRMs that integrate with a support tool; Helpin *is* the support tool. This is a defensible moat, and it is currently unmined.
-
-### Direction
-
-The signals this unlocks do not exist in any competitor's catalog:
+Clarify and Attio structurally cannot see any of this. They are CRMs that integrate with a support tool; Helpin *is* the support tool. This is the defensible moat, and the signals it unlocks do not exist in any competitor's catalog:
 
 | Candidate signal | Derived from | Why it matters |
 |---|---|---|
@@ -186,16 +255,33 @@ The signals this unlocks do not exist in any competitor's catalog:
 | Escalation to human | `ai_escalated_at` | The AI could not resolve it; frustration is real |
 | CSAT drop | CSAT in conversation `metadata` | Leading churn indicator |
 | Requested feature shipped | PM task state transition on a task linked to the account | The single best re-engagement trigger in existence, and only Helpin can fire it |
-| Pricing / security doc viewed repeatedly | `docs` view tracking + widget visitor identity | Classic intent, sourced first-party rather than bought |
+| Help-center article read before a renewal | `docs.view_count` + widget visitor identity | Self-serve research that never reaches a rep |
 | Meeting booked / declined / cancelled / no-show | `crm_calendar_events.status`, `attendees[].response_status` | Among the strongest short-horizon signals in B2B sales |
 | Buying committee expanded | New attendee domains on calendar events, or new participants on a thread | Deal is broadening — a strong positive |
 
-Two properties make this cheap relative to its value:
+Three properties make this cheap relative to its value:
 
-1. **Most of it needs no LLM.** These are deterministic queries over data already in Postgres. No token cost, no hallucination surface, no evidence-verification problem — the evidence *is* the row.
-2. **The calendar path is already half-built.** `model.PayloadFromCalendarEvent` exists and is unreferenced. The calendar event model already carries per-attendee `response_status`. Meeting-booked and meeting-declined are close to free, and are the cheapest high-value item in this entire document.
+1. **Most of it needs no LLM.** These are deterministic queries. No token cost, no hallucination surface, no evidence-verification problem — the evidence *is* the row.
+2. **The collection is already paid for.** The pipeline is built, deployed, enriched, sessionized, bot-filtered, and identity-stitched. What is missing is a reader, not a producer. This is the highest ratio of unlocked value to remaining work anywhere in this assessment.
+3. **The calendar path is already half-built.** `model.PayloadFromCalendarEvent` exists and is unreferenced. The calendar event model already carries per-attendee `response_status`. Meeting-booked and meeting-declined are close to free.
 
-One design consequence: deterministic signals have no meaningful `confidence`. Either the meeting was declined or it was not. This argues for the `detector_kind` distinction described in the next section.
+### Recommended shape: async rollup, not live query
+
+Two existing PRDs have already settled the architectural question, and the answer should be respected:
+
+- `docs/PRD-support-live-chat.md:788` — the events pipeline "is entirely independent of the Go API server and PostgreSQL."
+- `docs/PRD-autonomous-support-coverage.md:414` — "Keep the existing SDK/events-pipeline/Kafka/ClickHouse path for high-volume product and visitor analytics. **Do not make ClickHouse the source of truth.**"
+
+So the CRM contact page should **not** issue a live ClickHouse query on render. The pattern that fits both the existing architecture and the rest of this document is a **scheduled evaluator**:
+
+1. A Temporal cron job resolves each workspace to its `project_id` via `widget_installations.widget_key`.
+2. It runs bounded aggregate queries against `usermaven.events` — thresholds, not row dumps.
+3. Rows that cross a threshold become `crm_buyer_signals` with `source_type = 'web'` and `detector_kind = 'rule_derived'`, joined to a contact or company via `user_email` or the `user_anonymous_id → support_conversations → crm_contact_id` chain.
+4. The CRM reads only Postgres, exactly as it does today.
+
+This keeps ClickHouse off the transactional read path, reuses the existing signal storage, provenance, dedupe, and UI without modification, and — importantly — is the **same scheduled-evaluator component** needed for the absence detectors in §6. Both should be built as one thing.
+
+One design consequence: deterministic signals have no meaningful `confidence`. Either the pricing page was viewed four times or it was not. This argues for the `detector_kind` distinction described in the next section, and means the read-side `0.6` confidence floor must not be applied to them — as written today it would silently discard every rule-derived signal that did not fake a confidence score.
 
 ---
 
@@ -321,10 +407,13 @@ Ordered by differentiation per unit of effort, not by size.
 | 2 | Refresh the two stale Phase 1 docs against the code | §0 | Trivial | Stops compounding drift | — |
 | 3 | Wire calendar ingestion: meeting booked / declined / cancelled / no-show, from the existing unused payload builder | §5 | Small | High — strongest short-horizon signals, near-free | — |
 | 4 | Sanitize HTML to text before prompt construction, aligning it with the verifier's normalization | §8 | Small | Recovers signals currently lost to verification asymmetry | — |
-| 5 | Add `detector_kind` (`llm_extracted` \| `rule_derived`) and decouple `confidence` from `weight`/`severity` | §4, §6 | Small | Structural prerequisite for 6–8 | — |
-| 6 | First-party behavior signals from support, PM tasks, docs, and widget | §5 | Medium | **Highest — the defensible moat** | 5 |
+| 5 | Add `detector_kind` (`llm_extracted` \| `rule_derived`) and a `web` source type; decouple `confidence` from `weight`/`severity`; exempt rule-derived signals from the 0.6 read floor | §4, §5, §6 | Small | Structural prerequisite for 6–8 | — |
+| 6a | **ClickHouse read path**: Go client + workspace→`project_id` resolution with mandatory tenant predicate | §5 | Medium | **Highest — unlocks data already captured and paid for** | 5 |
+| 6b | Web behavior signals from `usermaven.events` via a scheduled evaluator writing `crm_buyer_signals` | §5 | Medium | **Highest** | 6a |
+| 6c | Cross-module signals from support, PM tasks, and docs (Postgres only — no ClickHouse dependency, can run in parallel with 6a) | §5 | Medium | **High — the part no competitor can copy** | 5 |
+| 6d | Implement `$form` capture in the SDK; the `autocapture_attributes` column already exists | §5 | Small | High — demo/pricing form submits are the highest-intent web events, currently uncaptured | — |
 | 7 | Scoring model: per-type weight × exponential decay × ICP, compound boost; make it the producer for `crm_deal_health_scores` | §4 | Medium | High — turns a list into a ranking | 5 |
-| 8 | Scheduled absence evaluator: gone dark, stalled, single-threaded, champion quiet, renewal window | §6 | Medium | High — closes the gap between what `risk_signal` promises and what it can detect | 5 |
+| 8 | Scheduled absence evaluator: gone dark, stalled, single-threaded, champion quiet, renewal window — **same component as 6b** | §6 | Medium | High — closes the gap between what `risk_signal` promises and what it can detect | 5 |
 | 9 | Workspace-level signal feed with filtering, plus routing and alerting | §8 | Medium | High — without it, detection has no consumer | 7 |
 | 10 | Feed dismissals back into per-type precision metrics and prompt calibration | §8 | Medium | Medium — the only path to knowing if any of this works | — |
 | 11 | Extend the taxonomy: `authority`, `expansion`, `renewal`, `advocacy`, `procurement`, `stakeholder_change` | §8 | Medium | Medium — post-sale coverage, where Helpin's data is richest | 1 |
@@ -332,7 +421,9 @@ Ordered by differentiation per unit of effort, not by size.
 | 13 | Revisit the multi-contact/no-deal skip once scoring can suppress low-value noise | §8 | Medium | Medium — unlocks buying-committee threads | 7 |
 | 14 | Market/third-party signals: funding, hiring, job changes, tech-stack | §7 | Large | Medium — parity, not advantage; buy rather than build | 7, 9 |
 
-The shape of this ordering: items 1–5 are cheap corrections and structural groundwork. Items 6–9 are the substance — mine what Helpin uniquely owns, rank it, detect what is absent, and actually put it in front of someone. Item 14 is last on purpose.
+The shape of this ordering: items 1–5 are cheap corrections and structural groundwork. Items 6–9 are the substance — mine what Helpin already collects and uniquely owns, rank it, detect what is absent, and actually put it in front of someone. Item 14 is last on purpose.
+
+Item 6b and item 8 should be built as a single scheduled evaluator. Item 6c has no ClickHouse dependency and can proceed in parallel with 6a.
 
 ---
 
@@ -358,6 +449,22 @@ The shape of this ordering: items 1–5 are cheap corrections and structural gro
 - `frontend/src/hooks/queries/useCRM.ts`
 - `frontend/src/lib/crmTypes.ts`
 
+**Events pipeline** (`events-pipeline/`, vendored Usermaven; deployed at `k8s/{stage,prod}/events-pipeline/`)
+- `rust-capture/src/events/transform_event.rs` — the de-facto ClickHouse row schema
+- `rust-capture/src/events/event.rs` — wire event; `event_type` is a free-form string, no enum
+- `rust-capture/src/enrichment/handler.rs` — enrichment entry point, `project_id` derivation, bot/proxy classification
+- `rust-capture/src/enrichment/privacy_enrichment.rs` — anonymous ID resolution and IP masking
+- `kafka-streams/src/main/java/com/eventspipeline/SessionEventWindowStream.java` — 30-minute session windowing
+- `eventpipeline-retroactive/main.py` — 6-month retroactive identity stitching; the only working ClickHouse client in the repo
+- `eventpipeline-upsert/` — the ClickHouse writer, **referenced but not vendored here**; DDL and TTL live elsewhere
+
+**Pixel → CRM identity chain**
+- `packages/sdk-js/src/core/client.ts` — `id()`, `lead()`, `group()`, `track()`, `sendIdentifyToBackend`
+- `server/internal/service/support_inbox_widget.go` — `UpgradeWidgetSession`, `IdentifyByAnonymousID`
+- `server/internal/service/support_inbox.go` — `matchOrCreateCRMContactIdentityTx`
+- `server/internal/repository/support_inbox.go` — `UpdateIdentityByAnonymousID`
+- `server/internal/service/support_inbox_visitor.go` — `GetVisitorContext`
+
 **Migrations**
 - `server/migrations/028_crm_intelligence.sql`
 - `server/migrations/040_crm_signal_ingestion.sql`
@@ -382,3 +489,8 @@ The shape of this ordering: items 1–5 are cheap corrections and structural gro
 - `docs/CRM_MODULE.md`
 - `docs/AGENTS_AND_AUTOMATION.md`
 - `docs/PRD-widget-identify-crm-leads.md`
+- `docs/PRD_WIDGET_SDK_FEATURE_PARITY.md` — the `anonymous_id` identity model across SDK, pipeline, ClickHouse, and CRM
+- `docs/PRD-support-live-chat.md` §2.7 — events pipeline vs Go API separation
+- `docs/PRD-autonomous-support-coverage.md` — "do not make ClickHouse the source of truth"
+- `events-pipeline/README.md`
+- `docs/research-rust-kafka-session-windowing.md`

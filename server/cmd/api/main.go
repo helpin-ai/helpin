@@ -1332,12 +1332,14 @@ func main() {
 	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo).
-		SetCompanySummaryRefresh(crmSummaryService)
+		SetCompanySummaryRefresh(crmSummaryService).
+		SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo).
 		SetActivityRepository(crmActivityRepo).
 		SetWebsocketPublisher(wsPublisher).
 		SetCompanySummaryRefresh(crmSummaryService)
-	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService)
+	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService).
+		SetHealthScoreDependencies(crmDealRepo)
 	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
@@ -1501,7 +1503,8 @@ func main() {
 		}()
 	}
 
-	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
+	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService).
+		SetHealthScoreRefresh(crmSignalService)
 	crmSummaryService.SetIntelligenceDependencies(signalDetectionService, crmActivityRepo, supportMessageRepo)
 	crmActivityService.SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
@@ -1934,6 +1937,35 @@ func main() {
 		}
 	}
 
+	// Produce explainable deal-health snapshots on startup and every six hours.
+	healthScoreDone := make(chan struct{})
+	go func() {
+		runHealthScoreSweep := func() {
+			workspaceIDs, err := workspaceRepo.ListIDs(context.Background())
+			if err != nil {
+				slog.Error("list workspaces for deal health sweep", "error", err)
+				return
+			}
+			for _, workspaceID := range workspaceIDs {
+				if err := crmSignalService.RefreshWorkspaceHealthScores(context.Background(), workspaceID); err != nil {
+					slog.Warn("deal health sweep failed", "error", err, "workspace_id", workspaceID)
+				}
+			}
+		}
+
+		runHealthScoreSweep()
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runHealthScoreSweep()
+			case <-healthScoreDone:
+				return
+			}
+		}
+	}()
+
 	// Start background ticker for digest email delivery.
 	digestDone := make(chan struct{})
 	go func() {
@@ -2138,6 +2170,7 @@ func main() {
 		emailFallbackCancel()
 	}
 	close(digestDone)
+	close(healthScoreDone)
 	close(supportReplyEmailDone)
 	close(billingTrialExpiryDone)
 	close(cleanupDone)

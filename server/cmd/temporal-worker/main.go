@@ -302,8 +302,12 @@ func main() {
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService).
 		SetMeetingRepository(crmMeetingRepo).
 		SetMeetingCaptureScheduler(meetingCaptureScheduler).
-		SetMeetingPolicyReconciler(calendarMeetingPolicyService)
-	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
+		SetMeetingPolicyReconciler(calendarMeetingPolicyService).
+		SetCalendarSignalRepository(crmSignalRepo)
+	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService).
+		SetHealthScoreDependencies(crmDealRepo)
+	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService).
+		SetHealthScoreRefresh(crmSignalService)
 	crmSummaryService.SetIntelligenceDependencies(signalDetectionService, crmActivityRepo, supportMessageRepo)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	runRepo.SetTriggerExecutionRepository(triggerExecutionRepo)
@@ -538,7 +542,7 @@ func main() {
 	commandService.SetSupportAttachmentRepository(repository.NewSupportAttachmentRepository(db))
 	commandService.SetCRMReadServices(
 		service.NewCRMContactService(crmContactRepo),
-		service.NewCRMSignalService(crmSignalRepo, crmSummaryService),
+		crmSignalService,
 	)
 	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)
 	commandService.SetWorkspaceSearchServices(

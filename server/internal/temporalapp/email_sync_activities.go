@@ -39,7 +39,11 @@ type EmailSyncActivities struct {
 	syncSettingsRepo        *repository.CRMEmailSyncSettingsRepository
 	resolver                *crmemail.Resolver
 	signalIngestion         *crmsignal.IngestionService
-	summaryRefresh          interface {
+	calendarSignalStarter   interface {
+		StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+	}
+	calendarSignalRepo *repository.CRMSignalRepository
+	summaryRefresh     interface {
 		RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
 		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
 	}
@@ -58,15 +62,24 @@ func NewEmailSyncActivities(
 		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
 	},
 ) *EmailSyncActivities {
+	starter := crmsignal.NewTemporalStarter(temporalClient, QueueAutomation)
 	return &EmailSyncActivities{
-		gmailClient:      gmailClient,
-		emailRepo:        emailRepo,
-		calendarRepo:     calendarRepo,
-		syncSettingsRepo: syncSettingsRepo,
-		resolver:         crmemail.NewResolver(contactRepo),
-		signalIngestion:  crmsignal.NewIngestionService(emailRepo, crmsignal.NewTemporalStarter(temporalClient, QueueAutomation)),
-		summaryRefresh:   summaryRefresh,
+		gmailClient:           gmailClient,
+		emailRepo:             emailRepo,
+		calendarRepo:          calendarRepo,
+		syncSettingsRepo:      syncSettingsRepo,
+		resolver:              crmemail.NewResolver(contactRepo),
+		signalIngestion:       crmsignal.NewIngestionService(emailRepo, starter),
+		calendarSignalStarter: starter,
+		summaryRefresh:        summaryRefresh,
 	}
+}
+
+// SetCalendarSignalRepository enables stale signal cleanup when synced events
+// are removed by provider filters.
+func (a *EmailSyncActivities) SetCalendarSignalRepository(repo *repository.CRMSignalRepository) *EmailSyncActivities {
+	a.calendarSignalRepo = repo
+	return a
 }
 
 // BackfillEmailsActivity fetches last 90 days of emails.

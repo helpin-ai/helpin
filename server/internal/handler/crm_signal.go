@@ -122,7 +122,7 @@ func (h *CRMSignalHandler) ListHealthScores(w http.ResponseWriter, r *http.Reque
 // GetDealHealthScore handles GET /api/crm/deals/{id}/health-score.
 func (h *CRMSignalHandler) GetDealHealthScore(w http.ResponseWriter, r *http.Request) {
 	dealID := chi.URLParam(r, "id")
-	score, err := h.signalService.GetLatestHealthScore(r.Context(), dealID)
+	score, err := h.signalService.GetLatestHealthScore(r.Context(), getWorkspaceID(r), dealID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return

@@ -295,6 +295,21 @@ func (r *CRMSignalRepository) ReconcileAutomatedSignalsForSource(ctx context.Con
 	return nil
 }
 
+// ListSignalsForDealSince returns verified, visible signals used by the
+// deterministic deal-health scorer.
+func (r *CRMSignalRepository) ListSignalsForDealSince(ctx context.Context, workspaceID, dealID string, since time.Time) ([]model.CRMBuyerSignal, error) {
+	var signals []model.CRMBuyerSignal
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND deal_id = ? AND dismissed_at IS NULL AND detected_at >= ?", workspaceID, dealID, since).
+		Where("source_type = ? OR confidence >= ?", model.CRMSignalSourceManual, minimumAutomatedSignalConfidence).
+		Order("detected_at DESC, id DESC").
+		Find(&signals).Error
+	if err != nil {
+		return nil, fmt.Errorf("list deal signals for health score: %w", err)
+	}
+	return signals, nil
+}
+
 func isDuplicateKeyError(err error) bool {
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
 		return true
@@ -331,10 +346,39 @@ func (r *CRMSignalRepository) CreateHealthScore(ctx context.Context, score *mode
 	return nil
 }
 
+// SaveCalculatedHealthScore keeps one mutable snapshot per deal per day. This
+// preserves useful history without letting hourly reconciliation grow the table
+// without bound.
+func (r *CRMSignalRepository) SaveCalculatedHealthScore(ctx context.Context, score *model.CRMDealHealthScore) error {
+	if score == nil {
+		return nil
+	}
+	latest, err := r.GetLatestHealthScore(ctx, score.WorkspaceID, score.DealID)
+	if err != nil {
+		return err
+	}
+	if latest != nil {
+		snapshotAt := latest.CreatedAt
+		if snapshotAt.IsZero() {
+			snapshotAt = latest.CalculatedAt
+		}
+		if snapshotAt.After(score.CalculatedAt.Add(-24 * time.Hour)) {
+			score.ID, score.CreatedAt = latest.ID, latest.CreatedAt
+			if err := r.db.WithContext(ctx).Model(latest).Updates(map[string]interface{}{
+				"score": score.Score, "factors": score.Factors, "calculated_at": score.CalculatedAt,
+			}).Error; err != nil {
+				return fmt.Errorf("update calculated deal health score: %w", err)
+			}
+			return nil
+		}
+	}
+	return r.CreateHealthScore(ctx, score)
+}
+
 // GetLatestHealthScore returns the most recent health score for a deal.
-func (r *CRMSignalRepository) GetLatestHealthScore(ctx context.Context, dealID string) (*model.CRMDealHealthScore, error) {
+func (r *CRMSignalRepository) GetLatestHealthScore(ctx context.Context, workspaceID, dealID string) (*model.CRMDealHealthScore, error) {
 	var score model.CRMDealHealthScore
-	if err := r.db.WithContext(ctx).Where("deal_id = ?", dealID).Order("calculated_at DESC").First(&score).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND deal_id = ?", workspaceID, dealID).Order("calculated_at DESC, id DESC").First(&score).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -345,16 +389,31 @@ func (r *CRMSignalRepository) GetLatestHealthScore(ctx context.Context, dealID s
 
 // ListHealthScores returns health scores for a workspace.
 func (r *CRMSignalRepository) ListHealthScores(ctx context.Context, workspaceID string, pagination model.PMPagination) ([]model.CRMDealHealthScore, int64, error) {
-	query := r.db.WithContext(ctx).Model(&model.CRMDealHealthScore{}).Where("workspace_id = ?", workspaceID)
+	if pagination.Page < 1 {
+		pagination.Page = 1
+	}
+	if pagination.PerPage < 1 || pagination.PerPage > 100 {
+		pagination.PerPage = 20
+	}
+	query := r.db.WithContext(ctx).Model(&model.CRMDealHealthScore{}).
+		Where("crm_deal_health_scores.workspace_id = ?", workspaceID).
+		Where(`NOT EXISTS (
+			SELECT 1 FROM crm_deal_health_scores newer
+			WHERE newer.workspace_id = crm_deal_health_scores.workspace_id
+			  AND newer.deal_id = crm_deal_health_scores.deal_id
+			  AND (newer.calculated_at > crm_deal_health_scores.calculated_at
+			    OR (newer.calculated_at = crm_deal_health_scores.calculated_at AND newer.id > crm_deal_health_scores.id))
+		)`)
 
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := query.Distinct("crm_deal_health_scores.deal_id").Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count health scores: %w", err)
 	}
+	query = query.Select("crm_deal_health_scores.*")
 
 	var scores []model.CRMDealHealthScore
 	offset := (pagination.Page - 1) * pagination.PerPage
-	if err := query.Order("calculated_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&scores).Error; err != nil {
+	if err := query.Order("calculated_at DESC, id DESC").Offset(offset).Limit(pagination.PerPage).Find(&scores).Error; err != nil {
 		return nil, 0, fmt.Errorf("list health scores: %w", err)
 	}
 	return scores, total, nil

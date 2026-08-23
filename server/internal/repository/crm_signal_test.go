@@ -123,3 +123,42 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 		t.Fatalf("context not hydrated: %#v", rows)
 	}
 }
+
+func TestCRMSignalRepositorySavesBoundedHealthSnapshotsAndListsLatestPerDeal(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:crm-health-snapshots?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE crm_deal_health_scores (
+		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL,
+		deal_id TEXT NOT NULL, score INTEGER NOT NULL, factors BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+		calculated_at DATETIME NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`).Error; err != nil {
+		t.Fatalf("create health schema: %v", err)
+	}
+	repo := NewCRMSignalRepository(db)
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	first := &model.CRMDealHealthScore{WorkspaceID: "ws-1", DealID: "deal-1", Score: 55, Factors: model.JSONB{"signal_count": 0}, CalculatedAt: now, CreatedAt: now}
+	if err := repo.SaveCalculatedHealthScore(context.Background(), first); err != nil {
+		t.Fatalf("save first score: %v", err)
+	}
+	updated := &model.CRMDealHealthScore{WorkspaceID: "ws-1", DealID: "deal-1", Score: 72, Factors: model.JSONB{"signal_count": 2}, CalculatedAt: now.Add(time.Hour)}
+	if err := repo.SaveCalculatedHealthScore(context.Background(), updated); err != nil {
+		t.Fatalf("update daily score: %v", err)
+	}
+	var count int64
+	if err := db.Table("crm_deal_health_scores").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("same-day snapshot count = %d, err=%v; want 1", count, err)
+	}
+	nextDay := &model.CRMDealHealthScore{WorkspaceID: "ws-1", DealID: "deal-1", Score: 80, Factors: model.JSONB{"signal_count": 3}, CalculatedAt: now.Add(25 * time.Hour)}
+	if err := repo.SaveCalculatedHealthScore(context.Background(), nextDay); err != nil {
+		t.Fatalf("save next-day score: %v", err)
+	}
+	rows, total, err := repo.ListHealthScores(context.Background(), "ws-1", model.PMPagination{Page: 1, PerPage: 20})
+	if err != nil {
+		t.Fatalf("ListHealthScores: %v", err)
+	}
+	if total != 1 || len(rows) != 1 || rows[0].Score != 80 {
+		t.Fatalf("latest rows = %#v, total=%d; want one score of 80", rows, total)
+	}
+}

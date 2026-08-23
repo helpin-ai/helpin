@@ -5,12 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"html"
 	"log/slog"
-	"regexp"
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/crmtext"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -22,8 +21,6 @@ const (
 	signalEvidenceDetectorVersion = "verified-v3-en"
 )
 
-var signalHTMLTagPattern = regexp.MustCompile(`<[^>]+>`)
-
 // SignalDetectionService uses LLM to detect buyer signals from various sources.
 type SignalDetectionService struct {
 	llmProvider    llm.Provider
@@ -31,6 +28,9 @@ type SignalDetectionService struct {
 	summaryRefresh interface {
 		RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
 		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
+	}
+	healthScoreRefresh interface {
+		RefreshDealHealthScore(ctx context.Context, workspaceID, dealID string) (*model.CRMDealHealthScore, error)
 	}
 }
 
@@ -44,6 +44,14 @@ func NewSignalDetectionService(llmProvider llm.Provider, signalRepo *repository.
 		signalRepo:     signalRepo,
 		summaryRefresh: summaryRefresh,
 	}
+}
+
+// SetHealthScoreRefresh recalculates deal health when verified evidence changes.
+func (s *SignalDetectionService) SetHealthScoreRefresh(refresh interface {
+	RefreshDealHealthScore(ctx context.Context, workspaceID, dealID string) (*model.CRMDealHealthScore, error)
+}) *SignalDetectionService {
+	s.healthScoreRefresh = refresh
+	return s
 }
 
 // DetectedSignal is the parsed LLM output for a single signal.
@@ -276,6 +284,7 @@ For each detected signal, provide:
 Return a JSON array of detected signals. If no signals are detected, return an empty array [].
 Only detect signals that are clearly present — avoid false positives. Be conservative with confidence scores.
 Treat inbound customer language as primary evidence. Do not interpret the seller's outbound pitch, internal task state, or deal-stage movement as a buyer signal.
+For calendar sources, attendee response status and event cancellation are factual evidence; do not treat the organizer's meeting title or description alone as buyer intent.
 Write generated summaries in English even when the source evidence is in another language. Keep raw_evidence as an exact excerpt in its original language.
 
 Example response:
@@ -319,22 +328,28 @@ func signalEvidenceCorpus(payload model.SignalSourcePayload) string {
 }
 
 func normalizedSignalText(value string) string {
-	value = html.UnescapeString(signalHTMLTagPattern.ReplaceAllString(value, " "))
-	return strings.ToLower(strings.Join(strings.Fields(value), " "))
+	return crmtext.Normalize(value)
 }
 
 func (s *SignalDetectionService) requestSummaryRefresh(ctx context.Context, signal model.CRMBuyerSignal) {
-	if s == nil || s.summaryRefresh == nil {
+	if s == nil {
 		return
 	}
-	if signal.ContactID != nil && *signal.ContactID != "" {
+	if s.summaryRefresh != nil && signal.ContactID != nil && *signal.ContactID != "" {
 		if err := s.summaryRefresh.RequestContactRefresh(ctx, signal.WorkspaceID, *signal.ContactID); err != nil {
 			slog.ErrorContext(ctx, "failed to request contact summary refresh from detected signal", "error", err, "workspace_id", signal.WorkspaceID, "contact_id", *signal.ContactID, "signal_id", signal.ID)
 		}
 	}
 	if signal.DealID != nil && *signal.DealID != "" {
-		if err := s.summaryRefresh.RequestDealRefresh(ctx, signal.WorkspaceID, *signal.DealID); err != nil {
-			slog.ErrorContext(ctx, "failed to request deal summary refresh from detected signal", "error", err, "workspace_id", signal.WorkspaceID, "deal_id", *signal.DealID, "signal_id", signal.ID)
+		if s.summaryRefresh != nil {
+			if err := s.summaryRefresh.RequestDealRefresh(ctx, signal.WorkspaceID, *signal.DealID); err != nil {
+				slog.ErrorContext(ctx, "failed to request deal summary refresh from detected signal", "error", err, "workspace_id", signal.WorkspaceID, "deal_id", *signal.DealID, "signal_id", signal.ID)
+			}
+		}
+		if s.healthScoreRefresh != nil {
+			if _, err := s.healthScoreRefresh.RefreshDealHealthScore(ctx, signal.WorkspaceID, *signal.DealID); err != nil {
+				slog.ErrorContext(ctx, "failed to refresh deal health from detected signal", "error", err, "workspace_id", signal.WorkspaceID, "deal_id", *signal.DealID, "signal_id", signal.ID)
+			}
 		}
 	}
 	companyRefresh, canRefreshCompany := s.summaryRefresh.(CompanySummaryRefreshRequester)

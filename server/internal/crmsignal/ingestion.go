@@ -13,6 +13,7 @@ import (
 	tclient "go.temporal.io/sdk/client"
 
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
+	"github.com/helpin-ai/helpin/server/internal/crmtext"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -195,17 +196,7 @@ func (s *IngestionService) buildEmailPayload(ctx context.Context, message *model
 }
 
 func preferredBody(bodyText, bodyHTML *string) string {
-	body := strings.TrimSpace(stringValue(bodyText))
-	if body == "" {
-		body = strings.TrimSpace(stringValue(bodyHTML))
-	}
-	if body == "" {
-		return ""
-	}
-	if len(body) > maxSignalBodyChars {
-		body = body[:maxSignalBodyChars]
-	}
-	return body
+	return crmtext.PreferredBody(stringValue(bodyText), stringValue(bodyHTML), maxSignalBodyChars)
 }
 
 func preferredSubject(messageSubject string, thread *model.CRMEmailThread) string {

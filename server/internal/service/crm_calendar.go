@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -15,11 +16,24 @@ import (
 type CRMCalendarService struct {
 	calendarRepo   *repository.CRMCalendarRepository
 	summaryRefresh CompanySummaryRefreshRequester
+	signalStarter  interface {
+		StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+	}
+	signalRepo *repository.CRMSignalRepository
 }
 
 // SetCompanySummaryRefresh enables linked-account invalidation after calendar changes.
 func (s *CRMCalendarService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMCalendarService {
 	s.summaryRefresh = refresh
+	return s
+}
+
+// SetSignalDetection enables versioned buyer-signal analysis for calendar
+// events and stale-signal cleanup when an event is removed.
+func (s *CRMCalendarService) SetSignalDetection(starter interface {
+	StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+}, signalRepo *repository.CRMSignalRepository) *CRMCalendarService {
+	s.signalStarter, s.signalRepo = starter, signalRepo
 	return s
 }
 
@@ -77,6 +91,7 @@ func (s *CRMCalendarService) Create(ctx context.Context, req model.CreateCRMCale
 		return nil, err
 	}
 	s.requestCompanySummaryRefresh(ctx, event)
+	s.enqueueSignalDetection(ctx, event)
 	return event, nil
 }
 
@@ -130,6 +145,7 @@ func (s *CRMCalendarService) Update(ctx context.Context, workspaceID, id string,
 		return nil, err
 	}
 	s.requestCompanySummaryRefresh(ctx, event)
+	s.enqueueSignalDetection(ctx, event)
 	return event, nil
 }
 
@@ -146,7 +162,30 @@ func (s *CRMCalendarService) Delete(ctx context.Context, workspaceID, id string)
 		return err
 	}
 	s.requestCompanySummaryRefresh(ctx, event)
+	s.reconcileDeletedSignals(ctx, event)
 	return nil
+}
+
+func (s *CRMCalendarService) enqueueSignalDetection(ctx context.Context, event *model.CRMCalendarEvent) {
+	if s == nil || s.signalStarter == nil {
+		return
+	}
+	payload, eligible := crmsignal.CalendarPayload(event)
+	if !eligible {
+		return
+	}
+	if err := s.signalStarter.StartSignalDetection(ctx, crmsignal.CalendarWorkflowKey(*payload), []model.SignalSourcePayload{*payload}); err != nil {
+		slog.WarnContext(ctx, "calendar buyer signal enqueue failed", "error", err, "calendar_event_id", event.ID)
+	}
+}
+
+func (s *CRMCalendarService) reconcileDeletedSignals(ctx context.Context, event *model.CRMCalendarEvent) {
+	if s == nil || s.signalRepo == nil || event == nil {
+		return
+	}
+	if err := s.signalRepo.ReconcileAutomatedSignalsForSource(ctx, event.WorkspaceID, model.CRMSignalSourceMeeting, event.ID, nil); err != nil {
+		slog.WarnContext(ctx, "deleted calendar event retained stale buyer signals", "error", err, "calendar_event_id", event.ID)
+	}
 }
 
 func (s *CRMCalendarService) requestCompanySummaryRefresh(ctx context.Context, event *model.CRMCalendarEvent) {

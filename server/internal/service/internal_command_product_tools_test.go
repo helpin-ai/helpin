@@ -476,7 +476,7 @@ func createProductToolCRMTables(t *testing.T, db *gorm.DB) {
 	mustExec(t, db, `INSERT INTO crm_buyer_signals (id, workspace_id, deal_id, signal_type, summary, confidence, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		"signal-1", "ws-1", "deal-1", "buying_intent", "Asked for pricing", 0.92, now, now)
 	mustExec(t, db, `INSERT INTO crm_buyer_signals (id, workspace_id, deal_id, signal_type, summary, confidence, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		"signal-2", "ws-1", "deal-2", "churn_risk", "Went quiet", 0.71, now, now)
+		"signal-2", "ws-1", "deal-2", "risk_signal", "Went quiet", 0.71, now, now)
 }
 
 func TestCRMListDealsCommandReturnsDealSummaries(t *testing.T) {

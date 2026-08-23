@@ -170,6 +170,24 @@ func TestSignalDetectionService_RequiresVerifiedConfidentEvidence(t *testing.T) 
 	}
 }
 
+func TestSignalDetectionServiceVerifiesEvidenceAcrossInlineHTMLTags(t *testing.T) {
+	db := setupCRMSignalDetectionTestDB(t)
+	svc := NewSignalDetectionService(&fakeLLMProvider{content: `[
+		{"signal_type":"buying_intent","summary":"The buyer requested pricing.","confidence":0.92,"raw_evidence":"Please send pricing details."}
+	]`}, repository.NewCRMSignalRepository(db), &fakeSummaryRequester{})
+
+	rows, err := svc.DetectSignals(context.Background(), []model.SignalSourcePayload{{
+		WorkspaceID: "ws-1", SourceType: model.CRMSignalSourceEmail, SourceID: "message-1",
+		Body: `<p>Please send pri<strong>cing</strong> details.</p>`,
+	}})
+	if err != nil {
+		t.Fatalf("DetectSignals: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("signals = %d, want 1", len(rows))
+	}
+}
+
 func TestSignalDetectionService_BatchBindsSignalToDeclaredSource(t *testing.T) {
 	db := setupCRMSignalDetectionTestDB(t)
 	repo := repository.NewCRMSignalRepository(db)
