@@ -10,9 +10,15 @@ import {
   ZapIcon,
 } from '@/lib/icons';
 import { formatDistanceToNow } from 'date-fns';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { useContactSummary, useDealSummary } from '@/hooks/queries';
+import {
+  useContactSummary,
+  useDealSummary,
+  useRefreshContactSummary,
+  useRefreshDealSummary,
+} from '@/hooks/queries';
 import type { CRMEntitySummary, SummaryHighlight } from '@/lib/crmTypes';
 import { cn } from '@/lib/utils';
 
@@ -97,9 +103,17 @@ function SummaryBody({ summary }: { summary: CRMEntitySummary }) {
 export function EntitySummaryCard({ workspaceId, contactId, dealId, presentation = 'default' }: EntitySummaryCardProps) {
   const contactQuery = useContactSummary(workspaceId, contactId ?? '');
   const dealQuery = useDealSummary(workspaceId, dealId ?? '');
+  const contactRefresh = useRefreshContactSummary(workspaceId, contactId ?? '');
+  const dealRefresh = useRefreshDealSummary(workspaceId, dealId ?? '');
   const query = contactId ? contactQuery : dealQuery;
+  const refresh = contactId ? contactRefresh : dealRefresh;
   const summary = query.data;
   const compact = presentation === 'compact';
+  const generateSummary = () => {
+    refresh.mutate(undefined, {
+      onError: (error) => toast.error(error instanceof Error ? error.message : 'Summary could not be generated'),
+    });
+  };
 
   if (query.isLoading) {
     return (
@@ -135,11 +149,11 @@ export function EntitySummaryCard({ workspaceId, contactId, dealId, presentation
               variant="outline"
               size="sm"
               className="shrink-0 gap-1.5"
-              onClick={() => query.refetch()}
-              disabled={query.isFetching}
+              onClick={generateSummary}
+              disabled={refresh.isPending}
             >
-              <SparklesIcon className="h-3.5 w-3.5" />
-              {query.isFetching ? 'Checking…' : 'Generate anyway'}
+              {refresh.isPending ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <SparklesIcon className="h-3.5 w-3.5" />}
+              {refresh.isPending ? 'Generating…' : 'Generate anyway'}
             </Button>
           </div>
         </DashedShell>
@@ -163,11 +177,11 @@ export function EntitySummaryCard({ workspaceId, contactId, dealId, presentation
           variant="ghost"
           size="sm"
           className="h-6 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
-          onClick={() => query.refetch()}
-          disabled={query.isFetching}
+          onClick={generateSummary}
+          disabled={refresh.isPending}
         >
-          <SparklesIcon className="h-3 w-3" />
-          Regenerate
+          {refresh.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <SparklesIcon className="h-3 w-3" />}
+          {refresh.isPending ? 'Generating…' : 'Regenerate'}
         </Button>
       </div>
       <DashedShell className={cn('border-solid bg-muted/20', compact && 'rounded-md px-4 py-3 sm:px-4 sm:py-3')}>

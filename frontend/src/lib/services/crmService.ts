@@ -321,6 +321,8 @@ export const crmSignalService = {
 export const crmSummaryService = {
   getForContact: (workspaceId: string, contactId: string) => api.get<CRMEntitySummary | null>(`/crm/contacts/${contactId}/summary${qs(workspaceId)}`),
   getForDeal: (workspaceId: string, dealId: string) => api.get<CRMEntitySummary | null>(`/crm/deals/${dealId}/summary${qs(workspaceId)}`),
+  refreshContact: (workspaceId: string, contactId: string) => api.post<CRMEntitySummary>(`/crm/contacts/${contactId}/summary/refresh${qs(workspaceId)}`, {}),
+  refreshDeal: (workspaceId: string, dealId: string) => api.post<CRMEntitySummary>(`/crm/deals/${dealId}/summary/refresh${qs(workspaceId)}`, {}),
 };
 
 export const crmHealthScoreService = {

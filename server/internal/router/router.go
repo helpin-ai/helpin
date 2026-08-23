@@ -1606,6 +1606,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/signals", h.CRMSignal.ListByDeal)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/summary", h.CRMSummary.GetContactSummary)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/summary", h.CRMSummary.GetDealSummary)
+				r.With(requirePerm(authorization.PermCRMRead)).Post("/contacts/{id}/summary/refresh", h.CRMSummary.RefreshContactSummary)
+				r.With(requirePerm(authorization.PermCRMRead)).Post("/deals/{id}/summary/refresh", h.CRMSummary.RefreshDealSummary)
 
 				// Health Scores — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/health-scores", h.CRMSignal.ListHealthScores)

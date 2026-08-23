@@ -8,7 +8,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
-// CRMSummaryHandler handles CRM summary read endpoints.
+// CRMSummaryHandler handles CRM summary endpoints.
 type CRMSummaryHandler struct {
 	summaryService *service.CRMSummaryService
 }
@@ -37,6 +37,32 @@ func (h *CRMSummaryHandler) GetDealSummary(w http.ResponseWriter, r *http.Reques
 	dealID := chi.URLParam(r, "id")
 
 	summary, err := h.summaryService.GetDealSummary(r.Context(), workspaceID, dealID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+// RefreshContactSummary handles POST /api/crm/contacts/{id}/summary/refresh.
+func (h *CRMSummaryHandler) RefreshContactSummary(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	contactID := chi.URLParam(r, "id")
+
+	summary, err := h.summaryService.RefreshContactSummaryNow(r.Context(), workspaceID, contactID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+// RefreshDealSummary handles POST /api/crm/deals/{id}/summary/refresh.
+func (h *CRMSummaryHandler) RefreshDealSummary(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	dealID := chi.URLParam(r, "id")
+
+	summary, err := h.summaryService.RefreshDealSummaryNow(r.Context(), workspaceID, dealID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

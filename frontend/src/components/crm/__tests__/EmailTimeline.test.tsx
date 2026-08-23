@@ -184,4 +184,10 @@ describe('EmailTimeline', () => {
     expect(source).toContain('variant="divider"');
     expect(source).toContain('contentVariant="pm"');
   });
+
+  it('uses the shared PM rich-text typography for thread subjects and message bodies', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/crm/EmailTimeline.tsx'), 'utf8');
+
+    expect(source.match(/pm-rich-text/g)).toHaveLength(2);
+  });
 });

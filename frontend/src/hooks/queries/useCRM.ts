@@ -896,6 +896,16 @@ export function useContactSummary(wsId: string, contactId: string) {
   })
 }
 
+export function useRefreshContactSummary(wsId: string, contactId: string) {
+  const qc = useQueryClient()
+  const queryKey = queryKeys.crm.contactSummary(wsId, contactId)
+  return useMutation({
+    mutationFn: async () => unwrap(await crmSummaryService.refreshContact(wsId, contactId)),
+    onSuccess: (summary) => qc.setQueryData(queryKey, summary),
+    onSettled: () => qc.invalidateQueries({ queryKey }),
+  })
+}
+
 export function useDealSummary(wsId: string, dealId: string) {
   return useQuery({
     queryKey: queryKeys.crm.dealSummary(wsId, dealId),
@@ -905,6 +915,16 @@ export function useDealSummary(wsId: string, dealId: string) {
       const summary = query.state.data as { status?: string } | null | undefined
       return summary?.status === 'pending_refresh' || summary?.status === 'stale' ? 15000 : false
     },
+  })
+}
+
+export function useRefreshDealSummary(wsId: string, dealId: string) {
+  const qc = useQueryClient()
+  const queryKey = queryKeys.crm.dealSummary(wsId, dealId)
+  return useMutation({
+    mutationFn: async () => unwrap(await crmSummaryService.refreshDeal(wsId, dealId)),
+    onSuccess: (summary) => qc.setQueryData(queryKey, summary),
+    onSettled: () => qc.invalidateQueries({ queryKey }),
   })
 }
 

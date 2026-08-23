@@ -95,7 +95,7 @@ function ThreadRow({ thread, selected, onSelect }: { thread: CRMEmailThread; sel
           <span className="ml-auto shrink-0 text-[11px]">{thread.message_count > 1 ? thread.message_count : ''}</span>
           <span className="shrink-0 text-[11px]">{relativeDate(thread.last_message_at)}</span>
         </span>
-        <span className={cn('mt-0.5 block truncate text-[13px] leading-5 text-foreground', thread.needs_reply && 'font-semibold')}>{thread.subject || '(no subject)'}</span>
+        <span className={cn('pm-rich-text mt-0.5 block truncate', thread.needs_reply && 'font-semibold')}>{thread.subject || '(no subject)'}</span>
         <span className="mt-0.5 block truncate text-xs leading-5 text-muted-foreground">{messageText(latest) || 'No message preview'}</span>
         <span className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
           {latest?.direction === 'inbound' ? <ArrowDown02Icon className="h-3 w-3 text-teal-700 dark:text-teal-400" /> : <SentIcon className="h-3 w-3" />}
@@ -119,7 +119,7 @@ function MessageBlock({ message }: { message: CRMEmailMessage }) {
           <div className="min-w-0 flex-1"><span className="text-[13px] font-semibold text-foreground">{sender}</span><span className="ml-2 truncate text-xs text-muted-foreground">to {recipients || 'undisclosed recipients'}</span></div>
           <time className="shrink-0 text-[11px] text-muted-foreground">{format(new Date(message.sent_at), 'MMM d, yyyy · h:mm a')}</time>
         </div>
-        <div className="mt-2 max-w-[680px] text-[0.9333rem] leading-7 text-foreground">
+        <div className="pm-rich-text mt-2 max-w-[680px]">
           {message.body_html ? <EmailBodyRenderer html={message.body_html} collapsedByDefault constrainHeight={false} /> : <p className="whitespace-pre-wrap break-words">{message.body_text || 'No message body'}</p>}
         </div>
       </div>

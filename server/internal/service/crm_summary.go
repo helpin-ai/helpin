@@ -164,6 +164,44 @@ func (s *CRMSummaryService) RequestDealRefresh(ctx context.Context, workspaceID,
 	})
 }
 
+// RefreshContactSummaryNow immediately recomputes a contact summary for an
+// explicit user request, bypassing the debounce used for activity-driven
+// refreshes.
+func (s *CRMSummaryService) RefreshContactSummaryNow(ctx context.Context, workspaceID, contactID string) (*model.CRMEntitySummary, error) {
+	return s.refreshSummaryNow(ctx, model.CRMEntitySummaryRefreshInput{
+		WorkspaceID: workspaceID,
+		EntityType:  model.CRMObjectContact,
+		EntityID:    contactID,
+	})
+}
+
+// RefreshDealSummaryNow immediately recomputes a deal summary for an explicit
+// user request, bypassing the debounce used for activity-driven refreshes.
+func (s *CRMSummaryService) RefreshDealSummaryNow(ctx context.Context, workspaceID, dealID string) (*model.CRMEntitySummary, error) {
+	return s.refreshSummaryNow(ctx, model.CRMEntitySummaryRefreshInput{
+		WorkspaceID: workspaceID,
+		EntityType:  model.CRMObjectDeal,
+		EntityID:    dealID,
+	})
+}
+
+func (s *CRMSummaryService) refreshSummaryNow(ctx context.Context, input model.CRMEntitySummaryRefreshInput) (*model.CRMEntitySummary, error) {
+	if s == nil || s.summaryRepo == nil {
+		return nil, fmt.Errorf("summary service not configured")
+	}
+	if input.WorkspaceID == "" || input.EntityType == "" || input.EntityID == "" {
+		return nil, fmt.Errorf("workspace_id, entity_type, and entity_id are required")
+	}
+
+	if err := s.summaryRepo.UpsertRefreshRequest(ctx, input, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	if _, err := s.RefreshSummary(ctx, input); err != nil {
+		return nil, err
+	}
+	return s.summaryRepo.GetByEntity(ctx, input.WorkspaceID, input.EntityType, input.EntityID)
+}
+
 func (s *CRMSummaryService) requestRefresh(ctx context.Context, input model.CRMEntitySummaryRefreshInput) error {
 	if s == nil || s.summaryRepo == nil {
 		return nil
@@ -247,6 +285,19 @@ func (s *CRMSummaryService) RefreshSummary(ctx context.Context, input model.CRME
 			EntityType: input.EntityType,
 			EntityID:   input.EntityID,
 			Status:     model.CRMEntitySummaryStatusReady,
+		}, nil
+	}
+	// A user-triggered refresh can finish while an older debounced workflow is
+	// still sleeping. Treat that workflow as satisfied instead of paying for a
+	// second generation pass over the same evidence.
+	if current.Status == model.CRMEntitySummaryStatusReady && current.ComputedAt != nil && !current.ComputedAt.Before(*current.LastTriggeredAt) {
+		return &model.CRMEntitySummaryRefreshResult{
+			EntityType:        input.EntityType,
+			EntityID:          input.EntityID,
+			Status:            current.Status,
+			Highlights:        len(current.Highlights),
+			SourceEmailCount:  intValue(current.Metadata["source_email_count"]),
+			SourceSignalCount: intValue(current.Metadata["source_signal_count"]),
 		}, nil
 	}
 
