@@ -450,11 +450,15 @@ func createProductToolCRMTables(t *testing.T, db *gorm.DB) {
 			workspace_id TEXT NOT NULL,
 			contact_id TEXT,
 			deal_id TEXT,
+			company_id TEXT,
 			signal_type TEXT NOT NULL,
 			source_type TEXT NOT NULL DEFAULT 'manual',
 			summary TEXT NOT NULL,
 			confidence REAL NOT NULL DEFAULT 0,
 			detected_at DATETIME NOT NULL,
+			evidence_fingerprint TEXT NOT NULL DEFAULT '',
+			dismissed_at DATETIME,
+			dismissed_by_member_id TEXT,
 			created_at DATETIME
 		)`,
 	} {

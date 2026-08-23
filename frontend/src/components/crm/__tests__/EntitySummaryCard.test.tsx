@@ -9,7 +9,9 @@ import { EntitySummaryCard } from '../EntitySummaryCard';
 const summaryState = vi.hoisted(() => ({
   contactSummary: null as null | { summary_markdown: string; highlights: unknown[]; status: string },
   contactPending: false,
+  companyPending: false,
   refreshContact: vi.fn(),
+  refreshCompany: vi.fn(),
   refetchContact: vi.fn(),
 }));
 
@@ -23,7 +25,9 @@ vi.mock('@/hooks/queries', () => ({
     refetch: summaryState.refetchContact,
   }),
   useDealSummary: () => ({ data: null, isLoading: false, isFetching: false, refetch: vi.fn() }),
+  useCompanySummary: () => ({ data: null, isLoading: false, isFetching: false, refetch: vi.fn() }),
   useRefreshContactSummary: () => ({ mutate: summaryState.refreshContact, isPending: summaryState.contactPending }),
+  useRefreshCompanySummary: () => ({ mutate: summaryState.refreshCompany, isPending: summaryState.companyPending }),
   useRefreshDealSummary: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
@@ -35,6 +39,7 @@ let root: Root;
 beforeEach(() => {
   summaryState.contactSummary = null;
   summaryState.contactPending = false;
+  summaryState.companyPending = false;
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -68,5 +73,16 @@ describe('EntitySummaryCard', () => {
       .find((candidate) => candidate.textContent?.includes('Generating'));
     expect(button).toBeDefined();
     expect(button?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('routes company generation through the company refresh endpoint', () => {
+    act(() => root.render(<EntitySummaryCard workspaceId="workspace-1" companyId="company-1" />));
+
+    const button = [...container.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.includes('Generate anyway'));
+    act(() => button?.click());
+
+    expect(summaryState.refreshCompany).toHaveBeenCalledTimes(1);
+    expect(summaryState.refreshContact).not.toHaveBeenCalled();
   });
 });

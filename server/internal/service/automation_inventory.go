@@ -193,6 +193,7 @@ func (s *AutomationInventoryService) crmBuiltInItems(ctx context.Context, worksp
 		"crm.buyer_signal_ingestion",
 		"crm.contact_summary_refresh",
 		"crm.deal_summary_refresh",
+		"crm.company_summary_refresh",
 	}
 	items := make([]model.AutomationInventoryItem, 0, len(catalogIDs))
 	for _, catalogID := range catalogIDs {

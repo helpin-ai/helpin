@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -21,6 +22,13 @@ type CRMContactService struct {
 	timelineRepo   *repository.CRMCompanyTimelineRepository
 	entitlementSvc *EntitlementService
 	wsPublisher    websocket.EventPublisher
+	summaryRefresh CompanySummaryRefreshRequester
+}
+
+// SetCompanySummaryRefresh enables linked-account summary invalidation after contact changes.
+func (s *CRMContactService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMContactService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // NewCRMContactService creates a new CRMContactService.
@@ -210,6 +218,7 @@ func (s *CRMContactService) Create(ctx context.Context, req model.CreateCRMConta
 		OccurredAt: contact.CreatedAt,
 		Attributes: map[string]any{"entity_id": contact.ID, "lifecycle_stage": contact.LifecycleStage, "module": "crm"},
 	})
+	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	return contact, nil
 }
 
@@ -408,6 +417,7 @@ func (s *CRMContactService) UpdateWithActor(
 			ActorID:     actorUserID,
 		})
 	}
+	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	return contact, nil
 }
 
@@ -462,7 +472,17 @@ func (s *CRMContactService) Delete(ctx context.Context, id string) error {
 	if contact == nil {
 		return fmt.Errorf("contact not found")
 	}
+	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	return s.contactRepo.Delete(ctx, id)
+}
+
+func (s *CRMContactService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, contactID string) {
+	if s == nil || s.summaryRefresh == nil {
+		return
+	}
+	if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, model.CRMObjectContact, contactID); err != nil {
+		slog.ErrorContext(ctx, "failed to request company summary refresh from contact", "error", err, "workspace_id", workspaceID, "contact_id", contactID)
+	}
 }
 
 func seededContactName(sequence int) (string, string) {

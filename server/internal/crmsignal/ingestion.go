@@ -46,12 +46,17 @@ func NewTemporalStarter(client tclient.Client, taskQueue string) *TemporalStarte
 
 // StartEmailSignalDetection starts the per-message signal detection workflow.
 func (s *TemporalStarter) StartEmailSignalDetection(ctx context.Context, messageID string, payloads []model.SignalSourcePayload) error {
-	if s == nil || s.client == nil || messageID == "" || len(payloads) == 0 {
+	return s.StartSignalDetection(ctx, "email-"+messageID, payloads)
+}
+
+// StartSignalDetection starts a source-keyed signal workflow.
+func (s *TemporalStarter) StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error {
+	if s == nil || s.client == nil || sourceKey == "" || len(payloads) == 0 {
 		return nil
 	}
 
 	_, err := s.client.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
-		ID:                    WorkflowIDForMessage(messageID),
+		ID:                    "crm-signal-" + sourceKey,
 		TaskQueue:             s.taskQueue,
 		WorkflowIDReusePolicy: enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
 	}, signalDetectionWorkflowName, payloads)

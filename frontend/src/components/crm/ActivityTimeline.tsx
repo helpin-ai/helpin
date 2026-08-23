@@ -17,7 +17,6 @@ import type { CRMActivity, CRMActivityType, CRMTimelineFilter, CRMTimelineItem }
 import { cn } from '@/lib/utils';
 import { crmTimelinePresentation, dedupeCRMTimelineItems, type CRMTimelinePresentation } from './companyTimelinePresentation';
 import { CRMEmailComposerDialog } from './CRMEmailComposerDialog';
-import { EmailTimeline } from './EmailTimeline';
 
 interface ActivityTimelineProps {
   activities?: CRMActivity[];
@@ -407,9 +406,7 @@ export function ActivityTimeline({
         </div>
       )}
 
-      {timelineItems && selectedFilter === 'email' && workspaceId && !dealId ? (
-        <EmailTimeline workspaceId={workspaceId} contactId={contactId} companyId={companyId} dealId={dealId} defaultRecipient={emailRecipient} showComposeAction={false} />
-      ) : isTimelineLoading ? (
+      {isTimelineLoading ? (
         <div className="flex items-center justify-center px-6 py-12">
           <Loading01Icon className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>

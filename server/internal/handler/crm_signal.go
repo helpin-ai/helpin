@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -19,6 +20,22 @@ func NewCRMSignalHandler(signalService *service.CRMSignalService) *CRMSignalHand
 	return &CRMSignalHandler{signalService: signalService}
 }
 
+// DismissSignal handles POST /api/crm/signals/{id}/dismiss.
+func (h *CRMSignalHandler) DismissSignal(w http.ResponseWriter, r *http.Request) {
+	actor := authorization.GetActor(r.Context())
+	if actor == nil || actor.WorkspaceMemberID == "" {
+		writeError(w, http.StatusForbidden, "workspace membership is required")
+		return
+	}
+	if err := h.signalService.DismissSignal(
+		r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), actor.WorkspaceMemberID,
+	); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "signal dismissed"})
+}
+
 // ListSignals handles GET /api/crm/signals.
 func (h *CRMSignalHandler) ListSignals(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -29,6 +46,7 @@ func (h *CRMSignalHandler) ListSignals(w http.ResponseWriter, r *http.Request) {
 	filters := model.CRMBuyerSignalListFilters{
 		ContactID:  queryStringPtr(r, "contact_id"),
 		DealID:     queryStringPtr(r, "deal_id"),
+		CompanyID:  queryStringPtr(r, "company_id"),
 		SignalType: queryStringPtr(r, "signal_type"),
 		SourceType: queryStringPtr(r, "source_type"),
 	}
@@ -176,4 +194,20 @@ func (h *CRMSignalHandler) ListByDeal(w http.ResponseWriter, r *http.Request) {
 		"total": total,
 		"page":  pagination.Page,
 	})
+}
+
+// ListByCompany handles GET /api/crm/companies/{id}/signals.
+func (h *CRMSignalHandler) ListByCompany(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	companyID := chi.URLParam(r, "id")
+	pagination := queryPagination(r)
+	signals, total, err := h.signalService.ListCompanySignals(r.Context(), workspaceID, companyID, pagination)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "buyer signals could not be loaded")
+		return
+	}
+	if signals == nil {
+		signals = []model.CRMBuyerSignal{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": signals, "total": total, "page": pagination.Page})
 }

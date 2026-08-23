@@ -15,13 +15,14 @@ type SignalParticipant struct {
 
 // SignalSourcePayload is a unified format for signal detection inputs.
 type SignalSourcePayload struct {
-	SourceType             string              `json:"source_type"` // "email", "meeting", "support"
+	SourceType             string              `json:"source_type"` // email, meeting, support, note, or call
 	SourceID               string              `json:"source_id"`
 	SourceThreadID         *string             `json:"source_thread_id,omitempty"`
 	SourceThreadExternalID *string             `json:"source_thread_external_id,omitempty"`
 	WorkspaceID            string              `json:"workspace_id"`
 	ContactID              *string             `json:"contact_id"`
 	DealID                 *string             `json:"deal_id"`
+	CompanyID              *string             `json:"company_id"`
 	Subject                string              `json:"subject"`
 	Body                   string              `json:"body"`
 	Participants           []SignalParticipant `json:"participants"`
@@ -118,14 +119,16 @@ func PayloadFromSupportMessage(msg *SupportMessage, ticket *SupportConversation)
 	}
 
 	return SignalSourcePayload{
-		SourceType:  CRMSignalSourceSupport,
-		SourceID:    msg.ID,
-		WorkspaceID: msg.WorkspaceID,
-		ContactID:   contactID,
-		Subject:     ticket.Subject,
-		Body:        body,
-		Direction:   direction,
-		OccurredAt:  msg.CreatedAt,
+		SourceType:     CRMSignalSourceSupport,
+		SourceID:       msg.ID,
+		WorkspaceID:    msg.WorkspaceID,
+		ContactID:      contactID,
+		CompanyID:      ticket.CRMCompanyID,
+		Subject:        ticket.Subject,
+		Body:           body,
+		Direction:      direction,
+		OccurredAt:     msg.CreatedAt,
+		SourceThreadID: &ticket.ID,
 	}
 }
 

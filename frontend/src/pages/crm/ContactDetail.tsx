@@ -24,6 +24,7 @@ import {
   Tag01Icon,
   TelephoneIcon,
   UserIcon,
+  ZapIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -1076,14 +1077,35 @@ export function ContactDetailPage({
           {activeTab === 'overview' && (
             <div className="min-h-0 flex-1 overflow-y-auto">
               <div className={contactDetailOverviewContentClassName}>
-              <section className="border-b border-border/60 px-4 py-5 sm:px-6 lg:px-10">
-                <div className="grid items-start gap-6 xl:grid-cols-2">
-                  <EntitySummaryCard workspaceId={wsId} contactId={contactId} presentation="compact" />
-                  <div className="min-w-0">
-                    <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Buyer signals</h3>
-                    <BuyerSignals workspaceId={wsId} contactId={contactId} presentation="compact" />
-                  </div>
+              <EntitySummaryCard
+                workspaceId={wsId}
+                contactId={contactId}
+                presentation="overview"
+                onOpenTab={(tab, threadId) => {
+                  if (tab === 'emails' && threadId) onEmailThreadChange?.(threadId);
+                  else onTabChange?.(tab);
+                }}
+                onTaskCreated={refreshContactActivity}
+              />
+              <section aria-label="Buyer signals" className="border-b border-border/60">
+                <div className="flex items-center gap-2 px-4 pb-2 pt-5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 sm:px-6 lg:px-10">
+                  <ZapIcon className="h-[15px] w-[15px] text-muted-foreground" />
+                  Buyer signals
                 </div>
+                <BuyerSignals
+                  workspaceId={wsId}
+                  contactId={contactId}
+                  presentation="overview"
+                  onOpenSource={(signal) => {
+                    if (signal.source_type === 'email' && signal.source_thread_id) onEmailThreadChange?.(signal.source_thread_id);
+                    else if (signal.source_type === 'meeting' && signal.source_id) navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: signal.source_id } } as never);
+                    else if (signal.source_type === 'support' && signal.source_thread_id) navigate({ to: '/w/$slug/support/$conversationId', params: { slug: wsSlug, conversationId: signal.source_thread_id } } as never);
+                    else if (signal.source_type === 'meeting') onTabChange?.('meetings');
+                    else if (signal.source_type === 'support') onTabChange?.('support');
+                    else if (signal.source_type === 'note') onTabChange?.('notes');
+                    else if (signal.source_type === 'call') onTabChange?.('calls');
+                  }}
+                />
               </section>
               <ActivityTimeline
                 timelineItems={timeline.data?.pages.flatMap((page) => page?.data ?? []) ?? []}

@@ -14,6 +14,7 @@ import {
   MapPinIcon,
   PlusSignIcon,
   LayoutTwoColumnIcon,
+	ZapIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
@@ -38,6 +39,8 @@ import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { DesktopDetailRail } from '@/components/crm/DesktopDetailRail';
 import { CompanyContactsView, CompanyDealsView, CompanyMeetingsView, CompanySupportView } from '@/components/crm/CompanyDetailCollections';
+import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
+import { BuyerSignals } from '@/components/crm/BuyerSignals';
 import { useTitle } from '@/hooks/useTitle';
 import { cn } from '@/lib/utils';
 import type { CRMCompanyTimelineFilter, CRMCompanyTimelineItem, UpdateCRMCompanyRequest } from '@/lib/crmTypes';
@@ -424,6 +427,36 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
                     </div>
                   )}
                 </div>
+              </section>
+              <EntitySummaryCard
+                workspaceId={wsId}
+                companyId={companyId}
+                presentation="overview"
+                onOpenTab={(tab, threadId) => {
+                  if (tab === 'emails' && threadId) onEmailThreadChange?.(threadId);
+                  else onTabChange?.(tab);
+                }}
+                onTaskCreated={() => void timeline.refetch()}
+              />
+              <section aria-label="Buyer signals" className="border-b border-border/60">
+                <div className="flex items-center gap-2 px-4 pb-2 pt-5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 sm:px-6 lg:px-10">
+                  <ZapIcon className="h-[15px] w-[15px] text-muted-foreground" />
+                  Buyer signals
+                </div>
+                <BuyerSignals
+                  workspaceId={wsId}
+                  companyId={companyId}
+                  presentation="overview"
+                  onOpenSource={(signal) => {
+                    if (signal.source_type === 'email' && signal.source_thread_id) onEmailThreadChange?.(signal.source_thread_id);
+                    else if (signal.source_type === 'meeting' && signal.source_id) navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: signal.source_id } } as never);
+                    else if (signal.source_type === 'support' && signal.source_thread_id) navigate({ to: '/w/$slug/support/$conversationId', params: { slug: wsSlug, conversationId: signal.source_thread_id } } as never);
+                    else if (signal.source_type === 'meeting') onTabChange?.('meetings');
+                    else if (signal.source_type === 'support') onTabChange?.('support');
+                    else if (signal.source_type === 'note') onTabChange?.('notes');
+                    else if (signal.source_type === 'call') onTabChange?.('calls');
+                  }}
+                />
               </section>
               <section aria-label="Contacts" className="border-b border-border/60">
                 <CompanyContactsView

@@ -194,7 +194,11 @@ WITH timeline_contacts AS (
     LEFT JOIN users eu ON eu.id::text = a.metadata->>'actor_user_id'
     WHERE a.workspace_id = @workspace_id
       AND (
-        (@scope_type = 'company' AND a.company_id = @scope_id)
+        (@scope_type = 'company' AND (
+          a.company_id = @scope_id
+          OR a.contact_id IN (SELECT id FROM timeline_contacts)
+          OR a.deal_id IN (SELECT id FROM related_deals)
+        ))
         OR (@scope_type = 'contact' AND a.contact_id = @scope_id)
         OR (@scope_type = 'deal' AND a.deal_id = @scope_id)
       )
@@ -228,7 +232,8 @@ WITH timeline_contacts AS (
     WHERE m.workspace_id = @workspace_id
       AND (
         (@scope_type = 'deal' AND m.deal_id = @scope_id)
-        OR (@scope_type IN ('company', 'contact') AND cc.id IS NOT NULL)
+        OR (@scope_type = 'company' AND (cc.id IS NOT NULL OR m.deal_id IN (SELECT id FROM related_deals)))
+        OR (@scope_type = 'contact' AND cc.id IS NOT NULL)
       )
 
     UNION ALL
@@ -259,7 +264,8 @@ WITH timeline_contacts AS (
     WHERE ce.workspace_id = @workspace_id
       AND (
         (@scope_type = 'deal' AND ce.deal_id = @scope_id)
-        OR (@scope_type IN ('company', 'contact') AND cc.id IS NOT NULL)
+        OR (@scope_type = 'company' AND (cc.id IS NOT NULL OR ce.deal_id IN (SELECT id FROM related_deals)))
+        OR (@scope_type = 'contact' AND cc.id IS NOT NULL)
       )
       AND ce.status <> 'cancelled'
       AND ce.start_time <= NOW()
@@ -534,7 +540,25 @@ func (r *CRMCompanyTimelineRepository) listPortable(
 	case "deal":
 		dbQuery = dbQuery.Where("deal_id = ?", scopeID)
 	default:
-		dbQuery = dbQuery.Where("company_id = ?", scopeID)
+		if r.db.Migrator().HasTable("crm_associations") {
+			dbQuery = dbQuery.Where(`company_id = ?
+				OR contact_id IN (
+					SELECT CASE WHEN ca.from_object_type = 'contact' THEN ca.from_object_id ELSE ca.to_object_id END
+					FROM crm_associations ca
+					WHERE ca.workspace_id = ? AND ((ca.from_object_type = 'contact' AND ca.to_object_type = 'company' AND ca.to_object_id = ?)
+						OR (ca.to_object_type = 'contact' AND ca.from_object_type = 'company' AND ca.from_object_id = ?))
+				)
+				OR deal_id IN (
+					SELECT CASE WHEN da.from_object_type = 'deal' THEN da.from_object_id ELSE da.to_object_id END
+					FROM crm_associations da
+					WHERE da.workspace_id = ? AND (
+						(da.from_object_type = 'deal' AND da.to_object_type = 'company' AND da.to_object_id = ?)
+						OR (da.to_object_type = 'deal' AND da.from_object_type = 'company' AND da.from_object_id = ?)
+					)
+				)`, scopeID, workspaceID, scopeID, scopeID, workspaceID, scopeID, scopeID)
+		} else {
+			dbQuery = dbQuery.Where("company_id = ?", scopeID)
+		}
 	}
 	if query.Filter != "" && query.Filter != model.CRMCompanyTimelineFilterAll {
 		dbQuery = dbQuery.Where("activity_type = ?", query.Filter)

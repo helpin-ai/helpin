@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+const minimumAutomatedSignalConfidence = 0.6
 
 // CRMSignalRepository handles DB operations for CRM signals and health scores.
 type CRMSignalRepository struct {
@@ -26,6 +29,7 @@ func NewCRMSignalRepository(db *gorm.DB) *CRMSignalRepository {
 
 // CreateSignal inserts a buyer signal.
 func (r *CRMSignalRepository) CreateSignal(ctx context.Context, signal *model.CRMBuyerSignal) error {
+	ensureSignalEvidenceFingerprint(signal)
 	if err := r.db.WithContext(ctx).Create(signal).Error; err != nil {
 		return fmt.Errorf("create buyer signal: %w", err)
 	}
@@ -37,6 +41,7 @@ func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *
 	if signal == nil {
 		return false, nil
 	}
+	ensureSignalEvidenceFingerprint(signal)
 	var existing model.CRMBuyerSignal
 	err := r.db.WithContext(ctx).
 		Where("workspace_id = ?", signal.WorkspaceID).
@@ -45,7 +50,22 @@ func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *
 		Where("signal_type = ?", signal.SignalType).
 		First(&existing).Error
 	if err == nil {
-		return false, nil
+		ensureSignalEvidenceFingerprint(&existing)
+		if existing.EvidenceFingerprint == signal.EvidenceFingerprint {
+			return false, nil
+		}
+		updates := map[string]interface{}{
+			"contact_id": signal.ContactID, "deal_id": signal.DealID, "company_id": signal.CompanyID,
+			"source_thread_id": signal.SourceThreadID, "summary": signal.Summary,
+			"evidence_excerpt": signal.EvidenceExcerpt, "metadata": signal.Metadata,
+			"confidence": signal.Confidence, "detected_at": signal.DetectedAt,
+			"evidence_fingerprint": signal.EvidenceFingerprint,
+			"dismissed_at":         nil, "dismissed_by_member_id": nil,
+		}
+		if err := r.db.WithContext(ctx).Model(&existing).Updates(updates).Error; err != nil {
+			return false, fmt.Errorf("refresh buyer signal evidence: %w", err)
+		}
+		return true, nil
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, fmt.Errorf("lookup buyer signal by source: %w", err)
@@ -63,12 +83,21 @@ func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *
 // ListSignals returns buyer signals with optional filters.
 func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination) ([]model.CRMBuyerSignal, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).Where("workspace_id = ?", workspaceID)
+	if !filters.IncludeDismissed {
+		query = query.Where("dismissed_at IS NULL")
+	}
+	if !filters.IncludeLowConfidence {
+		query = query.Where("source_type = ? OR confidence >= ?", model.CRMSignalSourceManual, minimumAutomatedSignalConfidence)
+	}
 
 	if filters.ContactID != nil && *filters.ContactID != "" {
 		query = query.Where("contact_id = ?", *filters.ContactID)
 	}
 	if filters.DealID != nil && *filters.DealID != "" {
 		query = query.Where("deal_id = ?", *filters.DealID)
+	}
+	if filters.CompanyID != nil && *filters.CompanyID != "" {
+		query = query.Where("company_id = ?", *filters.CompanyID)
 	}
 	if filters.SignalType != nil && *filters.SignalType != "" {
 		query = query.Where("signal_type = ?", *filters.SignalType)
@@ -90,7 +119,130 @@ func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID strin
 	if err := query.Order("detected_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&signals).Error; err != nil {
 		return nil, 0, fmt.Errorf("list buyer signals: %w", err)
 	}
+	if err := r.hydrateSignalContext(ctx, workspaceID, signals); err != nil {
+		return nil, 0, err
+	}
 	return signals, total, nil
+}
+
+// ListSignalsByCompany returns canonical signals related to a company directly,
+// through its contacts, or through deals associated with those contacts.
+func (r *CRMSignalRepository) ListSignalsByCompany(
+	ctx context.Context,
+	workspaceID, companyID string,
+	pagination model.PMPagination,
+) ([]model.CRMBuyerSignal, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+		Where("crm_buyer_signals.workspace_id = ?", workspaceID).
+		Where("crm_buyer_signals.dismissed_at IS NULL").
+		Where("crm_buyer_signals.source_type = ? OR crm_buyer_signals.confidence >= ?", model.CRMSignalSourceManual, minimumAutomatedSignalConfidence).
+		Where(`(
+			crm_buyer_signals.company_id = ?
+			OR crm_buyer_signals.contact_id IN (
+				SELECT CASE WHEN ca.from_object_type = 'contact' THEN ca.from_object_id ELSE ca.to_object_id END
+				FROM crm_associations ca
+				WHERE ca.workspace_id = ? AND (
+					(ca.from_object_type = 'contact' AND ca.to_object_type = 'company' AND ca.to_object_id = ?)
+					OR (ca.to_object_type = 'contact' AND ca.from_object_type = 'company' AND ca.from_object_id = ?)
+				)
+			)
+			OR crm_buyer_signals.deal_id IN (
+				SELECT d.id FROM crm_deals d WHERE d.workspace_id = ? AND EXISTS (
+					SELECT 1 FROM crm_associations da WHERE da.workspace_id = d.workspace_id AND (
+						(da.from_object_type = 'deal' AND da.from_object_id = d.id AND da.to_object_type = 'company' AND da.to_object_id = ?)
+						OR (da.to_object_type = 'deal' AND da.to_object_id = d.id AND da.from_object_type = 'company' AND da.from_object_id = ?)
+						OR (da.from_object_type = 'deal' AND da.from_object_id = d.id AND da.to_object_type = 'contact' AND da.to_object_id IN (
+							SELECT CASE WHEN ca.from_object_type = 'contact' THEN ca.from_object_id ELSE ca.to_object_id END FROM crm_associations ca
+							WHERE ca.workspace_id = d.workspace_id AND ((ca.from_object_type = 'contact' AND ca.to_object_type = 'company' AND ca.to_object_id = ?) OR (ca.to_object_type = 'contact' AND ca.from_object_type = 'company' AND ca.from_object_id = ?))
+						))
+						OR (da.to_object_type = 'deal' AND da.to_object_id = d.id AND da.from_object_type = 'contact' AND da.from_object_id IN (
+							SELECT CASE WHEN ca.from_object_type = 'contact' THEN ca.from_object_id ELSE ca.to_object_id END FROM crm_associations ca
+							WHERE ca.workspace_id = d.workspace_id AND ((ca.from_object_type = 'contact' AND ca.to_object_type = 'company' AND ca.to_object_id = ?) OR (ca.to_object_type = 'contact' AND ca.from_object_type = 'company' AND ca.from_object_id = ?))
+						))
+					)
+				)
+			)
+		)`, companyID, workspaceID, companyID, companyID, workspaceID,
+			companyID, companyID, companyID, companyID, companyID, companyID)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count company buyer signals: %w", err)
+	}
+	page, perPage := pagination.Page, pagination.PerPage
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 25
+	}
+	var signals []model.CRMBuyerSignal
+	if err := query.Order("detected_at DESC, id DESC").Offset((page - 1) * perPage).Limit(perPage).Find(&signals).Error; err != nil {
+		return nil, 0, fmt.Errorf("list company buyer signals: %w", err)
+	}
+	if err := r.hydrateSignalContext(ctx, workspaceID, signals); err != nil {
+		return nil, 0, err
+	}
+	return signals, total, nil
+}
+
+func (r *CRMSignalRepository) hydrateSignalContext(ctx context.Context, workspaceID string, signals []model.CRMBuyerSignal) error {
+	contactIDs := make([]string, 0, len(signals))
+	dealIDs := make([]string, 0, len(signals))
+	for i := range signals {
+		if signals[i].ContactID != nil {
+			contactIDs = append(contactIDs, *signals[i].ContactID)
+		}
+		if signals[i].DealID != nil {
+			dealIDs = append(dealIDs, *signals[i].DealID)
+		}
+	}
+	type contactRow struct{ ID, FirstName, LastName string }
+	var contacts []contactRow
+	if len(contactIDs) > 0 {
+		if err := r.db.WithContext(ctx).Table("crm_contacts").Select("id, first_name, last_name").Where("workspace_id = ? AND id IN ?", workspaceID, contactIDs).Scan(&contacts).Error; err != nil {
+			return fmt.Errorf("hydrate signal contacts: %w", err)
+		}
+	}
+	type dealRow struct{ ID, Name, DisplayID string }
+	var deals []dealRow
+	if len(dealIDs) > 0 {
+		if err := r.db.WithContext(ctx).Table("crm_deals").Select("id, name, display_id").Where("workspace_id = ? AND id IN ?", workspaceID, dealIDs).Scan(&deals).Error; err != nil {
+			return fmt.Errorf("hydrate signal deals: %w", err)
+		}
+	}
+	contactNames := make(map[string]string, len(contacts))
+	for _, contact := range contacts {
+		contactNames[contact.ID] = strings.TrimSpace(contact.FirstName + " " + contact.LastName)
+	}
+	dealRows := make(map[string]dealRow, len(deals))
+	for _, deal := range deals {
+		dealRows[deal.ID] = deal
+	}
+	for i := range signals {
+		if signals[i].ContactID != nil {
+			signals[i].ContactName = contactNames[*signals[i].ContactID]
+		}
+		if signals[i].DealID != nil {
+			deal := dealRows[*signals[i].DealID]
+			signals[i].DealName, signals[i].DealDisplayID = deal.Name, deal.DisplayID
+		}
+	}
+	return nil
+}
+
+// DismissSignal hides a signal for the workspace until its evidence changes.
+func (r *CRMSignalRepository) DismissSignal(ctx context.Context, workspaceID, id, memberID string, dismissedAt time.Time) error {
+	result := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, id).
+		Updates(map[string]interface{}{"dismissed_at": dismissedAt, "dismissed_by_member_id": memberID})
+	if result.Error != nil {
+		return fmt.Errorf("dismiss buyer signal: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("buyer signal not found")
+	}
+	return nil
 }
 
 // DeleteSignal removes a buyer signal.
@@ -103,21 +255,44 @@ func (r *CRMSignalRepository) DeleteSignal(ctx context.Context, id string) error
 
 // HasRecentSignalForThread returns true when a same-type signal already exists
 // for the same thread inside the provided window.
-func (r *CRMSignalRepository) HasRecentSignalForThread(ctx context.Context, workspaceID, threadID, signalType string, since time.Time) (bool, error) {
+func (r *CRMSignalRepository) HasRecentSignalForThread(ctx context.Context, workspaceID, threadID, signalType, excludeSourceID string, since time.Time) (bool, error) {
 	if workspaceID == "" || threadID == "" || signalType == "" {
 		return false, nil
 	}
 	var count int64
-	if err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Model(&model.CRMBuyerSignal{}).
 		Where("workspace_id = ?", workspaceID).
 		Where("source_thread_id = ?", threadID).
 		Where("signal_type = ?", signalType).
-		Where("detected_at >= ?", since).
-		Count(&count).Error; err != nil {
+		Where("detected_at >= ?", since)
+	if excludeSourceID != "" {
+		query = query.Where("source_id IS NULL OR source_id <> ?", excludeSourceID)
+	}
+	if err := query.Count(&count).Error; err != nil {
 		return false, fmt.Errorf("count recent thread signals: %w", err)
 	}
 	return count > 0, nil
+}
+
+// ReconcileAutomatedSignalsForSource removes stale model-created signals after
+// a source has been analyzed successfully. Manually-created signals are never
+// affected by source reconciliation.
+func (r *CRMSignalRepository) ReconcileAutomatedSignalsForSource(ctx context.Context, workspaceID, sourceType, sourceID string, keepTypes []string) error {
+	if workspaceID == "" || sourceType == "" || sourceID == "" {
+		return nil
+	}
+	query := r.db.WithContext(ctx).Where(
+		"workspace_id = ? AND source_type = ? AND source_id = ? AND source_type <> ?",
+		workspaceID, sourceType, sourceID, model.CRMSignalSourceManual,
+	)
+	if len(keepTypes) > 0 {
+		query = query.Where("signal_type NOT IN ?", keepTypes)
+	}
+	if err := query.Delete(&model.CRMBuyerSignal{}).Error; err != nil {
+		return fmt.Errorf("reconcile buyer signals for source: %w", err)
+	}
+	return nil
 }
 
 func isDuplicateKeyError(err error) bool {
@@ -126,6 +301,24 @@ func isDuplicateKeyError(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "duplicate key") || strings.Contains(message, "unique constraint")
+}
+
+func ensureSignalEvidenceFingerprint(signal *model.CRMBuyerSignal) {
+	if signal == nil || strings.TrimSpace(signal.EvidenceFingerprint) != "" {
+		return
+	}
+	parts := []string{signal.SourceType, signal.SignalType, strings.TrimSpace(signal.Summary)}
+	if signal.SourceID != nil {
+		parts = append(parts, *signal.SourceID)
+	}
+	if signal.SourceThreadID != nil {
+		parts = append(parts, *signal.SourceThreadID)
+	}
+	if signal.EvidenceExcerpt != nil {
+		parts = append(parts, strings.TrimSpace(*signal.EvidenceExcerpt))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	signal.EvidenceFingerprint = fmt.Sprintf("%x", sum)
 }
 
 // ── Deal Health Scores ──

@@ -18,26 +18,34 @@ const (
 	CRMSignalSourceEmail   = "email"
 	CRMSignalSourceMeeting = "meeting"
 	CRMSignalSourceNote    = "note"
+	CRMSignalSourceCall    = "call"
 	CRMSignalSourceManual  = "manual"
 	CRMSignalSourceSupport = "support"
 )
 
 // CRMBuyerSignal represents a detected buyer signal in CRM interactions.
 type CRMBuyerSignal struct {
-	ID              string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ContactID       *string   `json:"contact_id" gorm:"type:uuid;index"`
-	DealID          *string   `json:"deal_id" gorm:"type:uuid;index"`
-	SignalType      string    `json:"signal_type" gorm:"not null"`                  // buying_intent, objection, etc.
-	SourceType      string    `json:"source_type" gorm:"not null;default:'manual'"` // email, meeting, note, manual
-	SourceID        *string   `json:"source_id" gorm:"type:uuid"`
-	SourceThreadID  *string   `json:"source_thread_id" gorm:"type:uuid;index"`
-	Summary         string    `json:"summary" gorm:"not null"`
-	EvidenceExcerpt *string   `json:"evidence_excerpt"`
-	Metadata        JSONB     `json:"metadata" gorm:"type:jsonb;default:'{}'"`
-	Confidence      float64   `json:"confidence" gorm:"not null;default:0"`
-	DetectedAt      time.Time `json:"detected_at" gorm:"not null"`
-	CreatedAt       time.Time `json:"created_at" gorm:"autoCreateTime"`
+	ID                  string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID         string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ContactID           *string    `json:"contact_id" gorm:"type:uuid;index"`
+	DealID              *string    `json:"deal_id" gorm:"type:uuid;index"`
+	CompanyID           *string    `json:"company_id,omitempty" gorm:"type:uuid;index"`
+	SignalType          string     `json:"signal_type" gorm:"not null"`                  // buying_intent, objection, etc.
+	SourceType          string     `json:"source_type" gorm:"not null;default:'manual'"` // email, meeting, note, manual
+	SourceID            *string    `json:"source_id" gorm:"type:uuid"`
+	SourceThreadID      *string    `json:"source_thread_id" gorm:"type:uuid;index"`
+	Summary             string     `json:"summary" gorm:"not null"`
+	EvidenceExcerpt     *string    `json:"evidence_excerpt"`
+	Metadata            JSONB      `json:"metadata" gorm:"type:jsonb;default:'{}'"`
+	Confidence          float64    `json:"confidence" gorm:"not null;default:0"`
+	DetectedAt          time.Time  `json:"detected_at" gorm:"not null"`
+	EvidenceFingerprint string     `json:"evidence_fingerprint,omitempty" gorm:"not null;default:'';index"`
+	DismissedAt         *time.Time `json:"dismissed_at,omitempty" gorm:"index"`
+	DismissedByMemberID *string    `json:"dismissed_by_member_id,omitempty" gorm:"type:uuid"`
+	CreatedAt           time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	ContactName         string     `json:"contact_name,omitempty" gorm:"-"`
+	DealName            string     `json:"deal_name,omitempty" gorm:"-"`
+	DealDisplayID       string     `json:"deal_display_id,omitempty" gorm:"-"`
 }
 
 func (CRMBuyerSignal) TableName() string { return "crm_buyer_signals" }
@@ -60,6 +68,7 @@ type CreateCRMBuyerSignalRequest struct {
 	WorkspaceID     string                 `json:"workspace_id"`
 	ContactID       *string                `json:"contact_id"`
 	DealID          *string                `json:"deal_id"`
+	CompanyID       *string                `json:"company_id"`
 	SignalType      string                 `json:"signal_type"`
 	SourceType      string                 `json:"source_type"`
 	SourceID        *string                `json:"source_id"`
@@ -80,8 +89,11 @@ type CreateCRMDealHealthScoreRequest struct {
 
 // CRMBuyerSignalListFilters applies filters when listing signals.
 type CRMBuyerSignalListFilters struct {
-	ContactID  *string
-	DealID     *string
-	SignalType *string
-	SourceType *string
+	ContactID            *string
+	DealID               *string
+	CompanyID            *string
+	SignalType           *string
+	SourceType           *string
+	IncludeDismissed     bool
+	IncludeLowConfidence bool
 }

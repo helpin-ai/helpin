@@ -27,12 +27,6 @@ vi.mock('../CRMEmailComposerDialog', () => ({
     : null,
 }));
 
-vi.mock('../EmailTimeline', () => ({
-  EmailTimeline: ({ contactId, companyId }: { contactId?: string; companyId?: string }) => (
-    <div data-testid="rich-email-timeline">{contactId ?? companyId}</div>
-  ),
-}));
-
 vi.mock('@/components/ui/dialog', () => ({
   Dialog: ({
     open,
@@ -167,11 +161,22 @@ describe('CRM ActivityTimeline activity dialog', () => {
     expect(container.textContent).toContain('Load more');
   });
 
-  it('uses the rich email timeline for the Emails filter on contacts and companies', () => {
+  it('keeps the Emails filter inside the compact activity timeline', () => {
     act(() => {
       root.render(
         <ActivityTimeline
-          timelineItems={[]}
+          timelineItems={[{
+            id: 'email:message-1',
+            kind: 'email',
+            event_type: 'email.inbound',
+            source_type: 'crm_email_message',
+            source_id: 'message-1',
+            title: 'Pricing follow-up',
+            description: 'Can you send the updated proposal?',
+            occurred_at: new Date().toISOString(),
+            can_edit: false,
+            can_delete: false,
+          }]}
           timelineFilter="email"
           workspaceId="workspace-1"
           companyId="company-1"
@@ -180,8 +185,9 @@ describe('CRM ActivityTimeline activity dialog', () => {
       );
     });
 
-    expect(container.querySelector('[data-testid="rich-email-timeline"]')?.textContent).toBe('company-1');
-    expect(container.textContent).not.toContain('No activities yet');
+    expect(container.textContent).toContain('Pricing follow-up');
+    expect(container.textContent).toContain('Can you send the updated proposal?');
+    expect(container.querySelector('[data-testid="rich-email-timeline"]')).toBeNull();
   });
 
   it('renders authored activity content with its entity icon and existing actions', () => {

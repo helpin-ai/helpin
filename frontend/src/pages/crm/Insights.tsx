@@ -19,6 +19,7 @@ import {
   Message01Icon,
   Search01Icon,
   SparklesIcon,
+  TelephoneIcon,
   Tick01Icon,
   UserCheck01Icon,
 } from '@/lib/icons';
@@ -51,6 +52,7 @@ const sourceConfig: Record<CRMSignalSourceType, { label: string; icon: typeof Ac
   meeting: { label: 'Meeting', icon: Calendar01Icon },
   support: { label: 'Support', icon: Message01Icon },
   note: { label: 'Note', icon: Message01Icon },
+  call: { label: 'Call', icon: TelephoneIcon },
   manual: { label: 'Manual', icon: Activity01Icon },
 };
 

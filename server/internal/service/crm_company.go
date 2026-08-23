@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -14,9 +15,16 @@ import (
 
 // CRMCompanyService contains CRM company business logic.
 type CRMCompanyService struct {
-	companyRepo  *repository.CRMCompanyRepository
-	timelineRepo *repository.CRMCompanyTimelineRepository
+	companyRepo    *repository.CRMCompanyRepository
+	timelineRepo   *repository.CRMCompanyTimelineRepository
+	summaryRefresh CompanySummaryRefreshRequester
 	productAnalyticsEmitter
+}
+
+// SetCompanySummaryRefresh enables summary invalidation after company changes.
+func (s *CRMCompanyService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMCompanyService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // NewCRMCompanyService creates a new CRMCompanyService.
@@ -216,6 +224,7 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 		OccurredAt: company.CreatedAt,
 		Attributes: map[string]any{"entity_id": company.ID, "industry": company.Industry, "module": "crm"},
 	})
+	s.requestCompanySummaryRefresh(ctx, company.WorkspaceID, company.ID)
 	return company, nil
 }
 
@@ -275,6 +284,7 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 	if err := s.companyRepo.Update(ctx, company); err != nil {
 		return nil, err
 	}
+	s.requestCompanySummaryRefresh(ctx, company.WorkspaceID, company.ID)
 	return company, nil
 }
 
@@ -288,4 +298,13 @@ func (s *CRMCompanyService) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("company not found")
 	}
 	return s.companyRepo.Delete(ctx, id)
+}
+
+func (s *CRMCompanyService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, companyID string) {
+	if s == nil || s.summaryRefresh == nil {
+		return
+	}
+	if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, model.CRMObjectCompany, companyID); err != nil {
+		slog.ErrorContext(ctx, "failed to request company summary refresh from company", "error", err, "workspace_id", workspaceID, "company_id", companyID)
+	}
 }

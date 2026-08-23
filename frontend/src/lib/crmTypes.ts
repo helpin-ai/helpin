@@ -665,14 +665,18 @@ export type CRMSignalType =
   | 'champion_signal'
   | 'risk_signal';
 
-export type CRMSignalSourceType = 'email' | 'meeting' | 'note' | 'manual' | 'support';
+export type CRMSignalSourceType = 'email' | 'meeting' | 'note' | 'call' | 'manual' | 'support';
 
 export interface CRMSignalMetadata {
   message_direction?: string;
   participant_count?: number;
   thread_external_id?: string;
   ingestion_version?: string;
+	detector_version?: string;
+	source_content_hash?: string;
+	evidence_verified?: boolean;
   skip_reason?: string;
+  mailbox_email?: string;
 }
 
 export interface CRMBuyerSignal {
@@ -680,6 +684,10 @@ export interface CRMBuyerSignal {
   workspace_id: string;
   contact_id?: string;
   deal_id?: string;
+  company_id?: string;
+  contact_name?: string;
+  deal_name?: string;
+  deal_display_id?: string;
   signal_type: CRMSignalType;
   source_type: CRMSignalSourceType;
   source_id?: string;
@@ -689,6 +697,9 @@ export interface CRMBuyerSignal {
   metadata?: CRMSignalMetadata;
   confidence: number;
   detected_at: string;
+  evidence_fingerprint?: string;
+  dismissed_at?: string;
+  dismissed_by_member_id?: string;
   created_at: string;
 }
 
@@ -696,6 +707,7 @@ export interface CreateCRMBuyerSignalRequest {
   workspace_id: string;
   contact_id?: string;
   deal_id?: string;
+  company_id?: string;
   signal_type: CRMSignalType;
   source_type?: CRMSignalSourceType;
   source_id?: string;
@@ -718,12 +730,44 @@ export interface CRMEntitySummaryMetadata {
   source_email_count?: number;
   source_signal_count?: number;
   generation_version?: string;
+  source_contact_count?: number;
+  source_deal_count?: number;
+  source_task_count?: number;
+  source_support_count?: number;
+  source_activity_count?: number;
+  source_activity_counts?: Record<string, number>;
+  source_window_days?: number;
+}
+
+export interface CRMSummaryReadinessStep {
+  key: string;
+  label: string;
+  complete: boolean;
+}
+
+export interface CRMSummaryReadiness {
+  count: number;
+  threshold: number;
+  ready: boolean;
+  steps: CRMSummaryReadinessStep[];
+}
+
+export interface CRMSummarySource {
+  key: string;
+  type: string;
+  source_id: string;
+  thread_id?: string;
+  entity_type?: string;
+  entity_id?: string;
+  label: string;
+  occurred_at: string;
+  email_account_id?: string;
 }
 
 export interface CRMEntitySummary {
   id: string;
   workspace_id: string;
-  entity_type: 'contact' | 'deal';
+  entity_type: 'contact' | 'company' | 'deal';
   entity_id: string;
   summary_markdown: string;
   highlights: SummaryHighlight[];
@@ -734,8 +778,18 @@ export interface CRMEntitySummary {
   last_triggered_at?: string;
   last_error?: string;
   metadata?: CRMEntitySummaryMetadata;
+  readiness?: CRMSummaryReadiness;
+  sources?: CRMSummarySource[];
+  next_step?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CRMIntelligenceRefreshResult {
+  summary: CRMEntitySummary;
+  sources_analyzed: number;
+  signals_detected: number;
+  warnings: string[];
 }
 
 export interface CRMDealHealthScore {

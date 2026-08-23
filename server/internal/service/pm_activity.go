@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -12,7 +13,14 @@ import (
 
 // PMActivityService contains activity logging business logic.
 type PMActivityService struct {
-	activityRepo *repository.PMActivityRepository
+	activityRepo   *repository.PMActivityRepository
+	summaryRefresh CompanySummaryRefreshRequester
+}
+
+// SetCompanySummaryRefresh enables account-summary invalidation for linked task and deal milestones.
+func (s *PMActivityService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *PMActivityService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // NewPMActivityService creates a new PMActivityService.
@@ -78,6 +86,11 @@ func (s *PMActivityService) log(ctx context.Context, workspaceID, entityType, en
 	}
 	if err := s.activityRepo.Create(ctx, entry); err != nil {
 		return err
+	}
+	if s.summaryRefresh != nil && (entityType == model.CRMObjectTask || entityType == model.CRMObjectDeal) {
+		if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, entityType, entityID); err != nil {
+			slog.ErrorContext(ctx, "failed to request company summary refresh from pm activity", "error", err, "entity_type", entityType, "entity_id", entityID)
+		}
 	}
 	return nil
 }

@@ -849,7 +849,7 @@ export function useApplyEnrichmentSuggestion(wsId: string) {
 
 export function useBuyerSignals(
   wsId: string,
-  filters?: { contact_id?: string; deal_id?: string; signal_type?: string },
+  filters?: { contact_id?: string; deal_id?: string; company_id?: string; signal_type?: string },
 ) {
   return useQuery({
     queryKey: [...queryKeys.crm.signals(wsId), filters],
@@ -874,12 +874,36 @@ export function useDealSignals(wsId: string, dealId: string) {
   })
 }
 
+export function useCompanySignals(wsId: string, companyId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.companySignals(wsId, companyId),
+    queryFn: async () => unwrap(await crmSignalService.listByCompany(wsId, companyId)),
+    enabled: !!wsId && !!companyId,
+  })
+}
+
 export function useCreateBuyerSignal(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMBuyerSignalRequest) => unwrap(await crmSignalService.create(data)),
+    onSuccess: (_result, data) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+      if (data.contact_id) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, data.contact_id) })
+      if (data.deal_id) qc.invalidateQueries({ queryKey: queryKeys.crm.dealSignals(wsId, data.deal_id) })
+      if (data.company_id) qc.invalidateQueries({ queryKey: queryKeys.crm.companySignals(wsId, data.company_id) })
+    },
+  })
+}
+
+export function useDismissBuyerSignal(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (signalId: string) => unwrap(await crmSignalService.dismiss(wsId, signalId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+      if (contactId) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, contactId) })
+      if (dealId) qc.invalidateQueries({ queryKey: queryKeys.crm.dealSignals(wsId, dealId) })
+      if (companyId) qc.invalidateQueries({ queryKey: queryKeys.crm.companySignals(wsId, companyId) })
     },
   })
 }
@@ -900,8 +924,38 @@ export function useRefreshContactSummary(wsId: string, contactId: string) {
   const qc = useQueryClient()
   const queryKey = queryKeys.crm.contactSummary(wsId, contactId)
   return useMutation({
-    mutationFn: async () => unwrap(await crmSummaryService.refreshContact(wsId, contactId)),
-    onSuccess: (summary) => qc.setQueryData(queryKey, summary),
+    mutationFn: async () => unwrap(await crmSummaryService.refreshContactIntelligence(wsId, contactId)),
+    onSuccess: (result) => {
+      qc.setQueryData(queryKey, result.summary)
+      qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, contactId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey }),
+  })
+}
+
+export function useCompanySummary(wsId: string, companyId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.companySummary(wsId, companyId),
+    queryFn: async () => unwrap(await crmSummaryService.getForCompany(wsId, companyId)),
+    enabled: !!wsId && !!companyId,
+    refetchInterval: (query) => {
+      const summary = query.state.data as { status?: string } | null | undefined
+      return summary?.status === 'pending_refresh' || summary?.status === 'stale' ? 15000 : false
+    },
+  })
+}
+
+export function useRefreshCompanySummary(wsId: string, companyId: string) {
+  const qc = useQueryClient()
+  const queryKey = queryKeys.crm.companySummary(wsId, companyId)
+  return useMutation({
+    mutationFn: async () => unwrap(await crmSummaryService.refreshCompanyIntelligence(wsId, companyId)),
+    onSuccess: (result) => {
+      qc.setQueryData(queryKey, result.summary)
+      qc.invalidateQueries({ queryKey: queryKeys.crm.companySignals(wsId, companyId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+    },
     onSettled: () => qc.invalidateQueries({ queryKey }),
   })
 }
@@ -922,8 +976,12 @@ export function useRefreshDealSummary(wsId: string, dealId: string) {
   const qc = useQueryClient()
   const queryKey = queryKeys.crm.dealSummary(wsId, dealId)
   return useMutation({
-    mutationFn: async () => unwrap(await crmSummaryService.refreshDeal(wsId, dealId)),
-    onSuccess: (summary) => qc.setQueryData(queryKey, summary),
+    mutationFn: async () => unwrap(await crmSummaryService.refreshDealIntelligence(wsId, dealId)),
+    onSuccess: (result) => {
+      qc.setQueryData(queryKey, result.summary)
+      qc.invalidateQueries({ queryKey: queryKeys.crm.dealSignals(wsId, dealId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+    },
     onSettled: () => qc.invalidateQueries({ queryKey }),
   })
 }

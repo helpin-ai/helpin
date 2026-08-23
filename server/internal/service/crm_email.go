@@ -1324,9 +1324,23 @@ func (s *CRMEmailService) requestSummaryRefreshForMessage(ctx context.Context, m
 		return
 	}
 
+	companyRefresh, canRefreshCompanies := s.summaryRefresh.(CompanySummaryRefreshRequester)
 	if message.DealID != nil && *message.DealID != "" {
 		if err := s.summaryRefresh.RequestDealRefresh(ctx, message.WorkspaceID, *message.DealID); err != nil {
 			slog.ErrorContext(ctx, "failed to request deal summary refresh from crm email message", "error", err, "workspace_id", message.WorkspaceID, "deal_id", *message.DealID, "message_id", message.ID, "source", source)
+		}
+		if canRefreshCompanies {
+			if err := companyRefresh.RequestCompanyRefreshForObject(ctx, message.WorkspaceID, model.CRMObjectDeal, *message.DealID); err != nil {
+				slog.ErrorContext(ctx, "failed to request company summary refresh from crm email deal", "error", err, "workspace_id", message.WorkspaceID, "deal_id", *message.DealID, "message_id", message.ID, "source", source)
+			}
+		}
+	}
+
+	if canRefreshCompanies {
+		for _, contactID := range message.ContactIDs {
+			if err := companyRefresh.RequestCompanyRefreshForObject(ctx, message.WorkspaceID, model.CRMObjectContact, contactID); err != nil {
+				slog.ErrorContext(ctx, "failed to request company summary refresh from crm email contact", "error", err, "workspace_id", message.WorkspaceID, "contact_id", contactID, "message_id", message.ID, "source", source)
+			}
 		}
 	}
 

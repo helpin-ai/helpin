@@ -141,6 +141,53 @@ func TestCRMCompanyTimelinePortableOrderingFilteringAndCursor(t *testing.T) {
 	}
 }
 
+func TestCRMCompanyTimelinePortableIncludesLinkedContactAndDealActivity(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:company-linked-timeline?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE crm_activities (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, activity_type TEXT NOT NULL,
+		contact_id TEXT, company_id TEXT, deal_id TEXT, owner_member_id TEXT,
+		subject TEXT, body TEXT, occurred_at DATETIME NOT NULL, metadata TEXT,
+		created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create activities table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE crm_associations (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, from_object_type TEXT NOT NULL,
+		from_object_id TEXT NOT NULL, to_object_type TEXT NOT NULL, to_object_id TEXT NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create associations table: %v", err)
+	}
+
+	workspaceID, companyID, contactID, dealID := "workspace-1", "company-1", "contact-1", "deal-1"
+	if err := db.Exec(`INSERT INTO crm_associations VALUES
+		('company-contact', ?, 'company', ?, 'contact', ?),
+		('company-deal', ?, 'company', ?, 'deal', ?)`,
+		workspaceID, companyID, contactID, workspaceID, companyID, dealID).Error; err != nil {
+		t.Fatalf("insert associations: %v", err)
+	}
+	now := time.Now().UTC()
+	contactSubject, dealSubject := "Contact meeting note", "Deal milestone note"
+	for _, activity := range []model.CRMActivity{
+		{ID: "contact-activity", WorkspaceID: workspaceID, ContactID: &contactID, ActivityType: model.CRMActivityMeeting, Subject: &contactSubject, OccurredAt: now},
+		{ID: "deal-activity", WorkspaceID: workspaceID, DealID: &dealID, ActivityType: model.CRMActivityNote, Subject: &dealSubject, OccurredAt: now.Add(-time.Minute)},
+	} {
+		if err := db.Create(&activity).Error; err != nil {
+			t.Fatalf("create activity: %v", err)
+		}
+	}
+
+	items, err := NewCRMCompanyTimelineRepository(db).List(context.Background(), workspaceID, companyID, model.CRMCompanyTimelineQuery{Filter: model.CRMCompanyTimelineFilterAll, Limit: 10})
+	if err != nil {
+		t.Fatalf("list company timeline: %v", err)
+	}
+	if len(items) != 2 || items[0].Title != contactSubject || items[1].Title != dealSubject {
+		t.Fatalf("company timeline = %#v, want linked contact and deal activity", items)
+	}
+}
+
 func TestCRMContactTimelinePortableScopesActivitiesDirectlyToContact(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:contact-timeline?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

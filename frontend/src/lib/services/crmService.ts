@@ -44,6 +44,7 @@ import type {
   CRMBuyerSignal,
   CreateCRMBuyerSignalRequest,
   CRMEntitySummary,
+  CRMIntelligenceRefreshResult,
   CRMDealHealthScore,
   CreateCRMDealHealthScoreRequest,
   CRMSuggestion,
@@ -306,6 +307,7 @@ export const crmSignalService = {
     filters?: {
       contact_id?: string;
       deal_id?: string;
+      company_id?: string;
       signal_type?: string;
       source_type?: string;
       page?: number;
@@ -313,16 +315,23 @@ export const crmSignalService = {
   ) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/signals${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   create: (payload: CreateCRMBuyerSignalRequest) => api.post<CRMBuyerSignal>(`/crm/signals${qs(payload.workspace_id)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/signals/${id}${qs(workspaceId)}`),
+  dismiss: (workspaceId: string, id: string) => api.post(`/crm/signals/${id}/dismiss${qs(workspaceId)}`, {}),
   listByContact: (workspaceId: string, contactId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listByDeal: (workspaceId: string, dealId: string, page?: number) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listByCompany: (workspaceId: string, companyId: string, page?: number) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/companies/${companyId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
 };
 
 export const crmSummaryService = {
   getForContact: (workspaceId: string, contactId: string) => api.get<CRMEntitySummary | null>(`/crm/contacts/${contactId}/summary${qs(workspaceId)}`),
   getForDeal: (workspaceId: string, dealId: string) => api.get<CRMEntitySummary | null>(`/crm/deals/${dealId}/summary${qs(workspaceId)}`),
-  refreshContact: (workspaceId: string, contactId: string) => api.post<CRMEntitySummary>(`/crm/contacts/${contactId}/summary/refresh${qs(workspaceId)}`, {}),
+  getForCompany: (workspaceId: string, companyId: string) => api.get<CRMEntitySummary | null>(`/crm/companies/${companyId}/summary${qs(workspaceId)}`),
+  refreshContact: (workspaceId: string, contactId: string) => api.post<CRMEntitySummary>(`/crm/contacts/${contactId}/summary/refresh${qs(workspaceId)}`, { force: true }),
   refreshDeal: (workspaceId: string, dealId: string) => api.post<CRMEntitySummary>(`/crm/deals/${dealId}/summary/refresh${qs(workspaceId)}`, {}),
+  refreshCompany: (workspaceId: string, companyId: string) => api.post<CRMEntitySummary>(`/crm/companies/${companyId}/summary/refresh${qs(workspaceId)}`, { force: true }),
+  refreshContactIntelligence: (workspaceId: string, contactId: string) => api.post<CRMIntelligenceRefreshResult>(`/crm/contacts/${contactId}/intelligence/refresh${qs(workspaceId)}`, {}),
+  refreshDealIntelligence: (workspaceId: string, dealId: string) => api.post<CRMIntelligenceRefreshResult>(`/crm/deals/${dealId}/intelligence/refresh${qs(workspaceId)}`, {}),
+  refreshCompanyIntelligence: (workspaceId: string, companyId: string) => api.post<CRMIntelligenceRefreshResult>(`/crm/companies/${companyId}/intelligence/refresh${qs(workspaceId)}`, {}),
 };
 
 export const crmHealthScoreService = {

@@ -13,10 +13,17 @@ import (
 // CRMDealService contains CRM deal and pipeline business logic.
 type CRMDealService struct {
 	productAnalyticsEmitter
-	dealRepo     *repository.CRMDealRepository
-	assocRepo    *repository.CRMAssociationRepository
-	activity     *PMActivityService
-	timelineRepo *repository.CRMCompanyTimelineRepository
+	dealRepo       *repository.CRMDealRepository
+	assocRepo      *repository.CRMAssociationRepository
+	activity       *PMActivityService
+	timelineRepo   *repository.CRMCompanyTimelineRepository
+	summaryRefresh CompanySummaryRefreshRequester
+}
+
+// SetCompanySummaryRefresh enables account-summary invalidation after deal changes.
+func (s *CRMDealService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMDealService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // NewCRMDealService creates a new CRMDealService.
@@ -354,6 +361,7 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		OccurredAt: deal.CreatedAt,
 		Attributes: map[string]any{"entity_id": deal.ID, "pipeline_id": deal.PipelineID, "stage_id": deal.StageID, "amount": deal.Amount, "currency": deal.Currency, "module": "crm"},
 	})
+	s.requestCompanySummaryRefresh(ctx, deal.WorkspaceID, deal.ID)
 	return created, nil
 }
 
@@ -458,6 +466,7 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 			Attributes: map[string]any{"entity_id": updated.ID, "pipeline_id": updated.PipelineID, "previous_stage_id": previousStageID, "stage_id": updated.StageID, "stage_type": stageType, "amount": updated.Amount, "currency": updated.Currency, "module": "crm"},
 		})
 	}
+	s.requestCompanySummaryRefresh(ctx, updated.WorkspaceID, updated.ID)
 	return updated, nil
 }
 
@@ -470,5 +479,15 @@ func (s *CRMDealService) Delete(ctx context.Context, id string) error {
 	if deal == nil {
 		return fmt.Errorf("deal not found")
 	}
+	s.requestCompanySummaryRefresh(ctx, deal.WorkspaceID, deal.ID)
 	return s.dealRepo.Delete(ctx, id)
+}
+
+func (s *CRMDealService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, dealID string) {
+	if s == nil || s.summaryRefresh == nil {
+		return
+	}
+	if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, model.CRMObjectDeal, dealID); err != nil {
+		slog.ErrorContext(ctx, "failed to request company summary refresh from deal", "error", err, "workspace_id", workspaceID, "deal_id", dealID)
+	}
 }

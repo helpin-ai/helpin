@@ -27,6 +27,14 @@ func NewCRMSignalService(signalRepo *repository.CRMSignalRepository, summaryRefr
 	return &CRMSignalService{signalRepo: signalRepo, summaryRefresh: summaryRefresh}
 }
 
+// ListCompanySignals returns signals rolled up through company relationships.
+func (s *CRMSignalService) ListCompanySignals(ctx context.Context, workspaceID, companyID string, pagination model.PMPagination) ([]model.CRMBuyerSignal, int64, error) {
+	if workspaceID == "" || companyID == "" {
+		return nil, 0, fmt.Errorf("workspace_id and company_id are required")
+	}
+	return s.signalRepo.ListSignalsByCompany(ctx, workspaceID, companyID, pagination)
+}
+
 // ── Buyer Signals ──
 
 // ListSignals returns buyer signals with filters and pagination.
@@ -57,6 +65,7 @@ func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRM
 		WorkspaceID:     req.WorkspaceID,
 		ContactID:       req.ContactID,
 		DealID:          req.DealID,
+		CompanyID:       req.CompanyID,
 		SignalType:      req.SignalType,
 		SourceType:      sourceType,
 		SourceID:        req.SourceID,
@@ -78,6 +87,14 @@ func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRM
 // DeleteSignal removes a buyer signal.
 func (s *CRMSignalService) DeleteSignal(ctx context.Context, id string) error {
 	return s.signalRepo.DeleteSignal(ctx, id)
+}
+
+// DismissSignal hides a signal until the detector observes materially changed evidence.
+func (s *CRMSignalService) DismissSignal(ctx context.Context, workspaceID, id, memberID string) error {
+	if workspaceID == "" || id == "" || memberID == "" {
+		return fmt.Errorf("workspace_id, signal_id, and member_id are required")
+	}
+	return s.signalRepo.DismissSignal(ctx, workspaceID, id, memberID, time.Now().UTC())
 }
 
 // ── Deal Health Scores ──
@@ -140,6 +157,25 @@ func (s *CRMSignalService) requestSummaryRefresh(ctx context.Context, signal *mo
 	if signal.DealID != nil && *signal.DealID != "" {
 		if err := s.summaryRefresh.RequestDealRefresh(ctx, signal.WorkspaceID, *signal.DealID); err != nil {
 			slog.ErrorContext(ctx, "failed to request deal summary refresh from manual crm signal", "error", err, "workspace_id", signal.WorkspaceID, "deal_id", *signal.DealID, "signal_id", signal.ID)
+		}
+	}
+	companyRefresh, canRefreshCompany := s.summaryRefresh.(CompanySummaryRefreshRequester)
+	if !canRefreshCompany {
+		return
+	}
+	if signal.DealID != nil && *signal.DealID != "" {
+		if err := companyRefresh.RequestCompanyRefreshForObject(ctx, signal.WorkspaceID, model.CRMObjectDeal, *signal.DealID); err != nil {
+			slog.ErrorContext(ctx, "request company summary refresh from crm signal deal", "error", err, "deal_id", *signal.DealID)
+		}
+	}
+	if signal.ContactID != nil && *signal.ContactID != "" {
+		if err := companyRefresh.RequestCompanyRefreshForObject(ctx, signal.WorkspaceID, model.CRMObjectContact, *signal.ContactID); err != nil {
+			slog.ErrorContext(ctx, "request company summary refresh from crm signal contact", "error", err, "contact_id", *signal.ContactID)
+		}
+	}
+	if signal.CompanyID != nil && *signal.CompanyID != "" {
+		if err := companyRefresh.RequestCompanyRefreshForObject(ctx, signal.WorkspaceID, model.CRMObjectCompany, *signal.CompanyID); err != nil {
+			slog.ErrorContext(ctx, "request company summary refresh from crm signal", "error", err, "company_id", *signal.CompanyID)
 		}
 	}
 }
