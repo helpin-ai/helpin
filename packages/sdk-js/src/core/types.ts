@@ -43,6 +43,19 @@ export interface LeadProps extends EventPayload {
 	identity_verification?: IdentityVerification;
 }
 
+export type FormCaptureConfig = {
+  selector: string;
+  formId: string;
+  fields?: string[];
+};
+
+export type InteractionCaptureRule = {
+  ruleKey: string;
+  version: number;
+  clickSelectors?: string[];
+  scrollMilestones?: number[];
+};
+
 export interface Transport {
   send(payload: any): Promise<void>;
 }
@@ -106,6 +119,8 @@ type CamelCaseConfig = {
   widgetRuntimeUrl?: string;
   widgetRuntimeChannel?: string;
   widgetRuntimeVersion?: string;
+  formCapture?: FormCaptureConfig[];
+  interactionCaptureRules?: InteractionCaptureRule[];
 };
 
 type SnakeCaseConfig = {
@@ -140,6 +155,8 @@ type SnakeCaseConfig = {
   widget_runtime_url?: string;
   widget_runtime_channel?: string;
   widget_runtime_version?: string;
+  form_capture?: FormCaptureConfig[];
+  interaction_capture_rules?: InteractionCaptureRule[];
 };
 
 export type Config = Partial<CamelCaseConfig & SnakeCaseConfig> & {
@@ -174,6 +191,7 @@ export interface HelpinGlobal {
   ): void;
   (command: 'rawTrack', payload: any): void;
   (command: 'lead', payload: LeadProps, directSend?: boolean): void;
+  (command: 'articleView', articleId: string, properties?: EventPayload): void;
   (command: 'setUserId', userId: string): void;
   (command: 'onLoad', callback: () => void): void;
   (command: 'show', ...args: never[]): void;
@@ -216,6 +234,7 @@ export interface HelpinGlobal {
   ): void;
   rawTrack(payload: any): void;
   lead(payload: LeadProps, directSend?: boolean): void;
+  articleView(articleId: string, properties?: EventPayload): void;
   setUserId(userId: string): void;
   boot(settings: { widgetKey?: string; key?: string; host?: string; user?: Record<string, unknown> }): void;
   shutdown(): void;

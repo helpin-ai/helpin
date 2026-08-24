@@ -38,6 +38,22 @@ func setupSignalRuleRepositoryTest(t *testing.T) (*gorm.DB, *CRMSignalRepository
 	return db, NewCRMSignalRepository(db)
 }
 
+func TestAdditionalCaptureRuleDimensions(t *testing.T) {
+	tests := []struct {
+		rule, wantSummary string
+	}{
+		{model.CRMSignalRuleConfiguredForm, "Configured high-intent form submitted"},
+		{model.CRMSignalRuleIdentifiedArticleView, "Identified contact viewed a relevant article"},
+		{model.CRMSignalRuleVersionedInteraction, "Versioned high-intent interaction observed"},
+	}
+	for _, test := range tests {
+		_, domain, _, source, summary := behavioralRuleDimensions(test.rule)
+		if domain != model.CRMSignalDomainWebBehavior || source != model.CRMSignalSourceWeb || summary != test.wantSummary {
+			t.Fatalf("rule %s dimensions = domain %s source %s summary %q", test.rule, domain, source, summary)
+		}
+	}
+}
+
 func TestEvaluateSupportEscalationRule(t *testing.T) {
 	db, repo := setupSignalRuleRepositoryTest(t)
 	start := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)

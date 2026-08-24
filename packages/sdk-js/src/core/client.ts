@@ -22,6 +22,7 @@ import { isWindowAvailable } from '../utils/common';
 import { HttpsTransport } from '../transport/https';
 import { persistIdentity, clearIdentity, getStoredIdentity } from './identity';
 import type { ShowArticleOptions, WidgetSettings } from './widget';
+import { ConfiguredCapture } from '../tracking/configured-capture';
 
 type WidgetCallback = (...args: any[]) => void;
 
@@ -111,6 +112,7 @@ export class HelpinClient {
   private widgetController: HelpinWidgetController | null;
   private widgetSettings: WidgetSettings | null;
   private hasBootedWidget: boolean;
+  private configuredCapture?: ConfiguredCapture;
 
   constructor(
     config: Config,
@@ -160,6 +162,16 @@ export class HelpinClient {
     if (this.config.crossDomainLinking) {
       this.manageCrossDomainLinking();
     }
+
+    this.configuredCapture?.destroy();
+    this.configuredCapture = new ConfiguredCapture(
+      this,
+      this.config.formCapture ?? this.config.form_capture ?? [],
+      this.config.interactionCaptureRules ??
+        this.config.interaction_capture_rules ??
+        [],
+    );
+    this.configuredCapture.init();
 
     // Setup page leave tracking
     this.setupPageLeaveTracking();
@@ -518,6 +530,30 @@ export class HelpinClient {
     this.sendIdentifyToBackend(resolveIdentityPayload(payload), 'sdk_lead');
   }
 
+  public articleView(articleId: string, properties: EventPayload = {}): void {
+    const normalizedId = getIdentityString(articleId);
+    if (!normalizedId) throw new Error('articleId is required');
+    const userProps = this.persistence.get('userProps') || {};
+    const verified = isObject(userProps.identity_verification);
+    const identified =
+      verified ||
+      Boolean(userProps.id || userProps.email || this.persistence.get('userId'));
+    this.track('article_view', {
+      ...properties,
+      article_id: normalizedId,
+      identity_method: verified
+        ? 'signed_widget_identity'
+        : identified
+          ? 'sdk_identify'
+          : 'anonymous_cookie',
+      identity_trust: verified
+        ? 'verified'
+        : identified
+          ? 'probabilistic'
+          : 'untrusted',
+    });
+  }
+
   private trackInternal(
     typeName: string,
     payload?: EventPayload,
@@ -871,6 +907,10 @@ export class HelpinClient {
     articleKey: string,
     options?: ShowArticleOptions,
   ): void {
+    this.articleView(articleKey, {
+      collection_id: options?.collectionId,
+      space_id: options?.spaceId,
+    });
     this.ensureWidgetBooted();
     this.widgetController?.openArticle(articleKey, options);
   }

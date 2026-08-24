@@ -147,6 +147,11 @@ func ruleSweepWindow(cadence string, now time.Time) (time.Time, time.Time, time.
 }
 
 func (e *CRMSignalRuleEvaluator) evaluateRule(ctx context.Context, config model.CRMSignalRuleConfig, start, end time.Time) ([]model.CRMSignalRuleCandidate, error) {
+	// External evidence is pushed through the normalized ingestion contract;
+	// the config remains active for scoring/version policy, not polling.
+	if config.RuleKey == model.CRMSignalRuleExternalEvidence {
+		return nil, nil
+	}
 	if config.Cadence == model.CRMSignalRuleCadenceDaily {
 		return e.signals.EvaluatePostgresSignalRule(ctx, config, start, end)
 	}

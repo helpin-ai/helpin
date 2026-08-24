@@ -379,6 +379,7 @@ func main() {
 			&model.CRMSignalFeedback{},
 			&model.CRMSignalRoutingPolicy{},
 			&model.CRMSignalDelivery{},
+			&model.CRMSignalExternalEvidence{},
 			&model.CRMEntitySummary{},
 			&model.CRMDealHealthScore{},
 			&model.CRMSuggestion{},

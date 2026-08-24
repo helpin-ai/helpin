@@ -6,7 +6,16 @@
  */
 export { HelpinClient } from './core/client';
 export { LogLevel } from './utils/logger';
-export type { Config as HelpinOptions, UserProps, LeadProps, CompanyPayload, EventPayload, ClientProperties } from './core/types';
+export type {
+  Config as HelpinOptions,
+  UserProps,
+  LeadProps,
+  CompanyPayload,
+  EventPayload,
+  ClientProperties,
+  FormCaptureConfig,
+  InteractionCaptureRule,
+} from './core/types';
 
 import { HelpinClient } from './core/client';
 import { HostedWidgetController } from './core/hosted-widget';

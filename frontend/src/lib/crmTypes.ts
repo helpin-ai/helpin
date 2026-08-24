@@ -675,7 +675,8 @@ export type CRMSignalSourceType =
   | 'crm'
   | 'pm'
   | 'web_behavior'
-  | 'product_usage';
+  | 'product_usage'
+  | 'external';
 
 export type CRMSignalDomain =
   | 'conversation'
@@ -739,6 +740,44 @@ export interface CRMBuyerSignal {
   dismissed_by_member_id?: string;
   created_at: string;
 }
+
+export type CRMExternalEvidenceType =
+  | 'funding'
+  | 'hiring'
+  | 'job_change'
+  | 'technology'
+  | 'leadership'
+  | 'third_party_intent';
+
+export interface CRMSignalExternalEvidence {
+  id: string;
+  workspace_id: string;
+  provider: string;
+  provider_evidence_id: string;
+  evidence_type: CRMExternalEvidenceType;
+  rule_key: string;
+  rule_version: number;
+  signal_type: CRMSignalType;
+  signal_domain: CRMSignalDomain;
+  polarity: CRMSignalPolarity;
+  summary: string;
+  evidence_excerpt?: string;
+  source_url?: string;
+  contact_id?: string;
+  deal_id?: string;
+  company_id?: string;
+  identity_method: string;
+  identity_trust: string;
+  provenance: Record<string, unknown>;
+  observed_at: string;
+  signal_id?: string;
+  created_at: string;
+}
+
+export type IngestCRMSignalExternalEvidenceRequest = Omit<
+  CRMSignalExternalEvidence,
+  'id' | 'signal_id' | 'created_at'
+>;
 
 export interface CRMSignalAccountStory {
   id: string;

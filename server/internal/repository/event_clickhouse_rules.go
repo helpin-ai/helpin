@@ -70,6 +70,14 @@ func (r *ClickHouseEventRepository) EvaluateBehavioralSignalRule(
 		rows, err = r.campaignReturnRows(ctx, projects, lookbackStart, windowStartedAt, windowEndedAt)
 	case model.CRMSignalRulePreIdentification:
 		rows, err = r.preIdentificationRows(ctx, projects, lookbackStart, windowStartedAt, windowEndedAt)
+	case model.CRMSignalRuleConfiguredForm:
+		rows, err = r.capturedFormRows(ctx, projects, windowStartedAt, windowEndedAt,
+			ruleStrings(config.Thresholds, "form_ids", nil))
+	case model.CRMSignalRuleIdentifiedArticleView:
+		rows, err = r.identifiedArticleRows(ctx, projects, windowStartedAt, windowEndedAt,
+			ruleStrings(config.Thresholds, "article_ids", nil))
+	case model.CRMSignalRuleVersionedInteraction:
+		rows, err = r.versionedInteractionRows(ctx, projects, windowStartedAt, windowEndedAt, config.RuleKey, config.Version)
 	default:
 		return nil, fmt.Errorf("unsupported behavioral signal rule %q", config.RuleKey)
 	}
@@ -77,6 +85,61 @@ func (r *ClickHouseEventRepository) EvaluateBehavioralSignalRule(
 		return nil, err
 	}
 	return behavioralCandidates(config, r.workspaceID, rows), nil
+}
+
+func (r *ClickHouseEventRepository) capturedFormRows(ctx context.Context, projects []string, start, end time.Time, formIDs []string) ([]behavioralRuleRow, error) {
+	projectSQL, args := clickHouseProjectFilter(projects)
+	args = append(args, start.UTC(), end.UTC())
+	formFilter := ""
+	if len(formIDs) > 0 {
+		formFilter = " AND has(?, JSONExtractString(event_attributes, 'form_id'))"
+		args = append(args, formIDs)
+	}
+	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
+		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
+		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		count() AS event_count, uniqExact(session_id) AS session_count,
+		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'form_id'))), ', ') AS evidence
+		FROM usermaven.events WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		AND event_type = '$form' AND user_anonymous_id != ''` + formFilter + `
+		GROUP BY user_anonymous_id`
+	return r.queryBehavioralRows(ctx, "configured form submissions", query, args...)
+}
+
+func (r *ClickHouseEventRepository) identifiedArticleRows(ctx context.Context, projects []string, start, end time.Time, articleIDs []string) ([]behavioralRuleRow, error) {
+	projectSQL, args := clickHouseProjectFilter(projects)
+	args = append(args, start.UTC(), end.UTC())
+	articleFilter := ""
+	if len(articleIDs) > 0 {
+		articleFilter = " AND has(?, JSONExtractString(event_attributes, 'article_id'))"
+		args = append(args, articleIDs)
+	}
+	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
+		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
+		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		count() AS event_count, uniqExact(session_id) AS session_count,
+		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'article_id'))), ', ') AS evidence
+		FROM usermaven.events WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		AND event_type = 'article_view' AND identity_trust != 'untrusted'
+		AND (user_anonymous_id != '' OR user_id != '')` + articleFilter + `
+		GROUP BY coalesce(nullIf(user_anonymous_id, ''), user_id), user_anonymous_id`
+	return r.queryBehavioralRows(ctx, "identified article views", query, args...)
+}
+
+func (r *ClickHouseEventRepository) versionedInteractionRows(ctx context.Context, projects []string, start, end time.Time, ruleKey string, version int) ([]behavioralRuleRow, error) {
+	projectSQL, args := clickHouseProjectFilter(projects)
+	args = append(args, start.UTC(), end.UTC(), ruleKey, version)
+	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
+		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
+		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		count() AS event_count, uniqExact(session_id) AS session_count,
+		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'interaction_type'))), ', ') AS evidence
+		FROM usermaven.events WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		AND event_type = '$interaction'
+		AND JSONExtractString(event_attributes, 'capture_rule_key') = ?
+		AND JSONExtractInt(event_attributes, 'capture_rule_version') = ?
+		AND user_anonymous_id != '' GROUP BY user_anonymous_id`
+	return r.queryBehavioralRows(ctx, "versioned captured interactions", query, args...)
 }
 
 func (r *ClickHouseEventRepository) pathActivityRows(ctx context.Context, projects []string, start, end time.Time, paths []string, minimumSessions int, verifiedOnly bool) ([]behavioralRuleRow, error) {
@@ -281,6 +344,12 @@ func behavioralRuleDimensions(ruleKey string) (string, string, string, string, s
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityNeutral, model.CRMSignalSourceWeb, "Anonymous traffic from a known account"
 	case model.CRMSignalRuleCampaignReturn:
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityPositive, model.CRMSignalSourceWeb, "Known visitor returned through a campaign"
+	case model.CRMSignalRuleConfiguredForm:
+		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityPositive, model.CRMSignalSourceWeb, "Configured high-intent form submitted"
+	case model.CRMSignalRuleIdentifiedArticleView:
+		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityNeutral, model.CRMSignalSourceWeb, "Identified contact viewed a relevant article"
+	case model.CRMSignalRuleVersionedInteraction:
+		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityNeutral, model.CRMSignalSourceWeb, "Versioned high-intent interaction observed"
 	default:
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityNeutral, model.CRMSignalSourceWeb, "Pre-identification activity became attributable"
 	}

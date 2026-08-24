@@ -55,6 +55,24 @@ client.pageview();
 client.open();
 ```
 
+Form, click, and scroll capture are off unless explicitly configured. Form values are limited to an allowlist and sensitive controls are never collected; click and scroll events always carry the rule key and version that requested them.
+
+```ts
+const client = helpinClient({
+  widgetKey: 'your-widget-key',
+  host: 'https://client.helpin.ai',
+  formCapture: [{ selector: '#demo-request', formId: 'demo-request', fields: ['email', 'company'] }],
+  interactionCaptureRules: [{
+    ruleKey: 'versioned_interaction',
+    version: 1,
+    clickSelectors: ['[data-helpin-intent="pricing"]'],
+    scrollMilestones: [75],
+  }],
+});
+
+client?.articleView('security-overview');
+```
+
 By default, the widget boots automatically in browser environments when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep the widget dormant until you explicitly call `boot()`, `show()`, `open()`, `openMessages()`, or `openNewMessage()`.
 
 ## Quick Start (Script Tag)

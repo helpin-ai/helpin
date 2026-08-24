@@ -39,16 +39,17 @@ const (
 
 // CRM signal source types.
 const (
-	CRMSignalSourceEmail   = "email"
-	CRMSignalSourceMeeting = "meeting"
-	CRMSignalSourceNote    = "note"
-	CRMSignalSourceCall    = "call"
-	CRMSignalSourceManual  = "manual"
-	CRMSignalSourceSupport = "support"
-	CRMSignalSourceCRM     = "crm"
-	CRMSignalSourcePM      = "pm"
-	CRMSignalSourceWeb     = "web_behavior"
-	CRMSignalSourceProduct = "product_usage"
+	CRMSignalSourceEmail    = "email"
+	CRMSignalSourceMeeting  = "meeting"
+	CRMSignalSourceNote     = "note"
+	CRMSignalSourceCall     = "call"
+	CRMSignalSourceManual   = "manual"
+	CRMSignalSourceSupport  = "support"
+	CRMSignalSourceCRM      = "crm"
+	CRMSignalSourcePM       = "pm"
+	CRMSignalSourceWeb      = "web_behavior"
+	CRMSignalSourceProduct  = "product_usage"
+	CRMSignalSourceExternal = "external"
 )
 
 // CRM signal evaluator cadences.
@@ -82,6 +83,10 @@ const (
 	CRMSignalRuleAnonymousAccountTraffic = "anonymous_account_traffic"
 	CRMSignalRuleCampaignReturn          = "campaign_attributed_return"
 	CRMSignalRulePreIdentification       = "pre_identification_history"
+	CRMSignalRuleConfiguredForm          = "configured_form_submission"
+	CRMSignalRuleIdentifiedArticleView   = "identified_article_view"
+	CRMSignalRuleVersionedInteraction    = "versioned_interaction"
+	CRMSignalRuleExternalEvidence        = "external_provider_evidence"
 )
 
 // CRMBuyerSignal represents a detected buyer signal in CRM interactions.

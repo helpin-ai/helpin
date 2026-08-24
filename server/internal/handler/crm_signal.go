@@ -222,6 +222,31 @@ func (h *CRMSignalHandler) CreateSignal(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, signal)
 }
 
+// IngestExternalEvidence accepts normalized evidence from configured providers.
+func (h *CRMSignalHandler) IngestExternalEvidence(w http.ResponseWriter, r *http.Request) {
+	var req model.IngestCRMSignalExternalEvidenceRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	if req.WorkspaceID != "" && req.WorkspaceID != workspaceID {
+		writeError(w, http.StatusBadRequest, "workspace does not match request scope")
+		return
+	}
+	req.WorkspaceID = workspaceID
+	evidence, created, err := h.signalService.IngestExternalEvidence(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, evidence)
+}
+
 // DeleteSignal handles DELETE /api/crm/signals/{id}.
 func (h *CRMSignalHandler) DeleteSignal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

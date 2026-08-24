@@ -1610,6 +1610,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals/rules/{ruleKey}/versions/{version}/activate", h.CRMSignal.ActivateRuleVersion)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals", h.CRMSignal.ListSignals)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals", h.CRMSignal.CreateSignal)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals/external-evidence", h.CRMSignal.IngestExternalEvidence)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/signals/{id}", h.CRMSignal.DeleteSignal)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals/{id}/dismiss", h.CRMSignal.DismissSignal)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals/{id}/review", h.CRMSignal.ReviewSignal)

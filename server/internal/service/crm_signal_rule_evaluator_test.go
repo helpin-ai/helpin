@@ -75,3 +75,13 @@ func TestPersistBehavioralCandidateKeepsUntrustedEvidenceContextOnly(t *testing.
 		t.Fatalf("stored trust=%s metadata=%#v", signal.EvidenceIdentityTrust, signal.Metadata)
 	}
 }
+
+func TestExternalEvidenceRuleUsesPushIngestionInsteadOfPolling(t *testing.T) {
+	evaluator := NewCRMSignalRuleEvaluator(nil, nil, nil, "test-owner")
+	rows, err := evaluator.evaluateRule(context.Background(), model.CRMSignalRuleConfig{
+		RuleKey: model.CRMSignalRuleExternalEvidence, Cadence: model.CRMSignalRuleCadenceDaily,
+	}, time.Now().Add(-time.Hour), time.Now())
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("external polling rows=%+v err=%v", rows, err)
+	}
+}
