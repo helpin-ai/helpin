@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -58,6 +59,11 @@ func (h *CRMActivityHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.WorkspaceID == "" {
 		req.WorkspaceID = getWorkspaceID(r)
+	}
+	if req.OwnerMemberID == nil {
+		if actor := authorization.GetActor(r.Context()); actor != nil && actor.WorkspaceMemberID != "" {
+			req.OwnerMemberID = &actor.WorkspaceMemberID
+		}
 	}
 	activity, err := h.activityService.Create(r.Context(), req)
 	if err != nil {

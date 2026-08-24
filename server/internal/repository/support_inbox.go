@@ -1919,9 +1919,15 @@ func (r *SupportConversationRepository) ListByLinkedStoryIDs(ctx context.Context
 }
 
 // ListByContact returns conversations linked to a CRM contact.
-func (r *SupportConversationRepository) ListByContact(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+func (r *SupportConversationRepository) ListByContact(ctx context.Context, workspaceID, contactID, status, search string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.SupportConversation{}).
 		Where("workspace_id = ? AND crm_contact_id = ?", workspaceID, contactID)
+	if trimmed := strings.TrimSpace(status); trimmed != "" && trimmed != "all" {
+		query = query.Where("status = ?", trimmed)
+	}
+	if trimmed := strings.TrimSpace(search); trimmed != "" {
+		query = query.Where("LOWER(subject) LIKE ?", "%"+strings.ToLower(trimmed)+"%")
+	}
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -1941,6 +1947,52 @@ func (r *SupportConversationRepository) ListByContact(ctx context.Context, works
 	var conversations []model.SupportConversation
 	if err := query.Order("created_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list contact conversations: %w", err)
+	}
+	return conversations, total, nil
+}
+
+// ListByCompany returns conversations linked directly to a company or to one of its contacts.
+func (r *SupportConversationRepository) ListByCompany(ctx context.Context, workspaceID, companyID, status, search string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.SupportConversation{}).
+		Where("support_conversations.workspace_id = ?", workspaceID).
+		Where(`(
+			support_conversations.crm_company_id = ?
+			OR support_conversations.crm_contact_id IN (
+				SELECT CASE WHEN ca.from_object_type = 'contact' THEN ca.from_object_id ELSE ca.to_object_id END
+				FROM crm_associations ca WHERE ca.workspace_id = support_conversations.workspace_id
+				  AND ((ca.from_object_type = 'contact' AND ca.to_object_type = 'company' AND ca.to_object_id = ?)
+				    OR (ca.to_object_type = 'contact' AND ca.from_object_type = 'company' AND ca.from_object_id = ?))
+			)
+			OR EXISTS (
+				SELECT 1 FROM crm_associations sa WHERE sa.workspace_id = support_conversations.workspace_id
+				  AND ((sa.from_object_type = 'support_conversation' AND sa.from_object_id = support_conversations.id AND sa.to_object_type = 'company' AND sa.to_object_id = ?)
+				    OR (sa.to_object_type = 'support_conversation' AND sa.to_object_id = support_conversations.id AND sa.from_object_type = 'company' AND sa.from_object_id = ?))
+			)
+		)`, companyID, companyID, companyID, companyID, companyID)
+	if trimmed := strings.TrimSpace(status); trimmed != "" && trimmed != "all" {
+		query = query.Where("support_conversations.status = ?", trimmed)
+	}
+	if trimmed := strings.TrimSpace(search); trimmed != "" {
+		query = query.Where("LOWER(support_conversations.subject) LIKE ?", "%"+strings.ToLower(trimmed)+"%")
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count company conversations: %w", err)
+	}
+	page, perPage := pagination.Page, pagination.PerPage
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 50
+	}
+	if perPage > 100 {
+		perPage = 100
+	}
+	var conversations []model.SupportConversation
+	if err := query.Order("support_conversations.updated_at DESC").Offset((page - 1) * perPage).Limit(perPage).Find(&conversations).Error; err != nil {
+		return nil, 0, fmt.Errorf("list company conversations: %w", err)
 	}
 	return conversations, total, nil
 }

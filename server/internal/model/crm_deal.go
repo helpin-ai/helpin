@@ -129,5 +129,6 @@ type CRMDealListFilters struct {
 	PipelineID    *string
 	StageID       *string
 	OwnerMemberID *string
+	ContactID     *string
 	Search        *string
 }

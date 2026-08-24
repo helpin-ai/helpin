@@ -35,6 +35,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/coordination"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
+	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -773,6 +774,7 @@ func main() {
 	pushDeviceRepo := repository.NewPushDeviceRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
+	crmCompanyTimelineRepo := repository.NewCRMCompanyTimelineRepository(db)
 	crmDealRepo := repository.NewCRMDealRepository(db)
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
@@ -1287,11 +1289,15 @@ func main() {
 	)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo).
-		SetIdentitySync(crmActivityRepo, wsPublisher)
-	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
+		SetIdentitySync(crmActivityRepo, wsPublisher).
+		SetTimelineRepository(crmCompanyTimelineRepo)
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo).
+		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmContactService.SetProductAnalyticsService(productAnalytics)
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)
-	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
+		SetActivityService(pmActivityService).
+		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
@@ -1315,14 +1321,25 @@ func main() {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
 	}
 
-	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
+	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient).
+		SetCompanyEvidenceRepositories(crmCompanyTimelineRepo, pmTaskRepo, supportConversationRepo)
+	crmContactService.SetCompanySummaryRefresh(crmSummaryService)
+	crmCompanyService.SetCompanySummaryRefresh(crmSummaryService)
+	crmDealService.SetCompanySummaryRefresh(crmSummaryService)
+	crmAssociationService.SetCompanySummaryRefresh(crmSummaryService)
+	crmActivityService.SetCompanySummaryRefresh(crmSummaryService)
+	pmActivityService.SetCompanySummaryRefresh(crmSummaryService)
 	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
-	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
+	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo).
+		SetCompanySummaryRefresh(crmSummaryService).
+		SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo).
 		SetActivityRepository(crmActivityRepo).
-		SetWebsocketPublisher(wsPublisher)
-	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService)
+		SetWebsocketPublisher(wsPublisher).
+		SetCompanySummaryRefresh(crmSummaryService)
+	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService).
+		SetHealthScoreDependencies(crmDealRepo)
 	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
@@ -1486,7 +1503,10 @@ func main() {
 		}()
 	}
 
-	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
+	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService).
+		SetHealthScoreRefresh(crmSignalService)
+	crmSummaryService.SetIntelligenceDependencies(signalDetectionService, crmActivityRepo, supportMessageRepo)
+	crmActivityService.SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	_ = signalDetectionService // Used by Temporal workers
 
@@ -1532,7 +1552,9 @@ func main() {
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
-	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService)
+	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
+		SetCompanySummaryRefresh(crmSummaryService).
+		SetSignalDetection(supportMessageRepo, supportConversationRepo, crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation))
 	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
 	supportAIService.SetSupportAIRetrievalTraceRecorder(supportCoverageTraceService)
@@ -1915,6 +1937,35 @@ func main() {
 		}
 	}
 
+	// Produce explainable deal-health snapshots on startup and every six hours.
+	healthScoreDone := make(chan struct{})
+	go func() {
+		runHealthScoreSweep := func() {
+			workspaceIDs, err := workspaceRepo.ListIDs(context.Background())
+			if err != nil {
+				slog.Error("list workspaces for deal health sweep", "error", err)
+				return
+			}
+			for _, workspaceID := range workspaceIDs {
+				if err := crmSignalService.RefreshWorkspaceHealthScores(context.Background(), workspaceID); err != nil {
+					slog.Warn("deal health sweep failed", "error", err, "workspace_id", workspaceID)
+				}
+			}
+		}
+
+		runHealthScoreSweep()
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runHealthScoreSweep()
+			case <-healthScoreDone:
+				return
+			}
+		}
+	}()
+
 	// Start background ticker for digest email delivery.
 	digestDone := make(chan struct{})
 	go func() {
@@ -2119,6 +2170,7 @@ func main() {
 		emailFallbackCancel()
 	}
 	close(digestDone)
+	close(healthScoreDone)
 	close(supportReplyEmailDone)
 	close(billingTrialExpiryDone)
 	close(cleanupDone)

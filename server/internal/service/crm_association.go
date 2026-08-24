@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -11,7 +12,14 @@ import (
 
 // CRMAssociationService contains CRM association business logic.
 type CRMAssociationService struct {
-	assocRepo *repository.CRMAssociationRepository
+	assocRepo      *repository.CRMAssociationRepository
+	summaryRefresh CompanySummaryRefreshRequester
+}
+
+// SetCompanySummaryRefresh enables account-summary invalidation after link changes.
+func (s *CRMAssociationService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMAssociationService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // NewCRMAssociationService creates a new CRMAssociationService.
@@ -47,6 +55,7 @@ func (s *CRMAssociationService) Create(ctx context.Context, req model.CreateCRMA
 	if err := s.applyAssociationSemantics(ctx, assoc, req); err != nil {
 		return nil, err
 	}
+	s.requestCompanySummaryRefresh(ctx, assoc)
 	return assoc, nil
 }
 
@@ -158,7 +167,15 @@ func crmAssociationStringPtr(value string) *string {
 
 // Delete removes an association.
 func (s *CRMAssociationService) Delete(ctx context.Context, id string) error {
-	return s.assocRepo.Delete(ctx, id)
+	assoc, err := s.assocRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.assocRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	s.requestCompanySummaryRefresh(ctx, assoc)
+	return nil
 }
 
 // GetScoped returns an association only when it belongs to the supplied workspace.
@@ -179,7 +196,23 @@ func (s *CRMAssociationService) DeleteScoped(ctx context.Context, workspaceID, i
 	if err != nil {
 		return err
 	}
-	return s.assocRepo.Delete(ctx, assoc.ID)
+	if err := s.assocRepo.Delete(ctx, assoc.ID); err != nil {
+		return err
+	}
+	s.requestCompanySummaryRefresh(ctx, assoc)
+	return nil
+}
+
+func (s *CRMAssociationService) requestCompanySummaryRefresh(ctx context.Context, assoc *model.CRMAssociation) {
+	if s == nil || s.summaryRefresh == nil || assoc == nil {
+		return
+	}
+	objects := [][2]string{{assoc.FromObjectType, assoc.FromObjectID}, {assoc.ToObjectType, assoc.ToObjectID}}
+	for _, object := range objects {
+		if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, assoc.WorkspaceID, object[0], object[1]); err != nil {
+			slog.ErrorContext(ctx, "failed to request company summary refresh from crm association", "error", err, "association_id", assoc.ID, "object_type", object[0], "object_id", object[1])
+		}
+	}
 }
 
 // SetPrimaryContactCompany creates or reuses a contact-company association and
@@ -222,10 +255,81 @@ func (s *CRMAssociationService) ListByObjectEnriched(ctx context.Context, worksp
 	if err != nil {
 		return nil, err
 	}
-	if objectType != model.CRMObjectCompany || objectID == "" {
+	if objectID == "" {
 		return assocs, nil
 	}
-	return s.appendInferredCompanyContactAssociations(ctx, workspaceID, objectID, assocs)
+	switch objectType {
+	case model.CRMObjectCompany:
+		return s.appendInferredCompanyContactAssociations(ctx, workspaceID, objectID, assocs)
+	case model.CRMObjectDeal:
+		return s.appendInferredDealContactCompanies(ctx, workspaceID, objectID, assocs)
+	default:
+		return assocs, nil
+	}
+}
+
+func (s *CRMAssociationService) appendInferredDealContactCompanies(
+	ctx context.Context,
+	workspaceID, dealID string,
+	assocs []model.CRMAssociationEnriched,
+) ([]model.CRMAssociationEnriched, error) {
+	if len(assocs) == 0 {
+		return assocs, nil
+	}
+
+	seen := make(map[string]struct{}, len(assocs))
+	enriched := append([]model.CRMAssociationEnriched(nil), assocs...)
+	for _, assoc := range assocs {
+		otherType, otherID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectDeal, dealID)
+		seen[otherType+":"+otherID] = struct{}{}
+	}
+
+	for _, assoc := range assocs {
+		otherType, contactID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectDeal, dealID)
+		if otherType != model.CRMObjectContact {
+			continue
+		}
+
+		contactAssocs, err := s.assocRepo.ListByObjectEnriched(ctx, workspaceID, model.CRMObjectContact, contactID)
+		if err != nil {
+			return nil, err
+		}
+		contextName := strings.TrimSpace(assoc.LinkedObjectName)
+		if contextName == "" {
+			contextName = "contact"
+		}
+		contextLabel := "via " + contextName
+
+		for _, contactAssoc := range contactAssocs {
+			inferredType, companyID := otherAssociationSide(contactAssoc.CRMAssociation, model.CRMObjectContact, contactID)
+			if inferredType != model.CRMObjectCompany {
+				continue
+			}
+			key := inferredType + ":" + companyID
+			if _, exists := seen[key]; exists {
+				continue
+			}
+
+			enriched = append(enriched, model.CRMAssociationEnriched{
+				CRMAssociation: model.CRMAssociation{
+					WorkspaceID:    workspaceID,
+					FromObjectType: model.CRMObjectDeal,
+					FromObjectID:   dealID,
+					ToObjectType:   model.CRMObjectCompany,
+					ToObjectID:     companyID,
+				},
+				LinkedObjectName:        contactAssoc.LinkedObjectName,
+				LinkedObjectDisplayID:   contactAssoc.LinkedObjectDisplayID,
+				LinkedObjectStatus:      contactAssoc.LinkedObjectStatus,
+				LinkedObjectStatusColor: contactAssoc.LinkedObjectStatusColor,
+				Inferred:                true,
+				ContextLabel:            &contextLabel,
+			})
+			seen[key] = struct{}{}
+		}
+	}
+
+	return enriched, nil
 }
 
 func (s *CRMAssociationService) appendInferredCompanyContactAssociations(

@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -11,13 +15,128 @@ import (
 
 // CRMCompanyService contains CRM company business logic.
 type CRMCompanyService struct {
-	companyRepo *repository.CRMCompanyRepository
+	companyRepo    *repository.CRMCompanyRepository
+	timelineRepo   *repository.CRMCompanyTimelineRepository
+	summaryRefresh CompanySummaryRefreshRequester
 	productAnalyticsEmitter
+}
+
+// SetCompanySummaryRefresh enables summary invalidation after company changes.
+func (s *CRMCompanyService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMCompanyService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // NewCRMCompanyService creates a new CRMCompanyService.
 func NewCRMCompanyService(companyRepo *repository.CRMCompanyRepository) *CRMCompanyService {
 	return &CRMCompanyService{companyRepo: companyRepo}
+}
+
+// SetTimelineRepository enables the unified company timeline read model.
+func (s *CRMCompanyService) SetTimelineRepository(repo *repository.CRMCompanyTimelineRepository) *CRMCompanyService {
+	s.timelineRepo = repo
+	return s
+}
+
+type crmTimelineCursor struct {
+	Version int       `json:"v"`
+	At      time.Time `json:"at"`
+	ID      string    `json:"id"`
+}
+
+// ListTimeline returns one cursor-paginated page of the unified company timeline.
+func (s *CRMCompanyService) ListTimeline(
+	ctx context.Context,
+	workspaceID, companyID, filter, cursor string,
+	limit int,
+) (*model.CRMCompanyTimelinePage, error) {
+	if workspaceID == "" || companyID == "" {
+		return nil, fmt.Errorf("workspace_id and company_id are required")
+	}
+	if s.timelineRepo == nil {
+		return nil, fmt.Errorf("company timeline is not configured")
+	}
+	company, err := s.GetByID(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	if company.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("company not found")
+	}
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		filter = model.CRMCompanyTimelineFilterAll
+	}
+	if !validCRMTimelineFilter(filter) {
+		return nil, fmt.Errorf("invalid timeline filter")
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	query := model.CRMCompanyTimelineQuery{Filter: filter, Limit: limit + 1}
+	if cursor != "" {
+		decoded, err := decodeCRMTimelineCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		query.CursorAt = &decoded.At
+		query.CursorID = decoded.ID
+	}
+	items, err := s.timelineRepo.List(ctx, workspaceID, companyID, query)
+	if err != nil {
+		return nil, err
+	}
+	page := &model.CRMCompanyTimelinePage{Data: items}
+	if len(items) > limit {
+		page.Data = items[:limit]
+		last := page.Data[len(page.Data)-1]
+		next, err := encodeCRMTimelineCursor(crmTimelineCursor{Version: 1, At: last.OccurredAt, ID: last.ID})
+		if err != nil {
+			return nil, err
+		}
+		page.NextCursor = &next
+	}
+	return page, nil
+}
+
+func validCRMTimelineFilter(filter string) bool {
+	switch filter {
+	case model.CRMCompanyTimelineFilterAll,
+		model.CRMCompanyTimelineFilterNote,
+		model.CRMCompanyTimelineFilterEmail,
+		model.CRMCompanyTimelineFilterCall,
+		model.CRMCompanyTimelineFilterMeeting,
+		model.CRMCompanyTimelineFilterTask,
+		model.CRMCompanyTimelineFilterDeal,
+		model.CRMCompanyTimelineFilterSupport:
+		return true
+	default:
+		return false
+	}
+}
+
+func encodeCRMTimelineCursor(cursor crmTimelineCursor) (string, error) {
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return "", fmt.Errorf("encode CRM timeline cursor: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeCRMTimelineCursor(value string) (*crmTimelineCursor, error) {
+	payload, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid timeline cursor")
+	}
+	var cursor crmTimelineCursor
+	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.Version != 1 || cursor.At.IsZero() || cursor.ID == "" {
+		return nil, fmt.Errorf("invalid timeline cursor")
+	}
+	return &cursor, nil
 }
 
 // List returns companies with filters and pagination.
@@ -26,6 +145,34 @@ func (s *CRMCompanyService) List(ctx context.Context, workspaceID string, filter
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
 	return s.companyRepo.List(ctx, workspaceID, filters, pagination)
+}
+
+func (s *CRMCompanyService) ListContacts(ctx context.Context, workspaceID, companyID, search string, pagination model.PMPagination) ([]model.CRMContact, int64, error) {
+	if err := s.requireCompanyWorkspace(ctx, workspaceID, companyID); err != nil {
+		return nil, 0, err
+	}
+	return s.companyRepo.ListContacts(ctx, workspaceID, companyID, search, pagination)
+}
+
+func (s *CRMCompanyService) ListDeals(ctx context.Context, workspaceID, companyID, search string, pagination model.PMPagination) ([]model.CRMDeal, int64, error) {
+	if err := s.requireCompanyWorkspace(ctx, workspaceID, companyID); err != nil {
+		return nil, 0, err
+	}
+	return s.companyRepo.ListDeals(ctx, workspaceID, companyID, search, pagination)
+}
+
+func (s *CRMCompanyService) requireCompanyWorkspace(ctx context.Context, workspaceID, companyID string) error {
+	if workspaceID == "" || companyID == "" {
+		return fmt.Errorf("workspace_id and company_id are required")
+	}
+	company, err := s.companyRepo.GetByID(ctx, companyID)
+	if err != nil {
+		return err
+	}
+	if company == nil || company.WorkspaceID != workspaceID {
+		return fmt.Errorf("company not found")
+	}
+	return nil
 }
 
 // GetByID returns a company by ID.
@@ -77,6 +224,7 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 		OccurredAt: company.CreatedAt,
 		Attributes: map[string]any{"entity_id": company.ID, "industry": company.Industry, "module": "crm"},
 	})
+	s.requestCompanySummaryRefresh(ctx, company.WorkspaceID, company.ID)
 	return company, nil
 }
 
@@ -136,6 +284,7 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 	if err := s.companyRepo.Update(ctx, company); err != nil {
 		return nil, err
 	}
+	s.requestCompanySummaryRefresh(ctx, company.WorkspaceID, company.ID)
 	return company, nil
 }
 
@@ -149,4 +298,13 @@ func (s *CRMCompanyService) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("company not found")
 	}
 	return s.companyRepo.Delete(ctx, id)
+}
+
+func (s *CRMCompanyService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, companyID string) {
+	if s == nil || s.summaryRefresh == nil {
+		return
+	}
+	if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, model.CRMObjectCompany, companyID); err != nil {
+		slog.ErrorContext(ctx, "failed to request company summary refresh from company", "error", err, "workspace_id", workspaceID, "company_id", companyID)
+	}
 }

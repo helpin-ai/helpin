@@ -1,27 +1,34 @@
 import { useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
+import { useCreateAssociation, useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
 import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
+import type { CRMDeal } from '@/lib/crmTypes';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 
 interface CreateDealDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  companyContext?: { id: string; name: string };
+  contactContext?: { id: string; name: string };
+  onDealCreated?: (deal: CRMDeal) => void;
 }
 
 const currencyOptions = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
 
-export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) {
+export function CreateDealDialog({ open, onOpenChange, companyContext, contactContext, onDealCreated }: CreateDealDialogProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const createDeal = useCreateDeal(wsId);
+  const createAssociation = useCreateAssociation(wsId);
   const { data: pipelines } = usePipelines(wsId);
   const { data: contacts } = useContacts(wsId);
 
@@ -33,6 +40,8 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
   const [currency, setCurrency] = useState('USD');
   const [closeDate, setCloseDate] = useState('');
   const [probability, setProbability] = useState('');
+
+  const selectedContactId = contactContext?.id ?? contactId;
 
   const selectedPipeline = pipelines?.find((p) => p.id === pipelineId);
   const stages = selectedPipeline?.stages ?? [];
@@ -47,7 +56,7 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
 
   const resetForm = () => {
     setName('');
-    setContactId('');
+    setContactId(contactContext?.id ?? '');
     setAmount('');
     setCurrency('USD');
     setCloseDate('');
@@ -56,13 +65,14 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !contactId || !pipelineId || !stageId) return;
+    if (!name.trim() || !selectedContactId || !pipelineId || !stageId) return;
 
+    let deal: CRMDeal;
     try {
-      const deal = await createDeal.mutateAsync({
+      deal = await createDeal.mutateAsync({
         workspace_id: wsId,
         name: name.trim(),
-        contact_id: contactId,
+        contact_id: selectedContactId,
         pipeline_id: pipelineId,
         stage_id: stageId,
         amount: amount ? parseFloat(amount) : undefined,
@@ -70,24 +80,47 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
         close_date: closeDate ? `${closeDate}T00:00:00Z` : undefined,
         probability: probability ? parseInt(probability) : undefined,
       });
-      showEntityCreatedToast({
-        entityLabel: 'Deal',
-        title: deal.name,
-        subtitle: deal.amount ? `${deal.currency} ${deal.amount.toLocaleString()}` : undefined,
-        tone: 'crm',
-        icon: entityCreatedToastIcons.deal,
-        onOpen: currentWorkspace?.slug
-          ? () => navigate({
-              to: '/w/$slug/crm/deals/$dealId',
-              params: { slug: currentWorkspace.slug, dealId: deal.id },
-            })
-          : undefined,
-      });
-      onOpenChange(false);
-      resetForm();
     } catch {
       toast.error('Failed to create deal');
+      return;
     }
+
+    const openDeal = () => {
+      if (!currentWorkspace?.slug) return;
+      openDealRoute(navigate as never, location, currentWorkspace.slug, deal.id);
+    };
+
+    if (companyContext) {
+      try {
+        await createAssociation.mutateAsync({
+          workspace_id: wsId,
+          from_object_type: 'deal',
+          from_object_id: deal.id,
+          to_object_type: 'company',
+          to_object_id: companyContext.id,
+        });
+      } catch {
+        onOpenChange(false);
+        resetForm();
+        toast.warning(`Deal created, but it could not be linked to ${companyContext.name}.`, {
+          action: { label: 'Open deal', onClick: openDeal },
+        });
+        return;
+      }
+    }
+
+    onDealCreated?.(deal);
+
+    showEntityCreatedToast({
+      entityLabel: 'Deal',
+      title: deal.name,
+      subtitle: deal.amount ? `${deal.currency} ${deal.amount.toLocaleString()}` : undefined,
+      tone: 'crm',
+      icon: entityCreatedToastIcons.deal,
+      onOpen: currentWorkspace?.slug ? openDeal : undefined,
+    });
+    onOpenChange(false);
+    resetForm();
   };
 
   return (
@@ -95,6 +128,9 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create Deal</DialogTitle>
+          <DialogDescription className="sr-only">
+            Create a deal linked to the selected CRM contact.
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -103,7 +139,7 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
           </div>
           <div className="space-y-2">
             <Label>Contact *</Label>
-            <Select value={contactId} onValueChange={setContactId}>
+            <Select value={selectedContactId} onValueChange={setContactId} disabled={!!contactContext}>
               <SelectTrigger><SelectValue placeholder="Select contact" /></SelectTrigger>
               <SelectContent>
                 {contacts?.data?.map((c) => (
@@ -169,8 +205,8 @@ export function CreateDealDialog({ open, onOpenChange }: CreateDealDialogProps) 
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={createDeal.isPending || !name.trim() || !contactId || !pipelineId || !stageId}>
-              {createDeal.isPending ? 'Creating...' : 'Create'}
+            <Button type="submit" disabled={createDeal.isPending || createAssociation.isPending || !name.trim() || !selectedContactId || !pipelineId || !stageId}>
+              {createDeal.isPending || createAssociation.isPending ? 'Creating...' : 'Create'}
             </Button>
           </DialogFooter>
         </form>

@@ -1135,7 +1135,9 @@ func (h *SupportInboxHandler) ListContactConversations(w http.ResponseWriter, r 
 	contactID := chi.URLParam(r, "id")
 	pagination := queryPagination(r)
 
-	conversations, total, err := h.supportService.ListContactConversations(r.Context(), workspaceID, contactID, pagination)
+	conversations, total, err := h.supportService.ListContactConversations(
+		r.Context(), workspaceID, contactID, r.URL.Query().Get("status"), r.URL.Query().Get("search"), pagination,
+	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1148,6 +1150,24 @@ func (h *SupportInboxHandler) ListContactConversations(w http.ResponseWriter, r 
 		"total": total,
 		"page":  pagination.Page,
 	})
+}
+
+// ListCompanyConversations handles GET /api/crm/companies/{id}/support-conversations.
+func (h *SupportInboxHandler) ListCompanyConversations(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	companyID := chi.URLParam(r, "id")
+	pagination := queryPagination(r)
+	conversations, total, err := h.supportService.ListCompanyConversations(
+		r.Context(), workspaceID, companyID, r.URL.Query().Get("status"), r.URL.Query().Get("search"), pagination,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": conversations, "total": total, "page": pagination.Page})
 }
 
 // RunAgent handles POST /api/support/tickets/{id}/run-agent.

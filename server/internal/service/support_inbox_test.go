@@ -1938,6 +1938,7 @@ func TestSupportInboxServiceListContactConversationsReturnsUnpagedTotal(t *testi
 		Role:              model.RoleOwner,
 	})
 	now := time.Now().UTC()
+	resolvedConversationID := ""
 
 	for i := 0; i < 3; i++ {
 		conversation := &model.SupportConversation{
@@ -1952,6 +1953,9 @@ func TestSupportInboxServiceListContactConversationsReturnsUnpagedTotal(t *testi
 		if err := repo.Create(ctx, conversation); err != nil {
 			t.Fatalf("create linked conversation %d: %v", i+1, err)
 		}
+		if i == 1 {
+			resolvedConversationID = conversation.ID
+		}
 		if err := db.Model(&model.SupportConversation{}).
 			Where("id = ?", conversation.ID).
 			Updates(map[string]any{
@@ -1962,7 +1966,7 @@ func TestSupportInboxServiceListContactConversationsReturnsUnpagedTotal(t *testi
 		}
 	}
 
-	conversations, total, err := svc.ListContactConversations(ctx, workspaceID, contactID, model.PMPagination{Page: 1, PerPage: 2})
+	conversations, total, err := svc.ListContactConversations(ctx, workspaceID, contactID, "", "", model.PMPagination{Page: 1, PerPage: 2})
 	if err != nil {
 		t.Fatalf("list contact conversations: %v", err)
 	}
@@ -1971,6 +1975,19 @@ func TestSupportInboxServiceListContactConversationsReturnsUnpagedTotal(t *testi
 	}
 	if total != 3 {
 		t.Fatalf("total = %d, want 3", total)
+	}
+
+	if err := db.Model(&model.SupportConversation{}).
+		Where("id = ?", resolvedConversationID).
+		Update("status", model.SupportConversationStatusResolved).Error; err != nil {
+		t.Fatalf("resolve filtered conversation: %v", err)
+	}
+	filtered, filteredTotal, err := svc.ListContactConversations(ctx, workspaceID, contactID, "resolved", "conversation 2", model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("filter contact conversations: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != resolvedConversationID || filteredTotal != 1 {
+		t.Fatalf("filtered conversations = %#v, total = %d", filtered, filteredTotal)
 	}
 }
 

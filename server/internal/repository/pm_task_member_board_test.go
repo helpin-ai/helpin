@@ -77,6 +77,22 @@ func TestPMTaskRepository_MemberBoardOrdering(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("List filters tasks across workflows by canonical state type", func(t *testing.T) {
+		stateType := model.PMStateTypeStarted
+		tasks, total, err := repo.List(
+			ctx,
+			workspaceID,
+			model.PMTaskFilters{StateType: &stateType},
+			model.PMPagination{Page: 1, PerPage: 20},
+		)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if total != 1 || len(tasks) != 1 || tasks[0].ID != "story-started" {
+			t.Fatalf("tasks = %#v, total = %d; want only story-started", taskIDsFromBoardTasks(tasks), total)
+		}
+	})
 }
 
 func TestPMTaskRepository_ListFiltersByOwnerMemberIDsFromJoinTable(t *testing.T) {

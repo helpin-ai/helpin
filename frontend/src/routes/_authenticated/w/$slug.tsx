@@ -15,6 +15,7 @@ import { Header } from '@/components/layout/Header'
 import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
 import { GlobalEpicPanel } from '@/components/pm/GlobalEpicPanel'
 import { GlobalTaskPanel } from '@/components/pm/GlobalTaskPanel'
+import { GlobalDealPanel } from '@/components/crm/GlobalDealPanel'
 import { PageContextProvider } from '@/components/command-bar/pageContext'
 import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
@@ -157,6 +158,7 @@ function WorkspaceLayout() {
               <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
               <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
               <MemoizedGlobalEpicPanel workspaceId={currentWorkspace.id} />
+              <MemoizedGlobalDealPanel workspaceId={currentWorkspace.id} />
             </PageContextProvider>
           </SidebarInset>
         </SidebarProvider>
@@ -235,4 +237,5 @@ function RouteAwareAskAgentsDock() {
 
 const MemoizedGlobalCreateModals = memo(GlobalCreateModals)
 const MemoizedGlobalTaskPanel = memo(GlobalTaskPanel)
+const MemoizedGlobalDealPanel = memo(GlobalDealPanel)
 const MemoizedGlobalEpicPanel = memo(GlobalEpicPanel)

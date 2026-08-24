@@ -662,6 +662,17 @@ func setupAgentRuntimeSupportRunTestDB(t *testing.T) *gorm.DB {
 			created_at datetime,
 			updated_at datetime
 		)`,
+		`CREATE TABLE support_messages (
+			id text PRIMARY KEY,
+			workspace_id text NOT NULL,
+			conversation_id text NOT NULL,
+			sender_type text NOT NULL,
+			message_type text NOT NULL DEFAULT 'reply',
+			system_event_type text,
+			is_internal boolean NOT NULL DEFAULT false,
+			created_at datetime,
+			deleted_at datetime
+		)`,
 		`CREATE TABLE support_widget_sessions (
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,

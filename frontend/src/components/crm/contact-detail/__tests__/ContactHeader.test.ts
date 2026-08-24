@@ -8,10 +8,10 @@ import {
 } from '../ContactHeader';
 
 describe('ContactHeader', () => {
-  it('uses a Clarify-like contact header hierarchy', () => {
-    expect(contactHeaderAvatarClassName).toContain('h-14');
-    expect(contactHeaderAvatarClassName).toContain('w-14');
-    expect(contactHeaderNameClassName).toContain('text-[24px]');
+  it('uses the compact CRM detail header hierarchy', () => {
+    expect(contactHeaderAvatarClassName).toContain('h-10');
+    expect(contactHeaderAvatarClassName).toContain('w-10');
+    expect(contactHeaderNameClassName).toContain('text-2xl');
     expect(contactHeaderLifecycleBadgeClassName).toContain('border-border/60');
     expect(contactHeaderLifecycleBadgeClassName).toContain('text-muted-foreground');
   });

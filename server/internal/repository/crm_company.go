@@ -89,6 +89,85 @@ func (r *CRMCompanyRepository) List(ctx context.Context, workspaceID string, fil
 	return companies, total, nil
 }
 
+// ListContacts returns contacts directly associated with a company.
+func (r *CRMCompanyRepository) ListContacts(ctx context.Context, workspaceID, companyID, search string, pagination model.PMPagination) ([]model.CRMContact, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.CRMContact{}).
+		Where("crm_contacts.workspace_id = ?", workspaceID).
+		Where(`EXISTS (
+			SELECT 1 FROM crm_associations ca
+			WHERE ca.workspace_id = crm_contacts.workspace_id
+			  AND ((ca.from_object_type = 'contact' AND ca.from_object_id = crm_contacts.id AND ca.to_object_type = 'company' AND ca.to_object_id = ?)
+			    OR (ca.to_object_type = 'contact' AND ca.to_object_id = crm_contacts.id AND ca.from_object_type = 'company' AND ca.from_object_id = ?))
+		)`, companyID, companyID)
+	if trimmed := strings.TrimSpace(search); trimmed != "" {
+		like := "%" + strings.ToLower(trimmed) + "%"
+		query = query.Where("LOWER(CONCAT_WS(' ', first_name, last_name, email, job_title)) LIKE ?", like)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count company contacts: %w", err)
+	}
+	page, perPage := normalizeCompanyPagination(pagination)
+	var contacts []model.CRMContact
+	if err := query.Order("updated_at DESC, id DESC").Offset((page - 1) * perPage).Limit(perPage).Find(&contacts).Error; err != nil {
+		return nil, 0, fmt.Errorf("list company contacts: %w", err)
+	}
+	return contacts, total, nil
+}
+
+// ListDeals returns deals associated with the company directly or through one of its contacts.
+func (r *CRMCompanyRepository) ListDeals(ctx context.Context, workspaceID, companyID, search string, pagination model.PMPagination) ([]model.CRMDeal, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.CRMDeal{}).
+		Where("crm_deals.workspace_id = ?", workspaceID).
+		Where(`EXISTS (
+			SELECT 1 FROM crm_associations ca
+			WHERE ca.workspace_id = crm_deals.workspace_id
+			  AND ((ca.from_object_type = 'deal' AND ca.from_object_id = crm_deals.id AND ca.to_object_type = 'company' AND ca.to_object_id = ?)
+			    OR (ca.to_object_type = 'deal' AND ca.to_object_id = crm_deals.id AND ca.from_object_type = 'company' AND ca.from_object_id = ?)
+			    OR (ca.from_object_type = 'deal' AND ca.from_object_id = crm_deals.id AND ca.to_object_type = 'contact' AND ca.to_object_id IN (
+			      SELECT CASE WHEN cca.from_object_type = 'contact' THEN cca.from_object_id ELSE cca.to_object_id END
+			      FROM crm_associations cca WHERE cca.workspace_id = crm_deals.workspace_id
+			        AND ((cca.from_object_type = 'contact' AND cca.to_object_type = 'company' AND cca.to_object_id = ?)
+			          OR (cca.to_object_type = 'contact' AND cca.from_object_type = 'company' AND cca.from_object_id = ?))
+			    ))
+			    OR (ca.to_object_type = 'deal' AND ca.to_object_id = crm_deals.id AND ca.from_object_type = 'contact' AND ca.from_object_id IN (
+			      SELECT CASE WHEN cca.from_object_type = 'contact' THEN cca.from_object_id ELSE cca.to_object_id END
+			      FROM crm_associations cca WHERE cca.workspace_id = crm_deals.workspace_id
+			        AND ((cca.from_object_type = 'contact' AND cca.to_object_type = 'company' AND cca.to_object_id = ?)
+			          OR (cca.to_object_type = 'contact' AND cca.from_object_type = 'company' AND cca.from_object_id = ?))
+			    )))
+		)`, companyID, companyID, companyID, companyID, companyID, companyID)
+	if trimmed := strings.TrimSpace(search); trimmed != "" {
+		query = query.Where("LOWER(crm_deals.name) LIKE ?", "%"+strings.ToLower(trimmed)+"%")
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count company deals: %w", err)
+	}
+	page, perPage := normalizeCompanyPagination(pagination)
+	var deals []model.CRMDeal
+	if err := query.Preload("Pipeline").Preload("Stage").Order("crm_deals.updated_at DESC, crm_deals.id DESC").Offset((page - 1) * perPage).Limit(perPage).Find(&deals).Error; err != nil {
+		return nil, 0, fmt.Errorf("list company deals: %w", err)
+	}
+	return deals, total, nil
+}
+
+func normalizeCompanyPagination(pagination model.PMPagination) (int, int) {
+	page, perPage := pagination.Page, pagination.PerPage
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 25
+	}
+	if perPage > 100 {
+		perPage = 100
+	}
+	return page, perPage
+}
+
 // GetByID returns a company by ID.
 func (r *CRMCompanyRepository) GetByID(ctx context.Context, id string) (*model.CRMCompany, error) {
 	var company model.CRMCompany

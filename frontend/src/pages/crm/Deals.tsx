@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   Activity01Icon,
   ChartIncreaseIcon,
@@ -27,6 +27,7 @@ import { DealBoard } from '@/components/crm/DealBoard';
 import { DealDisplayMenu } from '@/components/crm/DealDisplayMenu';
 import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { useTitle } from '@/hooks/useTitle';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 
 function DealPipelinePreview({ stages }: { stages: Array<{ id: string; name: string }> }) {
   const previewStages = stages.length > 0
@@ -199,6 +200,7 @@ export function DealsPage() {
   const wsId = currentWorkspace?.id ?? '';
   const wsSlug = currentWorkspace?.slug ?? '';
   const navigate = useNavigate();
+  const location = useLocation();
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
 
@@ -217,7 +219,7 @@ export function DealsPage() {
   });
   const setView = useCallback((mode: 'board' | 'list') => {
     setViewState(mode);
-    try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
+    try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch { /* Preserve the in-memory preference when storage is unavailable. */ }
   }, [VIEW_MODE_KEY]);
 
   // Pipeline selector
@@ -244,8 +246,8 @@ export function DealsPage() {
   );
 
   const handleDealClick = useCallback(
-    (id: string) => navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug: wsSlug, dealId: id } }),
-    [navigate, wsSlug],
+    (id: string) => openDealRoute(navigate as never, location, wsSlug, id),
+    [location, navigate, wsSlug],
   );
   const handleImportClick = useCallback(() => {
     if (!wsSlug) return;

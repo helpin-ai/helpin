@@ -345,7 +345,7 @@ The CRM module includes a "self-driving" automation layer that reads email threa
 - `review_threshold` (default 0.7) — signals between review and auto-execute create pending suggestions
 - Below review threshold: low-priority suggestions
 
-**Signal Types** (7): `buying_intent`, `budget_signal`, `authority_signal`, `need_signal`, `timeline_signal`, `competitor_mention`, `churn_risk`
+**Signal Types** (7): `buying_intent`, `objection`, `competitor_mention`, `budget_signal`, `timeline_signal`, `champion_signal`, `risk_signal`
 
 **Signal Sources**: `email`, `meeting`, `call`, `support`
 

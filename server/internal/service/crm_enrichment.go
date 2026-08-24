@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"net/url"
 	"strconv"
@@ -29,6 +30,13 @@ type CRMEnrichmentService struct {
 	assocRepo      *repository.CRMAssociationRepository
 	activityRepo   *repository.CRMActivityRepository
 	wsPublisher    websocket.EventPublisher
+	summaryRefresh CompanySummaryRefreshRequester
+}
+
+// SetCompanySummaryRefresh enables account-summary invalidation after enrichment changes.
+func (s *CRMEnrichmentService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMEnrichmentService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // SetActivityRepository enables immutable CRM timeline entries for enrichment changes.
@@ -215,6 +223,7 @@ func (s *CRMEnrichmentService) ApplySuggestion(ctx context.Context, workspaceID,
 		entity = "crm_company"
 	}
 	s.publishCRMEnrichment(entity, workspaceID, audit.ObjectID, req.ActorUserID)
+	s.requestCompanySummaryRefresh(ctx, workspaceID, audit.ObjectType, audit.ObjectID)
 	return audit, nil
 }
 
@@ -319,6 +328,7 @@ func (s *CRMEnrichmentService) EnrichContact(ctx context.Context, workspaceID st
 	}
 	result.EnrichmentResultID = enrichment.ID
 	s.publishCRMEnrichment("crm_contact", workspaceID, contact.ID, req.ActorUserID)
+	s.requestCompanySummaryRefresh(ctx, workspaceID, model.CRMObjectContact, contact.ID)
 	return result, nil
 }
 
@@ -445,6 +455,7 @@ func (s *CRMEnrichmentService) EnrichCompany(ctx context.Context, workspaceID st
 	}
 	result.EnrichmentResultID = enrichment.ID
 	s.publishCRMEnrichment("crm_company", workspaceID, company.ID, req.ActorUserID)
+	s.requestCompanySummaryRefresh(ctx, workspaceID, model.CRMObjectCompany, company.ID)
 	return result, nil
 }
 
@@ -567,7 +578,17 @@ func (s *CRMEnrichmentService) EnsureContactCompany(ctx context.Context, workspa
 	if _, err := s.createEnsureCompanyAudit(ctx, workspaceID, req, result); err != nil {
 		return nil, err
 	}
+	s.requestCompanySummaryRefresh(ctx, workspaceID, model.CRMObjectCompany, company.ID)
 	return result, nil
+}
+
+func (s *CRMEnrichmentService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, objectType, objectID string) {
+	if s == nil || s.summaryRefresh == nil {
+		return
+	}
+	if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, objectType, objectID); err != nil {
+		slog.WarnContext(ctx, "failed to request company summary refresh from enrichment", "error", err, "workspace_id", workspaceID, "object_type", objectType, "object_id", objectID)
+	}
 }
 
 func allowedContactEnrichmentFields() map[string]bool {

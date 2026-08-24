@@ -2,8 +2,11 @@ package model
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/helpin-ai/helpin/server/internal/crmtext"
 )
 
 // SignalParticipant captures a normalized source participant.
@@ -15,13 +18,14 @@ type SignalParticipant struct {
 
 // SignalSourcePayload is a unified format for signal detection inputs.
 type SignalSourcePayload struct {
-	SourceType             string              `json:"source_type"` // "email", "meeting", "support"
+	SourceType             string              `json:"source_type"` // email, meeting, support, note, or call
 	SourceID               string              `json:"source_id"`
 	SourceThreadID         *string             `json:"source_thread_id,omitempty"`
 	SourceThreadExternalID *string             `json:"source_thread_external_id,omitempty"`
 	WorkspaceID            string              `json:"workspace_id"`
 	ContactID              *string             `json:"contact_id"`
 	DealID                 *string             `json:"deal_id"`
+	CompanyID              *string             `json:"company_id"`
 	Subject                string              `json:"subject"`
 	Body                   string              `json:"body"`
 	Participants           []SignalParticipant `json:"participants"`
@@ -32,17 +36,7 @@ type SignalSourcePayload struct {
 
 // PayloadFromEmail builds a signal source payload from an email message.
 func PayloadFromEmail(msg *CRMEmailMessage, threadSubject string) SignalSourcePayload {
-	body := ""
-	if msg.BodyText != nil {
-		body = *msg.BodyText
-	}
-	if body == "" && msg.BodyHTML != nil {
-		body = *msg.BodyHTML
-	}
-	// Truncate body to 3000 chars
-	if len(body) > 3000 {
-		body = body[:3000]
-	}
+	body := crmtext.PreferredBody(stringValue(msg.BodyText), stringValue(msg.BodyHTML), 3000)
 
 	participants := []SignalParticipant{
 		{
@@ -80,23 +74,56 @@ func PayloadFromEmail(msg *CRMEmailMessage, threadSubject string) SignalSourcePa
 
 // PayloadFromCalendarEvent builds a signal source payload from a calendar event.
 func PayloadFromCalendarEvent(event *CRMCalendarEvent) SignalSourcePayload {
-	body := ""
-	if event.Description != nil {
-		body = *event.Description
+	if event == nil {
+		return SignalSourcePayload{}
 	}
-	if len(body) > 3000 {
-		body = body[:3000]
+	lines := make([]string, 0, len(event.Attendees)+3)
+	if description := crmtext.PlainText(stringValue(event.Description)); description != "" {
+		lines = append(lines, description)
 	}
+	lines = append(lines,
+		fmt.Sprintf("Meeting status: %s", strings.TrimSpace(event.Status)),
+		fmt.Sprintf("Meeting starts: %s", event.StartTime.UTC().Format(time.RFC3339)),
+	)
+	participants := make([]SignalParticipant, 0, len(event.Attendees))
+	direction := "bilateral"
+	for _, attendee := range event.Attendees {
+		emailAddress := strings.ToLower(strings.TrimSpace(attendee.Email))
+		if emailAddress == "" {
+			continue
+		}
+		role := CRMEmailParticipantRoleTo
+		if attendee.Organizer {
+			role = CRMEmailParticipantRoleFrom
+		}
+		participants = append(participants, SignalParticipant{Email: emailAddress, Name: strings.TrimSpace(attendee.Name), Role: role})
+		response := strings.TrimSpace(attendee.ResponseStatus)
+		if response != "" && !attendee.Self {
+			label := emailAddress
+			if strings.TrimSpace(attendee.Name) != "" {
+				label = strings.TrimSpace(attendee.Name) + " <" + emailAddress + ">"
+			}
+			lines = append(lines, fmt.Sprintf("Attendee %s response: %s", label, response))
+		}
+	}
+	var contactID *string
+	if len(event.ContactIDs) > 0 && strings.TrimSpace(event.ContactIDs[0]) != "" {
+		value := strings.TrimSpace(event.ContactIDs[0])
+		contactID = &value
+	}
+	body := crmtext.Truncate(strings.Join(lines, "\n"), 3000)
 
 	return SignalSourcePayload{
-		SourceType:  CRMSignalSourceMeeting,
-		SourceID:    event.ID,
-		WorkspaceID: event.WorkspaceID,
-		DealID:      event.DealID,
-		Subject:     event.Title,
-		Body:        body,
-		Direction:   "bilateral",
-		OccurredAt:  event.StartTime,
+		SourceType:   CRMSignalSourceMeeting,
+		SourceID:     event.ID,
+		WorkspaceID:  event.WorkspaceID,
+		ContactID:    contactID,
+		DealID:       event.DealID,
+		Subject:      event.Title,
+		Body:         body,
+		Participants: participants,
+		Direction:    direction,
+		OccurredAt:   event.StartTime,
 	}
 }
 
@@ -118,14 +145,16 @@ func PayloadFromSupportMessage(msg *SupportMessage, ticket *SupportConversation)
 	}
 
 	return SignalSourcePayload{
-		SourceType:  CRMSignalSourceSupport,
-		SourceID:    msg.ID,
-		WorkspaceID: msg.WorkspaceID,
-		ContactID:   contactID,
-		Subject:     ticket.Subject,
-		Body:        body,
-		Direction:   direction,
-		OccurredAt:  msg.CreatedAt,
+		SourceType:     CRMSignalSourceSupport,
+		SourceID:       msg.ID,
+		WorkspaceID:    msg.WorkspaceID,
+		ContactID:      contactID,
+		CompanyID:      ticket.CRMCompanyID,
+		Subject:        ticket.Subject,
+		Body:           body,
+		Direction:      direction,
+		OccurredAt:     msg.CreatedAt,
+		SourceThreadID: &ticket.ID,
 	}
 }
 

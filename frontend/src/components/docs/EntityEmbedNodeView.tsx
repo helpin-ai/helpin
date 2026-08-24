@@ -13,6 +13,7 @@ import {
 } from '@/lib/icons'
 import { openEpicRoute } from '@/components/pm/epic-detail/epicRouteNavigation'
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation'
 import { docsService } from '@/lib/services/docsService'
 import { cn } from '@/lib/utils'
 
@@ -264,7 +265,7 @@ export function EntityEmbedNodeView(props: NodeViewProps) {
       return
     }
     if (entityType === 'deal') {
-      navigate({ to: '/w/$slug/crm/deals/$dealId' as string, params: { slug: workspaceSlug, dealId: entityId } })
+      openDealRoute(navigate as never, location, workspaceSlug, entityId)
       return
     }
     if (entityType === 'contact') {

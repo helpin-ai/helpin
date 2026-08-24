@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -18,8 +19,16 @@ type CRMContactService struct {
 	productAnalyticsEmitter
 	contactRepo    *repository.CRMContactRepository
 	activityRepo   *repository.CRMActivityRepository
+	timelineRepo   *repository.CRMCompanyTimelineRepository
 	entitlementSvc *EntitlementService
 	wsPublisher    websocket.EventPublisher
+	summaryRefresh CompanySummaryRefreshRequester
+}
+
+// SetCompanySummaryRefresh enables linked-account summary invalidation after contact changes.
+func (s *CRMContactService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMContactService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // NewCRMContactService creates a new CRMContactService.
@@ -35,6 +44,12 @@ func (s *CRMContactService) SetIdentitySync(
 ) *CRMContactService {
 	s.activityRepo = activityRepo
 	s.wsPublisher = wsPublisher
+	return s
+}
+
+// SetTimelineRepository enables the unified contact timeline read model.
+func (s *CRMContactService) SetTimelineRepository(repo *repository.CRMCompanyTimelineRepository) *CRMContactService {
+	s.timelineRepo = repo
 	return s
 }
 
@@ -78,6 +93,65 @@ func (s *CRMContactService) requireContactViewEntitlement(ctx context.Context, w
 		return err
 	}
 	return s.entitlementSvc.RequireLimitUsage(ctx, workspaceID, EntitlementLimitContacts, count, 0)
+}
+
+// ListTimeline returns one cursor-paginated page of events directly related to a contact.
+func (s *CRMContactService) ListTimeline(
+	ctx context.Context,
+	workspaceID, contactID, filter, cursor string,
+	limit int,
+) (*model.CRMTimelinePage, error) {
+	if workspaceID == "" || contactID == "" {
+		return nil, fmt.Errorf("workspace_id and contact_id are required")
+	}
+	if s.timelineRepo == nil {
+		return nil, fmt.Errorf("contact timeline is not configured")
+	}
+	contact, err := s.GetByID(ctx, contactID)
+	if err != nil {
+		return nil, err
+	}
+	if contact.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("contact not found")
+	}
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		filter = model.CRMTimelineFilterAll
+	}
+	if !validCRMTimelineFilter(filter) {
+		return nil, fmt.Errorf("invalid timeline filter")
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	query := model.CRMTimelineQuery{Filter: filter, Limit: limit + 1}
+	if cursor != "" {
+		decoded, err := decodeCRMTimelineCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		query.CursorAt = &decoded.At
+		query.CursorID = decoded.ID
+	}
+	items, err := s.timelineRepo.ListContact(ctx, workspaceID, contactID, query)
+	if err != nil {
+		return nil, err
+	}
+	page := &model.CRMTimelinePage{Data: items}
+	if len(items) > limit {
+		page.Data = items[:limit]
+		last := page.Data[len(page.Data)-1]
+		next, err := encodeCRMTimelineCursor(crmTimelineCursor{Version: 1, At: last.OccurredAt, ID: last.ID})
+		if err != nil {
+			return nil, err
+		}
+		page.NextCursor = &next
+	}
+	return page, nil
 }
 
 // Create creates a contact.
@@ -144,6 +218,7 @@ func (s *CRMContactService) Create(ctx context.Context, req model.CreateCRMConta
 		OccurredAt: contact.CreatedAt,
 		Attributes: map[string]any{"entity_id": contact.ID, "lifecycle_stage": contact.LifecycleStage, "module": "crm"},
 	})
+	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	return contact, nil
 }
 
@@ -342,6 +417,7 @@ func (s *CRMContactService) UpdateWithActor(
 			ActorID:     actorUserID,
 		})
 	}
+	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	return contact, nil
 }
 
@@ -396,7 +472,17 @@ func (s *CRMContactService) Delete(ctx context.Context, id string) error {
 	if contact == nil {
 		return fmt.Errorf("contact not found")
 	}
+	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
 	return s.contactRepo.Delete(ctx, id)
+}
+
+func (s *CRMContactService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, contactID string) {
+	if s == nil || s.summaryRefresh == nil {
+		return
+	}
+	if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, model.CRMObjectContact, contactID); err != nil {
+		slog.ErrorContext(ctx, "failed to request company summary refresh from contact", "error", err, "workspace_id", workspaceID, "contact_id", contactID)
+	}
 }
 
 func seededContactName(sequence int) (string, string) {

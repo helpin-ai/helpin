@@ -368,6 +368,9 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	if got := len(itemsByCatalog["crm.deal_summary_refresh"]); got != 1 {
 		t.Fatalf("expected 1 deal summary item, got %d", got)
 	}
+	if got := len(itemsByCatalog["crm.company_summary_refresh"]); got != 1 {
+		t.Fatalf("expected 1 company summary item, got %d", got)
+	}
 	if got := len(itemsByCatalog["pm.epic_auto_start"]); got != 1 {
 		t.Fatalf("expected 1 epic auto-start item, got %d", got)
 	}

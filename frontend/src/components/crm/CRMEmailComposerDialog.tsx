@@ -106,7 +106,7 @@ export function CRMEmailComposerDialog({
 }: CRMEmailComposerDialogProps) {
   const queryClient = useQueryClient();
   const availableAccounts = useMemo(
-    () => accounts.filter((account) => account.is_active && account.status !== 'pending_oauth' && account.status !== 'disconnected'),
+    () => accounts.filter((account) => account.can_send !== false && account.is_active && account.status === 'connected'),
     [accounts],
   );
   const [accountId, setAccountId] = useState(availableAccounts[0]?.id ?? '');

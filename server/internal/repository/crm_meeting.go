@@ -70,6 +70,7 @@ func (r *CRMMeetingRepository) List(
 	}
 	query = applyMeetingAssociationFilter(query, model.CRMObjectContact, filters.ContactID)
 	query = applyMeetingAssociationFilter(query, model.CRMObjectCompany, filters.CompanyID)
+	query = applyMeetingCompanyRollupFilter(query, filters.CompanyRollupID)
 	query = applyMeetingAssociationFilter(query, model.CRMObjectDeal, filters.DealID)
 
 	var total int64
@@ -390,6 +391,31 @@ func applyMeetingAssociationFilter(query *gorm.DB, objectType string, objectID *
 		AND ((a.from_object_type = ? AND a.from_object_id = crm_meetings.id AND a.to_object_type = ? AND a.to_object_id = ?)
 		OR (a.to_object_type = ? AND a.to_object_id = crm_meetings.id AND a.from_object_type = ? AND a.from_object_id = ?))
 	)`, model.CRMObjectMeeting, objectType, strings.TrimSpace(*objectID), model.CRMObjectMeeting, objectType, strings.TrimSpace(*objectID))
+}
+
+func applyMeetingCompanyRollupFilter(query *gorm.DB, companyID *string) *gorm.DB {
+	if companyID == nil || strings.TrimSpace(*companyID) == "" {
+		return query
+	}
+	id := strings.TrimSpace(*companyID)
+	return query.Where(`EXISTS (
+		SELECT 1 FROM crm_associations a
+		WHERE a.workspace_id = crm_meetings.workspace_id
+		  AND (
+		    (a.from_object_type = 'meeting' AND a.from_object_id = crm_meetings.id AND a.to_object_type = 'company' AND a.to_object_id = ?)
+		    OR (a.to_object_type = 'meeting' AND a.to_object_id = crm_meetings.id AND a.from_object_type = 'company' AND a.from_object_id = ?)
+		    OR (a.from_object_type = 'meeting' AND a.from_object_id = crm_meetings.id AND a.to_object_type = 'contact' AND a.to_object_id IN (
+		      SELECT CASE WHEN ca.from_object_type = 'contact' THEN ca.from_object_id ELSE ca.to_object_id END FROM crm_associations ca
+		      WHERE ca.workspace_id = crm_meetings.workspace_id AND ((ca.from_object_type = 'contact' AND ca.to_object_type = 'company' AND ca.to_object_id = ?)
+		        OR (ca.to_object_type = 'contact' AND ca.from_object_type = 'company' AND ca.from_object_id = ?))
+		    ))
+		    OR (a.to_object_type = 'meeting' AND a.to_object_id = crm_meetings.id AND a.from_object_type = 'contact' AND a.from_object_id IN (
+		      SELECT CASE WHEN ca.from_object_type = 'contact' THEN ca.from_object_id ELSE ca.to_object_id END FROM crm_associations ca
+		      WHERE ca.workspace_id = crm_meetings.workspace_id AND ((ca.from_object_type = 'contact' AND ca.to_object_type = 'company' AND ca.to_object_id = ?)
+		        OR (ca.to_object_type = 'contact' AND ca.from_object_type = 'company' AND ca.from_object_id = ?))
+		    ))
+		  )
+	)`, id, id, id, id, id, id)
 }
 
 func normalizedPagination(pagination model.PMPagination) (int, int) {

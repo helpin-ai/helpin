@@ -700,10 +700,10 @@
   color: var(--rich-text-soft-foreground);
 }
 
-/* Compact PM rich text: text-sm resolves to 13.125px at the app's 93.75%
-   root scale, while 1.25rem resolves to 18.75px. */
+/* Compact PM rich text: 0.9333rem resolves to approximately 14px at the
+   app's 93.75% root scale, while 1.25rem resolves to 18.75px. */
 .pm-rich-text {
-  font-size: 0.875rem;
+  font-size: 0.9333rem;
   line-height: 1.25rem;
 }
 .pm-rich-text :where(p, ol, ul, li, blockquote, dl) {
