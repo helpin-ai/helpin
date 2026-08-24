@@ -131,8 +131,8 @@ async fn handle_ip2proxy_download() {
 #[derive(Clone)]
 struct ProcessingContext {
     bot_resolver: BotResolver,
-    geo_resolver: GeoResolver,
-    ip2proxy_resolver: IP2ProxyResolver,
+    geo_resolver: Option<GeoResolver>,
+    ip2proxy_resolver: Option<IP2ProxyResolver>,
     handler: EnrichmentHandler,
     sink: sinks::kafka_event_sink::KafkaSink,
     failed_sink: sinks::kafka_event_sink::KafkaSink,
@@ -163,8 +163,8 @@ async fn expensive_computation<'a>(
         .handler
         .process_payload(
             &payload_value,
-            &context.geo_resolver,
-            &context.ip2proxy_resolver,
+            context.geo_resolver.as_ref(),
+            context.ip2proxy_resolver.as_ref(),
             &context.bot_resolver,
             &context.uap,
         )
@@ -234,9 +234,17 @@ async fn start_simple_consumer() {
     .unwrap();
 
     let handler = EnrichmentHandler::new();
-    let geo_resolver = GeoResolver::new(&events_pipeline::geo::downloader::target_path()).unwrap();
-    let ip2proxy_resolver: IP2ProxyResolver =
-        IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+    let network_enrichment_enabled = std::env::var("NETWORK_ENRICHMENT_ENABLED")
+        .map(|value| value != "false")
+        .unwrap_or(true);
+    let geo_resolver = network_enrichment_enabled
+        .then(|| GeoResolver::new(&events_pipeline::geo::downloader::target_path()))
+        .transpose()
+        .expect("failed to load MaxMind database");
+    let ip2proxy_resolver = network_enrichment_enabled
+        .then(|| IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN"))
+        .transpose()
+        .expect("failed to load IP2Proxy database");
     let bot_resolver = BotResolver::new();
     let config: ClientConfig = create_consumer_kafka_config(brokers);
     let consumer: Arc<StreamConsumer> =
@@ -379,8 +387,15 @@ async fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::new(filter))
         .init();
 
-    handle_maxmind_db().await;
-    handle_ip2proxy_download().await;
+    let network_enrichment_enabled = std::env::var("NETWORK_ENRICHMENT_ENABLED")
+        .map(|value| value != "false")
+        .unwrap_or(true);
+    if network_enrichment_enabled {
+        handle_maxmind_db().await;
+        handle_ip2proxy_download().await;
+    } else {
+        tracing::info!("Network enrichment disabled");
+    }
 
     let num_workers = 1;
     (0..num_workers)

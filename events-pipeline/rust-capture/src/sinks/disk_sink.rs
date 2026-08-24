@@ -586,10 +586,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_dir_returns_error() {
-        let sink = DiskSink::new(PathBuf::from("/nonexistent/deeply/nested/fallback"));
+        let blocking_file =
+            std::env::temp_dir().join(format!("disk_sink_invalid_{}", Uuid::new_v4()));
+        fs::write(&blocking_file, "not a directory").unwrap();
+        let sink = DiskSink::new(blocking_file.join("fallback"));
 
         let result = sink.send(make_test_event("key")).await;
         assert!(result.is_err(), "Writing to invalid path should fail");
+        fs::remove_file(blocking_file).unwrap();
     }
 
     #[tokio::test]

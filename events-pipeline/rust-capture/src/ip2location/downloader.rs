@@ -43,6 +43,7 @@ mod tests {
     use std::path::Path;
 
     #[tokio::test]
+    #[ignore = "requires the external IP2Proxy downloader"]
     async fn test_ip2proxy_download_and_save() {
         ip2proxy_download_and_save().await.unwrap();
         // Check that the file exists.

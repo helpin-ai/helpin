@@ -33,6 +33,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "requires a licensed MaxMind database fixture"]
     fn test_geo_resolver() {
         // Create a GeoResolver with the test database file
 
@@ -66,6 +67,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a licensed MaxMind database fixture"]
     fn test_ipv6_geo_resolver() {
         // Create a GeoResolver with the test database file
 

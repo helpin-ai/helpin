@@ -212,6 +212,8 @@ impl HttpTokens {
 mod tests {
     use super::*;
 
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     struct FakeHttpTokens {
         tokens: Vec<Token>,
     }
@@ -268,6 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_tokens_missing_env_var() {
+        let _guard = ENV_LOCK.lock().await;
         // Ensure HTTP_TOKENS_URL is not set for this test
         env::remove_var("HTTP_TOKENS_URL");
 
@@ -281,6 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_tokens_http_server_error() {
+        let _guard = ENV_LOCK.lock().await;
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/tokens")
@@ -304,6 +308,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_tokens_http_not_found() {
+        let _guard = ENV_LOCK.lock().await;
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/tokens")
@@ -322,6 +327,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_tokens_invalid_json_response() {
+        let _guard = ENV_LOCK.lock().await;
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/tokens")
@@ -346,6 +352,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_tokens_success() {
+        let _guard = ENV_LOCK.lock().await;
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/tokens")
@@ -371,6 +378,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_tokens_empty_list() {
+        let _guard = ENV_LOCK.lock().await;
         let mut server = mockito::Server::new_async().await;
         let mock = server
             .mock("GET", "/tokens")

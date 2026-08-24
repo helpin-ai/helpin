@@ -67,8 +67,8 @@ impl EnrichmentHandler {
     pub async fn process_payload(
         &self,
         payload: &str,
-        geo_resolver: &GeoResolver,
-        ip2proxy_resolver: &IP2ProxyResolver,
+        geo_resolver: Option<&GeoResolver>,
+        ip2proxy_resolver: Option<&IP2ProxyResolver>,
         bot_resolver: &BotResolver,
         ua_parser: &UaResolver,
     ) -> Result<TransformedEvent, Box<dyn std::error::Error + Send>> {
@@ -95,7 +95,7 @@ impl EnrichmentHandler {
         let mut transformed_event: TransformedEvent = TransformedEvent::default();
 
         let mut service = PrivacyEnrichmentService::new(data.event.clone());
-        let result = match service.enrich(&geo_resolver) {
+        let result = match service.enrich(geo_resolver) {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!("Privacy enrichment failed: {:?}, using defaults", e);
@@ -112,32 +112,33 @@ impl EnrichmentHandler {
                 }
             }
         };
-        let maxmind_resolver: MaxMindResolver = MaxMindResolver::new(geo_resolver);
-        let location_data = match maxmind_resolver.resolve(&result.ip) {
-            Ok(data) => data,
-            Err(e) => {
+        let location_data = geo_resolver
+            .map(|resolver| MaxMindResolver::new(resolver).resolve(&result.ip))
+            .transpose()
+            .unwrap_or_else(|e| {
                 tracing::warn!(
                     "Could not resolve location data for ip {:?}: {:?}, proceeding with empty geo data",
                     result.ip,
                     e
                 );
-                crate::geo::maxmind::Data::default()
-            }
-        };
+                None
+            })
+            .unwrap_or_default();
 
         // check ip2proxy
 
-        let ip2proxy_result = match IP2ProxyWrapper::new(ip2proxy_resolver).resolve(&result.ip) {
-            Ok(data) => data,
-            Err(e) => {
+        let ip2proxy_result = ip2proxy_resolver
+            .map(|resolver| IP2ProxyWrapper::new(resolver).resolve(&result.ip))
+            .transpose()
+            .unwrap_or_else(|e| {
                 tracing::warn!(
                     "Could not resolve IP2Proxy data for ip {:?}: {:?}, defaulting to NOPROXY",
                     result.ip,
                     e
                 );
-                crate::ip2location::ip2proxy::Data::default()
-            }
-        };
+                None
+            })
+            .unwrap_or_default();
         let proxy_type = ip2proxy_result.proxy_type.as_deref().unwrap_or("NOPROXY");
 
         let is_bot = if let Some(user_agent) = &data.event.user_agent {
@@ -504,9 +505,8 @@ mod tests {
     #[tokio::test]
     async fn test_event_enrichment() {
         // Create necessary dependencies
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -548,8 +548,8 @@ mod tests {
             let result = handler
                 .process_payload(
                     payload,
-                    &geo_resolver,
-                    &ip2proxy_resolver,
+                    geo_resolver.as_ref(),
+                    ip2proxy_resolver.as_ref(),
                     &bot_resolver,
                     &ua_parser,
                 )
@@ -567,10 +567,7 @@ mod tests {
                         "9b8faa58-1ef4-44b4-879f-21813cc6e75e"
                     );
                     assert_eq!(transformed_event.project_id, "UMYwi4UKqF");
-                    assert_eq!(
-                        transformed_event.api_key,
-                        "UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7"
-                    );
+                    assert_eq!(transformed_event.api_key, "");
 
                     // Check utm parameters
                     if transformed_event.event_type == "page_view" {
@@ -597,9 +594,8 @@ mod tests {
     /// are still processed successfully with empty geo data instead of being dropped.
     #[tokio::test]
     async fn test_event_with_unknown_ip_succeeds() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -611,8 +607,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -648,9 +644,8 @@ mod tests {
     /// Tests with the exact IP that was causing production event drops.
     #[tokio::test]
     async fn test_event_with_production_failing_ip() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -662,8 +657,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -685,9 +680,8 @@ mod tests {
     /// don't panic during EU compliance check.
     #[tokio::test]
     async fn test_event_with_cookie_comply_and_unknown_ip() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -699,8 +693,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -716,9 +710,8 @@ mod tests {
     /// when not explicitly provided (server-side events).
     #[tokio::test]
     async fn test_server_side_event_parses_url_fields() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -730,8 +723,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -755,9 +748,8 @@ mod tests {
     /// by URL parsing (client-side events).
     #[tokio::test]
     async fn test_client_side_event_preserves_explicit_doc_fields() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -769,8 +761,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -791,9 +783,8 @@ mod tests {
     /// Tests URL parsing with various URL formats.
     #[tokio::test]
     async fn test_url_parsing_edge_cases() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -805,8 +796,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )

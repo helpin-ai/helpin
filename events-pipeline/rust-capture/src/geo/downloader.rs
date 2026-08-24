@@ -93,6 +93,7 @@ mod tests {
     use std::fs;
 
     #[tokio::test]
+    #[ignore = "requires MaxMind credentials and network access"]
     async fn test_download_and_save() {
         download_and_save().await.unwrap();
 

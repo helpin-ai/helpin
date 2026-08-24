@@ -93,6 +93,7 @@ Key variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PRINT_SINK` | `false` | Use PrintSink instead of Kafka |
+| `NETWORK_ENRICHMENT_ENABLED` | `true` | Load GeoIP/proxy databases; disable for credential-free local development |
 | `KAFKA_BROKERS` | `localhost:9092` | Kafka bootstrap servers |
 | `KAFKA_TOPIC` | -- | Topic for captured events |
 | `KAFKA_AUTH` | `false` | Enable Kafka authentication |
