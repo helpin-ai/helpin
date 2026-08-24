@@ -79,3 +79,6 @@ events-logs:
 
 events-smoke:
     ./events-pipeline/scripts/smoke.sh
+
+events-browser-smoke:
+    ./events-pipeline/scripts/browser-smoke.sh
