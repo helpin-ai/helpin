@@ -950,6 +950,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/routing-usage", h.SupportInbox.GetRoutingUsageStatus)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Patch("/inbox/installations", h.SupportInbox.UpdateInstallationSettings)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/regenerate-key", h.SupportInbox.RegenerateWidgetKey)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/rotate-secret", h.SupportInbox.RotateWidgetSecret)
 
 				// Canned responses
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses", h.SupportInbox.ListCannedResponses)

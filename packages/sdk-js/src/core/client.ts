@@ -1,6 +1,6 @@
 import { defaultConfig } from './config';
 import { Config } from './types';
-import { CompanyPayload, CompanyProps, EventPayload, LeadProps, Transport, UserProps } from './types';
+import { CompanyPayload, CompanyProps, EventPayload, IdentityVerification, LeadProps, Transport, UserProps } from './types';
 import { getLogger, Logger } from '../utils/logger';
 import { CookieManager } from '../utils/cookie';
 import { PageviewTracking } from '../tracking/pageviews';
@@ -31,6 +31,8 @@ type BackendIdentityPayload = {
   firstName: string;
   lastName: string;
   company?: CompanyPayload;
+	externalUserId: string;
+	identityVerification?: IdentityVerification;
 };
 
 function getIdentityString(value: unknown): string {
@@ -51,6 +53,10 @@ function resolveIdentityPayload(payload: Record<string, any>): BackendIdentityPa
     name,
     firstName,
     lastName,
+		externalUserId: getIdentityString(payload.id ?? payload.external_user_id),
+		...(isObject(payload.identity_verification)
+			? { identityVerification: payload.identity_verification as unknown as IdentityVerification }
+			: {}),
     ...(company ? { company } : {}),
   };
 }
@@ -763,7 +769,16 @@ export class HelpinClient {
     // Try widget WS path first via the public sendSessionUpgrade method
     const namespace = this.config.namespace || 'helpin';
     const nsFunc = (globalThis as any)[namespace];
-    if (nsFunc?._widgetManager?.sendSessionUpgrade?.(identity.email, identity.name, source, identity.firstName, identity.lastName, identity.company)) {
+    if (nsFunc?._widgetManager?.sendSessionUpgrade?.(
+		identity.email,
+		identity.name,
+		source,
+		identity.firstName,
+		identity.lastName,
+		identity.company,
+		identity.externalUserId,
+		identity.identityVerification,
+	)) {
       return;
     }
 
@@ -779,8 +794,10 @@ export class HelpinClient {
       name: identity.name,
       first_name: identity.firstName,
       last_name: identity.lastName,
+		external_user_id: identity.externalUserId,
       source,
       company: identity.company,
+		identity_verification: identity.identityVerification,
     });
 
     if (typeof fetch !== 'undefined') {

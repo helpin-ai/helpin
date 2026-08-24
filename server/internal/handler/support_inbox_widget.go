@@ -2,6 +2,9 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -42,7 +45,25 @@ func (h *SupportInboxWidgetHandler) GetWidgetTokens(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusInternalServerError, "failed to fetch widget tokens")
 		return
 	}
-	writeJSON(w, http.StatusOK, model.WidgetTokensResponse{Tokens: tokens})
+	response := model.WidgetTokensResponse{Tokens: tokens}
+	body, err := json.Marshal(response)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to encode widget tokens")
+		return
+	}
+	digest := sha256.Sum256(body)
+	etag := `"` + hex.EncodeToString(digest[:]) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(body); err != nil {
+		return
+	}
 }
 
 // GetConfig handles GET /api/widget/support/config?widget_key=...

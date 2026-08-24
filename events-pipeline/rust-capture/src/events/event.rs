@@ -11,6 +11,7 @@ use bytes::Bytes;
 use serde_json::from_str;
 use uuid::Uuid;
 
+use crate::auth::authorization::AuthorizedCredential;
 use crate::utils::time;
 #[derive(Deserialize, Default)]
 pub enum Compression {
@@ -105,11 +106,7 @@ fn extract_and_set_request_context(
             .map(|v| v.to_string())
             .unwrap_or_default();
         if current_api_key != serde_json::json!(token).to_string() {
-            tracing::warn!(
-                "HTTP-header value: {} differs from api_key value: {}. Overriding api_key value with token value.",
-                token,
-                current_api_key
-            );
+            tracing::debug!("request credential overrides the payload credential");
             obj.insert("api_key".to_string(), serde_json::json!(token));
         }
     }
@@ -193,11 +190,39 @@ impl Event {
 pub struct ProcessedEvent {
     pub event: Event,
     pub event_id: Uuid,
+    #[serde(default)]
+    pub authorization: Option<AuthorizedCredential>,
+    #[serde(default)]
+    pub identity_provenance: EventIdentityProvenance,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct EventIdentityProvenance {
+    pub identity_method: String,
+    pub identity_trust: String,
+    pub verified_at: Option<String>,
+    pub verifier_version: Option<String>,
+}
+
+impl Default for EventIdentityProvenance {
+    fn default() -> Self {
+        Self {
+            identity_method: "anonymous".to_string(),
+            identity_trust: "untrusted".to_string(),
+            verified_at: None,
+            verifier_version: None,
+        }
+    }
 }
 
 impl ProcessedEvent {
     pub fn key(&self) -> String {
-        format!("{}:{}", self.event.api_key, self.event_id)
+        let project_id = self
+            .authorization
+            .as_ref()
+            .map(|credential| credential.workspace_id.as_str())
+            .unwrap_or_default();
+        format!("{}:{}", project_id, self.event_id)
     }
 }
 

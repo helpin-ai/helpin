@@ -1,6 +1,6 @@
 use std::env;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use tokio::task::spawn;
@@ -9,9 +9,16 @@ use tokio::time::sleep;
 #[derive(Deserialize, Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Token {
     pub id: String,
+    pub workspace_id: String,
     pub client_secret: String,
     pub server_secret: String,
     pub origins: Vec<String>,
+    #[serde(default = "default_identity_verification_mode")]
+    pub identity_verification_mode: String,
+}
+
+fn default_identity_verification_mode() -> String {
+    "report_only".to_string()
 }
 
 #[derive(Deserialize, Debug)]
@@ -94,11 +101,20 @@ impl HttpTokens {
 
     async fn update_tokens(tokens_list: Arc<Mutex<Self>>) {
         tracing::debug!("Running background task to update tokens every 10 seconds.");
+        let mut etag: Option<String> = None;
+        let mut last_success = Instant::now();
         loop {
             sleep(Duration::from_secs(10)).await;
-            let new_tokens = match Self::fetch_tokens().await {
-                Ok(tokens) => tokens,
+            metrics::gauge!(
+                "token_registry_refresh_age_seconds",
+                last_success.elapsed().as_secs_f64()
+            );
+            let (new_tokens, next_etag) = match Self::fetch_tokens_with_etag(etag.as_deref()).await
+            {
+                Ok(result) => result,
                 Err(err) => {
+                    metrics::increment_counter!("token_registry_fetch_failures_total");
+                    metrics::increment_counter!("token_registry_stale_retentions_total");
                     tracing::warn!(
                         "Failed to fetch new tokens: {:?}. Keeping stale tokens.",
                         err
@@ -106,8 +122,16 @@ impl HttpTokens {
                     continue;
                 }
             };
+            last_success = Instant::now();
+            if let Some(next_etag) = next_etag {
+                etag = Some(next_etag);
+            }
+            let Some(new_tokens) = new_tokens else {
+                continue;
+            };
 
             if new_tokens.is_empty() {
+                metrics::increment_counter!("token_registry_stale_retentions_total");
                 tracing::warn!("Token fetch returned empty list. Keeping stale tokens.");
                 continue;
             }
@@ -133,6 +157,13 @@ impl HttpTokens {
     }
 
     async fn fetch_tokens() -> Result<Vec<Token>, String> {
+        let (tokens, _) = Self::fetch_tokens_with_etag(None).await?;
+        Ok(tokens.unwrap_or_default())
+    }
+
+    async fn fetch_tokens_with_etag(
+        etag: Option<&str>,
+    ) -> Result<(Option<Vec<Token>>, Option<String>), String> {
         let url = env::var("HTTP_TOKENS_URL")
             .map_err(|_| "HTTP_TOKENS_URL env var is not set".to_string())?;
 
@@ -143,12 +174,18 @@ impl HttpTokens {
         if let Ok(secret) = env::var("INTERNAL_API_SECRET") {
             request = request.bearer_auth(secret);
         }
+        if let Some(etag) = etag {
+            request = request.header(reqwest::header::IF_NONE_MATCH, etag);
+        }
 
         let response = request
             .send()
             .await
             .map_err(|e| format!("HTTP request to {} failed: {}", url, e))?;
 
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            return Ok((None, etag.map(ToString::to_string)));
+        }
         if !response.status().is_success() {
             return Err(format!(
                 "HTTP tokens endpoint returned status {}",
@@ -156,13 +193,18 @@ impl HttpTokens {
             ));
         }
 
+        let response_etag = response
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|value| value.to_str().ok())
+            .map(ToString::to_string);
         let tokens_response: Tokens = response
             .json()
             .await
             .map_err(|e| format!("Failed to parse tokens response: {}", e))?;
 
         tracing::debug!("Fetched {} tokens", tokens_response.tokens.len());
-        Ok(tokens_response.tokens)
+        Ok((Some(tokens_response.tokens), response_etag))
     }
 }
 
@@ -188,9 +230,11 @@ mod tests {
     async fn test_new() {
         let fake_tokens = vec![Token {
             id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
             client_secret: "secret".to_string(),
             server_secret: "secret".to_string(),
             origins: vec!["localhost".to_string()],
+            identity_verification_mode: "report_only".to_string(),
         }];
 
         let fake_http_tokens = FakeHttpTokens::new(fake_tokens.clone());
@@ -207,9 +251,11 @@ mod tests {
     async fn test_fetch_tokens() {
         let fake_tokens = vec![Token {
             id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
             client_secret: "secret".to_string(),
             server_secret: "secret".to_string(),
             origins: vec!["localhost".to_string()],
+            identity_verification_mode: "report_only".to_string(),
         }];
 
         let fake_http_tokens = FakeHttpTokens::new(fake_tokens.clone());
@@ -305,7 +351,7 @@ mod tests {
             .mock("GET", "/tokens")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{"tokens": [{"id": "1", "client_secret": "cs1", "server_secret": "ss1", "origins": ["localhost"]}]}"#)
+            .with_body(r#"{"tokens": [{"id": "1", "workspace_id": "00000000-0000-0000-0000-000000000001", "client_secret": "cs1", "server_secret": "ss1", "origins": ["localhost"]}]}"#)
             .create_async()
             .await;
 

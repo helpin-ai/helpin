@@ -13,6 +13,13 @@ export interface CompanyPayload extends EventPayload {
   };
 }
 
+export interface IdentityVerification {
+	version: 'v1';
+	issued_at: number;
+	expires_at: number;
+	signature: string;
+}
+
 export interface UserProps extends EventPayload {
   id?: string;
   email?: string;
@@ -21,6 +28,7 @@ export interface UserProps extends EventPayload {
   firstName?: string;
   lastName?: string;
   company?: CompanyPayload | null;
+	identity_verification?: IdentityVerification;
   [key: string]: any;
 }
 
@@ -31,6 +39,8 @@ export interface LeadProps extends EventPayload {
   firstName?: string;
   lastName?: string;
   company?: CompanyPayload | null;
+	id?: string;
+	identity_verification?: IdentityVerification;
 }
 
 export interface Transport {

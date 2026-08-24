@@ -29,6 +29,7 @@ func NewCRMSignalRepository(db *gorm.DB) *CRMSignalRepository {
 
 // CreateSignal inserts a buyer signal.
 func (r *CRMSignalRepository) CreateSignal(ctx context.Context, signal *model.CRMBuyerSignal) error {
+	ensureSignalDimensions(signal)
 	ensureSignalEvidenceFingerprint(signal)
 	if err := r.db.WithContext(ctx).Create(signal).Error; err != nil {
 		return fmt.Errorf("create buyer signal: %w", err)
@@ -41,6 +42,7 @@ func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *
 	if signal == nil {
 		return false, nil
 	}
+	ensureSignalDimensions(signal)
 	ensureSignalEvidenceFingerprint(signal)
 	var existing model.CRMBuyerSignal
 	err := r.db.WithContext(ctx).
@@ -59,8 +61,14 @@ func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *
 			"source_thread_id": signal.SourceThreadID, "summary": signal.Summary,
 			"evidence_excerpt": signal.EvidenceExcerpt, "metadata": signal.Metadata,
 			"confidence": signal.Confidence, "detected_at": signal.DetectedAt,
-			"evidence_fingerprint": signal.EvidenceFingerprint,
-			"dismissed_at":         nil, "dismissed_by_member_id": nil,
+			"detector_kind": signal.DetectorKind, "signal_domain": signal.SignalDomain,
+			"polarity": signal.Polarity, "rule_key": signal.RuleKey,
+			"rule_version": signal.RuleVersion, "window_started_at": signal.WindowStartedAt,
+			"window_ended_at":          signal.WindowEndedAt,
+			"evidence_identity_method": signal.EvidenceIdentityMethod,
+			"evidence_identity_trust":  signal.EvidenceIdentityTrust,
+			"evidence_fingerprint":     signal.EvidenceFingerprint,
+			"dismissed_at":             nil, "dismissed_by_member_id": nil,
 		}
 		if err := r.db.WithContext(ctx).Model(&existing).Updates(updates).Error; err != nil {
 			return false, fmt.Errorf("refresh buyer signal evidence: %w", err)
@@ -87,7 +95,12 @@ func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID strin
 		query = query.Where("dismissed_at IS NULL")
 	}
 	if !filters.IncludeLowConfidence {
-		query = query.Where("source_type = ? OR confidence >= ?", model.CRMSignalSourceManual, minimumAutomatedSignalConfidence)
+		query = query.Where(
+			"detector_kind = ? OR source_type = ? OR confidence >= ?",
+			model.CRMSignalDetectorRuleDerived,
+			model.CRMSignalSourceManual,
+			minimumAutomatedSignalConfidence,
+		)
 	}
 
 	if filters.ContactID != nil && *filters.ContactID != "" {
@@ -334,6 +347,39 @@ func ensureSignalEvidenceFingerprint(signal *model.CRMBuyerSignal) {
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	signal.EvidenceFingerprint = fmt.Sprintf("%x", sum)
+}
+
+func ensureSignalDimensions(signal *model.CRMBuyerSignal) {
+	if signal == nil {
+		return
+	}
+	if signal.DetectorKind == "" {
+		signal.DetectorKind = model.CRMSignalDetectorLLMExtracted
+	}
+	if signal.SignalDomain == "" {
+		signal.SignalDomain = model.CRMSignalDomainConversation
+	}
+	if signal.Polarity == "" {
+		switch signal.SignalType {
+		case model.CRMSignalBuyingIntent, model.CRMSignalBudgetSignal,
+			model.CRMSignalTimelineSignal, model.CRMSignalChampionSignal:
+			signal.Polarity = model.CRMSignalPolarityPositive
+		case model.CRMSignalObjection, model.CRMSignalCompetitorMention, model.CRMSignalRiskSignal:
+			signal.Polarity = model.CRMSignalPolarityNegative
+		default:
+			signal.Polarity = model.CRMSignalPolarityNeutral
+		}
+	}
+	if signal.EvidenceIdentityMethod == "" {
+		if signal.SourceType == model.CRMSignalSourceSupport {
+			signal.EvidenceIdentityMethod = model.IdentityMethodVerifiedSupport
+		} else {
+			signal.EvidenceIdentityMethod = model.IdentityMethodConnectedMailbox
+		}
+	}
+	if signal.EvidenceIdentityTrust == "" {
+		signal.EvidenceIdentityTrust = model.IdentityTrustVerified
+	}
 }
 
 // ── Deal Health Scores ──

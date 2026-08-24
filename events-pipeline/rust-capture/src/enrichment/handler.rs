@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::{error::Error, time::Instant};
 use uaparser::{Parser, UserAgentParser};
 
+use crate::auth::authorization::CredentialKind;
 use crate::events::event::ProcessedEvent;
 use crate::events::failed_event::FailedEvent;
 use crate::events::transform_event::TransformedEvent;
@@ -147,16 +148,30 @@ impl EnrichmentHandler {
         let classification = Self::determine_classification(is_bot, proxy_type);
 
         transformed_event.event_id = data.event_id.to_string();
+        transformed_event.identity_method = data.identity_provenance.identity_method.clone();
+        transformed_event.identity_trust = data.identity_provenance.identity_trust.clone();
+        transformed_event.identity_verified_at = data.identity_provenance.verified_at.clone();
+        transformed_event.identity_verifier_version =
+            data.identity_provenance.verifier_version.clone();
         transformed_event.src = data.event.src.or_else(|| Some("usermaven".to_string()));
         // payload attributes
         transformed_event.project_id = data
-            .event
-            .api_key
-            .split('.')
-            .next()
-            .unwrap_or("")
-            .to_string();
-        transformed_event.api_key = data.event.api_key.clone();
+            .authorization
+            .as_ref()
+            .map(|credential| credential.workspace_id.clone())
+            .unwrap_or_else(|| {
+                data.event
+                    .api_key
+                    .split('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            });
+        transformed_event.api_key = data
+            .authorization
+            .as_ref()
+            .map(|credential| credential.installation_id.clone())
+            .unwrap_or_default();
         transformed_event.event_type = data.event.event_type.clone();
         transformed_event.utc_time = data.event.utc_time;
         transformed_event.local_tz_offset = Some(0);
@@ -222,7 +237,11 @@ impl EnrichmentHandler {
         transformed_event.parsed_ua_bot = classification;
 
         // Check if the API key is a server-side token
-        let is_server_side_token = data.event.api_key.contains('.');
+        let is_server_side_token = data
+            .authorization
+            .as_ref()
+            .map(|credential| credential.credential_kind == CredentialKind::Server)
+            .unwrap_or_else(|| data.event.api_key.contains('.'));
 
         // Look for the timestamp in the event data
         let event_timestamp = if is_server_side_token {
@@ -301,7 +320,6 @@ impl EnrichmentHandler {
         };
         transformed_event.user_custom = user_custom_str;
 
-        tracing::debug!("User attributes: {:?}", user);
         if let Some(created_at) = user.get("created_at").and_then(|v| v.as_str()) {
             transformed_event.user_created_at = Some(created_at.to_string());
         }
@@ -474,8 +492,6 @@ impl EnrichmentHandler {
                 // }
             }
         }
-
-        tracing::debug!("Transformed event: {:?}", transformed_event);
 
         Ok(transformed_event)
     }

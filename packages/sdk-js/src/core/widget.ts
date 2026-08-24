@@ -2,6 +2,7 @@ import { mountWidget, unmountWidget, SYSTEM_EVENT_TYPES } from '@helpin-ai/widge
 import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
 import widgetStyles from '@helpin-ai/widget-core/styles?inline';
+import type { IdentityVerification } from './types';
 import { isBot } from '../utils/bot-detect';
 import {
   getOrCreateAnonymousId,
@@ -2259,7 +2260,16 @@ export class WidgetManager {
    * identify() / lead() SDK methods without going through the HTTP fallback.
    * Returns true if the message was sent, false if WS is not open.
    */
-  public sendSessionUpgrade(email: string, name: string, source: string, firstName: string = '', lastName: string = '', company?: Record<string, any>): boolean {
+  public sendSessionUpgrade(
+    email: string,
+    name: string,
+    source: string,
+    firstName: string = '',
+    lastName: string = '',
+    company?: Record<string, any>,
+    externalUserId: string = '',
+    identityVerification?: IdentityVerification,
+  ): boolean {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', {
         email,
@@ -2268,6 +2278,8 @@ export class WidgetManager {
         last_name: lastName,
         source,
         company,
+		external_user_id: externalUserId,
+		identity_verification: identityVerification,
       });
       // Persist identity so it survives page refresh
       if (this.widgetKey && email) {

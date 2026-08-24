@@ -1,10 +1,31 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 
-use crate::auth::http_tokens::HttpTokens;
+use crate::auth::http_tokens::{HttpTokens, Token};
 use axum::http::HeaderMap;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialKind {
+    Browser,
+    Server,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AuthorizedCredential {
+    pub workspace_id: String,
+    pub credential_kind: CredentialKind,
+    pub installation_id: String,
+    pub allowed_origins: Vec<String>,
+    pub identity_verification_mode: String,
+    #[serde(skip)]
+    pub signing_secret: String,
+    #[serde(skip)]
+    pub browser_key: String,
+}
 
 // This enum is used to define possible reasons for a token to be invalid.
 #[derive(Debug, PartialEq)]
@@ -100,7 +121,7 @@ pub fn validate_token(
     params: BTreeMap<std::string::String, std::string::String>,
     headers: HeaderMap,
     tokens: Arc<Mutex<HttpTokens>>,
-) -> Result<(), InvalidTokenReason> {
+) -> Result<AuthorizedCredential, InvalidTokenReason> {
     // Initialize the variables we'll use to store the api_key and _token.
     let mut api_key = String::new();
     let mut _token = String::new();
@@ -112,7 +133,7 @@ pub fn validate_token(
         } else if k == ExtractTokenConst::Token.as_str()
             || k.starts_with(ExtractTokenConst::RandomizeAPIKey.as_str())
         {
-            api_key = v.clone();
+            _token = v.clone();
         }
     }
 
@@ -132,24 +153,48 @@ pub fn validate_token(
         }
     };
 
-    // Convert the tokens list into a HashSet for efficient lookups.
-    let token_set: HashSet<_> = tokens_guard.tokens.iter().collect();
+    let effective = if !_token.is_empty() {
+        &_token
+    } else {
+        &api_key
+    };
+    if effective.is_empty() {
+        return Err(InvalidTokenReason::Empty);
+    }
 
-    // Check if the api_key or _token is found in the tokens set.
-    let found_api_key = token_set.iter().any(|token| token.client_secret == api_key);
-    let found_token = token_set.iter().any(|token| token.server_secret == _token);
-    let found_api_key_in_server_secret =
-        token_set.iter().any(|token| token.server_secret == api_key);
+    let mut matched: Option<(&Token, CredentialKind)> = None;
+    for token in &tokens_guard.tokens {
+        let kind = if token.client_secret == *effective {
+            Some(CredentialKind::Browser)
+        } else if token.server_secret == *effective {
+            Some(CredentialKind::Server)
+        } else {
+            None
+        };
+        let Some(kind) = kind else { continue };
+        if let Some((previous, _)) = matched {
+            if previous.workspace_id != token.workspace_id {
+                return Err(InvalidTokenReason::Token);
+            }
+        }
+        matched = Some((token, kind));
+    }
 
-    // If either the api_key or _token is found, set found to true.
-    let found = found_api_key || found_token || found_api_key_in_server_secret;
-
-    // If found is true, return Ok. Otherwise, return an appropriate error.
-    match found {
-        true => Ok(()),
-        false if !api_key.is_empty() => Err(InvalidTokenReason::ApiKey),
-        false if !_token.is_empty() => Err(InvalidTokenReason::Token),
-        false => Err(InvalidTokenReason::Empty),
+    match matched {
+        Some((token, credential_kind)) if !token.workspace_id.trim().is_empty() => {
+            Ok(AuthorizedCredential {
+                workspace_id: token.workspace_id.to_lowercase(),
+                credential_kind,
+                installation_id: token.id.clone(),
+                allowed_origins: token.origins.clone(),
+                identity_verification_mode: token.identity_verification_mode.clone(),
+                signing_secret: token.server_secret.clone(),
+                browser_key: token.client_secret.clone(),
+            })
+        }
+        Some(_) => Err(InvalidTokenReason::Token),
+        None if !api_key.is_empty() => Err(InvalidTokenReason::ApiKey),
+        None => Err(InvalidTokenReason::Token),
     }
 }
 
@@ -174,16 +219,23 @@ mod tests {
 
         let token = Token {
             id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
             client_secret: "secret_api_key".to_string(),
             server_secret: "secret_token".to_string(),
             origins: vec!["localhost".to_string()],
+            identity_verification_mode: "report_only".to_string(),
         };
 
         let tokens = Arc::new(Mutex::new(HttpTokens {
             tokens: vec![token],
         }));
 
-        assert_eq!(validate_token(params, headers.clone(), tokens).unwrap(), ());
+        let authorized = validate_token(params, headers.clone(), tokens).unwrap();
+        assert_eq!(authorized.credential_kind, CredentialKind::Server);
+        assert_eq!(
+            authorized.workspace_id,
+            "00000000-0000-0000-0000-000000000001"
+        );
     }
 
     #[test]
@@ -197,9 +249,11 @@ mod tests {
 
         let token = Token {
             id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
             client_secret: "secret_api_key".to_string(),
             server_secret: "secret_toaken".to_string(),
             origins: vec!["localhost".to_string()],
+            identity_verification_mode: "report_only".to_string(),
         };
 
         let tokens = Arc::new(Mutex::new(HttpTokens {
@@ -223,9 +277,11 @@ mod tests {
 
         let token = Token {
             id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
             client_secret: "secret_api_key".to_string(),
             server_secret: "secret_token".to_string(),
             origins: vec!["localhost".to_string()],
+            identity_verification_mode: "report_only".to_string(),
         };
 
         let tokens = Arc::new(Mutex::new(HttpTokens {
@@ -245,9 +301,11 @@ mod tests {
 
         let token = Token {
             id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
             client_secret: "secret_api_key".to_string(),
             server_secret: "secret_token".to_string(),
             origins: vec!["localhost".to_string()],
+            identity_verification_mode: "report_only".to_string(),
         };
 
         let tokens = Arc::new(Mutex::new(HttpTokens {
@@ -348,9 +406,11 @@ mod tests {
 
         let token = Token {
             id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
             client_secret: "secret_api_key".to_string(),
             server_secret: "secret_token".to_string(),
             origins: vec!["localhost".to_string()],
+            identity_verification_mode: "report_only".to_string(),
         };
 
         let tokens = Arc::new(Mutex::new(HttpTokens {
@@ -368,9 +428,11 @@ mod tests {
 
         let token = Token {
             id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
             client_secret: "secret_api_key".to_string(),
             server_secret: "secret_token".to_string(),
             origins: vec!["localhost".to_string()],
+            identity_verification_mode: "report_only".to_string(),
         };
 
         let tokens = Arc::new(Mutex::new(HttpTokens {
@@ -413,16 +475,42 @@ mod tests {
 
         let token = Token {
             id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
             client_secret: "client_key".to_string(),
             server_secret: "server_secret_value".to_string(),
             origins: vec![],
+            identity_verification_mode: "report_only".to_string(),
         };
 
         let tokens = Arc::new(Mutex::new(HttpTokens {
             tokens: vec![token],
         }));
 
-        // Should pass via found_api_key_in_server_secret
-        assert!(validate_token(params, headers, tokens).is_ok());
+        let authorized = validate_token(params, headers, tokens).unwrap();
+        assert_eq!(authorized.credential_kind, CredentialKind::Server);
+        assert_eq!(
+            authorized.workspace_id,
+            "00000000-0000-0000-0000-000000000001"
+        );
+    }
+
+    #[test]
+    fn punctuation_in_browser_key_does_not_grant_server_privileges() {
+        let mut params = BTreeMap::new();
+        params.insert("api_key".to_string(), "browser.key.with.dots".to_string());
+        let token = Token {
+            id: "1".to_string(),
+            workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
+            client_secret: "browser.key.with.dots".to_string(),
+            server_secret: "server-secret".to_string(),
+            origins: vec![],
+            identity_verification_mode: "report_only".to_string(),
+        };
+        let tokens = Arc::new(Mutex::new(HttpTokens {
+            tokens: vec![token],
+        }));
+
+        let authorized = validate_token(params, HeaderMap::new(), tokens).unwrap();
+        assert_eq!(authorized.credential_kind, CredentialKind::Browser);
     }
 }

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TransformedEvent {
     pub timestamp: String,
     pub _is_deleted: u32,
@@ -23,6 +24,10 @@ pub struct TransformedEvent {
     pub ids_ajs_user_id: Option<String>,
     pub ids_fbp: Option<String>,
     pub ids_ga: Option<String>,
+    pub identity_method: String,
+    pub identity_trust: String,
+    pub identity_verified_at: Option<String>,
+    pub identity_verifier_version: Option<String>,
     pub local_tz_offset: Option<i64>,
     pub location_city: Option<String>,
     pub location_continent: Option<String>,

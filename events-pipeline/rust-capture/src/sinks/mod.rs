@@ -30,11 +30,19 @@ impl EventTypes {
 
     pub fn project_id(&self) -> String {
         match self {
-            EventTypes::Processed(event) => {
-                let api_key = event.event.api_key.clone();
-                let first_element = api_key.split('.').next().unwrap_or("");
-                first_element.to_string()
-            }
+            EventTypes::Processed(event) => event
+                .authorization
+                .as_ref()
+                .map(|credential| credential.workspace_id.clone())
+                .unwrap_or_else(|| {
+                    event
+                        .event
+                        .api_key
+                        .split('.')
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                }),
             EventTypes::Transformed(event) => event.project_id.clone(),
             EventTypes::Failed(event) => event.project_id.clone(),
         }

@@ -76,6 +76,7 @@ mod tests {
                 ..Default::default()
             },
             event_id: Uuid::new_v4(),
+            ..Default::default()
         })
     }
 
