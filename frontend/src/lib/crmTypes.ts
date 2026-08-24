@@ -686,6 +686,7 @@ export type CRMSignalDomain =
   | 'relationship'
   | 'market';
 export type CRMSignalPolarity = 'positive' | 'negative' | 'neutral';
+export type CRMSignalDismissalReason = 'incorrect_evidence' | 'wrong_entity' | 'duplicate' | 'irrelevant' | 'handled' | 'bad_timing';
 export type CRMSignalSeverity = 'low' | 'medium' | 'high';
 
 export interface CRMSignalMetadata {

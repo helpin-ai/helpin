@@ -380,6 +380,9 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			evidence_fingerprint TEXT NOT NULL DEFAULT '',
 			dismissed_at DATETIME,
 			dismissed_by_member_id TEXT,
+			dismissal_reason TEXT,
+			reviewed_at DATETIME,
+			acted_at DATETIME,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE crm_entity_summaries (

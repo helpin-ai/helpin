@@ -2146,6 +2146,10 @@
             "description": "Optional deal ID to filter signals for a specific deal",
             "type": "string"
           },
+          "activation_only": {
+            "description": "Return only versioned signals that pass trust, score, dedupe, and open-task gates",
+            "type": "boolean"
+          },
           "limit": {
             "description": "Maximum number of signals to return (default 20, max 50)",
             "type": "integer"

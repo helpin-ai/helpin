@@ -14,8 +14,11 @@ import (
 
 // CRMSignalService contains CRM signal and deal health business logic.
 type CRMSignalService struct {
-	signalRepo     *repository.CRMSignalRepository
-	dealRepo       *repository.CRMDealRepository
+	signalRepo    *repository.CRMSignalRepository
+	dealRepo      *repository.CRMDealRepository
+	notifications interface {
+		Emit(context.Context, model.NotificationEventInput) error
+	}
 	summaryRefresh interface {
 		RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
 		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
@@ -27,6 +30,13 @@ const dealHealthSignalWindow = 180 * 24 * time.Hour
 // SetHealthScoreDependencies enables deterministic deal-health production.
 func (s *CRMSignalService) SetHealthScoreDependencies(dealRepo *repository.CRMDealRepository) *CRMSignalService {
 	s.dealRepo = dealRepo
+	return s
+}
+
+func (s *CRMSignalService) SetActivationDependencies(notifications interface {
+	Emit(context.Context, model.NotificationEventInput) error
+}) *CRMSignalService {
+	s.notifications = notifications
 	return s
 }
 
@@ -143,11 +153,11 @@ func (s *CRMSignalService) DeleteSignal(ctx context.Context, id string) error {
 }
 
 // DismissSignal hides a signal until the detector observes materially changed evidence.
-func (s *CRMSignalService) DismissSignal(ctx context.Context, workspaceID, id, memberID string) error {
+func (s *CRMSignalService) DismissSignal(ctx context.Context, workspaceID, id, memberID, reason string) error {
 	if workspaceID == "" || id == "" || memberID == "" {
 		return fmt.Errorf("workspace_id, signal_id, and member_id are required")
 	}
-	return s.signalRepo.DismissSignal(ctx, workspaceID, id, memberID, time.Now().UTC())
+	return s.RecordSignalFeedback(ctx, workspaceID, id, memberID, model.CRMSignalFeedbackDismissed, reason)
 }
 
 // ── Deal Health Scores ──

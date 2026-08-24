@@ -28,13 +28,120 @@ func (h *CRMSignalHandler) DismissSignal(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusForbidden, "workspace membership is required")
 		return
 	}
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "a dismissal reason is required")
+		return
+	}
 	if err := h.signalService.DismissSignal(
-		r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), actor.WorkspaceMemberID,
+		r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), actor.WorkspaceMemberID, req.Reason,
 	); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "signal dismissed"})
+}
+
+// ReviewSignal records detection-to-review time without changing visibility.
+func (h *CRMSignalHandler) ReviewSignal(w http.ResponseWriter, r *http.Request) {
+	h.recordFeedback(w, r, model.CRMSignalFeedbackReviewed)
+}
+
+// ActOnSignal records detection-to-action time.
+func (h *CRMSignalHandler) ActOnSignal(w http.ResponseWriter, r *http.Request) {
+	h.recordFeedback(w, r, model.CRMSignalFeedbackActed)
+}
+
+func (h *CRMSignalHandler) recordFeedback(w http.ResponseWriter, r *http.Request, action string) {
+	actor := authorization.GetActor(r.Context())
+	if actor == nil || actor.WorkspaceMemberID == "" {
+		writeError(w, http.StatusForbidden, "workspace membership is required")
+		return
+	}
+	if err := h.signalService.RecordSignalFeedback(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), actor.WorkspaceMemberID, action, ""); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "signal feedback recorded"})
+}
+
+func (h *CRMSignalHandler) PrecisionReport(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.signalService.SignalPrecisionReport(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+}
+
+func (h *CRMSignalHandler) GetRoutingPolicy(w http.ResponseWriter, r *http.Request) {
+	policy, err := h.signalService.GetRoutingPolicy(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, policy)
+}
+
+func (h *CRMSignalHandler) CreateRoutingPolicy(w http.ResponseWriter, r *http.Request) {
+	actor := authorization.GetActor(r.Context())
+	if actor == nil || actor.WorkspaceMemberID == "" {
+		writeError(w, http.StatusForbidden, "workspace membership is required")
+		return
+	}
+	var req model.CreateCRMSignalRoutingPolicyRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	policy, err := h.signalService.CreateRoutingPolicy(r.Context(), getWorkspaceID(r), actor.WorkspaceMemberID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, policy)
+}
+
+func (h *CRMSignalHandler) ActivateRoutingPolicy(w http.ResponseWriter, r *http.Request) {
+	version, err := strconv.Atoi(chi.URLParam(r, "version"))
+	if err != nil || h.signalService.ActivateRoutingPolicyVersion(r.Context(), getWorkspaceID(r), version) != nil {
+		writeError(w, http.StatusBadRequest, "routing policy version not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "routing policy activated"})
+}
+
+func (h *CRMSignalHandler) ActivateRuleVersion(w http.ResponseWriter, r *http.Request) {
+	version, err := strconv.Atoi(chi.URLParam(r, "version"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid version")
+		return
+	}
+	if err := h.signalService.ActivateRuleVersion(r.Context(), getWorkspaceID(r), chi.URLParam(r, "ruleKey"), version); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "rule version activated"})
+}
+
+func (h *CRMSignalHandler) SignalBrief(w http.ResponseWriter, r *http.Request) {
+	brief, err := h.signalService.GetSignalBrief(r.Context(), getWorkspaceID(r), signalListFiltersFromRequest(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, brief)
+}
+
+func (h *CRMSignalHandler) MeetingSignalBrief(w http.ResponseWriter, r *http.Request) {
+	brief, err := h.signalService.GetMeetingSignalBrief(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, brief)
 }
 
 // ListSignals handles GET /api/crm/signals.

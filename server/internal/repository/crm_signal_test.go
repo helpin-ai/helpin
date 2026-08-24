@@ -26,7 +26,7 @@ func TestCRMSignalRepositoryDismissalPersistsUntilEvidenceChanges(t *testing.T) 
 		rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME,
 		evidence_identity_method TEXT NOT NULL DEFAULT 'connected_mailbox',
 		evidence_identity_trust TEXT NOT NULL DEFAULT 'verified', evidence_fingerprint TEXT NOT NULL DEFAULT '',
-		dismissed_at DATETIME, dismissed_by_member_id TEXT, created_at DATETIME
+		dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create signal schema: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 		t.Fatalf("open sqlite: %v", err)
 	}
 	statements := []string{
-		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, created_at DATETIME)`,
+		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, first_name TEXT, last_name TEXT)`,
 		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, display_id TEXT, amount REAL, probability INTEGER, owner_member_id TEXT)`,
 		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, domain TEXT, owner_member_id TEXT)`,

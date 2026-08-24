@@ -318,7 +318,7 @@ export const crmSignalService = {
   ) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/signals${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   create: (payload: CreateCRMBuyerSignalRequest) => api.post<CRMBuyerSignal>(`/crm/signals${qs(payload.workspace_id)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/signals/${id}${qs(workspaceId)}`),
-  dismiss: (workspaceId: string, id: string) => api.post(`/crm/signals/${id}/dismiss${qs(workspaceId)}`, {}),
+  dismiss: (workspaceId: string, id: string, reason: import('../crmTypes').CRMSignalDismissalReason) => api.post(`/crm/signals/${id}/dismiss${qs(workspaceId)}`, { reason }),
   listByContact: (workspaceId: string, contactId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listByDeal: (workspaceId: string, dealId: string, page?: number) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),

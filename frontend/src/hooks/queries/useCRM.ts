@@ -907,7 +907,7 @@ export function useCreateBuyerSignal(wsId: string) {
 export function useDismissBuyerSignal(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (signalId: string) => unwrap(await crmSignalService.dismiss(wsId, signalId)),
+    mutationFn: async ({ signalId, reason }: { signalId: string; reason: import('@/lib/crmTypes').CRMSignalDismissalReason }) => unwrap(await crmSignalService.dismiss(wsId, signalId, reason)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
       if (contactId) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, contactId) })

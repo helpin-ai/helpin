@@ -179,9 +179,10 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"deal_id": map[string]any{"type": "string", "description": "Optional deal ID to filter signals for a specific deal."},
-				"limit":   map[string]any{"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum number of signals to return. Defaults to 20, max 50."},
-				"offset":  map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
+				"deal_id":         map[string]any{"type": "string", "description": "Optional deal ID to filter signals for a specific deal."},
+				"activation_only": map[string]any{"type": "boolean", "description": "Return only versioned signals that pass trust, score, dedupe, and open-task gates."},
+				"limit":           map[string]any{"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum number of signals to return. Defaults to 20, max 50."},
+				"offset":          map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
 			},
 			"required":             []string{},
 			"additionalProperties": false,

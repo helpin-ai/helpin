@@ -55,6 +55,18 @@ func (r *CRMSignalRepository) ListWorkspaceSignalCandidates(ctx context.Context,
 	if filters.CompanyID != nil && *filters.CompanyID != "" {
 		query = query.Where("company_id = ?", *filters.CompanyID)
 	}
+	if filters.DealID != nil && *filters.DealID != "" {
+		query = query.Where("deal_id = ?", *filters.DealID)
+	}
+	if filters.ContactID != nil && *filters.ContactID != "" {
+		query = query.Where("contact_id = ?", *filters.ContactID)
+	}
+	if filters.SignalType != nil && *filters.SignalType != "" {
+		query = query.Where("signal_type = ?", *filters.SignalType)
+	}
+	if filters.SourceType != nil && *filters.SourceType != "" {
+		query = query.Where("source_type = ?", *filters.SourceType)
+	}
 	if filters.SignalDomain != nil && *filters.SignalDomain != "" {
 		query = query.Where("signal_domain = ?", *filters.SignalDomain)
 	}

@@ -376,6 +376,9 @@ func main() {
 			&model.CRMSignalEvaluationRun{},
 			&model.CRMSignalEvaluatorWatermark{},
 			&model.CRMSignalScoringConfig{},
+			&model.CRMSignalFeedback{},
+			&model.CRMSignalRoutingPolicy{},
+			&model.CRMSignalDelivery{},
 			&model.CRMEntitySummary{},
 			&model.CRMDealHealthScore{},
 			&model.CRMSuggestion{},
@@ -1367,7 +1370,8 @@ func main() {
 		SetWebsocketPublisher(wsPublisher).
 		SetCompanySummaryRefresh(crmSummaryService)
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService).
-		SetHealthScoreDependencies(crmDealRepo)
+		SetHealthScoreDependencies(crmDealRepo).
+		SetActivationDependencies(notificationService)
 	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
@@ -1974,6 +1978,35 @@ func main() {
 		signalRuleEvaluator.Run(signalRuleCtx)
 	}()
 
+	// Route only policy-eligible, versioned signals. Delivery rows make every
+	// channel idempotent across replicas and restarts.
+	signalRouteDone := make(chan struct{})
+	go func() {
+		runSignalRouteSweep := func() {
+			workspaceIDs, err := workspaceRepo.ListIDs(context.Background())
+			if err != nil {
+				slog.Error("list workspaces for signal routing", "error", err)
+				return
+			}
+			for _, workspaceID := range workspaceIDs {
+				if _, err := crmSignalService.RouteWorkspaceSignals(context.Background(), workspaceID); err != nil {
+					slog.Warn("CRM signal routing failed", "error", err, "workspace_id", workspaceID)
+				}
+			}
+		}
+		runSignalRouteSweep()
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runSignalRouteSweep()
+			case <-signalRouteDone:
+				return
+			}
+		}
+	}()
+
 	// Produce explainable deal-health snapshots on startup and every six hours.
 	healthScoreDone := make(chan struct{})
 	go func() {
@@ -2214,6 +2247,7 @@ func main() {
 	}
 	close(digestDone)
 	close(healthScoreDone)
+	close(signalRouteDone)
 	close(supportReplyEmailDone)
 	close(billingTrialExpiryDone)
 	close(cleanupDone)

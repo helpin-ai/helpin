@@ -59,6 +59,9 @@ func setupCRMSignalDetectionTestDB(t *testing.T) *gorm.DB {
 			evidence_fingerprint TEXT NOT NULL DEFAULT '',
 			dismissed_at DATETIME,
 			dismissed_by_member_id TEXT,
+			dismissal_reason TEXT,
+			reviewed_at DATETIME,
+			acted_at DATETIME,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX idx_crm_signals_source_thread ON crm_buyer_signals(source_thread_id)`,

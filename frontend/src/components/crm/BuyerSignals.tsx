@@ -7,8 +7,9 @@ import {
 } from '@/lib/icons';
 import { useCompanySignals, useContactSignals, useDealSignals, useDismissBuyerSignal, useEmailAccounts, useWorkspaceMembers } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { CRMBuyerSignal, CRMSignalType } from '@/lib/crmTypes';
+import type { CRMBuyerSignal, CRMSignalDismissalReason, CRMSignalType } from '@/lib/crmTypes';
 import { cn } from '@/lib/utils';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 type SignalTone = 'positive' | 'blocker' | 'risk' | 'neutral';
 
@@ -28,6 +29,15 @@ const toneClasses: Record<SignalTone, { marker: string; icon: string; word: stri
   risk: { marker: 'bg-foreground/45', icon: 'text-foreground/65', word: 'text-foreground/65' },
   neutral: { marker: 'bg-transparent', icon: 'text-muted-foreground', word: 'text-foreground/65' },
 };
+
+const dismissalReasons: Array<{ value: CRMSignalDismissalReason; label: string }> = [
+  { value: 'incorrect_evidence', label: 'Incorrect evidence' },
+  { value: 'wrong_entity', label: 'Wrong person or account' },
+  { value: 'duplicate', label: 'Duplicate signal' },
+  { value: 'irrelevant', label: 'Not relevant' },
+  { value: 'handled', label: 'Already handled' },
+  { value: 'bad_timing', label: 'Bad timing' },
+];
 
 interface BuyerSignalsProps {
   workspaceId: string;
@@ -113,7 +123,18 @@ export function BuyerSignals({ workspaceId, contactId, dealId, companyId, presen
               <p className="mt-1 max-w-[700px] text-[13px] leading-[1.6] text-muted-foreground [text-wrap:pretty]">{signal.evidence_excerpt || signal.summary}</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground/60"><span>{sourceLabel(signal)}</span>{signal.contact_name ? <><span className="h-2.5 w-px bg-border" /><span>{signal.contact_name}</span></> : null}{signal.deal_name ? <><span className="h-2.5 w-px bg-border" /><span>{signal.deal_display_id ? `${signal.deal_display_id} · ` : ''}{signal.deal_name}</span></> : null}<span className="h-2.5 w-px bg-border" /><button type="button" className="text-orange-700 hover:text-orange-800 dark:text-orange-400" onClick={() => onOpenSource?.(signal)}>{sourceAction(signal)}</button></div>
             </div>
-            <button type="button" className="absolute right-3 top-3.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100" title="Dismiss signal" aria-label="Dismiss signal" disabled={dismiss.isPending} onClick={() => dismiss.mutate(signal.id, { onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be dismissed') })}><MoreVerticalIcon className="h-4 w-4" /></button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" className="absolute right-3 top-3.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100" title="Dismiss signal" aria-label="Dismiss signal" disabled={dismiss.isPending}><MoreVerticalIcon className="h-4 w-4" /></button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {dismissalReasons.map((reason) => (
+                  <DropdownMenuItem key={reason.value} onSelect={() => dismiss.mutate({ signalId: signal.id, reason: reason.value }, { onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be dismissed') })}>
+                    {reason.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </article>
         );
       })}

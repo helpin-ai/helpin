@@ -112,6 +112,9 @@ type CRMBuyerSignal struct {
 	EvidenceFingerprint    string     `json:"evidence_fingerprint,omitempty" gorm:"not null;default:'';index"`
 	DismissedAt            *time.Time `json:"dismissed_at,omitempty" gorm:"index"`
 	DismissedByMemberID    *string    `json:"dismissed_by_member_id,omitempty" gorm:"type:uuid"`
+	DismissalReason        *string    `json:"dismissal_reason,omitempty" gorm:"index"`
+	ReviewedAt             *time.Time `json:"reviewed_at,omitempty" gorm:"index"`
+	ActedAt                *time.Time `json:"acted_at,omitempty" gorm:"index"`
 	CreatedAt              time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	ContactName            string     `json:"contact_name,omitempty" gorm:"-"`
 	DealName               string     `json:"deal_name,omitempty" gorm:"-"`
@@ -126,6 +129,9 @@ type CRMBuyerSignal struct {
 	Severity               string     `json:"severity" gorm:"-"`
 	ScoreVersion           int        `json:"score_version" gorm:"-"`
 	ScoreFactors           JSONB      `json:"score_factors,omitempty" gorm:"-"`
+	ActivationEligible     bool       `json:"activation_eligible" gorm:"-"`
+	ActivationBlockers     []string   `json:"activation_blockers,omitempty" gorm:"-"`
+	ExistingOpenTaskID     *string    `json:"existing_open_task_id,omitempty" gorm:"-"`
 }
 
 func (CRMBuyerSignal) TableName() string { return "crm_buyer_signals" }
