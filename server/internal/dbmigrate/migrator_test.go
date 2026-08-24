@@ -235,6 +235,36 @@ func TestSupportEmailRouteVerificationBackfillMigrationContract(t *testing.T) {
 	}
 }
 
+func TestCompanyDealTimelineDedupeMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202608210003" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected company deal timeline dedupe migration 202608210003")
+	}
+
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"delete from pm_activity_log as backfilled",
+		"coalesce(backfilled.metadata->>'backfilled', 'false') = 'true'",
+		"canonical.new_value is not distinct from backfilled.new_value",
+		"interval '5 minutes'",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("migration missing behavior %q", clause)
+		}
+	}
+}
+
 func TestAgentModelTierBackfillMigrationContract(t *testing.T) {
 	migrations, err := loadMigrations()
 	if err != nil {

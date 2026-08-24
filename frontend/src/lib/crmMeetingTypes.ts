@@ -151,6 +151,7 @@ export interface CRMMeetingFilters {
   status?: string;
   owner_member_id?: string;
   company_id?: string;
+  company_rollup_id?: string;
   contact_id?: string;
   deal_id?: string;
   search?: string;
@@ -176,12 +177,7 @@ export interface CRMMeetingSettings {
   updated_at?: string;
 }
 
-export type UpdateCRMMeetingSettingsRequest = Partial<Pick<CRMMeetingSettings,
-  | 'enabled'
-  | 'bot_name'
-  | 'auto_join_mode'
-  | 'record_audio_by_default'
->>;
+export type UpdateCRMMeetingSettingsRequest = Partial<Pick<CRMMeetingSettings, 'enabled' | 'bot_name' | 'auto_join_mode' | 'record_audio_by_default'>>;
 
 export interface CRMMeetingSettingsResponse {
   settings: CRMMeetingSettings;

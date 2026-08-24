@@ -252,14 +252,15 @@ type UpdateCRMMeetingRequest struct {
 
 // CRMMeetingListFilters controls meeting list queries.
 type CRMMeetingListFilters struct {
-	Status        *string
-	OwnerMemberID *string
-	CompanyID     *string
-	ContactID     *string
-	DealID        *string
-	Search        *string
-	StartAfter    *time.Time
-	StartBefore   *time.Time
+	Status          *string
+	OwnerMemberID   *string
+	CompanyID       *string
+	CompanyRollupID *string
+	ContactID       *string
+	DealID          *string
+	Search          *string
+	StartAfter      *time.Time
+	StartBefore     *time.Time
 }
 
 // UpdateCRMMeetingSettingsRequest updates workspace meeting policy.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -321,11 +322,13 @@ func (r *CRMEmailRepository) CreateThread(ctx context.Context, thread *model.CRM
 // ListThreads returns email threads with optional filters.
 func (r *CRMEmailRepository) ListThreads(ctx context.Context, workspaceID string, filters model.CRMEmailThreadListFilters, pagination model.PMPagination) ([]model.CRMEmailThread, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.CRMEmailThread{}).Where("workspace_id = ?", workspaceID)
+	var scopedContactIDs *gorm.DB
 
 	if filters.EmailAccountID != nil && *filters.EmailAccountID != "" {
 		query = query.Where("email_account_id = ?", *filters.EmailAccountID)
 	}
 	if filters.ContactID != nil && *filters.ContactID != "" {
+		scopedContactIDs = r.db.WithContext(ctx).Table("crm_contacts").Select("id").Where("id = ?", *filters.ContactID)
 		contactSubquery := r.db.WithContext(ctx).
 			Model(&model.CRMEmailMessage{}).
 			Select("1").
@@ -343,12 +346,56 @@ func (r *CRMEmailRepository) ListThreads(ctx context.Context, workspaceID string
 			query = query.Where("EXISTS (?)", contactSubquery)
 		}
 	}
+	if filters.CompanyID != nil && *filters.CompanyID != "" {
+		scopedContactIDs = r.db.WithContext(ctx).
+			Table("crm_associations").
+			Select(`CASE WHEN from_object_type = 'contact' THEN from_object_id ELSE to_object_id END`).
+			Where("workspace_id = ?", workspaceID).
+			Where(`
+				(from_object_type = 'contact' AND to_object_type = 'company' AND to_object_id = ?)
+				OR (to_object_type = 'contact' AND from_object_type = 'company' AND from_object_id = ?)
+			`, *filters.CompanyID, *filters.CompanyID)
+		companyThread := r.db.WithContext(ctx).
+			Table("crm_email_messages").
+			Select("1").
+			Joins("JOIN crm_email_message_contacts ON crm_email_message_contacts.message_id = crm_email_messages.id").
+			Where("crm_email_messages.thread_id = crm_email_threads.id").
+			Where("crm_email_message_contacts.contact_id IN (?)", scopedContactIDs)
+		query = query.Where("EXISTS (?)", companyThread)
+	}
 	if filters.DealID != nil && *filters.DealID != "" {
 		query = query.Where("deal_id = ?", *filters.DealID)
 	}
 	if filters.Search != nil && *filters.Search != "" {
-		search := "%" + *filters.Search + "%"
-		query = query.Where("subject ILIKE ?", search)
+		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
+		messageSearch := r.db.WithContext(ctx).
+			Table("crm_email_messages").
+			Select("1").
+			Where("crm_email_messages.thread_id = crm_email_threads.id").
+			Where(`LOWER(COALESCE(crm_email_messages.from_name, '') || ' ' || COALESCE(crm_email_messages.from_address, '') || ' ' || COALESCE(crm_email_messages.subject, '') || ' ' || COALESCE(crm_email_messages.body_text, '') || ' ' || CAST(crm_email_messages.to_addresses AS TEXT) || ' ' || CAST(crm_email_messages.cc_addresses AS TEXT)) LIKE ?`, search)
+		query = query.Where("LOWER(crm_email_threads.subject) LIKE ? OR EXISTS (?)", search, messageSearch)
+	}
+	if filters.Scope != nil && *filters.Scope == "direct" && scopedContactIDs != nil {
+		directThread := r.db.WithContext(ctx).
+			Table("crm_email_messages").
+			Select("1").
+			Joins("JOIN crm_email_message_contacts ON crm_email_message_contacts.message_id = crm_email_messages.id").
+			Where("crm_email_messages.thread_id = crm_email_threads.id").
+			Where("crm_email_message_contacts.contact_id IN (?)", scopedContactIDs).
+			Where("crm_email_message_contacts.participant_role IN ?", []string{model.CRMEmailParticipantRoleFrom, model.CRMEmailParticipantRoleTo})
+		query = query.Where("EXISTS (?)", directThread)
+	}
+	if filters.Scope != nil && *filters.Scope == "needs_reply" {
+		query = query.Where(`(SELECT direction FROM crm_email_messages WHERE thread_id = crm_email_threads.id ORDER BY sent_at DESC, id DESC LIMIT 1) = ?`, model.CRMEmailDirectionInbound)
+		if filters.UserID != nil && *filters.UserID != "" {
+			query = query.Where(`NOT EXISTS (
+				SELECT 1 FROM crm_email_thread_dismissals dismissal
+				WHERE dismissal.workspace_id = crm_email_threads.workspace_id
+				  AND dismissal.thread_id = crm_email_threads.id
+				  AND dismissal.user_id = ?
+				  AND dismissal.dismissed_at >= crm_email_threads.last_message_at
+			)`, *filters.UserID)
+		}
 	}
 
 	var total int64
@@ -358,10 +405,94 @@ func (r *CRMEmailRepository) ListThreads(ctx context.Context, workspaceID string
 
 	var threads []model.CRMEmailThread
 	offset := (pagination.Page - 1) * pagination.PerPage
-	if err := query.Order("last_message_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&threads).Error; err != nil {
+	order := "last_message_at DESC, id DESC"
+	if filters.Sort != nil && *filters.Sort == "oldest" {
+		order = "last_message_at ASC, id ASC"
+	}
+	if err := query.Order(order).Offset(offset).Limit(pagination.PerPage).Find(&threads).Error; err != nil {
 		return nil, 0, fmt.Errorf("list email threads: %w", err)
 	}
 	return threads, total, nil
+}
+
+func (r *CRMEmailRepository) GetLatestMessageForThread(ctx context.Context, workspaceID, threadID string) (*model.CRMEmailMessage, error) {
+	var message model.CRMEmailMessage
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND thread_id = ?", workspaceID, threadID).
+		Order("sent_at DESC, id DESC").
+		First(&message).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get latest thread message: %w", err)
+	}
+	return &message, nil
+}
+
+func (r *CRMEmailRepository) GetThreadDismissal(ctx context.Context, workspaceID, threadID, userID string) (*model.CRMEmailThreadDismissal, error) {
+	var dismissal model.CRMEmailThreadDismissal
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND thread_id = ? AND user_id = ?", workspaceID, threadID, userID).
+		First(&dismissal).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get email thread dismissal: %w", err)
+	}
+	return &dismissal, nil
+}
+
+func (r *CRMEmailRepository) UpsertThreadDismissal(ctx context.Context, dismissal *model.CRMEmailThreadDismissal) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing model.CRMEmailThreadDismissal
+		err := tx.Where("workspace_id = ? AND thread_id = ? AND user_id = ?", dismissal.WorkspaceID, dismissal.ThreadID, dismissal.UserID).First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return tx.Create(dismissal).Error
+		}
+		if err != nil {
+			return err
+		}
+		return tx.Model(&existing).Update("dismissed_at", dismissal.DismissedAt).Error
+	})
+}
+
+func (r *CRMEmailRepository) DeleteThreadDismissal(ctx context.Context, workspaceID, threadID, userID string) error {
+	return r.db.WithContext(ctx).
+		Where("workspace_id = ? AND thread_id = ? AND user_id = ?", workspaceID, threadID, userID).
+		Delete(&model.CRMEmailThreadDismissal{}).Error
+}
+
+func (r *CRMEmailRepository) UpdateThreadDeal(ctx context.Context, workspaceID, threadID string, dealID *string) error {
+	result := r.db.WithContext(ctx).Model(&model.CRMEmailThread{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, threadID).
+		Update("deal_id", dealID)
+	if result.Error != nil {
+		return fmt.Errorf("update email thread deal: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("email thread not found")
+	}
+	return nil
+}
+
+func (r *CRMEmailRepository) UpdateMessageReplyHeaders(ctx context.Context, workspaceID, messageID string, rfcMessageID, inReplyTo, references string) error {
+	return r.db.WithContext(ctx).Model(&model.CRMEmailMessage{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, messageID).
+		Updates(map[string]any{
+			"rfc_message_id":    optionalRepositoryString(rfcMessageID),
+			"in_reply_to":       optionalRepositoryString(inReplyTo),
+			"references_header": optionalRepositoryString(references),
+		}).Error
+}
+
+func optionalRepositoryString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 // ── Email Messages ──
@@ -574,6 +705,29 @@ func (r *CRMEmailRepository) ListMessages(ctx context.Context, workspaceID strin
 			"crm_email_messages.contact_id = ? OR EXISTS (?)",
 			*filters.ContactID,
 			contactSubquery,
+		)
+	}
+	if filters.CompanyID != nil && *filters.CompanyID != "" {
+		companyContactIDs := r.db.WithContext(ctx).
+			Table("crm_associations").
+			Select(`CASE
+				WHEN from_object_type = 'contact' THEN from_object_id
+				ELSE to_object_id
+			END`).
+			Where("workspace_id = ?", workspaceID).
+			Where(`
+				(from_object_type = 'contact' AND to_object_type = 'company' AND to_object_id = ?)
+				OR (to_object_type = 'contact' AND from_object_type = 'company' AND from_object_id = ?)
+			`, *filters.CompanyID, *filters.CompanyID)
+		messageContactSubquery := r.db.WithContext(ctx).
+			Model(&model.CRMEmailMessageContact{}).
+			Select("1").
+			Where("crm_email_message_contacts.message_id = crm_email_messages.id").
+			Where("crm_email_message_contacts.contact_id IN (?)", companyContactIDs)
+		query = query.Where(
+			"crm_email_messages.contact_id IN (?) OR EXISTS (?)",
+			companyContactIDs,
+			messageContactSubquery,
 		)
 	}
 	if filters.DealID != nil && *filters.DealID != "" {

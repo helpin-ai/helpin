@@ -51,11 +51,11 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain('ACTIVE_RUN_STATUSES.has(status)');
   });
 
-  it('uses the three task views and existing shared task components', () => {
+  it('uses the two task views and existing shared task components', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
     const agentRunSource = readFileSync(resolve(__dirname, '../../AgentRunPanel.tsx'), 'utf8');
 
-    expect(panelSource).toContain("(['overview', 'updates', 'delivery'] as TaskDetailView[])");
+    expect(panelSource).toContain("(['overview', 'delivery'] as TaskDetailView[])");
     expect(panelSource).toContain('<TaskUpdatesView');
     expect(panelSource).toContain('<AgentRunPanel');
     expect(panelSource).not.toContain('<TaskGitPanel');
@@ -72,14 +72,15 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(agentRunSource).not.toContain('<RepositoryBranchPicker');
   });
 
-  it('keeps comments and history out of Overview', () => {
+  it('keeps updates in Overview while delivery remains separate', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
     const overviewStart = panelSource.indexOf("activeView === 'overview'");
     const deliveryStart = panelSource.indexOf("activeView === 'delivery'");
     const overviewBlock = panelSource.slice(overviewStart, deliveryStart);
 
-    expect(overviewBlock).not.toContain('<TaskUpdatesView');
+    expect(overviewBlock).toContain('<TaskDetailSectionHeading title="Updates"');
+    expect(overviewBlock).toContain('<TaskUpdatesView');
     expect(overviewBlock).not.toContain('<AgentRunPanel');
-    expect(panelSource.indexOf('<TaskUpdatesView')).toBeGreaterThan(deliveryStart);
+    expect(panelSource.indexOf('<TaskUpdatesView')).toBeLessThan(deliveryStart);
   });
 });

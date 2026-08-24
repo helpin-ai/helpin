@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -12,13 +13,99 @@ import (
 // CRMDealService contains CRM deal and pipeline business logic.
 type CRMDealService struct {
 	productAnalyticsEmitter
-	dealRepo  *repository.CRMDealRepository
-	assocRepo *repository.CRMAssociationRepository
+	dealRepo       *repository.CRMDealRepository
+	assocRepo      *repository.CRMAssociationRepository
+	activity       *PMActivityService
+	timelineRepo   *repository.CRMCompanyTimelineRepository
+	summaryRefresh CompanySummaryRefreshRequester
+}
+
+// SetCompanySummaryRefresh enables account-summary invalidation after deal changes.
+func (s *CRMDealService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMDealService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // NewCRMDealService creates a new CRMDealService.
 func NewCRMDealService(dealRepo *repository.CRMDealRepository, assocRepo *repository.CRMAssociationRepository) *CRMDealService {
 	return &CRMDealService{dealRepo: dealRepo, assocRepo: assocRepo}
+}
+
+// SetActivityService enables durable user-facing deal milestone logging.
+func (s *CRMDealService) SetActivityService(activity *PMActivityService) *CRMDealService {
+	s.activity = activity
+	return s
+}
+
+// SetTimelineRepository enables the unified deal timeline read model.
+func (s *CRMDealService) SetTimelineRepository(
+	repo *repository.CRMCompanyTimelineRepository,
+) *CRMDealService {
+	s.timelineRepo = repo
+	return s
+}
+
+// ListTimeline returns one cursor-paginated page of events directly related to a deal.
+func (s *CRMDealService) ListTimeline(
+	ctx context.Context,
+	workspaceID, dealID, filter, cursor string,
+	limit int,
+) (*model.CRMTimelinePage, error) {
+	if workspaceID == "" || dealID == "" {
+		return nil, fmt.Errorf("workspace_id and deal_id are required")
+	}
+	if s.timelineRepo == nil {
+		return nil, fmt.Errorf("deal timeline is not configured")
+	}
+	deal, err := s.GetByID(ctx, dealID)
+	if err != nil {
+		return nil, err
+	}
+	if deal.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("deal not found")
+	}
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		filter = model.CRMTimelineFilterAll
+	}
+	if !validCRMTimelineFilter(filter) {
+		return nil, fmt.Errorf("invalid timeline filter")
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	query := model.CRMTimelineQuery{Filter: filter, Limit: limit + 1}
+	if cursor != "" {
+		decoded, err := decodeCRMTimelineCursor(cursor)
+		if err != nil {
+			return nil, err
+		}
+		query.CursorAt = &decoded.At
+		query.CursorID = decoded.ID
+	}
+	items, err := s.timelineRepo.ListDeal(ctx, workspaceID, dealID, query)
+	if err != nil {
+		return nil, err
+	}
+	page := &model.CRMTimelinePage{Data: items}
+	if len(items) > limit {
+		page.Data = items[:limit]
+		last := page.Data[len(page.Data)-1]
+		next, err := encodeCRMTimelineCursor(crmTimelineCursor{
+			Version: 1,
+			At:      last.OccurredAt,
+			ID:      last.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		page.NextCursor = &next
+	}
+	return page, nil
 }
 
 // SeedWorkspaceDefaults creates a default sales pipeline for a new workspace.
@@ -182,6 +269,15 @@ func (s *CRMDealService) GetByID(ctx context.Context, id string) (*model.CRMDeal
 
 // Create creates a deal.
 func (s *CRMDealService) Create(ctx context.Context, req model.CreateCRMDealRequest) (*model.CRMDeal, error) {
+	return s.create(ctx, req, "")
+}
+
+// CreateWithActor creates a deal and attributes its timeline milestone to the actor.
+func (s *CRMDealService) CreateWithActor(ctx context.Context, req model.CreateCRMDealRequest, actorID string) (*model.CRMDeal, error) {
+	return s.create(ctx, req, actorID)
+}
+
+func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequest, actorID string) (*model.CRMDeal, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
@@ -253,17 +349,33 @@ func (s *CRMDealService) Create(ctx context.Context, req model.CreateCRMDealRequ
 	if err != nil {
 		return nil, err
 	}
+	if s.activity != nil {
+		action := "created this deal in " + stage.Name
+		if err := s.activity.LogEvent(ctx, deal.WorkspaceID, "deal", deal.ID, optionalActor(actorID), "deal.created", action, stringPtr("stage"), nil, &stage.ID, map[string]interface{}{"stage_name": stage.Name, "stage_type": stage.StageType}); err != nil {
+			slog.ErrorContext(ctx, "log deal creation milestone", "error", err, "deal_id", deal.ID, "workspace_id", deal.WorkspaceID)
+		}
+	}
 	s.trackProductEvent(ctx, ProductAnalyticsEvent{
 		SemanticKey: "crm_deal_created:" + deal.ID,
 		WorkspaceID: deal.WorkspaceID, Name: "crm_deal_created", Source: "api",
 		OccurredAt: deal.CreatedAt,
 		Attributes: map[string]any{"entity_id": deal.ID, "pipeline_id": deal.PipelineID, "stage_id": deal.StageID, "amount": deal.Amount, "currency": deal.Currency, "module": "crm"},
 	})
+	s.requestCompanySummaryRefresh(ctx, deal.WorkspaceID, deal.ID)
 	return created, nil
 }
 
 // Update updates a deal.
 func (s *CRMDealService) Update(ctx context.Context, id string, req model.UpdateCRMDealRequest) (*model.CRMDeal, error) {
+	return s.update(ctx, id, req, "")
+}
+
+// UpdateWithActor updates a deal and attributes timeline milestones to the actor.
+func (s *CRMDealService) UpdateWithActor(ctx context.Context, id string, req model.UpdateCRMDealRequest, actorID string) (*model.CRMDeal, error) {
+	return s.update(ctx, id, req, actorID)
+}
+
+func (s *CRMDealService) update(ctx context.Context, id string, req model.UpdateCRMDealRequest, actorID string) (*model.CRMDeal, error) {
 	deal, err := s.dealRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -273,6 +385,10 @@ func (s *CRMDealService) Update(ctx context.Context, id string, req model.Update
 	}
 
 	previousStageID := deal.StageID
+	previousStageName := previousStageID
+	if deal.Stage != nil {
+		previousStageName = deal.Stage.Name
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -326,8 +442,22 @@ func (s *CRMDealService) Update(ctx context.Context, id string, req model.Update
 	}
 	if previousStageID != updated.StageID {
 		stageType := ""
+		stageName := updated.StageID
 		if updated.Stage != nil {
 			stageType = updated.Stage.StageType
+			stageName = updated.Stage.Name
+		}
+		if s.activity != nil {
+			eventType := "deal.stage_changed"
+			if stageType == model.CRMStageTypeWon {
+				eventType = "deal.won"
+			} else if stageType == model.CRMStageTypeLost {
+				eventType = "deal.lost"
+			}
+			action := "moved this deal from " + previousStageName + " to " + stageName
+			if err := s.activity.LogEvent(ctx, updated.WorkspaceID, "deal", updated.ID, optionalActor(actorID), eventType, action, stringPtr("stage"), &previousStageID, &updated.StageID, map[string]interface{}{"previous_stage_name": previousStageName, "stage_name": stageName, "stage_type": stageType}); err != nil {
+				slog.ErrorContext(ctx, "log deal stage milestone", "error", err, "deal_id", updated.ID, "workspace_id", updated.WorkspaceID)
+			}
 		}
 		s.trackProductEvent(ctx, ProductAnalyticsEvent{
 			SemanticKey: fmt.Sprintf("crm_deal_stage_changed:%s:%s:%d", updated.ID, updated.StageID, updated.UpdatedAt.UnixNano()),
@@ -336,6 +466,7 @@ func (s *CRMDealService) Update(ctx context.Context, id string, req model.Update
 			Attributes: map[string]any{"entity_id": updated.ID, "pipeline_id": updated.PipelineID, "previous_stage_id": previousStageID, "stage_id": updated.StageID, "stage_type": stageType, "amount": updated.Amount, "currency": updated.Currency, "module": "crm"},
 		})
 	}
+	s.requestCompanySummaryRefresh(ctx, updated.WorkspaceID, updated.ID)
 	return updated, nil
 }
 
@@ -348,5 +479,15 @@ func (s *CRMDealService) Delete(ctx context.Context, id string) error {
 	if deal == nil {
 		return fmt.Errorf("deal not found")
 	}
+	s.requestCompanySummaryRefresh(ctx, deal.WorkspaceID, deal.ID)
 	return s.dealRepo.Delete(ctx, id)
+}
+
+func (s *CRMDealService) requestCompanySummaryRefresh(ctx context.Context, workspaceID, dealID string) {
+	if s == nil || s.summaryRefresh == nil {
+		return
+	}
+	if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, model.CRMObjectDeal, dealID); err != nil {
+		slog.ErrorContext(ctx, "failed to request company summary refresh from deal", "error", err, "workspace_id", workspaceID, "deal_id", dealID)
+	}
 }

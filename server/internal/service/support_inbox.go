@@ -3268,8 +3268,8 @@ func (s *SupportInboxService) UpdateConversationCRMCompany(ctx context.Context, 
 }
 
 // ListContactConversations returns support conversations linked to a CRM contact.
-func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
-	conversations, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
+func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID, status, search string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+	conversations, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, status, search, pagination)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -3285,6 +3285,29 @@ func (s *SupportInboxService) ListContactConversations(ctx context.Context, work
 	if s.triageService != nil {
 		if err := s.triageService.HydrateConversations(ctx, filtered); err != nil {
 			slog.ErrorContext(ctx, "hydrate support contact conversation triage", "error", err, "workspace_id", workspaceID)
+		}
+	}
+	return filtered, total, nil
+}
+
+// ListCompanyConversations returns mailbox-visible support conversations for a CRM company roll-up.
+func (s *SupportInboxService) ListCompanyConversations(ctx context.Context, workspaceID, companyID, status, search string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+	conversations, total, err := s.conversationRepo.ListByCompany(ctx, workspaceID, companyID, status, search, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
+	ids := make([]string, 0, len(conversations))
+	for _, conversation := range conversations {
+		ids = append(ids, conversation.ID)
+	}
+	filtered, err := s.conversationRepo.ListByIDs(ctx, workspaceID, ids, workspaceMemberID, role)
+	if err != nil {
+		return nil, 0, err
+	}
+	if s.triageService != nil {
+		if err := s.triageService.HydrateConversations(ctx, filtered); err != nil {
+			slog.ErrorContext(ctx, "hydrate support company conversation triage", "error", err, "workspace_id", workspaceID)
 		}
 	}
 	return filtered, total, nil

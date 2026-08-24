@@ -145,6 +145,14 @@ func (r *CRMDealRepository) List(ctx context.Context, workspaceID string, filter
 	if filters.OwnerMemberID != nil && *filters.OwnerMemberID != "" {
 		query = query.Where("owner_member_id = ?", *filters.OwnerMemberID)
 	}
+	if filters.ContactID != nil && *filters.ContactID != "" {
+		query = query.Where(`EXISTS (
+			SELECT 1 FROM crm_associations ca
+			WHERE ca.workspace_id = crm_deals.workspace_id
+			  AND ((ca.from_object_type = 'deal' AND ca.from_object_id = crm_deals.id AND ca.to_object_type = 'contact' AND ca.to_object_id = ?)
+			    OR (ca.to_object_type = 'deal' AND ca.to_object_id = crm_deals.id AND ca.from_object_type = 'contact' AND ca.from_object_id = ?))
+		)`, *filters.ContactID, *filters.ContactID)
+	}
 	if filters.Search != nil && *filters.Search != "" {
 		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
 		query = query.Where("LOWER(name) LIKE ?", search)

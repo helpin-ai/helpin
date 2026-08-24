@@ -38,7 +38,7 @@ const IFRAME_STYLES = `
     min-width: 0 !important;
     max-width: 100% !important;
     background: #ffffff;
-    color: #111827;
+    color: rgba(17, 24, 39, 0.9);
     color-scheme: light;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 14px;

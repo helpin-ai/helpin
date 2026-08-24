@@ -9,13 +9,12 @@ import {
   DollarCircleIcon,
   File01Icon,
   InboxIcon,
-  LayoutTable01Icon,
+  CheckListIcon,
   BulbIcon,
   Message01Icon,
   PauseIcon,
   ArrowReloadHorizontalIcon,
   Setting07Icon,
-  KanbanIcon,
   Target01Icon,
   UserIcon,
   UserGroupIcon,
@@ -51,13 +50,13 @@ export function deriveActiveRail(pathname: string): RailId {
 }
 
 export const teamSubItems: { key: string; label: string; icon: IconComponent; path: string }[] = [
-  { key: 'tasks', label: 'Tasks', icon: LayoutTable01Icon, path: 'tasks' },
+  { key: 'tasks', label: 'Tasks', icon: CheckListIcon, path: 'tasks' },
   { key: 'epics', label: 'Epics', icon: Layers01Icon, path: 'epics' },
   { key: 'sprints', label: 'Sprints', icon: ArrowReloadHorizontalIcon, path: 'sprints' },
 ];
 
 export const projectCreateOptions = [
-  { key: 'task' as const, label: 'Task', icon: KanbanIcon, pages: ['tasks'] },
+  { key: 'task' as const, label: 'Task', icon: CheckListIcon, pages: ['tasks'] },
   { key: 'epic' as const, label: 'Epic', icon: Layers01Icon, pages: ['epics'] },
   { key: 'sprint' as const, label: 'Sprint', icon: ArrowReloadHorizontalIcon, pages: ['sprints'] },
   { key: 'objective' as const, label: 'Objective', icon: Target01Icon, pages: ['objectives'] },

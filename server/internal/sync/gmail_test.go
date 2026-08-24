@@ -54,6 +54,46 @@ func TestGmailSyncClient_SendMessageBuildsSafeMIMEPayload(t *testing.T) {
 	}
 }
 
+func TestGmailSyncClient_SendThreadMessagePreservesGmailThreading(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		var payload map[string]string
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if payload["threadId"] != "gmail-thread-1" {
+			t.Fatalf("threadId = %q, want gmail-thread-1", payload["threadId"])
+		}
+		raw, err := base64.URLEncoding.DecodeString(payload["raw"])
+		if err != nil {
+			t.Fatalf("decode raw message: %v", err)
+		}
+		message := string(raw)
+		if !containsAll(message, "In-Reply-To: <message-1@example.com>", "References: <older@example.com> <message-1@example.com>") {
+			t.Fatalf("thread headers missing from MIME message: %q", message)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"sent-2","threadId":"gmail-thread-1"}`))
+	}))
+	defer server.Close()
+
+	client := &GmailSyncClient{httpClient: server.Client(), apiBaseURL: server.URL}
+	result, err := client.SendThreadMessage(
+		context.Background(), "token", "owner@example.com", []string{"buyer@example.com"}, nil,
+		"Re: Hello", "<p>Thanks</p>", "gmail-thread-1", "<message-1@example.com>",
+		"<older@example.com> <message-1@example.com>",
+	)
+	if err != nil {
+		t.Fatalf("SendThreadMessage: %v", err)
+	}
+	if result.ID != "sent-2" || result.ThreadID != "gmail-thread-1" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func containsAll(value string, parts ...string) bool {
 	for _, part := range parts {
 		if !strings.Contains(value, part) {
@@ -93,6 +133,9 @@ func TestParseGmailMessage_PreservesLabelIDsAndNormalizesFrom(t *testing.T) {
 	}{
 		{Name: "From", Value: `Alice Example <ALICE@example.com>`},
 		{Name: "To", Value: `Bob Example <bob@example.com>`},
+		{Name: "Message-ID", Value: `<message-1@example.com>`},
+		{Name: "In-Reply-To", Value: `<message-0@example.com>`},
+		{Name: "References", Value: `<message-0@example.com>`},
 	}
 
 	msg := parseGmailMessage(raw)
@@ -101,6 +144,9 @@ func TestParseGmailMessage_PreservesLabelIDsAndNormalizesFrom(t *testing.T) {
 	}
 	if len(msg.LabelIDs) != 2 || msg.LabelIDs[1] != "SENT" {
 		t.Fatalf("label_ids = %v, want preserved labels", msg.LabelIDs)
+	}
+	if msg.RFCMessageID != "<message-1@example.com>" || msg.InReplyTo != "<message-0@example.com>" || msg.ReferencesHeader != "<message-0@example.com>" {
+		t.Fatalf("reply headers = %q/%q/%q, want parsed RFC headers", msg.RFCMessageID, msg.InReplyTo, msg.ReferencesHeader)
 	}
 }
 

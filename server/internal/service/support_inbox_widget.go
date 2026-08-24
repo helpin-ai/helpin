@@ -628,6 +628,11 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
 	s.enrichSupportMessageLinksAsync(msg, "widget:"+session.ID)
+	s.recordSupportEvent(SupportEventInput{
+		WorkspaceID: session.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
+		ConversationID: session.ConversationID, MessageID: &msg.ID,
+		ActorType: model.SupportEventActorCustomer, Channel: "widget",
+	})
 
 	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner); err == nil {
 		if conv != nil && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {

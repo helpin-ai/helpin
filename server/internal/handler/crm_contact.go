@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -122,6 +123,36 @@ func (h *CRMContactHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contact)
+}
+
+// ListTimeline handles GET /api/crm/contacts/{id}/timeline.
+func (h *CRMContactHandler) ListTimeline(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	contactID := chi.URLParam(r, "id")
+	page, err := h.contactService.ListTimeline(
+		r.Context(),
+		workspaceID,
+		contactID,
+		r.URL.Query().Get("filter"),
+		r.URL.Query().Get("cursor"),
+		queryInt(r, "limit", 25),
+	)
+	if err != nil {
+		var entitlementErr *service.EntitlementError
+		if errors.As(err, &entitlementErr) {
+			writeError(w, http.StatusPaymentRequired, entitlementErr.Error())
+			return
+		}
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "invalid timeline") || strings.Contains(err.Error(), "required") {
+			status = http.StatusBadRequest
+		} else if strings.Contains(err.Error(), "contact not found") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
 }
 
 // Update handles PUT /api/crm/contacts/{id}.

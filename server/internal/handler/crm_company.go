@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -75,6 +76,57 @@ func (h *CRMCompanyHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, company)
+}
+
+// ListTimeline handles GET /api/crm/companies/{id}/timeline.
+func (h *CRMCompanyHandler) ListTimeline(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	companyID := chi.URLParam(r, "id")
+	page, err := h.companyService.ListTimeline(
+		r.Context(),
+		workspaceID,
+		companyID,
+		r.URL.Query().Get("filter"),
+		r.URL.Query().Get("cursor"),
+		queryInt(r, "limit", 25),
+	)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "invalid timeline") || strings.Contains(err.Error(), "required") {
+			status = http.StatusBadRequest
+		} else if strings.Contains(err.Error(), "company not found") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *CRMCompanyHandler) ListContacts(w http.ResponseWriter, r *http.Request) {
+	workspaceID, companyID := getWorkspaceID(r), chi.URLParam(r, "id")
+	items, total, err := h.companyService.ListContacts(r.Context(), workspaceID, companyID, r.URL.Query().Get("search"), queryPagination(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if items == nil {
+		items = []model.CRMContact{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": total, "page": queryPagination(r).Page})
+}
+
+func (h *CRMCompanyHandler) ListDeals(w http.ResponseWriter, r *http.Request) {
+	workspaceID, companyID := getWorkspaceID(r), chi.URLParam(r, "id")
+	items, total, err := h.companyService.ListDeals(r.Context(), workspaceID, companyID, r.URL.Query().Get("search"), queryPagination(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if items == nil {
+		items = []model.CRMDeal{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": items, "total": total, "page": queryPagination(r).Page})
 }
 
 // Update handles PUT /api/crm/companies/{id}.

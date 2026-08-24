@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   ArrowRight01Icon,
   Building03Icon,
@@ -31,6 +31,7 @@ import type {
   GroupedAssociations,
   SupportConversation,
 } from '@/lib/pmTypes';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 import { Input } from '@/components/ui/input';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
@@ -141,6 +142,7 @@ export function AssociationsPanel({
   section,
 }: AssociationsPanelProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const slug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
@@ -154,7 +156,7 @@ export function AssociationsPanel({
     } else if (type === 'company') {
       navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: id } } as any);
     } else if (type === 'deal') {
-      navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: id } } as any);
+      openDealRoute(navigate as never, location, slug, id);
     } else if (type === 'document') {
       setPreviewDocId(id);
     }

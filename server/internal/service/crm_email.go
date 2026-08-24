@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,6 +33,11 @@ type gmailMailboxClient interface {
 	GetMailboxProfile(ctx context.Context, accessToken string) (*sync.GmailProfile, error)
 	GetValidToken(ctx context.Context, account *model.CRMEmailAccount) (string, error)
 	SendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string) (*sync.GmailSendResult, error)
+}
+
+type gmailThreadClient interface {
+	GetMessageDetail(ctx context.Context, accessToken, messageID string) (*sync.GmailMessage, error)
+	SendThreadMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string) (*sync.GmailSendResult, error)
 }
 
 type emailSyncWorkflowRunner interface {
@@ -608,7 +614,7 @@ func (s *CRMEmailService) RebuildAccountAssociations(ctx context.Context, worksp
 }
 
 // SendEmail sends an email via Gmail API and stores the outbound message.
-func (s *CRMEmailService) SendEmail(ctx context.Context, workspaceID, accountID, userID string, isAdmin bool, to, cc []string, subject, bodyHTML string) (*model.CRMEmailMessage, error) {
+func (s *CRMEmailService) SendEmail(ctx context.Context, workspaceID, accountID, userID string, _ bool, to, cc []string, subject, bodyHTML string) (*model.CRMEmailMessage, error) {
 	if s.gmailSync == nil {
 		return nil, fmt.Errorf("Gmail sync not configured")
 	}
@@ -620,7 +626,7 @@ func (s *CRMEmailService) SendEmail(ctx context.Context, workspaceID, accountID,
 	if account == nil {
 		return nil, fmt.Errorf("email account not found")
 	}
-	if !isAdmin && account.MemberID != userID {
+	if account.MemberID != userID {
 		return nil, fmt.Errorf("not authorized to send from this email account")
 	}
 	if !account.IsActive {
@@ -721,11 +727,292 @@ func (s *CRMEmailService) SendEmail(ctx context.Context, workspaceID, accountID,
 // ── Email Threads ──
 
 // ListThreads returns email threads with filters.
-func (s *CRMEmailService) ListThreads(ctx context.Context, workspaceID string, filters model.CRMEmailThreadListFilters, pagination model.PMPagination) ([]model.CRMEmailThread, int64, error) {
+func (s *CRMEmailService) ListThreads(ctx context.Context, workspaceID, userID string, filters model.CRMEmailThreadListFilters, pagination model.PMPagination) ([]model.CRMEmailThread, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
-	return s.emailRepo.ListThreads(ctx, workspaceID, filters, pagination)
+	filters.UserID = &userID
+	threads, total, err := s.emailRepo.ListThreads(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range threads {
+		account, accountErr := s.emailRepo.GetAccountByIDForWorkspace(ctx, workspaceID, threads[i].EmailAccountID)
+		if accountErr != nil {
+			return nil, 0, accountErr
+		}
+		latest, latestErr := s.emailRepo.GetLatestMessageForThread(ctx, workspaceID, threads[i].ID)
+		if latestErr != nil {
+			return nil, 0, latestErr
+		}
+		threads[i].LatestMessage = latest
+		if account != nil {
+			threads[i].MailboxEmail = account.EmailAddress
+			threads[i].MailboxProvider = account.Provider
+			threads[i].MailboxStatus = account.Status
+			threads[i].MailboxLastSync = account.LastSyncedAt
+			threads[i].CanReply = account.MemberID == userID && account.IsActive && account.Status == model.CRMEmailAccountStatusConnected && account.Provider == model.CRMEmailProviderGmail
+		}
+		if latest != nil && latest.Direction == model.CRMEmailDirectionInbound {
+			dismissal, dismissalErr := s.emailRepo.GetThreadDismissal(ctx, workspaceID, threads[i].ID, userID)
+			if dismissalErr != nil {
+				return nil, 0, dismissalErr
+			}
+			threads[i].NeedsReplyDismissed = dismissal != nil && !dismissal.DismissedAt.Before(latest.SentAt)
+			threads[i].NeedsReply = !threads[i].NeedsReplyDismissed
+		}
+	}
+	return threads, total, nil
+}
+
+func (s *CRMEmailService) GetThreadDetail(ctx context.Context, workspaceID, threadID, userID string) (*model.CRMEmailThreadDetail, error) {
+	thread, err := s.emailRepo.GetThreadByID(ctx, threadID)
+	if err != nil || thread == nil || thread.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("email thread not found")
+	}
+	account, err := s.emailRepo.GetAccountByIDForWorkspace(ctx, workspaceID, thread.EmailAccountID)
+	if err != nil {
+		return nil, err
+	}
+	latest, err := s.emailRepo.GetLatestMessageForThread(ctx, workspaceID, threadID)
+	if err != nil {
+		return nil, err
+	}
+	thread.LatestMessage = latest
+	if account != nil {
+		thread.MailboxEmail = account.EmailAddress
+		thread.MailboxProvider = account.Provider
+		thread.MailboxStatus = account.Status
+		thread.MailboxLastSync = account.LastSyncedAt
+		thread.CanReply = account.MemberID == userID && account.IsActive && account.Status == model.CRMEmailAccountStatusConnected && account.Provider == model.CRMEmailProviderGmail
+	}
+	if latest != nil && latest.Direction == model.CRMEmailDirectionInbound {
+		dismissal, dismissalErr := s.emailRepo.GetThreadDismissal(ctx, workspaceID, threadID, userID)
+		if dismissalErr != nil {
+			return nil, dismissalErr
+		}
+		thread.NeedsReplyDismissed = dismissal != nil && !dismissal.DismissedAt.Before(latest.SentAt)
+		thread.NeedsReply = !thread.NeedsReplyDismissed
+	}
+	messages, _, err := s.emailRepo.ListMessages(ctx, workspaceID, model.CRMEmailMessageListFilters{ThreadID: &threadID}, model.PMPagination{Page: 1, PerPage: 250})
+	if err != nil {
+		return nil, err
+	}
+	participants, err := s.threadParticipants(ctx, workspaceID, messages)
+	if err != nil {
+		return nil, err
+	}
+	return &model.CRMEmailThreadDetail{Thread: *thread, Messages: messages, Participants: participants}, nil
+}
+
+func (s *CRMEmailService) SetThreadDismissed(ctx context.Context, workspaceID, threadID, userID string, dismissed bool) error {
+	thread, err := s.emailRepo.GetThreadByID(ctx, threadID)
+	if err != nil || thread == nil || thread.WorkspaceID != workspaceID {
+		return fmt.Errorf("email thread not found")
+	}
+	if !dismissed {
+		return s.emailRepo.DeleteThreadDismissal(ctx, workspaceID, threadID, userID)
+	}
+	return s.emailRepo.UpsertThreadDismissal(ctx, &model.CRMEmailThreadDismissal{WorkspaceID: workspaceID, ThreadID: threadID, UserID: userID, DismissedAt: time.Now().UTC()})
+}
+
+func (s *CRMEmailService) LinkThreadDeal(ctx context.Context, workspaceID, threadID string, dealID *string) error {
+	if dealID != nil && strings.TrimSpace(*dealID) != "" {
+		valid, err := s.emailRepo.CRMEntityBelongsToWorkspace(ctx, "deal", workspaceID, strings.TrimSpace(*dealID))
+		if err != nil {
+			return err
+		}
+		if !valid {
+			return fmt.Errorf("deal not found")
+		}
+	}
+	return s.emailRepo.UpdateThreadDeal(ctx, workspaceID, threadID, dealID)
+}
+
+func (s *CRMEmailService) ReplyToThread(ctx context.Context, workspaceID, threadID, userID, mode, bodyHTML string) (*model.CRMEmailMessage, error) {
+	thread, err := s.emailRepo.GetThreadByID(ctx, threadID)
+	if err != nil || thread == nil || thread.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("email thread not found")
+	}
+	account, err := s.emailRepo.GetAccountByIDForWorkspace(ctx, workspaceID, thread.EmailAccountID)
+	if err != nil || account == nil {
+		return nil, fmt.Errorf("email account not found")
+	}
+	if account.MemberID != userID {
+		return nil, fmt.Errorf("only the connected mailbox owner can reply to this thread")
+	}
+	if !account.IsActive || account.Status != model.CRMEmailAccountStatusConnected {
+		return nil, fmt.Errorf("email account is not connected")
+	}
+	threadClient, ok := s.gmailSync.(gmailThreadClient)
+	if !ok || threadClient == nil {
+		return nil, fmt.Errorf("thread replies are not configured")
+	}
+	latest, err := s.emailRepo.GetLatestMessageForThread(ctx, workspaceID, threadID)
+	if err != nil || latest == nil {
+		return nil, fmt.Errorf("email thread has no messages")
+	}
+	accessToken, err := s.gmailSync.GetValidToken(ctx, account)
+	if err != nil {
+		return nil, fmt.Errorf("get valid token: %w", err)
+	}
+	if latest.RFCMessageID == nil || strings.TrimSpace(*latest.RFCMessageID) == "" {
+		detail, detailErr := threadClient.GetMessageDetail(ctx, accessToken, latest.MessageExternalID)
+		if detailErr != nil {
+			return nil, fmt.Errorf("load reply headers: %w", detailErr)
+		}
+		latest.RFCMessageID = optionalStringPtr(detail.RFCMessageID)
+		latest.InReplyTo = optionalStringPtr(detail.InReplyTo)
+		latest.ReferencesHeader = optionalStringPtr(detail.ReferencesHeader)
+		if err := s.emailRepo.UpdateMessageReplyHeaders(ctx, workspaceID, latest.ID, detail.RFCMessageID, detail.InReplyTo, detail.ReferencesHeader); err != nil {
+			return nil, err
+		}
+	}
+	to, cc := threadReplyRecipients(latest, account.EmailAddress, mode)
+	if len(to) == 0 {
+		return nil, fmt.Errorf("thread has no reply recipient")
+	}
+	references := strings.TrimSpace(stringValue(latest.ReferencesHeader) + " " + stringValue(latest.RFCMessageID))
+	sendResult, err := threadClient.SendThreadMessage(ctx, accessToken, account.EmailAddress, to, cc, thread.Subject, bodyHTML, thread.ThreadExternalID, stringValue(latest.RFCMessageID), references)
+	if err != nil {
+		return nil, fmt.Errorf("send thread reply: %w", err)
+	}
+	now := time.Now().UTC()
+	toJSON, _ := json.Marshal(to)
+	ccJSON, _ := json.Marshal(cc)
+	settings, settingsErr := s.GetEmailSyncSettings(ctx, workspaceID)
+	if settingsErr != nil {
+		return nil, fmt.Errorf("load email sync settings: %w", settingsErr)
+	}
+	resolution, resolutionErr := s.resolver.Resolve(ctx, crmemail.ResolveInput{
+		WorkspaceID: workspaceID,
+		Direction:   model.CRMEmailDirectionOutbound,
+		Settings:    settings,
+		SelfEmails:  []string{account.EmailAddress},
+		From:        crmemail.Participant{Email: account.EmailAddress, Role: model.CRMEmailParticipantRoleFrom},
+		To:          participantsFromAddresses(to, model.CRMEmailParticipantRoleTo),
+		CC:          participantsFromAddresses(cc, model.CRMEmailParticipantRoleCC),
+	})
+	if resolutionErr != nil {
+		return nil, fmt.Errorf("resolve reply participants: %w", resolutionErr)
+	}
+	message := &model.CRMEmailMessage{
+		WorkspaceID: workspaceID, EmailAccountID: account.ID, ThreadID: &thread.ID,
+		MessageExternalID: sendResult.ID, FromAddress: account.EmailAddress,
+		ToAddresses: toJSON, CCAddresses: ccJSON, Subject: thread.Subject,
+		BodyHTML: &bodyHTML, Direction: model.CRMEmailDirectionOutbound, SentAt: now, DealID: thread.DealID,
+		ContactID: resolution.PrimaryContactID, ContactIDs: resolution.ContactIDs,
+	}
+	if err := s.emailRepo.CreateMessage(ctx, message); err != nil {
+		return message, nil
+	}
+	if err := s.emailRepo.IncrementThreadMessageCount(ctx, thread.ID, now); err != nil {
+		slog.ErrorContext(ctx, "failed to increment replied thread", "error", err, "thread_id", thread.ID)
+	}
+	if err := s.emailRepo.ReplaceMessageContacts(ctx, message.ID, resolution.PrimaryContactID, cloneAssociationsForMessage(message.ID, resolution.Associations)); err != nil {
+		slog.ErrorContext(ctx, "failed to persist reply contacts", "error", err, "message_id", message.ID)
+	} else if err := s.emailRepo.RefreshThreadContactIDs(ctx, thread.ID); err != nil {
+		slog.ErrorContext(ctx, "failed to refresh reply thread contacts", "error", err, "thread_id", thread.ID)
+	}
+	s.enqueueBuyerSignalDetection(ctx, message.ID)
+	s.requestSummaryRefreshForMessage(ctx, message, "thread_reply")
+	return message, nil
+}
+
+func threadReplyRecipients(message *model.CRMEmailMessage, selfEmail, mode string) ([]string, []string) {
+	selfEmail = strings.ToLower(strings.TrimSpace(selfEmail))
+	toAddresses := crmemail.ParseAddressJSONArray(message.ToAddresses)
+	ccAddresses := crmemail.ParseAddressJSONArray(message.CCAddresses)
+	seen := map[string]struct{}{selfEmail: {}}
+	add := func(target *[]string, value string) {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		*target = append(*target, value)
+	}
+	to := []string{}
+	cc := []string{}
+	if mode == "reply_all" {
+		add(&to, message.FromAddress)
+		for _, address := range toAddresses {
+			add(&to, address)
+		}
+		for _, address := range ccAddresses {
+			add(&cc, address)
+		}
+		return to, cc
+	}
+	if message.Direction == model.CRMEmailDirectionInbound {
+		add(&to, message.FromAddress)
+	} else {
+		for _, address := range toAddresses {
+			add(&to, address)
+			if len(to) == 1 {
+				break
+			}
+		}
+	}
+	return to, cc
+}
+
+func (s *CRMEmailService) threadParticipants(ctx context.Context, workspaceID string, messages []model.CRMEmailMessage) ([]model.CRMEmailParticipant, error) {
+	type participantSeed struct {
+		email string
+		name  string
+		role  string
+	}
+	byEmail := map[string]participantSeed{}
+	roles := map[string]int{model.CRMEmailParticipantRoleFrom: 0, model.CRMEmailParticipantRoleTo: 1, model.CRMEmailParticipantRoleCC: 2}
+	put := func(email, name, role string) {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email == "" {
+			return
+		}
+		current, exists := byEmail[email]
+		if !exists || roles[role] < roles[current.role] {
+			byEmail[email] = participantSeed{email: email, name: strings.TrimSpace(name), role: role}
+		} else if current.name == "" && strings.TrimSpace(name) != "" {
+			current.name = strings.TrimSpace(name)
+			byEmail[email] = current
+		}
+	}
+	for _, message := range messages {
+		put(message.FromAddress, stringValue(message.FromName), model.CRMEmailParticipantRoleFrom)
+		for _, address := range crmemail.ParseAddressJSONArray(message.ToAddresses) {
+			put(address, "", model.CRMEmailParticipantRoleTo)
+		}
+		for _, address := range crmemail.ParseAddressJSONArray(message.CCAddresses) {
+			put(address, "", model.CRMEmailParticipantRoleCC)
+		}
+	}
+	emails := make([]string, 0, len(byEmail))
+	for email := range byEmail {
+		emails = append(emails, email)
+	}
+	sort.Strings(emails)
+	contacts, err := s.contactRepo.ListByEmails(ctx, workspaceID, emails)
+	if err != nil {
+		return nil, err
+	}
+	participants := make([]model.CRMEmailParticipant, 0, len(emails))
+	for _, email := range emails {
+		seed := byEmail[email]
+		participant := model.CRMEmailParticipant{Email: email, Name: seed.name, Role: seed.role}
+		if contact, ok := contacts[email]; ok {
+			participant.ContactID = &contact.ID
+			participant.ContactName = strings.TrimSpace(contact.FirstName + " " + stringValue(contact.LastName))
+			if participant.Name == "" {
+				participant.Name = participant.ContactName
+			}
+		}
+		participants = append(participants, participant)
+	}
+	return participants, nil
 }
 
 // ── Email Messages ──
@@ -1037,9 +1324,23 @@ func (s *CRMEmailService) requestSummaryRefreshForMessage(ctx context.Context, m
 		return
 	}
 
+	companyRefresh, canRefreshCompanies := s.summaryRefresh.(CompanySummaryRefreshRequester)
 	if message.DealID != nil && *message.DealID != "" {
 		if err := s.summaryRefresh.RequestDealRefresh(ctx, message.WorkspaceID, *message.DealID); err != nil {
 			slog.ErrorContext(ctx, "failed to request deal summary refresh from crm email message", "error", err, "workspace_id", message.WorkspaceID, "deal_id", *message.DealID, "message_id", message.ID, "source", source)
+		}
+		if canRefreshCompanies {
+			if err := companyRefresh.RequestCompanyRefreshForObject(ctx, message.WorkspaceID, model.CRMObjectDeal, *message.DealID); err != nil {
+				slog.ErrorContext(ctx, "failed to request company summary refresh from crm email deal", "error", err, "workspace_id", message.WorkspaceID, "deal_id", *message.DealID, "message_id", message.ID, "source", source)
+			}
+		}
+	}
+
+	if canRefreshCompanies {
+		for _, contactID := range message.ContactIDs {
+			if err := companyRefresh.RequestCompanyRefreshForObject(ctx, message.WorkspaceID, model.CRMObjectContact, contactID); err != nil {
+				slog.ErrorContext(ctx, "failed to request company summary refresh from crm email contact", "error", err, "workspace_id", message.WorkspaceID, "contact_id", contactID, "message_id", message.ID, "source", source)
+			}
 		}
 	}
 

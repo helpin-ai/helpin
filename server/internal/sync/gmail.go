@@ -26,20 +26,23 @@ const (
 
 // GmailMessage represents a parsed Gmail message.
 type GmailMessage struct {
-	ID        string
-	ThreadID  string
-	Subject   string
-	From      string
-	FromName  string
-	To        []string
-	ToNames   map[string]string // email → display name
-	CC        []string
-	CCNames   map[string]string // email → display name
-	Date      time.Time
-	BodyText  string
-	BodyHTML  string
-	HistoryID string
-	LabelIDs  []string
+	ID               string
+	ThreadID         string
+	Subject          string
+	From             string
+	FromName         string
+	To               []string
+	ToNames          map[string]string // email → display name
+	CC               []string
+	CCNames          map[string]string // email → display name
+	Date             time.Time
+	BodyText         string
+	BodyHTML         string
+	HistoryID        string
+	LabelIDs         []string
+	RFCMessageID     string
+	InReplyTo        string
+	ReferencesHeader string
 }
 
 // GmailSendResult contains the identifiers returned by Gmail after sending.
@@ -224,6 +227,15 @@ func (c *GmailSyncClient) GetMessageDetail(ctx context.Context, accessToken, mes
 
 // SendMessage sends an email via Gmail API and returns the created message and thread IDs.
 func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string) (*GmailSendResult, error) {
+	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, "", "", "")
+}
+
+// SendThreadMessage sends a reply into an existing Gmail thread.
+func (c *GmailSyncClient) SendThreadMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string) (*GmailSendResult, error) {
+	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, threadID, inReplyTo, references)
+}
+
+func (c *GmailSyncClient) sendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string) (*GmailSendResult, error) {
 	fromHeader, err := safeMailHeaderAddress(from)
 	if err != nil {
 		return nil, fmt.Errorf("invalid from address: %w", err)
@@ -248,6 +260,12 @@ func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from str
 		b.WriteString("Cc: " + strings.Join(ccHeaders, ", ") + "\r\n")
 	}
 	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
+	if strings.TrimSpace(inReplyTo) != "" {
+		b.WriteString("In-Reply-To: " + sanitizeMessageHeader(inReplyTo) + "\r\n")
+	}
+	if strings.TrimSpace(references) != "" {
+		b.WriteString("References: " + sanitizeMessageHeader(references) + "\r\n")
+	}
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
 	b.WriteString("\r\n")
@@ -257,7 +275,11 @@ func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from str
 	encoded := base64.URLEncoding.EncodeToString([]byte(b.String()))
 
 	sendURL := fmt.Sprintf("%s/messages/send", c.userBaseURL())
-	payload, err := json.Marshal(map[string]string{"raw": encoded})
+	payloadData := map[string]string{"raw": encoded}
+	if strings.TrimSpace(threadID) != "" {
+		payloadData["threadId"] = strings.TrimSpace(threadID)
+	}
+	payload, err := json.Marshal(payloadData)
 	if err != nil {
 		return nil, fmt.Errorf("encode send request: %w", err)
 	}
@@ -296,6 +318,10 @@ func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from str
 		ID:       sendResp.ID,
 		ThreadID: sendResp.ThreadID,
 	}, nil
+}
+
+func sanitizeMessageHeader(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(value), "\r", ""), "\n", "")
 }
 
 func safeMailHeaderAddresses(addresses []string) ([]string, error) {
@@ -512,6 +538,12 @@ func parseGmailMessage(raw *gmailRawMessage) *GmailMessage {
 			if t, err := mail.ParseDate(h.Value); err == nil {
 				msg.Date = t
 			}
+		case "message-id":
+			msg.RFCMessageID = strings.TrimSpace(h.Value)
+		case "in-reply-to":
+			msg.InReplyTo = strings.TrimSpace(h.Value)
+		case "references":
+			msg.ReferencesHeader = strings.TrimSpace(h.Value)
 		}
 	}
 

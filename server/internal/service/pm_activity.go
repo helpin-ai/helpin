@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -11,7 +13,14 @@ import (
 
 // PMActivityService contains activity logging business logic.
 type PMActivityService struct {
-	activityRepo *repository.PMActivityRepository
+	activityRepo   *repository.PMActivityRepository
+	summaryRefresh CompanySummaryRefreshRequester
+}
+
+// SetCompanySummaryRefresh enables account-summary invalidation for linked task and deal milestones.
+func (s *PMActivityService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *PMActivityService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // NewPMActivityService creates a new PMActivityService.
@@ -37,6 +46,19 @@ func (s *PMActivityService) ListWorkspace(ctx context.Context, workspaceID strin
 
 // Log writes an activity log entry.
 func (s *PMActivityService) Log(ctx context.Context, workspaceID, entityType, entityID string, actorID *string, action string, fieldName, oldValue, newValue *string, metadata map[string]interface{}) error {
+	return s.log(ctx, workspaceID, entityType, entityID, actorID, nil, action, fieldName, oldValue, newValue, metadata)
+}
+
+// LogEvent writes an activity entry with a stable machine-readable event type.
+func (s *PMActivityService) LogEvent(ctx context.Context, workspaceID, entityType, entityID string, actorID *string, eventType, action string, fieldName, oldValue, newValue *string, metadata map[string]interface{}) error {
+	eventType = strings.TrimSpace(eventType)
+	if eventType == "" {
+		return fmt.Errorf("event_type is required")
+	}
+	return s.log(ctx, workspaceID, entityType, entityID, actorID, &eventType, action, fieldName, oldValue, newValue, metadata)
+}
+
+func (s *PMActivityService) log(ctx context.Context, workspaceID, entityType, entityID string, actorID, eventType *string, action string, fieldName, oldValue, newValue *string, metadata map[string]interface{}) error {
 	if workspaceID == "" || entityType == "" || entityID == "" || action == "" {
 		return fmt.Errorf("workspace_id, entity_type, entity_id, and action are required")
 	}
@@ -55,6 +77,7 @@ func (s *PMActivityService) Log(ctx context.Context, workspaceID, entityType, en
 		EntityType:  entityType,
 		EntityID:    entityID,
 		ActorID:     actorID,
+		EventType:   eventType,
 		Action:      action,
 		FieldName:   fieldName,
 		OldValue:    oldValue,
@@ -63,6 +86,11 @@ func (s *PMActivityService) Log(ctx context.Context, workspaceID, entityType, en
 	}
 	if err := s.activityRepo.Create(ctx, entry); err != nil {
 		return err
+	}
+	if s.summaryRefresh != nil && (entityType == model.CRMObjectTask || entityType == model.CRMObjectDeal) {
+		if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, entityType, entityID); err != nil {
+			slog.ErrorContext(ctx, "failed to request company summary refresh from pm activity", "error", err, "entity_type", entityType, "entity_id", entityID)
+		}
 	}
 	return nil
 }

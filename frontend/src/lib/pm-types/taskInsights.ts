@@ -2,7 +2,7 @@ import type { AgentRun } from './agents';
 import type { TaskGitLink } from './delivery';
 import type { ActivityLogEntry, CommentWithAuthor } from './project';
 
-export type TaskDetailView = 'overview' | 'updates' | 'delivery';
+export type TaskDetailView = 'overview' | 'delivery';
 export type TaskUpdateFilter = 'all' | 'discussion' | 'changes';
 export type TaskUpdateKind = 'comment' | 'change' | 'agent_run' | 'git';
 

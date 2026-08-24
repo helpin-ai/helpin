@@ -217,6 +217,10 @@ interface TaskListViewProps {
   sprintId?: string | null;
   /** When provided, use these tasks instead of fetching internally. */
   externalTasks?: Task[];
+  /** Disable the global create event when an external scoped query owns membership. */
+  listenForCreatedTasks?: boolean;
+  /** Let an embedded list shrink to its rows while retaining a bounded scroll area. */
+  fitContent?: boolean;
   /** Keeps an external owner of task state in sync with inline table edits. */
   onExternalTasksChange?: (updater: TaskListTasksUpdater) => void;
   onInlineUpdateSavingChange?: (saving: boolean) => void;
@@ -602,6 +606,8 @@ export function TaskListView({
   epicId,
   sprintId,
   externalTasks,
+  listenForCreatedTasks = true,
+  fitContent = false,
   onExternalTasksChange,
   onInlineUpdateSavingChange,
   onInlineUpdateError,
@@ -703,6 +709,7 @@ export function TaskListView({
   }, [workspaceId]);
 
   useEffect(() => {
+    if (!listenForCreatedTasks) return;
     const handleTaskCreated = (event: Event) => {
       const created = (event as CustomEvent<{ task?: Task }>).detail?.task;
       if (!created) return;
@@ -717,7 +724,7 @@ export function TaskListView({
     };
     window.addEventListener('task-created', handleTaskCreated);
     return () => window.removeEventListener('task-created', handleTaskCreated);
-  }, [workspaceId, workflow.workflow.id, teamId]);
+  }, [listenForCreatedTasks, workspaceId, workflow.workflow.id, teamId]);
 
   // Build lookup maps
   const availableWorkflows = useMemo(
@@ -1765,7 +1772,7 @@ export function TaskListView({
   const { rows } = table.getRowModel();
   const selectWidth = table.getColumn('select')?.getSize() ?? CHECKBOX_COL_SIZE;
   const displayIdWidth = table.getColumn('displayId')?.getSize() ?? 90;
-  const typeIconColumn = table.getColumn('typeIcon');
+  const typeIconColumn = table.getAllLeafColumns().find((column) => column.id === 'typeIcon');
   const typeIconWidth = typeIconColumn?.getSize() ?? 40;
   const showTypeIcon = typeIconColumn?.getIsVisible() ?? false;
   const pinnedOffsets = useMemo(() => {
@@ -2063,7 +2070,10 @@ export function TaskListView({
   const usePortal = !!portalContainer;
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col gap-2">
+    <div className={cn(
+      'relative flex min-h-0 flex-col gap-2',
+      fitContent ? 'flex-none' : 'flex-1',
+    )}>
       {usePortal && selectedTasks.length > 0 ? createPortal(bulkActionsBar, portalContainer) : null}
       {showToolbar ? (
         <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
@@ -2130,7 +2140,7 @@ export function TaskListView({
       {/* Table */}
       <div
         ref={parentRef}
-        className={TABLE_CONTAINER}
+        className={cn(TABLE_CONTAINER, fitContent && 'max-h-[370px] flex-none')}
         onScroll={(e) => {
           const el = e.currentTarget;
           const scrollTop = el.scrollTop;

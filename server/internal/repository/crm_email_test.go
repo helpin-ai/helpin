@@ -42,6 +42,9 @@ func setupCRMEmailRepositoryTestDB(t *testing.T) *gorm.DB {
 			email_account_id TEXT NOT NULL,
 			thread_id TEXT,
 			message_external_id TEXT,
+			rfc_message_id TEXT,
+			in_reply_to TEXT,
+			references_header TEXT,
 			from_address TEXT NOT NULL,
 			from_name TEXT,
 			to_addresses BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
@@ -63,6 +66,14 @@ func setupCRMEmailRepositoryTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			PRIMARY KEY (message_id, contact_id, participant_role)
 		)`,
+		`CREATE TABLE crm_associations (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			from_object_type TEXT NOT NULL,
+			from_object_id TEXT NOT NULL,
+			to_object_type TEXT NOT NULL,
+			to_object_id TEXT NOT NULL
+		)`,
 	}
 	for _, stmt := range statements {
 		if err := db.Exec(stmt).Error; err != nil {
@@ -71,6 +82,60 @@ func setupCRMEmailRepositoryTestDB(t *testing.T) *gorm.DB {
 	}
 
 	return db
+}
+
+func TestCRMEmailRepository_ListMessagesByAssociatedCompanyContacts(t *testing.T) {
+	db := setupCRMEmailRepositoryTestDB(t)
+	repo := NewCRMEmailRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	for _, message := range []struct {
+		id        string
+		contactID any
+	}{
+		{id: "message-primary", contactID: "contact-primary"},
+		{id: "message-participant", contactID: nil},
+		{id: "message-other-company", contactID: "contact-other"},
+	} {
+		if err := db.Exec(`
+			INSERT INTO crm_email_messages (
+				id, workspace_id, email_account_id, from_address, to_addresses, cc_addresses,
+				subject, direction, sent_at, contact_id
+			) VALUES (?, 'ws-1', 'account-1', 'owner@example.com', ?, ?, ?, 'outbound', ?, ?)
+		`, message.id, []byte(`[]`), []byte(`[]`), message.id, now, message.contactID).Error; err != nil {
+			t.Fatalf("seed %s: %v", message.id, err)
+		}
+	}
+
+	for _, statement := range []string{
+		`INSERT INTO crm_associations VALUES ('association-primary', 'ws-1', 'contact', 'contact-primary', 'company', 'company-1')`,
+		`INSERT INTO crm_associations VALUES ('association-participant', 'ws-1', 'company', 'company-1', 'contact', 'contact-participant')`,
+		`INSERT INTO crm_associations VALUES ('association-other', 'ws-1', 'contact', 'contact-other', 'company', 'company-2')`,
+		`INSERT INTO crm_email_message_contacts VALUES ('message-participant', 'contact-participant', 'to', 'ws-1', NULL)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("seed company email association: %v", err)
+		}
+	}
+
+	companyID := "company-1"
+	messages, total, err := repo.ListMessages(ctx, "ws-1", model.CRMEmailMessageListFilters{
+		CompanyID: &companyID,
+	}, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if total != 2 || len(messages) != 2 {
+		t.Fatalf("messages = %#v total = %d, want two company messages", messages, total)
+	}
+	ids := map[string]bool{}
+	for _, message := range messages {
+		ids[message.ID] = true
+	}
+	if !ids["message-primary"] || !ids["message-participant"] || ids["message-other-company"] {
+		t.Fatalf("company message IDs = %v", ids)
+	}
 }
 
 func TestCRMEmailRepository_ListMessagesByAssociatedContact(t *testing.T) {

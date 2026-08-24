@@ -17,14 +17,189 @@ import (
 
 type fakeSummaryLLMProvider struct {
 	content  string
+	contents []string
 	beforeFn func(context.Context)
+	calls    int
 }
 
 func (f *fakeSummaryLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	f.calls++
 	if f.beforeFn != nil {
 		f.beforeFn(ctx)
 	}
+	if len(f.contents) > 0 {
+		index := f.calls - 1
+		if index >= len(f.contents) {
+			index = len(f.contents) - 1
+		}
+		return &llm.ChatResponse{Content: f.contents[index]}, nil
+	}
 	return &llm.ChatResponse{Content: f.content}, nil
+}
+
+func TestCRMSummaryService_RetriesChineseNarrativeAndKeepsEnglishResult(t *testing.T) {
+	provider := &fakeSummaryLLMProvider{contents: []string{
+		`{"summary_markdown":"该公司正在评估企业计划，并希望本月作出决定。","highlights":[{"kind":"next_step","text":"安排后续会议。"}]}`,
+		`{"summary_markdown":"The company is evaluating the enterprise plan and expects to decide this month.","highlights":[{"kind":"next_step","text":"Schedule the follow-up meeting."}]}`,
+	}}
+	svc := &CRMSummaryService{llmProvider: provider}
+	output, err := svc.generateSummaryLLM(context.Background(), AIUsageMeteringContext{
+		WorkspaceID: "ws-1", FeatureKey: BillingFeatureCRMSummary, IdempotencyKey: "summary-language-test",
+	}, summaryPromptEntity{EntityType: model.CRMObjectCompany})
+	if err != nil {
+		t.Fatalf("generateSummaryLLM: %v", err)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", provider.calls)
+	}
+	if !strings.Contains(output.SummaryMarkdown, "evaluating the enterprise plan") {
+		t.Fatalf("summary = %q, want retried English result", output.SummaryMarkdown)
+	}
+}
+
+func TestCRMSummaryService_RefreshContactSummaryNowGeneratesSparseSummaryAndSatisfiesQueuedRefresh(t *testing.T) {
+	db := setupCRMSummaryTestDB(t)
+	ctx := context.Background()
+
+	summaryRepo := repository.NewCRMSummaryRepository(db)
+	provider := &fakeSummaryLLMProvider{
+		content: `{"summary_markdown":"There is limited recent activity for Atsuyo, but the contact is currently a new subscriber.","highlights":[{"kind":"next_step","text":"Add a note or reach out to establish the next step."}]}`,
+	}
+	runner := &fakeSummaryWorkflowRunner{}
+	svc := NewCRMSummaryService(
+		summaryRepo,
+		repository.NewCRMContactRepository(db),
+		repository.NewCRMCompanyRepository(db),
+		repository.NewCRMDealRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewCRMSignalRepository(db),
+		repository.NewCRMEmailRepository(db),
+		provider,
+		nil,
+	)
+	svc.runner = runner
+
+	mustExecSummary(t, db, `INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, email, custom_properties) VALUES (?, ?, ?, ?, ?, CAST(? AS BLOB))`,
+		"contact-1", "ws-1", "CON-1", "Atsuyo", "atsuyo@example.com", `{}`)
+
+	summary, err := svc.RefreshContactSummaryNow(ctx, "ws-1", "contact-1")
+	if err != nil {
+		t.Fatalf("RefreshContactSummaryNow: %v", err)
+	}
+	if summary == nil || summary.Status != model.CRMEntitySummaryStatusReady {
+		t.Fatalf("summary = %+v, want ready summary", summary)
+	}
+	if !strings.Contains(summary.SummaryMarkdown, "limited recent activity") {
+		t.Fatalf("summary markdown = %q, want sparse-context summary", summary.SummaryMarkdown)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	}
+	if len(runner.inputs) != 0 {
+		t.Fatalf("manual refresh queued %d workflows, want none", len(runner.inputs))
+	}
+
+	result, err := svc.RefreshSummary(ctx, model.CRMEntitySummaryRefreshInput{
+		WorkspaceID: "ws-1",
+		EntityType:  model.CRMObjectContact,
+		EntityID:    "contact-1",
+	})
+	if err != nil {
+		t.Fatalf("RefreshSummary after manual generation: %v", err)
+	}
+	if result.Status != model.CRMEntitySummaryStatusReady || result.NeedsContinue {
+		t.Fatalf("queued result = %+v, want satisfied ready result", result)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls after queued refresh = %d, want 1", provider.calls)
+	}
+}
+
+func TestCRMSummaryService_RefreshDealSummaryNowGeneratesSparseSummary(t *testing.T) {
+	db := setupCRMSummaryTestDB(t)
+	ctx := context.Background()
+
+	provider := &fakeSummaryLLMProvider{
+		content: `{"summary_markdown":"The expansion deal is currently qualified, with no recent communication recorded.","highlights":[{"kind":"next_step","text":"Confirm the buyer's timeline and next meeting."}]}`,
+	}
+	svc := NewCRMSummaryService(
+		repository.NewCRMSummaryRepository(db),
+		repository.NewCRMContactRepository(db),
+		repository.NewCRMCompanyRepository(db),
+		repository.NewCRMDealRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewCRMSignalRepository(db),
+		repository.NewCRMEmailRepository(db),
+		provider,
+		nil,
+	)
+
+	mustExecSummary(t, db, `INSERT INTO crm_pipeline_stages (id, pipeline_id, name, stage_type, position, probability) VALUES (?, ?, ?, ?, ?, ?)`,
+		"stage-open", "pipe-1", "Qualified", "open", 0, 50)
+	mustExecSummary(t, db, `INSERT INTO crm_deals (id, workspace_id, display_id, name, pipeline_id, stage_id, currency, custom_properties) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS BLOB))`,
+		"deal-1", "ws-1", "DEAL-1", "Expansion", "pipe-1", "stage-open", "USD", `{}`)
+
+	summary, err := svc.RefreshDealSummaryNow(ctx, "ws-1", "deal-1")
+	if err != nil {
+		t.Fatalf("RefreshDealSummaryNow: %v", err)
+	}
+	if summary == nil || summary.EntityType != model.CRMObjectDeal || summary.Status != model.CRMEntitySummaryStatusReady {
+		t.Fatalf("summary = %+v, want ready deal summary", summary)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	}
+}
+
+func TestCRMSummaryService_RefreshCompanySummaryNowGeneratesSparseAccountSummary(t *testing.T) {
+	db := setupCRMSummaryTestDB(t)
+	ctx := context.Background()
+	mustExecSummary(t, db, `CREATE TABLE crm_activities (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, activity_type TEXT NOT NULL,
+		contact_id TEXT, company_id TEXT, deal_id TEXT, owner_member_id TEXT,
+		subject TEXT, body TEXT, occurred_at DATETIME NOT NULL, metadata BLOB
+	)`)
+	mustExecSummary(t, db, `CREATE TABLE pm_tasks (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, updated_at DATETIME NOT NULL)`)
+	mustExecSummary(t, db, `CREATE TABLE support_conversations (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, display_id INTEGER NOT NULL,
+		subject TEXT NOT NULL, status TEXT NOT NULL, priority TEXT, channel TEXT,
+		crm_contact_id TEXT, crm_company_id TEXT, updated_at DATETIME NOT NULL
+	)`)
+	mustExecSummary(t, db, `INSERT INTO crm_companies (id, workspace_id, display_id, name, domain, industry, description, custom_properties) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS BLOB))`,
+		"company-1", "ws-1", "COM-1", "Monita", "monita.example", "SaaS", "Customer analytics platform", `{}`)
+
+	provider := &fakeSummaryLLMProvider{
+		content: `{"summary_markdown":"Monita is a SaaS account with limited recent engagement recorded.","highlights":[{"kind":"next_step","text":"Add the next customer touchpoint."}]}`,
+	}
+	svc := NewCRMSummaryService(
+		repository.NewCRMSummaryRepository(db),
+		repository.NewCRMContactRepository(db),
+		repository.NewCRMCompanyRepository(db),
+		repository.NewCRMDealRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewCRMSignalRepository(db),
+		repository.NewCRMEmailRepository(db),
+		provider,
+		nil,
+	).SetCompanyEvidenceRepositories(
+		repository.NewCRMCompanyTimelineRepository(db),
+		repository.NewPMTaskRepository(db),
+		repository.NewSupportConversationRepository(db),
+	)
+
+	summary, err := svc.RefreshCompanySummaryNow(ctx, "ws-1", "company-1")
+	if err != nil {
+		t.Fatalf("RefreshCompanySummaryNow: %v", err)
+	}
+	if summary == nil || summary.EntityType != model.CRMObjectCompany || summary.Status != model.CRMEntitySummaryStatusReady {
+		t.Fatalf("summary = %+v, want ready company summary", summary)
+	}
+	if intValue(summary.Metadata["source_contact_count"]) != 0 {
+		t.Fatalf("source_contact_count = %#v, want zero", summary.Metadata["source_contact_count"])
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	}
 }
 
 type fakeSummaryWorkflowRunner struct {
@@ -87,11 +262,16 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			display_id TEXT NOT NULL,
+			external_id TEXT,
 			name TEXT NOT NULL,
 			domain TEXT,
 			industry TEXT,
-			size INTEGER,
-			revenue REAL,
+			employee_count INTEGER,
+			annual_revenue REAL,
+			description TEXT,
+			logo_url TEXT,
+			linkedin_url TEXT,
+			headquarters TEXT,
 			owner_member_id TEXT,
 			custom_properties BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -148,6 +328,9 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			email_account_id TEXT NOT NULL,
 			thread_id TEXT,
 			message_external_id TEXT,
+			rfc_message_id TEXT,
+			in_reply_to TEXT,
+			references_header TEXT,
 			from_address TEXT NOT NULL,
 			from_name TEXT,
 			to_addresses BLOB NOT NULL DEFAULT (CAST('[]' AS BLOB)),
@@ -159,6 +342,7 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			sent_at DATETIME NOT NULL,
 			contact_id TEXT,
 			deal_id TEXT,
+			company_id TEXT,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE crm_email_message_contacts (
@@ -174,6 +358,7 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			contact_id TEXT,
 			deal_id TEXT,
+			company_id TEXT,
 			signal_type TEXT NOT NULL,
 			source_type TEXT NOT NULL DEFAULT 'manual',
 			source_id TEXT,
@@ -183,6 +368,9 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			metadata BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			confidence REAL NOT NULL DEFAULT 0,
 			detected_at DATETIME NOT NULL,
+			evidence_fingerprint TEXT NOT NULL DEFAULT '',
+			dismissed_at DATETIME,
+			dismissed_by_member_id TEXT,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE crm_entity_summaries (
@@ -407,6 +595,8 @@ func TestCRMSummaryService_RunDailyReconciliationQueuesOpenDealsAndTouchedContac
 	now := time.Now().UTC()
 	mustExecSummary(t, db, `INSERT INTO crm_contacts (id, workspace_id, display_id, first_name, email, custom_properties) VALUES (?, ?, ?, ?, ?, CAST(? AS BLOB))`,
 		"contact-1", "ws-1", "CON-1", "Atsuyo", "atsuyo@example.com", `{}`)
+	mustExecSummary(t, db, `INSERT INTO crm_companies (id, workspace_id, display_id, name, custom_properties, updated_at) VALUES (?, ?, ?, ?, CAST(? AS BLOB), ?)`,
+		"company-1", "ws-1", "COM-1", "Monita", `{}`, now)
 	mustExecSummary(t, db, `INSERT INTO crm_pipeline_stages (id, pipeline_id, name, stage_type, position, probability) VALUES (?, ?, ?, ?, ?, ?)`,
 		"stage-open", "pipe-1", "Qualified", "open", 0, 50)
 	mustExecSummary(t, db, `INSERT INTO crm_deals (id, workspace_id, display_id, name, pipeline_id, stage_id, custom_properties, updated_at) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS BLOB), ?)`,
@@ -423,11 +613,70 @@ func TestCRMSummaryService_RunDailyReconciliationQueuesOpenDealsAndTouchedContac
 	if err != nil {
 		t.Fatalf("RunDailyReconciliation: %v", err)
 	}
-	if result.DealsQueued != 1 || result.ContactsQueued != 1 {
-		t.Fatalf("result = %+v, want one deal and one contact queued", result)
+	if result.DealsQueued != 1 || result.ContactsQueued != 1 || result.CompaniesQueued != 1 {
+		t.Fatalf("result = %+v, want one deal, contact, and company queued", result)
 	}
-	if len(runner.inputs) != 2 {
-		t.Fatalf("runner inputs = %d, want 2", len(runner.inputs))
+	if len(runner.inputs) != 3 {
+		t.Fatalf("runner inputs = %d, want 3", len(runner.inputs))
+	}
+}
+
+func TestCRMSummaryService_RequestCompanyRefreshForRelatedDeal(t *testing.T) {
+	db := setupCRMSummaryTestDB(t)
+	ctx := context.Background()
+	runner := &fakeSummaryWorkflowRunner{}
+	svc := NewCRMSummaryService(
+		repository.NewCRMSummaryRepository(db),
+		repository.NewCRMContactRepository(db),
+		repository.NewCRMCompanyRepository(db),
+		repository.NewCRMDealRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewCRMSignalRepository(db),
+		repository.NewCRMEmailRepository(db),
+		nil,
+		nil,
+	)
+	svc.runner = runner
+
+	mustExecSummary(t, db, `INSERT INTO crm_associations (id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		"assoc-company-contact", "ws-1", model.CRMObjectCompany, "company-1", model.CRMObjectContact, "contact-1")
+	mustExecSummary(t, db, `INSERT INTO crm_associations (id, workspace_id, from_object_type, from_object_id, to_object_type, to_object_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		"assoc-contact-deal", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectDeal, "deal-1")
+
+	if err := svc.RequestCompanyRefreshForObject(ctx, "ws-1", model.CRMObjectDeal, "deal-1"); err != nil {
+		t.Fatalf("RequestCompanyRefreshForObject: %v", err)
+	}
+	if len(runner.inputs) != 1 {
+		t.Fatalf("runner inputs = %d, want one company refresh", len(runner.inputs))
+	}
+	if got := runner.inputs[0]; got.EntityType != model.CRMObjectCompany || got.EntityID != "company-1" {
+		t.Fatalf("refresh input = %+v, want company-1", got)
+	}
+}
+
+func TestSampleCompanySummaryActivityAppliesWindowCapsAndDeduplication(t *testing.T) {
+	now := time.Now().UTC()
+	rows := make([]model.CRMCompanyTimelineItem, 0, 16)
+	for i := 0; i < 14; i++ {
+		rows = append(rows, model.CRMCompanyTimelineItem{
+			ID: fmt.Sprintf("email-%d", i), Kind: model.CRMCompanyTimelineFilterEmail,
+			EventType: "email.inbound", SourceType: "crm_email_message", SourceID: fmt.Sprintf("message-%d", i),
+			Title: fmt.Sprintf("Email %d", i), OccurredAt: now.Add(-time.Duration(i) * time.Hour),
+		})
+	}
+	rows = append(rows,
+		model.CRMCompanyTimelineItem{ID: "duplicate", Kind: model.CRMCompanyTimelineFilterEmail, EventType: "email.inbound", SourceType: "crm_email_message", SourceID: "message-0", Title: "Duplicate", OccurredAt: now},
+		model.CRMCompanyTimelineItem{ID: "old-note", Kind: model.CRMCompanyTimelineFilterNote, EventType: "activity.note", SourceType: "crm_activity", SourceID: "old-note", Title: "Old", OccurredAt: now.AddDate(0, 0, -91)},
+	)
+
+	activities, counts, times := sampleCompanySummaryActivity(rows, now.AddDate(0, 0, -90))
+	if len(activities) != 12 || counts[model.CRMCompanyTimelineFilterEmail] != 12 || len(times) != 12 {
+		t.Fatalf("activities=%d counts=%v times=%d, want 12 capped emails", len(activities), counts, len(times))
+	}
+	for _, activity := range activities {
+		if activity.Title == "Duplicate" || activity.Title == "Old" {
+			t.Fatalf("unexpected sampled activity %+v", activity)
+		}
 	}
 }
 
@@ -505,6 +754,60 @@ func TestCRMSummaryService_RefreshSummaryFailurePreservesLastGoodSummary(t *test
 	}
 	if summary.LastError == nil || strings.TrimSpace(*summary.LastError) == "" {
 		t.Fatal("expected last_error to be recorded")
+	}
+}
+
+func TestBuildSummaryReadinessCountsDistinctArtifacts(t *testing.T) {
+	now := time.Now().UTC()
+	rows := []model.CRMTimelineItem{
+		{ID: "email-2", Kind: model.CRMTimelineFilterEmail, SourceID: "message-2", Title: "Re: Pricing", OccurredAt: now, Entity: &model.CRMTimelineReference{Type: "email_thread", ID: "thread-1", Name: "Pricing"}},
+		{ID: "email-1", Kind: model.CRMTimelineFilterEmail, SourceID: "message-1", Title: "Pricing", OccurredAt: now.Add(-time.Hour), Entity: &model.CRMTimelineReference{Type: "email_thread", ID: "thread-1", Name: "Pricing"}},
+		{ID: "deal-1", Kind: model.CRMTimelineFilterDeal, SourceID: "deal-1", Title: "Pro plan", OccurredAt: now.Add(-2 * time.Hour), Entity: &model.CRMTimelineReference{Type: "deal", ID: "deal-1", Name: "Pro plan"}},
+		{ID: "note-1", Kind: model.CRMTimelineFilterNote, SourceID: "note-1", Title: "Security review", OccurredAt: now.Add(-3 * time.Hour)},
+	}
+
+	readiness, sources := buildSummaryReadiness(rows, now.AddDate(0, 0, -90))
+	if !readiness.Ready || readiness.Count != 3 {
+		t.Fatalf("readiness = %#v, want three distinct ready artifacts", readiness)
+	}
+	if len(sources) != 3 || sources[0].ThreadID != "thread-1" {
+		t.Fatalf("sources = %#v, want deduplicated email thread first", sources)
+	}
+	if readiness.Steps[0].Label != "Email logged" || readiness.Steps[2].Label != "Note added" {
+		t.Fatalf("steps = %#v, want artifact-specific labels", readiness.Steps)
+	}
+}
+
+func TestParseSummaryGenerationOutputRejectsEmptyResponseCleanly(t *testing.T) {
+	_, err := parseSummaryGenerationOutput("")
+	if err == nil || strings.Contains(err.Error(), "unexpected end of JSON") {
+		t.Fatalf("error = %v, want a clean empty-response error", err)
+	}
+}
+
+func TestGenerateSummaryLLMRetriesAnEmptyResponse(t *testing.T) {
+	provider := &fakeSummaryLLMProvider{contents: []string{
+		"",
+		`{"summary_markdown":"The company has active buyer engagement.","highlights":[]}`,
+	}}
+	svc := &CRMSummaryService{llmProvider: provider}
+
+	output, err := svc.generateSummaryLLM(context.Background(), AIUsageMeteringContext{
+		WorkspaceID:    "ws-1",
+		FeatureKey:     BillingFeatureCRMSummary,
+		IdempotencyKey: "summary-retry-test",
+	}, summaryPromptEntity{
+		EntityType: model.CRMObjectCompany,
+		Company:    &companySummarySnapshot{ID: "company-1", Name: "Acme"},
+	})
+	if err != nil {
+		t.Fatalf("generateSummaryLLM: %v", err)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want fallback retry", provider.calls)
+	}
+	if output.SummaryMarkdown != "The company has active buyer engagement." {
+		t.Fatalf("summary = %q", output.SummaryMarkdown)
 	}
 }
 
