@@ -11,7 +11,7 @@ RUN cargo build --release --bins
 FROM debian:bookworm-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libsasl2-2 libssl3 \
+    && apt-get install -y --no-install-recommends ca-certificates curl libsasl2-2 libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV TZ=UTC

@@ -67,3 +67,15 @@ claude:
 check:
     cd server && go vet ./... && go build ./cmd/api
     @echo "✅ vet + build passed"
+
+events-up:
+    ./events-pipeline/scripts/stack.sh up
+
+events-down:
+    ./events-pipeline/scripts/stack.sh down
+
+events-logs:
+    ./events-pipeline/scripts/stack.sh logs
+
+events-smoke:
+    ./events-pipeline/scripts/smoke.sh

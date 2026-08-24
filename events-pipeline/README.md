@@ -36,6 +36,16 @@ The ingestion and transformation code is under `rust-capture/` and sessionizatio
 
 ## Getting started
 
+From the Helpin repository root, the complete local stack is available through:
+
+```bash
+cp events-pipeline/.env.events.example events-pipeline/.env.events
+just events-up
+just events-smoke
+```
+
+`events-up` runs Kafka, capture, enrichment, sessionization, replay, and ClickHouse. It loads the internal API secret from `server/.env`; no event credential is stored in Compose or committed files. The smoke test verifies the authenticated project ID at every pipeline stage.
+
 ### Prerequisites
 
 - Rust toolchain ([install](https://www.rust-lang.org/learn/get-started))
