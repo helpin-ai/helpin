@@ -12,6 +12,37 @@ import (
 
 const maximumEventReadWindow = 366 * 24 * time.Hour
 
+// EventRetentionPolicy is the deployment-owned TTL declared on usermaven.events.
+type EventRetentionPolicy struct {
+	TTLConfigured bool
+	TTLClause     string
+}
+
+// InspectEventRetentionPolicy reads table metadata without scanning tenant events.
+func InspectEventRetentionPolicy(ctx context.Context, db *sql.DB) (EventRetentionPolicy, error) {
+	if db == nil {
+		return EventRetentionPolicy{}, fmt.Errorf("ClickHouse connection is required")
+	}
+	var ddl string
+	if err := db.QueryRowContext(ctx, `SELECT create_table_query FROM system.tables WHERE database = 'usermaven' AND name = 'events'`).Scan(&ddl); err != nil {
+		return EventRetentionPolicy{}, fmt.Errorf("inspect usermaven.events retention: %w", err)
+	}
+	return parseEventRetentionDDL(ddl), nil
+}
+
+func parseEventRetentionDDL(ddl string) EventRetentionPolicy {
+	upper := strings.ToUpper(ddl)
+	index := strings.Index(upper, " TTL ")
+	if index < 0 {
+		return EventRetentionPolicy{}
+	}
+	clause := strings.TrimSpace(ddl[index+5:])
+	if settings := strings.Index(strings.ToUpper(clause), " SETTINGS "); settings >= 0 {
+		clause = strings.TrimSpace(clause[:settings])
+	}
+	return EventRetentionPolicy{TTLConfigured: true, TTLClause: clause}
+}
+
 // EventProjectResolver resolves the projects owned by one internal workspace.
 type EventProjectResolver interface {
 	ResolveProjectSet(ctx context.Context, workspaceID string) ([]string, error)
@@ -74,7 +105,7 @@ func (r *ClickHouseEventRepository) SmokeCount(
 	}
 	args = append(args, windowStartedAt.UTC(), windowEndedAt.UTC())
 	query := `SELECT count() FROM usermaven.events WHERE project_id IN (` +
-		strings.Join(placeholders, ",") + `) AND timestamp >= ? AND timestamp < ?`
+		strings.Join(placeholders, ",") + `) AND _timestamp >= ? AND _timestamp < ?`
 
 	var count int64
 	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {

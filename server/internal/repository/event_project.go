@@ -51,3 +51,17 @@ func (r *EventProjectRepository) ResolveProjectSet(ctx context.Context, workspac
 	}
 	return projects, nil
 }
+
+// ListActiveEventWorkspaceIDs returns a bounded set of recently configured event tenants.
+func (r *EventProjectRepository) ListActiveEventWorkspaceIDs(ctx context.Context, limit int) ([]string, error) {
+	if limit < 1 || limit > 1000 {
+		limit = 500
+	}
+	var workspaceIDs []string
+	if err := r.db.WithContext(ctx).Model(&model.SupportWidgetInstallation{}).
+		Distinct("workspace_id").Where("active = ?", true).
+		Order("workspace_id ASC").Limit(limit).Pluck("workspace_id", &workspaceIDs).Error; err != nil {
+		return nil, fmt.Errorf("list active event workspaces: %w", err)
+	}
+	return workspaceIDs, nil
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	firebase "firebase.google.com/go/v4"
+	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"go.temporal.io/api/serviceerror"
@@ -114,6 +116,24 @@ func main() {
 		fatalWithSentry("failed to ping database", err)
 	}
 	slog.Info("connected to database")
+
+	var clickHouseDB *sql.DB
+	if cfg.ClickHouseDSN != "" {
+		clickHouseDB, err = sql.Open("clickhouse", cfg.ClickHouseDSN)
+		if err != nil {
+			fatalWithSentry("failed to open ClickHouse", err)
+		}
+		if err := clickHouseDB.PingContext(context.Background()); err != nil {
+			fatalWithSentry("failed to ping ClickHouse", err)
+		}
+		retention, err := repository.InspectEventRetentionPolicy(context.Background(), clickHouseDB)
+		if err != nil {
+			fatalWithSentry("failed to inspect ClickHouse event retention", err)
+		}
+		defer clickHouseDB.Close()
+		slog.Info("connected to ClickHouse for CRM behavioral signals",
+			"ttl_configured", retention.TTLConfigured, "ttl_clause", retention.TTLClause)
+	}
 
 	// Ensure pgcrypto extension is available for gen_random_uuid().
 	slog.Info("startup: enabling pgcrypto extension")
@@ -352,6 +372,9 @@ func main() {
 			// CRM Phase 4: Intelligence
 			&model.CRMEnrichmentResult{},
 			&model.CRMBuyerSignal{},
+			&model.CRMSignalRuleConfig{},
+			&model.CRMSignalEvaluationRun{},
+			&model.CRMSignalEvaluatorWatermark{},
 			&model.CRMEntitySummary{},
 			&model.CRMDealHealthScore{},
 			&model.CRMSuggestion{},
@@ -786,6 +809,7 @@ func main() {
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
+	eventProjectRepo := repository.NewEventProjectRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	crmMeetingRepo := repository.NewCRMMeetingRepository(db)
 	pmTaskInsightsRepo := repository.NewPMTaskInsightsRepository(db)
@@ -1940,6 +1964,15 @@ func main() {
 		}
 	}
 
+	// Evaluate cross-module rules daily and behavioral rules every ten minutes.
+	signalRuleCtx, signalRuleCancel := context.WithCancel(context.Background())
+	signalRuleDone := make(chan struct{})
+	signalRuleEvaluator := service.NewCRMSignalRuleEvaluator(crmSignalRepo, eventProjectRepo, clickHouseDB, podID)
+	go func() {
+		defer close(signalRuleDone)
+		signalRuleEvaluator.Run(signalRuleCtx)
+	}()
+
 	// Produce explainable deal-health snapshots on startup and every six hours.
 	healthScoreDone := make(chan struct{})
 	go func() {
@@ -2141,6 +2174,7 @@ func main() {
 	agentRuntimeProjectionCancel()
 	customerIOOutboxCancel()
 	productAnalyticsCancel()
+	signalRuleCancel()
 	settlementCancel()
 	periodCancel()
 	reservationCancel()
@@ -2168,6 +2202,11 @@ func main() {
 	case <-reservationDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("AI usage reservation sweeper did not stop before shutdown timeout")
+	}
+	select {
+	case <-signalRuleDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("CRM signal rule evaluator did not stop before shutdown timeout")
 	}
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()

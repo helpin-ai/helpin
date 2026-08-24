@@ -45,6 +45,43 @@ const (
 	CRMSignalSourceCall    = "call"
 	CRMSignalSourceManual  = "manual"
 	CRMSignalSourceSupport = "support"
+	CRMSignalSourceCRM     = "crm"
+	CRMSignalSourcePM      = "pm"
+	CRMSignalSourceWeb     = "web_behavior"
+	CRMSignalSourceProduct = "product_usage"
+)
+
+// CRM signal evaluator cadences.
+const (
+	CRMSignalRuleCadenceDaily      = "daily"
+	CRMSignalRuleCadenceMicroBatch = "micro_batch"
+)
+
+// CRM signal rule keys are stable identities independent of signal taxonomy.
+const (
+	CRMSignalRuleSupportVolumeSpike       = "support_volume_spike"
+	CRMSignalRuleUrgentIssueOpenDeal      = "urgent_issue_open_deal"
+	CRMSignalRuleSupportAIEscalation      = "support_ai_escalation"
+	CRMSignalRuleSupportCSATDeterioration = "support_csat_deterioration"
+	CRMSignalRuleRequestedFeatureShipped  = "requested_feature_shipped"
+	CRMSignalRuleDealStageStalled         = "deal_stage_stalled"
+	CRMSignalRuleDealGoneDark             = "deal_gone_dark"
+	CRMSignalRuleChampionQuiet            = "champion_quiet"
+	CRMSignalRuleTimelineFollowupLapsed   = "timeline_followup_lapsed"
+	CRMSignalRuleDealSingleThreaded       = "deal_single_threaded"
+	CRMSignalRuleRenewalApproaching       = "renewal_approaching"
+	CRMSignalRuleBuyingCommitteeExpanded  = "buying_committee_expanded"
+	CRMSignalRuleBuyingCommitteeShrank    = "buying_committee_shrank"
+
+	CRMSignalRuleRepeatedPricingActivity = "repeated_pricing_activity"
+	CRMSignalRuleProcurementPageActivity = "procurement_page_activity"
+	CRMSignalRuleKnownContactReturned    = "known_contact_returned"
+	CRMSignalRuleHighIntentProductEvent  = "high_intent_product_event"
+	CRMSignalRuleSessionDepthSpike       = "session_depth_spike"
+	CRMSignalRuleNewAccountStakeholder   = "new_account_stakeholder"
+	CRMSignalRuleAnonymousAccountTraffic = "anonymous_account_traffic"
+	CRMSignalRuleCampaignReturn          = "campaign_attributed_return"
+	CRMSignalRulePreIdentification       = "pre_identification_history"
 )
 
 // CRMBuyerSignal represents a detected buyer signal in CRM interactions.
@@ -82,6 +119,55 @@ type CRMBuyerSignal struct {
 }
 
 func (CRMBuyerSignal) TableName() string { return "crm_buyer_signals" }
+
+// CRMSignalRuleConfig stores one immutable detector version and its thresholds.
+// A newer version is inserted rather than mutating detector semantics in place.
+type CRMSignalRuleConfig struct {
+	ID                 string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID        *string   `json:"workspace_id,omitempty" gorm:"type:uuid;index"`
+	RuleKey            string    `json:"rule_key" gorm:"not null;index"`
+	Version            int       `json:"version" gorm:"not null"`
+	Cadence            string    `json:"cadence" gorm:"not null;index"`
+	Enabled            bool      `json:"enabled" gorm:"not null;default:true"`
+	ShadowMode         bool      `json:"shadow_mode" gorm:"not null;default:true"`
+	ActivationEligible bool      `json:"activation_eligible" gorm:"not null;default:false"`
+	Thresholds         JSONB     `json:"thresholds" gorm:"type:jsonb;default:'{}'"`
+	CreatedAt          time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (CRMSignalRuleConfig) TableName() string { return "crm_signal_rule_configs" }
+
+// CRMSignalEvaluationRun records evaluator coverage and shadow output.
+type CRMSignalEvaluationRun struct {
+	ID              string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	Cadence         string     `json:"cadence" gorm:"not null;index"`
+	RuleKey         string     `json:"rule_key" gorm:"not null;index"`
+	RuleVersion     int        `json:"rule_version" gorm:"not null"`
+	WindowStartedAt time.Time  `json:"window_started_at" gorm:"type:timestamptz;not null"`
+	WindowEndedAt   time.Time  `json:"window_ended_at" gorm:"type:timestamptz;not null"`
+	Status          string     `json:"status" gorm:"not null"`
+	CandidateCount  int        `json:"candidate_count" gorm:"not null;default:0"`
+	InsertedCount   int        `json:"inserted_count" gorm:"not null;default:0"`
+	ErrorMessage    *string    `json:"error_message,omitempty"`
+	StartedAt       time.Time  `json:"started_at" gorm:"type:timestamptz;not null"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty" gorm:"type:timestamptz"`
+	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (CRMSignalEvaluationRun) TableName() string { return "crm_signal_evaluation_runs" }
+
+// CRMSignalEvaluatorWatermark coordinates one global evaluator cadence.
+type CRMSignalEvaluatorWatermark struct {
+	Cadence       string     `json:"cadence" gorm:"primaryKey"`
+	Watermark     time.Time  `json:"watermark" gorm:"type:timestamptz;not null"`
+	LeaseOwner    *string    `json:"lease_owner,omitempty"`
+	LeaseUntil    *time.Time `json:"lease_until,omitempty" gorm:"type:timestamptz"`
+	LastStartedAt *time.Time `json:"last_started_at,omitempty" gorm:"type:timestamptz"`
+	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (CRMSignalEvaluatorWatermark) TableName() string { return "crm_signal_evaluator_watermarks" }
 
 // CRMDealHealthScore represents a calculated health score for a deal.
 type CRMDealHealthScore struct {

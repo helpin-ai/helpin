@@ -192,6 +192,7 @@ type Config struct {
 	UsermavenAPIKey      string
 	UsermavenServerToken string
 	UsermavenEndpoint    string
+	ClickHouseDSN        string
 
 	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
 	// Firebase Cloud Messaging (optional — mobile push notifications disabled if unset)
@@ -406,6 +407,7 @@ func Load() (*Config, error) {
 		UsermavenAPIKey:                        strings.TrimSpace(os.Getenv("USERMAVEN_API_KEY")),
 		UsermavenServerToken:                   strings.TrimSpace(os.Getenv("USERMAVEN_SERVER_TOKEN")),
 		UsermavenEndpoint:                      strings.TrimSpace(os.Getenv("USERMAVEN_ENDPOINT")),
+		ClickHouseDSN:                          strings.TrimSpace(os.Getenv("CLICKHOUSE_DSN")),
 		FCMServiceAccountJSON:                  strings.TrimSpace(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
