@@ -42,6 +42,8 @@ import type {
   CRMEnrichmentResult,
   CreateCRMEnrichmentRequest,
   CRMBuyerSignal,
+  CRMSignalWorkspaceFeed,
+  CRMSignalFeedFilters,
   CreateCRMBuyerSignalRequest,
   CRMEntitySummary,
   CRMIntelligenceRefreshResult,
@@ -302,6 +304,7 @@ export const crmEnrichmentService = {
 };
 
 export const crmSignalService = {
+  feed: (workspaceId: string, filters?: CRMSignalFeedFilters) => api.get<CRMSignalWorkspaceFeed>(`/crm/signals/feed${qs(workspaceId)}${filterQuery({ ...(filters ?? {}) })}`),
   list: (
     workspaceId: string,
     filters?: {

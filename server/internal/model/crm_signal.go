@@ -116,6 +116,16 @@ type CRMBuyerSignal struct {
 	ContactName            string     `json:"contact_name,omitempty" gorm:"-"`
 	DealName               string     `json:"deal_name,omitempty" gorm:"-"`
 	DealDisplayID          string     `json:"deal_display_id,omitempty" gorm:"-"`
+	AccountName            string     `json:"account_name,omitempty" gorm:"-"`
+	AccountDomain          string     `json:"account_domain,omitempty" gorm:"-"`
+	OwnerMemberID          *string    `json:"owner_member_id,omitempty" gorm:"-"`
+	DealAmount             *float64   `json:"deal_amount,omitempty" gorm:"-"`
+	DealStageProbability   *int       `json:"deal_stage_probability,omitempty" gorm:"-"`
+	BusinessPriority       float64    `json:"business_priority" gorm:"-"`
+	SignedImpact           float64    `json:"signed_impact" gorm:"-"`
+	Severity               string     `json:"severity" gorm:"-"`
+	ScoreVersion           int        `json:"score_version" gorm:"-"`
+	ScoreFactors           JSONB      `json:"score_factors,omitempty" gorm:"-"`
 }
 
 func (CRMBuyerSignal) TableName() string { return "crm_buyer_signals" }
@@ -132,6 +142,8 @@ type CRMSignalRuleConfig struct {
 	ShadowMode         bool      `json:"shadow_mode" gorm:"not null;default:true"`
 	ActivationEligible bool      `json:"activation_eligible" gorm:"not null;default:false"`
 	Thresholds         JSONB     `json:"thresholds" gorm:"type:jsonb;default:'{}'"`
+	BusinessWeight     float64   `json:"business_weight" gorm:"not null;default:10"`
+	HalfLifeDays       float64   `json:"half_life_days" gorm:"not null;default:30"`
 	CreatedAt          time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -217,11 +229,18 @@ type CreateCRMDealHealthScoreRequest struct {
 
 // CRMBuyerSignalListFilters applies filters when listing signals.
 type CRMBuyerSignalListFilters struct {
-	ContactID            *string
-	DealID               *string
-	CompanyID            *string
-	SignalType           *string
-	SourceType           *string
-	IncludeDismissed     bool
-	IncludeLowConfidence bool
+	ContactID             *string
+	DealID                *string
+	CompanyID             *string
+	SignalType            *string
+	SourceType            *string
+	IncludeDismissed      bool
+	IncludeLowConfidence  bool
+	OwnerMemberID         *string
+	SignalDomain          *string
+	Polarity              *string
+	EvidenceIdentityTrust *string
+	Status                *string
+	Severity              *string
+	MaxAgeDays            *int
 }

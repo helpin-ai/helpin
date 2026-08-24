@@ -19,7 +19,7 @@ func setupSignalRuleRepositoryTest(t *testing.T) (*gorm.DB, *CRMSignalRepository
 		t.Fatalf("open sqlite: %v", err)
 	}
 	statements := []string{
-		`CREATE TABLE crm_signal_rule_configs (id TEXT PRIMARY KEY, workspace_id TEXT, rule_key TEXT, version INTEGER, cadence TEXT, enabled BOOLEAN, shadow_mode BOOLEAN, activation_eligible BOOLEAN, thresholds BLOB, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE crm_signal_rule_configs (id TEXT PRIMARY KEY, workspace_id TEXT, rule_key TEXT, version INTEGER, cadence TEXT, enabled BOOLEAN, shadow_mode BOOLEAN, activation_eligible BOOLEAN, thresholds BLOB, business_weight REAL, half_life_days REAL, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE crm_signal_evaluator_watermarks (cadence TEXT PRIMARY KEY, watermark DATETIME, lease_owner TEXT, lease_until DATETIME, last_started_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, created_at DATETIME)`,
 		`CREATE TABLE crm_identity_links (id TEXT PRIMARY KEY, workspace_id TEXT, anonymous_id TEXT, contact_id TEXT, company_id TEXT, identity_method TEXT, identity_trust TEXT, verified_at DATETIME, verifier_version TEXT, created_at DATETIME)`,

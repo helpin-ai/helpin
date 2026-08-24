@@ -85,7 +85,8 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 	statements := []string{
 		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, created_at DATETIME)`,
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, first_name TEXT, last_name TEXT)`,
-		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, display_id TEXT)`,
+		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, display_id TEXT, amount REAL, probability INTEGER, owner_member_id TEXT)`,
+		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, domain TEXT, owner_member_id TEXT)`,
 		`CREATE TABLE crm_associations (workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
 	}
 	for _, statement := range statements {
@@ -96,7 +97,8 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 	now := time.Now().UTC()
 	for _, statement := range []string{
 		`INSERT INTO crm_contacts VALUES ('contact-1','ws-1','Ava','Buyer')`,
-		`INSERT INTO crm_deals VALUES ('deal-1','ws-1','Expansion','DEAL-7')`,
+		`INSERT INTO crm_deals (id, workspace_id, name, display_id) VALUES ('deal-1','ws-1','Expansion','DEAL-7')`,
+		`INSERT INTO crm_companies (id, workspace_id, name, domain) VALUES ('company-1','ws-1','Acme','acme.test')`,
 		`INSERT INTO crm_associations VALUES ('ws-1','contact','contact-1','company','company-1')`,
 		`INSERT INTO crm_associations VALUES ('ws-1','deal','deal-1','contact','contact-1')`,
 	} {

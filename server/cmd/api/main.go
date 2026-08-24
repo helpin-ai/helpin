@@ -375,6 +375,7 @@ func main() {
 			&model.CRMSignalRuleConfig{},
 			&model.CRMSignalEvaluationRun{},
 			&model.CRMSignalEvaluatorWatermark{},
+			&model.CRMSignalScoringConfig{},
 			&model.CRMEntitySummary{},
 			&model.CRMDealHealthScore{},
 			&model.CRMSuggestion{},

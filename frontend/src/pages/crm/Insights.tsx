@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { CRMSearchResults } from '@/components/crm/CRMSearchResults';
+import { SignalWorkspaceFeed } from '@/components/crm/SignalWorkspaceFeed';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,19 +10,14 @@ import {
   Activity01Icon,
   Alert01Icon,
   BulbIcon,
-  Calendar01Icon,
   ChartIncreaseIcon,
   CheckmarkCircle02Icon,
-  Clock03Icon,
   DollarCircleIcon,
   FavouriteIcon,
   Mail01Icon,
-  Message01Icon,
   Search01Icon,
   SparklesIcon,
-  TelephoneIcon,
   Tick01Icon,
-  UserCheck01Icon,
 } from '@/lib/icons';
 import {
   useAcceptSuggestion,
@@ -33,28 +29,9 @@ import {
 import { useTitle } from '@/hooks/useTitle';
 import { cn, timeAgo } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { CRMBuyerSignal, CRMDealHealthScore, CRMSignalSourceType, CRMSignalType, CRMSuggestion } from '@/lib/crmTypes';
+import type { CRMDealHealthScore, CRMSuggestion } from '@/lib/crmTypes';
 
 type Tone = 'neutral' | 'good' | 'warn' | 'danger' | 'accent';
-
-const signalTypeConfig: Record<CRMSignalType, { label: string; tone: Tone; icon: typeof Activity01Icon }> = {
-  buying_intent: { label: 'Buying intent', tone: 'good', icon: DollarCircleIcon },
-  budget_signal: { label: 'Budget', tone: 'good', icon: ChartIncreaseIcon },
-  timeline_signal: { label: 'Timeline', tone: 'accent', icon: Calendar01Icon },
-  champion_signal: { label: 'Champion', tone: 'good', icon: UserCheck01Icon },
-  competitor_mention: { label: 'Competitor', tone: 'warn', icon: Alert01Icon },
-  objection: { label: 'Objection', tone: 'warn', icon: Message01Icon },
-  risk_signal: { label: 'Risk', tone: 'danger', icon: Alert01Icon },
-};
-
-const sourceConfig: Record<CRMSignalSourceType, { label: string; icon: typeof Activity01Icon }> = {
-  email: { label: 'Email', icon: Mail01Icon },
-  meeting: { label: 'Meeting', icon: Calendar01Icon },
-  support: { label: 'Support', icon: Message01Icon },
-  note: { label: 'Note', icon: Message01Icon },
-  call: { label: 'Call', icon: TelephoneIcon },
-  manual: { label: 'Manual', icon: Activity01Icon },
-};
 
 const suggestionTypeConfig: Record<CRMSuggestion['suggestion_type'], { label: string; icon: typeof BulbIcon; tone: Tone }> = {
   deal_create: { label: 'New deal', icon: DollarCircleIcon, tone: 'good' },
@@ -228,67 +205,6 @@ function StatTile({
   );
 }
 
-function BuyerSignalRow({ signal }: { signal: CRMBuyerSignal }) {
-  const config = signalTypeConfig[signal.signal_type] ?? {
-    label: signal.signal_type.replace(/_/g, ' '),
-    tone: 'neutral' as const,
-    icon: Activity01Icon,
-  };
-  const source = sourceConfig[signal.source_type] ?? sourceConfig.manual;
-  const SignalIcon = config.icon;
-  const SourceIcon = source.icon;
-  const confidence = Math.round(signal.confidence * 100);
-
-  return (
-    <div className="rounded-lg border bg-card p-3 transition-colors hover:bg-muted/20">
-      <div className="flex items-start gap-3">
-        <div className={cn('mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border', toneClasses(config.tone))}>
-          <SignalIcon className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className={cn('capitalize', toneClasses(config.tone))}>
-              {config.label}
-            </Badge>
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <SourceIcon className="h-3.5 w-3.5" />
-              {source.label}
-            </span>
-            {signal.metadata?.message_direction ? (
-              <span className="text-xs capitalize text-muted-foreground">{signal.metadata.message_direction}</span>
-            ) : null}
-          </div>
-
-          <p className="mt-2 text-sm leading-5">{signal.summary || 'Signal detected'}</p>
-
-          {signal.evidence_excerpt ? (
-            <p className="mt-2 line-clamp-2 rounded-md border-l-2 border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
-              {signal.evidence_excerpt}
-            </p>
-          ) : null}
-
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <Clock03Icon className="h-3.5 w-3.5" />
-              {timeAgo(signal.detected_at)}
-            </span>
-            {typeof signal.metadata?.participant_count === 'number' ? (
-              <span>{signal.metadata.participant_count} participants</span>
-            ) : null}
-            {signal.source_thread_id ? <span>Thread linked</span> : null}
-          </div>
-        </div>
-        <div className="w-16 shrink-0 text-right">
-          <p className="text-xs font-medium tabular-nums">{confidence}%</p>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className={cn('h-full rounded-full', progressClasses(config.tone))} style={{ width: `${confidence}%` }} />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ReviewQueue({
   suggestions,
   isLoading,
@@ -425,8 +341,8 @@ export function InsightsPage() {
   const acceptSuggestion = useAcceptSuggestion(wsId);
   const dismissSuggestion = useDismissSuggestion(wsId);
 
-  const signals = signalsData?.data ?? [];
-  const healthScores = healthData?.data ?? [];
+  const signals = useMemo(() => signalsData?.data ?? [], [signalsData?.data]);
+  const healthScores = useMemo(() => healthData?.data ?? [], [healthData?.data]);
   const suggestions = useMemo(
     () => [...(suggestionsData?.data ?? [])].sort((a, b) => b.confidence - a.confidence),
     [suggestionsData],
@@ -551,93 +467,64 @@ export function InsightsPage() {
             </div>
 
             <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.85fr)]">
-          <Card className="rounded-lg">
-            <CardHeader className="pb-0">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Activity01Icon className="h-4 w-4 text-muted-foreground" />
-                  Recent Buyer Signals
-                </CardTitle>
-                {signals.length > 0 ? (
-                  <Badge variant="secondary" className="font-normal">
-                    Latest {Math.min(signals.length, 12)}
-                  </Badge>
-                ) : null}
+              <div className="min-w-0 rounded-lg border bg-card px-4 py-4 sm:px-5">
+                <SignalWorkspaceFeed workspaceId={wsId} />
               </div>
-            </CardHeader>
-            <CardContent>
-              {signalsLoading ? (
-                <div className="py-10 text-center text-sm text-muted-foreground">Loading buyer signals...</div>
-              ) : signals.length === 0 ? (
-                <EmptyState
-                  icon={Activity01Icon}
-                  title="No buyer signals detected yet"
-                  description="Email, meeting, support, and CRM activity will produce signal cards as the workspace gathers sales context."
+
+              <div className="space-y-4">
+                <ReviewQueue
+                  suggestions={suggestions}
+                  isLoading={suggestionsLoading}
+                  hasSignals={signals.length > 0}
+                  onAccept={handleAccept}
+                  onDismiss={handleDismiss}
+                  isMutating={acceptSuggestion.isPending || dismissSuggestion.isPending}
+                  onViewAll={goToReview}
                 />
-              ) : (
-                <div className="space-y-2">
-                  {signals.slice(0, 12).map((signal) => (
-                    <BuyerSignalRow key={signal.id} signal={signal} />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
-          <div className="space-y-4">
-            <ReviewQueue
-              suggestions={suggestions}
-              isLoading={suggestionsLoading}
-              hasSignals={signals.length > 0}
-              onAccept={handleAccept}
-              onDismiss={handleDismiss}
-              isMutating={acceptSuggestion.isPending || dismissSuggestion.isPending}
-              onViewAll={goToReview}
-            />
+                <Card className="rounded-lg">
+                  <CardHeader className="pb-0">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <FavouriteIcon className="h-4 w-4 text-muted-foreground" />
+                      Deal Health
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {healthLoading ? (
+                      <div className="py-6 text-sm text-muted-foreground">Loading health scores...</div>
+                    ) : healthScores.length === 0 ? (
+                      <EmptyState
+                        icon={FavouriteIcon}
+                        title={signals.length > 0 ? 'Health scores need deal activity' : 'No deal health scores yet'}
+                        description={
+                          signals.length > 0
+                            ? 'Buyer signals are flowing, but deal health needs linked deals, activity history, and progression signals.'
+                            : 'Scores will appear after deals have enough activity, signals, and progression history.'
+                        }
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        {healthScores.slice(0, 8).map((healthScore) => (
+                          <HealthRow key={healthScore.id} healthScore={healthScore} />
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
-            <Card className="rounded-lg">
-              <CardHeader className="pb-0">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <FavouriteIcon className="h-4 w-4 text-muted-foreground" />
-                  Deal Health
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {healthLoading ? (
-                  <div className="py-6 text-sm text-muted-foreground">Loading health scores...</div>
-                ) : healthScores.length === 0 ? (
-                  <EmptyState
-                    icon={FavouriteIcon}
-                    title={signals.length > 0 ? 'Health scores need deal activity' : 'No deal health scores yet'}
-                    description={
-                      signals.length > 0
-                        ? 'Buyer signals are flowing, but deal health needs linked deals, activity history, and progression signals.'
-                        : 'Scores will appear after deals have enough activity, signals, and progression history.'
-                    }
-                  />
-                ) : (
-                  <div className="space-y-2">
-                    {healthScores.slice(0, 8).map((healthScore) => (
-                      <HealthRow key={healthScore.id} healthScore={healthScore} />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-lg">
-              <CardHeader className="pb-0">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Search01Icon className="h-4 w-4 text-muted-foreground" />
-                  Find CRM Records
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CRMSearchResults workspaceId={wsId} />
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+                <Card className="rounded-lg">
+                  <CardHeader className="pb-0">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Search01Icon className="h-4 w-4 text-muted-foreground" />
+                      Find CRM Records
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <CRMSearchResults workspaceId={wsId} />
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </>
         )}
       </div>

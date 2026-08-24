@@ -1600,6 +1600,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/enrichments/{id}/apply-suggestion", h.CRMEnrichment.ApplySuggestion)
 
 				// Signals — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/feed", h.CRMSignal.ListWorkspaceFeed)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals", h.CRMSignal.ListSignals)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals", h.CRMSignal.CreateSignal)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/signals/{id}", h.CRMSignal.DeleteSignal)

@@ -665,7 +665,28 @@ export type CRMSignalType =
   | 'champion_signal'
   | 'risk_signal';
 
-export type CRMSignalSourceType = 'email' | 'meeting' | 'note' | 'call' | 'manual' | 'support';
+export type CRMSignalSourceType =
+  | 'email'
+  | 'meeting'
+  | 'note'
+  | 'call'
+  | 'manual'
+  | 'support'
+  | 'crm'
+  | 'pm'
+  | 'web_behavior'
+  | 'product_usage';
+
+export type CRMSignalDomain =
+  | 'conversation'
+  | 'web_behavior'
+  | 'product_usage'
+  | 'support'
+  | 'delivery'
+  | 'relationship'
+  | 'market';
+export type CRMSignalPolarity = 'positive' | 'negative' | 'neutral';
+export type CRMSignalSeverity = 'low' | 'medium' | 'high';
 
 export interface CRMSignalMetadata {
   message_direction?: string;
@@ -688,6 +709,9 @@ export interface CRMBuyerSignal {
   contact_name?: string;
   deal_name?: string;
   deal_display_id?: string;
+  account_name?: string;
+  account_domain?: string;
+  owner_member_id?: string;
   signal_type: CRMSignalType;
   source_type: CRMSignalSourceType;
   source_id?: string;
@@ -697,10 +721,62 @@ export interface CRMBuyerSignal {
   metadata?: CRMSignalMetadata;
   confidence: number;
   detected_at: string;
+  detector_kind?: 'llm_extracted' | 'rule_derived';
+  signal_domain?: CRMSignalDomain;
+  polarity?: CRMSignalPolarity;
+  rule_key?: string;
+  rule_version?: number;
+  evidence_identity_method?: string;
+  evidence_identity_trust?: string;
+  business_priority?: number;
+  signed_impact?: number;
+  severity?: CRMSignalSeverity;
+  score_version?: number;
+  score_factors?: Record<string, unknown>;
   evidence_fingerprint?: string;
   dismissed_at?: string;
   dismissed_by_member_id?: string;
   created_at: string;
+}
+
+export interface CRMSignalAccountStory {
+  id: string;
+  entity_type: 'company' | 'deal' | 'contact' | 'unresolved';
+  entity_id: string;
+  account_name: string;
+  account_domain?: string;
+  owner_member_id?: string;
+  priority: number;
+  signed_impact: number;
+  severity: CRMSignalSeverity;
+  polarity: CRMSignalPolarity;
+  domains: CRMSignalDomain[];
+  latest_detected_at: string;
+  changed_since: number;
+  change_summary: string;
+  score_version: number;
+  score_factors: Record<string, unknown>;
+  signals: CRMBuyerSignal[];
+}
+
+export interface CRMSignalWorkspaceFeed {
+  data: CRMSignalAccountStory[];
+  total: number;
+  page: number;
+  score_version: number;
+  heuristic: boolean;
+}
+
+export interface CRMSignalFeedFilters {
+  owner_member_id?: string;
+  account_id?: string;
+  domain?: CRMSignalDomain;
+  polarity?: CRMSignalPolarity;
+  severity?: CRMSignalSeverity;
+  trust?: string;
+  status?: 'active' | 'dismissed' | 'all';
+  max_age_days?: number;
+  page?: number;
 }
 
 export interface CreateCRMBuyerSignalRequest {

@@ -217,11 +217,48 @@ func (r *CRMSignalRepository) hydrateSignalContext(ctx context.Context, workspac
 			return fmt.Errorf("hydrate signal contacts: %w", err)
 		}
 	}
-	type dealRow struct{ ID, Name, DisplayID string }
+	type dealRow struct {
+		ID, Name, DisplayID string
+	}
 	var deals []dealRow
 	if len(dealIDs) > 0 {
-		if err := r.db.WithContext(ctx).Table("crm_deals").Select("id, name, display_id").Where("workspace_id = ? AND id IN ?", workspaceID, dealIDs).Scan(&deals).Error; err != nil {
+		if err := r.db.WithContext(ctx).Table("crm_deals d").
+			Select("d.id, d.name, d.display_id").
+			Where("d.workspace_id = ? AND d.id IN ?", workspaceID, dealIDs).Scan(&deals).Error; err != nil {
 			return fmt.Errorf("hydrate signal deals: %w", err)
+		}
+	}
+	type dealRankingRow struct {
+		ID            string
+		Amount        *float64
+		Probability   *int
+		OwnerMemberID *string
+	}
+	var dealRankings []dealRankingRow
+	if len(dealIDs) > 0 && r.db.Migrator().HasColumn("crm_deals", "probability") {
+		if err := r.db.WithContext(ctx).Table("crm_deals").
+			Select("id, amount, probability, owner_member_id").
+			Where("workspace_id = ? AND id IN ?", workspaceID, dealIDs).Scan(&dealRankings).Error; err != nil {
+			return fmt.Errorf("hydrate signal deal ranking context: %w", err)
+		}
+	}
+	companyIDs := make([]string, 0, len(signals))
+	for i := range signals {
+		if signals[i].CompanyID != nil {
+			companyIDs = append(companyIDs, *signals[i].CompanyID)
+		}
+	}
+	type companyRow struct {
+		ID, Name      string
+		Domain        *string
+		OwnerMemberID *string
+	}
+	var companies []companyRow
+	if len(companyIDs) > 0 && r.db.Migrator().HasTable("crm_companies") {
+		if err := r.db.WithContext(ctx).Table("crm_companies").
+			Select("id, name, domain, owner_member_id").
+			Where("workspace_id = ? AND id IN ?", workspaceID, companyIDs).Scan(&companies).Error; err != nil {
+			return fmt.Errorf("hydrate signal companies: %w", err)
 		}
 	}
 	contactNames := make(map[string]string, len(contacts))
@@ -232,13 +269,35 @@ func (r *CRMSignalRepository) hydrateSignalContext(ctx context.Context, workspac
 	for _, deal := range deals {
 		dealRows[deal.ID] = deal
 	}
+	dealRankingRows := make(map[string]dealRankingRow, len(dealRankings))
+	for _, deal := range dealRankings {
+		dealRankingRows[deal.ID] = deal
+	}
+	companyRows := make(map[string]companyRow, len(companies))
+	for _, company := range companies {
+		companyRows[company.ID] = company
+	}
 	for i := range signals {
 		if signals[i].ContactID != nil {
 			signals[i].ContactName = contactNames[*signals[i].ContactID]
 		}
 		if signals[i].DealID != nil {
 			deal := dealRows[*signals[i].DealID]
+			ranking := dealRankingRows[*signals[i].DealID]
 			signals[i].DealName, signals[i].DealDisplayID = deal.Name, deal.DisplayID
+			signals[i].DealAmount = ranking.Amount
+			signals[i].OwnerMemberID = ranking.OwnerMemberID
+			signals[i].DealStageProbability = ranking.Probability
+		}
+		if signals[i].CompanyID != nil {
+			company := companyRows[*signals[i].CompanyID]
+			signals[i].AccountName = company.Name
+			if company.Domain != nil {
+				signals[i].AccountDomain = *company.Domain
+			}
+			if signals[i].OwnerMemberID == nil {
+				signals[i].OwnerMemberID = company.OwnerMemberID
+			}
 		}
 	}
 	return nil

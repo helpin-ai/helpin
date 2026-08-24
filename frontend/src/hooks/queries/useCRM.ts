@@ -48,6 +48,7 @@ import type {
   UpdateCRMWritingProfileRequest,
   CRMTimelineFilter,
   CRMCompanyTimelineFilter,
+  CRMSignalFeedFilters,
 } from '@/lib/crmTypes'
 
 // ── Contacts ──
@@ -854,6 +855,14 @@ export function useBuyerSignals(
   return useQuery({
     queryKey: [...queryKeys.crm.signals(wsId), filters],
     queryFn: async () => unwrap(await crmSignalService.list(wsId, filters)),
+    enabled: !!wsId,
+  })
+}
+
+export function useSignalWorkspaceFeed(wsId: string, filters?: CRMSignalFeedFilters) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.signals(wsId), 'feed', filters],
+    queryFn: async () => unwrap(await crmSignalService.feed(wsId, filters)),
     enabled: !!wsId,
   })
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -43,13 +44,7 @@ func (h *CRMSignalHandler) ListSignals(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
-	filters := model.CRMBuyerSignalListFilters{
-		ContactID:  queryStringPtr(r, "contact_id"),
-		DealID:     queryStringPtr(r, "deal_id"),
-		CompanyID:  queryStringPtr(r, "company_id"),
-		SignalType: queryStringPtr(r, "signal_type"),
-		SourceType: queryStringPtr(r, "source_type"),
-	}
+	filters := signalListFiltersFromRequest(r)
 	pagination := queryPagination(r)
 
 	signals, total, err := h.signalService.ListSignals(r.Context(), workspaceID, filters, pagination)
@@ -65,6 +60,41 @@ func (h *CRMSignalHandler) ListSignals(w http.ResponseWriter, r *http.Request) {
 		"total": total,
 		"page":  pagination.Page,
 	})
+}
+
+// ListWorkspaceFeed handles GET /api/crm/signals/feed.
+func (h *CRMSignalHandler) ListWorkspaceFeed(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	feed, err := h.signalService.ListWorkspaceSignalFeed(r.Context(), workspaceID, signalListFiltersFromRequest(r), queryPagination(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, feed)
+}
+
+func signalListFiltersFromRequest(r *http.Request) model.CRMBuyerSignalListFilters {
+	filters := model.CRMBuyerSignalListFilters{
+		ContactID: queryStringPtr(r, "contact_id"), DealID: queryStringPtr(r, "deal_id"),
+		CompanyID: queryStringPtr(r, "account_id"), SignalType: queryStringPtr(r, "signal_type"),
+		SourceType: queryStringPtr(r, "source_type"), OwnerMemberID: queryStringPtr(r, "owner_member_id"),
+		SignalDomain: queryStringPtr(r, "domain"), Polarity: queryStringPtr(r, "polarity"),
+		EvidenceIdentityTrust: queryStringPtr(r, "trust"), Status: queryStringPtr(r, "status"),
+		Severity: queryStringPtr(r, "severity"),
+	}
+	if filters.CompanyID == nil {
+		filters.CompanyID = queryStringPtr(r, "company_id")
+	}
+	if value := r.URL.Query().Get("max_age_days"); value != "" {
+		if days, err := strconv.Atoi(value); err == nil && days > 0 && days <= 366 {
+			filters.MaxAgeDays = &days
+		}
+	}
+	return filters
 }
 
 // CreateSignal handles POST /api/crm/signals.

@@ -53,7 +53,16 @@ func (s *CRMSignalService) ListSignals(ctx context.Context, workspaceID string, 
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
-	return s.signalRepo.ListSignals(ctx, workspaceID, filters, pagination)
+	signals, total, err := s.signalRepo.ListSignals(ctx, workspaceID, filters, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	profile := s.loadSignalScoringProfile(ctx, workspaceID)
+	now := time.Now().UTC()
+	for index := range signals {
+		profile.scoreSignal(&signals[index], now)
+	}
+	return signals, total, nil
 }
 
 // CreateSignal creates a new buyer signal.
@@ -204,7 +213,8 @@ func (s *CRMSignalService) calculateAndStoreDealHealthScore(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	score, factors := calculateDealHealthScore(deal, signals, now)
+	profile := s.loadSignalScoringProfile(ctx, deal.WorkspaceID)
+	score, factors := calculateDealHealthScoreWithProfile(deal, signals, profile, now)
 	health := &model.CRMDealHealthScore{WorkspaceID: deal.WorkspaceID, DealID: deal.ID, Score: score, Factors: factors, CalculatedAt: now}
 	if err := s.signalRepo.SaveCalculatedHealthScore(ctx, health); err != nil {
 		return nil, err
@@ -212,28 +222,17 @@ func (s *CRMSignalService) calculateAndStoreDealHealthScore(ctx context.Context,
 	return health, nil
 }
 
-type dealSignalWeight struct {
-	weight   float64
-	halfLife float64
-}
-
-var dealHealthSignalWeights = map[string]dealSignalWeight{
-	model.CRMSignalBuyingIntent:      {weight: 15, halfLife: 7},
-	model.CRMSignalBudgetSignal:      {weight: 12, halfLife: 21},
-	model.CRMSignalTimelineSignal:    {weight: 10, halfLife: 10},
-	model.CRMSignalChampionSignal:    {weight: 12, halfLife: 180},
-	model.CRMSignalObjection:         {weight: -12, halfLife: 30},
-	model.CRMSignalCompetitorMention: {weight: -8, halfLife: 45},
-	model.CRMSignalRiskSignal:        {weight: -20, halfLife: 30},
-}
-
 func calculateDealHealthScore(deal *model.CRMDeal, signals []model.CRMBuyerSignal, now time.Time) (int, model.JSONB) {
+	return calculateDealHealthScoreWithProfile(deal, signals, defaultSignalScoringProfile(), now)
+}
+
+func calculateDealHealthScoreWithProfile(deal *model.CRMDeal, signals []model.CRMBuyerSignal, profile signalScoringProfile, now time.Time) (int, model.JSONB) {
 	if deal.Stage != nil {
 		switch deal.Stage.StageType {
 		case model.CRMStageTypeWon:
-			return 100, model.JSONB{"outcome": "closed_won", "model_version": "deterministic-v1"}
+			return 100, model.JSONB{"outcome": "closed_won", "score_version": profile.version, "heuristic": profile.heuristic}
 		case model.CRMStageTypeLost:
-			return 0, model.JSONB{"outcome": "closed_lost", "model_version": "deterministic-v1"}
+			return 0, model.JSONB{"outcome": "closed_lost", "score_version": profile.version, "heuristic": profile.heuristic}
 		}
 	}
 	stageProbability := 50
@@ -265,28 +264,24 @@ func calculateDealHealthScore(deal *model.CRMDeal, signals []model.CRMBuyerSigna
 		score += closeDateImpact
 	}
 	signalImpact := 0.0
-	recentPositiveTypes := map[string]bool{}
-	for _, signal := range signals {
-		weight, ok := dealHealthSignalWeights[signal.SignalType]
-		if !ok {
-			continue
+	recentDomains := map[string]bool{}
+	signalFactors := make([]model.JSONB, 0, len(signals))
+	for index := range signals {
+		if signals[index].DealAmount == nil {
+			signals[index].DealAmount = deal.Amount
 		}
-		age := math.Max(0, now.Sub(signal.DetectedAt).Hours()/24)
-		confidence := signal.Confidence
-		if signal.SourceType == model.CRMSignalSourceManual && confidence <= 0 {
-			confidence = 1
+		if signals[index].DealStageProbability == nil {
+			signals[index].DealStageProbability = &stageProbability
 		}
-		confidence = math.Max(0, math.Min(1, confidence))
-		impact := weight.weight * confidence * math.Pow(0.5, age/weight.halfLife)
-		signalImpact += impact
-		if weight.weight > 0 && age <= 14 {
-			recentPositiveTypes[signal.SignalType] = true
+		profile.scoreSignal(&signals[index], now)
+		signalImpact += signals[index].SignedImpact
+		if now.Sub(signals[index].DetectedAt).Hours()/24 <= profile.compoundWindowDays {
+			recentDomains[signals[index].SignalDomain] = true
 		}
+		signalFactors = append(signalFactors, model.JSONB{"signal_id": signals[index].ID, "impact": signals[index].SignedImpact, "factors": signals[index].ScoreFactors})
 	}
-	compoundBoost := 0.0
-	if len(recentPositiveTypes) >= 2 {
-		compoundBoost = 5
-	}
+	compoundRate := math.Min(profile.maxCompoundBoost, math.Max(0, float64(len(recentDomains)-1))*profile.compoundBoostPerDomain)
+	compoundBoost := signalImpact * compoundRate
 	score += signalImpact + compoundBoost
 	finalScore := int(math.Round(math.Max(0, math.Min(100, score))))
 	factors := model.JSONB{
@@ -294,10 +289,13 @@ func calculateDealHealthScore(deal *model.CRMDeal, signals []model.CRMBuyerSigna
 		"activity_recency_days": int(math.Max(0, math.Floor(ageDays))),
 		"activity_impact":       int(math.Round(activityPenalty)),
 		"signal_count":          len(signals),
-		"signal_impact":         int(math.Round(signalImpact)),
-		"compound_signal_boost": int(compoundBoost),
+		"signal_impact":         roundScore(signalImpact),
+		"compound_signal_boost": roundScore(compoundBoost),
+		"independent_domains":   len(recentDomains),
+		"signal_factors":        signalFactors,
 		"close_date_impact":     int(closeDateImpact),
-		"model_version":         "deterministic-v1",
+		"score_version":         profile.version,
+		"heuristic":             profile.heuristic,
 	}
 	return finalScore, factors
 }

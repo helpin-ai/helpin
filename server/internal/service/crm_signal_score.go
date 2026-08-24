@@ -1,0 +1,325 @@
+package service
+
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"log/slog"
+	"math"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+)
+
+type signalScoringProfile struct {
+	version                int
+	heuristic              bool
+	signalWeights          map[string]float64
+	halfLives              map[string]float64
+	domainWeights          map[string]float64
+	identityTrust          map[string]float64
+	compoundWindowDays     float64
+	compoundBoostPerDomain float64
+	maxCompoundBoost       float64
+	rules                  map[string]model.CRMSignalRuleConfig
+}
+
+func defaultSignalScoringProfile() signalScoringProfile {
+	return signalScoringProfile{
+		version: 1, heuristic: true,
+		signalWeights: map[string]float64{
+			model.CRMSignalBuyingIntent: 15, model.CRMSignalBudgetSignal: 12,
+			model.CRMSignalTimelineSignal: 10, model.CRMSignalChampionSignal: 12,
+			model.CRMSignalObjection: 12, model.CRMSignalCompetitorMention: 8,
+			model.CRMSignalRiskSignal: 20,
+		},
+		halfLives: map[string]float64{
+			model.CRMSignalBuyingIntent: 7, model.CRMSignalBudgetSignal: 21,
+			model.CRMSignalTimelineSignal: 10, model.CRMSignalChampionSignal: 180,
+			model.CRMSignalObjection: 30, model.CRMSignalCompetitorMention: 45,
+			model.CRMSignalRiskSignal: 30,
+		},
+		domainWeights: map[string]float64{
+			model.CRMSignalDomainConversation: 1, model.CRMSignalDomainWebBehavior: 1.1,
+			model.CRMSignalDomainProductUsage: 1.1, model.CRMSignalDomainSupport: 1.15,
+			model.CRMSignalDomainDelivery: 1, model.CRMSignalDomainRelationship: 1.1,
+			model.CRMSignalDomainMarket: 0.7,
+		},
+		identityTrust: map[string]float64{
+			"verified": 1, "probabilistic": 0.65, "untrusted": 0.35, "unknown": 0.5,
+		},
+		compoundWindowDays: 14, compoundBoostPerDomain: 0.15, maxCompoundBoost: 0.45,
+		rules: map[string]model.CRMSignalRuleConfig{},
+	}
+}
+
+func (s *CRMSignalService) loadSignalScoringProfile(ctx context.Context, workspaceID string) signalScoringProfile {
+	profile := defaultSignalScoringProfile()
+	config, err := s.signalRepo.GetLatestSignalScoringConfig(ctx, workspaceID)
+	if err != nil {
+		slog.WarnContext(ctx, "using default CRM signal scoring profile", "error", err, "workspace_id", workspaceID)
+	} else {
+		profile.version, profile.heuristic = config.Version, config.Heuristic
+		mergeFloatMap(profile.signalWeights, config.Parameters["signal_weights"])
+		mergeFloatMap(profile.halfLives, config.Parameters["half_lives_days"])
+		mergeFloatMap(profile.domainWeights, config.Parameters["domain_weights"])
+		mergeFloatMap(profile.identityTrust, config.Parameters["identity_trust"])
+		profile.compoundWindowDays = jsonFloat(config.Parameters["compound_window_days"], profile.compoundWindowDays)
+		profile.compoundBoostPerDomain = jsonFloat(config.Parameters["compound_boost_per_domain"], profile.compoundBoostPerDomain)
+		profile.maxCompoundBoost = jsonFloat(config.Parameters["max_compound_boost"], profile.maxCompoundBoost)
+	}
+	if rules, ruleErr := s.signalRepo.ListLatestRuleScoringConfigs(ctx, workspaceID); ruleErr == nil {
+		profile.rules = rules
+	} else {
+		slog.WarnContext(ctx, "CRM rule scoring overrides unavailable", "error", ruleErr, "workspace_id", workspaceID)
+	}
+	return profile
+}
+
+func mergeFloatMap(target map[string]float64, raw interface{}) {
+	values, ok := raw.(map[string]interface{})
+	if !ok {
+		return
+	}
+	for key, value := range values {
+		if number := jsonFloat(value, 0); number > 0 {
+			target[key] = number
+		}
+	}
+}
+
+func jsonFloat(value interface{}, fallback float64) float64 {
+	switch number := value.(type) {
+	case float64:
+		return number
+	case float32:
+		return float64(number)
+	case int:
+		return float64(number)
+	case int64:
+		return float64(number)
+	default:
+		return fallback
+	}
+}
+
+func (profile signalScoringProfile) scoreSignal(signal *model.CRMBuyerSignal, now time.Time) {
+	weight, halfLife := profile.signalWeights[signal.SignalType], profile.halfLives[signal.SignalType]
+	if signal.RuleKey != nil {
+		if rule, ok := profile.rules[*signal.RuleKey]; ok {
+			weight, halfLife = rule.BusinessWeight, rule.HalfLifeDays
+		}
+	}
+	if weight <= 0 {
+		weight = 8
+	}
+	if halfLife <= 0 {
+		halfLife = 30
+	}
+	domainFactor := profile.domainWeights[signal.SignalDomain]
+	if domainFactor <= 0 {
+		domainFactor = 1
+	}
+	trustFactor := profile.identityTrust[strings.ToLower(signal.EvidenceIdentityTrust)]
+	if trustFactor <= 0 {
+		trustFactor = profile.identityTrust["unknown"]
+	}
+	confidence := math.Max(0, math.Min(1, signal.Confidence))
+	if signal.SourceType == model.CRMSignalSourceManual && confidence == 0 {
+		confidence = 1
+	}
+	ageDays := math.Max(0, now.Sub(signal.DetectedAt).Hours()/24)
+	recencyFactor := math.Pow(0.5, ageDays/halfLife)
+	entityFactor := signalEntityMultiplier(signal)
+	direction := signalDirection(signal)
+	priority := math.Min(100, weight*domainFactor*recencyFactor*entityFactor*trustFactor*confidence)
+	signal.BusinessPriority = roundScore(priority)
+	signal.SignedImpact = roundScore(priority * direction)
+	signal.Severity = signalSeverity(priority)
+	signal.ScoreVersion = profile.version
+	signal.ScoreFactors = model.JSONB{
+		"business_weight": weight, "extraction_confidence": roundScore(confidence),
+		"domain_weight": roundScore(domainFactor), "identity_trust": roundScore(trustFactor),
+		"recency_factor": roundScore(recencyFactor), "half_life_days": halfLife,
+		"entity_multiplier": roundScore(entityFactor), "polarity_direction": direction,
+		"heuristic": profile.heuristic,
+	}
+}
+
+func signalDirection(signal *model.CRMBuyerSignal) float64 {
+	switch signal.Polarity {
+	case model.CRMSignalPolarityNegative:
+		return -1
+	case model.CRMSignalPolarityPositive:
+		return 1
+	}
+	switch signal.SignalType {
+	case model.CRMSignalObjection, model.CRMSignalCompetitorMention, model.CRMSignalRiskSignal:
+		return -1
+	default:
+		return 1
+	}
+}
+
+func signalEntityMultiplier(signal *model.CRMBuyerSignal) float64 {
+	multiplier := 1.0
+	if signal.DealStageProbability != nil {
+		multiplier *= 0.8 + math.Max(0, math.Min(100, float64(*signal.DealStageProbability)))/250
+	}
+	if signal.DealAmount != nil && *signal.DealAmount > 0 {
+		multiplier *= 1 + math.Min(0.25, math.Log10(*signal.DealAmount+1)/25)
+	}
+	return multiplier
+}
+
+func signalSeverity(priority float64) string {
+	switch {
+	case priority >= 15:
+		return "high"
+	case priority >= 8:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func roundScore(value float64) float64 { return math.Round(value*100) / 100 }
+
+// ListWorkspaceSignalFeed returns ranked account stories with their source evidence.
+func (s *CRMSignalService) ListWorkspaceSignalFeed(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination) (*model.CRMSignalWorkspaceFeed, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	now := time.Now().UTC()
+	signals, err := s.signalRepo.ListWorkspaceSignalCandidates(ctx, workspaceID, filters, now, 500)
+	if err != nil {
+		return nil, err
+	}
+	profile := s.loadSignalScoringProfile(ctx, workspaceID)
+	for index := range signals {
+		profile.scoreSignal(&signals[index], now)
+	}
+	stories := composeSignalStories(signals, profile, now)
+	if filters.Severity != nil && *filters.Severity != "" {
+		filtered := stories[:0]
+		for _, story := range stories {
+			if story.Severity == *filters.Severity {
+				filtered = append(filtered, story)
+			}
+		}
+		stories = filtered
+	}
+	total := len(stories)
+	page, perPage := pagination.Page, pagination.PerPage
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 25
+	}
+	start := min((page-1)*perPage, total)
+	end := min(start+perPage, total)
+	return &model.CRMSignalWorkspaceFeed{Data: stories[start:end], Total: total, Page: page, ScoreVersion: profile.version, Heuristic: profile.heuristic}, nil
+}
+
+func composeSignalStories(signals []model.CRMBuyerSignal, profile signalScoringProfile, now time.Time) []model.CRMSignalAccountStory {
+	grouped := map[string]*model.CRMSignalAccountStory{}
+	changedAfter := now.Add(-7 * 24 * time.Hour)
+	compoundAfter := now.Add(-time.Duration(profile.compoundWindowDays*24) * time.Hour)
+	for _, signal := range signals {
+		entityType, entityID, accountName := signalStoryEntity(signal)
+		key := entityType + ":" + entityID
+		story := grouped[key]
+		if story == nil {
+			sum := sha256.Sum256([]byte(key))
+			story = &model.CRMSignalAccountStory{ID: fmt.Sprintf("%x", sum[:12]), EntityType: entityType, EntityID: entityID, AccountName: accountName, AccountDomain: signal.AccountDomain, OwnerMemberID: signal.OwnerMemberID, LatestDetectedAt: signal.DetectedAt, ScoreVersion: profile.version, Signals: []model.CRMBuyerSignal{}}
+			grouped[key] = story
+		}
+		story.Signals = append(story.Signals, signal)
+		story.Priority += signal.BusinessPriority
+		story.SignedImpact += signal.SignedImpact
+		if signal.DetectedAt.After(story.LatestDetectedAt) {
+			story.LatestDetectedAt = signal.DetectedAt
+		}
+		if signal.DetectedAt.After(changedAfter) {
+			story.ChangedSince++
+		}
+	}
+	stories := make([]model.CRMSignalAccountStory, 0, len(grouped))
+	for _, story := range grouped {
+		domains := map[string]struct{}{}
+		for _, signal := range story.Signals {
+			if !signal.DetectedAt.Before(compoundAfter) {
+				domains[signal.SignalDomain] = struct{}{}
+			}
+		}
+		story.Domains = make([]string, 0, len(domains))
+		for domain := range domains {
+			story.Domains = append(story.Domains, domain)
+		}
+		sort.Strings(story.Domains)
+		boost := math.Min(profile.maxCompoundBoost, math.Max(0, float64(len(domains)-1))*profile.compoundBoostPerDomain)
+		story.Priority = roundScore(math.Min(100, story.Priority*(1+boost)))
+		story.SignedImpact = roundScore(story.SignedImpact * (1 + boost))
+		story.Severity = signalSeverity(story.Priority)
+		story.Polarity = model.CRMSignalPolarityNeutral
+		if story.SignedImpact > 0.01 {
+			story.Polarity = model.CRMSignalPolarityPositive
+		} else if story.SignedImpact < -0.01 {
+			story.Polarity = model.CRMSignalPolarityNegative
+		}
+		story.ScoreFactors = model.JSONB{"independent_domains": len(domains), "compound_boost": roundScore(boost), "signal_count": len(story.Signals), "heuristic": profile.heuristic}
+		story.ChangeSummary = signalStoryChangeSummary(*story)
+		sort.SliceStable(story.Signals, func(i, j int) bool { return story.Signals[i].BusinessPriority > story.Signals[j].BusinessPriority })
+		stories = append(stories, *story)
+	}
+	sort.SliceStable(stories, func(i, j int) bool {
+		if stories[i].Priority == stories[j].Priority {
+			return stories[i].LatestDetectedAt.After(stories[j].LatestDetectedAt)
+		}
+		return stories[i].Priority > stories[j].Priority
+	})
+	return stories
+}
+
+func signalStoryEntity(signal model.CRMBuyerSignal) (string, string, string) {
+	if signal.CompanyID != nil && *signal.CompanyID != "" {
+		return "company", *signal.CompanyID, firstSignalValue(signal.AccountName, "Unnamed account")
+	}
+	if signal.DealID != nil && *signal.DealID != "" {
+		return "deal", *signal.DealID, firstSignalValue(signal.DealName, "Unnamed deal")
+	}
+	if signal.ContactID != nil && *signal.ContactID != "" {
+		return "contact", *signal.ContactID, firstSignalValue(signal.ContactName, "Unnamed contact")
+	}
+	return "unresolved", signal.ID, "Unresolved account"
+}
+
+func signalStoryChangeSummary(story model.CRMSignalAccountStory) string {
+	if story.ChangedSince == 0 {
+		return "No new evidence in the last 7 days"
+	}
+	domainLabel := "domain"
+	if len(story.Domains) != 1 {
+		domainLabel = "domains"
+	}
+	return fmt.Sprintf("%d new signal%s across %d %s", story.ChangedSince, plural(story.ChangedSince), len(story.Domains), domainLabel)
+}
+
+func plural(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func firstSignalValue(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
