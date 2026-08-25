@@ -245,7 +245,20 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
-	completionRoutes := service.DefaultAICompletionRouteRegistry()
+	completionRoutes := service.NewAICompletionRouteRegistry(service.CRMCompletionRouteConfig{
+		Primary: service.AICompletionRoute{
+			Provider: cfg.CRMLLMProvider, Model: cfg.CRMLLMModel,
+			OpenRouterProvider: cfg.CRMLLMOpenRouterProvider,
+		},
+		Fallback: service.AICompletionRoute{
+			Provider: cfg.CRMLLMFallbackProvider, Model: cfg.CRMLLMFallbackModel,
+			OpenRouterProvider: cfg.CRMLLMFallbackOpenRouterProvider,
+		},
+		MeetingFallback: service.AICompletionRoute{
+			Provider: cfg.CRMMeetingFallbackProvider, Model: cfg.CRMMeetingFallbackModel,
+			OpenRouterProvider: cfg.CRMMeetingFallbackOpenRouterProvider,
+		},
+	})
 	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
 		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
 	}

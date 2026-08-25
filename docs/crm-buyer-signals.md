@@ -238,6 +238,52 @@ The signal evaluator runs immediately on API startup and then on its normal
 cadence. Routing runs at startup and every ten minutes. Deal-health snapshots
 run at startup and every six hours.
 
+### CRM AI model routing
+
+Conversation signal extraction, CRM summaries, and deal-automation inference
+use a deployment-owned primary/fallback route. Meeting intelligence shares the
+primary route and has its own fallback. With no overrides configured, the
+reviewed defaults are:
+
+| Route | Provider and model |
+|---|---|
+| CRM primary | `openrouter` / `deepseek/deepseek-v4-flash-0731` |
+| CRM fallback | `openrouter` / `openai/gpt-5.6-luna` |
+| Meeting fallback | `openrouter` / `google/gemini-3.7-flash` |
+
+Optional deployment overrides:
+
+```env
+CRM_LLM_PROVIDER=
+CRM_LLM_MODEL=
+CRM_LLM_OPENROUTER_PROVIDER=
+
+CRM_LLM_FALLBACK_PROVIDER=
+CRM_LLM_FALLBACK_MODEL=
+CRM_LLM_FALLBACK_OPENROUTER_PROVIDER=
+
+CRM_MEETING_LLM_FALLBACK_PROVIDER=
+CRM_MEETING_LLM_FALLBACK_MODEL=
+CRM_MEETING_LLM_FALLBACK_OPENROUTER_PROVIDER=
+```
+
+Provider/model variables must be set as pairs. Models must have an enabled
+pricing-catalog route and the corresponding provider credentials must be
+configured. For an OpenRouter route, the `*_OPENROUTER_PROVIDER` value pins one
+underlying infrastructure provider by sending `order: [value]` with
+`allow_fallbacks: false`; leave it empty to let OpenRouter choose. API and
+Temporal worker validate and use the same route registry.
+
+Provider credentials remain global rather than CRM-specific:
+
+```env
+OPENROUTER_API_KEY=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
+```
+
 ## Local verification
 
 Start and verify the event stack from the repository root:

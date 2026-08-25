@@ -375,10 +375,12 @@ promoted through the activation gates.
 | `GMAIL_CLIENT_ID` | Yes (if Gmail) | Google OAuth client ID |
 | `GMAIL_CLIENT_SECRET` | Yes (if Gmail) | Google OAuth client secret |
 | `GMAIL_OAUTH_REDIRECT_URL` | Yes (if Gmail) | OAuth redirect URL |
-| `CRM_LLM_PROVIDER` | No | `claude` (default) or `openai` |
-| `CRM_LLM_API_KEY` | Only if openai | OpenAI API key |
-| `CRM_LLM_BASE_URL` | Only if openai | OpenAI-compatible base URL |
-| `CRM_LLM_MODEL` | Only if openai | Model name for OpenAI provider |
+| `CRM_LLM_PROVIDER` / `CRM_LLM_MODEL` | No | Optional CRM primary-route override; empty preserves OpenRouter DeepSeek V4 Flash |
+| `CRM_LLM_OPENROUTER_PROVIDER` | No | Optional OpenRouter infrastructure provider for the primary route |
+| `CRM_LLM_FALLBACK_PROVIDER` / `CRM_LLM_FALLBACK_MODEL` | No | Optional general CRM fallback override; empty preserves OpenRouter GPT-5.6 Luna |
+| `CRM_LLM_FALLBACK_OPENROUTER_PROVIDER` | No | Optional OpenRouter infrastructure provider for the general fallback |
+| `CRM_MEETING_LLM_FALLBACK_PROVIDER` / `CRM_MEETING_LLM_FALLBACK_MODEL` | No | Optional meeting fallback override; empty preserves OpenRouter Gemini 3.7 Flash |
+| `CRM_MEETING_LLM_FALLBACK_OPENROUTER_PROVIDER` | No | Optional OpenRouter infrastructure provider for the meeting fallback |
 
 ### Agents And Automation Model
 
