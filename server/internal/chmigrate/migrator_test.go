@@ -93,3 +93,58 @@ func TestUsermavenEventSchemaContract(t *testing.T) {
 		t.Fatal("ingestion migration missing materialized view")
 	}
 }
+
+func TestRenderMigrationSQLUsesKafkaEnvironment(t *testing.T) {
+	t.Setenv("KAFKA_BROKERS", "cluster-kafka-bootstrap.eventpipeline.svc:9092")
+	t.Setenv("KAFKA_SESSIONIZED_TOPIC", "helpin.events.production")
+	t.Setenv("CLICKHOUSE_KAFKA_GROUP", "helpin-clickhouse-production")
+	t.Setenv("KAFKA_AUTH", "true")
+	t.Setenv("KAFKA_SECURITY_PROTOCOL", "SASL_PLAINTEXT")
+	t.Setenv("KAFKA_SASL", "SCRAM-SHA-512")
+	t.Setenv("KAFKA_USERNAME", "helpin-eventpipeline")
+	t.Setenv("KAFKA_PASSWORD", "secret'with\\characters")
+
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	rendered, err := renderMigrationSQL(migrations[2].SQL)
+	if err != nil {
+		t.Fatalf("render migration: %v", err)
+	}
+	for _, value := range []string{
+		"'cluster-kafka-bootstrap.eventpipeline.svc:9092'",
+		"'helpin.events.production'",
+		"'helpin-clickhouse-production'",
+		"kafka_security_protocol = 'sasl_plaintext'",
+		"kafka_sasl_mechanism = 'SCRAM-SHA-512'",
+		"kafka_sasl_username = 'helpin-eventpipeline'",
+		`kafka_sasl_password = 'secret\'with\\characters'`,
+	} {
+		if !strings.Contains(rendered, value) {
+			t.Errorf("rendered migration missing %q", value)
+		}
+	}
+}
+
+func TestRenderMigrationSQLRequiresCompleteKafkaAuth(t *testing.T) {
+	t.Setenv("KAFKA_AUTH", "true")
+	for _, name := range []string{
+		"KAFKA_SECURITY_PROTOCOL", "KAFKA_SASL", "KAFKA_USERNAME", "KAFKA_PASSWORD",
+	} {
+		t.Setenv(name, "")
+	}
+	if _, err := renderMigrationSQL("SELECT 1"); err == nil {
+		t.Fatal("renderMigrationSQL returned nil error with incomplete Kafka auth")
+	}
+}
+
+func TestRenderMigrationSQLRequiresProductionKafkaConfig(t *testing.T) {
+	t.Setenv("CLICKHOUSE_MIGRATION_REQUIRE_KAFKA_CONFIG", "true")
+	t.Setenv("KAFKA_BROKERS", "")
+	t.Setenv("KAFKA_SESSIONIZED_TOPIC", "helpin.events.sessionized")
+	t.Setenv("KAFKA_AUTH", "false")
+	if _, err := renderMigrationSQL("SELECT 1"); err == nil {
+		t.Fatal("renderMigrationSQL returned nil error without production Kafka brokers")
+	}
+}

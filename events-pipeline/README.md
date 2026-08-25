@@ -56,6 +56,10 @@ go run ./cmd/clickhouse-migrate status
 go run ./cmd/clickhouse-migrate validate
 ```
 
+Stage and production run the same command as an Argo CD `PreSync` job, before
+event consumers are updated. The `helpin-secrets` secret must provide
+`CLICKHOUSE_DSN` and the pipeline's `KAFKA_*` connection variables.
+
 ### Prerequisites
 
 - Rust toolchain ([install](https://www.rust-lang.org/learn/get-started))

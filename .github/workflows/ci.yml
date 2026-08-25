@@ -143,6 +143,7 @@ jobs:
           go build ./cmd/api
           go build ./cmd/temporal-worker
           go build ./cmd/migrate
+          go build ./cmd/clickhouse-migrate
 
   server-tests:
     name: Server Tests

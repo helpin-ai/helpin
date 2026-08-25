@@ -14,6 +14,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/server ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/temporal-worker ./cmd/temporal-worker
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/clickhouse-migrate ./cmd/clickhouse-migrate
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/reconcile-git-pr-status ./cmd/reconcile-git-pr-status
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/recover-missed-support-emails ./cmd/recover-missed-support-emails
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/reindex-helpcenter-search ./cmd/reindex-helpcenter-search
@@ -50,6 +51,7 @@ ENTRYPOINT ["./server"]
 FROM runtime-base AS migrate
 
 COPY --from=builder /app/migrate .
+COPY --from=builder /app/clickhouse-migrate .
 COPY --from=builder /app/reindex-helpcenter-search .
 RUN chown -R app:app /app
 

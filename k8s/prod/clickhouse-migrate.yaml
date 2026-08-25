@@ -1,0 +1,54 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: helpin-clickhouse-migrate
+  namespace: helpin
+  labels:
+    app: helpin-clickhouse-migrate
+    env: prod
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: helpin-clickhouse-migrate
+        env: prod
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      containers:
+        - name: migrate
+          image: ghcr.io/helpin-ai/helpin/server-migrate:server-v0.95.356
+          command: ["./clickhouse-migrate", "up"]
+          envFrom:
+            - secretRef:
+                name: helpin-secrets
+          env:
+            - name: CLICKHOUSE_KAFKA_GROUP
+              value: helpin-clickhouse-prod-v1
+            - name: CLICKHOUSE_MIGRATION_REQUIRE_KAFKA_CONFIG
+              value: "true"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
