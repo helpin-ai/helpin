@@ -1,133 +1,122 @@
-Usermaven's Event Pipeline
----
+# Helpin Events Pipeline
 
-Usermaven event pipeline is built on top of Rust and Java.
-Rust handles event ingestion, enrichment, and reliable delivery to Kafka.
-Java Kafka Streams handles sessionization.
+This directory contains Helpin's authenticated event-ingestion pipeline. It was
+originally derived from Usermaven, but Helpin's tenancy, identity, deployment,
+and ClickHouse contracts are authoritative here. The old documentation site
+under `events-pipeline/docs` is retained only as upstream historical reference.
 
-The ingestion and transformation code is under `rust-capture/` and sessionization under `kafka-streams/`.
+Buyer-signal behavior built on these events is documented in
+[`../docs/crm-buyer-signals.md`](../docs/crm-buyer-signals.md).
 
-## What the pipeline does
+## Responsibilities
 
-- Collect events from frontend and backend SDKs
-- Authenticate incoming requests by API key and server secret
-- Transform and enrich events:
-  - Geo-location enrichment (MaxMind)
-  - IP2Proxy detection
-  - Session ID generation
-  - Anonymous ID generation
-  - Privacy mode compliance (first 3 octets only)
-  - Bot detection
-  - User-agent parsing
-- Produce events to Kafka with disk fallback for reliability
-- Replay disk-buffered events when Kafka recovers
-- Sessionize events using Kafka Streams
+The pipeline:
 
-## Components
+- accepts browser and authenticated server events;
+- resolves the workspace from the matched credential;
+- writes the canonical workspace UUID to `project_id`;
+- records credential kind and identity provenance;
+- enriches events with URL, device, bot, proxy, geo, and privacy context;
+- assigns stable anonymous and session identifiers;
+- buffers and replays retryable deliveries;
+- writes the Usermaven-compatible typed event contract to
+  `usermaven.events` in ClickHouse.
 
-| Component | Language | Path | Description |
-|-----------|----------|------|-------------|
-| Capture API | Rust | `rust-capture/` | Event ingestion HTTP server |
-| Consumer | Rust | `rust-capture/src/consumers/` | Kafka consumer with enrichment |
-| Replay Worker | Rust | `rust-capture/src/replay_worker.rs` | Replays disk fallback to Kafka |
-| Sessionization | Java | `kafka-streams/` | Kafka Streams session windows |
-| Retroactive | Python | `eventpipeline-retroactive/` | Retroactive event processing |
-| Upsert | Python | `eventpipeline-upsert/` | ClickHouse upsert worker |
+The browser never supplies or learns `project_id`. A payload field that looks
+like workspace or project tenancy is not authoritative. Browser identity claims
+also remain untrusted unless they are verified by Helpin's signed-identity
+contract; authenticated server evidence can carry verified identity.
 
-## Getting started
+## Local stack
 
-From the Helpin repository root, the complete local stack is available through:
+From the Helpin repository root:
 
 ```bash
 cp events-pipeline/.env.events.example events-pipeline/.env.events
 just events-up
 just events-smoke
+just events-browser-smoke
 ```
 
-`events-up` runs Kafka, capture, enrichment, sessionization, replay, and ClickHouse. It loads the internal API secret from `server/.env`; no event credential is stored in Compose or committed files. The smoke test verifies the authenticated project ID at every pipeline stage.
+- `events-up` starts the local transport, capture, processing, replay, and
+  ClickHouse services defined by the checked-in stack scripts.
+- `events-smoke` sends authenticated events and verifies their canonical
+  project at each processing boundary and in ClickHouse.
+- `events-browser-smoke` runs the browser signal lab and generates page, form,
+  article, interaction, and product events.
+- `just events-logs` follows the local services.
+- `just events-down` stops the stack.
 
-ClickHouse schema changes are versioned under `server/internal/chmigrate/sql` and
-applied by the Go migration runner during `events-up`. They can also be inspected
-directly:
+The stack reads the internal API secret from `server/.env`; event credentials
+are not committed into Compose files.
+
+## ClickHouse schema
+
+ClickHouse migrations are versioned under `server/internal/chmigrate/sql` and
+carry checksums. Local stack startup runs the same Go migration implementation
+used by deployment hooks.
 
 ```bash
 cd server
 go run ./cmd/clickhouse-migrate status
 go run ./cmd/clickhouse-migrate validate
+go run ./cmd/clickhouse-migrate up
 ```
 
-Stage and production run the same command as an Argo CD `PreSync` job, before
-event consumers are updated. The `helpin-secrets` secret must provide
-`CLICKHOUSE_DSN` and the pipeline's `KAFKA_*` connection variables.
+Stage and production apply migrations before event consumers are updated. The
+backend and migration job require `CLICKHOUSE_DSN`; transport-specific settings
+are defined in the deployment and local stack configuration rather than this
+document.
 
-### Prerequisites
+The final `usermaven.events` table retains the raw normalized event for replay
+and debugging and exposes typed materialized columns for tenant-safe queries.
+Signal evaluators query bounded project sets and time windows; CRM pages never
+query this table synchronously.
 
-- Rust toolchain ([install](https://www.rust-lang.org/learn/get-started))
-- JDK 20 ([download](https://www.oracle.com/java/technologies/downloads/))
-- Maven ([download](https://maven.apache.org))
-- Docker + Docker Compose
+## Reliability and security invariants
 
-### Quick start
+- The token registry is the only credential-to-workspace authority.
+- Browser and server credentials for one installation resolve to the same
+  canonical `project_id`.
+- Credential rotation does not change the canonical project.
+- Raw credentials must not be stored as event `api_key` values or logged.
+- Failed, buffered, replayed, and successful paths preserve the authorized
+  project and identity provenance.
+- Delivery is retry-safe and downstream storage is idempotent.
+- A stale token-registry refresh retains the last valid set rather than
+  accepting unknown credentials.
+- Shutdown drains in-flight work and exposes health/readiness state.
+
+## Development and tests
+
+Rust component tests:
 
 ```bash
-git clone https://github.com/usermaven/events-pipeline
 cd events-pipeline/rust-capture
-cp .env.example .env
-cargo build
-```
-
-### Development with PrintSink (no Kafka needed)
-
-```bash
-cd rust-capture
-PRINT_SINK=true cargo run
-```
-
-### Development with Kafka
-
-```bash
-docker-compose up -d
-cd rust-capture
-cargo run
-```
-
-### Running the consumer
-
-```bash
-cargo run --bin consumer
-```
-
-### Running tests
-
-```bash
 cargo test
 ```
 
-### Sending test events
+ClickHouse migration tests:
 
 ```bash
-# Sample curl scripts in bin-request-examples/
-./bin-request-examples/send-event.sh
-./bin-request-examples/send-http-event.sh
+cd server
+go test ./internal/chmigrate
 ```
 
-### Validating events in Kafka
+The complete verification path is the pair of repository-root smoke commands.
+They cover service health, authenticated tenancy propagation, ingestion into
+ClickHouse, browser capture, and isolation between test projects.
 
-```bash
-# Inside the Kafka container
-kafka-run-class kafka.tools.GetOffsetShell --broker-list localhost:9092 --topic incoming_events --time -1
-```
+## Directory map
 
-## Reliability features
+| Area | Location |
+|---|---|
+| capture and processing | `rust-capture/` |
+| local orchestration | `scripts/`, `../docker-compose.yaml` |
+| browser signal lab | `../frontend/public/event-test/`, `../frontend/e2e/event-pipeline/` |
+| ClickHouse migrations | `../server/internal/chmigrate/sql/` |
+| ClickHouse migration CLI | `../server/cmd/clickhouse-migrate/` |
+| CRM behavioral rules | `../server/internal/repository/event_clickhouse_rules.go` |
 
-- Typed error handling (retryable vs non-retryable)
-- Kafka health detection via rdkafka stats callback
-- Disk fallback when Kafka is unavailable
-- Replay worker to recover buffered events
-- Manual consumer offset commits (at-least-once)
-- Request timeout middleware
-- Body size limits
-- Health check endpoints for k8s probes
-- Graceful shutdown with readiness drain
-
-See `rust-capture/README.md` for detailed documentation.
+Component READMEs may describe low-level implementation details, but this file
+is the canonical Helpin entry point for pipeline operations and invariants.

@@ -1,5 +1,11 @@
 # CRM Buyer Signals — Assessment and Implementation Roadmap
 
+> **Historical design record.** This assessment preserves the decisions and
+> implementation plan used to build the system; phase language and open-item
+> lists below are not current status. Use
+> [`crm-buyer-signals.md`](crm-buyer-signals.md) as the canonical implemented
+> architecture and operations reference.
+
 Assessed: 2026-08-23. Updated after the CRM signal reliability fixes and review of Helpin's vendored events pipeline and the upstream Usermaven implementation.
 
 This document describes the current buyer-signal system and defines the implementation sequence for turning it into a trustworthy cross-product signal system. Phase 0 is a decision-complete implementation specification. Later phases define product direction; their detector thresholds and score weights must be calibrated with production evidence.

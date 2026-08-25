@@ -2,6 +2,10 @@
 
 Monorepo for the Helpin app, embedded widget SDK, shared widget components, and the standalone widget bundle.
 
+Engineering documentation starts at [docs/README.md](docs/README.md). The
+canonical buyer-signals reference is
+[docs/crm-buyer-signals.md](docs/crm-buyer-signals.md).
+
 ## Main Packages
 
 - `frontend/`: main React app
