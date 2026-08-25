@@ -23,6 +23,16 @@ case "${1:-}" in
   up)
     : "${INTERNAL_API_SECRET:?INTERNAL_API_SECRET is required in server/.env}"
     docker compose --profile events up -d --build "${services[@]}"
+    for _ in $(seq 1 60); do
+      if docker compose exec -T clickhouse clickhouse-client \
+        --user helpin --password helpin --query 'SELECT 1' >/dev/null 2>&1; then
+        break
+      fi
+      sleep 2
+    done
+    docker compose exec -T clickhouse clickhouse-client \
+      --user helpin --password helpin --query 'SELECT 1' >/dev/null
+    (cd server && go run ./cmd/clickhouse-migrate up)
     ;;
   down)
     docker compose --profile events stop "${services[@]}"

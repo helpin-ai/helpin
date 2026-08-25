@@ -46,6 +46,16 @@ just events-smoke
 
 `events-up` runs Kafka, capture, enrichment, sessionization, replay, and ClickHouse. It loads the internal API secret from `server/.env`; no event credential is stored in Compose or committed files. The smoke test verifies the authenticated project ID at every pipeline stage.
 
+ClickHouse schema changes are versioned under `server/internal/chmigrate/sql` and
+applied by the Go migration runner during `events-up`. They can also be inspected
+directly:
+
+```bash
+cd server
+go run ./cmd/clickhouse-migrate status
+go run ./cmd/clickhouse-migrate validate
+```
+
 ### Prerequisites
 
 - Rust toolchain ([install](https://www.rust-lang.org/learn/get-started))

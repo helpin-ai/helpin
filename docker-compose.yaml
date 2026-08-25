@@ -179,7 +179,6 @@ services:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./events-pipeline/clickhouse/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "clickhouse-client --user helpin --password helpin --query 'SELECT 1' >/dev/null 2>&1"]
       interval: 5s
