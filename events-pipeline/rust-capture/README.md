@@ -28,7 +28,7 @@ volume.
 `nats-bootstrap` requires `NATS_URL`, `EVENTS_WORK_MAX_BYTES`,
 `EVENTS_RAW_MAX_BYTES`, and `EVENTS_DLQ_MAX_BYTES`. It creates an R3
 WorkQueue/DiscardNew work stream, an R1 diagnostic raw archive, and an R3 DLQ.
-All are file-backed, S2-compressed, and bounded to a 48-hour maximum age.
+All are file-backed, S2-compressed, and bounded to a six-hour maximum age.
 
 ## Local development
 
@@ -54,7 +54,7 @@ For a local writer process set `NATS_URL`, `CLICKHOUSE_HTTP_URL`,
 pulls bounded batches from one multi-subject durable consumer per writer, and
 sends AckProgress until ClickHouse and any terminal DLQ publication have
 completed. The 100 logical subjects are assigned in balanced contiguous ranges;
-three replicas own 34, 33, and 33 subjects.
+the current two-writer topology owns 50 subjects per writer.
 Production mounts the private NATS CA and role-specific client certificate
 through the `NATS_*_FILE` variables shown in `.env.example`.
 

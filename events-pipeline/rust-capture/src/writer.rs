@@ -14,7 +14,7 @@ pub const SHARD_PULL_BATCH_SIZE: usize = 256;
 pub const WRITER_PULL_MAX_MESSAGES: usize = 8_192;
 pub const SHARD_ACK_WAIT: Duration = Duration::from_secs(5 * 60);
 pub const ACK_PROGRESS_INTERVAL: Duration = Duration::from_secs(60);
-pub const STREAM_MAX_AGE: Duration = Duration::from_secs(48 * 60 * 60);
+pub const STREAM_MAX_AGE: Duration = Duration::from_secs(6 * 60 * 60);
 pub const PUBLISH_DEDUPLICATION_WINDOW: Duration = Duration::from_secs(30);
 pub const WRITER_CONSUMER_PREFIX: &str = "events-writer-v2-";
 pub const LEGACY_SHARD_CONSUMER_PREFIX: &str = "events-writer-v1-";
@@ -243,6 +243,7 @@ mod tests {
 
     #[test]
     fn work_capacity_rejects_new_events_but_debug_streams_drop_old_data() {
+        assert_eq!(STREAM_MAX_AGE, Duration::from_secs(6 * 60 * 60));
         let work = enriched_work_stream_config(10_000);
         assert_eq!(work.retention, RetentionPolicy::WorkQueue);
         assert_eq!(work.discard, DiscardPolicy::New);
@@ -252,9 +253,13 @@ mod tests {
         assert_eq!(work.compression, Some(Compression::S2));
         assert!(work.allow_direct);
 
-        assert_eq!(raw_archive_stream_config(1_000).discard, DiscardPolicy::Old);
-        assert_eq!(raw_archive_stream_config(1_000).num_replicas, 1);
-        assert_eq!(dlq_stream_config(1_000).discard, DiscardPolicy::Old);
+        let raw = raw_archive_stream_config(1_000);
+        assert_eq!(raw.discard, DiscardPolicy::Old);
+        assert_eq!(raw.num_replicas, 1);
+        assert_eq!(raw.max_age, STREAM_MAX_AGE);
+        let dlq = dlq_stream_config(1_000);
+        assert_eq!(dlq.discard, DiscardPolicy::Old);
+        assert_eq!(dlq.max_age, STREAM_MAX_AGE);
     }
 
     #[test]

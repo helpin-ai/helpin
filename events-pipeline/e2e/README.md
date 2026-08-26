@@ -108,6 +108,12 @@ boundary. Do not compare that result directly with the single-event closed
 connection profile above: batching and the open arrival model test different
 boundaries.
 
+The initial production qualification is 300 events/s for ten minutes with the
+same application topology, file-backed R3 work, file-backed consumer state, S2,
+and raw archive enabled. It achieved exact 180,010-event parity, a one-second
+drain, and p99 8.58 ms. The capacity baseline records its complete resource and
+disk results.
+
 ## Split target and remote generator
 
 Use this layout for an open-loop capacity test. It keeps k6 CPU, sockets, and
@@ -205,6 +211,7 @@ logs and enrichment metrics.
 | `capture-metrics.prom` | Work/archive publish latency, failure, spill, and enrichment metrics |
 | `writer-metrics.prom` | Writer batches, pending work, rejection, seed, and session metrics |
 | `jetstream-*.json` | Per-node JetStream stream and consumer state |
+| `jetstream-disk.csv` | Per-node total, work, raw, and DLQ physical filesystem samples |
 | `clickhouse-final.tsv` | Logical FINAL row, event, visitor, session, and empty-session counts |
 | `clickhouse-parts-health.tsv` | Active-part and partition health |
 
@@ -230,10 +237,17 @@ During a run, distinguish the layers:
 
 ## Compression A/B test
 
-The default work stream uses S2 compression. Repeat the same run with
-`SUSTAINED_WORK_COMPRESSION=none` to test it disabled; the diagnostic archive
-remains compressed. Compare work publish-ack latency, NATS CPU, disk bytes and
-IOPS, fallback volume, and drain time before changing production configuration.
+The default work stream uses S2 compression. Repeat the same capture-only,
+file-backed run with `SUSTAINED_WORK_COMPRESSION=none` to test it disabled; the
+diagnostic archive remains compressed. `summary.json` reports logical bytes,
+per-node physical bytes, and the physical/logical ratio when consumers are
+disabled. Compare those values plus publish-ack latency, NATS CPU, disk IOPS,
+fallback volume, and drain time before changing production configuration.
+
+Capture-only mode always records a final physical-disk sample. Recurring `du`
+sampling is disabled by default because it is an intrusive disk observer; set
+`SUSTAINED_JETSTREAM_DISK_MONITOR_ENABLED=true` only when disk-growth samples
+are part of the experiment.
 
 ## NATS contention isolation sequence
 

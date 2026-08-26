@@ -112,8 +112,9 @@ generation. The complete local sustained and split-host capacity-test runbook,
 including enrichment inputs, result files, interpretation, and cleanup, is in
 [`e2e/README.md`](e2e/README.md).
 
-The verified 15,000 events/second baseline, per-layer CPU and memory results,
-stage/production topology, and 48-hour JetStream capacity calculation are in
+The verified 15,000 events/second ceiling, 300 events/second production
+qualification, compression measurements, per-layer resources, and six-hour
+JetStream capacity calculation are in
 [`CAPACITY_BASELINE.md`](CAPACITY_BASELINE.md). That document is the canonical
 deployment-sizing reference; the benchmark's durability caveats apply.
 

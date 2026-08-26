@@ -84,11 +84,11 @@ spec:
               containerPort: 3001
           resources:
             requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
               cpu: 500m
               memory: 512Mi
-            limits:
-              cpu: "1"
-              memory: 1Gi
           startupProbe:
             httpGet:
               path: /health/liveness
@@ -176,11 +176,13 @@ spec:
             - name: NATS_CLIENT_KEY_FILE
               value: /etc/nats/tls/tls.key
             - name: EVENTS_WORK_MAX_BYTES
-              value: "107374182400"
+              value: "8589934592"
+            - name: EVENTS_WORK_COMPRESSION
+              value: s2
             - name: EVENTS_RAW_MAX_BYTES
-              value: "53687091200"
+              value: "4294967296"
             - name: EVENTS_DLQ_MAX_BYTES
-              value: "10737418240"
+              value: "1073741824"
             - name: EVENTS_CONSUMERS_ENABLED
               value: "true"
             - name: EVENTS_CONSUMER_MEMORY_STORAGE

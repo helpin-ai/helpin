@@ -79,109 +79,136 @@ SUSTAINED_RESULTS_DIR=/tmp/helpin-e2e-15000-baseline \
 events-pipeline/scripts/sustained-e2e.sh
 ```
 
+## Initial production qualification
+
+The launch ceiling is 300 events/s. A separate ten-minute run exercised the
+complete production semantics: two captures, two writers, encrypted file-backed
+R3 work, file-backed consumer state, S2 compression, and the R1 raw archive.
+
+| Measure | Result |
+| --- | ---: |
+| Scheduled and accepted events | 180,010 / 180,010 |
+| ClickHouse physical, logical, and unique rows | 180,010 |
+| Effective event / HTTP request rate | 300.012 / 30.001 per second |
+| Dropped k6 iterations / HTTP failures | 0 / 0 |
+| Response latency p50 / p95 / p99 / max | 4.47 / 7.14 / 8.58 / 33.36 ms |
+| Final drain | 1 second |
+| JetStream redeliveries | 0 |
+
+Observed resources at 300 events/s were far below the 15k ceiling. CPU values
+use 1.00 as one logical core; replica ranges are per process/container.
+
+| Layer | Replicas | CPU avg per replica | CPU peak per replica | Memory avg per replica | Memory peak per replica |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| k6 generator | 1 | 0.036 | 0.061 | 58 MiB | 79 MiB |
+| capture | 2 | 0.024-0.027 | 0.049-0.055 | 441 MiB | 443 MiB |
+| replay sidecar | 2 | 0.028 | 0.92-0.94 startup | 246 MiB | 247 MiB |
+| session writer | 2 | 0.018-0.019 | 0.027-0.030 | 33-34 MiB | 46-48 MiB |
+| NATS | 3 | 0.038-0.077 | 0.068-0.115 | 76-105 MiB | 98-132 MiB |
+| ClickHouse | 1 | 0.145 | 0.298 | 976 MiB | 1,331 MiB |
+
+The replay CPU peaks are one cold-start sample, not sustained replay load.
+
+## File-store compression measurement
+
+Two identical capture-only runs retained 600,010 events in an encrypted,
+file-backed R3 work stream. With consumers disabled, drain behavior could not
+hide stored bytes. The harness compared JetStream logical bytes with `du` from
+all three NATS data directories.
+
+| Work storage | Logical bytes/event | Replicated logical bytes | Physical bytes across R3 | Physical/logical |
+| --- | ---: | ---: | ---: | ---: |
+| no compression | 2,228.24 | 4.011 GB | 4.025 GB | 100.36% |
+| S2 | 2,228.24 | 4.011 GB | 271.5 MB | 6.77% |
+
+S2 reduced physical work storage by 93.25%, or 14.8x. The production run also
+measured the raw archive at 1,205.15 logical bytes/event and 12.52% physical to
+logical, or about 8.0x compression. These ratios are payload-dependent; alert
+on both filesystem use and logical stream bytes and repeat this measurement
+after material event-envelope changes.
+
 ## Deployment sizing
 
-Stage and production use the verified two-capture/two-writer application
-topology for availability and shard ownership. The initial production target is
-no more than 1,000 events/s, so production is intentionally smaller than the
-15k/s qualification environment:
+Stage and production preserve the two-capture/two-writer topology for
+availability and shard ownership. Production is sized for the measured 300/s
+launch ceiling, with burst headroom:
 
 | Production container | Replicas | CPU request / limit | Memory request / limit |
 | --- | ---: | ---: | ---: |
-| capture | 2 | 0.5 / 1 core | 512 MiB / 1 GiB |
+| capture | 2 | 0.25 / 1 core | 512 MiB / 1 GiB |
 | replay sidecar | 2 | 0.2 / 0.5 cores | 256 / 512 MiB |
-| session writer | 2 | 0.5 / 1 core | 512 MiB / 1 GiB |
-| NATS | 3 | 1 / 2 cores | 2 / 4 GiB |
+| session writer | 2 | 0.25 / 1 core | 512 MiB / 1 GiB |
+| NATS | 3 | 0.5 / 2 cores | 1 / 3 GiB |
 
-Staging preserves topology and correctness coverage at considerably lower
-cost. It is not continuously provisioned as a 15k/s performance environment:
+Staging preserves topology at a lower cost and is not continuously provisioned
+as a performance environment:
 
 | Staging container | Replicas | CPU request / limit | Memory request / limit |
 | --- | ---: | ---: | ---: |
-| capture | 2 | 0.5 / 1 core | 512 MiB / 1 GiB |
-| replay sidecar | 2 | 0.2 / 0.5 cores | 256 / 512 MiB |
-| session writer | 2 | 0.5 / 1 core | 512 MiB / 1 GiB |
-| NATS | 3 | 0.5 / 2 cores | 1 / 3 GiB |
+| capture | 2 | 0.1 / 0.5 core | 256 / 768 MiB |
+| replay sidecar | 2 | 0.1 / 0.25 cores | 256 / 512 MiB |
+| session writer | 2 | 0.1 / 0.5 core | 256 / 512 MiB |
+| NATS | 3 | 0.25 / 1 core | 512 MiB / 2 GiB |
 
-Temporarily apply the measured qualification envelope (2 CPU/2 GiB per capture
-and writer, 4 CPU/8 GiB per NATS node) and a provisioned-IOPS storage class
-before using stage for a 15k/s qualification, then restore the stage envelope
-after recording the run.
-
-NATS retains more memory than its observed 15k/s process RSS because the
-deployed streams are file-backed, encrypted, and R3, and operating-system page
-cache and storage latency affect their behavior. NATS pods must remain on
-separate nodes and use provisioned-IOPS NVMe-class volumes. ClickHouse is not
-owned by these manifests; for the initial 1k/s target, allocate 1/2 CPU
-request/limit and 2/4 GiB memory request/limit, then apply the measured 15k
-qualification envelope before raising the traffic target.
+ClickHouse is external to these manifests. The 300/s run supports a 0.5/2 CPU
+request/limit and 2/4 GiB memory request/limit. Apply the measured 15k
+qualification envelope and a provisioned-IOPS storage class before raising the
+traffic ceiling substantially.
 
 Changing `WRITER_REPLICAS` changes durable-consumer shard ownership. Stop all
 writers, set `EVENTS_CONSUMER_REBALANCE_FROM` to the exact active topology, run
 the bootstrap job, and then start the new StatefulSet. The current manifest
 performs the guarded `r003` to `r002` transition.
 
-For the first rollout of these manifests, pause automatic GitOps reconciliation,
-scale the writer StatefulSet to zero, wait for its pods to terminate, run the
-bootstrap job with `EVENTS_CONSUMER_REBALANCE_FROM=r003`, apply the two-replica
-StatefulSet, and then resume reconciliation. If the live consumer topology is
-not exactly `r003`, stop and use the topology reported by the bootstrap guard;
-do not bypass it while writers are running.
+For the first rollout, pause automatic GitOps reconciliation, scale the writer
+StatefulSet to zero, wait for its pods to terminate, run the bootstrap job with
+`EVENTS_CONSUMER_REBALANCE_FROM=r003`, apply the two-replica StatefulSet, and
+then resume reconciliation. If the live consumer topology is not exactly
+`r003`, stop and use the topology reported by the bootstrap guard.
 
-## Forty-eight-hour JetStream capacity
+## Six-hour JetStream capacity
 
-The work stream has a 48-hour maximum age. At the initial production ceiling:
+Work, raw, and DLQ streams have a six-hour maximum age. At the launch ceiling:
 
 ```text
-1,000 events/s * 172,800 s = 172,800,000 events
+300 events/s * 21,600 s = 6,480,000 events
 ```
 
-The monitored work-stream backlog measured 2,212.5 bytes/event on average and
-2,213.8 bytes/event at peak. Using the peak footprint:
+| Capacity component | Logical | Measured S2 physical | Physical with 25% headroom |
+| --- | ---: | ---: | ---: |
+| R3 work, per NATS node | 14.439 GB | 0.978 GB | 1.222 GB |
+| R3 work, cluster total | 43.317 GB | 2.933 GB | 3.666 GB |
+| R1 raw archive | 7.809 GB | 0.978 GB | 1.222 GB |
 
-| Capacity component | Size |
-| --- | ---: |
-| 48-hour logical enriched work payload at 1k/s | 382.5 GB (356.3 GiB) |
-| Logical work allocation with 25% headroom | 478.2 GB (445.3 GiB) |
-| R3 physical payload before headroom | 1.148 TB (1.044 TiB) |
-| R3 physical allocation with 25% headroom | 1.435 TB (1.305 TiB) |
+Production sets logical caps of 20 GiB for work, 12 GiB for raw, and 2 GiB for
+DLQ. NATS therefore needs a 40 GB logical file-store allowance, while measured
+compressed data for a complete six-hour outage is about 2.4 GB on the busiest
+node including 25% headroom. Each production NATS node receives a 16 GiB PVC;
+stage uses 8 GiB. This retains more than 6x physical headroom at the measured
+mix without provisioning against uncompressed logical bytes.
 
-Production uses a 512 GiB logical work-stream cap, a 900 GB JetStream file cap,
-and a 1 TiB PVC on each NATS node. The work cap is 549.8 GB, covering the
-478.2 GB requirement above. The configured work, bounded 256 GiB R1 raw
-archive, and 32 GiB R3 DLQ budgets total 800 GiB / 859.0 GB. That leaves 41 GB
-inside the JetStream cap and about 200 GB between the cap and each 1 TiB
-filesystem. Alert before any node reaches 70% of its filesystem or JetStream
-file-store allocation; capacity must be expanded before 80%.
+`max_file_store` is a logical JetStream allowance and is intentionally larger
+than the compressed filesystem. S2 is explicit in the bootstrap manifests.
+Alert at 70% of either PVC or logical allowance and expand before 80%. If the
+physical/logical ratio rises above 25%, reassess the PVC immediately.
 
-At 15k/s, the same calculation is 5.738 TB logical, 7.173 TB logical with 25%
-headroom, and 21.518 TB physical across R3. Before raising production to that
-rate, expand every NATS PVC to at least 8 TiB and raise `max_file_store` to 8 TB
-and `EVENTS_WORK_MAX_BYTES` to 7.173 TB. StatefulSet volume-claim templates are
-immutable on many clusters, so plan the retained-PVC expansion/recreation as an
-explicit storage migration.
+The capture fallback remains 10 GiB per capture pod. At 300/s, evenly balanced
+captures can hold roughly six hours of uncompressed enriched envelopes. It is a
+pod-local `emptyDir`: it survives a container restart but not pod replacement
+or node loss. The raw archive is diagnostic and may drop after its smaller
+archive-spill budget during a NATS outage; it must never delay capture.
 
-This is outage-buffer sizing. A healthy WorkQueue drains continuously: the
-qualification run's peak backlog was only 28,754 messages / 63.7 MB. Stage
-keeps its smaller 200 GiB-per-node qualification volume and does not promise a
-48-hour 15k/s outage buffer.
+Before increasing the rate, recalculate six-hour logical caps, run the same S2
+disk measurement with representative payloads, expand retained PVCs if needed,
+and repeat the production-semantics test. StatefulSet volume-claim templates
+are immutable on many clusters, so treat expansion as an explicit migration.
 
-The raw archive was disabled during the qualification, so its bytes/event were
-not measured. Its 512 GiB production limit is a bounded diagnostic budget, not
-evidence of 48-hour raw retention. Measure representative production payloads
-with the archive enabled before increasing that budget. The capture fallback
-and archive-spill volumes are pod-local `emptyDir` volumes; they survive a
-container restart but not pod replacement or node loss.
+## Evidence boundary
 
-## Evidence boundary and next qualification
-
-This baseline proves the application topology and 15k/s end-to-end correctness
-on one host. It does **not** prove the complete production durability path: the
-work stream and consumer state were memory-backed, the raw archive was off,
-and IP2Proxy was unavailable and followed the fail-open path.
-
-Before treating 15k/s as the production durability SLO, repeat the run on
-separate production-like nodes with file-backed R3 work storage, file-backed
-consumer state, raw archive enabled, pinned MaxMind/IP2Proxy databases, and the
-production storage class. Record disk latency, IOPS, throughput, and NATS
-filesystem growth alongside the existing per-layer CPU and memory summary.
+The 15k result proves application headroom on one host but used memory-backed
+work/consumer state with raw archive disabled. The 300/s launch qualification
+used the complete file-backed and archive path, but still shared one host and
+used IP2Proxy's fail-open path. A future higher production ceiling requires
+separate production-like nodes, the production storage class, pinned enrichment
+databases, and recorded disk latency, IOPS, throughput, compression, CPU, and
+memory.

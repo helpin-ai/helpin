@@ -84,7 +84,7 @@ spec:
               containerPort: 3001
           resources:
             requests:
-              cpu: 500m
+              cpu: 250m
               memory: 512Mi
             limits:
               cpu: "1"
@@ -176,11 +176,13 @@ spec:
             - name: NATS_CLIENT_KEY_FILE
               value: /etc/nats/tls/tls.key
             - name: EVENTS_WORK_MAX_BYTES
-              value: "549755813888"
+              value: "21474836480"
+            - name: EVENTS_WORK_COMPRESSION
+              value: s2
             - name: EVENTS_RAW_MAX_BYTES
-              value: "274877906944"
+              value: "12884901888"
             - name: EVENTS_DLQ_MAX_BYTES
-              value: "34359738368"
+              value: "2147483648"
             - name: EVENTS_CONSUMERS_ENABLED
               value: "true"
             - name: EVENTS_CONSUMER_MEMORY_STORAGE

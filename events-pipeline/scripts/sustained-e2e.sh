@@ -39,6 +39,7 @@ k6_p50_limit_ms=${SUSTAINED_K6_P50_LIMIT_MS:-10}
 k6_p99_limit_ms=${SUSTAINED_K6_P99_LIMIT_MS:-25}
 resource_monitor_enabled=${SUSTAINED_RESOURCE_MONITOR_ENABLED:-true}
 docker_resource_monitor_enabled=${SUSTAINED_DOCKER_RESOURCE_MONITOR_ENABLED:-true}
+jetstream_disk_monitor_enabled=${SUSTAINED_JETSTREAM_DISK_MONITOR_ENABLED:-false}
 resource_sample_interval=${SUSTAINED_RESOURCE_SAMPLE_INTERVAL_SECONDS:-5}
 expected=$((rate * duration))
 run_id="sustained-$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -199,6 +200,27 @@ print(0, 0, 0, 0, 0)
 PY
 }
 
+sample_jetstream_disk() {
+  local now=$1
+  local ordinal container_id total_kib work_kib raw_kib dlq_kib
+  for ordinal in 0 1 2; do
+    container_id=$("${compose[@]}" ps -q "nats-$ordinal" 2>/dev/null || true)
+    if [[ -z "$container_id" ]]; then
+      continue
+    fi
+    total_kib=$(docker exec "$container_id" du -sk /data 2>/dev/null \
+      | awk 'NR == 1 { print $1 }' || true)
+    work_kib=$(docker exec "$container_id" du -sk '/data/jetstream/$G/streams/EVENTS_ENRICHED_V1' 2>/dev/null \
+      | awk 'NR == 1 { print $1 }' || true)
+    raw_kib=$(docker exec "$container_id" du -sk '/data/jetstream/$G/streams/EVENTS_RAW_V1' 2>/dev/null \
+      | awk 'NR == 1 { print $1 }' || true)
+    dlq_kib=$(docker exec "$container_id" du -sk '/data/jetstream/$G/streams/EVENTS_DLQ_V1' 2>/dev/null \
+      | awk 'NR == 1 { print $1 }' || true)
+    echo "$now,$ordinal,$container_id,${total_kib:-0},${work_kib:-0},${raw_kib:-0},${dlq_kib:-0}" \
+      >>"$run_dir/jetstream-disk.csv"
+  done
+}
+
 clickhouse_query() {
   curl --fail-with-body --silent --show-error \
     --user helpin:helpin \
@@ -236,6 +258,9 @@ sample_resources() {
     echo "$now,${capture_cpu:-0},${capture_rss:-0},${writer_cpu:-0},${writer_rss:-0},$mem_available,$swap_free" >>"$run_dir/process-resources.csv"
     read -r work_messages work_bytes ack_pending consumer_pending redelivered <<<"$(work_stream_resources)"
     echo "$now,$work_messages,$work_bytes,$ack_pending,$consumer_pending,$redelivered" >>"$run_dir/jetstream-resources.csv"
+    if [[ "$jetstream_disk_monitor_enabled" == "true" ]]; then
+      sample_jetstream_disk "$now"
+    fi
     for ordinal in "${!capture_pids[@]}"; do
       read -r cpu rss <<<"$(ps -p "${capture_pids[$ordinal]}" -o %cpu=,rss= 2>/dev/null | xargs || true)"
       echo "$now,capture,$ordinal,${capture_pids[$ordinal]},${cpu:-0},${rss:-0}" >>"$run_dir/process-resources-detailed.csv"
@@ -271,10 +296,10 @@ assert_no_spill_files() {
   fi
 }
 
-echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size workers=$workers connections=$connections visitors=$visitors print_sink=$print_sink archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas capture_replicas=$capture_replicas work_storage=$work_storage work_replicas=$work_replicas work_in_flight=$work_max_in_flight resource_monitor=$resource_monitor_enabled docker_resource_monitor=$docker_resource_monitor_enabled resource_sample_interval=$resource_sample_interval"
+echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size workers=$workers connections=$connections visitors=$visitors print_sink=$print_sink archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas capture_replicas=$capture_replicas work_storage=$work_storage work_replicas=$work_replicas work_in_flight=$work_max_in_flight resource_monitor=$resource_monitor_enabled docker_resource_monitor=$docker_resource_monitor_enabled jetstream_disk_monitor=$jetstream_disk_monitor_enabled resource_sample_interval=$resource_sample_interval"
 echo "Results will be retained in $run_dir"
-printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_storage=%s\nwork_replicas=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\ncapture_replicas=%s\nresource_monitor_enabled=%s\ndocker_resource_monitor_enabled=%s\nresource_sample_interval_seconds=%s\n' \
-  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_storage" "$work_replicas" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" "$capture_replicas" "$resource_monitor_enabled" "$docker_resource_monitor_enabled" "$resource_sample_interval" >"$run_dir/test.env"
+printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_storage=%s\nwork_replicas=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\ncapture_replicas=%s\nresource_monitor_enabled=%s\ndocker_resource_monitor_enabled=%s\njetstream_disk_monitor_enabled=%s\nresource_sample_interval_seconds=%s\n' \
+  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_storage" "$work_replicas" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" "$capture_replicas" "$resource_monitor_enabled" "$docker_resource_monitor_enabled" "$jetstream_disk_monitor_enabled" "$resource_sample_interval" >"$run_dir/test.env"
 
 "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 "${compose[@]}" up --detach --wait
@@ -422,6 +447,7 @@ done
 echo 'unix_time,capture_cpu_percent,capture_rss_kib,writer_cpu_percent,writer_rss_kib,mem_available_kib,swap_free_kib' >"$run_dir/process-resources.csv"
 echo 'unix_time,component,ordinal,pid,cpu_percent,rss_kib' >"$run_dir/process-resources-detailed.csv"
 echo 'unix_time,messages,bytes,ack_pending,consumer_pending,redelivered' >"$run_dir/jetstream-resources.csv"
+echo 'unix_time,node_ordinal,container_id,total_physical_kib,work_physical_kib,raw_physical_kib,dlq_physical_kib' >"$run_dir/jetstream-disk.csv"
 if [[ "$resource_monitor_enabled" == "true" ]]; then
   sample_resources &
   monitor_pid=$!
@@ -527,6 +553,10 @@ if [[ "$consumers_enabled" != "true" ]]; then
     sleep 1
   done
 
+  final_disk_sample_time=$(date +%s)
+  sample_jetstream_disk "$final_disk_sample_time"
+  read -r work_messages work_bytes _ _ _ <<<"$(work_stream_resources)"
+
   save_capture_metrics
   for port in 18222 18223 18224; do
     curl --fail --silent "http://127.0.0.1:$port/jsz?streams=true&consumers=true" >"$run_dir/jetstream-$port.json"
@@ -534,17 +564,46 @@ if [[ "$consumers_enabled" != "true" ]]; then
   "${compose[@]}" ps >"$run_dir/compose-ps.txt"
   "${compose[@]}" logs --no-color >"$run_dir/containers.log" 2>&1
 
-  RUN_DIR="$run_dir" WORK_MESSAGES="$work_messages" CONSUMER_COUNT="$consumer_count" python3 - <<'PY'
+  RUN_DIR="$run_dir" WORK_MESSAGES="$work_messages" WORK_BYTES="$work_bytes" \
+    WORK_REPLICAS="$work_replicas" WORK_COMPRESSION="$work_compression" \
+    WORK_STORAGE="$work_storage" CONSUMER_COUNT="$consumer_count" python3 - <<'PY'
+import csv
 import json
 import os
 from pathlib import Path
 
 root = Path(os.environ["RUN_DIR"])
+with (root / "jetstream-disk.csv").open() as source:
+    disk_rows = list(csv.DictReader(source))
+latest_disk = {}
+latest_total_disk = {}
+for row in disk_rows:
+    latest_disk[row["node_ordinal"]] = int(row["work_physical_kib"]) * 1024
+    latest_total_disk[row["node_ordinal"]] = int(row["total_physical_kib"]) * 1024
+logical_bytes = int(os.environ["WORK_BYTES"])
+replicas = int(os.environ["WORK_REPLICAS"])
+physical_bytes = sum(latest_disk.values())
+replicated_logical_bytes = logical_bytes * replicas
 summary = {
     "load": json.loads((root / "load-result.json").read_text()),
     "jetstream": {
         "work_messages": int(os.environ["WORK_MESSAGES"]),
+        "work_logical_bytes": logical_bytes,
+        "work_logical_bytes_per_message": round(
+            logical_bytes / int(os.environ["WORK_MESSAGES"]), 3
+        ),
         "consumer_count": int(os.environ["CONSUMER_COUNT"]),
+        "storage": os.environ["WORK_STORAGE"],
+        "compression": os.environ["WORK_COMPRESSION"],
+        "replicas": replicas,
+        "physical_bytes_by_node": latest_disk,
+        "physical_bytes_total": physical_bytes,
+        "total_store_bytes_by_node": latest_total_disk,
+        "total_store_bytes": sum(latest_total_disk.values()),
+        "replicated_logical_bytes": replicated_logical_bytes,
+        "physical_to_logical_ratio": round(
+            physical_bytes / replicated_logical_bytes, 6
+        ) if replicated_logical_bytes else 0,
     },
     "mode": "capture_without_consumers",
 }
@@ -660,6 +719,9 @@ with (root / "process-resources-detailed.csv").open() as source:
 with (root / "jetstream-resources.csv").open() as source:
     jetstream_rows = list(csv.DictReader(source))
 
+with (root / "jetstream-disk.csv").open() as source:
+    jetstream_disk_rows = list(csv.DictReader(source))
+
 def stats(name):
     values = [float(row[name]) for row in rows]
     if not values:
@@ -687,6 +749,25 @@ for metric in ["messages", "bytes", "ack_pending", "consumer_pending", "redelive
         "average": round(sum(values) / len(values), 3) if values else 0,
         "peak": max(values) if values else 0,
     }
+
+jetstream_disk = defaultdict(lambda: defaultdict(list))
+for row in jetstream_disk_rows:
+    for stream in ["total", "work", "raw", "dlq"]:
+        jetstream_disk[row["node_ordinal"]][stream].append(
+            int(row[f"{stream}_physical_kib"]) / 1024
+        )
+jetstream_disk_summary = {
+    f"nats-{ordinal}": {
+        stream: {
+            "average_mib": round(sum(values) / len(values), 3),
+            "peak_mib": round(max(values), 3),
+            "final_mib": round(values[-1], 3),
+        }
+        for stream, values in streams.items()
+        if values
+    }
+    for ordinal, streams in jetstream_disk.items()
+}
 
 docker = defaultdict(lambda: {"cpu": [], "memory_mib": []})
 memory_pattern = re.compile(r"([0-9.]+)([KMG]iB)")
@@ -735,6 +816,7 @@ summary = {
     },
     "host_process_details": detailed_summary,
     "jetstream_backlog": jetstream_summary,
+    "jetstream_disk": jetstream_disk_summary,
     "docker": docker_summary,
 }
 (root / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")

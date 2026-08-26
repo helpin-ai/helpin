@@ -15,7 +15,8 @@ data:
     jetstream {
       store_dir: /data/jetstream
       max_memory_store: 1GB
-      max_file_store: 180GB
+      # Functional stage budget: 8GiB work, 4GiB raw, and 1GiB DLQ.
+      max_file_store: 15GB
       cipher: chachapoly
       key: "$JS_ENCRYPTION_KEY"
       # Pin the server default. Tune only from a storage benchmark.
@@ -211,11 +212,11 @@ spec:
               containerPort: 8222
           resources:
             requests:
-              cpu: 500m
-              memory: 1Gi
+              cpu: 250m
+              memory: 512Mi
             limits:
-              cpu: "2"
-              memory: 3Gi
+              cpu: "1"
+              memory: 2Gi
           readinessProbe:
             httpGet:
               path: /healthz?js-enabled-only=true
@@ -261,4 +262,4 @@ spec:
         # using stage for performance qualification.
         resources:
           requests:
-            storage: 200Gi
+            storage: 8Gi
