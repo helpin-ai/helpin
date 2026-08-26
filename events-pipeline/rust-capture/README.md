@@ -9,10 +9,12 @@ SDK -> capture -> events.enriched.v1.<visitor-shard> -> session writer -> ClickH
                \-> events.raw.v1
 ```
 
-The capture process publishes the work and privacy-normalized archive messages
-concurrently. A work publish failure is fsynced to `FALLBACK_DIR`; the replay
-worker later runs the same enrichment and NATS publish path. The deployment must
-put this directory on an encrypted persistent volume.
+The capture process waits only for the work-stream acknowledgement. It publishes
+the privacy-normalized diagnostic archive in bounded background tasks, so an
+archive outage cannot delay a valid response. A work publish failure is fsynced
+to `FALLBACK_DIR`; the replay worker later runs the same enrichment and NATS
+publish path. The deployment must put this directory on an encrypted persistent
+volume.
 
 ## Binaries
 
@@ -61,7 +63,9 @@ the durable spill is writable.
 
 Capture spills work immediately when the async-NATS client is pending or
 disconnected. Connected work and DLQ publishes wait up to 1.5 seconds for the
-JetStream acknowledgement; the non-critical archive waits 250 ms. Override
+JetStream acknowledgement; each non-critical background archive publish waits
+250 ms. At most 4,096 archive operations may be in flight; overload drops only
+the diagnostic copy and increments `capture_raw_archive_dropped_total`. Override
 these with `NATS_WORK_PUBLISH_TIMEOUT_MS`,
 `NATS_ARCHIVE_PUBLISH_TIMEOUT_MS`, and `NATS_DLQ_PUBLISH_TIMEOUT_MS`.
 `capture_publish_latency_seconds{stream,result}` records every outcome.

@@ -14,7 +14,11 @@ use uuid::Uuid;
 pub struct JsonSpool {
     pending_dir: PathBuf,
     max_bytes: u64,
-    lock: Arc<Mutex<()>>,
+    state: Arc<Mutex<SpoolState>>,
+}
+
+struct SpoolState {
+    used_bytes: u64,
 }
 
 impl JsonSpool {
@@ -32,17 +36,18 @@ impl JsonSpool {
                 let _ = std::fs::remove_file(path);
             }
         }
+        let used_bytes = directory_bytes(&pending_dir)?;
         Ok(Self {
             pending_dir,
             max_bytes,
-            lock: Arc::new(Mutex::new(())),
+            state: Arc::new(Mutex::new(SpoolState { used_bytes })),
         })
     }
 
     pub async fn append<T: Serialize>(&self, value: &T) -> Result<()> {
         let payload = serde_json::to_vec(value).context("serialize spool record")?;
-        let _guard = self.lock.lock().await;
-        let used = directory_bytes(&self.pending_dir)?;
+        let mut state = self.state.lock().await;
+        let used = state.used_bytes;
         anyhow::ensure!(
             used.saturating_add(payload.len() as u64) <= self.max_bytes,
             "spool capacity exceeded ({used} + {} > {})",
@@ -71,11 +76,12 @@ impl JsonSpool {
             .context("open spool directory for fsync")?
             .sync_all()
             .context("fsync spool directory")?;
+        state.used_bytes = state.used_bytes.saturating_add(payload.len() as u64);
         Ok(())
     }
 
     pub async fn pending(&self) -> Result<Vec<PathBuf>> {
-        let _guard = self.lock.lock().await;
+        let _guard = self.state.lock().await;
         let mut entries = std::fs::read_dir(&self.pending_dir)
             .with_context(|| format!("read spool directory {:?}", self.pending_dir))?
             .filter_map(|entry| entry.ok())
@@ -96,10 +102,16 @@ impl JsonSpool {
     }
 
     pub async fn remove(&self, path: &Path) -> Result<()> {
-        let _guard = self.lock.lock().await;
+        let mut state = self.state.lock().await;
+        let bytes = tokio::fs::metadata(path)
+            .await
+            .with_context(|| format!("stat spool record {path:?}"))?
+            .len();
         tokio::fs::remove_file(path)
             .await
-            .with_context(|| format!("remove spool record {path:?}"))
+            .with_context(|| format!("remove spool record {path:?}"))?;
+        state.used_bytes = state.used_bytes.saturating_sub(bytes);
+        Ok(())
     }
 
     #[cfg(test)]
@@ -139,7 +151,8 @@ mod tests {
         );
         assert!(spool.append(&"x".repeat(64)).await.is_err());
         spool.remove(&pending[0]).await.unwrap();
-        assert!(spool.pending().await.unwrap().is_empty());
+        spool.append(&"x".repeat(20)).await.unwrap();
+        assert_eq!(spool.pending().await.unwrap().len(), 1);
         std::fs::remove_dir_all(root).unwrap();
     }
 }

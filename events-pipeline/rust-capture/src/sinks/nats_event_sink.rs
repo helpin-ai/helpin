@@ -6,7 +6,7 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 
 use crate::api::CaptureError;
 use crate::events::failed_event::FailedEvent;
@@ -22,6 +22,8 @@ const DEFAULT_NATS_WORK_PUBLISH_TIMEOUT: Duration = Duration::from_millis(1_500)
 const DEFAULT_NATS_ARCHIVE_PUBLISH_TIMEOUT: Duration = Duration::from_millis(250);
 const DEFAULT_NATS_DLQ_PUBLISH_TIMEOUT: Duration = Duration::from_millis(1_500);
 const ARCHIVE_REPLAY_INTERVAL: Duration = Duration::from_secs(5);
+const ARCHIVE_REPLAY_BATCH_SIZE: usize = 256;
+const ARCHIVE_IN_FLIGHT_LIMIT: usize = 4_096;
 const DEFAULT_ARCHIVE_SPILL_MAX_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone)]
@@ -30,6 +32,7 @@ pub struct NatsEventPublisher {
     connection: Arc<RwLock<Option<NatsConnection>>>,
     health: HealthRegistry,
     archive_spool: Option<JsonSpool>,
+    archive_permits: Arc<Semaphore>,
     publish_timeouts: PublishTimeouts,
 }
 
@@ -123,6 +126,7 @@ impl NatsEventPublisher {
             connection: Arc::new(RwLock::new(None)),
             health,
             archive_spool,
+            archive_permits: Arc::new(Semaphore::new(ARCHIVE_IN_FLIGHT_LIMIT)),
             publish_timeouts: PublishTimeouts::from_env(),
         };
         publisher.health.set_nats_healthy(false);
@@ -188,7 +192,7 @@ impl NatsEventPublisher {
                         continue;
                     }
                 };
-                for path in pending {
+                for path in pending.into_iter().take(ARCHIVE_REPLAY_BATCH_SIZE) {
                     let archive = match spool.read::<RawArchiveEnvelopeV1>(&path).await {
                         Ok(archive) => archive,
                         Err(error) => {
@@ -236,50 +240,67 @@ impl NatsEventPublisher {
         raw: &RawArchiveEnvelopeV1,
     ) -> Result<(), CaptureError> {
         let work_subject = enriched.work_subject();
-        let work = self.publish_json(
-            &work_subject,
-            &enriched.event_id,
-            enriched,
-            PublishKind::Work,
-            true,
-        );
-        let archive = self.publish_json(
-            RAW_ARCHIVE_SUBJECT,
-            &raw.event_id,
-            raw,
-            PublishKind::Archive,
-            false,
-        );
-        let (work_result, archive_result) = tokio::join!(work, archive);
-
-        if let Err(error) = &archive_result {
-            metrics::counter!("capture_raw_archive_publish_failures_total", 1);
-            tracing::warn!(%error, event_id = %raw.event_id, "raw archive publish failed");
-            // Archive is diagnostic, not the system of record. Once the work
-            // publish is durable, never send the whole event to the work
-            // fallback just because its archive copy failed.
-            if work_result.is_ok() {
-                match &self.archive_spool {
-                    Some(spool) => match spool.append(raw).await {
-                        Ok(()) => {
-                            metrics::counter!("capture_archive_spill_written_total", 1);
-                        }
-                        Err(error) => {
-                            metrics::counter!("capture_archive_spill_write_failures_total", 1);
-                            tracing::warn!(%error, event_id = %raw.event_id, "archive spill failed; continuing because work publish succeeded");
-                        }
-                    },
-                    None => {
-                        metrics::counter!("capture_archive_spill_write_failures_total", 1);
-                    }
-                }
-            }
+        let work_result = self
+            .publish_json(
+                &work_subject,
+                &enriched.event_id,
+                enriched,
+                PublishKind::Work,
+                true,
+            )
+            .await;
+        if work_result.is_ok() {
+            self.publish_archive_best_effort(raw);
         }
         if let Err(error) = &work_result {
             metrics::counter!("capture_work_publish_failures_total", 1);
             tracing::warn!(%error, event_id = %enriched.event_id, "work publish failed");
         }
         work_result
+    }
+
+    /// The archive is a diagnostic copy, not part of the capture durability
+    /// contract. Bound its background work so an archive outage cannot queue
+    /// unbounded tasks or delay a successful work-stream response.
+    fn publish_archive_best_effort(&self, raw: &RawArchiveEnvelopeV1) {
+        let Ok(permit) = self.archive_permits.clone().try_acquire_owned() else {
+            metrics::counter!("capture_raw_archive_dropped_total", 1, "reason" => "in_flight_limit");
+            return;
+        };
+        let publisher = self.clone();
+        let raw = raw.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            if publisher
+                .publish_json(
+                    RAW_ARCHIVE_SUBJECT,
+                    &raw.event_id,
+                    &raw,
+                    PublishKind::Archive,
+                    false,
+                )
+                .await
+                .is_ok()
+            {
+                return;
+            }
+
+            metrics::counter!("capture_raw_archive_publish_failures_total", 1);
+            match &publisher.archive_spool {
+                Some(spool) => match spool.append(&raw).await {
+                    Ok(()) => {
+                        metrics::counter!("capture_archive_spill_written_total", 1);
+                    }
+                    Err(error) => {
+                        metrics::counter!("capture_archive_spill_write_failures_total", 1);
+                        tracing::warn!(%error, event_id = %raw.event_id, "archive spill failed; diagnostic copy dropped");
+                    }
+                },
+                None => {
+                    metrics::counter!("capture_archive_spill_write_failures_total", 1);
+                }
+            }
+        });
     }
 
     pub async fn publish_failed(&self, event: &FailedEvent) -> Result<(), CaptureError> {
@@ -338,16 +359,16 @@ impl NatsEventPublisher {
                 record_publish_latency(kind, "error", started.elapsed());
                 if affects_health {
                     self.health.set_nats_healthy(false);
+                    tracing::warn!(%error, %subject, %message_id, "JetStream publish failed");
                 }
-                tracing::warn!(%error, %subject, %message_id, "JetStream publish failed");
                 return Err(CaptureError::RetryableSinkError);
             }
             Err(_) => {
                 record_publish_latency(kind, "timeout", started.elapsed());
                 if affects_health {
                     self.health.set_nats_healthy(false);
+                    tracing::warn!(%subject, %message_id, "JetStream publish timed out");
                 }
-                tracing::warn!(%subject, %message_id, "JetStream publish timed out");
                 return Err(CaptureError::RetryableSinkError);
             }
         }

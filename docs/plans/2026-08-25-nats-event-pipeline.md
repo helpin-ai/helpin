@@ -55,12 +55,15 @@ in the image. Licensed
 MaxMind/IP2Proxy golden fixtures and their database checksums are a production
 enablement gate; this clean-slate branch has no live traffic.
 
-The availability-critical work publish and the privacy-normalized raw archive
-publish run concurrently. Full IP addresses are removed or truncated in the
-archive using the same privacy decision as enrichment. Only work-publish
-failure invokes the work fallback. Archive-only failure is counted and fsynced
-to its own bounded best-effort archive spool, which replays only to the archive
-subject and cannot consume the work fallback's disk budget. A capture-DLQ
+Capture waits only for the availability-critical work publish. The
+privacy-normalized raw archive publish runs in a bounded background path after
+work succeeds. Full IP addresses are removed or truncated in the archive using
+the same privacy decision as enrichment. Only work-publish failure invokes the
+work fallback. Archive-only failure is counted and fsynced to its own bounded
+best-effort archive spool, which replays only to the archive subject and cannot
+consume the work fallback's disk budget. At most 4,096 live archive operations
+are retained; overload drops only the diagnostic copy and increments
+`capture_raw_archive_dropped_total`. A capture-DLQ
 failure preserves the rejected source event in the work fallback. Pending or
 disconnected async-NATS clients spill immediately. Connected work and DLQ
 publishes wait up to 1.5 seconds for a JetStream acknowledgement; the
