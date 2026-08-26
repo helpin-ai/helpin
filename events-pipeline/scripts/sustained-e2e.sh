@@ -12,7 +12,14 @@ workers=${SUSTAINED_WORKERS:-64}
 visitors=${SUSTAINED_VISITORS:-10000}
 load_driver=${SUSTAINED_LOAD_DRIVER:-python}
 connections=${SUSTAINED_CONNECTIONS:-70}
-source_label=${SUSTAINED_SOURCE_LABEL:-sustained-e2e}
+source_label=${SUSTAINED_SOURCE_LABEL:-}
+if [[ -z "$source_label" ]]; then
+  if [[ "$load_driver" == "k6-connections" ]]; then
+    source_label=k6-capture
+  else
+    source_label=sustained-e2e
+  fi
+fi
 network_enrichment=${SUSTAINED_NETWORK_ENRICHMENT_ENABLED:-false}
 capture_env_file=${SUSTAINED_CAPTURE_ENV_FILE:-}
 ip2proxy_db_path=${SUSTAINED_IP2PROXY_DB_PATH:-}
@@ -399,6 +406,7 @@ PY
 
 [[ "$logical_rows" == "$expected" ]]
 [[ "$k6_status" == "0" ]]
+[[ "$(awk '{print $5}' "$run_dir/clickhouse-final.tsv")" == "0" ]]
 [[ "$(cat "$run_dir/visitors-with-wrong-session-count.txt")" == "0" ]]
 [[ ! -s "$run_dir/fallback" || -z "$(find "$run_dir/fallback" -type f -print -quit 2>/dev/null)" ]]
 [[ ! -s "$run_dir/archive-spill" || -z "$(find "$run_dir/archive-spill" -type f -print -quit 2>/dev/null)" ]]

@@ -108,7 +108,9 @@ go test ./internal/chmigrate
 
 `events-e2e` is the canonical transport and storage verification. The separate
 browser smoke suite covers browser instrumentation and application-level signal
-generation.
+generation. The complete local sustained and split-host capacity-test runbook,
+including enrichment inputs, result files, interpretation, and cleanup, is in
+[`e2e/README.md`](e2e/README.md).
 
 ### k6 capture load test
 
