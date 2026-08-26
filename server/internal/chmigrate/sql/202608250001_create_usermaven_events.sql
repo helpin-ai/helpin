@@ -1,16 +1,20 @@
 -- Migration: create_usermaven_events
 CREATE DATABASE IF NOT EXISTS usermaven;
 
--- Usermaven-compatible event contract. The raw Kafka payload is retained for
--- replay/debugging; typed MATERIALIZED columns are computed once on insert.
+-- Usermaven-compatible event contract. The enriched NATS payload is retained
+-- for replay/debugging; typed MATERIALIZED columns are computed once on insert.
 CREATE TABLE IF NOT EXISTS usermaven.events
 (
     `raw_event` String CODEC(ZSTD(1)),
-    `_timestamp` DateTime64(3, 'UTC') MATERIALIZED parseDateTime64BestEffortOrZero(JSONExtractString(raw_event, 'timestamp'), 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
-    `_is_deleted` UInt8 MATERIALIZED toUInt8(JSONExtractUInt(raw_event, '_is_deleted')) CODEC(T64, ZSTD(1)),
-    `_offset` UInt64 CODEC(T64, ZSTD(1)),
-    `_kafka_timestamp_ms` Nullable(DateTime64(3, 'UTC')) CODEC(Delta(4), ZSTD(1)),
-    `_partition` UInt64 CODEC(T64, ZSTD(1)),
+    `_timestamp` DateTime64(3, 'UTC') MATERIALIZED parseDateTime64BestEffort(JSONExtractString(raw_event, 'timestamp'), 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
+    `event_received_at` DateTime64(3, 'UTC') MATERIALIZED parseDateTime64BestEffort(JSONExtractString(raw_event, 'event_received_at'), 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
+    `visitor_shard` UInt8 MATERIALIZED toUInt8(JSONExtractUInt(raw_event, 'visitor_shard')) CODEC(T64, ZSTD(1)),
+    `_nats_subject` String CODEC(ZSTD(1)),
+    `_nats_stream_sequence` UInt64 CODEC(T64, ZSTD(1)),
+    `_nats_delivery_attempt` UInt8 CODEC(T64, ZSTD(1)),
+    `_retro_generation` UInt8 CODEC(T64, ZSTD(1)),
+    `_ingest_version` UInt64 CODEC(T64, ZSTD(1)),
+    `_written_at` DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC') CODEC(Delta(4), ZSTD(1)),
 
     `api_key` String MATERIALIZED JSONExtractString(raw_event, 'api_key') CODEC(ZSTD(1)),
     `autocapture_attributes` String MATERIALIZED if(empty(JSONExtractString(raw_event, 'autocapture_attributes')), '{}', JSONExtractString(raw_event, 'autocapture_attributes')) CODEC(ZSTD(1)),
@@ -126,12 +130,14 @@ CREATE TABLE IF NOT EXISTS usermaven.events
     `user_custom_map` Map(String, String) MATERIALIZED JSONExtractKeysAndValuesRaw(user_custom) CODEC(ZSTD(1)),
     `utm_campaign_decoded` String MATERIALIZED decodeURLFormComponent(utm_campaign) CODEC(ZSTD(1)),
     `server_side_event` UInt8 MATERIALIZED toUInt8(identity_method = 'server_event') CODEC(T64, ZSTD(1)),
-    `ver` UInt8 MATERIALIZED if(JSONExtractUInt(raw_event, 'ver') = 0, 1, toUInt8(JSONExtractUInt(raw_event, 'ver'))) CODEC(T64, ZSTD(1)),
     `default_channel` String MATERIALIZED multiIf(multiSearchAnyCaseInsensitive(utm_medium, ['cpc', 'ppc', 'paid', 'ads', 'display']) > 0, 'paid campaign', utm_source != '' OR utm_medium != '' OR utm_campaign != '', 'other campaigns', referer != '' AND domainWithoutWWW(referer) != domainWithoutWWW(url), 'referral', 'direct') CODEC(ZSTD(1)),
-    `default_source` String MATERIALIZED multiIf(utm_source != '', utm_source, referer != '' AND domainWithoutWWW(referer) != domainWithoutWWW(url), domainWithoutWWW(referer), 'Direct') CODEC(ZSTD(1))
+    `default_source` String MATERIALIZED multiIf(utm_source != '', utm_source, referer != '' AND domainWithoutWWW(referer) != domainWithoutWWW(url), domainWithoutWWW(referer), 'Direct') CODEC(ZSTD(1)),
+
+    INDEX `idx_parsed_ua_bot` parsed_ua_bot TYPE set(8) GRANULARITY 1,
+    INDEX `idx_event_type` event_type TYPE bloom_filter(0.01) GRANULARITY 1
 )
-ENGINE = ReplacingMergeTree(ver)
+ENGINE = ReplacingMergeTree(_ingest_version)
 PARTITION BY toYYYYMM(_timestamp)
-ORDER BY (project_id, parsed_ua_bot, toDate(_timestamp), event_type, user_anonymous_id, session_id, event_id)
+ORDER BY (project_id, event_date, event_id)
 TTL _timestamp + INTERVAL 400 DAY DELETE
 SETTINGS index_granularity = 8192;

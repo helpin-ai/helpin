@@ -75,7 +75,8 @@ func NewClickHouseEventRepository(
 	}, nil
 }
 
-// SmokeCount counts canonical and legacy events inside a required bounded window.
+// SmokeCount counts unique events inside a required bounded window. ReplacingMergeTree
+// convergence is asynchronous, so a plain count can expose redelivery duplicates.
 func (r *ClickHouseEventRepository) SmokeCount(
 	ctx context.Context,
 	windowStartedAt, windowEndedAt time.Time,
@@ -104,7 +105,7 @@ func (r *ClickHouseEventRepository) SmokeCount(
 		args = append(args, projectID)
 	}
 	args = append(args, windowStartedAt.UTC(), windowEndedAt.UTC())
-	query := `SELECT count() FROM usermaven.events WHERE project_id IN (` +
+	query := `SELECT uniqExact(event_id) FROM usermaven.events WHERE project_id IN (` +
 		strings.Join(placeholders, ",") + `) AND _timestamp >= ? AND _timestamp < ?`
 
 	var count int64

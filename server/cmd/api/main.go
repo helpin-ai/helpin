@@ -16,7 +16,7 @@ import (
 	"time"
 
 	firebase "firebase.google.com/go/v4"
-	_ "github.com/ClickHouse/clickhouse-go/v2"
+	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"go.temporal.io/api/serviceerror"
@@ -119,10 +119,11 @@ func main() {
 
 	var clickHouseDB *sql.DB
 	if cfg.ClickHouseDSN != "" {
-		clickHouseDB, err = sql.Open("clickhouse", cfg.ClickHouseDSN)
-		if err != nil {
-			fatalWithSentry("failed to open ClickHouse", err)
+		clickHouseOptions, parseErr := eventClickHouseOptions(cfg.ClickHouseDSN)
+		if parseErr != nil {
+			fatalWithSentry("failed to parse ClickHouse DSN", parseErr)
 		}
+		clickHouseDB = clickhouse.OpenDB(clickHouseOptions)
 		if err := clickHouseDB.PingContext(context.Background()); err != nil {
 			fatalWithSentry("failed to ping ClickHouse", err)
 		}
@@ -2274,6 +2275,16 @@ func main() {
 	}
 
 	slog.Info("server stopped")
+}
+
+func eventClickHouseOptions(dsn string) (*clickhouse.Options, error) {
+	options, err := clickhouse.ParseDSN(dsn)
+	if err != nil {
+		return nil, err
+	}
+	options.Settings["do_not_merge_across_partitions_select_final"] = 1
+	options.Settings["use_skip_indexes_if_final_exact_mode"] = 1
+	return options, nil
 }
 
 func parseLogLevel(value string) slog.Level {

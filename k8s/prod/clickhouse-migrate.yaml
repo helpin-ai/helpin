@@ -34,11 +34,6 @@ spec:
           envFrom:
             - secretRef:
                 name: helpin-secrets
-          env:
-            - name: CLICKHOUSE_KAFKA_GROUP
-              value: helpin-clickhouse-prod-v1
-            - name: CLICKHOUSE_MIGRATION_REQUIRE_KAFKA_CONFIG
-              value: "true"
           resources:
             requests:
               cpu: 50m

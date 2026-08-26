@@ -1,4 +1,5 @@
 use isbot::Bots;
+use moka::sync::Cache;
 use regex::Regex;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -8,6 +9,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct BotResolver {
     bot: Arc<Bots>,
+    cache: Cache<String, bool>,
 }
 impl BotResolver {
     pub fn new() -> Self {
@@ -28,11 +30,19 @@ impl BotResolver {
             bot.append(&[&regex_str]);
         }
 
-        BotResolver { bot: Arc::new(bot) }
+        BotResolver {
+            bot: Arc::new(bot),
+            cache: Cache::new(30_000),
+        }
     }
 
     pub fn check_bot(&self, agent: &str) -> bool {
-        self.bot.is_bot(agent)
+        if let Some(is_bot) = self.cache.get(agent) {
+            return is_bot;
+        }
+        let is_bot = self.bot.is_bot(agent);
+        self.cache.insert(agent.to_string(), is_bot);
+        is_bot
     }
 }
 

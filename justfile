@@ -80,5 +80,8 @@ events-logs:
 events-smoke:
     ./events-pipeline/scripts/smoke.sh
 
+events-e2e:
+    ./events-pipeline/scripts/e2e.sh
+
 events-browser-smoke:
     ./events-pipeline/scripts/browser-smoke.sh

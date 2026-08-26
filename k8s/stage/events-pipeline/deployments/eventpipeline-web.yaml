@@ -34,10 +34,30 @@ spec:
       containers:
         - name: main
           image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.10-rc.1
-          command: ["./target/release/events-pipeline"]
+          command: ["events-pipeline"]
           envFrom:
             - secretRef:
                 name: helpin-secrets
+          env:
+            - name: NATS_URL
+              value: tls://helpin-eventpipeline-nats.helpin.svc.cluster.local:4222
+            - name: NATS_USERNAME
+              value: capture
+            - name: NATS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-eventpipeline-nats-secrets
+                  key: capture-password
+            - name: NATS_CA_FILE
+              value: /etc/nats/tls/ca.crt
+            - name: NATS_CLIENT_CERT_FILE
+              value: /etc/nats/tls/tls.crt
+            - name: NATS_CLIENT_KEY_FILE
+              value: /etc/nats/tls/tls.key
+            - name: ARCHIVE_SPILL_DIR
+              value: /app/data/archive-spill/capture
+            - name: ARCHIVE_SPILL_MAX_BYTES
+              value: "536870912"
           resources:
             limits:
               cpu: "3"
@@ -73,12 +93,37 @@ spec:
           volumeMounts:
             - name: fallback-volume
               mountPath: /app/data/fallback
+            - name: archive-spill-volume
+              mountPath: /app/data/archive-spill
+            - name: nats-client-tls
+              mountPath: /etc/nats/tls
+              readOnly: true
         - name: replay-worker
           image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.10-rc.1
-          command: ["./target/release/replay-worker"]
+          command: ["replay-worker"]
           envFrom:
             - secretRef:
                 name: helpin-secrets
+          env:
+            - name: NATS_URL
+              value: tls://helpin-eventpipeline-nats.helpin.svc.cluster.local:4222
+            - name: NATS_USERNAME
+              value: capture
+            - name: NATS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-eventpipeline-nats-secrets
+                  key: capture-password
+            - name: NATS_CA_FILE
+              value: /etc/nats/tls/ca.crt
+            - name: NATS_CLIENT_CERT_FILE
+              value: /etc/nats/tls/tls.crt
+            - name: NATS_CLIENT_KEY_FILE
+              value: /etc/nats/tls/tls.key
+            - name: ARCHIVE_SPILL_DIR
+              value: /app/data/archive-spill/replay
+            - name: ARCHIVE_SPILL_MAX_BYTES
+              value: "536870912"
           resources:
             limits:
               cpu: "500m"
@@ -89,10 +134,21 @@ spec:
           volumeMounts:
             - name: fallback-volume
               mountPath: /app/data/fallback
+            - name: archive-spill-volume
+              mountPath: /app/data/archive-spill
+            - name: nats-client-tls
+              mountPath: /etc/nats/tls
+              readOnly: true
       volumes:
         - name: fallback-volume
           emptyDir:
             sizeLimit: 10Gi
+        - name: archive-spill-volume
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: nats-client-tls
+          secret:
+            secretName: helpin-eventpipeline-nats-capture-tls
 ---
 apiVersion: v1
 kind: Service

@@ -196,6 +196,9 @@ impl DiskSink {
         segment.file.flush().map_err(|e| {
             CaptureError::NonRetryableSinkError(format!("Failed to flush segment: {}", e))
         })?;
+        segment.file.sync_all().map_err(|e| {
+            CaptureError::NonRetryableSinkError(format!("Failed to fsync segment: {}", e))
+        })?;
         drop(segment.file);
 
         if segment.size > 0 {
@@ -286,6 +289,9 @@ impl EventSink for DiskSink {
 
         segment.file.flush().map_err(|e| {
             CaptureError::NonRetryableSinkError(format!("Failed to flush disk segment: {}", e))
+        })?;
+        segment.file.sync_data().map_err(|e| {
+            CaptureError::NonRetryableSinkError(format!("Failed to fsync disk segment: {}", e))
         })?;
 
         metrics::counter!("capture_disk_events_written_total", events.len() as u64);

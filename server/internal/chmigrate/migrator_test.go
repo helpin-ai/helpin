@@ -54,23 +54,6 @@ func TestSplitStatementsRejectsUnterminatedSyntax(t *testing.T) {
 	}
 }
 
-func TestReplacementTableStatementUsesBaselineSchema(t *testing.T) {
-	migrations, err := loadMigrations()
-	if err != nil {
-		t.Fatalf("load migrations: %v", err)
-	}
-	statement, err := replacementTableStatement(migrations[0].SQL)
-	if err != nil {
-		t.Fatalf("replacement table statement: %v", err)
-	}
-	if !strings.Contains(statement, "CREATE TABLE IF NOT EXISTS usermaven.events_next") {
-		t.Fatal("replacement statement does not target events_next")
-	}
-	if !strings.Contains(statement, "ENGINE = ReplacingMergeTree(ver)") {
-		t.Fatal("replacement statement lost the canonical table engine")
-	}
-}
-
 func TestUsermavenEventSchemaContract(t *testing.T) {
 	migrations, err := loadMigrations()
 	if err != nil {
@@ -80,71 +63,42 @@ func TestUsermavenEventSchemaContract(t *testing.T) {
 	for _, column := range []string{
 		"`project_id`", "`event_id`", "`event_type`", "`user_anonymous_id`",
 		"`company_id`", "`company_name`", "`parsed_ua_bot`", "`parsed_referer_channel`",
-		"`identity_method`", "`identity_trust`", "`raw_event`",
+		"`identity_method`", "`identity_trust`", "`raw_event`", "`event_date`",
+		"`event_received_at`", "`visitor_shard`", "`_nats_stream_sequence`",
+		"`_nats_delivery_attempt`", "`_retro_generation`", "`_ingest_version`",
 	} {
 		if !strings.Contains(baseline, column) {
 			t.Errorf("baseline migration missing column %s", column)
 		}
 	}
-	if !strings.Contains(migrations[2].SQL, "ENGINE = Kafka") {
-		t.Fatal("ingestion migration missing Kafka table engine")
-	}
-	if !strings.Contains(migrations[2].SQL, "CREATE MATERIALIZED VIEW") {
-		t.Fatal("ingestion migration missing materialized view")
-	}
-}
-
-func TestRenderMigrationSQLUsesKafkaEnvironment(t *testing.T) {
-	t.Setenv("KAFKA_BROKERS", "cluster-kafka-bootstrap.eventpipeline.svc:9092")
-	t.Setenv("KAFKA_SESSIONIZED_TOPIC", "helpin.events.production")
-	t.Setenv("CLICKHOUSE_KAFKA_GROUP", "helpin-clickhouse-production")
-	t.Setenv("KAFKA_AUTH", "true")
-	t.Setenv("KAFKA_SECURITY_PROTOCOL", "SASL_PLAINTEXT")
-	t.Setenv("KAFKA_SASL", "SCRAM-SHA-512")
-	t.Setenv("KAFKA_USERNAME", "helpin-eventpipeline")
-	t.Setenv("KAFKA_PASSWORD", "secret'with\\characters")
-
-	migrations, err := loadMigrations()
-	if err != nil {
-		t.Fatalf("load migrations: %v", err)
-	}
-	rendered, err := renderMigrationSQL(migrations[2].SQL)
-	if err != nil {
-		t.Fatalf("render migration: %v", err)
-	}
-	for _, value := range []string{
-		"'cluster-kafka-bootstrap.eventpipeline.svc:9092'",
-		"'helpin.events.production'",
-		"'helpin-clickhouse-production'",
-		"kafka_security_protocol = 'sasl_plaintext'",
-		"kafka_sasl_mechanism = 'SCRAM-SHA-512'",
-		"kafka_sasl_username = 'helpin-eventpipeline'",
-		`kafka_sasl_password = 'secret\'with\\characters'`,
+	for _, contract := range []string{
+		"ENGINE = ReplacingMergeTree(_ingest_version)",
+		"ORDER BY (project_id, event_date, event_id)",
+		"parseDateTime64BestEffort(JSONExtractString(raw_event, 'timestamp')",
 	} {
-		if !strings.Contains(rendered, value) {
-			t.Errorf("rendered migration missing %q", value)
+		if !strings.Contains(baseline, contract) {
+			t.Errorf("baseline migration missing contract %q", contract)
 		}
 	}
-}
-
-func TestRenderMigrationSQLRequiresCompleteKafkaAuth(t *testing.T) {
-	t.Setenv("KAFKA_AUTH", "true")
-	for _, name := range []string{
-		"KAFKA_SECURITY_PROTOCOL", "KAFKA_SASL", "KAFKA_USERNAME", "KAFKA_PASSWORD",
+	if strings.Contains(
+		baseline,
+		"parseDateTime64BestEffortOrZero(JSONExtractString(raw_event, 'timestamp')",
+	) {
+		t.Fatal("event timestamp must not silently fall back to the Unix epoch")
+	}
+	ingestion := migrations[2].SQL
+	for _, contract := range []string{
+		"CREATE TABLE IF NOT EXISTS usermaven.session_seed_events",
+		"INDEX `idx_seed_event_timestamp` event_timestamp TYPE minmax",
+		"JSONExtractString(raw_event, 'project_id')",
+		"TTL event_received_at + INTERVAL 49 HOUR DELETE",
+		"WHERE _retro_generation = 0",
 	} {
-		t.Setenv(name, "")
+		if !strings.Contains(ingestion, contract) {
+			t.Errorf("session seed migration missing contract %q", contract)
+		}
 	}
-	if _, err := renderMigrationSQL("SELECT 1"); err == nil {
-		t.Fatal("renderMigrationSQL returned nil error with incomplete Kafka auth")
-	}
-}
-
-func TestRenderMigrationSQLRequiresProductionKafkaConfig(t *testing.T) {
-	t.Setenv("CLICKHOUSE_MIGRATION_REQUIRE_KAFKA_CONFIG", "true")
-	t.Setenv("KAFKA_BROKERS", "")
-	t.Setenv("KAFKA_SESSIONIZED_TOPIC", "helpin.events.sessionized")
-	t.Setenv("KAFKA_AUTH", "false")
-	if _, err := renderMigrationSQL("SELECT 1"); err == nil {
-		t.Fatal("renderMigrationSQL returned nil error without production Kafka brokers")
+	if strings.Contains(ingestion, "ENGINE = Kafka") {
+		t.Fatal("clean-slate ingestion migration must not create a Kafka engine")
 	}
 }

@@ -51,19 +51,11 @@ type appliedMigration struct {
 // ClickHouse DDL is not transactional. Migration SQL must therefore be
 // idempotent so an interrupted migration can be safely retried.
 func Up(ctx context.Context, db *sql.DB) error {
-	if err := validateKafkaEnvironment(); err != nil {
-		return err
-	}
 	migrations, err := loadMigrations()
 	if err != nil {
 		return err
 	}
 	if err := ensureSchemaMigrationsTable(ctx, db); err != nil {
-		return err
-	}
-
-	backup, err := reconcileLegacyEventsTable(ctx, db, migrations[0].SQL)
-	if err != nil {
 		return err
 	}
 
@@ -83,11 +75,6 @@ func Up(ctx context.Context, db *sql.DB) error {
 		}
 	}
 
-	if backup != "" {
-		if err := removeVerifiedLegacyBackup(ctx, db, backup); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

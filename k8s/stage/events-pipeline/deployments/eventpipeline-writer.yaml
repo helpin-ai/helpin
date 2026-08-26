@@ -1,0 +1,203 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: helpin-eventpipeline-writer-headless
+  namespace: helpin
+spec:
+  clusterIP: None
+  selector:
+    app: helpin-eventpipeline-writer
+  ports:
+    - name: health
+      port: 3000
+    - name: metrics
+      port: 3001
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: helpin-eventpipeline-writer
+  namespace: helpin
+spec:
+  serviceName: helpin-eventpipeline-writer-headless
+  replicas: 4
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: helpin-eventpipeline-writer
+  template:
+    metadata:
+      labels:
+        app: helpin-eventpipeline-writer
+    spec:
+      terminationGracePeriodSeconds: 330
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: writer
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.10-rc.1
+          command: ["session-writer"]
+          envFrom:
+            - secretRef:
+                name: helpin-eventpipeline-writer
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: WRITER_REPLICAS
+              value: "4"
+            - name: SESSION_CACHE_MAX_ENTRIES_PER_SHARD
+              value: "25000"
+            - name: WRITER_POISON_SPILL_DIR
+              value: /app/data/poison-spill
+            - name: WRITER_POISON_SPILL_MAX_BYTES
+              value: "1073741824"
+            - name: NATS_URL
+              value: tls://helpin-eventpipeline-nats.helpin.svc.cluster.local:4222
+            - name: NATS_USERNAME
+              value: writer
+            - name: NATS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-eventpipeline-nats-secrets
+                  key: writer-password
+            - name: NATS_CA_FILE
+              value: /etc/nats/tls/ca.crt
+            - name: NATS_CLIENT_CERT_FILE
+              value: /etc/nats/tls/tls.crt
+            - name: NATS_CLIENT_KEY_FILE
+              value: /etc/nats/tls/tls.key
+            - name: RUST_LOG
+              value: debug
+          ports:
+            - name: health
+              containerPort: 3000
+            - name: metrics
+              containerPort: 3001
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /health/liveness
+              port: health
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health/liveness
+              port: health
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 4
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: poison-spill
+              mountPath: /app/data/poison-spill
+            - name: nats-client-tls
+              mountPath: /etc/nats/tls
+              readOnly: true
+      volumes:
+        - name: poison-spill
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: nats-client-tls
+          secret:
+            secretName: helpin-eventpipeline-nats-writer-tls
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: helpin-eventpipeline-nats-bootstrap
+  namespace: helpin
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: 20
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: helpin-eventpipeline-nats-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      imagePullSecrets:
+        - name: ghcr-helpin-json-key
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bootstrap
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.10-rc.1
+          command: ["nats-bootstrap"]
+          env:
+            - name: NATS_URL
+              value: tls://helpin-eventpipeline-nats.helpin.svc.cluster.local:4222
+            - name: NATS_USERNAME
+              value: ops
+            - name: NATS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-eventpipeline-nats-secrets
+                  key: ops-password
+            - name: NATS_CA_FILE
+              value: /etc/nats/tls/ca.crt
+            - name: NATS_CLIENT_CERT_FILE
+              value: /etc/nats/tls/tls.crt
+            - name: NATS_CLIENT_KEY_FILE
+              value: /etc/nats/tls/tls.key
+            - name: EVENTS_WORK_MAX_BYTES
+              value: "107374182400"
+            - name: EVENTS_RAW_MAX_BYTES
+              value: "53687091200"
+            - name: EVENTS_DLQ_MAX_BYTES
+              value: "10737418240"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: nats-client-tls
+              mountPath: /etc/nats/tls
+              readOnly: true
+      volumes:
+        - name: nats-client-tls
+          secret:
+            secretName: helpin-eventpipeline-nats-ops-tls

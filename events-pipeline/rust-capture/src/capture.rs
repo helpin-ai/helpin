@@ -247,7 +247,7 @@ fn verify_event_identity_proof(
 }
 
 fn event_widget_key(authorization: &AuthorizedCredential) -> &str {
-    // The browser credential is not serialized into Kafka. It is needed only while
+    // The browser credential secret is not serialized into NATS or disk spill. It is needed only while
     // validating the domain-separated proof at capture time.
     &authorization.browser_key
 }

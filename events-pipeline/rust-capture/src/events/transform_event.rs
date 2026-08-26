@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct TransformedEvent {
     pub timestamp: String,
+    pub event_received_at: String,
+    pub visitor_shard: u8,
     pub _is_deleted: u32,
     pub api_key: String,
     pub autocapture_attributes: String,
@@ -90,6 +92,8 @@ mod tests {
         let event = TransformedEvent::default();
 
         assert_eq!(event.timestamp, "");
+        assert_eq!(event.event_received_at, "");
+        assert_eq!(event.visitor_shard, 0);
         assert_eq!(event._is_deleted, 0);
         assert_eq!(event.api_key, "");
         // Repeat for all fields in your struct

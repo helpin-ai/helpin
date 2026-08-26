@@ -18,13 +18,13 @@ anyhow = "1.0.71"
 uuid = { version = "1.3.3", features = ["serde", "v4"] }
 flate2 = "1.0.26"
 async-trait = "0.1.68"
+async-nats = "0.37.0"
 serde_urlencoded = "0.7.1"
 base64 = "0.21.2"
 tower-http = { version = "0.4.0", features = ["trace", "cors"] }
 governor = "0.5.1"
 tower_governor = "0.0.4"
 bytes = "1.4.0"
-rdkafka =  { version = "0.31.0", features = ["ssl", "sasl"] }
 time = { version = "0.3.21", features = ["formatting"] }
 axum-macros = "0.3.7"
 reqwest = { version = "0.11.18", features = ["json"] }
@@ -64,14 +64,13 @@ hex = "0.4"
 
 
 [[bin]]
-name = "worker"
-path = "src/consumers/async_consumer.rs"
-
-
-[[bin]]
-name = "consumer"
-path = "src/consumers/simple_consumer.rs"
-
-[[bin]]
 name = "replay-worker"
 path = "src/replay_worker.rs"
+
+[[bin]]
+name = "nats-bootstrap"
+path = "src/nats_bootstrap.rs"
+
+[[bin]]
+name = "session-writer"
+path = "src/session_writer.rs"

@@ -1,0 +1,400 @@
+use async_nats::connection::State as ConnectionState;
+use async_nats::jetstream;
+use async_nats::HeaderMap;
+use serde::Serialize;
+use std::env;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::RwLock;
+
+use crate::api::CaptureError;
+use crate::events::failed_event::FailedEvent;
+use crate::health::HealthRegistry;
+use crate::json_spool::JsonSpool;
+use crate::pipeline::{EnrichedEventEnvelopeV1, RawArchiveEnvelopeV1};
+
+const RAW_ARCHIVE_SUBJECT: &str = "events.raw.v1";
+const CAPTURE_DLQ_SUBJECT: &str = "events.dlq.v1.capture";
+const NATS_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const NATS_CONNECT_RETRY_DELAY: Duration = Duration::from_secs(1);
+const DEFAULT_NATS_WORK_PUBLISH_TIMEOUT: Duration = Duration::from_millis(1_500);
+const DEFAULT_NATS_ARCHIVE_PUBLISH_TIMEOUT: Duration = Duration::from_millis(250);
+const DEFAULT_NATS_DLQ_PUBLISH_TIMEOUT: Duration = Duration::from_millis(1_500);
+const ARCHIVE_REPLAY_INTERVAL: Duration = Duration::from_secs(5);
+const DEFAULT_ARCHIVE_SPILL_MAX_BYTES: u64 = 512 * 1024 * 1024;
+
+#[derive(Clone)]
+pub struct NatsEventPublisher {
+    url: String,
+    connection: Arc<RwLock<Option<NatsConnection>>>,
+    health: HealthRegistry,
+    archive_spool: Option<JsonSpool>,
+    publish_timeouts: PublishTimeouts,
+}
+
+#[derive(Clone)]
+struct NatsConnection {
+    client: async_nats::Client,
+    jetstream: jetstream::Context,
+}
+
+#[derive(Clone, Copy)]
+struct PublishTimeouts {
+    work: Duration,
+    archive: Duration,
+    dlq: Duration,
+}
+
+impl PublishTimeouts {
+    fn from_env() -> Self {
+        Self {
+            work: timeout_from_env(
+                "NATS_WORK_PUBLISH_TIMEOUT_MS",
+                DEFAULT_NATS_WORK_PUBLISH_TIMEOUT,
+            ),
+            archive: timeout_from_env(
+                "NATS_ARCHIVE_PUBLISH_TIMEOUT_MS",
+                DEFAULT_NATS_ARCHIVE_PUBLISH_TIMEOUT,
+            ),
+            dlq: timeout_from_env(
+                "NATS_DLQ_PUBLISH_TIMEOUT_MS",
+                DEFAULT_NATS_DLQ_PUBLISH_TIMEOUT,
+            ),
+        }
+    }
+
+    fn for_kind(self, kind: PublishKind) -> Duration {
+        match kind {
+            PublishKind::Work => self.work,
+            PublishKind::Archive => self.archive,
+            PublishKind::Dlq => self.dlq,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PublishKind {
+    Work,
+    Archive,
+    Dlq,
+}
+
+impl PublishKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Work => "work",
+            Self::Archive => "archive",
+            Self::Dlq => "dlq",
+        }
+    }
+}
+
+impl NatsEventPublisher {
+    /// Connect in the background so capture starts immediately and fsyncs to
+    /// fallback storage while NATS is unavailable. Once connected, async-nats
+    /// owns reconnects; publish failures never discard the healing client.
+    pub fn new(url: impl Into<String>, health: HealthRegistry) -> Self {
+        let archive_dir = PathBuf::from(
+            env::var("ARCHIVE_SPILL_DIR").unwrap_or_else(|_| "data/archive-spill".to_string()),
+        );
+        let archive_max_bytes = env::var("ARCHIVE_SPILL_MAX_BYTES")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(DEFAULT_ARCHIVE_SPILL_MAX_BYTES);
+        let archive_spool = match JsonSpool::new(archive_dir, archive_max_bytes) {
+            Ok(spool) => Some(spool),
+            Err(error) => {
+                metrics::gauge!("capture_archive_spill_available", 0.0);
+                tracing::warn!(%error, "archive spill unavailable; archive failures remain best effort");
+                None
+            }
+        };
+        Self::new_with_spool(url, health, archive_spool)
+    }
+
+    fn new_with_spool(
+        url: impl Into<String>,
+        health: HealthRegistry,
+        archive_spool: Option<JsonSpool>,
+    ) -> Self {
+        let publisher = Self {
+            url: url.into(),
+            connection: Arc::new(RwLock::new(None)),
+            health,
+            archive_spool,
+            publish_timeouts: PublishTimeouts::from_env(),
+        };
+        publisher.health.set_nats_healthy(false);
+        metrics::gauge!(
+            "capture_archive_spill_available",
+            if publisher.archive_spool.is_some() {
+                1.0
+            } else {
+                0.0
+            }
+        );
+        publisher.start_connector();
+        publisher.start_archive_replayer();
+        publisher
+    }
+
+    fn start_connector(&self) {
+        let url = self.url.clone();
+        let connection = self.connection.clone();
+        let health = self.health.clone();
+        tokio::spawn(async move {
+            loop {
+                match tokio::time::timeout(NATS_CONNECT_TIMEOUT, crate::nats_client::connect(&url))
+                    .await
+                {
+                    Ok(Ok(client)) => {
+                        let context = jetstream::new(client.clone());
+                        *connection.write().await = Some(NatsConnection {
+                            client,
+                            jetstream: context,
+                        });
+                        health.set_nats_healthy(true);
+                        tracing::info!(%url, "capture connected to NATS");
+                        return;
+                    }
+                    Ok(Err(error)) => {
+                        health.set_nats_healthy(false);
+                        tracing::warn!(%error, %url, "could not connect capture to NATS");
+                    }
+                    Err(_) => {
+                        health.set_nats_healthy(false);
+                        tracing::warn!(%url, "NATS connection timed out");
+                    }
+                }
+                tokio::time::sleep(NATS_CONNECT_RETRY_DELAY).await;
+            }
+        });
+    }
+
+    fn start_archive_replayer(&self) {
+        let Some(spool) = self.archive_spool.clone() else {
+            return;
+        };
+        let publisher = self.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(ARCHIVE_REPLAY_INTERVAL).await;
+                let pending = match spool.pending().await {
+                    Ok(pending) => pending,
+                    Err(error) => {
+                        metrics::counter!("capture_archive_spill_replay_total", 1, "result" => "scan_failure");
+                        tracing::warn!(%error, "scan archive spill failed");
+                        continue;
+                    }
+                };
+                for path in pending {
+                    let archive = match spool.read::<RawArchiveEnvelopeV1>(&path).await {
+                        Ok(archive) => archive,
+                        Err(error) => {
+                            metrics::counter!("capture_archive_spill_replay_total", 1, "result" => "decode_failure");
+                            tracing::warn!(%error, ?path, "dropping corrupt archive spill record");
+                            let _ = spool.remove(&path).await;
+                            continue;
+                        }
+                    };
+                    match publisher
+                        .publish_json(
+                            RAW_ARCHIVE_SUBJECT,
+                            &archive.event_id,
+                            &archive,
+                            PublishKind::Archive,
+                            false,
+                        )
+                        .await
+                    {
+                        Ok(()) => {
+                            if let Err(error) = spool.remove(&path).await {
+                                tracing::warn!(%error, ?path, "remove replayed archive spill failed");
+                            } else {
+                                metrics::counter!("capture_archive_spill_replay_total", 1, "result" => "success");
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+        });
+    }
+
+    async fn connection(&self) -> Result<NatsConnection, CaptureError> {
+        self.connection
+            .read()
+            .await
+            .clone()
+            .ok_or(CaptureError::RetryableSinkError)
+    }
+
+    pub async fn publish_event(
+        &self,
+        enriched: &EnrichedEventEnvelopeV1,
+        raw: &RawArchiveEnvelopeV1,
+    ) -> Result<(), CaptureError> {
+        let work_subject = enriched.work_subject();
+        let work = self.publish_json(
+            &work_subject,
+            &enriched.event_id,
+            enriched,
+            PublishKind::Work,
+            true,
+        );
+        let archive = self.publish_json(
+            RAW_ARCHIVE_SUBJECT,
+            &raw.event_id,
+            raw,
+            PublishKind::Archive,
+            false,
+        );
+        let (work_result, archive_result) = tokio::join!(work, archive);
+
+        if let Err(error) = &archive_result {
+            metrics::counter!("capture_raw_archive_publish_failures_total", 1);
+            tracing::warn!(%error, event_id = %raw.event_id, "raw archive publish failed");
+            // Archive is diagnostic, not the system of record. Once the work
+            // publish is durable, never send the whole event to the work
+            // fallback just because its archive copy failed.
+            if work_result.is_ok() {
+                match &self.archive_spool {
+                    Some(spool) => match spool.append(raw).await {
+                        Ok(()) => {
+                            metrics::counter!("capture_archive_spill_written_total", 1);
+                        }
+                        Err(error) => {
+                            metrics::counter!("capture_archive_spill_write_failures_total", 1);
+                            tracing::warn!(%error, event_id = %raw.event_id, "archive spill failed; continuing because work publish succeeded");
+                        }
+                    },
+                    None => {
+                        metrics::counter!("capture_archive_spill_write_failures_total", 1);
+                    }
+                }
+            }
+        }
+        if let Err(error) = &work_result {
+            metrics::counter!("capture_work_publish_failures_total", 1);
+            tracing::warn!(%error, event_id = %enriched.event_id, "work publish failed");
+        }
+        work_result
+    }
+
+    pub async fn publish_failed(&self, event: &FailedEvent) -> Result<(), CaptureError> {
+        self.publish_json(
+            CAPTURE_DLQ_SUBJECT,
+            &event.eventn_ctx_event_id,
+            event,
+            PublishKind::Dlq,
+            true,
+        )
+        .await
+    }
+
+    async fn publish_json<T: Serialize>(
+        &self,
+        subject: &str,
+        message_id: &str,
+        value: &T,
+        kind: PublishKind,
+        affects_health: bool,
+    ) -> Result<(), CaptureError> {
+        let started = std::time::Instant::now();
+        let payload = serde_json::to_vec(value).map_err(|error| {
+            CaptureError::NonRetryableSinkError(format!("failed to serialize NATS event: {error}"))
+        })?;
+        let mut headers = HeaderMap::new();
+        headers.insert("Nats-Msg-Id", message_id);
+        let connection = match self.connection().await {
+            Ok(connection) => connection,
+            Err(error) => {
+                record_publish_latency(kind, "unavailable", started.elapsed());
+                return Err(error);
+            }
+        };
+        if connection.client.connection_state() != ConnectionState::Connected {
+            if affects_health {
+                self.health.set_nats_healthy(false);
+            }
+            record_publish_latency(kind, "disconnected", started.elapsed());
+            return Err(CaptureError::RetryableSinkError);
+        }
+        let result = tokio::time::timeout(self.publish_timeouts.for_kind(kind), async {
+            let acknowledgement = connection
+                .jetstream
+                .publish_with_headers(subject.to_string(), headers, payload.into())
+                .await
+                .map_err(|error| error.to_string())?;
+            acknowledgement.await.map_err(|error| error.to_string())
+        })
+        .await;
+        match result {
+            Ok(Ok(_)) => {
+                record_publish_latency(kind, "success", started.elapsed());
+            }
+            Ok(Err(error)) => {
+                record_publish_latency(kind, "error", started.elapsed());
+                if affects_health {
+                    self.health.set_nats_healthy(false);
+                }
+                tracing::warn!(%error, %subject, %message_id, "JetStream publish failed");
+                return Err(CaptureError::RetryableSinkError);
+            }
+            Err(_) => {
+                record_publish_latency(kind, "timeout", started.elapsed());
+                if affects_health {
+                    self.health.set_nats_healthy(false);
+                }
+                tracing::warn!(%subject, %message_id, "JetStream publish timed out");
+                return Err(CaptureError::RetryableSinkError);
+            }
+        }
+        if affects_health {
+            self.health.set_nats_healthy(true);
+        }
+        Ok(())
+    }
+}
+
+fn timeout_from_env(name: &str, default: Duration) -> Duration {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|millis| *millis > 0)
+        .map(Duration::from_millis)
+        .unwrap_or(default)
+}
+
+fn record_publish_latency(kind: PublishKind, result: &'static str, elapsed: Duration) {
+    metrics::histogram!(
+        "capture_publish_latency_seconds",
+        elapsed.as_secs_f64(),
+        "stream" => kind.label(),
+        "result" => result
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn construction_connects_in_background_so_capture_can_start_during_an_outage() {
+        let publisher = NatsEventPublisher::new_with_spool(
+            "nats://unavailable.invalid:4222",
+            HealthRegistry::new(),
+            None,
+        );
+        assert!(publisher.connection.read().await.is_none());
+        assert_eq!(
+            publisher.publish_timeouts.work,
+            DEFAULT_NATS_WORK_PUBLISH_TIMEOUT
+        );
+        assert_eq!(
+            publisher.publish_timeouts.archive,
+            DEFAULT_NATS_ARCHIVE_PUBLISH_TIMEOUT
+        );
+    }
+}

@@ -27,28 +27,18 @@ like workspace or project tenancy is not authoritative. Browser identity claims
 also remain untrusted unless they are verified by Helpin's signed-identity
 contract; authenticated server evidence can carry verified identity.
 
-## Local stack
+## Local pipeline verification
 
 From the Helpin repository root:
 
 ```bash
-cp events-pipeline/.env.events.example events-pipeline/.env.events
-just events-up
-just events-smoke
-just events-browser-smoke
+just events-e2e
 ```
 
-- `events-up` starts the local transport, capture, processing, replay, and
-  ClickHouse services defined by the checked-in stack scripts.
-- `events-smoke` sends authenticated events and verifies their canonical
-  project at each processing boundary and in ClickHouse.
-- `events-browser-smoke` runs the browser signal lab and generates page, form,
-  article, interaction, and product events.
-- `just events-logs` follows the local services.
-- `just events-down` stops the stack.
-
-The stack reads the internal API secret from `server/.env`; event credentials
-are not committed into Compose files.
+This starts an isolated three-node JetStream cluster and ClickHouse instance,
+runs the real capture and writer binaries, executes the transport and recovery
+checks below, and removes the disposable infrastructure. Its test credential is
+a local fixture and is not shared with application development or deployment.
 
 ## ClickHouse schema
 
@@ -89,6 +79,19 @@ query this table synchronously.
 
 ## Development and tests
 
+Isolated end-to-end verification (three-node JetStream plus a disposable
+ClickHouse instance, automatically removed when the test finishes):
+
+```bash
+just events-e2e
+```
+
+This verifies inline enrichment, archive/DLQ routing, explicit WorkQueue
+acknowledgements, session-window behavior, ClickHouse insertion, and session
+cache seeding after a writer restart. It uses ports 14222, 18222, 18123, and
+19000 for disposable infrastructure while capture and writer health use
+3000/3001 and 3010/3011 respectively.
+
 Rust component tests:
 
 ```bash
@@ -103,9 +106,48 @@ cd server
 go test ./internal/chmigrate
 ```
 
-The complete verification path is the pair of repository-root smoke commands.
-They cover service health, authenticated tenancy propagation, ingestion into
-ClickHouse, browser capture, and isolation between test projects.
+`events-e2e` is the canonical transport and storage verification. The separate
+browser smoke suite covers browser instrumentation and application-level signal
+generation.
+
+### k6 capture load test
+
+The k6 profile uses an open arrival model, so slow responses do not silently
+reduce the requested arrival rate. Run k6 from a separate machine when
+measuring production capacity. Preallocate all expected VUs; a non-zero
+`dropped_iterations` value means the generator ran out of available VUs.
+
+Single-event requests at 300 events and requests per second:
+
+```bash
+TARGET_URL=https://events.example.com/api/v1/event \
+TOKEN=replace-with-server-token \
+EVENT_RATE=300 \
+BATCH_SIZE=1 \
+DURATION=15m \
+PRE_ALLOCATED_VUS=512 \
+MAX_VUS=512 \
+SUMMARY_PATH=k6-single-event.json \
+k6 run events-pipeline/scripts/k6-capture.js
+```
+
+For a fixed simultaneous-connection saturation test, use the closed model:
+
+```bash
+PROFILE=connections \
+CONNECTIONS=256 \
+DURATION=60s \
+TARGET_URL=https://events.example.com/api/v1/event \
+TOKEN=replace-with-server-token \
+k6 run events-pipeline/scripts/k6-capture.js
+```
+
+Connections are reused by default, matching SDK keep-alive behavior. Set
+`NO_VU_CONNECTION_REUSE=true` to close a VU's connection between iterations,
+or `NO_CONNECTION_REUSE=true` to disable HTTP keep-alive entirely. The test
+fails on request errors, dropped iterations, p50 above 10 ms, or p99 above
+25 ms. Override `P50_LIMIT_MS` and `P99_LIMIT_MS` only when intentionally
+testing a different SLO.
 
 ## Directory map
 

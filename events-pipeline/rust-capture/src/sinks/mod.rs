@@ -7,8 +7,9 @@ use crate::events::{
 };
 
 pub mod disk_sink;
+pub mod enriching_nats_sink;
 pub mod fallback_sink;
-pub mod kafka_event_sink;
+pub mod nats_event_sink;
 pub mod print_sink;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

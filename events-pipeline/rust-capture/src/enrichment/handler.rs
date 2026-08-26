@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
+use chrono::{NaiveDateTime, Utc};
 use serde_json::to_string;
 use std::error::Error as StdError;
 use std::fmt;
@@ -12,6 +12,7 @@ use crate::events::failed_event::FailedEvent;
 use crate::events::transform_event::TransformedEvent;
 use crate::ip2location::ip2proxy::IP2ProxyWrapper;
 use crate::ip2location::resolver::IP2ProxyResolver;
+use crate::pipeline::normalize_custom_timestamp;
 use crate::{
     enrichment::privacy_enrichment::PrivacyEnrichmentService,
     geo::{maxmind::MaxMindResolver, resolver::GeoResolver},
@@ -167,7 +168,8 @@ impl EnrichmentHandler {
                     .next()
                     .unwrap_or("")
                     .to_string()
-            });
+            })
+            .to_lowercase();
         transformed_event.api_key = data
             .authorization
             .as_ref()
@@ -235,6 +237,7 @@ impl EnrichmentHandler {
         transformed_event.location_lon = location_data.lon;
         transformed_event.location_zip = location_data.zip;
         transformed_event.timestamp = data.event.received_at.clone();
+        transformed_event.event_received_at = data.event.received_at.clone();
         transformed_event.parsed_ua_bot = classification;
 
         // Check if the API key is a server-side token
@@ -247,58 +250,19 @@ impl EnrichmentHandler {
         // Look for the timestamp in the event data
         let event_timestamp = if is_server_side_token {
             if let Some(custom_timestamp) = data.event.timestamp {
-                // Convert milliseconds to seconds if necessary
-                // Handle both seconds and milliseconds
-                let (seconds, nanoseconds) = if custom_timestamp > 1_000_000_000_000 {
-                    // Timestamp is in milliseconds
-                    let seconds = custom_timestamp / 1000;
-                    let nanoseconds = (custom_timestamp % 1000) * 1_000_000; // Convert remaining milliseconds to nanoseconds
-                    (seconds, nanoseconds as u32)
-                } else {
-                    // Timestamp is in seconds
-                    (custom_timestamp, 0)
-                };
-
-                // Create DateTime<Utc> from timestamp
-                if let Some(utc_datetime) = DateTime::<Utc>::from_timestamp(seconds, nanoseconds) {
-                    let now = Utc::now();
-                    let min_allowed_date = Utc.ymd(1971, 1, 1).and_hms(0, 0, 0);
-
-                    if utc_datetime < min_allowed_date {
-                        return Err(Box::new(MyError {
-                            failed_event: FailedEvent {
-                                eventn_ctx_event_id: data.event_id.to_string(),
-                                project_id: transformed_event.project_id.clone(),
-                                error_description: "Timestamp is before 1971-01-01".to_string(),
-                                error: 5,
-                                payload: payload.to_string(),
-                            },
-                            description: "Timestamp is before 1971-01-01".to_string(),
-                        }));
-                    }
-
-                    if utc_datetime > now + Duration::hours(24) {
-                        return Err(Box::new(MyError {
-                            failed_event: FailedEvent {
-                                eventn_ctx_event_id: data.event_id.to_string(),
-                                project_id: transformed_event.project_id.clone(),
-                                error_description: "Timestamp is more than 24 hours in the future"
-                                    .to_string(),
-                                error: 6,
-                                payload: payload.to_string(),
-                            },
-                            description: "Timestamp is more than 24 hours in the future"
-                                .to_string(),
-                        }));
-                    }
-
-                    // utc_datetime.to_rfc3339() returns a string like "2021-06-01T13:45:30Z"
-
-                    // Format the timestamp
-                    format!("{}", utc_datetime.format("%Y-%m-%dT%H:%M:%S.%9fZ"))
-                } else {
-                    data.event.received_at.clone()
-                }
+                normalize_custom_timestamp(custom_timestamp, Utc::now()).map_err(|error| {
+                    let description = error.to_string();
+                    Box::new(MyError {
+                        failed_event: FailedEvent {
+                            eventn_ctx_event_id: data.event_id.to_string(),
+                            project_id: transformed_event.project_id.clone(),
+                            error_description: description.clone(),
+                            error: 5,
+                            payload: payload.to_string(),
+                        },
+                        description,
+                    }) as Box<dyn Error + Send>
+                })?
             } else {
                 data.event.received_at.clone()
             }
@@ -566,7 +530,7 @@ mod tests {
                         transformed_event.event_id,
                         "9b8faa58-1ef4-44b4-879f-21813cc6e75e"
                     );
-                    assert_eq!(transformed_event.project_id, "UMYwi4UKqF");
+                    assert_eq!(transformed_event.project_id, "umywi4ukqf");
                     assert_eq!(transformed_event.api_key, "");
 
                     // Check utm parameters
@@ -621,7 +585,7 @@ mod tests {
 
         let event = result.unwrap();
         assert_eq!(event.event_id, "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
-        assert_eq!(event.project_id, "UMYwi4UKqF");
+        assert_eq!(event.project_id, "umywi4ukqf");
         // Geo fields should be None (graceful fallback)
         assert!(
             event.location_country.is_none(),
