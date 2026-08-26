@@ -39,6 +39,7 @@ k6_p50_limit_ms=${SUSTAINED_K6_P50_LIMIT_MS:-10}
 k6_p99_limit_ms=${SUSTAINED_K6_P99_LIMIT_MS:-25}
 resource_monitor_enabled=${SUSTAINED_RESOURCE_MONITOR_ENABLED:-true}
 docker_resource_monitor_enabled=${SUSTAINED_DOCKER_RESOURCE_MONITOR_ENABLED:-true}
+resource_sample_interval=${SUSTAINED_RESOURCE_SAMPLE_INTERVAL_SECONDS:-5}
 expected=$((rate * duration))
 run_id="sustained-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 run_dir=${SUSTAINED_RESULTS_DIR:-"/tmp/helpin-$run_id"}
@@ -48,7 +49,7 @@ export E2E_NATS_TLS_DIR="$run_dir/nats-tls"
 compose=(docker compose --project-name helpin-event-sustained --file "$compose_file")
 capture_pids=()
 capture_urls=()
-replay_pid=""
+replay_pids=()
 writer_pids=()
 token_pid=""
 monitor_pid=""
@@ -72,11 +73,15 @@ if ! [[ "$capture_replicas" =~ ^[1-4]$ ]]; then
   echo "SUSTAINED_CAPTURE_REPLICAS must be between 1 and 4" >&2
   exit 1
 fi
+if ! [[ "$resource_sample_interval" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SUSTAINED_RESOURCE_SAMPLE_INTERVAL_SECONDS must be a positive integer" >&2
+  exit 1
+fi
 
 cleanup() {
   status=$?
   trap - EXIT
-  for pid in "$monitor_pid" "$replay_pid" "$token_pid"; do
+  for pid in "$monitor_pid" "$token_pid"; do
     if [[ -n "$pid" ]]; then
       kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
@@ -84,6 +89,12 @@ cleanup() {
   done
   if ((${#capture_pids[@]})); then
     for pid in "${capture_pids[@]}"; do
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    done
+  fi
+  if ((${#replay_pids[@]})); then
+    for pid in "${replay_pids[@]}"; do
       kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
     done
@@ -97,13 +108,13 @@ cleanup() {
   if [[ $status -ne 0 ]]; then
     echo "Sustained E2E failed; preserving results in $run_dir" >&2
     "${compose[@]}" logs --no-color --tail=100 >"$run_dir/containers.log" 2>&1 || true
-    for log in replay writer load; do
+    for log in load; do
       if [[ -f "$run_dir/$log.log" ]]; then
         echo "== $log ==" >&2
         tail -n 50 "$run_dir/$log.log" >&2 || true
       fi
     done
-    for log in "$run_dir"/capture-*.log; do
+    for log in "$run_dir"/capture-*.log "$run_dir"/writer-*.log "$run_dir"/replay-*.log; do
       if [[ -f "$log" ]]; then
         echo "== $(basename "$log") ==" >&2
         tail -n 50 "$log" >&2 || true
@@ -163,6 +174,31 @@ print(0, -1)
 PY
 }
 
+work_stream_resources() {
+  python3 - <<'PY'
+import json
+import urllib.request
+
+with urllib.request.urlopen("http://127.0.0.1:18222/jsz?streams=true&consumers=true") as response:
+    state = json.load(response)
+for account in state.get("account_details", []):
+    for stream in account.get("stream_detail", []):
+        if stream.get("name") != "EVENTS_ENRICHED_V1":
+            continue
+        details = stream.get("state", {})
+        consumers = stream.get("consumer_detail", [])
+        print(
+            details.get("messages", 0),
+            details.get("bytes", 0),
+            sum(consumer.get("num_ack_pending", 0) for consumer in consumers),
+            sum(consumer.get("num_pending", 0) for consumer in consumers),
+            sum(consumer.get("num_redelivered", 0) for consumer in consumers),
+        )
+        raise SystemExit
+print(0, 0, 0, 0, 0)
+PY
+}
+
 clickhouse_query() {
   curl --fail-with-body --silent --show-error \
     --user helpin:helpin \
@@ -198,11 +234,25 @@ sample_resources() {
     writer_rss=$(awk '{print $2}' <<<"$writer_stats")
     read -r mem_available swap_free <<<"$(sample_host_memory_kib)"
     echo "$now,${capture_cpu:-0},${capture_rss:-0},${writer_cpu:-0},${writer_rss:-0},$mem_available,$swap_free" >>"$run_dir/process-resources.csv"
+    read -r work_messages work_bytes ack_pending consumer_pending redelivered <<<"$(work_stream_resources)"
+    echo "$now,$work_messages,$work_bytes,$ack_pending,$consumer_pending,$redelivered" >>"$run_dir/jetstream-resources.csv"
+    for ordinal in "${!capture_pids[@]}"; do
+      read -r cpu rss <<<"$(ps -p "${capture_pids[$ordinal]}" -o %cpu=,rss= 2>/dev/null | xargs || true)"
+      echo "$now,capture,$ordinal,${capture_pids[$ordinal]},${cpu:-0},${rss:-0}" >>"$run_dir/process-resources-detailed.csv"
+    done
+    for ordinal in "${!writer_pids[@]}"; do
+      read -r cpu rss <<<"$(ps -p "${writer_pids[$ordinal]}" -o %cpu=,rss= 2>/dev/null | xargs || true)"
+      echo "$now,writer,$ordinal,${writer_pids[$ordinal]},${cpu:-0},${rss:-0}" >>"$run_dir/process-resources-detailed.csv"
+    done
+    for ordinal in "${!replay_pids[@]}"; do
+      read -r cpu rss <<<"$(ps -p "${replay_pids[$ordinal]}" -o %cpu=,rss= 2>/dev/null | xargs || true)"
+      echo "$now,replay,$ordinal,${replay_pids[$ordinal]},${cpu:-0},${rss:-0}" >>"$run_dir/process-resources-detailed.csv"
+    done
     if [[ "$docker_resource_monitor_enabled" == "true" ]]; then
       docker stats --no-stream --format "$now,{{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.PIDs}}" \
         | grep 'helpin-event-sustained-' >>"$run_dir/docker-resources.csv" || true
     fi
-    sleep 5
+    sleep "$resource_sample_interval"
   done
 }
 
@@ -221,10 +271,10 @@ assert_no_spill_files() {
   fi
 }
 
-echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size workers=$workers connections=$connections visitors=$visitors print_sink=$print_sink archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas capture_replicas=$capture_replicas work_storage=$work_storage work_replicas=$work_replicas work_in_flight=$work_max_in_flight resource_monitor=$resource_monitor_enabled docker_resource_monitor=$docker_resource_monitor_enabled"
+echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size workers=$workers connections=$connections visitors=$visitors print_sink=$print_sink archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas capture_replicas=$capture_replicas work_storage=$work_storage work_replicas=$work_replicas work_in_flight=$work_max_in_flight resource_monitor=$resource_monitor_enabled docker_resource_monitor=$docker_resource_monitor_enabled resource_sample_interval=$resource_sample_interval"
 echo "Results will be retained in $run_dir"
-printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_storage=%s\nwork_replicas=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\ncapture_replicas=%s\nresource_monitor_enabled=%s\ndocker_resource_monitor_enabled=%s\n' \
-  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_storage" "$work_replicas" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" "$capture_replicas" "$resource_monitor_enabled" "$docker_resource_monitor_enabled" >"$run_dir/test.env"
+printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_storage=%s\nwork_replicas=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\ncapture_replicas=%s\nresource_monitor_enabled=%s\ndocker_resource_monitor_enabled=%s\nresource_sample_interval_seconds=%s\n' \
+  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_storage" "$work_replicas" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" "$capture_replicas" "$resource_monitor_enabled" "$docker_resource_monitor_enabled" "$resource_sample_interval" >"$run_dir/test.env"
 
 "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 "${compose[@]}" up --detach --wait
@@ -338,35 +388,40 @@ for ordinal in $(seq 0 $((capture_replicas - 1))); do
   wait_http "event capture $ordinal" "http://127.0.0.1:$http_port/health/readiness"
 done
 
-(
-  cd "$capture_dir"
-  if [[ -n "$capture_env_file" ]]; then
-    set -a
-    source "$capture_env_file"
-    set +a
-  fi
-  if [[ -n "$ip2proxy_db_path" ]]; then
-    export IP2PROXY_DB_PATH="$ip2proxy_db_path"
-  fi
-  exec env \
-    NATS_URL=tls://127.0.0.1:14222 \
-    NATS_CA_FILE="$E2E_NATS_TLS_DIR/ca.crt" \
-    NATS_CLIENT_CERT_FILE="$E2E_NATS_TLS_DIR/client.crt" \
-    NATS_CLIENT_KEY_FILE="$E2E_NATS_TLS_DIR/client.key" \
-    NETWORK_ENRICHMENT_ENABLED="$network_enrichment" \
-    FALLBACK_DIR="$run_dir/fallback" \
-    ARCHIVE_SPILL_DIR="$run_dir/archive-spill-replay" \
-    ARCHIVE_SPILL_MAX_BYTES=67108864 \
-    NATS_WORK_MAX_IN_FLIGHT="$work_max_in_flight" \
-    RAW_ARCHIVE_ENABLED="$raw_archive_enabled" \
-    REPLAY_POLL_INTERVAL_SECS=1 \
-    REPLAY_CLEANUP_HOURS=0 \
-    LOG_LEVEL=WARN \
-    ./target/release/replay-worker
-) >"$run_dir/replay.log" 2>&1 &
-replay_pid=$!
+for ordinal in $(seq 0 $((capture_replicas - 1))); do
+  nats_port=$((14222 + ordinal % 3))
+  (
+    cd "$capture_dir"
+    if [[ -n "$capture_env_file" ]]; then
+      set -a
+      source "$capture_env_file"
+      set +a
+    fi
+    if [[ -n "$ip2proxy_db_path" ]]; then
+      export IP2PROXY_DB_PATH="$ip2proxy_db_path"
+    fi
+    exec env \
+      NATS_URL="tls://127.0.0.1:$nats_port" \
+      NATS_CA_FILE="$E2E_NATS_TLS_DIR/ca.crt" \
+      NATS_CLIENT_CERT_FILE="$E2E_NATS_TLS_DIR/client.crt" \
+      NATS_CLIENT_KEY_FILE="$E2E_NATS_TLS_DIR/client.key" \
+      NETWORK_ENRICHMENT_ENABLED="$network_enrichment" \
+      FALLBACK_DIR="$run_dir/fallback-$ordinal" \
+      ARCHIVE_SPILL_DIR="$run_dir/archive-spill-replay-$ordinal" \
+      ARCHIVE_SPILL_MAX_BYTES=67108864 \
+      NATS_WORK_MAX_IN_FLIGHT="$work_max_in_flight" \
+      RAW_ARCHIVE_ENABLED="$raw_archive_enabled" \
+      REPLAY_POLL_INTERVAL_SECS=1 \
+      REPLAY_CLEANUP_HOURS=0 \
+      LOG_LEVEL=WARN \
+      ./target/release/replay-worker
+  ) >"$run_dir/replay-$ordinal.log" 2>&1 &
+  replay_pids+=("$!")
+done
 
 echo 'unix_time,capture_cpu_percent,capture_rss_kib,writer_cpu_percent,writer_rss_kib,mem_available_kib,swap_free_kib' >"$run_dir/process-resources.csv"
+echo 'unix_time,component,ordinal,pid,cpu_percent,rss_kib' >"$run_dir/process-resources-detailed.csv"
+echo 'unix_time,messages,bytes,ack_pending,consumer_pending,redelivered' >"$run_dir/jetstream-resources.csv"
 if [[ "$resource_monitor_enabled" == "true" ]]; then
   sample_resources &
   monitor_pid=$!
@@ -383,6 +438,7 @@ if [[ "$load_driver" == "k6-connections" || "$load_driver" == "k6-arrival" ]]; t
   chmod 0777 "$run_dir"
   set +e
   docker run --rm --network host \
+    --name helpin-event-sustained-k6 \
     --volume "$repo_root/events-pipeline/scripts:/scripts:ro" \
     --volume "$run_dir:/results" \
     --env TARGET_URL="${capture_urls[0]}" \
@@ -598,11 +654,39 @@ load = json.loads((root / "load-result.json").read_text())
 with (root / "process-resources.csv").open() as source:
     rows = list(csv.DictReader(source))
 
+with (root / "process-resources-detailed.csv").open() as source:
+    detailed_rows = list(csv.DictReader(source))
+
+with (root / "jetstream-resources.csv").open() as source:
+    jetstream_rows = list(csv.DictReader(source))
+
 def stats(name):
     values = [float(row[name]) for row in rows]
     if not values:
         return {"average": 0, "peak": 0}
     return {"average": round(sum(values) / len(values), 3), "peak": round(max(values), 3)}
+
+detailed = defaultdict(lambda: {"cpu_percent": [], "rss_mib": []})
+for row in detailed_rows:
+    name = f'{row["component"]}-{row["ordinal"]}'
+    detailed[name]["cpu_percent"].append(float(row["cpu_percent"]))
+    detailed[name]["rss_mib"].append(float(row["rss_kib"]) / 1024)
+
+detailed_summary = {}
+for name, samples in detailed.items():
+    detailed_summary[name] = {
+        metric: {"average": round(sum(values) / len(values), 3), "peak": round(max(values), 3)}
+        for metric, values in samples.items()
+        if values
+    }
+
+jetstream_summary = {}
+for metric in ["messages", "bytes", "ack_pending", "consumer_pending", "redelivered"]:
+    values = [int(row[metric]) for row in jetstream_rows]
+    jetstream_summary[metric] = {
+        "average": round(sum(values) / len(values), 3) if values else 0,
+        "peak": max(values) if values else 0,
+    }
 
 docker = defaultdict(lambda: {"cpu": [], "memory_mib": []})
 memory_pattern = re.compile(r"([0-9.]+)([KMG]iB)")
@@ -649,6 +733,8 @@ summary = {
         "host_mem_available_mib": {key: round(value / 1024, 3) for key, value in stats("mem_available_kib").items()},
         "host_swap_free_mib": {key: round(value / 1024, 3) for key, value in stats("swap_free_kib").items()},
     },
+    "host_process_details": detailed_summary,
+    "jetstream_backlog": jetstream_summary,
     "docker": docker_summary,
 }
 (root / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
