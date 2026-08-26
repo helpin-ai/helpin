@@ -12,7 +12,7 @@ services:
       - "14222:4222"
       - "18222:8222"
     mem_limit: 1g
-    cpus: 1
+    cpus: 2
 
   nats-1:
     image: nats:2.14.5-alpine@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da
@@ -26,7 +26,7 @@ services:
     ports:
       - "18223:8222"
     mem_limit: 1g
-    cpus: 1
+    cpus: 2
 
   nats-2:
     image: nats:2.14.5-alpine@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da
@@ -40,7 +40,7 @@ services:
     ports:
       - "18224:8222"
     mem_limit: 1g
-    cpus: 1
+    cpus: 2
 
   clickhouse:
     image: clickhouse/clickhouse-server:25.8

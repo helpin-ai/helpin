@@ -226,6 +226,52 @@ The default work stream uses S2 compression. Repeat the same run with
 remains compressed. Compare work publish-ack latency, NATS CPU, disk bytes and
 IOPS, fallback volume, and drain time before changing production configuration.
 
+## NATS contention isolation sequence
+
+The capture process always uses separate work, archive, and DLQ connections.
+`NATS_WORK_MAX_IN_FLIGHT` defaults to 512; the sustained harness exposes it as
+`SUSTAINED_WORK_MAX_IN_FLIGHT` and records it in `test.env`.
+
+For a 10,000 events/s qualification, keep the generator remote and repeat the
+same target run first with the diagnostic archive disabled, then enabled. Use a
+fresh results directory for each run:
+
+```bash
+SUSTAINED_LOAD_DRIVER=external \
+SUSTAINED_RATE=10000 \
+SUSTAINED_DURATION_SECONDS=600 \
+SUSTAINED_VISITORS=4000000 \
+SUSTAINED_RAW_ARCHIVE_ENABLED=false \
+SUSTAINED_WORK_MAX_IN_FLIGHT=512 \
+SUSTAINED_RESULTS_DIR=/tmp/helpin-10k-no-archive \
+events-pipeline/scripts/sustained-e2e.sh
+```
+
+Repeat with `SUSTAINED_RAW_ARCHIVE_ENABLED=true` and a different result path.
+Drive each target from the remote-generator command above with
+`EVENT_RATE=10000`; keep every other input identical.
+
+If work acknowledgements still stall, isolate stream replication from the
+replicated consumer state machines. This mode provisions no consumers, does
+not start the writer, and succeeds when every accepted event is present in the
+unconsumed work stream:
+
+```bash
+SUSTAINED_LOAD_DRIVER=external \
+SUSTAINED_RATE=10000 \
+SUSTAINED_DURATION_SECONDS=600 \
+SUSTAINED_VISITORS=4000000 \
+SUSTAINED_RAW_ARCHIVE_ENABLED=false \
+SUSTAINED_CONSUMERS_ENABLED=false \
+SUSTAINED_RESULTS_DIR=/tmp/helpin-10k-no-consumers \
+events-pipeline/scripts/sustained-e2e.sh
+```
+
+Finally, compare the normal per-writer durable consumer with memory-backed consumer
+state by setting `SUSTAINED_CONSUMER_MEMORY_STORAGE=true`. Memory-backed state
+remains replicated but removes consumer-state disk I/O; it is an isolation
+setting, not a production recommendation without recovery testing.
+
 ## Cleanup
 
 Normal completion and most failures remove the disposable containers and

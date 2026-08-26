@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -9,12 +9,13 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use async_nats::jetstream;
 use async_nats::jetstream::consumer::PullConsumer;
+use async_nats::jetstream::stream::DirectGetErrorKind;
 use async_nats::jetstream::{AckKind, Message};
 use async_nats::HeaderMap;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::json_spool::JsonSpool;
@@ -22,7 +23,10 @@ use crate::pipeline::{
     delivery_disposition, encode_ingest_version, seed_received_scan_start, visitor_shard,
     DeliveryDisposition, EnrichedEventEnvelopeV1, Sessionizer, VISITOR_SHARD_COUNT,
 };
-use crate::writer::{ACK_PROGRESS_INTERVAL, SHARD_PULL_BATCH_SIZE};
+use crate::writer::{
+    seed_floor_from_metadata, shard_from_subject, writer_consumer_name, writer_owned_shards,
+    ACK_PROGRESS_INTERVAL, WRITER_PULL_MAX_MESSAGES, WRITER_PULL_MIN_MESSAGES,
+};
 use crate::writer_store::{
     insert_with_isolation, ClickHouseEventStore, EventInsertRow, IsolationOutcome, SeedRequest,
     StoreError,
@@ -30,13 +34,11 @@ use crate::writer_store::{
 
 const WORK_STREAM_NAME: &str = "EVENTS_ENRICHED_V1";
 const WRITER_DLQ_SUBJECT: &str = "events.dlq.v1.writer";
-const COORDINATOR_CHANNEL_CAPACITY: usize = 128;
 const INSERT_MIN_ROWS: usize = 1_000;
 const INSERT_MAX_ROWS: usize = 8_192;
 const INSERT_MAX_BYTES: usize = 16 * 1024 * 1024;
 const INSERT_COALESCE_WAIT: Duration = Duration::from_secs(1);
 const INSERT_MAX_WAIT: Duration = Duration::from_secs(10);
-const EMPTY_FETCH_DELAY: Duration = Duration::from_millis(100);
 const NATS_PUBLISH_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_INITIAL_DELAY: Duration = Duration::from_millis(250);
 const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
@@ -64,8 +66,8 @@ impl WriterSettings {
         let replicas = parse_env("WRITER_REPLICAS", 4_usize)?;
         anyhow::ensure!(replicas > 0, "WRITER_REPLICAS must be positive");
         anyhow::ensure!(
-            usize::from(VISITOR_SHARD_COUNT) % replicas == 0,
-            "WRITER_REPLICAS must divide {VISITOR_SHARD_COUNT}"
+            replicas <= usize::from(VISITOR_SHARD_COUNT),
+            "WRITER_REPLICAS cannot exceed {VISITOR_SHARD_COUNT} logical shards"
         );
         let ordinal = match env::var("WRITER_ORDINAL") {
             Ok(value) => value
@@ -116,16 +118,16 @@ impl WriterSettings {
         })
     }
 
-    pub fn owned_shards(&self) -> std::ops::Range<u8> {
-        let per_writer = usize::from(VISITOR_SHARD_COUNT) / self.replicas;
-        let start = self.ordinal * per_writer;
-        start as u8..(start + per_writer) as u8
+    pub fn owned_shards(&self) -> Vec<u8> {
+        writer_owned_shards(self.replicas, self.ordinal)
+            .expect("validated writer replica and ordinal settings")
     }
 }
 
 pub struct SessionWriter {
     settings: WriterSettings,
-    jetstream: jetstream::Context,
+    work_jetstream: jetstream::Context,
+    dlq_jetstream: jetstream::Context,
     store: ClickHouseEventStore,
     sessions: HashMap<u8, Sessionizer>,
     poison_spool: JsonSpool,
@@ -156,10 +158,14 @@ impl SessionWriter {
         settings: WriterSettings,
         health: WriterHealth,
     ) -> Result<Self> {
-        let client = crate::nats_client::connect(&settings.nats_url)
-            .await
-            .context("connect session writer to NATS")?;
-        let jetstream = jetstream::new(client);
+        let work_client =
+            crate::nats_client::connect_named(&settings.nats_url, "helpin-session-writer-work")
+                .await
+                .context("connect session writer work client to NATS")?;
+        let dlq_client =
+            crate::nats_client::connect_named(&settings.nats_url, "helpin-session-writer-dlq")
+                .await
+                .context("connect session writer DLQ client to NATS")?;
         let store = ClickHouseEventStore::new(
             &settings.clickhouse_http_url,
             &settings.clickhouse_database,
@@ -173,7 +179,8 @@ impl SessionWriter {
         .context("initialize writer poison spill")?;
         Ok(Self {
             settings,
-            jetstream,
+            work_jetstream: jetstream::new(work_client),
+            dlq_jetstream: jetstream::new(dlq_client),
             store,
             sessions: HashMap::new(),
             poison_spool,
@@ -188,40 +195,44 @@ impl SessionWriter {
     pub async fn run(mut self) -> Result<()> {
         let startup_started = std::time::Instant::now();
         let stream = self
-            .jetstream
+            .work_jetstream
             .get_stream(WORK_STREAM_NAME)
             .await
             .context("get enriched work stream")?;
-        spawn_poison_replayer(self.jetstream.clone(), self.poison_spool.clone());
-        let (batch_sender, mut batch_receiver) =
-            mpsc::channel::<FetchedShardBatch>(COORDINATOR_CHANNEL_CAPACITY);
-
+        spawn_poison_replayer(self.dlq_jetstream.clone(), self.poison_spool.clone());
+        let durable_name = writer_consumer_name(self.settings.replicas, self.settings.ordinal);
+        let mut consumer: PullConsumer = stream
+            .get_consumer(&durable_name)
+            .await
+            .map_err(|error| anyhow!("get pre-provisioned consumer {durable_name}: {error}"))?;
+        let consumer_info = consumer
+            .info()
+            .await
+            .context("read writer consumer seed boundary")?
+            .clone();
+        let shared_ack_floor = consumer_info.ack_floor.stream_sequence;
+        let seed_metadata = consumer_info.config.metadata.clone();
         let store = self.store.clone();
         let mut initializations = futures::stream::iter(self.settings.owned_shards())
             .map(|shard| {
                 let stream = stream.clone();
                 let store = store.clone();
+                let seed_floor =
+                    shared_ack_floor.max(seed_floor_from_metadata(&seed_metadata, shard));
                 async move {
-                    let durable_name = format!("events-writer-v1-{shard:03}");
-                    let mut consumer: PullConsumer =
-                        stream.get_consumer(&durable_name).await.map_err(|error| {
-                            anyhow!("get pre-provisioned consumer for shard {shard}: {error}")
-                        })?;
-                    let sessionizer = seed_shard(&store, shard, &stream, &mut consumer)
+                    let sessionizer = seed_shard(&store, shard, &stream, seed_floor)
                         .await
                         .with_context(|| format!("seed shard {shard}"))?;
-                    Result::<_>::Ok((shard, consumer, sessionizer))
+                    Result::<_>::Ok((shard, sessionizer))
                 }
             })
             .buffer_unordered(8);
 
         while let Some(initialized) = initializations.next().await {
-            let (shard, consumer, sessionizer) = initialized?;
+            let (shard, sessionizer) = initialized?;
             metrics::gauge!("event_writer_session_cache_entries", sessionizer.len() as f64, "shard" => shard.to_string());
             self.sessions.insert(shard, sessionizer);
-            tokio::spawn(fetch_shard_batches(shard, consumer, batch_sender.clone()));
         }
-        drop(batch_sender);
         self.health.set_ready(true);
         metrics::histogram!(
             "event_writer_startup_duration_seconds",
@@ -235,10 +246,21 @@ impl SessionWriter {
             "session writer ready"
         );
 
-        while let Some(first) = batch_receiver.recv().await {
-            let batches = collect_insert_round(first, &mut batch_receiver).await;
-            let progress = ProgressGuard::start(messages_for_progress(&batches));
-            let preparation = self.prepare_round(&batches)?;
+        loop {
+            let messages = match fetch_writer_round(&consumer).await {
+                Ok(messages) => messages,
+                Err(error) => {
+                    metrics::counter!("event_writer_fetch_errors_total", 1);
+                    tracing::warn!(%error, %durable_name, "writer consumer fetch failed");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
+            if messages.is_empty() {
+                continue;
+            }
+            let progress = ProgressGuard::start(messages.clone());
+            let preparation = self.prepare_round(&messages)?;
 
             for terminal in &preparation.terminal_dlq {
                 self.publish_dlq_or_spill(terminal).await?;
@@ -264,92 +286,95 @@ impl SessionWriter {
             }
 
             self.commit_session_overlays(&preparation.session_overlays)?;
-            for batch in &batches {
-                let Some(sessionizer) = self.sessions.get_mut(&batch.shard) else {
+            for shard in &preparation.touched_shards {
+                let Some(sessionizer) = self.sessions.get_mut(shard) else {
                     continue;
                 };
                 let evicted = sessionizer.prune_idle(SESSION_CACHE_IDLE_RETENTION)
                     + sessionizer
                         .enforce_capacity(self.settings.session_cache_max_entries_per_shard);
                 if evicted > 0 {
-                    metrics::counter!("event_writer_session_cache_evictions_total", evicted as u64, "shard" => batch.shard.to_string());
+                    metrics::counter!("event_writer_session_cache_evictions_total", evicted as u64, "shard" => shard.to_string());
                 }
-                metrics::gauge!("event_writer_session_cache_entries", sessionizer.len() as f64, "shard" => batch.shard.to_string());
+                metrics::gauge!("event_writer_session_cache_entries", sessionizer.len() as f64, "shard" => shard.to_string());
             }
-            self.ack_round_with_retry(&batches).await;
+            self.ack_round_with_retry(&messages).await;
             progress.stop().await;
-            complete_batches(batches);
             metrics::counter!(
                 "event_writer_committed_rows_total",
                 preparation.rows.len().saturating_sub(rejected_count) as u64
             );
         }
-
-        Err(anyhow!("all shard fetch loops stopped"))
     }
 
-    fn prepare_round(&self, batches: &[FetchedShardBatch]) -> Result<PreparedRound> {
+    fn prepare_round(&self, messages: &[Message]) -> Result<PreparedRound> {
         // Only sessionize visitors touched by this insert round. Cloning all
         // warm shard caches here made every round O(total cache cardinality).
         let mut overlays = HashMap::<u8, Sessionizer>::new();
         let mut rows = Vec::new();
         let mut row_sources = Vec::new();
         let mut terminal_dlq = Vec::new();
+        let mut touched_shards = BTreeSet::new();
 
-        for batch in batches {
+        for message in messages {
+            let shard = shard_from_subject(message.subject.as_str()).ok_or_else(|| {
+                anyhow!(
+                    "writer consumer delivered unexpected subject {}",
+                    message.subject
+                )
+            })?;
             anyhow::ensure!(
-                self.sessions.contains_key(&batch.shard),
+                self.sessions.contains_key(&shard),
                 "missing session state for shard {}",
-                batch.shard
+                shard
             );
-            for message in &batch.messages {
-                let source = MessageSource::from_message(batch.shard, message)?;
-                if delivery_disposition(source.delivery_attempt)
-                    == DeliveryDisposition::TerminalDlqAndAck
-                {
-                    terminal_dlq.push(WriterDlqRecord::from_source(
-                        &source,
-                        "delivery_attempt_exhausted",
-                        "application delivery-attempt cap reached",
-                    ));
-                    continue;
-                }
+            touched_shards.insert(shard);
+            let source = MessageSource::from_message(shard, message)?;
+            if delivery_disposition(source.delivery_attempt)
+                == DeliveryDisposition::TerminalDlqAndAck
+            {
+                terminal_dlq.push(WriterDlqRecord::from_source(
+                    &source,
+                    "delivery_attempt_exhausted",
+                    "application delivery-attempt cap reached",
+                ));
+                continue;
+            }
 
-                let mut envelope = match parse_and_validate_envelope(batch.shard, message) {
-                    Ok(envelope) => envelope,
-                    Err(error) => {
-                        terminal_dlq.push(WriterDlqRecord::from_source(
-                            &source,
-                            "invalid_envelope",
-                            &error.to_string(),
-                        ));
-                        continue;
-                    }
-                };
-                if let Err(error) =
-                    assign_with_overlay(&self.sessions, &mut overlays, batch.shard, &mut envelope)
-                {
+            let mut envelope = match parse_and_validate_envelope(shard, message) {
+                Ok(envelope) => envelope,
+                Err(error) => {
                     terminal_dlq.push(WriterDlqRecord::from_source(
                         &source,
-                        "invalid_event_timestamp",
+                        "invalid_envelope",
                         &error.to_string(),
                     ));
                     continue;
                 }
-                let ingest_version =
-                    encode_ingest_version(source.stream_sequence, 0, source.delivery_attempt)
-                        .map_err(|error| anyhow!(error))?;
-                rows.push(EventInsertRow {
-                    raw_event: serde_json::to_string(&envelope.event)
-                        .context("serialize sessionized event")?,
-                    _nats_subject: source.subject.clone(),
-                    _nats_stream_sequence: source.stream_sequence,
-                    _nats_delivery_attempt: source.delivery_attempt.min(255) as u8,
-                    _retro_generation: 0,
-                    _ingest_version: ingest_version,
-                });
-                row_sources.push(source);
+            };
+            if let Err(error) =
+                assign_with_overlay(&self.sessions, &mut overlays, shard, &mut envelope)
+            {
+                terminal_dlq.push(WriterDlqRecord::from_source(
+                    &source,
+                    "invalid_event_timestamp",
+                    &error.to_string(),
+                ));
+                continue;
             }
+            let ingest_version =
+                encode_ingest_version(source.stream_sequence, 0, source.delivery_attempt)
+                    .map_err(|error| anyhow!(error))?;
+            rows.push(EventInsertRow {
+                raw_event: serde_json::to_string(&envelope.event)
+                    .context("serialize sessionized event")?,
+                _nats_subject: source.subject.clone(),
+                _nats_stream_sequence: source.stream_sequence,
+                _nats_delivery_attempt: source.delivery_attempt.min(255) as u8,
+                _retro_generation: 0,
+                _ingest_version: ingest_version,
+            });
+            row_sources.push(source);
         }
 
         Ok(PreparedRound {
@@ -357,6 +382,7 @@ impl SessionWriter {
             row_sources,
             session_overlays: overlays,
             terminal_dlq,
+            touched_shards: touched_shards.into_iter().collect(),
         })
     }
 
@@ -394,7 +420,7 @@ impl SessionWriter {
     }
 
     async fn publish_dlq_or_spill(&self, record: &WriterDlqRecord) -> Result<()> {
-        match publish_dlq(&self.jetstream, record).await {
+        match publish_dlq(&self.dlq_jetstream, record).await {
             Ok(()) => Ok(()),
             Err(error) => {
                 metrics::counter!("event_writer_dlq_publish_failures_total", 1);
@@ -409,49 +435,26 @@ impl SessionWriter {
         }
     }
 
-    async fn ack_round_with_retry(&self, batches: &[FetchedShardBatch]) {
-        // WorkQueue pull consumers require AckExplicit. Preserve strict order
-        // within each shard so the ack floor remains a valid seed boundary,
-        // but acknowledge independent shard batches concurrently so one round
-        // does not serialize thousands of local publish operations.
-        let mut progress = BatchAckProgress::new(batches);
+    async fn ack_round_with_retry(&self, messages: &[Message]) {
+        // The writer consumer spans many subjects, so acknowledgements must
+        // stay in delivery order. This keeps its single ack floor a valid seed
+        // boundary for every logical shard it owns.
+        let mut next = 0;
         let mut delay = RETRY_INITIAL_DELAY;
-        loop {
-            let mut failed = false;
-            let attempts = futures::stream::iter(batches.iter().enumerate().filter_map(
-                |(batch_index, batch)| {
-                    let start = progress.next(batch_index);
-                    (start < batch.messages.len()).then_some(async move {
-                        let mut next = start;
-                        while let Some(message) = batch.messages.get(next) {
-                            if let Err(error) = message.ack().await {
-                                return (batch_index, next, Some(error));
-                            }
-                            next += 1;
-                        }
-                        (batch_index, next, None)
-                    })
-                },
-            ))
-            .buffer_unordered(batches.len().max(1))
-            .collect::<Vec<_>>()
-            .await;
-
-            for (batch_index, next, error) in attempts {
-                progress.advance_to(batch_index, next);
-                if let Some(error) = error {
-                    failed = true;
-                    let shard = batches[batch_index].shard;
-                    metrics::counter!("event_writer_ack_retries_total", 1, "shard" => shard.to_string());
-                    tracing::warn!(%error, shard, "JetStream message ack failed");
+        while let Some(message) = messages.get(next) {
+            match message.ack().await {
+                Ok(()) => {
+                    next += 1;
+                    delay = RETRY_INITIAL_DELAY;
+                }
+                Err(error) => {
+                    let shard = shard_from_subject(message.subject.as_str());
+                    metrics::counter!("event_writer_ack_retries_total", 1, "shard" => shard.map(|value| value.to_string()).unwrap_or_else(|| "unknown".to_string()));
+                    tracing::warn!(%error, ?shard, "JetStream message ack failed");
+                    tokio::time::sleep(delay).await;
+                    delay = (delay * 2).min(RETRY_MAX_DELAY);
                 }
             }
-            if progress.complete() {
-                return;
-            }
-            debug_assert!(failed);
-            tokio::time::sleep(delay).await;
-            delay = (delay * 2).min(RETRY_MAX_DELAY);
         }
     }
 }
@@ -469,58 +472,26 @@ fn commit_session_overlays_into(
     Ok(())
 }
 
-struct BatchAckProgress {
-    next_message: Vec<usize>,
-    message_counts: Vec<usize>,
-}
-
-impl BatchAckProgress {
-    fn new(batches: &[FetchedShardBatch]) -> Self {
-        Self {
-            next_message: vec![0; batches.len()],
-            message_counts: batches.iter().map(|batch| batch.messages.len()).collect(),
-        }
-    }
-
-    fn next(&self, batch_index: usize) -> usize {
-        self.next_message[batch_index]
-    }
-
-    fn advance_to(&mut self, batch_index: usize, next_message: usize) {
-        self.next_message[batch_index] = next_message;
-    }
-
-    fn complete(&self) -> bool {
-        self.next_message
-            .iter()
-            .zip(&self.message_counts)
-            .all(|(next, count)| next == count)
-    }
-}
-
 async fn seed_shard(
     store: &ClickHouseEventStore,
     shard: u8,
     stream: &jetstream::stream::Stream,
-    consumer: &mut PullConsumer,
+    ack_floor: u64,
 ) -> Result<Sessionizer> {
     let started = std::time::Instant::now();
-    let info = consumer.info().await.context("read consumer info")?.clone();
-    let ack_floor = info.ack_floor.stream_sequence;
     let now = Utc::now();
-    let (anchor_received, anchor_event) = if info.num_pending == 0 {
-        (now, now)
-    } else {
-        let subject = format!("events.enriched.v1.{shard:03}");
-        let first = stream
-            .direct_get_next_for_subject(&subject, Some(ack_floor.saturating_add(1)))
-            .await
-            .context("direct-read first pending shard event")?;
-        seed_anchors_from_payload(&first.payload).unwrap_or_else(|error| {
+    let subject = format!("events.enriched.v1.{shard:03}");
+    let (anchor_received, anchor_event) = match stream
+        .direct_get_next_for_subject(&subject, Some(ack_floor.saturating_add(1)))
+        .await
+    {
+        Ok(first) => seed_anchors_from_payload(&first.payload).unwrap_or_else(|error| {
             metrics::counter!("event_writer_seed_anchor_fallback_total", 1, "shard" => shard.to_string());
             tracing::warn!(%error, shard, "first pending event cannot anchor seed; using current time");
             (now, now)
-        })
+        }),
+        Err(error) if error.kind() == DirectGetErrorKind::NotFound => (now, now),
+        Err(error) => return Err(error).context("direct-read first pending shard event"),
     };
 
     let request = SeedRequest {
@@ -544,6 +515,7 @@ struct PreparedRound {
     row_sources: Vec<MessageSource>,
     session_overlays: HashMap<u8, Sessionizer>,
     terminal_dlq: Vec<WriterDlqRecord>,
+    touched_shards: Vec<u8>,
 }
 
 fn assign_with_overlay(
@@ -569,95 +541,60 @@ fn assign_with_overlay(
     Ok(())
 }
 
-struct FetchedShardBatch {
-    shard: u8,
-    messages: Vec<Message>,
-    completion: oneshot::Sender<()>,
-}
-
-async fn fetch_shard_batches(
-    shard: u8,
-    consumer: PullConsumer,
-    sender: mpsc::Sender<FetchedShardBatch>,
-) {
-    loop {
-        let mut fetched = match consumer
-            .fetch()
-            .max_messages(SHARD_PULL_BATCH_SIZE)
-            .messages()
-            .await
-        {
-            Ok(fetched) => fetched,
-            Err(error) => {
-                metrics::counter!("event_writer_fetch_errors_total", 1, "shard" => shard.to_string());
-                tracing::warn!(%error, shard, "failed to start shard fetch");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                continue;
-            }
-        };
-        let mut messages = Vec::with_capacity(SHARD_PULL_BATCH_SIZE);
-        while let Some(result) = fetched.next().await {
-            match result {
-                Ok(message) => messages.push(message),
-                Err(error) => {
-                    metrics::counter!("event_writer_fetch_errors_total", 1, "shard" => shard.to_string());
-                    tracing::warn!(%error, shard, "shard fetch stream error");
-                    break;
-                }
-            }
-        }
-        if messages.is_empty() {
-            tokio::time::sleep(EMPTY_FETCH_DELAY).await;
-            continue;
-        }
-        let (completion, completed) = oneshot::channel();
-        if sender
-            .send(FetchedShardBatch {
-                shard,
-                messages,
-                completion,
-            })
-            .await
-            .is_err()
-        {
-            return;
-        }
-        if completed.await.is_err() {
-            return;
-        }
-    }
-}
-
-async fn collect_insert_round(
-    first: FetchedShardBatch,
-    receiver: &mut mpsc::Receiver<FetchedShardBatch>,
-) -> Vec<FetchedShardBatch> {
+async fn fetch_writer_round(consumer: &PullConsumer) -> Result<Vec<Message>> {
     let started = tokio::time::Instant::now();
-    let mut rows = first.messages.len();
-    let mut bytes = batch_payload_bytes(&first);
-    let mut batches = vec![first];
+    let mut messages = Vec::with_capacity(WRITER_PULL_MAX_MESSAGES);
+    let mut bytes = 0;
 
     loop {
-        let elapsed = started.elapsed();
-        if should_flush_insert_round(rows, bytes, elapsed) {
+        if should_flush_insert_round(messages.len(), bytes, started.elapsed()) {
             break;
         }
-        let deadline = if rows >= INSERT_MIN_ROWS {
+        let deadline = if messages.len() >= WRITER_PULL_MIN_MESSAGES {
             started + INSERT_COALESCE_WAIT
         } else {
             started + INSERT_MAX_WAIT
         };
-        tokio::select! {
-            next = receiver.recv() => {
-                let Some(next) = next else { break };
-                rows += next.messages.len();
-                bytes += batch_payload_bytes(&next);
-                batches.push(next);
-            }
-            _ = tokio::time::sleep_until(deadline) => break,
+        let Some(expires) = deadline.checked_duration_since(tokio::time::Instant::now()) else {
+            break;
+        };
+        let max_messages = if messages.len() < WRITER_PULL_MIN_MESSAGES {
+            WRITER_PULL_MIN_MESSAGES - messages.len()
+        } else {
+            WRITER_PULL_MAX_MESSAGES - messages.len()
+        };
+        let max_bytes = INSERT_MAX_BYTES.saturating_sub(bytes).max(1);
+        let mut fetched = consumer
+            .batch()
+            .max_messages(max_messages)
+            .max_bytes(max_bytes)
+            .expires(expires.max(Duration::from_millis(1)))
+            .messages()
+            .await
+            .context("start writer consumer fetch")?;
+        let before = messages.len();
+        while let Some(result) = fetched.next().await {
+            let message = match result {
+                Ok(message) => message,
+                // NATS 2.12 reports a max-bytes-completed pull as 409 instead
+                // of terminating the batch stream. async-nats 0.37 does not
+                // classify that status yet; the messages already yielded by
+                // this pull are complete and must still be committed.
+                Err(error) if batch_completed(&error.to_string()) => break,
+                Err(error) => return Err(anyhow!("writer consumer fetch stream: {error}")),
+            };
+            bytes += message.payload.len();
+            messages.push(message);
+        }
+        if messages.len() == before && started.elapsed() >= INSERT_MAX_WAIT {
+            break;
         }
     }
-    batches
+    Ok(messages)
+}
+
+fn batch_completed(error: &str) -> bool {
+    error.contains("409") && error.contains("Batch Completed")
 }
 
 fn should_flush_insert_round(rows: usize, bytes: usize, elapsed: Duration) -> bool {
@@ -665,14 +602,6 @@ fn should_flush_insert_round(rows: usize, bytes: usize, elapsed: Duration) -> bo
         || bytes >= INSERT_MAX_BYTES
         || elapsed >= INSERT_MAX_WAIT
         || (rows >= INSERT_MIN_ROWS && elapsed >= INSERT_COALESCE_WAIT)
-}
-
-fn batch_payload_bytes(batch: &FetchedShardBatch) -> usize {
-    batch
-        .messages
-        .iter()
-        .map(|message| message.payload.len())
-        .sum()
 }
 
 fn insert_ranges(rows: &[EventInsertRow], max_rows: usize, max_bytes: usize) -> Vec<Range<usize>> {
@@ -695,21 +624,6 @@ fn insert_ranges(rows: &[EventInsertRow], max_rows: usize, max_bytes: usize) -> 
         ranges.push(start..rows.len());
     }
     ranges
-}
-
-fn complete_batches(batches: Vec<FetchedShardBatch>) {
-    for batch in batches {
-        if batch.completion.send(()).is_err() {
-            tracing::debug!(shard = batch.shard, "shard fetch loop stopped after commit");
-        }
-    }
-}
-
-fn messages_for_progress(batches: &[FetchedShardBatch]) -> Vec<Message> {
-    batches
-        .iter()
-        .flat_map(|batch| batch.messages.iter().cloned())
-        .collect()
 }
 
 struct ProgressGuard {
@@ -958,7 +872,18 @@ mod tests {
             };
             shards.extend(settings.owned_shards());
         }
-        assert_eq!(shards, (0..128).collect::<Vec<_>>());
+        assert_eq!(shards, (0..100).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn recognizes_nats_batch_completion_as_a_successful_pull_boundary() {
+        assert!(batch_completed(
+            "error while processing messages from the stream: 409, Some(\"Batch Completed\")"
+        ));
+        assert!(!batch_completed(
+            "error while processing messages from the stream: 409, Some(\"Consumer Deleted\")"
+        ));
+        assert!(!batch_completed("connection reset"));
     }
 
     #[test]
@@ -1094,24 +1019,5 @@ mod tests {
             .assign(&mut third)
             .unwrap();
         assert_eq!(third.event.session_id, Some(committed.session_id));
-    }
-
-    #[test]
-    fn ack_progress_does_not_retry_batches_that_already_succeeded() {
-        let mut progress = BatchAckProgress {
-            next_message: vec![0, 0, 0],
-            message_counts: vec![2, 1, 0],
-        };
-        assert!(!progress.complete());
-        assert_eq!(progress.next(0), 0);
-        assert_eq!(progress.next(1), 0);
-
-        progress.advance_to(0, 2);
-        assert_eq!(progress.next(0), 2);
-        assert_eq!(progress.next(1), 0);
-        assert!(!progress.complete());
-
-        progress.advance_to(1, 1);
-        assert!(progress.complete());
     }
 }

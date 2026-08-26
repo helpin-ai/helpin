@@ -11,7 +11,8 @@ export E2E_NATS_TLS_DIR="$run_dir/nats-tls"
 prepare_e2e_nats_tls "$E2E_NATS_TLS_DIR"
 compose=(docker compose --project-name helpin-event-e2e --file "$compose_file")
 capture_pid=""
-writer_pid=""
+writer_replicas=${E2E_WRITER_REPLICAS:-1}
+writer_pids=()
 token_pid=""
 
 cleanup() {
@@ -27,7 +28,7 @@ cleanup() {
     done
     "${compose[@]}" logs --no-color --tail=80 >&2 || true
   fi
-  for pid in "$capture_pid" "$writer_pid" "$token_pid"; do
+  for pid in "$capture_pid" "${writer_pids[@]}" "$token_pid"; do
     if [[ -n "$pid" ]]; then
       kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
@@ -118,30 +119,48 @@ post_event() {
     http://127.0.0.1:3000/api/v1/event >/dev/null
 }
 
-start_writer() {
-  (
-    cd "$capture_dir"
-    exec env \
-      NATS_URL=tls://127.0.0.1:14222 \
-      NATS_CA_FILE="$E2E_NATS_TLS_DIR/ca.crt" \
-      NATS_CLIENT_CERT_FILE="$E2E_NATS_TLS_DIR/client.crt" \
-      NATS_CLIENT_KEY_FILE="$E2E_NATS_TLS_DIR/client.key" \
-      CLICKHOUSE_HTTP_URL=http://127.0.0.1:18123 \
-      CLICKHOUSE_DATABASE=usermaven \
-      CLICKHOUSE_USER=helpin \
-      CLICKHOUSE_PASSWORD=helpin \
-      WRITER_REPLICAS=1 \
-      WRITER_ORDINAL=0 \
-      WRITER_HEALTH_PORT=3010 \
-      WRITER_METRICS_PORT=3011 \
-      SESSION_CACHE_MAX_ENTRIES_PER_SHARD=1000 \
-      WRITER_POISON_SPILL_DIR="$run_dir/poison-spill" \
-      WRITER_POISON_SPILL_MAX_BYTES=16777216 \
-      RUST_LOG=info \
-      ./target/debug/session-writer
-  ) >"$run_dir/writer.log" 2>&1 &
-  writer_pid=$!
-  wait_http "session writer" http://127.0.0.1:3010/health/readiness
+start_writers() {
+  writer_pids=()
+  for ordinal in $(seq 0 $((writer_replicas - 1))); do
+    health_port=$((3010 + ordinal * 2))
+    metrics_port=$((health_port + 1))
+    (
+      cd "$capture_dir"
+      exec env \
+        NATS_URL=tls://127.0.0.1:14222 \
+        NATS_CA_FILE="$E2E_NATS_TLS_DIR/ca.crt" \
+        NATS_CLIENT_CERT_FILE="$E2E_NATS_TLS_DIR/client.crt" \
+        NATS_CLIENT_KEY_FILE="$E2E_NATS_TLS_DIR/client.key" \
+        CLICKHOUSE_HTTP_URL=http://127.0.0.1:18123 \
+        CLICKHOUSE_DATABASE=usermaven \
+        CLICKHOUSE_USER=helpin \
+        CLICKHOUSE_PASSWORD=helpin \
+        WRITER_REPLICAS="$writer_replicas" \
+        WRITER_ORDINAL="$ordinal" \
+        WRITER_HEALTH_PORT="$health_port" \
+        WRITER_METRICS_PORT="$metrics_port" \
+        SESSION_CACHE_MAX_ENTRIES_PER_SHARD=1000 \
+        WRITER_POISON_SPILL_DIR="$run_dir/poison-spill-$ordinal" \
+        WRITER_POISON_SPILL_MAX_BYTES=16777216 \
+        RUST_LOG=info \
+        ./target/debug/session-writer
+    ) >"$run_dir/writer-$ordinal.log" 2>&1 &
+    writer_pids+=("$!")
+  done
+  for ordinal in $(seq 0 $((writer_replicas - 1))); do
+    health_port=$((3010 + ordinal * 2))
+    wait_http "session writer $ordinal" "http://127.0.0.1:$health_port/health/readiness"
+  done
+}
+
+stop_writers() {
+  for pid in "${writer_pids[@]}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  for pid in "${writer_pids[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+  writer_pids=()
 }
 
 echo "Starting disposable NATS and ClickHouse infrastructure"
@@ -166,6 +185,7 @@ echo "Applying ClickHouse migrations and building pipeline binaries"
     EVENTS_WORK_MAX_BYTES=67108864 \
     EVENTS_RAW_MAX_BYTES=33554432 \
     EVENTS_DLQ_MAX_BYTES=16777216 \
+    WRITER_REPLICAS="$writer_replicas" \
     ./target/debug/nats-bootstrap
 )
 
@@ -174,7 +194,7 @@ python3 -m http.server --bind 127.0.0.1 --directory "$fixture_dir" 18080 \
 token_pid=$!
 wait_http "token fixture" http://127.0.0.1:18080/tokens.json
 
-start_writer
+start_writers
 (
   cd "$capture_dir"
   exec env \
@@ -263,9 +283,7 @@ assert by_type["page_view"][2] == "Chrome"
 assert by_type["page_view"][3:] == ["server_event", "verified"]
 '
 
-kill "$writer_pid"
-wait "$writer_pid" 2>/dev/null || true
-writer_pid=""
+stop_writers
 queued_payload=$(MARKER="$marker" python3 -c '
 import json, os
 marker = os.environ["MARKER"]
@@ -278,7 +296,7 @@ print(json.dumps({
 ')
 post_event "$queued_payload"
 [[ "$(stream_messages EVENTS_ENRICHED_V1)" == "1" ]]
-start_writer
+start_writers
 wait_for_row_count 5 "$marker"
 
 rows=$(clickhouse_query "SELECT event_type, session_id FROM events FINAL WHERE user_anonymous_id = '$marker' ORDER BY _written_at")
@@ -314,4 +332,4 @@ done
 [[ "$(stream_messages EVENTS_DLQ_V1)" == "1" ]]
 [[ "$(clickhouse_query "SELECT count() FROM events FINAL WHERE user_anonymous_id = '$marker-invalid'")" == "0" ]]
 
-echo "Pipeline E2E passed: enrichment, R3 work/DLQ and R1 archive streams, session windows, ClickHouse writes, and restart seeding."
+echo "Pipeline E2E passed with $writer_replicas writer(s): enrichment, R3 work/DLQ and R1 archive streams, session windows, ClickHouse writes, and restart seeding."

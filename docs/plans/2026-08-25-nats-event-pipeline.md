@@ -14,10 +14,10 @@ events.enriched.v1.<shard> -> sessionizer -> ClickHouse
 
 The `session-writer` binary is the only work-stream consumer. It owns the
 JetStream pull loops, session state, ClickHouse inserts, DLQ isolation, and
-acknowledgements. The bootstrap job creates all 128 durable consumers before
-capture starts. An environment must not accept capture traffic unless all
-writer ordinals are ready; otherwise the WorkQueue eventually reaches
-`MaxBytes` and capture spills locally.
+acknowledgements. The bootstrap job creates one multi-subject durable consumer
+per writer before capture starts. An environment must not accept capture
+traffic unless all writer ordinals are ready; otherwise the WorkQueue
+eventually reaches `MaxBytes` and capture spills locally.
 
 Kafka, Kafka Streams, the ClickHouse Kafka engine, NATS KV, shard leases, and
 an event-assignment ledger are not part of the production design.
@@ -26,7 +26,7 @@ Capture lowercases `project_id` before all identity-sensitive operations. The
 visitor shard is:
 
 ```text
-sha256(lower(project_id) + ":" + user_anonymous_id) % 128
+sha256(lower(project_id) + ":" + user_anonymous_id) % 100
 ```
 
 The subject and envelope version are immutable contracts. An incompatible
@@ -97,22 +97,26 @@ capacity never take valid ingestion down.
 
 ## Sessionization and delivery
 
-There are 128 permanent shard subjects and initially four StatefulSet writers.
-Each writer owns 32 static shards. Supported writer counts are divisors of 128;
-the next scale step is eight.
+There are 100 permanent shard subjects and initially three StatefulSet writers.
+Each writer owns a balanced contiguous range: three writers own 34, 33, and 33
+shards. One durable consumer per writer filters that range.
 
-Each shard consumer uses `AckPolicy=Explicit` (required by WorkQueue
-retention), `AckWait=5m`,
-`MaxAckPending=256`, `MaxDeliver=-1`, and pulls 256 messages. Pull size plus
-`MaxAckPending` makes JetStream enforce one pending shard batch. The writer
-acks every message in stream order after the whole contiguous shard batch
-commits, so the consumer ack floor advances contiguously. Independent shard
-batches are acknowledged concurrently; acknowledgements within one shard stay
-serial. NATS 2.14 rejects `AckPolicy=All` for a pull consumer on a WorkQueue
-stream, so a single final-message acknowledgement is not available under this
-retention contract.
+Each writer consumer uses `AckPolicy=Explicit` (required by WorkQueue
+retention), `AckWait=5m`, `MaxAckPending=8192`, and `MaxDeliver=-1`. A writer
+holds at most one bounded insert round and acknowledges it in delivery order
+after commit, so its shared consumer ack floor remains a valid boundary for
+every owned shard. NATS 2.14 rejects `AckPolicy=All` for a pull consumer on a
+WorkQueue stream, so a single final-message acknowledgement is not available.
 During ClickHouse retry it sends `AckProgress` for every pending message every
 60 seconds.
+
+Replica-count changes require a stopped-writer topology migration because
+WorkQueue consumer filters cannot overlap and JetStream does not provide
+Kafka-style subject/partition assignment callbacks. Bootstrap snapshots each
+shard's effective ack floor into consumer metadata before replacing filters and
+requires `EVENTS_CONSUMER_REBALANCE_FROM` to match the observed old topology.
+The StatefulSet replica count and writer/bootstrap `WRITER_REPLICAS` values must
+change together; writers restart only after bootstrap succeeds.
 
 The application, not JetStream, owns the poison attempt threshold. At delivery
 256 or later it durably writes the event to DLQ/poison spill and terminally
@@ -134,7 +138,8 @@ not normal flow.
 
 The session seed window is measured in event time. On restart the writer:
 
-1. Reads the consumer's contiguous ack floor.
+1. Reads the consumer's contiguous ack floor and any migration floor recorded
+   for the shard, using the greater value.
 2. Direct-reads the first message for the shard subject after that floor.
 3. Uses its immutable `event_received_at` and event timestamp as anchors.
 4. Scans received time from `anchor_received - 30m - 48h` through the anchor,
@@ -160,8 +165,8 @@ zero. Any rejection increments `event_clickhouse_rejected_rows_total`; a
 non-zero sustained rate pages independently of DLQ volume. As a backstop, the
 writer bisects a rejected batch. Once a failing sub-batch has eight or fewer
 rows it switches to row-by-row inserts, durably DLQs the bad rows, and releases
-the valid rows. This avoids recursively stalling all 32 shards during a
-systematic payload wave.
+the valid rows. This avoids recursively stalling every shard owned by the
+writer during a systematic payload wave.
 
 ClickHouse uses `ReplacingMergeTree(_ingest_version)` and
 `ORDER BY (project_id, event_date, event_id)`. The version layout is:
@@ -217,7 +222,7 @@ session seeds, and timestamp/shard casing invariants.
 
 ## Deployment contract
 
-The checked-in manifests run three NATS 2.14.5 nodes and four writer ordinals.
+The checked-in manifests run three NATS 2.14.5 nodes and three writer ordinals.
 The NATS image is pinned to its Linux amd64 manifest digest, so the StatefulSet
 also selects amd64 nodes. Server and client certificates must be issued by the
 same private CA. The server certificate needs both client and server extended

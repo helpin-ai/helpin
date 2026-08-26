@@ -7,7 +7,7 @@ use std::time::{Duration as StdDuration, Instant};
 use crate::events::event::ProcessedEvent;
 use crate::events::transform_event::TransformedEvent;
 
-pub const VISITOR_SHARD_COUNT: u16 = 128;
+pub const VISITOR_SHARD_COUNT: u16 = 100;
 pub const MAX_EVENT_AGE_DAYS: i64 = 7;
 pub const MAX_EVENT_FUTURE_HOURS: i64 = 1;
 pub const MAX_EXPECTED_REPLAY_DELAY_HOURS: i64 = 48;

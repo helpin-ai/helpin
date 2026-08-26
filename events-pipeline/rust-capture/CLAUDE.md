@@ -15,7 +15,7 @@
 - `events.enriched.v1.<shard>` and its envelope are immutable. Breaking changes
   get new versioned subjects.
 - Visitor sharding always hashes
-  `lower(project_id) + ":" + user_anonymous_id` into 128 shards.
+  `lower(project_id) + ":" + user_anonymous_id` into 100 shards.
 - Client timestamps are rejected outside `now - 7d` through `now + 1h`; never
   clamp a timestamp because ClickHouse replacement depends on partition
   stability.

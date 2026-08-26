@@ -58,6 +58,10 @@ spec:
               value: /app/data/archive-spill/capture
             - name: ARCHIVE_SPILL_MAX_BYTES
               value: "536870912"
+            - name: NATS_WORK_MAX_IN_FLIGHT
+              value: "512"
+            - name: RAW_ARCHIVE_ENABLED
+              value: "true"
           resources:
             limits:
               cpu: "3"
@@ -124,6 +128,10 @@ spec:
               value: /app/data/archive-spill/replay
             - name: ARCHIVE_SPILL_MAX_BYTES
               value: "536870912"
+            - name: NATS_WORK_MAX_IN_FLIGHT
+              value: "512"
+            - name: RAW_ARCHIVE_ENABLED
+              value: "true"
           resources:
             limits:
               cpu: "500m"

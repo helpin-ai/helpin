@@ -51,8 +51,10 @@ credential-free development.
 For a local writer process set `NATS_URL`, `CLICKHOUSE_HTTP_URL`,
 `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `WRITER_REPLICAS`, and
 `WRITER_ORDINAL`. It reconstructs active sessions from `session_seed_events`,
-combines one pending batch per owned shard into synchronous inserts, and sends
-AckProgress until ClickHouse and any terminal DLQ publication have completed.
+pulls bounded batches from one multi-subject durable consumer per writer, and
+sends AckProgress until ClickHouse and any terminal DLQ publication have
+completed. The 100 logical subjects are assigned in balanced contiguous ranges;
+three replicas own 34, 33, and 33 subjects.
 Production mounts the private NATS CA and role-specific client certificate
 through the `NATS_*_FILE` variables shown in `.env.example`.
 
@@ -61,14 +63,40 @@ The API listens on `:3000`, metrics on `:3001`, and exposes
 reported separately while readiness remains true during a broker outage when
 the durable spill is writable.
 
-Capture spills work immediately when the async-NATS client is pending or
-disconnected. Connected work and DLQ publishes wait up to 1.5 seconds for the
-JetStream acknowledgement; each non-critical background archive publish waits
-250 ms. At most 4,096 archive operations may be in flight; overload drops only
-the diagnostic copy and increments `capture_raw_archive_dropped_total`. Override
-these with `NATS_WORK_PUBLISH_TIMEOUT_MS`,
-`NATS_ARCHIVE_PUBLISH_TIMEOUT_MS`, and `NATS_DLQ_PUBLISH_TIMEOUT_MS`.
-`capture_publish_latency_seconds{stream,result}` records every outcome.
+Capture uses separate named NATS connections for durable work, the raw archive,
+and capture DLQ traffic. The session writer likewise separates its work
+consumer and DLQ publisher connections. Capture spills work immediately when
+the work client is pending, disconnected, or has 512 publish acknowledgements
+in flight; this keeps a large HTTP burst out of the async-NATS client queue.
+Set `NATS_WORK_MAX_IN_FLIGHT` to tune that cap. Connected work and DLQ publishes
+wait up to 1.5 seconds for the JetStream acknowledgement; each non-critical
+background archive publish waits 250 ms.
+
+At most 4,096 archive operations may be in flight; overload drops only the
+diagnostic copy and increments `capture_raw_archive_dropped_total`.
+`RAW_ARCHIVE_ENABLED=false` completely disables its connection, background
+publishes, replay, and spill for an isolation run. Override publish timeouts
+with `NATS_WORK_PUBLISH_TIMEOUT_MS`, `NATS_ARCHIVE_PUBLISH_TIMEOUT_MS`, and
+`NATS_DLQ_PUBLISH_TIMEOUT_MS`. `capture_publish_latency_seconds{stream,result}`
+records every outcome; `capture_work_publish_saturated_total` records work sent
+directly to the durable fallback because the explicit limit was full.
+Fallback segments become replayable after 10 MiB or 60 seconds even when no
+later request arrives. `FALLBACK_MAX_SEGMENT_BYTES` and
+`FALLBACK_MAX_SEGMENT_AGE_SECS` tune those boundaries.
+
+`nats-bootstrap` accepts `EVENTS_CONSUMERS_ENABLED=false` for a disposable
+capture-only isolation run and `EVENTS_CONSUMER_MEMORY_STORAGE=true` for a
+consumer-state storage A/B test. Do not disable consumers on a persistent
+environment without a deliberate backlog and recovery plan.
+
+Changing `WRITER_REPLICAS` is a coordinated topology migration, not an online
+Kafka-style consumer-group rebalance. Stop and drain every writer, set the
+StatefulSet replica count and both writer/bootstrap `WRITER_REPLICAS` values,
+then run `nats-bootstrap` with `EVENTS_CONSUMER_REBALANCE_FROM` equal to the
+observed topology (`legacy`, `r003`, `r004`, and so on). Bootstrap refuses a
+different or missing guard, snapshots each shard's safe seed floor into the new
+consumer metadata, removes the old non-overlapping WorkQueue filters, and
+creates the new consumers. Start writers only after bootstrap succeeds.
 
 The complete runtime, storage, sessionization, and acceptance contract is in
 [`../../docs/plans/2026-08-25-nats-event-pipeline.md`](../../docs/plans/2026-08-25-nats-event-pipeline.md).

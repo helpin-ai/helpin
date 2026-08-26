@@ -4,7 +4,12 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 pub async fn connect(url: &str) -> Result<async_nats::Client> {
+    connect_named(url, "helpin-events-pipeline").await
+}
+
+pub async fn connect_named(url: &str, client_name: &str) -> Result<async_nats::Client> {
     let mut options = async_nats::ConnectOptions::new();
+    options = options.name(client_name);
 
     match (env::var("NATS_USERNAME"), env::var("NATS_PASSWORD")) {
         (Ok(username), Ok(password)) => {
@@ -35,7 +40,7 @@ pub async fn connect(url: &str) -> Result<async_nats::Client> {
     options
         .connect(url)
         .await
-        .with_context(|| format!("connect to NATS at {url}"))
+        .with_context(|| format!("connect {client_name} to NATS at {url}"))
 }
 
 #[cfg(test)]

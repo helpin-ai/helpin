@@ -20,7 +20,7 @@ metadata:
   namespace: helpin
 spec:
   serviceName: helpin-eventpipeline-writer-headless
-  replicas: 4
+  replicas: 3
   podManagementPolicy: Parallel
   selector:
     matchLabels:
@@ -53,7 +53,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: WRITER_REPLICAS
-              value: "4"
+              value: "3"
             - name: SESSION_CACHE_MAX_ENTRIES_PER_SHARD
               value: "25000"
             - name: WRITER_POISON_SPILL_DIR
@@ -181,6 +181,17 @@ spec:
               value: "53687091200"
             - name: EVENTS_DLQ_MAX_BYTES
               value: "10737418240"
+            - name: EVENTS_CONSUMERS_ENABLED
+              value: "true"
+            - name: EVENTS_CONSUMER_MEMORY_STORAGE
+              value: "false"
+            - name: WRITER_REPLICAS
+              value: "3"
+            # One-shot guard for the v1 per-shard -> v2 per-writer migration.
+            # A later replica-count change must replace this with the exact
+            # current topology (for example r003) after writers are stopped.
+            - name: EVENTS_CONSUMER_REBALANCE_FROM
+              value: legacy
           resources:
             requests:
               cpu: 25m
