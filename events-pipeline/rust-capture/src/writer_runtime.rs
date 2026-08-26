@@ -25,7 +25,7 @@ use crate::pipeline::{
 };
 use crate::writer::{
     seed_floor_from_metadata, shard_from_subject, writer_consumer_name, writer_owned_shards,
-    ACK_PROGRESS_INTERVAL, WRITER_PULL_MAX_MESSAGES, WRITER_PULL_MIN_MESSAGES,
+    ACK_PROGRESS_INTERVAL, WRITER_PULL_MAX_MESSAGES,
 };
 use crate::writer_store::{
     insert_with_isolation, ClickHouseEventStore, EventInsertRow, IsolationOutcome, SeedRequest,
@@ -34,11 +34,9 @@ use crate::writer_store::{
 
 const WORK_STREAM_NAME: &str = "EVENTS_ENRICHED_V1";
 const WRITER_DLQ_SUBJECT: &str = "events.dlq.v1.writer";
-const INSERT_MIN_ROWS: usize = 1_000;
 const INSERT_MAX_ROWS: usize = 8_192;
 const INSERT_MAX_BYTES: usize = 16 * 1024 * 1024;
-const INSERT_COALESCE_WAIT: Duration = Duration::from_secs(1);
-const INSERT_MAX_WAIT: Duration = Duration::from_secs(10);
+const INSERT_MAX_WAIT: Duration = Duration::from_secs(1);
 const NATS_PUBLISH_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_INITIAL_DELAY: Duration = Duration::from_millis(250);
 const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
@@ -550,19 +548,11 @@ async fn fetch_writer_round(consumer: &PullConsumer) -> Result<Vec<Message>> {
         if should_flush_insert_round(messages.len(), bytes, started.elapsed()) {
             break;
         }
-        let deadline = if messages.len() >= WRITER_PULL_MIN_MESSAGES {
-            started + INSERT_COALESCE_WAIT
-        } else {
-            started + INSERT_MAX_WAIT
-        };
+        let deadline = started + INSERT_MAX_WAIT;
         let Some(expires) = deadline.checked_duration_since(tokio::time::Instant::now()) else {
             break;
         };
-        let max_messages = if messages.len() < WRITER_PULL_MIN_MESSAGES {
-            WRITER_PULL_MIN_MESSAGES - messages.len()
-        } else {
-            WRITER_PULL_MAX_MESSAGES - messages.len()
-        };
+        let max_messages = next_pull_max_messages(messages.len());
         let max_bytes = INSERT_MAX_BYTES.saturating_sub(bytes).max(1);
         let mut fetched = consumer
             .batch()
@@ -576,10 +566,9 @@ async fn fetch_writer_round(consumer: &PullConsumer) -> Result<Vec<Message>> {
         while let Some(result) = fetched.next().await {
             let message = match result {
                 Ok(message) => message,
-                // NATS 2.12 reports a max-bytes-completed pull as 409 instead
-                // of terminating the batch stream. async-nats 0.37 does not
-                // classify that status yet; the messages already yielded by
-                // this pull are complete and must still be committed.
+                // NATS reports a max-bytes-completed pull as 409. The messages
+                // already yielded by this pull are complete and must still be
+                // committed.
                 Err(error) if batch_completed(&error.to_string()) => break,
                 Err(error) => return Err(anyhow!("writer consumer fetch stream: {error}")),
             };
@@ -593,15 +582,16 @@ async fn fetch_writer_round(consumer: &PullConsumer) -> Result<Vec<Message>> {
     Ok(messages)
 }
 
+fn next_pull_max_messages(buffered: usize) -> usize {
+    WRITER_PULL_MAX_MESSAGES.saturating_sub(buffered)
+}
+
 fn batch_completed(error: &str) -> bool {
     error.contains("409") && error.contains("Batch Completed")
 }
 
 fn should_flush_insert_round(rows: usize, bytes: usize, elapsed: Duration) -> bool {
-    rows >= INSERT_MAX_ROWS
-        || bytes >= INSERT_MAX_BYTES
-        || elapsed >= INSERT_MAX_WAIT
-        || (rows >= INSERT_MIN_ROWS && elapsed >= INSERT_COALESCE_WAIT)
+    rows >= INSERT_MAX_ROWS || bytes >= INSERT_MAX_BYTES || elapsed >= INSERT_MAX_WAIT
 }
 
 fn insert_ranges(rows: &[EventInsertRow], max_rows: usize, max_bytes: usize) -> Vec<Range<usize>> {
@@ -936,24 +926,16 @@ mod tests {
     }
 
     #[test]
-    fn insert_round_has_a_row_floor_and_an_absolute_wait_ceiling() {
+    fn insert_round_fills_capacity_or_flushes_after_one_second() {
+        assert_eq!(next_pull_max_messages(0), WRITER_PULL_MAX_MESSAGES);
+        assert_eq!(next_pull_max_messages(999), 7_193);
         assert!(!should_flush_insert_round(
             999,
-            1_000,
-            Duration::from_secs(9)
-        ));
-        assert!(should_flush_insert_round(
-            999,
-            1_000,
-            Duration::from_secs(10)
-        ));
-        assert!(!should_flush_insert_round(
-            1_000,
             1_000,
             Duration::from_millis(999)
         ));
         assert!(should_flush_insert_round(
-            1_000,
+            999,
             1_000,
             Duration::from_secs(1)
         ));

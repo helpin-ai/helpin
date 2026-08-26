@@ -11,7 +11,6 @@ use anyhow::{ensure, Result};
 use crate::pipeline::{DeliveryDisposition, ROW_BY_ROW_REJECTION_THRESHOLD, VISITOR_SHARD_COUNT};
 
 pub const SHARD_PULL_BATCH_SIZE: usize = 256;
-pub const WRITER_PULL_MIN_MESSAGES: usize = 1_000;
 pub const WRITER_PULL_MAX_MESSAGES: usize = 8_192;
 pub const SHARD_ACK_WAIT: Duration = Duration::from_secs(5 * 60);
 pub const ACK_PROGRESS_INTERVAL: Duration = Duration::from_secs(60);

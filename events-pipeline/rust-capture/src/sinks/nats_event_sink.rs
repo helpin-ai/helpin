@@ -316,20 +316,30 @@ impl NatsEventPublisher {
         enriched: &EnrichedEventEnvelopeV1,
         raw: &RawArchiveEnvelopeV1,
     ) -> Result<(), CaptureError> {
+        let started = std::time::Instant::now();
+        let deadline = started + self.publish_timeouts.work;
         let work_subject = enriched.work_subject();
-        let (work_result, saturated) = match self.work_permits.clone().try_acquire_owned() {
-            Ok(permit) => {
+        let permit_wait = deadline.saturating_duration_since(std::time::Instant::now());
+        let (work_result, saturated) = match tokio::time::timeout(
+            permit_wait,
+            self.work_permits.clone().acquire_owned(),
+        )
+        .await
+        {
+            Ok(Ok(permit)) => {
                 let in_flight = self.work_permits.available_permits();
                 metrics::gauge!(
                     "capture_work_publishes_in_flight",
                     (self.work_in_flight_limit.saturating_sub(in_flight)) as f64
                 );
                 let result = self
-                    .publish_json(
+                    .publish_json_until(
                         &work_subject,
                         &enriched.event_id,
                         enriched,
                         PublishKind::Work,
+                        started,
+                        deadline,
                     )
                     .await;
                 drop(permit);
@@ -344,8 +354,12 @@ impl NatsEventPublisher {
             }
             Err(_) => {
                 metrics::counter!("capture_work_publish_saturated_total", 1);
-                record_publish_latency(PublishKind::Work, "saturated", Duration::ZERO);
+                record_publish_latency(PublishKind::Work, "saturated", started.elapsed());
                 (Err(CaptureError::RetryableSinkError), true)
+            }
+            Ok(Err(_)) => {
+                record_publish_latency(PublishKind::Work, "unavailable", started.elapsed());
+                (Err(CaptureError::RetryableSinkError), false)
             }
         };
         if work_result.is_ok() {
@@ -426,6 +440,20 @@ impl NatsEventPublisher {
         kind: PublishKind,
     ) -> Result<(), CaptureError> {
         let started = std::time::Instant::now();
+        let deadline = started + self.publish_timeouts.for_kind(kind);
+        self.publish_json_until(subject, message_id, value, kind, started, deadline)
+            .await
+    }
+
+    async fn publish_json_until<T: Serialize>(
+        &self,
+        subject: &str,
+        message_id: &str,
+        value: &T,
+        kind: PublishKind,
+        started: std::time::Instant,
+        deadline: std::time::Instant,
+    ) -> Result<(), CaptureError> {
         let payload = serde_json::to_vec(value).map_err(|error| {
             CaptureError::NonRetryableSinkError(format!("failed to serialize NATS event: {error}"))
         })?;
@@ -446,7 +474,12 @@ impl NatsEventPublisher {
             record_publish_latency(kind, "disconnected", started.elapsed());
             return Err(CaptureError::RetryableSinkError);
         }
-        let result = tokio::time::timeout(self.publish_timeouts.for_kind(kind), async {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            record_publish_latency(kind, "timeout", started.elapsed());
+            return Err(CaptureError::RetryableSinkError);
+        }
+        let result = tokio::time::timeout(remaining, async {
             let acknowledgement = connection
                 .jetstream
                 .publish_with_headers(subject.to_string(), headers, payload.into())
@@ -557,14 +590,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn saturated_work_fails_fast_before_entering_the_nats_client() {
-        let publisher = NatsEventPublisher::new_with_config(
+    async fn saturated_work_waits_for_capacity_within_the_publish_budget() {
+        let mut publisher = NatsEventPublisher::new_with_config(
             "nats://unavailable.invalid:4222",
             HealthRegistry::new(),
             None,
             false,
             1,
         );
+        publisher.publish_timeouts.work = Duration::from_millis(100);
         let _permit = publisher
             .work_permits
             .clone()
@@ -585,10 +619,55 @@ mod tests {
             event: Default::default(),
         };
 
+        let publish = tokio::spawn({
+            let publisher = publisher.clone();
+            async move { publisher.publish_event(&event, &raw).await }
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(!publish.is_finished());
+        drop(_permit);
+        assert!(matches!(
+            publish.await.unwrap(),
+            Err(CaptureError::RetryableSinkError)
+        ));
+        assert!(!publisher.archive_enabled);
+    }
+
+    #[tokio::test]
+    async fn saturated_work_falls_back_when_the_publish_budget_expires() {
+        let mut publisher = NatsEventPublisher::new_with_config(
+            "nats://unavailable.invalid:4222",
+            HealthRegistry::new(),
+            None,
+            false,
+            1,
+        );
+        publisher.publish_timeouts.work = Duration::from_millis(20);
+        let _permit = publisher
+            .work_permits
+            .clone()
+            .acquire_owned()
+            .await
+            .unwrap();
+        let event = EnrichedEventEnvelopeV1 {
+            schema_version: 1,
+            event_id: "event-1".to_string(),
+            event_received_at: "2026-08-26T00:00:00Z".to_string(),
+            visitor_shard: 0,
+            event: Default::default(),
+        };
+        let raw = RawArchiveEnvelopeV1 {
+            schema_version: 1,
+            event_id: "event-1".to_string(),
+            event_received_at: "2026-08-26T00:00:00Z".to_string(),
+            event: Default::default(),
+        };
+
+        let started = std::time::Instant::now();
         assert!(matches!(
             publisher.publish_event(&event, &raw).await,
             Err(CaptureError::RetryableSinkError)
         ));
-        assert!(!publisher.archive_enabled);
+        assert!(started.elapsed() >= Duration::from_millis(20));
     }
 }
