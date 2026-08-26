@@ -62,7 +62,7 @@ pub struct WriterSettings {
 
 impl WriterSettings {
     pub fn from_env() -> Result<Self> {
-        let replicas = parse_env("WRITER_REPLICAS", 4_usize)?;
+        let replicas = parse_env("WRITER_REPLICAS", 2_usize)?;
         anyhow::ensure!(replicas > 0, "WRITER_REPLICAS must be positive");
         anyhow::ensure!(
             replicas <= usize::from(VISITOR_SHARD_COUNT),

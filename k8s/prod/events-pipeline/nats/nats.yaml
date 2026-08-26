@@ -15,7 +15,8 @@ data:
     jetstream {
       store_dir: /data/jetstream
       max_memory_store: 4GB
-      max_file_store: 1800GB
+      # The 512GiB work cap covers 48h at the initial 1k events/s target.
+      max_file_store: 900GB
       cipher: chachapoly
       key: "$JS_ENCRYPTION_KEY"
       # Pin the server default. Changing this is a durability/IO tradeoff and
@@ -212,11 +213,11 @@ spec:
               containerPort: 8222
           resources:
             requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
               cpu: "2"
               memory: 4Gi
-            limits:
-              cpu: "4"
-              memory: 8Gi
           readinessProbe:
             httpGet:
               path: /healthz?js-enabled-only=true
@@ -262,4 +263,4 @@ spec:
         # provisioned-IOPS NVMe class before applying this StatefulSet.
         resources:
           requests:
-            storage: 2Ti
+            storage: 1Ti

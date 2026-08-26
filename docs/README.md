@@ -35,3 +35,5 @@ for historical design rationale. Use `crm-buyer-signals.md` for current status.
 - [`HELPIN_PUBLIC_MCP.md`](HELPIN_PUBLIC_MCP.md) — public inbound MCP surface.
 - [`../events-pipeline/README.md`](../events-pipeline/README.md) — local event
   ingestion and ClickHouse operations.
+- [`../events-pipeline/CAPACITY_BASELINE.md`](../events-pipeline/CAPACITY_BASELINE.md)
+  — verified throughput, resource allocation, and JetStream storage sizing.

@@ -158,7 +158,7 @@ async fn main() -> Result<()> {
     }
 
     if bool_from_env("EVENTS_CONSUMERS_ENABLED", true)? {
-        let writer_replicas = positive_usize_from_env("WRITER_REPLICAS", 4)?;
+        let writer_replicas = positive_usize_from_env("WRITER_REPLICAS", 2)?;
         let memory_storage = bool_from_env("EVENTS_CONSUMER_MEMORY_STORAGE", false)?;
         let stream = jetstream
             .get_stream("EVENTS_ENRICHED_V1")

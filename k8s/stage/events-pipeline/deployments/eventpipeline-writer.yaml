@@ -20,7 +20,7 @@ metadata:
   namespace: helpin
 spec:
   serviceName: helpin-eventpipeline-writer-headless
-  replicas: 3
+  replicas: 2
   podManagementPolicy: Parallel
   selector:
     matchLabels:
@@ -53,7 +53,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: WRITER_REPLICAS
-              value: "3"
+              value: "2"
             - name: SESSION_CACHE_MAX_ENTRIES_PER_SHARD
               value: "25000"
             - name: WRITER_POISON_SPILL_DIR
@@ -85,10 +85,10 @@ spec:
           resources:
             requests:
               cpu: 500m
-              memory: 1Gi
+              memory: 512Mi
             limits:
               cpu: "1"
-              memory: 2Gi
+              memory: 1Gi
           startupProbe:
             httpGet:
               path: /health/liveness
@@ -186,12 +186,12 @@ spec:
             - name: EVENTS_CONSUMER_MEMORY_STORAGE
               value: "false"
             - name: WRITER_REPLICAS
-              value: "3"
-            # One-shot guard for the v1 per-shard -> v2 per-writer migration.
-            # A later replica-count change must replace this with the exact
-            # current topology (for example r003) after writers are stopped.
+              value: "2"
+            # One-shot guard for the stopped-writer r003 -> r002 rebalance.
+            # Remove after the new topology has been reconciled. A later
+            # replica-count change must name its exact active topology.
             - name: EVENTS_CONSUMER_REBALANCE_FROM
-              value: legacy
+              value: r003
           resources:
             requests:
               cpu: 25m

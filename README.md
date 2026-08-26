@@ -14,6 +14,8 @@ canonical buyer-signals reference is
 - `packages/sdk-js/`: embeddable `lib.js` SDK loader and widget runtime
 - `widget/`: standalone non-SDK widget bundle
 - `server/`: Go API and workers
+- `events-pipeline/`: capture, JetStream delivery, session writers, sustained
+  test harness, and the [15k events/s capacity baseline](events-pipeline/CAPACITY_BASELINE.md)
 
 ## Widget Paths
 

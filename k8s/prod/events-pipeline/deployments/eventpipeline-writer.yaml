@@ -20,7 +20,7 @@ metadata:
   namespace: helpin
 spec:
   serviceName: helpin-eventpipeline-writer-headless
-  replicas: 3
+  replicas: 2
   podManagementPolicy: Parallel
   selector:
     matchLabels:
@@ -53,7 +53,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: WRITER_REPLICAS
-              value: "3"
+              value: "2"
             - name: SESSION_CACHE_MAX_ENTRIES_PER_SHARD
               value: "100000"
             - name: WRITER_POISON_SPILL_DIR
@@ -85,10 +85,10 @@ spec:
           resources:
             requests:
               cpu: 500m
-              memory: 1Gi
+              memory: 512Mi
             limits:
               cpu: "1"
-              memory: 2Gi
+              memory: 1Gi
           startupProbe:
             httpGet:
               path: /health/liveness
@@ -176,22 +176,22 @@ spec:
             - name: NATS_CLIENT_KEY_FILE
               value: /etc/nats/tls/tls.key
             - name: EVENTS_WORK_MAX_BYTES
-              value: "1099511627776"
-            - name: EVENTS_RAW_MAX_BYTES
               value: "549755813888"
+            - name: EVENTS_RAW_MAX_BYTES
+              value: "274877906944"
             - name: EVENTS_DLQ_MAX_BYTES
-              value: "68719476736"
+              value: "34359738368"
             - name: EVENTS_CONSUMERS_ENABLED
               value: "true"
             - name: EVENTS_CONSUMER_MEMORY_STORAGE
               value: "false"
             - name: WRITER_REPLICAS
-              value: "3"
-            # One-shot guard for the v1 per-shard -> v2 per-writer migration.
-            # A later replica-count change must replace this with the exact
-            # current topology (for example r003) after writers are stopped.
+              value: "2"
+            # One-shot guard for the stopped-writer r003 -> r002 rebalance.
+            # Remove after the new topology has been reconciled. A later
+            # replica-count change must name its exact active topology.
             - name: EVENTS_CONSUMER_REBALANCE_FROM
-              value: legacy
+              value: r003
           resources:
             requests:
               cpu: 50m

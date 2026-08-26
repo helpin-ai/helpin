@@ -99,6 +99,15 @@ regression testing, not as production capacity evidence. In particular, a
 four-core host can become CPU-bound well below 5,000 events/s even when disk and
 memory still have headroom.
 
+The current fully monitored single-host baseline is 15,000 events/s for ten
+minutes with batches of ten, two captures, and two writers. It achieved exact
+9,000,050-event ClickHouse parity with no drops or HTTP failures. See
+[`../CAPACITY_BASELINE.md`](../CAPACITY_BASELINE.md) for the reproducible
+command, latency, per-layer resources, storage calculation, and evidence
+boundary. Do not compare that result directly with the single-event closed
+connection profile above: batching and the open arrival model test different
+boundaries.
+
 ## Split target and remote generator
 
 Use this layout for an open-loop capacity test. It keeps k6 CPU, sockets, and
