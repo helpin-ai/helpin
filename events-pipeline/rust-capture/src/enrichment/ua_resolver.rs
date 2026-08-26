@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex;
 use uaparser::{Parser, UserAgentParser};
 
 #[derive(Debug, Default, Clone)]
@@ -125,6 +126,7 @@ impl OsString {
 pub struct UaResolver {
     parser: Arc<UserAgentParser>,
     cache: Cache<String, ResolvedUa>,
+    cold_miss: Arc<Mutex<()>>,
 }
 
 impl UaResolver {
@@ -141,6 +143,7 @@ impl UaResolver {
         UaResolver {
             parser: Arc::new(parser),
             cache,
+            cold_miss: Arc::new(Mutex::new(())),
         }
     }
 
@@ -166,6 +169,19 @@ impl UaResolver {
         if let Some(resolved_ua) = self.cache.get(ua) {
             // If it is, return the cached result immediately,
             // without needing to parse the UA string again.
+            return Some(resolved_ua);
+        }
+
+        // Regex keeps sizeable scratch buffers for concurrent searches. A
+        // burst of requests carrying the same unseen user agent used to let
+        // every Tokio worker parse it before the first cache insert, retaining
+        // one large regex workspace per worker. Serialize cold misses and
+        // double-check the cache so steady-state hits remain lock-free.
+        let _cold_miss = self
+            .cold_miss
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(resolved_ua) = self.cache.get(ua) {
             return Some(resolved_ua);
         }
 

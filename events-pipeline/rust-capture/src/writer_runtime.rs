@@ -4,7 +4,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 use async_nats::jetstream;
@@ -41,6 +41,7 @@ const NATS_PUBLISH_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_INITIAL_DELAY: Duration = Duration::from_millis(250);
 const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
 const SESSION_CACHE_IDLE_RETENTION: Duration = Duration::from_secs(60 * 60);
+const SESSION_CACHE_PRUNE_INTERVAL: Duration = Duration::from_secs(60);
 const DEFAULT_SESSION_CACHE_MAX_ENTRIES_PER_SHARD: usize = 100_000;
 const DEFAULT_POISON_SPILL_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 const POISON_REPLAY_INTERVAL: Duration = Duration::from_secs(5);
@@ -128,6 +129,7 @@ pub struct SessionWriter {
     dlq_jetstream: jetstream::Context,
     store: ClickHouseEventStore,
     sessions: HashMap<u8, Sessionizer>,
+    last_session_prune: Instant,
     poison_spool: JsonSpool,
     health: WriterHealth,
 }
@@ -181,6 +183,7 @@ impl SessionWriter {
             dlq_jetstream: jetstream::new(dlq_client),
             store,
             sessions: HashMap::new(),
+            last_session_prune: Instant::now(),
             poison_spool,
             health,
         })
@@ -284,17 +287,24 @@ impl SessionWriter {
             }
 
             self.commit_session_overlays(&preparation.session_overlays)?;
+            let prune_idle = self.last_session_prune.elapsed() >= SESSION_CACHE_PRUNE_INTERVAL;
             for shard in &preparation.touched_shards {
                 let Some(sessionizer) = self.sessions.get_mut(shard) else {
                     continue;
                 };
-                let evicted = sessionizer.prune_idle(SESSION_CACHE_IDLE_RETENTION)
-                    + sessionizer
-                        .enforce_capacity(self.settings.session_cache_max_entries_per_shard);
+                let evicted = if prune_idle {
+                    sessionizer.prune_idle(SESSION_CACHE_IDLE_RETENTION)
+                } else {
+                    0
+                } + sessionizer
+                    .enforce_capacity(self.settings.session_cache_max_entries_per_shard);
                 if evicted > 0 {
                     metrics::counter!("event_writer_session_cache_evictions_total", evicted as u64, "shard" => shard.to_string());
                 }
                 metrics::gauge!("event_writer_session_cache_entries", sessionizer.len() as f64, "shard" => shard.to_string());
+            }
+            if prune_idle {
+                self.last_session_prune = Instant::now();
             }
             self.ack_round_with_retry(&messages).await;
             progress.stop().await;
@@ -544,7 +554,7 @@ async fn fetch_writer_round(consumer: &PullConsumer) -> Result<Vec<Message>> {
     let mut messages = Vec::with_capacity(WRITER_PULL_MAX_MESSAGES);
     let mut bytes = 0;
 
-    loop {
+    'round: loop {
         if should_flush_insert_round(messages.len(), bytes, started.elapsed()) {
             break;
         }
@@ -553,11 +563,9 @@ async fn fetch_writer_round(consumer: &PullConsumer) -> Result<Vec<Message>> {
             break;
         };
         let max_messages = next_pull_max_messages(messages.len());
-        let max_bytes = INSERT_MAX_BYTES.saturating_sub(bytes).max(1);
         let mut fetched = consumer
             .batch()
             .max_messages(max_messages)
-            .max_bytes(max_bytes)
             .expires(expires.max(Duration::from_millis(1)))
             .messages()
             .await
@@ -566,10 +574,14 @@ async fn fetch_writer_round(consumer: &PullConsumer) -> Result<Vec<Message>> {
         while let Some(result) = fetched.next().await {
             let message = match result {
                 Ok(message) => message,
-                // NATS reports a max-bytes-completed pull as 409. The messages
-                // already yielded by this pull are complete and must still be
-                // committed.
-                Err(error) if batch_completed(&error.to_string()) => break,
+                // NATS reports a completed pull as 409. The messages already
+                // yielded by this pull are complete and must still be committed.
+                // Do not add a server-side max_bytes limit here. JetStream can
+                // mark the message crossing that boundary as delivered even
+                // though async-nats only yields the completion status, leaving
+                // it invisible until AckWait expires. ClickHouse byte limits
+                // are enforced locally by insert_ranges instead.
+                Err(error) if batch_completed(&error.to_string()) => break 'round,
                 Err(error) => return Err(anyhow!("writer consumer fetch stream: {error}")),
             };
             bytes += message.payload.len();
@@ -869,6 +881,9 @@ mod tests {
     fn recognizes_nats_batch_completion_as_a_successful_pull_boundary() {
         assert!(batch_completed(
             "error while processing messages from the stream: 409, Some(\"Batch Completed\")"
+        ));
+        assert!(!batch_completed(
+            "error while processing messages from the stream: 409, Some(\"Message Size Exceeds MaxBytes\")"
         ));
         assert!(!batch_completed(
             "error while processing messages from the stream: 409, Some(\"Consumer Deleted\")"

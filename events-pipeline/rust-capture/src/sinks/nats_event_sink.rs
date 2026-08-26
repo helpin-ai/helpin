@@ -316,6 +316,27 @@ impl NatsEventPublisher {
         enriched: &EnrichedEventEnvelopeV1,
         raw: &RawArchiveEnvelopeV1,
     ) -> Result<(), CaptureError> {
+        self.publish_event_with_optional_archive(enriched, Some(raw))
+            .await
+    }
+
+    pub async fn publish_enriched(
+        &self,
+        enriched: &EnrichedEventEnvelopeV1,
+    ) -> Result<(), CaptureError> {
+        self.publish_event_with_optional_archive(enriched, None)
+            .await
+    }
+
+    pub fn archive_enabled(&self) -> bool {
+        self.archive_enabled
+    }
+
+    async fn publish_event_with_optional_archive(
+        &self,
+        enriched: &EnrichedEventEnvelopeV1,
+        raw: Option<&RawArchiveEnvelopeV1>,
+    ) -> Result<(), CaptureError> {
         let started = std::time::Instant::now();
         let deadline = started + self.publish_timeouts.work;
         let work_subject = enriched.work_subject();
@@ -363,7 +384,9 @@ impl NatsEventPublisher {
             }
         };
         if work_result.is_ok() {
-            self.publish_archive_best_effort(raw);
+            if let Some(raw) = raw {
+                self.publish_archive_best_effort(raw);
+            }
         }
         if let Err(error) = &work_result {
             metrics::counter!("capture_work_publish_failures_total", 1);

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::Display;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::auth::http_tokens::{HttpTokens, Token};
 use axum::http::HeaderMap;
@@ -120,7 +120,7 @@ pub fn extract_token_by_key(
 pub fn validate_token(
     params: BTreeMap<std::string::String, std::string::String>,
     headers: HeaderMap,
-    tokens: Arc<Mutex<HttpTokens>>,
+    tokens: Arc<HttpTokens>,
 ) -> Result<AuthorizedCredential, InvalidTokenReason> {
     // Initialize the variables we'll use to store the api_key and _token.
     let mut api_key = String::new();
@@ -144,14 +144,7 @@ pub fn validate_token(
         }
     }
 
-    // Lock the mutex only once for efficiency.
-    let tokens_guard = match tokens.lock() {
-        Ok(guard) => guard,
-        Err(e) => {
-            tracing::error!("Failed to acquire lock on tokens: {:?}", e);
-            return Err(InvalidTokenReason::Token);
-        }
-    };
+    let tokens_snapshot = tokens.snapshot();
 
     let effective = if !_token.is_empty() {
         &_token
@@ -163,7 +156,7 @@ pub fn validate_token(
     }
 
     let mut matched: Option<(&Token, CredentialKind)> = None;
-    for token in &tokens_guard.tokens {
+    for token in tokens_snapshot.iter() {
         let kind = if token.client_secret == *effective {
             Some(CredentialKind::Browser)
         } else if token.server_secret == *effective {
@@ -206,7 +199,7 @@ mod tests {
     use axum::http::header::HeaderValue;
     use axum::http::HeaderMap;
     use std::collections::BTreeMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     #[test]
     fn test_validate_token() {
@@ -226,9 +219,7 @@ mod tests {
             identity_verification_mode: "report_only".to_string(),
         };
 
-        let tokens = Arc::new(Mutex::new(HttpTokens {
-            tokens: vec![token],
-        }));
+        let tokens = Arc::new(HttpTokens::from_tokens(vec![token]));
 
         let authorized = validate_token(params, headers.clone(), tokens).unwrap();
         assert_eq!(authorized.credential_kind, CredentialKind::Server);
@@ -256,9 +247,7 @@ mod tests {
             identity_verification_mode: "report_only".to_string(),
         };
 
-        let tokens = Arc::new(Mutex::new(HttpTokens {
-            tokens: vec![token],
-        }));
+        let tokens = Arc::new(HttpTokens::from_tokens(vec![token]));
 
         assert_eq!(
             validate_token(params, headers.clone(), tokens).unwrap_err(),
@@ -284,9 +273,7 @@ mod tests {
             identity_verification_mode: "report_only".to_string(),
         };
 
-        let tokens = Arc::new(Mutex::new(HttpTokens {
-            tokens: vec![token],
-        }));
+        let tokens = Arc::new(HttpTokens::from_tokens(vec![token]));
 
         assert_eq!(
             validate_token(params, headers.clone(), tokens).unwrap_err(),
@@ -308,9 +295,7 @@ mod tests {
             identity_verification_mode: "report_only".to_string(),
         };
 
-        let tokens = Arc::new(Mutex::new(HttpTokens {
-            tokens: vec![token],
-        }));
+        let tokens = Arc::new(HttpTokens::from_tokens(vec![token]));
 
         assert_eq!(
             validate_token(params, headers.clone(), tokens).unwrap_err(),
@@ -413,19 +398,14 @@ mod tests {
             identity_verification_mode: "report_only".to_string(),
         };
 
-        let tokens = Arc::new(Mutex::new(HttpTokens {
-            tokens: vec![token],
-        }));
+        let tokens = Arc::new(HttpTokens::from_tokens(vec![token]));
 
         // Should still validate via api_key param, ignoring the bad header
         assert!(validate_token(params, headers, tokens).is_ok());
     }
 
     #[test]
-    fn test_validate_token_poisoned_mutex_returns_error() {
-        let params = BTreeMap::new();
-        let headers = HeaderMap::new();
-
+    fn test_token_registry_replacement_is_visible_to_validation() {
         let token = Token {
             id: "1".to_string(),
             workspace_id: "00000000-0000-0000-0000-000000000001".to_string(),
@@ -435,23 +415,12 @@ mod tests {
             identity_verification_mode: "report_only".to_string(),
         };
 
-        let tokens = Arc::new(Mutex::new(HttpTokens {
-            tokens: vec![token],
-        }));
+        let tokens = HttpTokens::from_tokens(vec![token]);
+        assert_eq!(tokens.len(), 1);
 
-        // Poison the mutex by panicking while holding the lock
-        let tokens_clone = tokens.clone();
-        let _ = std::panic::catch_unwind(|| {
-            let _guard = tokens_clone.lock().unwrap();
-            panic!("intentional panic to poison mutex");
-        });
+        tokens.replace(Vec::new());
 
-        // Mutex is now poisoned — validate_token should return error, not panic
-        let result = validate_token(params, headers, tokens);
-        assert!(
-            result.is_err(),
-            "Poisoned mutex should return error, not panic"
-        );
+        assert_eq!(tokens.len(), 0);
     }
 
     #[test]
@@ -482,9 +451,7 @@ mod tests {
             identity_verification_mode: "report_only".to_string(),
         };
 
-        let tokens = Arc::new(Mutex::new(HttpTokens {
-            tokens: vec![token],
-        }));
+        let tokens = Arc::new(HttpTokens::from_tokens(vec![token]));
 
         let authorized = validate_token(params, headers, tokens).unwrap();
         assert_eq!(authorized.credential_kind, CredentialKind::Server);
@@ -506,9 +473,7 @@ mod tests {
             origins: vec![],
             identity_verification_mode: "report_only".to_string(),
         };
-        let tokens = Arc::new(Mutex::new(HttpTokens {
-            tokens: vec![token],
-        }));
+        let tokens = Arc::new(HttpTokens::from_tokens(vec![token]));
 
         let authorized = validate_token(params, HeaderMap::new(), tokens).unwrap();
         assert_eq!(authorized.credential_kind, CredentialKind::Browser);

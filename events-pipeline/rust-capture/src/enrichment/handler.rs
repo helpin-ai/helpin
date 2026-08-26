@@ -1,10 +1,8 @@
-use chrono::{NaiveDateTime, Utc};
+use chrono::Utc;
 use serde_json::to_string;
 use std::error::Error as StdError;
+use std::error::Error;
 use std::fmt;
-use std::sync::Arc;
-use std::{error::Error, time::Instant};
-use uaparser::{Parser, UserAgentParser};
 
 use crate::auth::authorization::CredentialKind;
 use crate::events::event::ProcessedEvent;
@@ -79,23 +77,65 @@ impl EnrichmentHandler {
                 "Payload is empty",
             )));
         }
-        let event: Result<ProcessedEvent, _> = serde_json::from_str(payload);
-        match event {
-            Ok(_) => tracing::debug!("Deserialization successful"),
-            Err(err) => tracing::error!("Deserialization error: {:?}", err),
-        }
-
-        // Here is where you would put your logic to process the payload.
-        // For now, we will just print it out.
-
         let data: ProcessedEvent =
             serde_json::from_str(payload).map_err(|e| Box::new(e) as Box<dyn Error + Send>)?;
+        self.process_event_inner(
+            data,
+            Some(payload),
+            geo_resolver,
+            ip2proxy_resolver,
+            bot_resolver,
+            ua_parser,
+        )
+        .await
+    }
+
+    pub async fn process_event(
+        &self,
+        data: ProcessedEvent,
+        geo_resolver: Option<&GeoResolver>,
+        ip2proxy_resolver: Option<&IP2ProxyResolver>,
+        bot_resolver: &BotResolver,
+        ua_parser: &UaResolver,
+    ) -> Result<TransformedEvent, Box<dyn std::error::Error + Send>> {
+        self.process_event_inner(
+            data,
+            None,
+            geo_resolver,
+            ip2proxy_resolver,
+            bot_resolver,
+            ua_parser,
+        )
+        .await
+    }
+
+    async fn process_event_inner(
+        &self,
+        data: ProcessedEvent,
+        original_payload: Option<&str>,
+        geo_resolver: Option<&GeoResolver>,
+        ip2proxy_resolver: Option<&IP2ProxyResolver>,
+        bot_resolver: &BotResolver,
+        ua_parser: &UaResolver,
+    ) -> Result<TransformedEvent, Box<dyn std::error::Error + Send>> {
+        // Only rejection records need the original JSON. Avoid serializing every
+        // successful inline event just to preserve a payload for uncommon failures.
+        let rejection_payload =
+            if data.event.event_type == "user_identify" || data.event.timestamp.is_some() {
+                match original_payload {
+                    Some(payload) => payload.to_string(),
+                    None => serde_json::to_string(&data)
+                        .map_err(|error| Box::new(error) as Box<dyn Error + Send>)?,
+                }
+            } else {
+                String::new()
+            };
 
         // enrich with geo data, privacy and default event values.
 
         let mut transformed_event: TransformedEvent = TransformedEvent::default();
 
-        let mut service = PrivacyEnrichmentService::new(data.event.clone());
+        let mut service = PrivacyEnrichmentService::new(&data.event);
         let result = match service.enrich(geo_resolver) {
             Ok(r) => r,
             Err(e) => {
@@ -258,7 +298,7 @@ impl EnrichmentHandler {
                             project_id: transformed_event.project_id.clone(),
                             error_description: description.clone(),
                             error: 5,
-                            payload: payload.to_string(),
+                            payload: rejection_payload.clone(),
                         },
                         description,
                     }) as Box<dyn Error + Send>
@@ -424,7 +464,7 @@ impl EnrichmentHandler {
                 failed.error_description = "user.id required".to_string();
                 failed.error = 1;
 
-                failed.payload = payload.to_string();
+                failed.payload = rejection_payload.clone();
 
                 return Err(Box::new(MyError {
                     failed_event: failed.clone(),
@@ -444,7 +484,7 @@ impl EnrichmentHandler {
                     failed.project_id = transformed_event.project_id;
                     failed.error_description = "company.id required".to_string();
                     failed.error = 3;
-                    failed.payload = payload.to_string();
+                    failed.payload = rejection_payload.clone();
                     return Err(Box::new(MyError {
                         failed_event: failed.clone(),
                         description: failed.error_description,

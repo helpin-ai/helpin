@@ -1,15 +1,14 @@
 use isbot::Bots;
 use moka::sync::Cache;
-use regex::Regex;
 use std::fs::File;
 use std::io::{self, BufRead};
-use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
 pub struct BotResolver {
     bot: Arc<Bots>,
     cache: Cache<String, bool>,
+    cold_miss: Arc<Mutex<()>>,
 }
 impl BotResolver {
     pub fn new() -> Self {
@@ -33,10 +32,18 @@ impl BotResolver {
         BotResolver {
             bot: Arc::new(bot),
             cache: Cache::new(30_000),
+            cold_miss: Arc::new(Mutex::new(())),
         }
     }
 
     pub fn check_bot(&self, agent: &str) -> bool {
+        if let Some(is_bot) = self.cache.get(agent) {
+            return is_bot;
+        }
+        let _cold_miss = self
+            .cold_miss
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(is_bot) = self.cache.get(agent) {
             return is_bot;
         }

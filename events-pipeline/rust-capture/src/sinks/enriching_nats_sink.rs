@@ -37,16 +37,12 @@ impl EnrichingNatsSink {
                 "inline enrichment accepts only processed capture events".to_string(),
             ));
         };
-        let payload = serde_json::to_string(&processed).map_err(|error| {
-            CaptureError::NonRetryableSinkError(format!(
-                "failed to serialize capture event for enrichment: {error}"
-            ))
-        })?;
+        let raw_event = self.publisher.archive_enabled().then(|| processed.clone());
         let (geo_resolver, ip2proxy_resolver) = self.databases.snapshot().await;
         let transformed = match self
             .handler
-            .process_payload(
-                &payload,
+            .process_event(
+                processed,
                 geo_resolver.as_ref(),
                 ip2proxy_resolver.as_ref(),
                 &self.bot_resolver,
@@ -77,17 +73,21 @@ impl EnrichingNatsSink {
             },
         };
 
-        let mut raw_event = processed;
-        raw_event.authorization = None;
-        raw_event.event.ip = Some(transformed.source_ip.clone());
-        let raw = RawArchiveEnvelopeV1 {
-            schema_version: 1,
-            event_id: raw_event.event_id.to_string(),
-            event_received_at: raw_event.event.received_at.clone(),
-            event: raw_event,
-        };
         let enriched = EnrichedEventEnvelopeV1::new(transformed);
-        self.publisher.publish_event(&enriched, &raw).await
+        match raw_event {
+            Some(mut raw_event) => {
+                raw_event.authorization = None;
+                raw_event.event.ip = Some(enriched.event.source_ip.clone());
+                let raw = RawArchiveEnvelopeV1 {
+                    schema_version: 1,
+                    event_id: raw_event.event_id.to_string(),
+                    event_received_at: raw_event.event.received_at.clone(),
+                    event: raw_event,
+                };
+                self.publisher.publish_event(&enriched, &raw).await
+            }
+            None => self.publisher.publish_enriched(&enriched).await,
+        }
     }
 }
 

@@ -1,5 +1,3 @@
-use maxminddb::geoip2;
-
 // Performs an enrichment to the event i.e user anonymous id, session id, and more.
 const COMPLY_VALUE: &str = "comply";
 const KEEP_VALUE: &str = "keep";
@@ -19,8 +17,8 @@ enum IPPolicy {
     Strict,
 }
 
-pub struct PrivacyEnrichmentService {
-    event: Event,
+pub struct PrivacyEnrichmentService<'a> {
+    event: &'a Event,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -30,8 +28,8 @@ pub struct IPGeoData {
     pub ip: String,
 }
 
-impl PrivacyEnrichmentService {
-    pub fn new(event: Event) -> Self {
+impl<'a> PrivacyEnrichmentService<'a> {
+    pub fn new(event: &'a Event) -> Self {
         Self { event }
     }
 
@@ -208,7 +206,7 @@ mod tests {
             timestamp: None,
         };
 
-        let mut service = PrivacyEnrichmentService::new(event.clone());
+        let mut service = PrivacyEnrichmentService::new(&event);
         let result = service.enrich(None);
         assert!(result.is_ok()); // First ensure the result is Ok
         let data = result.unwrap();

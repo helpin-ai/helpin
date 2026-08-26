@@ -1,10 +1,15 @@
 use std::env;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use arc_swap::ArcSwap;
 use serde::Deserialize;
 use tokio::task::spawn;
 use tokio::time::sleep;
+
+lazy_static::lazy_static! {
+    static ref TOKEN_HTTP_CLIENT: reqwest::Client = reqwest::Client::new();
+}
 
 #[derive(Deserialize, Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Token {
@@ -26,13 +31,30 @@ struct Tokens {
     tokens: Vec<Token>,
 }
 
-#[derive(Debug)]
 pub struct HttpTokens {
-    pub tokens: Vec<Token>,
+    tokens: ArcSwap<Vec<Token>>,
 }
 
 impl HttpTokens {
-    pub async fn new() -> Arc<Mutex<Self>> {
+    pub fn from_tokens(tokens: Vec<Token>) -> Self {
+        Self {
+            tokens: ArcSwap::from_pointee(tokens),
+        }
+    }
+
+    pub fn snapshot(&self) -> Arc<Vec<Token>> {
+        self.tokens.load_full()
+    }
+
+    pub fn len(&self) -> usize {
+        self.tokens.load().len()
+    }
+
+    pub(crate) fn replace(&self, tokens: Vec<Token>) {
+        self.tokens.store(Arc::new(tokens));
+    }
+
+    pub async fn new() -> Arc<Self> {
         tracing::info!("Loading authorization tokens");
 
         // Retry with backoff on startup (3 attempts: 2s, 5s, 10s)
@@ -93,18 +115,19 @@ impl HttpTokens {
         };
 
         tracing::info!("Tokens loaded: {:?} tokens", tokens.len());
-        let tokens_list = Arc::new(Mutex::new(HttpTokens { tokens }));
+        let tokens_list = Arc::new(HttpTokens::from_tokens(tokens));
         let cloned_tokens = Arc::clone(&tokens_list);
         spawn(Self::update_tokens(cloned_tokens));
         tokens_list
     }
 
-    async fn update_tokens(tokens_list: Arc<Mutex<Self>>) {
+    async fn update_tokens(tokens_list: Arc<Self>) {
         tracing::debug!("Running background task to update tokens every 10 seconds.");
         let mut etag: Option<String> = None;
         let mut last_success = Instant::now();
         loop {
             sleep(Duration::from_secs(10)).await;
+            let refresh_started = Instant::now();
             metrics::gauge!(
                 "token_registry_refresh_age_seconds",
                 last_success.elapsed().as_secs_f64()
@@ -119,6 +142,11 @@ impl HttpTokens {
                         "Failed to fetch new tokens: {:?}. Keeping stale tokens.",
                         err
                     );
+                    metrics::histogram!(
+                        "token_registry_refresh_duration_seconds",
+                        refresh_started.elapsed().as_secs_f64(),
+                        "result" => "failure"
+                    );
                     continue;
                 }
             };
@@ -127,32 +155,35 @@ impl HttpTokens {
                 etag = Some(next_etag);
             }
             let Some(new_tokens) = new_tokens else {
+                metrics::histogram!(
+                    "token_registry_refresh_duration_seconds",
+                    refresh_started.elapsed().as_secs_f64(),
+                    "result" => "not_modified"
+                );
                 continue;
             };
 
             if new_tokens.is_empty() {
                 metrics::increment_counter!("token_registry_stale_retentions_total");
                 tracing::warn!("Token fetch returned empty list. Keeping stale tokens.");
+                metrics::histogram!(
+                    "token_registry_refresh_duration_seconds",
+                    refresh_started.elapsed().as_secs_f64(),
+                    "result" => "empty"
+                );
                 continue;
             }
 
-            let mut tokens = match tokens_list.lock() {
-                Ok(tokens) => tokens,
-                Err(err) => {
-                    tracing::error!(
-                        "Failed to acquire lock on tokens: {:?}. Will retry next cycle.",
-                        err
-                    );
-                    continue;
-                }
-            };
-
-            tracing::debug!("Authorization mutex locked, checking if tokens have changed");
             tracing::info!(
                 "Authorization HTTP tokens updated. Total tokens: {:?}",
                 new_tokens.len()
             );
-            tokens.tokens = new_tokens;
+            tokens_list.replace(new_tokens);
+            metrics::histogram!(
+                "token_registry_refresh_duration_seconds",
+                refresh_started.elapsed().as_secs_f64(),
+                "result" => "updated"
+            );
         }
     }
 
@@ -167,8 +198,7 @@ impl HttpTokens {
         let url = env::var("HTTP_TOKENS_URL")
             .map_err(|_| "HTTP_TOKENS_URL env var is not set".to_string())?;
 
-        let client = reqwest::Client::new();
-        let mut request = client.get(&url);
+        let mut request = TOKEN_HTTP_CLIENT.get(&url);
 
         // Attach bearer token if INTERNAL_API_SECRET is set
         if let Ok(secret) = env::var("INTERNAL_API_SECRET") {
@@ -241,12 +271,10 @@ mod tests {
 
         let fake_http_tokens = FakeHttpTokens::new(fake_tokens.clone());
 
-        let http_tokens = Arc::new(Mutex::new(HttpTokens {
-            tokens: fake_tokens,
-        }));
+        let http_tokens = Arc::new(HttpTokens::from_tokens(fake_tokens));
 
         let result = fake_http_tokens.fetch_tokens().await.unwrap();
-        assert_eq!(result, http_tokens.lock().unwrap().tokens);
+        assert_eq!(result, *http_tokens.snapshot());
     }
 
     #[tokio::test]

@@ -11,8 +11,8 @@ services:
     ports:
       - "14222:4222"
       - "18222:8222"
-    mem_limit: 1g
-    cpus: 2
+    mem_limit: 4g
+    cpus: 4
 
   nats-1:
     image: nats:2.14.5-alpine@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da
@@ -24,9 +24,10 @@ services:
       - ./nats-secure.conf:/etc/nats/nats.conf:ro
       - ${E2E_NATS_TLS_DIR:-./fixtures/nats-tls}:/etc/nats/tls:ro
     ports:
+      - "14223:4222"
       - "18223:8222"
-    mem_limit: 1g
-    cpus: 2
+    mem_limit: 4g
+    cpus: 4
 
   nats-2:
     image: nats:2.14.5-alpine@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da
@@ -38,9 +39,10 @@ services:
       - ./nats-secure.conf:/etc/nats/nats.conf:ro
       - ${E2E_NATS_TLS_DIR:-./fixtures/nats-tls}:/etc/nats/tls:ro
     ports:
+      - "14224:4222"
       - "18224:8222"
-    mem_limit: 1g
-    cpus: 2
+    mem_limit: 4g
+    cpus: 4
 
   clickhouse:
     image: clickhouse/clickhouse-server:25.8

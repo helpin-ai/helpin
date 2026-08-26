@@ -3,7 +3,7 @@ use std::env;
 
 use anyhow::{Context, Result};
 use async_nats::jetstream::consumer;
-use async_nats::jetstream::stream::Compression;
+use async_nats::jetstream::stream::{Compression, StorageType};
 use events_pipeline::writer::{
     dlq_stream_config, enriched_work_stream_config, raw_archive_stream_config,
     seed_floor_from_metadata, shard_from_subject, writer_consumer_config, writer_consumer_name,
@@ -25,6 +25,14 @@ fn work_compression(value: Option<&str>) -> Result<Compression> {
         "s2" => Ok(Compression::S2),
         "none" => Ok(Compression::None),
         other => anyhow::bail!("EVENTS_WORK_COMPRESSION must be s2 or none, got {other}"),
+    }
+}
+
+fn work_storage(value: Option<&str>) -> Result<StorageType> {
+    match value.unwrap_or("file").to_ascii_lowercase().as_str() {
+        "file" => Ok(StorageType::File),
+        "memory" => Ok(StorageType::Memory),
+        other => anyhow::bail!("EVENTS_WORK_STORAGE must be file or memory, got {other}"),
     }
 }
 
@@ -123,6 +131,13 @@ async fn main() -> Result<()> {
     work.compression = Some(work_compression(
         env::var("EVENTS_WORK_COMPRESSION").ok().as_deref(),
     )?);
+    work.storage = work_storage(env::var("EVENTS_WORK_STORAGE").ok().as_deref())?;
+    let work_replicas = positive_usize_from_env("EVENTS_WORK_REPLICAS", 3)?;
+    anyhow::ensure!(
+        work_replicas <= 3,
+        "EVENTS_WORK_REPLICAS cannot exceed the three-node cluster"
+    );
+    work.num_replicas = work_replicas;
     let configs = [
         work,
         raw_archive_stream_config(required_positive_bytes("EVENTS_RAW_MAX_BYTES")?),
@@ -230,6 +245,14 @@ mod tests {
         assert_eq!(work_compression(Some("s2")).unwrap(), Compression::S2);
         assert_eq!(work_compression(Some("none")).unwrap(), Compression::None);
         assert!(work_compression(Some("gzip")).is_err());
+    }
+
+    #[test]
+    fn work_storage_supports_an_explicit_ab_switch() {
+        assert_eq!(work_storage(None).unwrap(), StorageType::File);
+        assert_eq!(work_storage(Some("file")).unwrap(), StorageType::File);
+        assert_eq!(work_storage(Some("memory")).unwrap(), StorageType::Memory);
+        assert!(work_storage(Some("disk")).is_err());
     }
 
     #[test]

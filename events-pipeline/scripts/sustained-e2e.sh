@@ -14,7 +14,7 @@ load_driver=${SUSTAINED_LOAD_DRIVER:-python}
 connections=${SUSTAINED_CONNECTIONS:-70}
 source_label=${SUSTAINED_SOURCE_LABEL:-}
 if [[ -z "$source_label" ]]; then
-  if [[ "$load_driver" == "k6-connections" ]]; then
+  if [[ "$load_driver" == k6-* ]]; then
     source_label=k6-capture
   else
     source_label=sustained-e2e
@@ -25,12 +25,20 @@ capture_env_file=${SUSTAINED_CAPTURE_ENV_FILE:-}
 ip2proxy_db_path=${SUSTAINED_IP2PROXY_DB_PATH:-}
 require_ip2proxy=${SUSTAINED_REQUIRE_IP2PROXY:-false}
 work_compression=${SUSTAINED_WORK_COMPRESSION:-s2}
+work_storage=${SUSTAINED_WORK_STORAGE:-file}
+work_replicas=${SUSTAINED_WORK_REPLICAS:-3}
 work_max_bytes=${SUSTAINED_WORK_MAX_BYTES:-1073741824}
 work_max_in_flight=${SUSTAINED_WORK_MAX_IN_FLIGHT:-512}
+print_sink=${SUSTAINED_PRINT_SINK:-false}
 raw_archive_enabled=${SUSTAINED_RAW_ARCHIVE_ENABLED:-true}
 consumers_enabled=${SUSTAINED_CONSUMERS_ENABLED:-true}
 consumer_memory_storage=${SUSTAINED_CONSUMER_MEMORY_STORAGE:-false}
 writer_replicas=${SUSTAINED_WRITER_REPLICAS:-1}
+capture_replicas=${SUSTAINED_CAPTURE_REPLICAS:-1}
+k6_p50_limit_ms=${SUSTAINED_K6_P50_LIMIT_MS:-10}
+k6_p99_limit_ms=${SUSTAINED_K6_P99_LIMIT_MS:-25}
+resource_monitor_enabled=${SUSTAINED_RESOURCE_MONITOR_ENABLED:-true}
+docker_resource_monitor_enabled=${SUSTAINED_DOCKER_RESOURCE_MONITOR_ENABLED:-true}
 expected=$((rate * duration))
 run_id="sustained-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 run_dir=${SUSTAINED_RESULTS_DIR:-"/tmp/helpin-$run_id"}
@@ -38,7 +46,8 @@ source "$repo_root/events-pipeline/scripts/e2e-nats-tls.sh"
 source "$repo_root/events-pipeline/scripts/e2e-host-resources.sh"
 export E2E_NATS_TLS_DIR="$run_dir/nats-tls"
 compose=(docker compose --project-name helpin-event-sustained --file "$compose_file")
-capture_pid=""
+capture_pids=()
+capture_urls=()
 replay_pid=""
 writer_pids=()
 token_pid=""
@@ -59,23 +68,45 @@ if ! [[ "$writer_replicas" =~ ^[1-9][0-9]*$ ]] || (( writer_replicas > 100 )); t
   echo "SUSTAINED_WRITER_REPLICAS must be between 1 and 100" >&2
   exit 1
 fi
+if ! [[ "$capture_replicas" =~ ^[1-4]$ ]]; then
+  echo "SUSTAINED_CAPTURE_REPLICAS must be between 1 and 4" >&2
+  exit 1
+fi
 
 cleanup() {
   status=$?
   trap - EXIT
-  for pid in "$monitor_pid" "$capture_pid" "$replay_pid" "${writer_pids[@]}" "$token_pid"; do
+  for pid in "$monitor_pid" "$replay_pid" "$token_pid"; do
     if [[ -n "$pid" ]]; then
       kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
     fi
   done
+  if ((${#capture_pids[@]})); then
+    for pid in "${capture_pids[@]}"; do
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    done
+  fi
+  if ((${#writer_pids[@]})); then
+    for pid in "${writer_pids[@]}"; do
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    done
+  fi
   if [[ $status -ne 0 ]]; then
     echo "Sustained E2E failed; preserving results in $run_dir" >&2
     "${compose[@]}" logs --no-color --tail=100 >"$run_dir/containers.log" 2>&1 || true
-    for log in capture replay writer load; do
+    for log in replay writer load; do
       if [[ -f "$run_dir/$log.log" ]]; then
         echo "== $log ==" >&2
         tail -n 50 "$run_dir/$log.log" >&2 || true
+      fi
+    done
+    for log in "$run_dir"/capture-*.log; do
+      if [[ -f "$log" ]]; then
+        echo "== $(basename "$log") ==" >&2
+        tail -n 50 "$log" >&2 || true
       fi
     done
   fi
@@ -139,11 +170,21 @@ clickhouse_query() {
     --data-binary "$1"
 }
 
+save_capture_metrics() {
+  for ordinal in $(seq 0 $((capture_replicas - 1))); do
+    metrics_port=$((3001 + ordinal * 2))
+    curl --fail --silent "http://127.0.0.1:$metrics_port/metrics" \
+      >"$run_dir/capture-metrics-$ordinal.prom"
+  done
+  cp "$run_dir/capture-metrics-0.prom" "$run_dir/capture-metrics.prom"
+}
+
 sample_resources() {
-  echo 'unix_time,capture_cpu_percent,capture_rss_kib,writer_cpu_percent,writer_rss_kib,mem_available_kib,swap_free_kib' >"$run_dir/process-resources.csv"
   while true; do
     now=$(date +%s)
-    capture_stats=$(ps -p "$capture_pid" -o %cpu=,rss= 2>/dev/null | xargs || true)
+    capture_pid_list=$(IFS=,; echo "${capture_pids[*]}")
+    capture_stats=$(ps -p "$capture_pid_list" -o %cpu=,rss= 2>/dev/null \
+      | awk '{ cpu += $1; rss += $2 } END { print cpu + 0, rss + 0 }')
     if ((${#writer_pids[@]})); then
       writer_pid_list=$(IFS=,; echo "${writer_pids[*]}")
       writer_stats=$(ps -p "$writer_pid_list" -o %cpu=,rss= 2>/dev/null \
@@ -157,16 +198,33 @@ sample_resources() {
     writer_rss=$(awk '{print $2}' <<<"$writer_stats")
     read -r mem_available swap_free <<<"$(sample_host_memory_kib)"
     echo "$now,${capture_cpu:-0},${capture_rss:-0},${writer_cpu:-0},${writer_rss:-0},$mem_available,$swap_free" >>"$run_dir/process-resources.csv"
-    docker stats --no-stream --format "$now,{{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.PIDs}}" \
-      | grep 'helpin-event-sustained-' >>"$run_dir/docker-resources.csv" || true
+    if [[ "$docker_resource_monitor_enabled" == "true" ]]; then
+      docker stats --no-stream --format "$now,{{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.PIDs}}" \
+        | grep 'helpin-event-sustained-' >>"$run_dir/docker-resources.csv" || true
+    fi
     sleep 5
   done
 }
 
-echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size workers=$workers connections=$connections visitors=$visitors archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas work_in_flight=$work_max_in_flight"
+assert_no_spill_files() {
+  local spill_file
+  spill_file=$(find "$run_dir" -maxdepth 2 -type f \( \
+    -path "$run_dir/fallback/*" -o \
+    -path "$run_dir/fallback-*/*" -o \
+    -path "$run_dir/archive-spill/*" -o \
+    -path "$run_dir/archive-spill-*/*" -o \
+    -path "$run_dir/poison-spill-*/*" \
+  \) -print -quit 2>/dev/null)
+  if [[ -n "$spill_file" ]]; then
+    echo "unexpected spill file: $spill_file" >&2
+    return 1
+  fi
+}
+
+echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size workers=$workers connections=$connections visitors=$visitors print_sink=$print_sink archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas capture_replicas=$capture_replicas work_storage=$work_storage work_replicas=$work_replicas work_in_flight=$work_max_in_flight resource_monitor=$resource_monitor_enabled docker_resource_monitor=$docker_resource_monitor_enabled"
 echo "Results will be retained in $run_dir"
-printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\n' \
-  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" >"$run_dir/test.env"
+printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_storage=%s\nwork_replicas=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\ncapture_replicas=%s\nresource_monitor_enabled=%s\ndocker_resource_monitor_enabled=%s\n' \
+  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_storage" "$work_replicas" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" "$capture_replicas" "$resource_monitor_enabled" "$docker_resource_monitor_enabled" >"$run_dir/test.env"
 
 "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 "${compose[@]}" up --detach --wait
@@ -188,6 +246,8 @@ echo "Applying ClickHouse migrations and building binaries"
     NATS_CLIENT_CERT_FILE="$E2E_NATS_TLS_DIR/client.crt" \
     NATS_CLIENT_KEY_FILE="$E2E_NATS_TLS_DIR/client.key" \
     EVENTS_WORK_COMPRESSION="$work_compression" \
+    EVENTS_WORK_STORAGE="$work_storage" \
+    EVENTS_WORK_REPLICAS="$work_replicas" \
     EVENTS_WORK_MAX_BYTES="$work_max_bytes" \
     EVENTS_RAW_MAX_BYTES=536870912 \
     EVENTS_DLQ_MAX_BYTES=67108864 \
@@ -237,35 +297,46 @@ else
   echo "Writer and all durable consumers are disabled for capture/stream isolation"
 fi
 
-(
-  cd "$capture_dir"
-  if [[ -n "$capture_env_file" ]]; then
-    set -a
-    source "$capture_env_file"
-    set +a
-  fi
-  if [[ -n "$ip2proxy_db_path" ]]; then
-    export IP2PROXY_DB_PATH="$ip2proxy_db_path"
-  fi
-  exec env \
-    NATS_URL=tls://127.0.0.1:14222 \
-    NATS_CA_FILE="$E2E_NATS_TLS_DIR/ca.crt" \
-    NATS_CLIENT_CERT_FILE="$E2E_NATS_TLS_DIR/client.crt" \
-    NATS_CLIENT_KEY_FILE="$E2E_NATS_TLS_DIR/client.key" \
-    PRINT_SINK=false \
-    NETWORK_ENRICHMENT_ENABLED="$network_enrichment" \
-    HTTP_TOKENS_URL=http://127.0.0.1:18080/tokens.json \
-    FALLBACK_DIR="$run_dir/fallback" \
-    FALLBACK_MAX_SEGMENT_AGE_SECS=5 \
-    ARCHIVE_SPILL_DIR="$run_dir/archive-spill" \
-    ARCHIVE_SPILL_MAX_BYTES=67108864 \
-    NATS_WORK_MAX_IN_FLIGHT="$work_max_in_flight" \
-    RAW_ARCHIVE_ENABLED="$raw_archive_enabled" \
-    LOG_LEVEL=WARN \
-    ./target/release/events-pipeline
-) >"$run_dir/capture.log" 2>&1 &
-capture_pid=$!
-wait_http "event capture" http://127.0.0.1:3000/health/readiness
+for ordinal in $(seq 0 $((capture_replicas - 1))); do
+  http_port=$((3000 + ordinal * 2))
+  metrics_port=$((http_port + 1))
+  nats_port=$((14222 + ordinal % 3))
+  (
+    cd "$capture_dir"
+    if [[ -n "$capture_env_file" ]]; then
+      set -a
+      source "$capture_env_file"
+      set +a
+    fi
+    if [[ -n "$ip2proxy_db_path" ]]; then
+      export IP2PROXY_DB_PATH="$ip2proxy_db_path"
+    fi
+    exec env \
+      NATS_URL="tls://127.0.0.1:$nats_port" \
+      NATS_CA_FILE="$E2E_NATS_TLS_DIR/ca.crt" \
+      NATS_CLIENT_CERT_FILE="$E2E_NATS_TLS_DIR/client.crt" \
+      NATS_CLIENT_KEY_FILE="$E2E_NATS_TLS_DIR/client.key" \
+      PRINT_SINK="$print_sink" \
+      NETWORK_ENRICHMENT_ENABLED="$network_enrichment" \
+      HTTP_TOKENS_URL=http://127.0.0.1:18080/tokens.json \
+      FALLBACK_DIR="$run_dir/fallback-$ordinal" \
+      FALLBACK_MAX_SEGMENT_AGE_SECS=5 \
+      ARCHIVE_SPILL_DIR="$run_dir/archive-spill-$ordinal" \
+      ARCHIVE_SPILL_MAX_BYTES=67108864 \
+      NATS_WORK_MAX_IN_FLIGHT="$work_max_in_flight" \
+      RAW_ARCHIVE_ENABLED="$raw_archive_enabled" \
+      CAPTURE_HTTP_PORT="$http_port" \
+      CAPTURE_METRICS_PORT="$metrics_port" \
+      LOG_LEVEL=WARN \
+      ./target/release/events-pipeline
+  ) >"$run_dir/capture-$ordinal.log" 2>&1 &
+  capture_pids+=("$!")
+  capture_urls+=("http://127.0.0.1:$http_port/api/v1/event")
+done
+for ordinal in $(seq 0 $((capture_replicas - 1))); do
+  http_port=$((3000 + ordinal * 2))
+  wait_http "event capture $ordinal" "http://127.0.0.1:$http_port/health/readiness"
+done
 
 (
   cd "$capture_dir"
@@ -295,21 +366,35 @@ wait_http "event capture" http://127.0.0.1:3000/health/readiness
 ) >"$run_dir/replay.log" 2>&1 &
 replay_pid=$!
 
-sample_resources &
-monitor_pid=$!
+echo 'unix_time,capture_cpu_percent,capture_rss_kib,writer_cpu_percent,writer_rss_kib,mem_available_kib,swap_free_kib' >"$run_dir/process-resources.csv"
+if [[ "$resource_monitor_enabled" == "true" ]]; then
+  sample_resources &
+  monitor_pid=$!
+fi
 
 echo "Driving the capture endpoint"
-if [[ "$load_driver" == "k6-connections" ]]; then
+if [[ "$load_driver" == "k6-connections" || "$load_driver" == "k6-arrival" ]]; then
+  if [[ "$load_driver" == "k6-arrival" ]]; then
+    k6_profile=arrival
+  else
+    k6_profile=connections
+  fi
+  target_urls=$(IFS=,; echo "${capture_urls[*]}")
   chmod 0777 "$run_dir"
   set +e
   docker run --rm --network host \
     --volume "$repo_root/events-pipeline/scripts:/scripts:ro" \
     --volume "$run_dir:/results" \
-    --env TARGET_URL=http://127.0.0.1:3000/api/v1/event \
+    --env TARGET_URL="${capture_urls[0]}" \
+    --env TARGET_URLS="$target_urls" \
     --env TOKEN=e2e-server-secret \
-    --env PROFILE=connections \
+    --env PROFILE="$k6_profile" \
     --env EVENT_RATE="$rate" \
     --env CONNECTIONS="$connections" \
+    --env PRE_ALLOCATED_VUS="${SUSTAINED_K6_PRE_ALLOCATED_VUS:-512}" \
+    --env MAX_VUS="${SUSTAINED_K6_MAX_VUS:-2048}" \
+    --env P50_LIMIT_MS="$k6_p50_limit_ms" \
+    --env P99_LIMIT_MS="$k6_p99_limit_ms" \
     --env DURATION="${duration}s" \
     --env BATCH_SIZE="$batch_size" \
     --env VISITORS="$visitors" \
@@ -364,19 +449,29 @@ fi
 printf 'accepted_events=%s\n' "$expected" >>"$run_dir/test.env"
 printf 'k6_exit_status=%s\n' "$k6_status" >>"$run_dir/test.env"
 
+if [[ "$print_sink" == "true" ]]; then
+  save_capture_metrics
+  if [[ "$k6_status" -ne 0 ]]; then
+    echo "k6 HTTP-only diagnostic failed with status $k6_status" >&2
+    exit "$k6_status"
+  fi
+  echo "Sustained HTTP-only diagnostic passed"
+  exit 0
+fi
+
 if [[ "$consumers_enabled" != "true" ]]; then
   echo "Waiting for the unconsumed work stream to reach $expected messages"
   work_messages=0
   consumer_count=-1
   for _ in $(seq 1 180); do
     read -r work_messages consumer_count < <(work_stream_state)
-    if [[ "$work_messages" == "$expected" ]]; then
+    if (( work_messages >= expected )); then
       break
     fi
     sleep 1
   done
 
-  curl --fail --silent http://127.0.0.1:3001/metrics >"$run_dir/capture-metrics.prom"
+  save_capture_metrics
   for port in 18222 18223 18224; do
     curl --fail --silent "http://127.0.0.1:$port/jsz?streams=true&consumers=true" >"$run_dir/jetstream-$port.json"
   done
@@ -401,11 +496,17 @@ summary = {
 print(json.dumps(summary, indent=2, sort_keys=True))
 PY
 
-  [[ "$work_messages" == "$expected" ]]
+  if [[ "$k6_status" -ne 0 ]]; then
+    echo "k6 capture-only load failed with status $k6_status" >&2
+    exit "$k6_status"
+  fi
+  if [[ "$load_driver" == "external" ]]; then
+    (( work_messages >= expected ))
+  else
+    [[ "$work_messages" == "$expected" ]]
+  fi
   [[ "$consumer_count" == "0" ]]
-  [[ "$k6_status" == "0" ]]
-  [[ ! -s "$run_dir/fallback" || -z "$(find "$run_dir/fallback" -type f -print -quit 2>/dev/null)" ]]
-  [[ ! -s "$run_dir/archive-spill-replay" || -z "$(find "$run_dir/archive-spill-replay" -type f -print -quit 2>/dev/null)" ]]
+  assert_no_spill_files
   echo "Sustained capture-only E2E passed"
   exit 0
 fi
@@ -415,14 +516,14 @@ drain_started=$(date +%s)
 logical_rows=0
 for _ in $(seq 1 180); do
   logical_rows=$(clickhouse_query "SELECT count() FROM events FINAL WHERE src = '$source_label'")
-  if [[ "$logical_rows" == "$expected" ]]; then
+  if (( logical_rows >= expected )); then
     break
   fi
   sleep 1
 done
 drain_seconds=$(($(date +%s) - drain_started))
 
-curl --fail --silent http://127.0.0.1:3001/metrics >"$run_dir/capture-metrics.prom"
+save_capture_metrics
 for ordinal in $(seq 0 $((writer_replicas - 1))); do
   metrics_port=$((3011 + ordinal * 2))
   curl --fail --silent "http://127.0.0.1:$metrics_port/metrics" >"$run_dir/writer-metrics-$ordinal.prom"
@@ -456,17 +557,29 @@ FROM events FINAL
 WHERE src = '$source_label'
 " >"$run_dir/clickhouse-final.tsv"
 
-clickhouse_query "
+# Keep the exact session invariant check bounded on long runs. Grouping every
+# visitor in one query exceeded the small E2E ClickHouse container's memory at
+# six million rows even though ingestion had fully drained. Ten shard ranges
+# preserve the exact result while bounding each aggregation to roughly one
+# tenth of the visitor set.
+wrong_session_visitors=0
+for shard_start in $(seq 0 10 90); do
+  shard_end=$((shard_start + 9))
+  wrong_in_range=$(clickhouse_query "
 SELECT count()
 FROM
 (
   SELECT user_anonymous_id
   FROM events FINAL
   WHERE src = '$source_label'
+    AND visitor_shard BETWEEN $shard_start AND $shard_end
   GROUP BY user_anonymous_id
-  HAVING uniqExact(session_id) != 1
+  HAVING min(session_id) != max(session_id)
 )
-" >"$run_dir/visitors-with-wrong-session-count.txt"
+")
+  wrong_session_visitors=$((wrong_session_visitors + wrong_in_range))
+done
+printf '%s\n' "$wrong_session_visitors" >"$run_dir/visitors-with-wrong-session-count.txt"
 
 clickhouse_query "$(<"$repo_root/events-pipeline/scripts/clickhouse-parts-health.sql")" \
   >"$run_dir/clickhouse-parts-health.tsv"
@@ -487,6 +600,8 @@ with (root / "process-resources.csv").open() as source:
 
 def stats(name):
     values = [float(row[name]) for row in rows]
+    if not values:
+        return {"average": 0, "peak": 0}
     return {"average": round(sum(values) / len(values), 3), "peak": round(max(values), 3)}
 
 docker = defaultdict(lambda: {"cpu": [], "memory_mib": []})
@@ -540,13 +655,21 @@ summary = {
 print(json.dumps(summary, indent=2, sort_keys=True))
 PY
 
-[[ "$logical_rows" == "$expected" ]]
-[[ "$k6_status" == "0" ]]
+if [[ "$k6_status" -ne 0 ]]; then
+  echo "k6 sustained load failed with status $k6_status" >&2
+  exit "$k6_status"
+fi
+if [[ "$load_driver" == "external" ]]; then
+  (( logical_rows >= expected ))
+else
+  [[ "$logical_rows" == "$expected" ]]
+  [[ "$(awk '{print $1}' "$run_dir/clickhouse-physical.tsv")" == "$expected" ]]
+  [[ "$(awk '{print $2}' "$run_dir/clickhouse-physical.tsv")" == "$expected" ]]
+  [[ "$(awk '{print $1}' "$run_dir/clickhouse-final.tsv")" == "$expected" ]]
+  [[ "$(awk '{print $2}' "$run_dir/clickhouse-final.tsv")" == "$expected" ]]
+fi
 [[ "$(awk '{print $5}' "$run_dir/clickhouse-final.tsv")" == "0" ]]
 [[ "$(cat "$run_dir/visitors-with-wrong-session-count.txt")" == "0" ]]
-[[ ! -s "$run_dir/fallback" || -z "$(find "$run_dir/fallback" -type f -print -quit 2>/dev/null)" ]]
-[[ ! -s "$run_dir/archive-spill" || -z "$(find "$run_dir/archive-spill" -type f -print -quit 2>/dev/null)" ]]
-[[ ! -s "$run_dir/archive-spill-replay" || -z "$(find "$run_dir/archive-spill-replay" -type f -print -quit 2>/dev/null)" ]]
-[[ -z "$(find "$run_dir" -maxdepth 2 -path '*/poison-spill-*/*' -type f -print -quit 2>/dev/null)" ]]
+assert_no_spill_files
 
 echo "Sustained E2E passed"

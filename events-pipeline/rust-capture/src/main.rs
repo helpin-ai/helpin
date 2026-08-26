@@ -49,10 +49,7 @@ async fn start_main_server() {
     tracing::info!("Application booting");
 
     let tokens = auth::http_tokens::HttpTokens::new().await;
-    tracing::info!(
-        "tokens loaded: {:?}",
-        tokens.lock().map(|t| t.tokens.len()).unwrap_or(0)
-    );
+    tracing::info!("tokens loaded: {:?}", tokens.len());
 
     let health_registry = health::HealthRegistry::new();
 
@@ -96,7 +93,7 @@ async fn start_main_server() {
         )
     };
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], env_port("CAPTURE_HTTP_PORT", 3000)));
     tracing::info!("listening on {}", addr);
 
     axum::Server::bind(&addr)
@@ -109,13 +106,31 @@ async fn start_main_server() {
 async fn start_metrics_server() {
     let app = metrics_app();
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3001));
+    let addr = SocketAddr::from(([0, 0, 0, 0], env_port("CAPTURE_METRICS_PORT", 3001)));
     tracing::debug!("listening on {} for metrics server", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .with_graceful_shutdown(wait_for_signal())
         .await
         .unwrap()
+}
+
+fn env_port(name: &str, default: u16) -> u16 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port > 0)
+        .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::env_port;
+
+    #[test]
+    fn capture_ports_use_defaults_when_unconfigured() {
+        assert_eq!(env_port("HELPIN_TEST_MISSING_CAPTURE_PORT", 3000), 3000);
+    }
 }
 
 async fn wait_for_signal() {

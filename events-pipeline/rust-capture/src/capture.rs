@@ -74,17 +74,7 @@ pub async fn event(
                 })?;
             Event::from_bytes(payload.into(), headers, query_params, token)
         }
-        _ => {
-            let payload_str = String::from_utf8_lossy(&body);
-            if serde_json::from_str::<serde_json::Value>(&payload_str).is_ok() {
-                Event::from_bytes(body, headers, query_params, token)
-            } else {
-                return Err(CaptureError::RequestDecodingError(format!(
-                    "JSON payload is invalid ({} bytes)",
-                    body.len()
-                )));
-            }
-        }
+        _ => Event::from_bytes(body, headers, query_params, token),
     };
 
     let events = events.map_err(|e| {
@@ -96,7 +86,7 @@ pub async fn event(
         return Err(CaptureError::EmptyBatch);
     }
 
-    process_events(state.sink.clone(), &events, &authorized).await?;
+    process_events(state.sink.clone(), events, &authorized).await?;
 
     Ok(Json(CaptureResponse {
         status: CaptureResponseCode::Ok,
@@ -104,15 +94,14 @@ pub async fn event(
 }
 
 pub fn process_single_event(
-    event: &Event,
+    mut event: Event,
     authorization: &AuthorizedCredential,
 ) -> Result<ProcessedEvent, CaptureError> {
-    let identity_provenance = event_identity_provenance(event, authorization);
-    let mut sanitized_event = event.clone();
-    sanitized_event.user.remove("identity_verification");
-    sanitized_event.api_key = authorization.installation_id.clone();
+    let identity_provenance = event_identity_provenance(&event, authorization);
+    event.user.remove("identity_verification");
+    event.api_key = authorization.installation_id.clone();
     Ok(ProcessedEvent {
-        event: sanitized_event,
+        event,
         event_id: Uuid::new_v4(),
         authorization: Some(authorization.clone()),
         identity_provenance,
@@ -254,18 +243,18 @@ fn event_widget_key(authorization: &AuthorizedCredential) -> &str {
 
 pub async fn process_events(
     sink: Arc<dyn sinks::EventSink + Send + Sync>,
-    events: &[Event],
+    events: Vec<Event>,
     authorization: &AuthorizedCredential,
 ) -> Result<(), CaptureError> {
     tracing::debug!(count = events.len(), "processing events");
 
-    let events: Vec<ProcessedEvent> = events
-        .iter()
+    let mut events: Vec<ProcessedEvent> = events
+        .into_iter()
         .map(|event| process_single_event(event, authorization))
         .collect::<Result<Vec<_>, _>>()?;
 
     if events.len() == 1 {
-        let event = sinks::EventTypes::Processed(events[0].clone());
+        let event = sinks::EventTypes::Processed(events.pop().expect("single event"));
         sink.send(event).await?;
     } else {
         let event_batch = events
@@ -287,7 +276,7 @@ mod tests {
     use crate::sinks::print_sink::PrintSink;
     use crate::utils::time::SystemTime;
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use serde_json::json;
 
@@ -309,16 +298,14 @@ mod tests {
 
     #[tokio::test]
     async fn all_events_have_same_token() {
-        let http_tokens: Arc<Mutex<HttpTokens>> = Arc::new(Mutex::new(HttpTokens {
-            tokens: vec![Token {
-                id: String::from("1"),
-                workspace_id: String::from("00000000-0000-0000-0000-000000000001"),
-                client_secret: String::from("secret_api_key"),
-                server_secret: String::from("secret_token"),
-                origins: vec![String::from("localhost")],
-                identity_verification_mode: String::from("report_only"),
-            }],
-        }));
+        let http_tokens = Arc::new(HttpTokens::from_tokens(vec![Token {
+            id: String::from("1"),
+            workspace_id: String::from("00000000-0000-0000-0000-000000000001"),
+            client_secret: String::from("secret_api_key"),
+            server_secret: String::from("secret_token"),
+            origins: vec![String::from("localhost")],
+            identity_verification_mode: String::from("report_only"),
+        }]));
         let state = State {
             http_tokens: http_tokens.clone(),
             sink: Arc::new(PrintSink {}),
@@ -341,7 +328,7 @@ mod tests {
             },
         ];
 
-        let processed = process_events(state.sink, &events, &test_authorization()).await;
+        let processed = process_events(state.sink, events, &test_authorization()).await;
         assert!(processed.is_ok());
     }
 
@@ -356,7 +343,7 @@ mod tests {
         }];
 
         // Single event goes through send() path
-        let result = process_events(sink, &events, &test_authorization()).await;
+        let result = process_events(sink, events, &test_authorization()).await;
         assert!(result.is_ok());
     }
 
@@ -376,7 +363,7 @@ mod tests {
             ..Default::default()
         };
 
-        let processed = process_single_event(&event, &authorization).unwrap();
+        let processed = process_single_event(event, &authorization).unwrap();
 
         assert_eq!(processed.event.api_key, authorization.installation_id);
         assert!(!processed.event.user.contains_key("identity_verification"));
@@ -389,7 +376,7 @@ mod tests {
 
         // process_events called with empty vec — no events to process, returns Ok
         // (the empty check happens in the capture handler, not process_events)
-        let result = process_events(sink, &events, &test_authorization()).await;
+        let result = process_events(sink, events, &test_authorization()).await;
         // Empty iter collects to empty vec, then events.len() == 0, neither branch executes
         assert!(result.is_ok());
     }
@@ -419,7 +406,7 @@ mod tests {
         ];
 
         // Multiple events go through send_batch() path
-        let result = process_events(sink, &events, &test_authorization()).await;
+        let result = process_events(sink, events, &test_authorization()).await;
         assert!(result.is_ok());
     }
 
@@ -452,7 +439,7 @@ mod tests {
                 ..Default::default()
             }];
 
-            let result = process_events(sink, &events, &test_authorization()).await;
+            let result = process_events(sink, events, &test_authorization()).await;
             assert!(result.is_err(), "Sink error should propagate");
         }
 
@@ -474,7 +461,7 @@ mod tests {
                 },
             ];
 
-            let result = process_events(sink, &events, &test_authorization()).await;
+            let result = process_events(sink, events, &test_authorization()).await;
             assert!(result.is_err(), "Batch sink error should propagate");
         }
     }

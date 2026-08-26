@@ -1,14 +1,12 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use axum::http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use anyhow::Result;
 use axum::http::HeaderMap;
 use bytes::Bytes;
-use serde_json::from_str;
 use uuid::Uuid;
 
 use crate::auth::authorization::AuthorizedCredential;
@@ -123,8 +121,6 @@ impl Event {
         token: Option<String>,
     ) -> Result<Vec<Event>> {
         tracing::debug!(len = bytes.len(), "decoding new event");
-        let payload = String::from_utf8(bytes.into())?;
-
         // Extract request context.
 
         let ip_addr = match headers.get("x-forwarded-for") {
@@ -143,7 +139,7 @@ impl Event {
             None => "",
         };
 
-        let json_value: serde_json::Value = serde_json::from_str(&payload)
+        let json_value: serde_json::Value = serde_json::from_slice(&bytes)
             .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
         let mut cookie_policy = String::new();
         let mut ip_policy = String::new();
@@ -164,6 +160,8 @@ impl Event {
             _ => vec![json_value],
         };
 
+        let token = token.unwrap_or_default();
+
         for json_value in json_values.iter_mut() {
             if let Some(obj) = json_value.as_object_mut() {
                 extract_and_set_request_context(
@@ -172,17 +170,16 @@ impl Event {
                     &cookie_policy,
                     &ip_policy,
                     &user_agent,
-                    &token.clone().unwrap_or_default(),
+                    &token,
                 );
             }
         }
 
-        let payload_modified = serde_json::to_string(&json_values).unwrap();
-
-        match serde_json::from_str::<Vec<Event>>(&payload_modified) {
-            Ok(events) => Ok(events),
-            Err(err) => Err(anyhow::Error::from(err)),
-        }
+        json_values
+            .into_iter()
+            .map(serde_json::from_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(anyhow::Error::from)
     }
 }
 

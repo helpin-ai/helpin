@@ -4,6 +4,10 @@ import { check, sleep } from 'k6';
 import { Counter, Rate } from 'k6/metrics';
 
 const targetUrl = __ENV.TARGET_URL || 'http://127.0.0.1:3000/api/v1/event';
+const targetUrls = (__ENV.TARGET_URLS || targetUrl)
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 const token = __ENV.TOKEN || 'e2e-server-secret';
 const profile = (__ENV.PROFILE || 'arrival').toLowerCase();
 const eventRate = integerEnv('EVENT_RATE', 300);
@@ -23,6 +27,9 @@ const userAgent = __ENV.USER_AGENT || 'HelpinK6Capture/1.0';
 
 if (eventRate % batchSize !== 0) {
   throw new Error(`EVENT_RATE (${eventRate}) must be divisible by BATCH_SIZE (${batchSize})`);
+}
+if (targetUrls.length === 0) {
+  throw new Error('TARGET_URLS must contain at least one capture endpoint');
 }
 if (profile !== 'arrival' && profile !== 'connections') {
   throw new Error(`PROFILE must be arrival or connections, got ${profile}`);
@@ -100,7 +107,8 @@ export default function () {
 
   const payload = batchSize === 1 ? events[0] : events;
   eventsAttempted.add(batchSize);
-  const response = http.post(targetUrl, JSON.stringify(payload), {
+  const requestUrl = targetUrls[exec.scenario.iterationInTest % targetUrls.length];
+  const response = http.post(requestUrl, JSON.stringify(payload), {
     headers: {
       'Content-Type': 'application/json',
       'X-Auth-Token': token,
@@ -132,6 +140,7 @@ export function handleSummary(data) {
   const result = {
     configuration: {
       target_url: targetUrl,
+      target_urls: targetUrls,
       profile,
       event_rate: eventRate,
       request_rate: requestRate,
