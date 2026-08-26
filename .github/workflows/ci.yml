@@ -31,6 +31,7 @@ jobs:
       helpcenter: ${{ steps.filter.outputs.helpcenter }}
       desktop: ${{ steps.filter.outputs.desktop }}
       mobile: ${{ steps.filter.outputs.mobile }}
+      eventpipeline: ${{ steps.filter.outputs.eventpipeline }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,6 +53,7 @@ jobs:
             echo "helpcenter=true" >> "$GITHUB_OUTPUT"
             echo "desktop=true" >> "$GITHUB_OUTPUT"
             echo "mobile=true" >> "$GITHUB_OUTPUT"
+            echo "eventpipeline=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -71,6 +73,7 @@ jobs:
           HELPCENTER=false
           DESKTOP=false
           MOBILE=false
+          EVENTPIPELINE=false
 
           if echo "$CHANGED" | grep -qE '^server/|^\.github/workflows/ci\.yml$'; then
             SERVER=true
@@ -101,6 +104,9 @@ jobs:
           if echo "$CHANGED" | grep -qE '^apps/support-mobile/|^packages/support-core/|^packages/shared/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
             MOBILE=true
           fi
+          if echo "$CHANGED" | grep -qE '^events-pipeline/|^\.github/workflows/(ci|eventpipeline-(staging|prod))\.yml$'; then
+            EVENTPIPELINE=true
+          fi
 
           echo "server=$SERVER" >> "$GITHUB_OUTPUT"
           echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
@@ -109,7 +115,22 @@ jobs:
           echo "helpcenter=$HELPCENTER" >> "$GITHUB_OUTPUT"
           echo "desktop=$DESKTOP" >> "$GITHUB_OUTPUT"
           echo "mobile=$MOBILE" >> "$GITHUB_OUTPUT"
-          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER desktop=$DESKTOP mobile=$MOBILE"
+          echo "eventpipeline=$EVENTPIPELINE" >> "$GITHUB_OUTPUT"
+          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER desktop=$DESKTOP mobile=$MOBILE eventpipeline=$EVENTPIPELINE"
+
+  # --------------------- Events Pipeline --------------------
+  eventpipeline:
+    name: Events Pipeline CI
+    needs: changes
+    if: needs.changes.outputs.eventpipeline == 'true'
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Test capture, replay, bootstrap, and writer binaries
+        working-directory: events-pipeline/rust-capture
+        run: cargo test --locked
 
   # ------------------------- Server -------------------------
   server:

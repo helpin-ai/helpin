@@ -118,6 +118,11 @@ JetStream capacity calculation are in
 [`CAPACITY_BASELINE.md`](CAPACITY_BASELINE.md). That document is the canonical
 deployment-sizing reference; the benchmark's durability caveats apply.
 
+The environment prerequisites, exact secret contract, first Argo CD rollout
+order, and post-deploy checks are in [`DEPLOYMENT.md`](DEPLOYMENT.md). A merge
+builds and tags the workloads, but does not provision the external ClickHouse
+service or the deployment secrets described there.
+
 ### k6 capture load test
 
 The k6 profile uses an open arrival model, so slow responses do not silently

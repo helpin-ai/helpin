@@ -80,6 +80,10 @@ spec:
             - secretRef:
                 name: helpin-secrets
           env:
+            - name: HTTP_TOKENS_URL
+              value: http://helpin-server-svc.helpin.svc.cluster.local:8080/api/internal/widget-tokens
+            - name: NETWORK_ENRICHMENT_ENABLED
+              value: "true"
             - name: NATS_URL
               value: tls://helpin-eventpipeline-nats.helpin.svc.cluster.local:4222
             - name: NATS_USERNAME
@@ -152,6 +156,8 @@ spec:
             - secretRef:
                 name: helpin-secrets
           env:
+            - name: NETWORK_ENRICHMENT_ENABLED
+              value: "true"
             - name: NATS_URL
               value: tls://helpin-eventpipeline-nats.helpin.svc.cluster.local:4222
             - name: NATS_USERNAME
