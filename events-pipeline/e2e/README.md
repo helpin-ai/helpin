@@ -20,6 +20,33 @@ The sustained scripts run the pinned `grafana/k6:1.8.1` image, so a host k6
 installation is not required. Reserve ports 3000, 3001, 3010, 3011, 14222,
 18123, 18222-18224, and 19000.
 
+### macOS OpenSSL requirement
+
+The certificate helper requires OpenSSL 3 because it uses
+`x509 -copy_extensions copy`. `/usr/bin/openssl` on macOS is LibreSSL and does
+not support this option. Older versions of the helper hid OpenSSL stderr, which
+made this failure look like a silent script exit before infrastructure startup.
+The helper now reports the unsupported implementation explicitly.
+
+Install and select Homebrew OpenSSL 3 before running either E2E script:
+
+```bash
+brew install openssl@3
+export PATH="$(brew --prefix openssl@3)/bin:$PATH"
+openssl version
+```
+
+The last command must report OpenSSL 3.x, not LibreSSL. On an Apple Silicon
+Homebrew installation, the equivalent one-command prefix is:
+
+```bash
+PATH="/opt/homebrew/opt/openssl@3/bin:$PATH" \
+just events-e2e
+```
+
+Use the same `PATH=...` prefix on the first line of a sustained-test command if
+you do not export it in the shell.
+
 ## Fast functional E2E test
 
 ```bash
