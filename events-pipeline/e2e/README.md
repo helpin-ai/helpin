@@ -47,6 +47,11 @@ just events-e2e
 Use the same `PATH=...` prefix on the first line of a sustained-test command if
 you do not export it in the shell.
 
+Resource sampling is also platform-aware: Linux reads `/proc/meminfo`, while
+macOS uses `vm_stat` and `sysctl vm.swapusage`. The macOS
+`mem_available_kib` value is an approximation based on free, inactive, and
+speculative VM pages; use Activity Monitor for additional host-level diagnosis.
+
 ## Fast functional E2E test
 
 ```bash

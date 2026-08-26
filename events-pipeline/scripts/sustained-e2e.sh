@@ -30,6 +30,7 @@ expected=$((rate * duration))
 run_id="sustained-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 run_dir=${SUSTAINED_RESULTS_DIR:-"/tmp/helpin-$run_id"}
 source "$repo_root/events-pipeline/scripts/e2e-nats-tls.sh"
+source "$repo_root/events-pipeline/scripts/e2e-host-resources.sh"
 export E2E_NATS_TLS_DIR="$run_dir/nats-tls"
 compose=(docker compose --project-name helpin-event-sustained --file "$compose_file")
 capture_pid=""
@@ -121,8 +122,7 @@ sample_resources() {
     capture_rss=$(awk '{print $2}' <<<"$capture_stats")
     writer_cpu=$(awk '{print $1}' <<<"$writer_stats")
     writer_rss=$(awk '{print $2}' <<<"$writer_stats")
-    mem_available=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo)
-    swap_free=$(awk '/SwapFree:/ {print $2}' /proc/meminfo)
+    read -r mem_available swap_free <<<"$(sample_host_memory_kib)"
     echo "$now,${capture_cpu:-0},${capture_rss:-0},${writer_cpu:-0},${writer_rss:-0},$mem_available,$swap_free" >>"$run_dir/process-resources.csv"
     docker stats --no-stream --format "$now,{{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.PIDs}}" \
       | grep 'helpin-event-sustained-' >>"$run_dir/docker-resources.csv" || true
