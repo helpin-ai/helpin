@@ -171,6 +171,9 @@ spec:
   templates:
     podTemplates:
       - name: helpin-clickhouse
+        metadata:
+          annotations:
+            helpin.ai/clickhouse-config-revision: "2026-08-27-1"
         spec:
           affinity:
             nodeAffinity:
