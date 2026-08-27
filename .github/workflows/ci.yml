@@ -127,6 +127,21 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust native build dependencies
+        run: |
+          if command -v cc >/dev/null 2>&1 \
+            && command -v pkg-config >/dev/null 2>&1 \
+            && pkg-config --exists openssl; then
+            exit 0
+          fi
+
+          PACKAGES="build-essential pkg-config libssl-dev"
+          (command -v sudo >/dev/null 2>&1 && sudo apt-get update && sudo apt-get install -y $PACKAGES) \
+            || (apt-get update && apt-get install -y $PACKAGES) \
+            || { echo "::error::could not install Rust native build dependencies"; exit 1; }
+
+          cc --version
+          pkg-config --modversion openssl
       - uses: dtolnay/rust-toolchain@1.88.0
       - name: Test capture, replay, bootstrap, and writer binaries
         working-directory: events-pipeline/rust-capture
