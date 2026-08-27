@@ -151,6 +151,18 @@ impl BotResolver {
     pub fn check_bot(&self, agent: &str) -> bool {
         self.classify(agent).is_bot
     }
+
+    pub fn seed_to_lru_cache(&self) -> io::Result<usize> {
+        let file = File::open("data/user_agents_seed.txt")?;
+        let buffered = io::BufReader::new(file);
+        let mut seeded = 0;
+        for line in buffered.lines() {
+            self.check_bot(&line?);
+            seeded += 1;
+        }
+        tracing::info!(seeded, "seeded bot resolver user-agent cache");
+        Ok(seeded)
+    }
 }
 
 #[cfg(test)]

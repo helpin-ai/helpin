@@ -22,12 +22,37 @@ pub struct EnrichingNatsSink {
 
 impl EnrichingNatsSink {
     pub fn new(publisher: NatsEventPublisher, databases: EnrichmentDatabaseState) -> Self {
+        Self::build(publisher, databases, false)
+    }
+
+    pub fn new_with_preloaded_user_agents(
+        publisher: NatsEventPublisher,
+        databases: EnrichmentDatabaseState,
+    ) -> Self {
+        Self::build(publisher, databases, true)
+    }
+
+    fn build(
+        publisher: NatsEventPublisher,
+        databases: EnrichmentDatabaseState,
+        preload_user_agents: bool,
+    ) -> Self {
+        let bot_resolver = BotResolver::new();
+        let ua_resolver = UaResolver::new();
+        if preload_user_agents {
+            if let Err(error) = bot_resolver.seed_to_lru_cache() {
+                tracing::warn!(%error, "bot resolver user-agent cache preload failed");
+            }
+            if let Err(error) = ua_resolver.seed_to_lru_cache() {
+                tracing::warn!(%error, "UA resolver cache preload failed");
+            }
+        }
         Self {
             publisher,
             handler: EnrichmentHandler::new(),
             databases,
-            bot_resolver: BotResolver::new(),
-            ua_resolver: UaResolver::new(),
+            bot_resolver,
+            ua_resolver,
         }
     }
 

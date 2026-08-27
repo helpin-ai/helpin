@@ -37,6 +37,10 @@ writer_replicas=${SUSTAINED_WRITER_REPLICAS:-1}
 capture_replicas=${SUSTAINED_CAPTURE_REPLICAS:-1}
 k6_p50_limit_ms=${SUSTAINED_K6_P50_LIMIT_MS:-10}
 k6_p99_limit_ms=${SUSTAINED_K6_P99_LIMIT_MS:-25}
+k6_data_profile=${SUSTAINED_K6_DATA_PROFILE:-simple}
+k6_realistic_user_agents=${SUSTAINED_K6_REALISTIC_USER_AGENTS:-9999}
+k6_realistic_ips=${SUSTAINED_K6_REALISTIC_IPS:-65536}
+realistic_min_distinct=${SUSTAINED_REALISTIC_MIN_DISTINCT:-100}
 resource_monitor_enabled=${SUSTAINED_RESOURCE_MONITOR_ENABLED:-true}
 docker_resource_monitor_enabled=${SUSTAINED_DOCKER_RESOURCE_MONITOR_ENABLED:-true}
 jetstream_disk_monitor_enabled=${SUSTAINED_JETSTREAM_DISK_MONITOR_ENABLED:-false}
@@ -351,10 +355,10 @@ assert_no_spill_files() {
   fi
 }
 
-echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size workers=$workers connections=$connections visitors=$visitors print_sink=$print_sink archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas capture_replicas=$capture_replicas work_storage=$work_storage work_replicas=$work_replicas work_in_flight=$work_max_in_flight clickhouse_storage=$clickhouse_storage resource_monitor=$resource_monitor_enabled docker_resource_monitor=$docker_resource_monitor_enabled jetstream_disk_monitor=$jetstream_disk_monitor_enabled resource_sample_interval=$resource_sample_interval"
+echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size data_profile=$k6_data_profile workers=$workers connections=$connections visitors=$visitors print_sink=$print_sink archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas capture_replicas=$capture_replicas work_storage=$work_storage work_replicas=$work_replicas work_in_flight=$work_max_in_flight clickhouse_storage=$clickhouse_storage resource_monitor=$resource_monitor_enabled docker_resource_monitor=$docker_resource_monitor_enabled jetstream_disk_monitor=$jetstream_disk_monitor_enabled resource_sample_interval=$resource_sample_interval"
 echo "Results will be retained in $run_dir"
-printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_storage=%s\nwork_replicas=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\ncapture_replicas=%s\nclickhouse_storage=%s\nresource_monitor_enabled=%s\ndocker_resource_monitor_enabled=%s\njetstream_disk_monitor_enabled=%s\nresource_sample_interval_seconds=%s\n' \
-  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_storage" "$work_replicas" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" "$capture_replicas" "$clickhouse_storage" "$resource_monitor_enabled" "$docker_resource_monitor_enabled" "$jetstream_disk_monitor_enabled" "$resource_sample_interval" >"$run_dir/test.env"
+printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nk6_data_profile=%s\nk6_realistic_user_agents=%s\nk6_realistic_ips=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_storage=%s\nwork_replicas=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\ncapture_replicas=%s\nclickhouse_storage=%s\nresource_monitor_enabled=%s\ndocker_resource_monitor_enabled=%s\njetstream_disk_monitor_enabled=%s\nresource_sample_interval_seconds=%s\n' \
+  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$k6_data_profile" "$k6_realistic_user_agents" "$k6_realistic_ips" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_storage" "$work_replicas" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" "$capture_replicas" "$clickhouse_storage" "$resource_monitor_enabled" "$docker_resource_monitor_enabled" "$jetstream_disk_monitor_enabled" "$resource_sample_interval" >"$run_dir/test.env"
 
 "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 "${compose[@]}" up --detach --wait
@@ -542,6 +546,7 @@ if [[ "$load_driver" == "k6-connections" || "$load_driver" == "k6-arrival" ]]; t
   docker run --rm --network host \
     --name helpin-event-sustained-k6 \
     --volume "$repo_root/events-pipeline/scripts:/scripts:ro" \
+    --volume "$capture_dir/data/user_agents_seed.txt:/fixtures/user-agents.txt:ro" \
     --volume "$run_dir:/results" \
     --env TARGET_URL="${capture_urls[0]}" \
     --env TARGET_URLS="$target_urls" \
@@ -556,6 +561,10 @@ if [[ "$load_driver" == "k6-connections" || "$load_driver" == "k6-arrival" ]]; t
     --env DURATION="${duration}s" \
     --env BATCH_SIZE="$batch_size" \
     --env VISITORS="$visitors" \
+    --env DATA_PROFILE="$k6_data_profile" \
+    --env REALISTIC_USER_AGENTS="$k6_realistic_user_agents" \
+    --env REALISTIC_IPS="$k6_realistic_ips" \
+    --env USER_AGENT_FILE=/fixtures/user-agents.txt \
     --env CLIENT_IP=8.8.8.8 \
     --env 'USER_AGENT=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36' \
     --env SUMMARY_PATH=/results/k6-summary.json \
@@ -563,6 +572,13 @@ if [[ "$load_driver" == "k6-connections" || "$load_driver" == "k6-arrival" ]]; t
     >"$run_dir/load.log" 2>&1
   k6_status=$?
   set -e
+  if [[ ! -s "$run_dir/k6-summary.json" ]]; then
+    echo "k6 did not produce a summary; inspect $run_dir/load.log" >&2
+    if (( k6_status == 0 )); then
+      exit 1
+    fi
+    exit "$k6_status"
+  fi
   expected=$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1]))["results"]["events_accepted"]))' "$run_dir/k6-summary.json")
   cp "$run_dir/k6-summary.json" "$run_dir/load-result.json"
 elif [[ "$load_driver" == "external" ]]; then
@@ -702,17 +718,23 @@ PY
   exit 0
 fi
 
-echo "Waiting for ClickHouse to reach $expected logical rows"
+echo "Waiting for the writer consumers to drain"
 drain_started=$(date +%s)
-logical_rows=0
+work_messages=-1
 for _ in $(seq 1 180); do
-  logical_rows=$(clickhouse_query "SELECT count() FROM events FINAL WHERE src = '$source_label'")
-  if (( logical_rows >= expected )); then
+  read -r work_messages _ < <(work_stream_state)
+  if (( work_messages == 0 )); then
     break
   fi
   sleep 1
 done
 drain_seconds=$(($(date +%s) - drain_started))
+if (( work_messages != 0 )); then
+  echo "writer consumers did not drain within three minutes; $work_messages work messages remain" >&2
+  exit 1
+fi
+echo "Verifying ClickHouse reached $expected logical rows"
+logical_rows=$(clickhouse_query "SELECT count() FROM events FINAL WHERE src = '$source_label'")
 
 save_capture_metrics
 for ordinal in $(seq 0 $((writer_replicas - 1))); do
@@ -774,6 +796,30 @@ printf '%s\n' "$wrong_session_visitors" >"$run_dir/visitors-with-wrong-session-c
 
 clickhouse_query "$(<"$repo_root/events-pipeline/scripts/clickhouse-parts-health.sql")" \
   >"$run_dir/clickhouse-parts-health.tsv"
+
+if [[ "$k6_data_profile" == "realistic" ]]; then
+  read -r distinct_ips distinct_user_agents geo_rows parsed_ua_rows utm_rows ids_rows click_rows company_rows autocapture_rows distinct_paths ai_bot_rows ai_bot_providers ai_bot_names < <(
+    clickhouse_query "
+SELECT
+  uniqExact(source_ip),
+  uniqExact(user_agent),
+  countIf(location_country != ''),
+  countIf(parsed_ua_ua_family != ''),
+  countIf(utm_source != ''),
+  countIf(ids_ga != ''),
+  countIf(click_id_gclid != ''),
+  countIf(company_id != ''),
+  countIf(autocapture_attributes != '{}'),
+  uniqExact(doc_path),
+  countIf(startsWith(parsed_ua_bot_category, 'ai_')),
+  uniqExactIf(parsed_ua_bot_provider, startsWith(parsed_ua_bot_category, 'ai_')),
+  uniqExactIf(parsed_ua_bot_name, startsWith(parsed_ua_bot_category, 'ai_'))
+FROM events FINAL
+WHERE src = '$source_label'
+FORMAT TSVRaw
+" | tee "$run_dir/clickhouse-realistic-coverage.tsv"
+  )
+fi
 
 if [[ "$clickhouse_storage" == "r2" ]]; then
   clickhouse_query "
@@ -891,6 +937,14 @@ for name, samples in docker.items():
 
 physical = [int(value) for value in (root / "clickhouse-physical.tsv").read_text().split()]
 logical = [int(value) for value in (root / "clickhouse-final.tsv").read_text().split()]
+realistic_coverage_path = root / "clickhouse-realistic-coverage.tsv"
+realistic_coverage = None
+if realistic_coverage_path.exists():
+    values = [int(value) for value in realistic_coverage_path.read_text().split()]
+    realistic_coverage = dict(zip(
+        ["distinct_ips", "distinct_user_agents", "geo_rows", "parsed_ua_rows", "utm_rows", "ids_rows", "click_rows", "company_rows", "autocapture_rows", "distinct_paths", "ai_bot_rows", "ai_bot_providers", "ai_bot_names"],
+        values,
+    ))
 summary = {
     "load": load,
     "drain_seconds": int(os.environ["DRAIN_SECONDS"]),
@@ -898,6 +952,7 @@ summary = {
         "physical": dict(zip(["rows", "unique_event_ids", "visitors", "sessions", "rows_without_session"], physical)),
         "final": dict(zip(["rows", "unique_event_ids", "visitors", "sessions", "rows_without_session"], logical)),
         "visitors_with_wrong_session_count": int((root / "visitors-with-wrong-session-count.txt").read_text()),
+        "realistic_coverage": realistic_coverage,
     },
     "host_processes": {
         "capture_cpu_percent": stats("capture_cpu_percent"),
@@ -931,6 +986,21 @@ else
 fi
 [[ "$(awk '{print $5}' "$run_dir/clickhouse-final.tsv")" == "0" ]]
 [[ "$(cat "$run_dir/visitors-with-wrong-session-count.txt")" == "0" ]]
+if [[ "$k6_data_profile" == "realistic" ]]; then
+  (( distinct_ips >= realistic_min_distinct ))
+  (( distinct_user_agents >= realistic_min_distinct ))
+  (( geo_rows > 0 ))
+  (( parsed_ua_rows > 0 ))
+  (( utm_rows > 0 ))
+  (( ids_rows > 0 ))
+  (( click_rows > 0 ))
+  (( company_rows > 0 ))
+  (( autocapture_rows > 0 ))
+  (( distinct_paths >= 5 ))
+  (( ai_bot_rows > 0 ))
+  (( ai_bot_providers >= 3 ))
+  (( ai_bot_names >= 5 ))
+fi
 assert_no_spill_files
 
 echo "Sustained E2E passed"

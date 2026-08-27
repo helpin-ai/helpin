@@ -114,6 +114,38 @@ and raw archive enabled. It achieved exact 180,010-event parity, a one-second
 drain, and p99 8.58 ms. The capacity baseline records its complete resource and
 disk results.
 
+## Realistic enrichment profile
+
+Set `SUSTAINED_K6_DATA_PROFILE=realistic` on a `k6-arrival` or
+`k6-connections` run to replace the minimal payload with a deterministic mixed
+workload. Each HTTP batch represents one browser: its events share a visitor,
+IP, and user agent, while successive requests rotate through 65,536 IPs and a
+weighted 9,999-UA fixture. The payload varies event types, URLs, referrers,
+privacy policies, UTM attribution, Segment/GA/Facebook IDs, click IDs, user and
+company properties, event attributes, and autocapture attributes.
+
+The profile keeps the simple workload as the historical throughput baseline.
+It intentionally increases capture CPU, payload bytes, JetStream bytes,
+ClickHouse row width, and object-storage traffic. Override its cardinalities
+with `SUSTAINED_K6_REALISTIC_USER_AGENTS` and
+`SUSTAINED_K6_REALISTIC_IPS`. It also reserves traffic for generic crawlers and
+all configured AI crawler/fetcher families. `clickhouse-realistic-coverage.tsv`
+and the `clickhouse.realistic_coverage` summary object prove that IP, UA, geo,
+UTM, ID, company, autocapture, and AI bot classification fields reached
+ClickHouse.
+
+A 60-second direct-R2 qualification at 15,000 events/s with two captures and
+three writers stored all 900,020 accepted events with no drops, HTTP failures,
+redeliveries, duplicates, or session errors. It covered 69,816 stored IPs,
+8,654 UAs, and 897,130 geo-enriched rows; latency was p50 3.65 ms, p95 85.76
+ms, and p99 180.90 ms, with a 13-second writer drain. Capture preloads the
+shipped UA fixture into the UA and bot caches at startup; compared with the
+same cold-cache run, that reduced p99 from 274.80 ms and peak RSS from roughly
+2.41 GiB to 2.02 GiB per capture. MaxMind was available during this run, but
+IP2Proxy was unavailable and followed the fail-open path, so a pinned
+IP2Proxy-enabled run is still required for complete network-enrichment
+qualification.
+
 ## Cloudflare R2-backed ClickHouse test
 
 ClickHouse authenticates to R2 through its S3-compatible API. Create an R2
@@ -255,6 +287,7 @@ logs and enrichment metrics.
 | `jetstream-disk.csv` | Per-node total, work, raw, and DLQ physical filesystem samples |
 | `clickhouse-final.tsv` | Logical FINAL row, event, visitor, session, and empty-session counts |
 | `clickhouse-parts-health.tsv` | Active-part and partition health |
+| `clickhouse-realistic-coverage.tsv` | Distinct IP/UA/path and populated enrichment/AI-bot field counts for the realistic profile |
 
 The script succeeds only when k6 succeeds, every accepted event reaches
 ClickHouse, session IDs are present, each generated visitor has the expected

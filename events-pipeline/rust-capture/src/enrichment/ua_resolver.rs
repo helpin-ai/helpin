@@ -147,18 +147,23 @@ impl UaResolver {
         }
     }
 
-    pub fn seed_to_lru_cache(&self) -> io::Result<()> {
+    pub fn seed_to_lru_cache(&self) -> io::Result<usize> {
         tracing::info!("🔄 Seeding user agents from file to LRU cache started");
         let path = Path::new("data/user_agents_seed.txt");
         let file = File::open(&path)?;
         let reader = io::BufReader::new(file);
+        let mut seeded = 0;
 
         for line in reader.lines() {
             let ua = line?;
             self.resolve(&ua);
+            seeded += 1;
         }
-        tracing::info!("✅ Seeding user agents from file to LRU cache completed");
-        Ok(())
+        tracing::info!(
+            seeded,
+            "✅ Seeding user agents from file to LRU cache completed"
+        );
+        Ok(seeded)
     }
 
     pub fn resolve(&self, ua: &str) -> Option<ResolvedUa> {

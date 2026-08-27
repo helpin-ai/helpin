@@ -75,9 +75,11 @@ async fn start_main_server() {
         )
         .await;
         databases.start_refresh_loop();
-        let nats_sink = Arc::new(sinks::enriching_nats_sink::EnrichingNatsSink::new(
-            publisher, databases,
-        ));
+        let nats_sink = Arc::new(
+            sinks::enriching_nats_sink::EnrichingNatsSink::new_with_preloaded_user_agents(
+                publisher, databases,
+            ),
+        );
 
         let fallback_dir =
             PathBuf::from(env::var("FALLBACK_DIR").unwrap_or_else(|_| "data/fallback".to_string()));
