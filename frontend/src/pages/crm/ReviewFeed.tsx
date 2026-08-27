@@ -22,7 +22,7 @@ import { useAcceptSuggestion, useDismissSuggestion, usePendingSuggestions } from
 import { SuggestionCard } from '@/components/crm/SuggestionCard'
 import { useTitle } from '@/hooks/useTitle'
 import { cn, timeAgo } from '@/lib/utils'
-import type { CRMSuggestion, CRMSuggestionType } from '@/lib/crmTypes'
+import type { CRMSignalDismissalReason, CRMSuggestion, CRMSuggestionType } from '@/lib/crmTypes'
 
 type FilterTab = 'all' | CRMSuggestionType
 type SortMode = 'recommended' | 'newest' | 'oldest'
@@ -292,13 +292,14 @@ export function ReviewFeed() {
   const [activeTab, setActiveTab] = useState<FilterTab>('all')
   const [sortMode, setSortMode] = useState<SortMode>('recommended')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const deferredSearch = useDeferredValue(search.trim())
 
-  const { data, isLoading } = usePendingSuggestions(wsId)
+  const { data, isLoading, isFetching } = usePendingSuggestions(wsId, page)
   const acceptMutation = useAcceptSuggestion(wsId)
   const dismissMutation = useDismissSuggestion(wsId)
 
-  const allSuggestions = data?.data ?? []
+  const allSuggestions = useMemo(() => data?.data ?? [], [data?.data])
   const counts = useMemo<Record<CRMSuggestionType, number>>(() => ({
     deal_create: allSuggestions.filter((item) => item.suggestion_type === 'deal_create').length,
     deal_advance: allSuggestions.filter((item) => item.suggestion_type === 'deal_advance').length,
@@ -316,6 +317,8 @@ export function ReviewFeed() {
   }, [activeTab, allSuggestions, deferredSearch, sortMode])
 
   const hasQueue = allSuggestions.length > 0
+  const totalSuggestions = data?.total ?? 0
+  const pageCount = Math.max(1, Math.ceil(totalSuggestions / 20))
   const stats = useMemo(() => {
     const highConfidence = allSuggestions.filter((item) => item.confidence >= 0.9).length
     const riskAlerts = allSuggestions.filter((item) => item.suggestion_type === 'risk_alert').length
@@ -332,8 +335,8 @@ export function ReviewFeed() {
     })
   }
 
-  const handleDismiss = (id: string) => {
-    dismissMutation.mutate(id, {
+  const handleDismiss = (id: string, reason: CRMSignalDismissalReason) => {
+    dismissMutation.mutate({ id, reason }, {
       onSuccess: () => toast.success('Suggestion dismissed'),
       onError: (err) => toast.error(`Failed to dismiss: ${err.message}`),
     })
@@ -360,7 +363,7 @@ export function ReviewFeed() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Review</h1>
-            <p className="text-sm text-muted-foreground">Approve, dismiss, and prioritize CRM automation suggestions.</p>
+            <p className="text-sm text-muted-foreground">Review the evidence and preview the change before CRM records are updated.</p>
           </div>
           <Button variant="outline" size="sm" onClick={goToInsights} disabled={!wsSlug}>
             <SparklesIcon className="h-4 w-4" />
@@ -372,29 +375,29 @@ export function ReviewFeed() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label="Pending"
-              value={isLoading ? '-' : allSuggestions.length}
-              detail={allSuggestions.length === 1 ? '1 item in review' : `${allSuggestions.length} items in review`}
+              value={isLoading ? '-' : totalSuggestions}
+              detail={totalSuggestions === 1 ? '1 item in review' : `${totalSuggestions} items in review`}
               icon={InboxIcon}
               tone={allSuggestions.length > 0 ? 'accent' : 'neutral'}
             />
             <StatCard
-              label="High confidence"
+              label="Strong recommendations"
               value={isLoading ? '-' : stats.highConfidence}
-              detail="90% or higher"
+              detail="90% or higher on this page"
               icon={SparklesIcon}
               tone={stats.highConfidence > 0 ? 'good' : 'neutral'}
             />
             <StatCard
               label="Risk alerts"
               value={isLoading ? '-' : stats.riskAlerts}
-              detail="Needs attention"
+              detail="Needs attention on this page"
               icon={Alert01Icon}
               tone={stats.riskAlerts > 0 ? 'danger' : 'neutral'}
             />
             <StatCard
-              label="Avg. confidence"
+              label="Avg. recommendation"
               value={isLoading || allSuggestions.length === 0 ? '-' : `${stats.avgConfidence}%`}
-              detail="Across pending queue"
+              detail="Current page"
               icon={ChartIncreaseIcon}
               tone="good"
             />
@@ -502,6 +505,15 @@ export function ReviewFeed() {
                     isDismissing={dismissMutation.isPending}
                   />
                 ))}
+                {pageCount > 1 ? (
+                  <div className="flex items-center justify-between rounded-lg border bg-card px-3 py-3 text-xs text-muted-foreground">
+                    <span>Page {page} of {pageCount}</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" className="h-8" disabled={page <= 1 || isFetching} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
+                      <Button variant="outline" size="sm" className="h-8" disabled={page >= pageCount || isFetching} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>Next</Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             )}
           </main>

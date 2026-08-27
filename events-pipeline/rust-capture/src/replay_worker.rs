@@ -1,6 +1,8 @@
 use dotenv::dotenv;
+use events_pipeline::enrichment::database_state::EnrichmentDatabaseState;
 use events_pipeline::health::HealthRegistry;
-use events_pipeline::sinks::kafka_event_sink::KafkaSink;
+use events_pipeline::sinks::enriching_nats_sink::EnrichingNatsSink;
+use events_pipeline::sinks::nats_event_sink::NatsEventPublisher;
 use events_pipeline::sinks::{EventSink, EventTypes};
 use std::env;
 use std::fs;
@@ -30,8 +32,7 @@ async fn main() {
         });
     }
 
-    let brokers = env::var("KAFKA_BROKERS").expect("KAFKA_BROKERS must be set");
-    let topic = env::var("KAFKA_TOPIC").expect("KAFKA_TOPIC must be set");
+    let nats_url = env::var("NATS_URL").expect("NATS_URL must be set");
     let batch_size: usize = env::var("REPLAY_BATCH_SIZE")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -45,8 +46,13 @@ async fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(24);
 
-    let sink = KafkaSink::new(topic, brokers, HealthRegistry::new())
-        .expect("Failed to create Kafka sink for replay");
+    let publisher = NatsEventPublisher::new(nats_url, HealthRegistry::new());
+    let network_enrichment_enabled = env::var("NETWORK_ENRICHMENT_ENABLED")
+        .map(|value| value != "false")
+        .unwrap_or(true);
+    let databases = EnrichmentDatabaseState::initialize(network_enrichment_enabled).await;
+    databases.start_refresh_loop();
+    let sink = EnrichingNatsSink::new(publisher, databases);
 
     tracing::info!("Replay worker started, watching {:?}", pending_dir);
 
@@ -65,7 +71,7 @@ async fn main() {
         {
             Ok(files_processed) => {
                 if files_processed > 0 {
-                    tracing::info!("Replayed {} files to Kafka", files_processed);
+                    tracing::info!("Replayed {} files to NATS", files_processed);
                 }
             }
             Err(e) => {
@@ -106,7 +112,7 @@ async fn process_pending_files(
     pending_dir: &Path,
     processing_dir: &Path,
     completed_dir: &Path,
-    sink: &KafkaSink,
+    sink: &(dyn EventSink + Send + Sync),
     batch_size: usize,
 ) -> Result<usize, String> {
     let entries =
@@ -132,7 +138,7 @@ async fn process_pending_files(
             }
             Err(e) => {
                 tracing::error!("Failed to replay file {:?}: {}", file_path, e);
-                break; // Stop processing if Kafka is down
+                break; // Preserve ordering and stop when NATS is unavailable.
             }
         }
     }
@@ -144,7 +150,7 @@ async fn replay_file(
     file_path: &Path,
     processing_dir: &Path,
     completed_dir: &Path,
-    sink: &KafkaSink,
+    sink: &(dyn EventSink + Send + Sync),
     batch_size: usize,
 ) -> Result<(), String> {
     let file_name = file_path
@@ -179,7 +185,7 @@ async fn replay_file(
                     if let Err(e) = sink.send_batch(batch).await {
                         // Move file back to pending for retry
                         let _ = fs::rename(&processing_path, file_path);
-                        return Err(format!("Kafka send failed: {:?}", e));
+                        return Err(format!("NATS send failed: {:?}", e));
                     }
                     total_events += count;
                     batch = Vec::with_capacity(batch_size);
@@ -197,7 +203,7 @@ async fn replay_file(
         let remaining = batch.len();
         if let Err(e) = sink.send_batch(batch).await {
             let _ = fs::rename(&processing_path, file_path);
-            return Err(format!("Kafka send failed: {:?}", e));
+            return Err(format!("NATS send failed: {:?}", e));
         }
         total_events += remaining;
     }

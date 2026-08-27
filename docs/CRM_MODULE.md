@@ -2,6 +2,11 @@
 
 AI-driven CRM integrated with Helpin's PM, Docs, Support, and Agent modules. HubSpot-compatible data model with zero-touch pipeline management, buyer signal detection, and automated outbound sequences.
 
+For buyer-signal architecture, rule definitions, activation safety, and local
+operations, use the canonical
+[`crm-buyer-signals.md`](crm-buyer-signals.md) reference. This module overview
+does not duplicate that changing rule catalogue.
+
 ## Architecture
 
 The CRM follows Helpin's standard Handler → Service → Repository layering with RBAC authorization, GORM models, and TanStack Query on the frontend.
@@ -16,7 +21,9 @@ The CRM follows Helpin's standard Handler → Service → Repository layering wi
 
 ### Database
 
-5 sequential migrations (`025`–`029`) create all CRM tables with proper indexes, GIN indexes on JSONB columns, and composite unique constraints on associations.
+CRM schema is maintained by startup AutoMigrate, focused idempotent repository
+migrations, and versioned SQL under `server/internal/dbmigrate/sql`. Legacy SQL
+under `server/migrations` is reference-only.
 
 ---
 
@@ -81,15 +88,21 @@ All core objects support `custom_properties` (JSONB) for user-defined fields wit
 
 **CRMCalendarEvent** — Synced calendar events with attendee-to-contact matching and deal association.
 
-> Note: OAuth flows are currently stubbed. Token storage and message models are complete.
+OAuth, incremental synchronization, message normalization, and downstream
+signal ingestion are documented in [`crm-email-sync.md`](crm-email-sync.md).
 
-### Intelligence (Phase 4)
+### Intelligence
 
 **CRMEnrichmentResult** — Contact/company enrichment data from Apollo, AI, or manual sources with confidence scores.
 
-**CRMBuyerSignal** — Detected buying signals: buying_intent, objection, competitor_mention, budget_signal, timeline_signal, champion_signal, risk_signal. Sourced from emails, meetings, notes.
+**CRMBuyerSignal** — Durable, explainable evidence from verified conversation
+extraction and versioned deterministic rules across support, delivery, CRM,
+relationship, web, product, and external domains. The stable signal taxonomy is
+`buying_intent`, `objection`, `competitor_mention`, `budget_signal`,
+`timeline_signal`, `champion_signal`, and `risk_signal`.
 
-**CRMDealHealthScore** — 0–100 deal health with factor breakdown (JSONB). Calculated periodically.
+**CRMDealHealthScore** — Deterministic 0–100 deal health with a versioned factor
+breakdown. Refreshed after signal changes and by a periodic workspace sweep.
 
 **CRMSuggestion** — AI-generated action items: follow_up, deal_create, deal_advance, enrichment, risk_alert. Statused as pending/accepted/dismissed.
 
@@ -209,7 +222,7 @@ All endpoints are under `/api/crm/` and require workspace context (`X-Workspace-
 ### Calendar
 | Method | Path | Permission | Description |
 |--------|------|-----------|-------------|
-| GET | `/crm/calendar-events` | crm.read | List events |
+| GET | `/crm/calendar/events` | crm.read | List events |
 | GET | `/crm/contacts/{id}/calendar` | crm.read | Contact's events |
 | GET | `/crm/deals/{id}/calendar` | crm.read | Deal's events |
 
@@ -220,8 +233,20 @@ All endpoints are under `/api/crm/` and require workspace context (`X-Workspace-
 | POST | `/crm/enrichments` | crm.edit | Create enrichment |
 | GET | `/crm/signals` | crm.read | List buyer signals |
 | POST | `/crm/signals` | crm.edit | Create signal |
+| GET | `/crm/signals/feed` | crm.read | Ranked workspace signal feed |
+| GET | `/crm/signals/brief` | crm.read | Current signal brief |
+| GET | `/crm/meetings/{id}/signal-brief` | crm.read | Meeting signal brief |
+| GET | `/crm/signals/precision` | crm.read | Rule/version feedback report |
+| GET | `/crm/signals/routing-policy` | crm.read | Active routing policy |
+| POST | `/crm/signals/routing-policy` | crm.edit | Create routing policy version |
+| POST | `/crm/signals/rules/{ruleKey}/versions/{version}/activate` | crm.edit | Activate rule version |
+| POST | `/crm/signals/external-evidence` | crm.edit | Ingest normalized external evidence |
+| POST | `/crm/signals/{id}/review` | crm.edit | Record review feedback |
+| POST | `/crm/signals/{id}/dismiss` | crm.edit | Dismiss with a reason |
+| POST | `/crm/signals/{id}/acted` | crm.edit | Record action feedback |
 | GET | `/crm/contacts/{id}/signals` | crm.read | Contact's signals |
 | GET | `/crm/deals/{id}/signals` | crm.read | Deal's signals |
+| GET | `/crm/companies/{id}/signals` | crm.read | Company's signals |
 | GET | `/crm/health-scores` | crm.read | List health scores |
 | GET | `/crm/deals/{id}/health-score` | crm.read | Deal's health score |
 | GET | `/crm/suggestions` | crm.read | List suggestions |
@@ -432,15 +457,12 @@ frontend/src/routes/_authenticated/w/$slug/crm/
 | Associations | Polymorphic table | Flexible any-to-any linking, supports cross-module associations |
 | Display IDs | Sequential per workspace (CON-1, COM-1, DEAL-1) | Human-readable, follows PM pattern |
 | Email tokens | Encrypted at rest | OAuth tokens are sensitive credentials |
-| AI analysis | Stubbed for Temporal async | Controls LLM costs, doesn't block sync |
+| AI analysis | Durable Temporal extraction plus deterministic evaluators | Keeps ingestion asynchronous and evidence auditable |
 | Sequences | Designed for Temporal workflows | Exactly-once guarantees, timer support |
 | CRM permissions | Flat RBAC (crm.read/edit/admin) | Follows existing pattern, no per-object ACL needed |
 
-## Future Work
+## Further work
 
-- **Email OAuth**: Complete Gmail/Microsoft Graph OAuth flows and incremental sync
-- **Temporal Workflows**: Wire enrichment, signal detection, sequence execution to Temporal
-- **AI Writing**: Implement Claude-based email drafting with voice matching
-- **Global Search**: Integrate CRM objects into workspace-wide search
-- **Support Integration**: Auto-lookup CRM contacts on support ticket creation
-- **PM Integration**: Associate deals with epics/stories
+This overview intentionally does not maintain a speculative backlog. Use dated
+documents under `docs/plans` for proposals and verify implementation status in
+the linked canonical feature references before relying on a plan.

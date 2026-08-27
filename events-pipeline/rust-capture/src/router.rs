@@ -1,6 +1,6 @@
 use axum::{extract::DefaultBodyLimit, middleware};
 use sentry::integrations::tower::{NewSentryLayer, SentryHttpLayer};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
 
@@ -24,7 +24,7 @@ use tower_http::cors::{Any, CorsLayer};
 pub struct State {
     pub sink: Arc<dyn sinks::EventSink + Send + Sync>,
     pub timesource: Arc<dyn TimeSource + Send + Sync>,
-    pub http_tokens: Arc<Mutex<HttpTokens>>,
+    pub http_tokens: Arc<HttpTokens>,
     pub health: HealthRegistry,
 }
 
@@ -38,7 +38,7 @@ pub fn router<
 >(
     timesource: TZ,
     sink: S,
-    http_tokens: Arc<Mutex<HttpTokens>>,
+    http_tokens: Arc<HttpTokens>,
     health_registry: HealthRegistry,
 ) -> Router {
     let state = State {

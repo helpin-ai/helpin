@@ -950,6 +950,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/routing-usage", h.SupportInbox.GetRoutingUsageStatus)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Patch("/inbox/installations", h.SupportInbox.UpdateInstallationSettings)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/regenerate-key", h.SupportInbox.RegenerateWidgetKey)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/rotate-secret", h.SupportInbox.RotateWidgetSecret)
 
 				// Canned responses
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses", h.SupportInbox.ListCannedResponses)
@@ -1599,10 +1600,22 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/enrichments/{id}/apply-suggestion", h.CRMEnrichment.ApplySuggestion)
 
 				// Signals — crm.read / crm.edit
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/feed", h.CRMSignal.ListWorkspaceFeed)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/brief", h.CRMSignal.SignalBrief)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/{id}/signal-brief", h.CRMSignal.MeetingSignalBrief)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/precision", h.CRMSignal.PrecisionReport)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/signals/rules", h.CRMSignal.ListRuleConfigs)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/routing-policy", h.CRMSignal.GetRoutingPolicy)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/routing-policy", h.CRMSignal.CreateRoutingPolicy)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/routing-policy/versions/{version}/activate", h.CRMSignal.ActivateRoutingPolicy)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/rules/{ruleKey}/versions/{version}/activate", h.CRMSignal.ActivateRuleVersion)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals", h.CRMSignal.ListSignals)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals", h.CRMSignal.CreateSignal)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/external-evidence", h.CRMSignal.IngestExternalEvidence)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/signals/{id}", h.CRMSignal.DeleteSignal)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals/{id}/dismiss", h.CRMSignal.DismissSignal)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals/{id}/review", h.CRMSignal.ReviewSignal)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/signals/{id}/acted", h.CRMSignal.ActOnSignal)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/signals", h.CRMSignal.ListByContact)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/signals", h.CRMSignal.ListByDeal)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}/signals", h.CRMSignal.ListByCompany)

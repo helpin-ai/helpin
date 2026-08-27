@@ -568,11 +568,12 @@ func (s *SupportInboxService) GetInstallation(ctx context.Context, workspaceID s
 		}
 
 		inst = &model.SupportWidgetInstallation{
-			WorkspaceID: workspaceID,
-			WidgetKey:   widgetKey,
-			SecretKey:   secretKey,
-			Settings:    string(raw),
-			Active:      true,
+			WorkspaceID:              workspaceID,
+			WidgetKey:                widgetKey,
+			SecretKey:                secretKey,
+			IdentityVerificationMode: model.IdentityVerificationModeEnforced,
+			Settings:                 string(raw),
+			Active:                   true,
 		}
 		if err := s.installationRepo.Create(ctx, inst); err != nil {
 			return nil, nil, fmt.Errorf("create widget installation: %w", err)
@@ -640,6 +641,23 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 	current := parseSettings(inst.Settings)
 	merged := mergeSettingsUpdate(current, req)
+	if req.AllowedOrigins != nil {
+		origins, err := normalizeAllowedOrigins(*req.AllowedOrigins)
+		if err != nil {
+			return nil, nil, err
+		}
+		inst.AllowedOrigins = model.DocsStringArray(origins)
+	}
+	if req.IdentityVerificationMode != nil {
+		mode := strings.TrimSpace(*req.IdentityVerificationMode)
+		if mode != model.IdentityVerificationModeReportOnly && mode != model.IdentityVerificationModeEnforced {
+			return nil, nil, fmt.Errorf("identity_verification_mode must be report_only or enforced")
+		}
+		if mode == model.IdentityVerificationModeEnforced && len(inst.AllowedOrigins) == 0 {
+			return nil, nil, fmt.Errorf("allowed_origins is required before identity enforcement")
+		}
+		inst.IdentityVerificationMode = mode
+	}
 	if s.entitlementSvc != nil {
 		if !merged.ShowBranding {
 			if err := s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureRemoveBranding); err != nil {
@@ -727,6 +745,30 @@ func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspace
 	return inst, &settings, nil
 }
 
+// RotateWidgetSecret rotates the S2S/signing secret without changing the public widget key.
+func (s *SupportInboxService) RotateWidgetSecret(ctx context.Context, workspaceID, actorUserID string) (string, error) {
+	inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if inst == nil {
+		return "", fmt.Errorf("no widget installation found for this workspace")
+	}
+	secretKey, err := generateSecureToken(32)
+	if err != nil {
+		return "", fmt.Errorf("generate secret key: %w", err)
+	}
+	if err := s.installationRepo.RotateSecret(ctx, inst.ID, secretKey, actorUserID); err != nil {
+		return "", err
+	}
+	slog.InfoContext(ctx, "rotated support widget server/signing secret",
+		"workspace_id", workspaceID,
+		"installation_id", inst.ID,
+		"actor_user_id", actorUserID,
+	)
+	return secretKey, nil
+}
+
 // SeedWorkspaceDefaults creates default support inbox data for a new workspace.
 func (s *SupportInboxService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
 	if s.installationRepo != nil {
@@ -751,11 +793,12 @@ func (s *SupportInboxService) SeedWorkspaceDefaults(ctx context.Context, workspa
 			}
 
 			inst := &model.SupportWidgetInstallation{
-				WorkspaceID: workspaceID,
-				WidgetKey:   widgetKey,
-				SecretKey:   secretKey,
-				Settings:    string(raw),
-				Active:      true,
+				WorkspaceID:              workspaceID,
+				WidgetKey:                widgetKey,
+				SecretKey:                secretKey,
+				IdentityVerificationMode: model.IdentityVerificationModeEnforced,
+				Settings:                 string(raw),
+				Active:                   true,
 			}
 			if err := s.installationRepo.Create(ctx, inst); err != nil {
 				return fmt.Errorf("create widget installation: %w", err)

@@ -391,44 +391,115 @@ func (SupportCannedResponse) TableName() string { return "support_canned_respons
 
 // SupportWidgetInstallation holds workspace-level widget configuration.
 type SupportWidgetInstallation struct {
-	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
-	WidgetKey   string    `json:"widget_key" gorm:"not null"` // public key for embedding
-	SecretKey   string    `json:"-" gorm:"not null"`          // for signing session tokens
-	Settings    string    `json:"settings" gorm:"type:jsonb;not null;default:'{}'"`
-	Active      bool      `json:"active" gorm:"not null;default:true"`
-	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                       string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID              string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
+	WidgetKey                string          `json:"widget_key" gorm:"not null"` // public key for embedding
+	SecretKey                string          `json:"-" gorm:"not null"`          // S2S auth and identity signing
+	AllowedOrigins           DocsStringArray `json:"allowed_origins" gorm:"type:text[];not null;default:'{}'"`
+	IdentityVerificationMode string          `json:"identity_verification_mode" gorm:"not null;default:'report_only'"`
+	Settings                 string          `json:"settings" gorm:"type:jsonb;not null;default:'{}'"`
+	Active                   bool            `json:"active" gorm:"not null;default:true"`
+	CreatedAt                time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportWidgetInstallation) TableName() string { return "support_widget_installations" }
 
+const (
+	IdentityVerificationModeOff        = "off"
+	IdentityVerificationModeReportOnly = "report_only"
+	IdentityVerificationModeEnforced   = "enforced"
+
+	IdentityMethodAnonymous        = "anonymous"
+	IdentityMethodBrowserClaim     = "browser_claim"
+	IdentityMethodSignedWidget     = "signed_widget"
+	IdentityMethodVerifiedSupport  = "verified_support"
+	IdentityMethodConnectedMailbox = "connected_mailbox"
+	IdentityMethodServerEvent      = "server_event"
+	IdentityMethodManualEntry      = "manual_entry"
+
+	IdentityTrustUntrusted     = "untrusted"
+	IdentityTrustProbabilistic = "probabilistic"
+	IdentityTrustVerified      = "verified"
+)
+
+// WorkspaceEventProjectAlias maps a historical ClickHouse project to its workspace.
+// Legacy server-secret aliases are read compatibility data and must never be exposed.
+type WorkspaceEventProjectAlias struct {
+	ID          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_event_project_workspace"`
+	ProjectID   string     `json:"-" gorm:"not null;uniqueIndex;uniqueIndex:idx_event_project_workspace"`
+	Source      string     `json:"source" gorm:"not null"`
+	ValidFrom   *time.Time `json:"valid_from,omitempty" gorm:"type:timestamptz"`
+	ValidTo     *time.Time `json:"valid_to,omitempty" gorm:"type:timestamptz"`
+	CreatedAt   time.Time  `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (WorkspaceEventProjectAlias) TableName() string {
+	return "workspace_event_project_aliases"
+}
+
+// CRMIdentityLink records the provenance of a browser-to-CRM identity mutation.
+type CRMIdentityLink struct {
+	ID              string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	AnonymousID     string     `json:"anonymous_id" gorm:"not null;index"`
+	ExternalUserID  *string    `json:"external_user_id,omitempty" gorm:"index"`
+	ContactID       *string    `json:"contact_id,omitempty" gorm:"type:uuid;index"`
+	CompanyID       *string    `json:"company_id,omitempty" gorm:"type:uuid;index"`
+	IdentityMethod  string     `json:"identity_method" gorm:"not null"`
+	IdentityTrust   string     `json:"identity_trust" gorm:"not null"`
+	VerifiedAt      *time.Time `json:"verified_at,omitempty" gorm:"type:timestamptz"`
+	VerifierVersion *string    `json:"verifier_version,omitempty"`
+	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (CRMIdentityLink) TableName() string { return "crm_identity_links" }
+
+// SupportCredentialRotationAudit records who rotated an installation secret.
+type SupportCredentialRotationAudit struct {
+	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	InstallationID string    `json:"installation_id" gorm:"type:uuid;not null;index"`
+	ActorUserID    string    `json:"actor_user_id" gorm:"type:uuid;not null"`
+	RotationKind   string    `json:"rotation_kind" gorm:"not null"`
+	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (SupportCredentialRotationAudit) TableName() string {
+	return "support_credential_rotation_audits"
+}
+
 // SupportWidgetSession represents an external widget chat session (30-day TTL).
 type SupportWidgetSession struct {
-	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ConversationID *string    `json:"conversation_id" gorm:"type:uuid;index"`
-	SessionToken   string     `json:"-" gorm:"not null;uniqueIndex"`
-	AnonymousID    string     `json:"anonymous_id" gorm:"not null"`
-	IsAnonymous    bool       `json:"is_anonymous" gorm:"default:true"`
-	CustomerName   *string    `json:"customer_name"`
-	CustomerEmail  *string    `json:"customer_email"`
-	CustomerPhone  *string    `json:"customer_phone"`
-	UserAgent      *string    `json:"-"`
-	LastPageURL    *string    `json:"last_page_url"`
-	Timezone       *string    `json:"timezone"`
-	Locale         *string    `json:"locale"`
-	IPAddress      *string    `json:"ip_address,omitempty" gorm:"size:64"`
-	CountryCode    *string    `json:"country_code,omitempty" gorm:"size:8"`
-	CountryName    *string    `json:"country_name,omitempty" gorm:"size:128"`
-	RegionName     *string    `json:"region_name,omitempty" gorm:"size:128"`
-	CityName       *string    `json:"city_name,omitempty" gorm:"size:128"`
-	CRMCompanyID   *string    `json:"crm_company_id" gorm:"type:uuid;index"`
-	LastActiveAt   *time.Time `json:"last_active_at,omitempty" gorm:"type:timestamptz;index"`
-	RevokedAt      *time.Time `json:"-" gorm:"index"`
-	ExpiresAt      time.Time  `json:"expires_at" gorm:"not null"`
-	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                      string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID             string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ConversationID          *string    `json:"conversation_id" gorm:"type:uuid;index"`
+	SessionToken            string     `json:"-" gorm:"not null;uniqueIndex"`
+	AnonymousID             string     `json:"anonymous_id" gorm:"not null"`
+	IsAnonymous             bool       `json:"is_anonymous" gorm:"default:true"`
+	CustomerName            *string    `json:"customer_name"`
+	CustomerEmail           *string    `json:"customer_email"`
+	CustomerPhone           *string    `json:"customer_phone"`
+	UserAgent               *string    `json:"-"`
+	LastPageURL             *string    `json:"last_page_url"`
+	Timezone                *string    `json:"timezone"`
+	Locale                  *string    `json:"locale"`
+	IPAddress               *string    `json:"ip_address,omitempty" gorm:"size:64"`
+	CountryCode             *string    `json:"country_code,omitempty" gorm:"size:8"`
+	CountryName             *string    `json:"country_name,omitempty" gorm:"size:128"`
+	RegionName              *string    `json:"region_name,omitempty" gorm:"size:128"`
+	CityName                *string    `json:"city_name,omitempty" gorm:"size:128"`
+	CRMCompanyID            *string    `json:"crm_company_id" gorm:"type:uuid;index"`
+	IdentityMethod          string     `json:"identity_method" gorm:"not null;default:'anonymous';index"`
+	IdentityTrust           string     `json:"identity_trust" gorm:"not null;default:'untrusted';index"`
+	IdentityVerifiedAt      *time.Time `json:"identity_verified_at,omitempty" gorm:"type:timestamptz"`
+	IdentityVerifierVersion *string    `json:"identity_verifier_version,omitempty"`
+	LastActiveAt            *time.Time `json:"last_active_at,omitempty" gorm:"type:timestamptz;index"`
+	RevokedAt               *time.Time `json:"-" gorm:"index"`
+	ExpiresAt               time.Time  `json:"expires_at" gorm:"not null"`
+	CreatedAt               time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt               time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (SupportWidgetSession) TableName() string { return "support_widget_sessions" }
@@ -1011,12 +1082,24 @@ type WidgetSessionRestoreData struct {
 
 // WidgetSessionUpgradeData is the payload for session:upgrade.
 type WidgetIdentityPayload struct {
-	Email     string `json:"email"`
-	Name      string `json:"name"` // backward-compatible full-name input only
-	FirstName string `json:"first_name,omitempty"`
-	LastName  string `json:"last_name,omitempty"`
-	Source    string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
-	Company   JSONB  `json:"company,omitempty"`
+	Email                string                      `json:"email"`
+	Name                 string                      `json:"name"` // backward-compatible full-name input only
+	FirstName            string                      `json:"first_name,omitempty"`
+	LastName             string                      `json:"last_name,omitempty"`
+	Phone                string                      `json:"phone,omitempty"`
+	JobTitle             string                      `json:"job_title,omitempty"`
+	ExternalUserID       string                      `json:"external_user_id,omitempty"`
+	Source               string                      `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
+	Company              JSONB                       `json:"company,omitempty"`
+	IdentityVerification *WidgetIdentityVerification `json:"identity_verification,omitempty"`
+}
+
+// WidgetIdentityVerification is a short-lived customer-server HMAC proof.
+type WidgetIdentityVerification struct {
+	Version   string `json:"version"`
+	IssuedAt  int64  `json:"issued_at"`
+	ExpiresAt int64  `json:"expires_at"`
+	Signature string `json:"signature"`
 }
 
 func (p WidgetIdentityPayload) DisplayName() string {
@@ -1318,6 +1401,8 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
+	AllowedOrigins                  *[]string                   `json:"allowed_origins,omitempty"`
+	IdentityVerificationMode        *string                     `json:"identity_verification_mode,omitempty"`
 	RequireEmailBeforeChat          *bool                       `json:"require_email_before_chat,omitempty"`
 	RequirePhoneAfterEmail          *bool                       `json:"require_phone_after_email,omitempty"`
 	WelcomeMessage                  *string                     `json:"welcome_message,omitempty"`
@@ -1487,10 +1572,12 @@ type SupportAIPreviewAnswer struct {
 
 // WidgetToken is the token format expected by the events-pipeline rust-capture service.
 type WidgetToken struct {
-	ID           string   `json:"id"`
-	ClientSecret string   `json:"client_secret"`
-	ServerSecret string   `json:"server_secret"`
-	Origins      []string `json:"origins"`
+	ID                       string   `json:"id"`
+	WorkspaceID              string   `json:"workspace_id"`
+	ClientSecret             string   `json:"client_secret"`
+	ServerSecret             string   `json:"server_secret"`
+	Origins                  []string `json:"origins"`
+	IdentityVerificationMode string   `json:"identity_verification_mode"`
 }
 
 // WidgetTokensResponse wraps the token list for the HTTP response.
@@ -1713,11 +1800,19 @@ type VisitorContextResponse struct {
 
 // InstallationSettingsResponse wraps installation + parsed settings for the admin API.
 type InstallationSettingsResponse struct {
-	ID          string               `json:"id"`
-	WorkspaceID string               `json:"workspace_id"`
-	WidgetKey   string               `json:"widget_key"`
-	Settings    SupportInboxSettings `json:"settings"`
-	Active      bool                 `json:"active"`
-	CreatedAt   string               `json:"created_at"`
-	UpdatedAt   string               `json:"updated_at"`
+	ID                       string               `json:"id"`
+	WorkspaceID              string               `json:"workspace_id"`
+	WidgetKey                string               `json:"widget_key"`
+	AllowedOrigins           []string             `json:"allowed_origins"`
+	IdentityVerificationMode string               `json:"identity_verification_mode"`
+	Settings                 SupportInboxSettings `json:"settings"`
+	Active                   bool                 `json:"active"`
+	CreatedAt                string               `json:"created_at"`
+	UpdatedAt                string               `json:"updated_at"`
+}
+
+// RotateWidgetSecretResponse returns a newly rotated secret exactly once.
+type RotateWidgetSecretResponse struct {
+	SecretKey string `json:"secret_key"`
+	RotatedAt string `json:"rotated_at"`
 }

@@ -1,0 +1,148 @@
+-- Migration: create_helpin_events
+CREATE DATABASE IF NOT EXISTS helpin ON CLUSTER helpin
+ENGINE = Replicated('/clickhouse/databases/helpin', '{shard}', '{replica}');
+
+-- Helpin event contract. The enriched NATS payload is retained
+-- for replay/debugging; typed MATERIALIZED columns are computed once on insert.
+CREATE TABLE IF NOT EXISTS helpin.events
+(
+    `raw_event` String CODEC(ZSTD(1)),
+    `_timestamp` DateTime64(3, 'UTC') MATERIALIZED parseDateTime64BestEffort(JSONExtractString(raw_event, 'timestamp'), 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
+    `event_received_at` DateTime64(3, 'UTC') MATERIALIZED parseDateTime64BestEffort(JSONExtractString(raw_event, 'event_received_at'), 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
+    `visitor_shard` UInt8 MATERIALIZED toUInt8(JSONExtractUInt(raw_event, 'visitor_shard')) CODEC(T64, ZSTD(1)),
+    `_nats_subject` String CODEC(ZSTD(1)),
+    `_nats_stream_sequence` UInt64 CODEC(T64, ZSTD(1)),
+    `_nats_delivery_attempt` UInt8 CODEC(T64, ZSTD(1)),
+    `_retro_generation` UInt8 CODEC(T64, ZSTD(1)),
+    `_ingest_version` UInt64 CODEC(T64, ZSTD(1)),
+    `_written_at` DateTime64(3, 'UTC') DEFAULT now64(3, 'UTC') CODEC(Delta(4), ZSTD(1)),
+
+    `api_key` String MATERIALIZED JSONExtractString(raw_event, 'api_key') CODEC(ZSTD(1)),
+    `autocapture_attributes` String MATERIALIZED if(empty(JSONExtractString(raw_event, 'autocapture_attributes')), '{}', JSONExtractString(raw_event, 'autocapture_attributes')) CODEC(ZSTD(1)),
+    `event_attributes` String MATERIALIZED if(empty(JSONExtractString(raw_event, 'event_attributes')), '{}', JSONExtractString(raw_event, 'event_attributes')) CODEC(ZSTD(1)),
+    `event_id` String MATERIALIZED JSONExtractString(raw_event, 'event_id') CODEC(ZSTD(1)),
+    `event_type` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'event_type') CODEC(ZSTD(1)),
+    `eventn_ctx_event_id` String MATERIALIZED JSONExtractString(raw_event, 'eventn_ctx_event_id') CODEC(ZSTD(1)),
+    `project_id` String MATERIALIZED lower(JSONExtractString(raw_event, 'project_id')) CODEC(ZSTD(1)),
+    `session_id` String MATERIALIZED JSONExtractString(raw_event, 'session_id') CODEC(ZSTD(1)),
+    `src` String MATERIALIZED JSONExtractString(raw_event, 'src') CODEC(ZSTD(1)),
+
+    `user_anonymous_id` String MATERIALIZED JSONExtractString(raw_event, 'user_anonymous_id') CODEC(ZSTD(1)),
+    `user_created_at` String MATERIALIZED JSONExtractString(raw_event, 'user_created_at') CODEC(ZSTD(1)),
+    `user_custom` String MATERIALIZED if(empty(JSONExtractString(raw_event, 'user_custom')), '{}', JSONExtractString(raw_event, 'user_custom')) CODEC(ZSTD(1)),
+    `user_email` String MATERIALIZED JSONExtractString(raw_event, 'user_email') CODEC(ZSTD(1)),
+    `user_first_name` String MATERIALIZED JSONExtractString(raw_event, 'user_first_name') CODEC(ZSTD(1)),
+    `user_hashed_anonymous_id` String MATERIALIZED JSONExtractString(raw_event, 'user_hashed_anonymous_id') CODEC(ZSTD(1)),
+    `user_id` String MATERIALIZED JSONExtractString(raw_event, 'user_id') CODEC(ZSTD(1)),
+    `user_language` String MATERIALIZED JSONExtractString(raw_event, 'user_language') CODEC(ZSTD(1)),
+    `user_last_name` String MATERIALIZED JSONExtractString(raw_event, 'user_last_name') CODEC(ZSTD(1)),
+
+    `company_created_at` String MATERIALIZED JSONExtractString(raw_event, 'company_created_at') CODEC(ZSTD(1)),
+    `company_custom` String MATERIALIZED if(empty(JSONExtractString(raw_event, 'company_custom')), '{}', JSONExtractString(raw_event, 'company_custom')) CODEC(ZSTD(1)),
+    `company_id` String MATERIALIZED JSONExtractString(raw_event, 'company_id') CODEC(ZSTD(1)),
+    `company_name` String MATERIALIZED JSONExtractString(raw_event, 'company_name') CODEC(ZSTD(1)),
+
+    `identity_method` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'identity_method') CODEC(ZSTD(1)),
+    `identity_trust` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'identity_trust') CODEC(ZSTD(1)),
+    `identity_verified_at` Nullable(DateTime64(3, 'UTC')) MATERIALIZED parseDateTime64BestEffortOrNull(JSONExtractString(raw_event, 'identity_verified_at'), 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
+    `identity_verifier_version` String MATERIALIZED JSONExtractString(raw_event, 'identity_verifier_version') CODEC(ZSTD(1)),
+
+    `doc_encoding` String MATERIALIZED JSONExtractString(raw_event, 'doc_encoding') CODEC(ZSTD(1)),
+    `doc_host` String MATERIALIZED JSONExtractString(raw_event, 'doc_host') CODEC(ZSTD(1)),
+    `doc_path` String MATERIALIZED JSONExtractString(raw_event, 'doc_path') CODEC(ZSTD(1)),
+    `doc_search` String MATERIALIZED JSONExtractString(raw_event, 'doc_search') CODEC(ZSTD(1)),
+    `page_title` String MATERIALIZED JSONExtractString(raw_event, 'page_title') CODEC(ZSTD(1)),
+    `referer` String MATERIALIZED JSONExtractString(raw_event, 'referer') CODEC(ZSTD(1)),
+    `screen_resolution` String MATERIALIZED JSONExtractString(raw_event, 'screen_resolution') CODEC(ZSTD(1)),
+    `source_ip` String MATERIALIZED JSONExtractString(raw_event, 'source_ip') CODEC(ZSTD(1)),
+    `url` String MATERIALIZED JSONExtractString(raw_event, 'url') CODEC(ZSTD(1)),
+    `user_agent` String MATERIALIZED JSONExtractString(raw_event, 'user_agent') CODEC(ZSTD(1)),
+    `vp_size` String MATERIALIZED JSONExtractString(raw_event, 'vp_size') CODEC(ZSTD(1)),
+    `local_tz_offset` Int64 MATERIALIZED JSONExtractInt(raw_event, 'local_tz_offset') CODEC(T64, ZSTD(1)),
+    `utc_time` DateTime64(3, 'UTC') MATERIALIZED parseDateTime64BestEffortOrZero(JSONExtractString(raw_event, 'utc_time'), 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
+
+    `click_id_fbclid` String MATERIALIZED JSONExtractString(raw_event, 'click_id_fbclid') CODEC(ZSTD(1)),
+    `click_id_gclid` String MATERIALIZED JSONExtractString(raw_event, 'click_id_gclid') CODEC(ZSTD(1)),
+    `ids_ajs_anonymous_id` String MATERIALIZED JSONExtractString(raw_event, 'ids_ajs_anonymous_id') CODEC(ZSTD(1)),
+    `ids_ajs_user_id` String MATERIALIZED JSONExtractString(raw_event, 'ids_ajs_user_id') CODEC(ZSTD(1)),
+    `ids_fbp` String MATERIALIZED JSONExtractString(raw_event, 'ids_fbp') CODEC(ZSTD(1)),
+    `ids_ga` String MATERIALIZED JSONExtractString(raw_event, 'ids_ga') CODEC(ZSTD(1)),
+    `utm_campaign` String MATERIALIZED JSONExtractString(raw_event, 'utm_campaign') CODEC(ZSTD(1)),
+    `utm_content` String MATERIALIZED JSONExtractString(raw_event, 'utm_content') CODEC(ZSTD(1)),
+    `utm_medium` String MATERIALIZED JSONExtractString(raw_event, 'utm_medium') CODEC(ZSTD(1)),
+    `utm_source` String MATERIALIZED JSONExtractString(raw_event, 'utm_source') CODEC(ZSTD(1)),
+    `utm_term` String MATERIALIZED JSONExtractString(raw_event, 'utm_term') CODEC(ZSTD(1)),
+
+    `location_city` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'location_city') CODEC(ZSTD(1)),
+    `location_continent` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'location_continent') CODEC(ZSTD(1)),
+    `location_country` String MATERIALIZED JSONExtractString(raw_event, 'location_country') CODEC(ZSTD(1)),
+    `location_country_name` String MATERIALIZED JSONExtractString(raw_event, 'location_country_name') CODEC(ZSTD(1)),
+    `location_lat` Float64 MATERIALIZED JSONExtractFloat(raw_event, 'location_lat') CODEC(Gorilla, ZSTD(1)),
+    `location_lon` Float64 MATERIALIZED JSONExtractFloat(raw_event, 'location_lon') CODEC(Gorilla, ZSTD(1)),
+    `location_region` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'location_region') CODEC(ZSTD(1)),
+    `location_region_name` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'location_region_name') CODEC(ZSTD(1)),
+    `location_zip` String MATERIALIZED JSONExtractString(raw_event, 'location_zip') CODEC(ZSTD(1)),
+
+    `parsed_ua_bot` Enum8('false' = 0, 'true' = 1, 'vpn' = 21, 'tor' = 22, 'dch' = 23, 'pub' = 24, 'web' = 25, 'ses' = 26) MATERIALIZED CAST(toInt8(JSONExtractInt(raw_event, 'parsed_ua_bot')), 'Enum8(\'false\' = 0, \'true\' = 1, \'vpn\' = 21, \'tor\' = 22, \'dch\' = 23, \'pub\' = 24, \'web\' = 25, \'ses\' = 26)') CODEC(T64, ZSTD(1)),
+    `parsed_ua_device_brand` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'parsed_ua_device_brand') CODEC(ZSTD(1)),
+    `parsed_ua_device_family` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'parsed_ua_device_family') CODEC(ZSTD(1)),
+    `parsed_ua_device_model` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'parsed_ua_device_model') CODEC(ZSTD(1)),
+    `parsed_ua_os_family` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'parsed_ua_os_family') CODEC(ZSTD(1)),
+    `parsed_ua_os_version` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'parsed_ua_os_version') CODEC(ZSTD(1)),
+    `parsed_ua_ua_family` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'parsed_ua_ua_family') CODEC(ZSTD(1)),
+    `parsed_ua_ua_version` LowCardinality(String) MATERIALIZED JSONExtractString(raw_event, 'parsed_ua_ua_version') CODEC(ZSTD(1)),
+
+    `source_page_url` String MATERIALIZED cutFragment(cutQueryString(url)) CODEC(ZSTD(1)),
+    `source_page_url_decoded` String MATERIALIZED decodeURLComponent(source_page_url) CODEC(ZSTD(1)),
+    `url_decoded` String MATERIALIZED decodeURLComponent(url) CODEC(ZSTD(1)),
+    `doc_path_decoded` String MATERIALIZED decodeURLComponent(doc_path) CODEC(ZSTD(1)),
+    `parsed_doc_host` String MATERIALIZED domain(doc_host) CODEC(ZSTD(1)),
+    `parsed_referer` String MATERIALIZED domainWithoutWWW(splitByChar(',', referer)[-1]) CODEC(ZSTD(1)),
+    `parsed_referer_channel` LowCardinality(String) MATERIALIZED multiIf(empty(referer), 'Direct', multiSearchAnyCaseInsensitive(parsed_referer, ['google', 'bing', 'yahoo', 'duckduckgo']) > 0, 'search', multiSearchAnyCaseInsensitive(parsed_referer, ['facebook', 'instagram', 'linkedin', 'twitter', 'tiktok', 'reddit']) > 0, 'social', 'referral') CODEC(ZSTD(1)),
+    `parsed_referer_source` LowCardinality(String) MATERIALIZED if(empty(referer), 'Direct', parsed_referer) CODEC(ZSTD(1)),
+    `event_date` Date MATERIALIZED toDate(_timestamp) CODEC(Delta(2), ZSTD(1)),
+    `parsed_company_created_at` DateTime64(3, 'UTC') MATERIALIZED parseDateTime64BestEffortOrZero(company_created_at, 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
+    `parsed_user_created_at` DateTime64(3, 'UTC') MATERIALIZED parseDateTime64BestEffortOrZero(user_created_at, 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
+    `parsed_device` String MATERIALIZED multiIf(toUInt16OrZero(splitByChar('x', screen_resolution)[1]) = 0, 'Unknown', toUInt16OrZero(splitByChar('x', screen_resolution)[1]) < 576, 'Mobile', toUInt16OrZero(splitByChar('x', screen_resolution)[1]) < 992, 'Tablet', toUInt16OrZero(splitByChar('x', screen_resolution)[1]) < 1440, 'Laptop', 'Desktop') CODEC(ZSTD(1)),
+
+    `ac_text_label` String MATERIALIZED visitParamExtractString(autocapture_attributes, 'el_text') CODEC(ZSTD(1)),
+    `ac_destination_url` String MATERIALIZED visitParamExtractString(autocapture_attributes, 'attr__href') CODEC(ZSTD(1)),
+    `ac_destination_url_decoded` String MATERIALIZED decodeURLComponent(ac_destination_url) CODEC(ZSTD(1)),
+    `ac_tag_name` String MATERIALIZED visitParamExtractString(autocapture_attributes, 'tag_name') CODEC(ZSTD(1)),
+    `ac_event_type` String MATERIALIZED visitParamExtractString(autocapture_attributes, 'event_type') CODEC(ZSTD(1)),
+    `ac_attr_id` String MATERIALIZED visitParamExtractString(autocapture_attributes, 'attr__id') CODEC(ZSTD(1)),
+    `ac_attr_name` String MATERIALIZED visitParamExtractString(autocapture_attributes, 'attr__name') CODEC(ZSTD(1)),
+    `ac_attr_class` String MATERIALIZED trimBoth(replaceAll(replaceAll(visitParamExtractString(autocapture_attributes, 'attr__class'), '\n', ' '), '  ', '')) CODEC(ZSTD(1)),
+
+    `ad_id` String MATERIALIZED replaceAll(replaceAll(decodeURLComponent(extractURLParameter(url, 'ad_id')), '{', ''), '}', '') CODEC(ZSTD(1)),
+    `click_id_dclid` String MATERIALIZED extractURLParameter(url, 'dclid') CODEC(ZSTD(1)),
+    `click_id_ko_click_id` String MATERIALIZED extractURLParameter(url, 'ko_click_id') CODEC(ZSTD(1)),
+    `click_id_li_fat_id` String MATERIALIZED extractURLParameter(url, 'li_fat_id') CODEC(ZSTD(1)),
+    `click_id_msclkid` String MATERIALIZED extractURLParameter(url, 'msclkid') CODEC(ZSTD(1)),
+    `click_id_ttclid` String MATERIALIZED extractURLParameter(url, 'ttclid') CODEC(ZSTD(1)),
+    `click_id_twclid` String MATERIALIZED extractURLParameter(url, 'twclid') CODEC(ZSTD(1)),
+    `click_id_wbraid` String MATERIALIZED extractURLParameter(url, 'wbraid') CODEC(ZSTD(1)),
+    `click_id_gbraid` String MATERIALIZED extractURLParameter(url, 'gbraid') CODEC(ZSTD(1)),
+    `click_id_um_cl` String MATERIALIZED extractURLParameter(url, 'um_cl') CODEC(ZSTD(1)),
+    `um_capmaign_id` String MATERIALIZED extractURLParameter(url, 'um_capmaign_id') CODEC(ZSTD(1)),
+
+    `company_custom_map` Map(String, String) MATERIALIZED JSONExtractKeysAndValuesRaw(company_custom) CODEC(ZSTD(1)),
+    `event_attributes_map` Map(String, String) MATERIALIZED JSONExtractKeysAndValuesRaw(event_attributes) CODEC(ZSTD(1)),
+    `user_custom_map` Map(String, String) MATERIALIZED JSONExtractKeysAndValuesRaw(user_custom) CODEC(ZSTD(1)),
+    `utm_campaign_decoded` String MATERIALIZED decodeURLFormComponent(utm_campaign) CODEC(ZSTD(1)),
+    `server_side_event` UInt8 MATERIALIZED toUInt8(identity_method = 'server_event') CODEC(T64, ZSTD(1)),
+    `default_channel` String MATERIALIZED multiIf(multiSearchAnyCaseInsensitive(utm_medium, ['cpc', 'ppc', 'paid', 'ads', 'display']) > 0, 'paid campaign', utm_source != '' OR utm_medium != '' OR utm_campaign != '', 'other campaigns', referer != '' AND domainWithoutWWW(referer) != domainWithoutWWW(url), 'referral', 'direct') CODEC(ZSTD(1)),
+    `default_source` String MATERIALIZED multiIf(utm_source != '', utm_source, referer != '' AND domainWithoutWWW(referer) != domainWithoutWWW(url), domainWithoutWWW(referer), 'Direct') CODEC(ZSTD(1)),
+
+    INDEX `idx_parsed_ua_bot` parsed_ua_bot TYPE set(8) GRANULARITY 1,
+    INDEX `idx_event_type` event_type TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = ReplicatedReplacingMergeTree(_ingest_version)
+PARTITION BY toYYYYMM(_timestamp)
+ORDER BY (project_id, event_date, event_id)
+TTL _timestamp + INTERVAL 400 DAY DELETE
+SETTINGS
+    index_granularity = 8192,
+    storage_policy = 'events',
+    min_bytes_for_wide_part = 1073741824,
+    min_rows_for_wide_part = 10000000;

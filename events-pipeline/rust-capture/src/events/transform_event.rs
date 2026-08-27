@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TransformedEvent {
     pub timestamp: String,
+    pub event_received_at: String,
+    pub visitor_shard: u8,
     pub _is_deleted: u32,
     pub api_key: String,
     pub autocapture_attributes: String,
@@ -23,6 +26,10 @@ pub struct TransformedEvent {
     pub ids_ajs_user_id: Option<String>,
     pub ids_fbp: Option<String>,
     pub ids_ga: Option<String>,
+    pub identity_method: String,
+    pub identity_trust: String,
+    pub identity_verified_at: Option<String>,
+    pub identity_verifier_version: Option<String>,
     pub local_tz_offset: Option<i64>,
     pub location_city: Option<String>,
     pub location_continent: Option<String>,
@@ -35,6 +42,9 @@ pub struct TransformedEvent {
     pub location_lon: Option<f64>,
     pub page_title: Option<String>,
     pub parsed_ua_bot: i32,
+    pub parsed_ua_bot_category: String,
+    pub parsed_ua_bot_name: String,
+    pub parsed_ua_bot_provider: String,
     pub parsed_ua_device_brand: Option<String>,
     pub parsed_ua_device_family: Option<String>,
     pub parsed_ua_device_model: Option<String>,
@@ -85,8 +95,13 @@ mod tests {
         let event = TransformedEvent::default();
 
         assert_eq!(event.timestamp, "");
+        assert_eq!(event.event_received_at, "");
+        assert_eq!(event.visitor_shard, 0);
         assert_eq!(event._is_deleted, 0);
         assert_eq!(event.api_key, "");
+        assert_eq!(event.parsed_ua_bot_category, "");
+        assert_eq!(event.parsed_ua_bot_name, "");
+        assert_eq!(event.parsed_ua_bot_provider, "");
         // Repeat for all fields in your struct
     }
 
@@ -123,6 +138,7 @@ mod tests {
         assert_eq!(event.timestamp, "2023-07-15T10:00:00Z");
         assert_eq!(event._is_deleted, 0);
         assert_eq!(event.api_key, "test_api_key");
+        assert_eq!(event.parsed_ua_bot_category, "");
         // Add similar assertions for the rest of your fields
     }
 }

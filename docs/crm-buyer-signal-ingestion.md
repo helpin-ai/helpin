@@ -1,12 +1,21 @@
-# CRM Buyer Signal Ingestion
+# CRM Conversation Signal Ingestion
 
-Taxonomy note: the canonical platform model for agents, built-in automations, and automation rules now lives in `docs/AGENTS_AND_AUTOMATION.md`. This file remains the implementation detail reference for the buyer-signal ingestion pipeline itself.
+This is the implementation-detail reference for conversation and email signal
+extraction. The canonical cross-domain buyer-signals architecture, rule
+catalogue, scoring, and activation model lives in
+[`crm-buyer-signals.md`](crm-buyer-signals.md). The canonical platform model for
+agents, built-in automations, and automation rules lives in
+[`AGENTS_AND_AUTOMATION.md`](AGENTS_AND_AUTOMATION.md).
 
-This document explains the Phase 1a buyer-signal ingestion pipeline as it is implemented today. It is an internal engineering reference for understanding how synced CRM email becomes stored buyer signals, where idempotency is enforced, what gets skipped, and which parts of the product surface those signals.
+This document explains how synced CRM email becomes stored LLM-extracted buyer
+signals, where idempotency is enforced, what gets skipped, and which product
+surfaces consume those signals. It does not describe deterministic Postgres or
+ClickHouse rules.
 
 ## Purpose
 
-Phase 1a is the first executable CRM intelligence slice.
+Conversation ingestion is one producer within the broader CRM intelligence
+system.
 
 The implemented pipeline does four things:
 
@@ -17,7 +26,9 @@ The implemented pipeline does four things:
 
 This is a background system automation. It is not a user-visible agent class and it does not run through PM/support explicit agent queues.
 
-Phase 1b contact/deal summaries consume these stored buyer signals and are documented separately in `docs/crm-entity-summaries.md`.
+Contact, company, and deal summaries consume these stored buyer signals and are
+documented separately in
+[`crm-entity-summaries.md`](crm-entity-summaries.md).
 
 ## Source of truth
 
@@ -252,43 +263,48 @@ This separation is intentional. CRM email sync is the durability path. Signal de
 Current CRM surfaces reading stored buyer signals:
 
 - CRM contact detail buyer-signal panel
+- CRM company detail buyer-signal panel
 - CRM deal detail buyer-signal panel
-- CRM Insights page
+- ranked workspace feed on CRM Insights
+- account and meeting signal briefs
 
 The frontend now reads and renders provenance fields including:
 
 - source type
-- confidence
+- confidence and business priority
 - evidence excerpt
-- message direction
-- participant count
-- thread-linked state
+- detector, domain, polarity, and rule version
+- identity method and trust
+- score factors and activation blockers
 
-The product does **not** yet expose a dedicated operational diagnostics surface for this automation. That belongs to a later `System Automations` settings surface.
+Rule feedback is available through the precision endpoint and evaluator runs are
+persisted. There is no separate system-automation diagnostics UI for the
+conversation workflow itself.
 
-## What this phase does not do
+## Scope boundary
 
-Phase 1a does not yet implement:
+This document only covers conversation extraction from stored CRM email. It
+does not describe:
 
-- contact summaries
-- deal summaries
-- autonomous deal creation
-- autonomous stage progression
-- review-feed population from runtime signals
-- support-triggered signal ingestion
-- calendar-triggered signal ingestion
-- persisted skip counters for ambiguous multi-contact/no-deal messages
+- support, PM, relationship, and deal-state rules;
+- ClickHouse behavioral rules;
+- ranking and composition;
+- routing and activation;
+- external evidence ingestion; or
+- contact, company, and deal summaries.
 
-It is the ingestion foundation only.
+Those implemented paths are covered by
+[`crm-buyer-signals.md`](crm-buyer-signals.md) and
+[`crm-entity-summaries.md`](crm-entity-summaries.md).
 
 ## Current limitations and follow-ups
 
 These are real current constraints, not future aspirations:
 
 - multi-contact/no-deal threads are skipped entirely
-- HTML fallback is not yet sanitized to plain text before prompt construction
 - skipped-message instrumentation currently relies on structured logs, not durable counters
-- repeated-thread suppression is thread-level only; it does not yet include deeper contact/deal semantic grouping
+- repeated-thread suppression remains deliberately conservative; evidence
+  fingerprints provide an additional material-change boundary
 - workflow execution is async and auditable through code/logs, but not yet exposed through a dedicated admin automation UI
 
 ## How to debug this pipeline
@@ -313,5 +329,6 @@ When duplicate signals appear:
 
 ## Related docs
 
-- `docs/crm-email-sync.md`
-- `.claude/plans/crm-phase-1-buyer-signal-ingestion.md`
+- [`crm-buyer-signals.md`](crm-buyer-signals.md)
+- [`crm-email-sync.md`](crm-email-sync.md)
+- [`crm-entity-summaries.md`](crm-entity-summaries.md)

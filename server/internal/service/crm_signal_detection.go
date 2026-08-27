@@ -19,6 +19,7 @@ const (
 	repeatedThreadSignalWindow    = 24 * time.Hour
 	minimumDetectedConfidence     = 0.6
 	signalEvidenceDetectorVersion = "verified-v3-en"
+	signalEvidenceRuleVersion     = 3
 )
 
 // SignalDetectionService uses LLM to detect buyer signals from various sources.
@@ -56,12 +57,13 @@ func (s *SignalDetectionService) SetHealthScoreRefresh(refresh interface {
 
 // DetectedSignal is the parsed LLM output for a single signal.
 type DetectedSignal struct {
-	SourceType  string  `json:"source_type"`
-	SourceID    string  `json:"source_id"`
-	SignalType  string  `json:"signal_type"`
-	Summary     string  `json:"summary"`
-	Confidence  float64 `json:"confidence"`
-	RawEvidence string  `json:"raw_evidence"`
+	SourceType   string  `json:"source_type"`
+	SourceID     string  `json:"source_id"`
+	SignalType   string  `json:"signal_type"`
+	Summary      string  `json:"summary"`
+	Confidence   float64 `json:"confidence"`
+	RawEvidence  string  `json:"raw_evidence"`
+	TimelineDate string  `json:"timeline_date,omitempty"`
 }
 
 // DetectSignals analyzes source payloads and detects buyer signals.
@@ -189,6 +191,17 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 			}
 		}
 
+		metadata := buildSignalMetadata(payload)
+		if d.SignalType == model.CRMSignalTimelineSignal && strings.TrimSpace(d.TimelineDate) != "" {
+			parsedDate, parseErr := time.Parse("2006-01-02", strings.TrimSpace(d.TimelineDate))
+			if parseErr != nil {
+				slog.InfoContext(ctx, "ignoring invalid buyer signal timeline date", "workspace_id", payload.WorkspaceID, "source_id", payload.SourceID)
+			} else {
+				metadata["timeline_date"] = parsedDate.Format("2006-01-02")
+			}
+		}
+
+		ruleKey, ruleVersion := model.CRMSignalRuleConversationExtraction, signalEvidenceRuleVersion
 		signal := model.CRMBuyerSignal{
 			WorkspaceID:     payload.WorkspaceID,
 			ContactID:       payload.ContactID,
@@ -200,9 +213,12 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 			SourceThreadID:  payload.SourceThreadID,
 			Summary:         d.Summary,
 			EvidenceExcerpt: &evidence,
-			Metadata:        buildSignalMetadata(payload),
+			Metadata:        metadata,
 			Confidence:      d.Confidence,
 			DetectedAt:      time.Now(),
+			DetectorKind:    model.CRMSignalDetectorLLMExtracted,
+			RuleKey:         &ruleKey,
+			RuleVersion:     &ruleVersion,
 		}
 
 		created, err := s.signalRepo.CreateSignalIfAbsent(ctx, &signal)
@@ -280,9 +296,11 @@ For each detected signal, provide:
 - summary: concise 1-2 sentence description of the signal, written in English
 - confidence: float 0.0-1.0 (0.9+ = very clear signal, 0.7-0.9 = likely signal, 0.5-0.7 = possible signal)
 - raw_evidence: the specific text/quote that indicates this signal
+- timeline_date: for timeline_signal only, the explicit calendar date normalized as YYYY-MM-DD; omit it when the evidence does not state a calendar date
 
 Return a JSON array of detected signals. If no signals are detected, return an empty array [].
 Only detect signals that are clearly present — avoid false positives. Be conservative with confidence scores.
+Never infer a timeline_date from vague phrases such as "soon", "next quarter", or "in a few weeks".
 Treat inbound customer language as primary evidence. Do not interpret the seller's outbound pitch, internal task state, or deal-stage movement as a buyer signal.
 For calendar sources, attendee response status and event cancellation are factual evidence; do not treat the organizer's meeting title or description alone as buyer intent.
 Write generated summaries in English even when the source evidence is in another language. Keep raw_evidence as an exact excerpt in its original language.

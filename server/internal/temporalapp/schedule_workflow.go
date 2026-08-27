@@ -2,10 +2,21 @@ package temporalapp
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
+)
+
+var (
+	// ErrScheduledRuleNotFound means a cron workflow outlived its rule record.
+	ErrScheduledRuleNotFound = errors.New("scheduled automation rule not found")
+	// ErrScheduledRuleDisabled means a cron workflow outlived an enabled rule.
+	ErrScheduledRuleDisabled = errors.New("scheduled automation rule is disabled")
+	// ErrScheduledRuleNotScheduled means a cron workflow outlived a cron trigger.
+	ErrScheduledRuleNotScheduled = errors.New("automation rule is no longer scheduled")
 )
 
 // ScheduledRuleInput identifies the automation rule for each cron tick.
@@ -53,5 +64,19 @@ func (a *ScheduledRuleActivities) ExecuteScheduledRule(ctx context.Context, inpu
 		)
 		return nil
 	}
-	return a.executor.ExecuteScheduledRule(ctx, input.WorkspaceID, input.RuleID)
+	err := a.executor.ExecuteScheduledRule(ctx, input.WorkspaceID, input.RuleID)
+	if isPermanentScheduledRuleError(err) {
+		return temporal.NewNonRetryableApplicationError(
+			err.Error(),
+			"scheduled_rule_unavailable",
+			err,
+		)
+	}
+	return err
+}
+
+func isPermanentScheduledRuleError(err error) bool {
+	return errors.Is(err, ErrScheduledRuleNotFound) ||
+		errors.Is(err, ErrScheduledRuleDisabled) ||
+		errors.Is(err, ErrScheduledRuleNotScheduled)
 }

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Local Helpin browser-event pipeline test surface." />
+    <title>Signal Lab · Helpin local event test</title>
+    <link rel="stylesheet" href="/event-test/styles.css" />
+  </head>
+  <body data-page="control">
+    <a class="skip-link" href="#main-content">Skip to test controls</a>
+    <header class="site-header">
+      <a class="wordmark" href="/event-test/">
+        <span class="wordmark-mark" aria-hidden="true">H</span>
+        <span class="wordmark-copy">Signal Lab / local</span>
+      </a>
+      <nav class="primary-nav" aria-label="Event test pages">
+        <a href="/event-test/" aria-current="page">Control</a>
+        <a href="/event-test/pricing/">Pricing</a>
+        <a href="/event-test/security/">Security</a>
+        <a href="/event-test/demo/">Demo</a>
+      </nav>
+    </header>
+
+    <main class="page-shell" id="main-content">
+      <div class="content">
+        <section data-reveal style="--i: 0">
+          <p class="eyebrow">Browser signal proving ground</p>
+          <h1>Trace intent. Keep the tenant honest.</h1>
+          <p class="lede">A small, realistic site for proving that the local pixel emits events, capture authenticates the installation, and the canonical project ID survives every pipeline stage.</p>
+        </section>
+
+        <section class="lab-panel" data-label="Connection" data-reveal style="--i: 1">
+          <form class="field-grid two-up" data-config-form>
+            <div class="field">
+              <label for="widget-key">Public widget key</label>
+              <input id="widget-key" name="widget_key" type="password" autocomplete="off" placeholder="Paste an active local widget key" required />
+            </div>
+            <div class="field">
+              <label for="api-host">API and SDK host</label>
+              <input id="api-host" name="host" type="url" inputmode="url" required />
+            </div>
+            <div class="actions">
+              <button type="submit">Save connection</button>
+            </div>
+            <p class="form-success" data-config-message aria-live="polite"></p>
+          </form>
+
+          <dl class="status-strip">
+            <div class="status-line"><dt>SDK</dt><dd><span class="state waiting" data-sdk-state>Checking configuration</span></dd></div>
+            <div class="status-line"><dt>Key</dt><dd data-configured-key>not configured</dd></div>
+            <div class="status-line"><dt>Host</dt><dd data-configured-host></dd></div>
+            <div class="status-line"><dt>Run</dt><dd data-run-id></dd></div>
+            <div class="status-line"><dt>Visitor</dt><dd data-visitor-id>pending</dd></div>
+            <div class="status-line"><dt>Identity</dt><dd data-identity-state></dd></div>
+          </dl>
+
+          <div class="actions">
+            <button type="button" data-track-pageview>Send pageview</button>
+            <button type="button" class="secondary" data-identify>Claim test identity</button>
+            <button type="button" class="secondary" data-reset>Reset visitor</button>
+            <button type="button" class="secondary" data-open-widget>Open chat</button>
+          </div>
+        </section>
+
+        <section class="section" data-reveal style="--i: 2">
+          <p class="eyebrow">Test sequence</p>
+          <h2>One visitor, four useful traces.</h2>
+          <ol class="proof-list">
+            <li><div><h3>Start anonymous</h3><p>Load each page and confirm pageviews share one anonymous visitor and the authenticated project ID.</p></div></li>
+            <li><div><h3>Express intent</h3><p>Select the pricing call to action. It emits both a named event and the versioned configured interaction.</p></div></li>
+            <li><div><h3>Claim identity</h3><p>Use the synthetic identity control. Browser claims remain explicitly untrusted without a signed proof.</p></div></li>
+            <li><div><h3>Request a demo</h3><p>Submit only allowlisted synthetic fields and inspect the resulting lead, form, and named demo events.</p></div></li>
+          </ol>
+        </section>
+      </div>
+
+      <aside class="console" aria-label="Browser event activity">
+        <div class="console-header">
+          <h2>Event console</h2>
+          <button class="secondary" type="button" data-clear-log>Clear</button>
+        </div>
+        <ol data-event-log aria-live="polite"></ol>
+      </aside>
+    </main>
+
+    <footer class="footer"><span>Helpin Signal Lab</span><span>Credentials stay in localStorage and are redacted on screen.</span></footer>
+    <script>window.helpinQ = window.helpinQ || []; window.helpin = window.helpin || function () { window.helpinQ.push(Array.from(arguments)); };</script>
+    <script defer src="/event-test/app.js"></script>
+  </body>
+</html>

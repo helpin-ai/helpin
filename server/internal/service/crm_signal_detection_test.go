@@ -47,9 +47,21 @@ func setupCRMSignalDetectionTestDB(t *testing.T) *gorm.DB {
 			metadata BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			confidence REAL NOT NULL DEFAULT 0,
 			detected_at DATETIME NOT NULL,
+			detector_kind TEXT NOT NULL DEFAULT 'direct',
+			signal_domain TEXT NOT NULL DEFAULT 'conversation',
+			polarity TEXT NOT NULL DEFAULT 'neutral',
+			rule_key TEXT,
+			rule_version TEXT,
+			window_started_at DATETIME,
+			window_ended_at DATETIME,
+			evidence_identity_method TEXT NOT NULL DEFAULT 'unknown',
+			evidence_identity_trust TEXT NOT NULL DEFAULT 'untrusted',
 			evidence_fingerprint TEXT NOT NULL DEFAULT '',
 			dismissed_at DATETIME,
 			dismissed_by_member_id TEXT,
+			dismissal_reason TEXT,
+			reviewed_at DATETIME,
+			acted_at DATETIME,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX idx_crm_signals_source_thread ON crm_buyer_signals(source_thread_id)`,
@@ -119,6 +131,10 @@ func TestSignalDetectionService_PersistsProvenanceAndDedupes(t *testing.T) {
 	}
 	if stored.EvidenceExcerpt == nil || *stored.EvidenceExcerpt == "" {
 		t.Fatal("expected evidence_excerpt to be stored")
+	}
+	if stored.RuleKey == nil || *stored.RuleKey != model.CRMSignalRuleConversationExtraction ||
+		stored.RuleVersion == nil || *stored.RuleVersion != signalEvidenceRuleVersion {
+		t.Fatalf("rule provenance = %v@%v", stored.RuleKey, stored.RuleVersion)
 	}
 	if got := stored.Metadata["thread_external_id"]; got != "ext-thread-1" {
 		t.Fatalf("metadata.thread_external_id = %v, want ext-thread-1", got)
@@ -192,12 +208,12 @@ func TestSignalDetectionService_BatchBindsSignalToDeclaredSource(t *testing.T) {
 	db := setupCRMSignalDetectionTestDB(t)
 	repo := repository.NewCRMSignalRepository(db)
 	svc := NewSignalDetectionService(&fakeLLMProvider{content: `[
-		{"source_type":"email","source_id":"message-2","signal_type":"timeline_signal","summary":"The buyer needs a decision this month.","confidence":0.94,"raw_evidence":"We need to decide this month."}
+		{"source_type":"email","source_id":"message-2","signal_type":"timeline_signal","summary":"The buyer needs a decision by September 15.","confidence":0.94,"raw_evidence":"We need to decide by September 15, 2026.","timeline_date":"2026-09-15"}
 	]`}, repo, &fakeSummaryRequester{})
 	contact1, contact2 := "contact-1", "contact-2"
 	payloads := []model.SignalSourcePayload{
 		{WorkspaceID: "ws-1", SourceType: model.CRMSignalSourceEmail, SourceID: "message-1", ContactID: &contact1, Body: "Please send the overview."},
-		{WorkspaceID: "ws-1", SourceType: model.CRMSignalSourceEmail, SourceID: "message-2", ContactID: &contact2, Body: "We need to decide this month."},
+		{WorkspaceID: "ws-1", SourceType: model.CRMSignalSourceEmail, SourceID: "message-2", ContactID: &contact2, Body: "We need to decide by September 15, 2026."},
 	}
 	signals, err := svc.DetectSignals(context.Background(), payloads)
 	if err != nil {
@@ -208,5 +224,8 @@ func TestSignalDetectionService_BatchBindsSignalToDeclaredSource(t *testing.T) {
 	}
 	if signals[0].ContactID == nil || *signals[0].ContactID != contact2 {
 		t.Fatalf("contact_id = %v, want %s", signals[0].ContactID, contact2)
+	}
+	if got := signals[0].Metadata["timeline_date"]; got != "2026-09-15" {
+		t.Fatalf("metadata.timeline_date = %v, want 2026-09-15", got)
 	}
 }

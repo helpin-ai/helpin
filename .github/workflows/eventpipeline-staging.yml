@@ -24,7 +24,6 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   RUST_IMAGE: ghcr.io/helpin-ai/helpin/events-pipeline
-  KSTREAMS_IMAGE: ghcr.io/helpin-ai/helpin/events-pipeline-kstreams
 
 jobs:
   version:
@@ -99,52 +98,8 @@ jobs:
           cache-from: type=gha,scope=ep-stage-rust
           cache-to: type=gha,mode=max,scope=ep-stage-rust
 
-  build-kstreams:
-    needs: version
-    runs-on: arc-runners-helpin-ai
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prepare Docker socket
-        run: |
-          if [ -S /var/run/docker.sock ]; then
-            sudo chmod 666 /var/run/docker.sock || true
-          fi
-          docker version
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Build KStreams image for verification
-        uses: docker/build-push-action@v5
-        with:
-          context: events-pipeline/kafka-streams
-          load: true
-          tags: helpin-eventpipeline-kstreams:verify
-          cache-from: type=gha,scope=ep-stage-kstreams
-          cache-to: type=gha,mode=max,scope=ep-stage-kstreams
-      - name: Verify KStreams runtime image
-        run: |
-          docker run --rm --entrypoint /usr/bin/java helpin-eventpipeline-kstreams:verify -version
-          docker run --rm --entrypoint /bin/sh helpin-eventpipeline-kstreams:verify -c 'test -f /app/app.jar'
-          docker run --rm -e PATH=/tmp --entrypoint /usr/bin/java helpin-eventpipeline-kstreams:verify -version
-          docker run --rm -e PATH=/tmp --entrypoint /bin/sh helpin-eventpipeline-kstreams:verify -c 'test -x /usr/bin/java && test -f /app/app.jar'
-      - name: Build and push KStreams image
-        uses: docker/build-push-action@v5
-        with:
-          context: events-pipeline/kafka-streams
-          push: true
-          tags: |
-            ${{ env.KSTREAMS_IMAGE }}:stage-latest
-            ${{ env.KSTREAMS_IMAGE }}:${{ needs.version.outputs.tag }}
-          cache-from: type=gha,scope=ep-stage-kstreams
-          cache-to: type=gha,mode=max,scope=ep-stage-kstreams
-
   release:
-    needs: [version, build-rust, build-kstreams]
+    needs: [version, build-rust]
     runs-on: arc-runners-helpin-ai
     steps:
       - uses: actions/checkout@v4
@@ -165,8 +120,7 @@ jobs:
       - name: Update K8s manifests
         run: |
           sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}|g" k8s/stage/events-pipeline/deployments/eventpipeline-web.yaml
-          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}|g" k8s/stage/events-pipeline/deployments/eventpipeline-worker.yaml
-          sed -i "s|${{ env.KSTREAMS_IMAGE }}:[^ ]*|${{ env.KSTREAMS_IMAGE }}:${{ needs.version.outputs.tag }}|g" k8s/stage/events-pipeline/deployments/eventpipeline-kstreams.yaml
+          sed -i "s|${{ env.RUST_IMAGE }}:[^ ]*|${{ env.RUST_IMAGE }}:${{ needs.version.outputs.tag }}|g" k8s/stage/events-pipeline/deployments/eventpipeline-writer.yaml
           if git diff --quiet; then
             echo "No manifest changes needed"
           else

@@ -1,6 +1,6 @@
 import { defaultConfig } from './config';
 import { Config } from './types';
-import { CompanyPayload, CompanyProps, EventPayload, LeadProps, Transport, UserProps } from './types';
+import { CompanyPayload, CompanyProps, EventPayload, IdentityVerification, LeadProps, Transport, UserProps } from './types';
 import { getLogger, Logger } from '../utils/logger';
 import { CookieManager } from '../utils/cookie';
 import { PageviewTracking } from '../tracking/pageviews';
@@ -22,6 +22,7 @@ import { isWindowAvailable } from '../utils/common';
 import { HttpsTransport } from '../transport/https';
 import { persistIdentity, clearIdentity, getStoredIdentity } from './identity';
 import type { ShowArticleOptions, WidgetSettings } from './widget';
+import { ConfiguredCapture } from '../tracking/configured-capture';
 
 type WidgetCallback = (...args: any[]) => void;
 
@@ -30,7 +31,11 @@ type BackendIdentityPayload = {
   name: string;
   firstName: string;
   lastName: string;
+  phone: string;
+  jobTitle: string;
   company?: CompanyPayload;
+  externalUserId: string;
+  identityVerification?: IdentityVerification;
 };
 
 function getIdentityString(value: unknown): string {
@@ -45,12 +50,20 @@ function resolveIdentityPayload(payload: Record<string, any>): BackendIdentityPa
   const firstName = getIdentityString(payload.first_name ?? payload.firstName);
   const lastName = getIdentityString(payload.last_name ?? payload.lastName);
   const name = buildIdentityName(firstName, lastName, getIdentityString(payload.name));
+  const phone = getIdentityString(payload.phone);
+  const jobTitle = getIdentityString(payload.job_title ?? payload.jobTitle);
   const company = resolveCompanyPayload(payload.company);
   return {
     email: getIdentityString(payload.email),
     name,
     firstName,
     lastName,
+    phone,
+    jobTitle,
+    externalUserId: getIdentityString(payload.id ?? payload.external_user_id),
+    ...(isObject(payload.identity_verification)
+      ? { identityVerification: payload.identity_verification as unknown as IdentityVerification }
+      : {}),
     ...(company ? { company } : {}),
   };
 }
@@ -105,6 +118,7 @@ export class HelpinClient {
   private widgetController: HelpinWidgetController | null;
   private widgetSettings: WidgetSettings | null;
   private hasBootedWidget: boolean;
+  private configuredCapture?: ConfiguredCapture;
 
   constructor(
     config: Config,
@@ -154,6 +168,16 @@ export class HelpinClient {
     if (this.config.crossDomainLinking) {
       this.manageCrossDomainLinking();
     }
+
+    this.configuredCapture?.destroy();
+    this.configuredCapture = new ConfiguredCapture(
+      this,
+      this.config.formCapture ?? this.config.form_capture ?? [],
+      this.config.interactionCaptureRules ??
+        this.config.interaction_capture_rules ??
+        [],
+    );
+    this.configuredCapture.init();
 
     // Setup page leave tracking
     this.setupPageLeaveTracking();
@@ -512,6 +536,30 @@ export class HelpinClient {
     this.sendIdentifyToBackend(resolveIdentityPayload(payload), 'sdk_lead');
   }
 
+  public articleView(articleId: string, properties: EventPayload = {}): void {
+    const normalizedId = getIdentityString(articleId);
+    if (!normalizedId) throw new Error('articleId is required');
+    const userProps = this.persistence.get('userProps') || {};
+    const verified = isObject(userProps.identity_verification);
+    const identified =
+      verified ||
+      Boolean(userProps.id || userProps.email || this.persistence.get('userId'));
+    this.track('article_view', {
+      ...properties,
+      article_id: normalizedId,
+      identity_method: verified
+        ? 'signed_widget_identity'
+        : identified
+          ? 'sdk_identify'
+          : 'anonymous_cookie',
+      identity_trust: verified
+        ? 'verified'
+        : identified
+          ? 'probabilistic'
+          : 'untrusted',
+    });
+  }
+
   private trackInternal(
     typeName: string,
     payload?: EventPayload,
@@ -763,7 +811,18 @@ export class HelpinClient {
     // Try widget WS path first via the public sendSessionUpgrade method
     const namespace = this.config.namespace || 'helpin';
     const nsFunc = (globalThis as any)[namespace];
-    if (nsFunc?._widgetManager?.sendSessionUpgrade?.(identity.email, identity.name, source, identity.firstName, identity.lastName, identity.company)) {
+    if (nsFunc?._widgetManager?.sendSessionUpgrade?.(
+      identity.email,
+      identity.name,
+      source,
+      identity.firstName,
+      identity.lastName,
+      identity.company,
+      identity.externalUserId,
+      identity.identityVerification,
+      identity.phone,
+      identity.jobTitle,
+    )) {
       return;
     }
 
@@ -779,8 +838,12 @@ export class HelpinClient {
       name: identity.name,
       first_name: identity.firstName,
       last_name: identity.lastName,
+      phone: identity.phone,
+      job_title: identity.jobTitle,
+      external_user_id: identity.externalUserId,
       source,
       company: identity.company,
+		identity_verification: identity.identityVerification,
     });
 
     if (typeof fetch !== 'undefined') {
@@ -788,9 +851,17 @@ export class HelpinClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
-      }).catch((err) => {
-        this.logger.error('Failed to send identify to backend:', err);
-      });
+      })
+        .then((response) => {
+          if (!response.ok) {
+            this.logger.error(
+              `Identify request was rejected with HTTP ${response.status}`,
+            );
+          }
+        })
+        .catch((err) => {
+          this.logger.error('Failed to send identify to backend:', err);
+        });
     }
   }
 
@@ -854,6 +925,10 @@ export class HelpinClient {
     articleKey: string,
     options?: ShowArticleOptions,
   ): void {
+    this.articleView(articleKey, {
+      collection_id: options?.collectionId,
+      space_id: options?.spaceId,
+    });
     this.ensureWidgetBooted();
     this.widgetController?.openArticle(articleKey, options);
   }

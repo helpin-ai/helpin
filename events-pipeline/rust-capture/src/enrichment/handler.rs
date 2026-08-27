@@ -1,22 +1,22 @@
-use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
+use chrono::Utc;
 use serde_json::to_string;
 use std::error::Error as StdError;
+use std::error::Error;
 use std::fmt;
-use std::sync::Arc;
-use std::{error::Error, time::Instant};
-use uaparser::{Parser, UserAgentParser};
 
+use crate::auth::authorization::CredentialKind;
 use crate::events::event::ProcessedEvent;
 use crate::events::failed_event::FailedEvent;
 use crate::events::transform_event::TransformedEvent;
 use crate::ip2location::ip2proxy::IP2ProxyWrapper;
 use crate::ip2location::resolver::IP2ProxyResolver;
+use crate::pipeline::normalize_custom_timestamp;
 use crate::{
     enrichment::privacy_enrichment::PrivacyEnrichmentService,
     geo::{maxmind::MaxMindResolver, resolver::GeoResolver},
 };
 
-use super::bot_resolver::BotResolver;
+use super::bot_resolver::{BotClassification, BotResolver};
 use super::ua_resolver::UaResolver;
 
 #[derive(Debug)]
@@ -66,8 +66,8 @@ impl EnrichmentHandler {
     pub async fn process_payload(
         &self,
         payload: &str,
-        geo_resolver: &GeoResolver,
-        ip2proxy_resolver: &IP2ProxyResolver,
+        geo_resolver: Option<&GeoResolver>,
+        ip2proxy_resolver: Option<&IP2ProxyResolver>,
         bot_resolver: &BotResolver,
         ua_parser: &UaResolver,
     ) -> Result<TransformedEvent, Box<dyn std::error::Error + Send>> {
@@ -77,24 +77,66 @@ impl EnrichmentHandler {
                 "Payload is empty",
             )));
         }
-        let event: Result<ProcessedEvent, _> = serde_json::from_str(payload);
-        match event {
-            Ok(_) => tracing::debug!("Deserialization successful"),
-            Err(err) => tracing::error!("Deserialization error: {:?}", err),
-        }
-
-        // Here is where you would put your logic to process the payload.
-        // For now, we will just print it out.
-
         let data: ProcessedEvent =
             serde_json::from_str(payload).map_err(|e| Box::new(e) as Box<dyn Error + Send>)?;
+        self.process_event_inner(
+            data,
+            Some(payload),
+            geo_resolver,
+            ip2proxy_resolver,
+            bot_resolver,
+            ua_parser,
+        )
+        .await
+    }
+
+    pub async fn process_event(
+        &self,
+        data: ProcessedEvent,
+        geo_resolver: Option<&GeoResolver>,
+        ip2proxy_resolver: Option<&IP2ProxyResolver>,
+        bot_resolver: &BotResolver,
+        ua_parser: &UaResolver,
+    ) -> Result<TransformedEvent, Box<dyn std::error::Error + Send>> {
+        self.process_event_inner(
+            data,
+            None,
+            geo_resolver,
+            ip2proxy_resolver,
+            bot_resolver,
+            ua_parser,
+        )
+        .await
+    }
+
+    async fn process_event_inner(
+        &self,
+        data: ProcessedEvent,
+        original_payload: Option<&str>,
+        geo_resolver: Option<&GeoResolver>,
+        ip2proxy_resolver: Option<&IP2ProxyResolver>,
+        bot_resolver: &BotResolver,
+        ua_parser: &UaResolver,
+    ) -> Result<TransformedEvent, Box<dyn std::error::Error + Send>> {
+        // Only rejection records need the original JSON. Avoid serializing every
+        // successful inline event just to preserve a payload for uncommon failures.
+        let rejection_payload =
+            if data.event.event_type == "user_identify" || data.event.timestamp.is_some() {
+                match original_payload {
+                    Some(payload) => payload.to_string(),
+                    None => serde_json::to_string(&data)
+                        .map_err(|error| Box::new(error) as Box<dyn Error + Send>)?,
+                }
+            } else {
+                String::new()
+            };
 
         // enrich with geo data, privacy and default event values.
 
         let mut transformed_event: TransformedEvent = TransformedEvent::default();
 
-        let mut service = PrivacyEnrichmentService::new(data.event.clone());
-        let result = match service.enrich(&geo_resolver) {
+        let mut service = PrivacyEnrichmentService::new(&data.event);
+        let result = match service.enrich(geo_resolver) {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!("Privacy enrichment failed: {:?}, using defaults", e);
@@ -111,52 +153,82 @@ impl EnrichmentHandler {
                 }
             }
         };
-        let maxmind_resolver: MaxMindResolver = MaxMindResolver::new(geo_resolver);
-        let location_data = match maxmind_resolver.resolve(&result.ip) {
-            Ok(data) => data,
-            Err(e) => {
+        let location_data = geo_resolver
+            .map(|resolver| MaxMindResolver::new(resolver).resolve(&result.ip))
+            .transpose()
+            .unwrap_or_else(|e| {
                 tracing::warn!(
                     "Could not resolve location data for ip {:?}: {:?}, proceeding with empty geo data",
                     result.ip,
                     e
                 );
-                crate::geo::maxmind::Data::default()
-            }
-        };
+                None
+            })
+            .unwrap_or_default();
 
         // check ip2proxy
 
-        let ip2proxy_result = match IP2ProxyWrapper::new(ip2proxy_resolver).resolve(&result.ip) {
-            Ok(data) => data,
-            Err(e) => {
+        let ip2proxy_result = ip2proxy_resolver
+            .map(|resolver| IP2ProxyWrapper::new(resolver).resolve(&result.ip))
+            .transpose()
+            .unwrap_or_else(|e| {
                 tracing::warn!(
                     "Could not resolve IP2Proxy data for ip {:?}: {:?}, defaulting to NOPROXY",
                     result.ip,
                     e
                 );
-                crate::ip2location::ip2proxy::Data::default()
-            }
-        };
+                None
+            })
+            .unwrap_or_default();
         let proxy_type = ip2proxy_result.proxy_type.as_deref().unwrap_or("NOPROXY");
 
-        let is_bot = if let Some(user_agent) = &data.event.user_agent {
-            bot_resolver.check_bot(user_agent)
-        } else {
-            true // Treat missing user_agent as a bot
-        };
-        let classification = Self::determine_classification(is_bot, proxy_type);
+        let bot_classification = data
+            .event
+            .user_agent
+            .as_deref()
+            .map(|user_agent| bot_resolver.classify(user_agent))
+            .unwrap_or_else(BotClassification::missing_user_agent);
+        let classification = Self::determine_classification(bot_classification.is_bot, proxy_type);
+        if bot_classification.is_bot {
+            let provider = if bot_classification.provider.is_empty() {
+                "unknown".to_string()
+            } else {
+                bot_classification.provider.clone()
+            };
+            metrics::counter!(
+                "capture_bot_classifications_total",
+                1,
+                "category" => bot_classification.category.clone(),
+                "provider" => provider
+            );
+        }
 
         transformed_event.event_id = data.event_id.to_string();
+        transformed_event.identity_method = data.identity_provenance.identity_method.clone();
+        transformed_event.identity_trust = data.identity_provenance.identity_trust.clone();
+        transformed_event.identity_verified_at = data.identity_provenance.verified_at.clone();
+        transformed_event.identity_verifier_version =
+            data.identity_provenance.verifier_version.clone();
         transformed_event.src = data.event.src.or_else(|| Some("usermaven".to_string()));
         // payload attributes
         transformed_event.project_id = data
-            .event
-            .api_key
-            .split('.')
-            .next()
-            .unwrap_or("")
-            .to_string();
-        transformed_event.api_key = data.event.api_key.clone();
+            .authorization
+            .as_ref()
+            .map(|credential| credential.workspace_id.clone())
+            .unwrap_or_else(|| {
+                data.event
+                    .api_key
+                    .split('.')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .to_lowercase();
+        transformed_event.api_key = data
+            .authorization
+            .as_ref()
+            .map(|credential| credential.installation_id.clone())
+            .unwrap_or_default();
         transformed_event.event_type = data.event.event_type.clone();
         transformed_event.utc_time = data.event.utc_time;
         transformed_event.local_tz_offset = Some(0);
@@ -219,66 +291,35 @@ impl EnrichmentHandler {
         transformed_event.location_lon = location_data.lon;
         transformed_event.location_zip = location_data.zip;
         transformed_event.timestamp = data.event.received_at.clone();
+        transformed_event.event_received_at = data.event.received_at.clone();
         transformed_event.parsed_ua_bot = classification;
+        transformed_event.parsed_ua_bot_category = bot_classification.category;
+        transformed_event.parsed_ua_bot_name = bot_classification.name;
+        transformed_event.parsed_ua_bot_provider = bot_classification.provider;
 
         // Check if the API key is a server-side token
-        let is_server_side_token = data.event.api_key.contains('.');
+        let is_server_side_token = data
+            .authorization
+            .as_ref()
+            .map(|credential| credential.credential_kind == CredentialKind::Server)
+            .unwrap_or_else(|| data.event.api_key.contains('.'));
 
         // Look for the timestamp in the event data
         let event_timestamp = if is_server_side_token {
             if let Some(custom_timestamp) = data.event.timestamp {
-                // Convert milliseconds to seconds if necessary
-                // Handle both seconds and milliseconds
-                let (seconds, nanoseconds) = if custom_timestamp > 1_000_000_000_000 {
-                    // Timestamp is in milliseconds
-                    let seconds = custom_timestamp / 1000;
-                    let nanoseconds = (custom_timestamp % 1000) * 1_000_000; // Convert remaining milliseconds to nanoseconds
-                    (seconds, nanoseconds as u32)
-                } else {
-                    // Timestamp is in seconds
-                    (custom_timestamp, 0)
-                };
-
-                // Create DateTime<Utc> from timestamp
-                if let Some(utc_datetime) = DateTime::<Utc>::from_timestamp(seconds, nanoseconds) {
-                    let now = Utc::now();
-                    let min_allowed_date = Utc.ymd(1971, 1, 1).and_hms(0, 0, 0);
-
-                    if utc_datetime < min_allowed_date {
-                        return Err(Box::new(MyError {
-                            failed_event: FailedEvent {
-                                eventn_ctx_event_id: data.event_id.to_string(),
-                                project_id: transformed_event.project_id.clone(),
-                                error_description: "Timestamp is before 1971-01-01".to_string(),
-                                error: 5,
-                                payload: payload.to_string(),
-                            },
-                            description: "Timestamp is before 1971-01-01".to_string(),
-                        }));
-                    }
-
-                    if utc_datetime > now + Duration::hours(24) {
-                        return Err(Box::new(MyError {
-                            failed_event: FailedEvent {
-                                eventn_ctx_event_id: data.event_id.to_string(),
-                                project_id: transformed_event.project_id.clone(),
-                                error_description: "Timestamp is more than 24 hours in the future"
-                                    .to_string(),
-                                error: 6,
-                                payload: payload.to_string(),
-                            },
-                            description: "Timestamp is more than 24 hours in the future"
-                                .to_string(),
-                        }));
-                    }
-
-                    // utc_datetime.to_rfc3339() returns a string like "2021-06-01T13:45:30Z"
-
-                    // Format the timestamp
-                    format!("{}", utc_datetime.format("%Y-%m-%dT%H:%M:%S.%9fZ"))
-                } else {
-                    data.event.received_at.clone()
-                }
+                normalize_custom_timestamp(custom_timestamp, Utc::now()).map_err(|error| {
+                    let description = error.to_string();
+                    Box::new(MyError {
+                        failed_event: FailedEvent {
+                            eventn_ctx_event_id: data.event_id.to_string(),
+                            project_id: transformed_event.project_id.clone(),
+                            error_description: description.clone(),
+                            error: 5,
+                            payload: rejection_payload.clone(),
+                        },
+                        description,
+                    }) as Box<dyn Error + Send>
+                })?
             } else {
                 data.event.received_at.clone()
             }
@@ -301,7 +342,6 @@ impl EnrichmentHandler {
         };
         transformed_event.user_custom = user_custom_str;
 
-        tracing::debug!("User attributes: {:?}", user);
         if let Some(created_at) = user.get("created_at").and_then(|v| v.as_str()) {
             transformed_event.user_created_at = Some(created_at.to_string());
         }
@@ -441,7 +481,7 @@ impl EnrichmentHandler {
                 failed.error_description = "user.id required".to_string();
                 failed.error = 1;
 
-                failed.payload = payload.to_string();
+                failed.payload = rejection_payload.clone();
 
                 return Err(Box::new(MyError {
                     failed_event: failed.clone(),
@@ -461,7 +501,7 @@ impl EnrichmentHandler {
                     failed.project_id = transformed_event.project_id;
                     failed.error_description = "company.id required".to_string();
                     failed.error = 3;
-                    failed.payload = payload.to_string();
+                    failed.payload = rejection_payload.clone();
                     return Err(Box::new(MyError {
                         failed_event: failed.clone(),
                         description: failed.error_description,
@@ -475,8 +515,6 @@ impl EnrichmentHandler {
             }
         }
 
-        tracing::debug!("Transformed event: {:?}", transformed_event);
-
         Ok(transformed_event)
     }
 }
@@ -488,9 +526,8 @@ mod tests {
     #[tokio::test]
     async fn test_event_enrichment() {
         // Create necessary dependencies
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -532,8 +569,8 @@ mod tests {
             let result = handler
                 .process_payload(
                     payload,
-                    &geo_resolver,
-                    &ip2proxy_resolver,
+                    geo_resolver.as_ref(),
+                    ip2proxy_resolver.as_ref(),
                     &bot_resolver,
                     &ua_parser,
                 )
@@ -550,11 +587,8 @@ mod tests {
                         transformed_event.event_id,
                         "9b8faa58-1ef4-44b4-879f-21813cc6e75e"
                     );
-                    assert_eq!(transformed_event.project_id, "UMYwi4UKqF");
-                    assert_eq!(
-                        transformed_event.api_key,
-                        "UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7"
-                    );
+                    assert_eq!(transformed_event.project_id, "umywi4ukqf");
+                    assert_eq!(transformed_event.api_key, "");
 
                     // Check utm parameters
                     if transformed_event.event_type == "page_view" {
@@ -581,9 +615,8 @@ mod tests {
     /// are still processed successfully with empty geo data instead of being dropped.
     #[tokio::test]
     async fn test_event_with_unknown_ip_succeeds() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -595,8 +628,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -609,7 +642,7 @@ mod tests {
 
         let event = result.unwrap();
         assert_eq!(event.event_id, "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
-        assert_eq!(event.project_id, "UMYwi4UKqF");
+        assert_eq!(event.project_id, "umywi4ukqf");
         // Geo fields should be None (graceful fallback)
         assert!(
             event.location_country.is_none(),
@@ -632,9 +665,8 @@ mod tests {
     /// Tests with the exact IP that was causing production event drops.
     #[tokio::test]
     async fn test_event_with_production_failing_ip() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -646,8 +678,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -669,9 +701,8 @@ mod tests {
     /// don't panic during EU compliance check.
     #[tokio::test]
     async fn test_event_with_cookie_comply_and_unknown_ip() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -683,8 +714,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -700,9 +731,8 @@ mod tests {
     /// when not explicitly provided (server-side events).
     #[tokio::test]
     async fn test_server_side_event_parses_url_fields() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -714,8 +744,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -739,9 +769,8 @@ mod tests {
     /// by URL parsing (client-side events).
     #[tokio::test]
     async fn test_client_side_event_preserves_explicit_doc_fields() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -753,8 +782,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -775,9 +804,8 @@ mod tests {
     /// Tests URL parsing with various URL formats.
     #[tokio::test]
     async fn test_url_parsing_edge_cases() {
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
-        let ip2proxy_resolver =
-            IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
+        let geo_resolver: Option<GeoResolver> = None;
+        let ip2proxy_resolver: Option<IP2ProxyResolver> = None;
         let bot_resolver = BotResolver::new();
         let ua_parser = UaResolver::new();
         ua_parser.seed_to_lru_cache().unwrap();
@@ -789,8 +817,8 @@ mod tests {
         let result = handler
             .process_payload(
                 payload,
-                &geo_resolver,
-                &ip2proxy_resolver,
+                geo_resolver.as_ref(),
+                ip2proxy_resolver.as_ref(),
                 &bot_resolver,
                 &ua_parser,
             )
@@ -804,5 +832,24 @@ mod tests {
             event.doc_search.is_none(),
             "No query string means doc_search should be None"
         );
+    }
+
+    #[tokio::test]
+    async fn test_ai_user_fetcher_enrichment() {
+        let bot_resolver = BotResolver::new();
+        let ua_parser = UaResolver::new();
+        ua_parser.seed_to_lru_cache().unwrap();
+        let handler = EnrichmentHandler::new();
+        let payload = r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","url":"https://example.com","user_agent":"Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot)","user":{"anonymous_id":"ai-fetcher"},"ip":"192.168.1.1","received_at":"2024-05-10T09:08:20.443126000Z","src":"usermaven"},"event_id":"a7a7a7a7-a7a7-47a7-a7a7-a7a7a7a7a7a7"}"#;
+
+        let event = handler
+            .process_payload(payload, None, None, &bot_resolver, &ua_parser)
+            .await
+            .expect("AI user fetcher event should be enriched");
+
+        assert_eq!(event.parsed_ua_bot, 1);
+        assert_eq!(event.parsed_ua_bot_category, "ai_user_fetcher");
+        assert_eq!(event.parsed_ua_bot_provider, "openai");
+        assert_eq!(event.parsed_ua_bot_name, "ChatGPT-User");
     }
 }

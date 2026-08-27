@@ -14,16 +14,29 @@ func TestCalculateDealHealthScoreUsesStageRecencyAndDecayedSignals(t *testing.T)
 		Stage: &model.CRMPipelineStage{StageType: model.CRMStageTypeOpen, Probability: 50},
 	}
 	signals := []model.CRMBuyerSignal{
-		{SignalType: model.CRMSignalBuyingIntent, SourceType: model.CRMSignalSourceEmail, Confidence: 1, DetectedAt: now},
-		{SignalType: model.CRMSignalBudgetSignal, SourceType: model.CRMSignalSourceEmail, Confidence: 1, DetectedAt: now},
+		{SignalType: model.CRMSignalBuyingIntent, SourceType: model.CRMSignalSourceEmail, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
+		{SignalType: model.CRMSignalBudgetSignal, SourceType: model.CRMSignalSourceEmail, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
 	}
 
 	score, factors := calculateDealHealthScore(deal, signals, now)
-	if score != 87 {
-		t.Fatalf("score = %d, want 87", score)
+	if score != 82 {
+		t.Fatalf("score = %d, want 82", score)
 	}
-	if factors["compound_signal_boost"] != 5 || factors["signal_count"] != 2 {
+	if factors["compound_signal_boost"] != float64(0) || factors["signal_count"] != 2 {
 		t.Fatalf("factors = %#v", factors)
+	}
+}
+
+func TestCalculateDealHealthScoreBoostsIndependentDomains(t *testing.T) {
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	deal := &model.CRMDeal{UpdatedAt: now, Stage: &model.CRMPipelineStage{StageType: model.CRMStageTypeOpen, Probability: 50}}
+	signals := []model.CRMBuyerSignal{
+		{SignalType: model.CRMSignalBuyingIntent, SignalDomain: model.CRMSignalDomainConversation, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
+		{SignalType: model.CRMSignalBudgetSignal, SignalDomain: model.CRMSignalDomainWebBehavior, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
+	}
+	_, factors := calculateDealHealthScore(deal, signals, now)
+	if factors["independent_domains"] != 2 || factors["compound_signal_boost"] == float64(0) {
+		t.Fatalf("cross-domain factors = %#v", factors)
 	}
 }
 

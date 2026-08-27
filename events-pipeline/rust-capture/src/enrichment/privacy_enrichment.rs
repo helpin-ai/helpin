@@ -1,5 +1,3 @@
-use maxminddb::geoip2;
-
 // Performs an enrichment to the event i.e user anonymous id, session id, and more.
 const COMPLY_VALUE: &str = "comply";
 const KEEP_VALUE: &str = "keep";
@@ -19,8 +17,8 @@ enum IPPolicy {
     Strict,
 }
 
-pub struct PrivacyEnrichmentService {
-    event: Event,
+pub struct PrivacyEnrichmentService<'a> {
+    event: &'a Event,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -30,12 +28,16 @@ pub struct IPGeoData {
     pub ip: String,
 }
 
-impl PrivacyEnrichmentService {
-    pub fn new(event: Event) -> Self {
+impl<'a> PrivacyEnrichmentService<'a> {
+    pub fn new(event: &'a Event) -> Self {
         Self { event }
     }
 
-    fn comply_with_cookie_laws(&self, geo_resolver: &GeoResolver, client_ip: &str) -> bool {
+    fn comply_with_cookie_laws(&self, geo_resolver: Option<&GeoResolver>, client_ip: &str) -> bool {
+        let Some(geo_resolver) = geo_resolver else {
+            // Without a country database, use the privacy-preserving branch.
+            return false;
+        };
         // Look up the IP address in the database
         let country = match geo_resolver.lookup_country(client_ip) {
             Ok(c) => c,
@@ -68,7 +70,7 @@ impl PrivacyEnrichmentService {
 
     pub fn enrich(
         &mut self,
-        geo_resolver: &GeoResolver,
+        geo_resolver: Option<&GeoResolver>,
     ) -> Result<IPGeoData, Box<dyn std::error::Error>> {
         let mut cookies_law_compliant = true;
         let mut compliant: Option<bool> = None;
@@ -147,7 +149,7 @@ impl PrivacyEnrichmentService {
                         compliant = Some(value);
                     }
 
-                    if compliant.unwrap_or(false) {
+                    if geo_resolver.is_none() || compliant.unwrap_or(false) {
                         data.ip = self.get_three_octets(self.event.ip.as_deref().unwrap_or(""))
                     }
                 }
@@ -165,7 +167,7 @@ impl PrivacyEnrichmentService {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::{geo::maxmind::MaxMindResolver, utils::time};
+    use crate::utils::time;
 
     use super::*;
 
@@ -173,8 +175,6 @@ mod tests {
     fn test_ip_geo_enrichment() {
         let mut user = HashMap::new();
         user.insert("id".to_string(), serde_json::json!("xy123"));
-        // Create a GeoResolver with the in-memory database
-        let geo_resolver = GeoResolver::new("data/GeoLite2-City.mmdb").unwrap();
         let event = Event {
             autocapture_attributes: None,
             api_key: "test_key".to_string(),
@@ -206,8 +206,8 @@ mod tests {
             timestamp: None,
         };
 
-        let mut service = PrivacyEnrichmentService::new(event.clone());
-        let result = service.enrich(&geo_resolver);
+        let mut service = PrivacyEnrichmentService::new(&event);
+        let result = service.enrich(None);
         assert!(result.is_ok()); // First ensure the result is Ok
         let data = result.unwrap();
         println!("{:?}", data);

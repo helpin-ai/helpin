@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Synthetic trust center for local buyer-signal testing." />
+    <title>Security · Signal Lab</title>
+    <link rel="stylesheet" href="/event-test/styles.css" />
+  </head>
+  <body data-page="security">
+    <a class="skip-link" href="#main-content">Skip to security overview</a>
+    <header class="site-header">
+      <a class="wordmark" href="/event-test/"><span class="wordmark-mark" aria-hidden="true">H</span><span class="wordmark-copy">Signal Lab / local</span></a>
+      <nav class="primary-nav" aria-label="Event test pages">
+        <a href="/event-test/">Control</a><a href="/event-test/pricing/">Pricing</a><a href="/event-test/security/" aria-current="page">Security</a><a href="/event-test/demo/">Demo</a>
+      </nav>
+    </header>
+
+    <main class="page-shell" id="main-content">
+      <article class="content">
+        <header data-reveal style="--i: 0">
+          <p class="eyebrow">Trust center / article 01</p>
+          <h1>Security is a system, not a badge wall.</h1>
+          <p class="lede">Opening this route emits a procurement pageview and an <strong>article_view</strong> for <strong>security-overview</strong>. Scroll to 75% to exercise the versioned interaction milestone.</p>
+        </header>
+
+        <section class="section" data-reveal style="--i: 1">
+          <h2>Boundaries before features.</h2>
+          <p class="lede">Workspace identity is derived from authenticated installation credentials. Payload-supplied project identifiers are discarded before the event reaches JetStream.</p>
+          <ol class="security-list">
+            <li><div><h3>Tenant binding</h3><p>Every captured event carries the workspace from the matched browser or server credential.</p></div></li>
+            <li><div><h3>Evidence provenance</h3><p>Anonymous, claimed, and cryptographically verified identities remain visibly distinct.</p></div></li>
+            <li><div><h3>Bounded retention</h3><p>The local behavioral store declares a 400-day TTL and evaluator reads stay time-bounded.</p></div></li>
+          </ol>
+        </section>
+
+        <section class="section">
+          <p class="eyebrow">Operational controls</p>
+          <h2>Failures should be inspectable.</h2>
+          <p class="lede">NATS JetStream exposes a raw diagnostic archive, sharded enriched work queue, and dead-letter stream. The session writer persists completed events to ClickHouse, while capture falls back to disk for retryable delivery failures.</p>
+          <p class="notice">A claimed browser identity remains <strong>untrusted</strong> in the Rust capture boundary. That is expected until signed widget identity is enabled.</p>
+        </section>
+
+        <section class="section">
+          <p class="eyebrow">Procurement note</p>
+          <h2>No mystery tenant field.</h2>
+          <p class="lede">The test application never sends a project ID. The value visible in ClickHouse is created only by token authorization, which makes this page useful for both behavioral and isolation testing.</p>
+          <a class="button" href="/event-test/demo/">Continue to demo request</a>
+        </section>
+      </article>
+
+      <aside class="console" aria-label="Browser event activity">
+        <div class="console-header"><h2>Event console</h2><button class="secondary" type="button" data-clear-log>Clear</button></div>
+        <ol data-event-log aria-live="polite"></ol>
+      </aside>
+    </main>
+    <footer class="footer"><span>Run <span data-run-id></span></span><span><span class="state waiting" data-sdk-state>Loading local SDK</span></span></footer>
+    <script>window.helpinQ = window.helpinQ || []; window.helpin = window.helpin || function () { window.helpinQ.push(Array.from(arguments)); };</script>
+    <script defer src="/event-test/app.js"></script>
+  </body>
+</html>

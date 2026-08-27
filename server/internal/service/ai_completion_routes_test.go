@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
@@ -80,5 +81,70 @@ func TestAICompletionRouteRegistryReportsMissingConfiguredProviders(t *testing.T
 	})
 	if len(issues) != 1 || issues[0].Error() != `AI completion provider "openrouter" is not configured` {
 		t.Fatalf("provider validation issues = %v", issues)
+	}
+}
+
+func TestAICompletionRouteRegistryAppliesCRMOverridesOnlyToCRMFeatures(t *testing.T) {
+	registry := NewAICompletionRouteRegistry(CRMCompletionRouteConfig{
+		Primary: AICompletionRoute{
+			Provider: "openrouter", Model: "anthropic/claude-sonnet-5", OpenRouterProvider: "anthropic",
+		},
+		Fallback: AICompletionRoute{
+			Provider: "openrouter", Model: "openai/gpt-5.6-luna", OpenRouterProvider: "openai",
+		},
+		MeetingFallback: AICompletionRoute{
+			Provider: "openrouter", Model: "google/gemini-3.7-flash", OpenRouterProvider: "google-vertex/global",
+		},
+	})
+
+	for _, feature := range []string{
+		BillingFeatureCRMSignalDetection,
+		BillingFeatureDealAutomationInference,
+		BillingFeatureCRMSummary,
+		BillingFeatureMeetingIntelligence,
+	} {
+		policy, ok := registry.Policy(feature, "")
+		if !ok {
+			t.Fatalf("CRM route %q missing", feature)
+		}
+		if policy.Primary.Model != "anthropic/claude-sonnet-5" || policy.Primary.OpenRouterProvider != "anthropic" {
+			t.Fatalf("CRM primary for %q = %#v", feature, policy.Primary)
+		}
+	}
+	meeting, _ := registry.Policy(BillingFeatureMeetingIntelligence, "")
+	if len(meeting.Fallbacks) != 1 || meeting.Fallbacks[0].OpenRouterProvider != "google-vertex/global" {
+		t.Fatalf("meeting fallback = %#v", meeting.Fallbacks)
+	}
+	summary, _ := registry.Policy(BillingFeatureCRMSummary, "")
+	if len(summary.Fallbacks) != 1 || summary.Fallbacks[0].OpenRouterProvider != "openai" {
+		t.Fatalf("CRM fallback = %#v", summary.Fallbacks)
+	}
+	nonCRM, _ := registry.Policy(BillingFeatureAIRouting, "")
+	if nonCRM.Primary.Model != "deepseek/deepseek-v4-flash-0731" || nonCRM.Primary.OpenRouterProvider != "" {
+		t.Fatalf("non-CRM route changed = %#v", nonCRM.Primary)
+	}
+
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issues := registry.Validate(catalog); len(issues) != 0 {
+		t.Fatalf("configured route validation issues = %v", issues)
+	}
+}
+
+func TestAICompletionRouteRegistryRejectsOpenRouterSelectionOnDirectRoute(t *testing.T) {
+	registry := NewAICompletionRouteRegistry(CRMCompletionRouteConfig{
+		Primary: AICompletionRoute{
+			Provider: "anthropic", Model: "claude-sonnet-5", OpenRouterProvider: "anthropic",
+		},
+	})
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	issues := registry.Validate(catalog)
+	if len(issues) == 0 || !strings.Contains(issues[0].Error(), "OpenRouter provider selection requires provider openrouter") {
+		t.Fatalf("route validation issues = %v", issues)
 	}
 }
