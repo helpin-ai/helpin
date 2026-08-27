@@ -253,6 +253,84 @@ func TestSupportEmailRouteVerificationBackfillMigrationContract(t *testing.T) {
 	}
 }
 
+func TestDockChatVisibilityMigrationPrerequisiteContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var prerequisite *Migration
+	var backfill *Migration
+	for i := range migrations {
+		switch migrations[i].Version {
+		case "20260814000050000000":
+			prerequisite = &migrations[i]
+		case "202608140001":
+			backfill = &migrations[i]
+		}
+	}
+	if prerequisite == nil {
+		t.Fatal("expected dock chat support conversation column migration 20260814000050000000 to be registered")
+	}
+	if backfill == nil {
+		t.Fatal("expected dock chat visibility migration 202608140001 to be registered")
+	}
+	if prerequisite.Version >= backfill.Version {
+		t.Fatalf("support conversation column migration %s must sort before visibility migration %s", prerequisite.Version, backfill.Version)
+	}
+
+	sql := strings.ToLower(strings.Join(strings.Fields(prerequisite.SQL), " "))
+	for _, clause := range []string{
+		"alter table if exists dock_chats",
+		"add column if not exists support_conversation_id uuid",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("prerequisite migration SQL missing contract clause %q", clause)
+		}
+	}
+}
+
+func TestCRMMeetingMigrationPrerequisiteContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var prerequisite *Migration
+	var calendarMigration *Migration
+	for i := range migrations {
+		switch migrations[i].Version {
+		case "20260815000050000000":
+			prerequisite = &migrations[i]
+		case "202608150001":
+			calendarMigration = &migrations[i]
+		}
+	}
+	if prerequisite == nil {
+		t.Fatal("expected CRM meeting prerequisite migration 20260815000050000000 to be registered")
+	}
+	if calendarMigration == nil {
+		t.Fatal("expected calendar meeting capture migration 202608150001 to be registered")
+	}
+	if prerequisite.Version >= calendarMigration.Version {
+		t.Fatalf("CRM meeting prerequisite migration %s must sort before calendar migration %s", prerequisite.Version, calendarMigration.Version)
+	}
+
+	sql := strings.ToLower(strings.Join(strings.Fields(prerequisite.SQL), " "))
+	for _, clause := range []string{
+		"create table if not exists crm_meetings",
+		"calendar_event_id uuid",
+		"activity_id uuid",
+		"recording_object_key text",
+		"create table if not exists crm_meeting_intelligence",
+		"meeting_id uuid not null",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("prerequisite migration SQL missing contract clause %q", clause)
+		}
+	}
+}
+
 func TestCompanyDealTimelineDedupeMigrationContract(t *testing.T) {
 	migrations, err := loadMigrations()
 	if err != nil {
