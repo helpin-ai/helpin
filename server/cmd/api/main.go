@@ -287,7 +287,10 @@ func main() {
 			&model.SupportTeammateStatusOverride{},
 			&model.SupportCannedResponse{},
 			&model.SupportWidgetInstallation{},
-			&model.WorkspaceEventProjectAlias{},
+			// WorkspaceEventProjectAlias is owned by versioned migration
+			// 202608240001, including its overlapping single-column and
+			// composite uniqueness constraints. GORM cannot safely reconcile
+			// those PostgreSQL constraints as indexes during AutoMigrate.
 			&model.CRMIdentityLink{},
 			&model.SupportCredentialRotationAudit{},
 			&model.SupportWidgetSession{},
