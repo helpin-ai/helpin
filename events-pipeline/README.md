@@ -39,8 +39,12 @@ just events-status
 ```
 
 Follow it with `just events-logs` and stop it with `just events-down`. The
-startup command prints the HTTPS event-lab URL with its local fixture
-credential. Caddy exposes the lab and event API through the existing
+startup command reads active widget credentials from Helpin's protected
+`/api/internal/widget-tokens` endpoint and prints the HTTPS event-lab URL for
+the selected workspace. Set `HELPIN_EVENT_TEST_WORKSPACE_ID` when the registry
+contains more than one workspace. The local API and event stack must use the
+same `INTERNAL_API_SECRET`. Caddy exposes the lab and event API through the
+existing
 `helpin-dev-fe.tryunhide.com` and `helpin-dev.tryunhide.com` DNS names; the
 underlying local service ports are not intended to be opened publicly.
 The repository's primary `docker-compose.yaml` provides shared application

@@ -2,13 +2,27 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+
+set -a
+if [[ -f "$repo_root/server/.env" ]]; then
+  source "$repo_root/server/.env"
+fi
+if [[ -f "$repo_root/events-pipeline/.env.events" ]]; then
+  source "$repo_root/events-pipeline/.env.events"
+fi
+set +a
+
 runtime_dir=${HELPIN_EVENTS_RUNTIME_DIR:-/tmp/helpin-events-local}
 log_dir="$runtime_dir/logs"
 pid_dir="$runtime_dir/pids"
 compose_file="$repo_root/events-pipeline/local/compose.yaml"
 compose=(docker compose --project-name helpin-events-local --file "$compose_file")
 capture_dir="$repo_root/events-pipeline/rust-capture"
-fixture_dir="$repo_root/events-pipeline/local"
+token_url=${HELPIN_EVENT_TOKEN_URL:-http://127.0.0.1:8080/api/internal/widget-tokens}
+caddy_bin=$(command -v caddy || true)
+if [[ -x /snap/caddy/current/usr/bin/caddy ]]; then
+  caddy_bin=/snap/caddy/current/usr/bin/caddy
+fi
 
 mkdir -p "$log_dir" "$pid_dir" "$runtime_dir/fallback" \
   "$runtime_dir/archive-spill" "$runtime_dir/poison-spill"
@@ -26,6 +40,26 @@ wait_http() {
   done
 
   echo "$name did not become ready: $url" >&2
+  return 1
+}
+
+fetch_token_registry() {
+  local args=(--fail --silent --show-error)
+  if [[ -n "${INTERNAL_API_SECRET:-}" ]]; then
+    args+=(--header "Authorization: Bearer $INTERNAL_API_SECRET")
+  fi
+  curl "${args[@]}" "$token_url"
+}
+
+wait_token_registry() {
+  local attempts=${1:-60}
+  for _ in $(seq 1 "$attempts"); do
+    if fetch_token_registry >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Helpin widget token registry did not become ready: $token_url" >&2
   return 1
 }
 
@@ -106,6 +140,29 @@ stop_local_processes() {
 }
 
 start_stack() {
+  wait_token_registry
+
+  local token_response test_workspace_id
+  token_response=$(fetch_token_registry)
+  test_workspace_id=${HELPIN_EVENT_TEST_WORKSPACE_ID:-${EVENT_TEST_PROJECT_ID:-}}
+  mapfile -t event_test_context < <(TOKEN_RESPONSE="$token_response" HELPIN_EVENT_TEST_WORKSPACE_ID="$test_workspace_id" python3 -c '
+import json, os
+tokens = json.loads(os.environ["TOKEN_RESPONSE"])["tokens"]
+workspace = os.environ.get("HELPIN_EVENT_TEST_WORKSPACE_ID", "").strip().lower()
+token = next((item for item in tokens if item["workspace_id"].lower() == workspace), None) if workspace else (tokens[0] if len(tokens) == 1 else None)
+if token is None:
+    raise SystemExit(f"expected one active widget installation or one for workspace {workspace}")
+print(token["client_secret"])
+print(token["workspace_id"])
+')
+  unset token_response
+  if [[ ${#event_test_context[@]} -ne 2 ]]; then
+    echo "Could not select an active widget installation from $token_url" >&2
+    return 1
+  fi
+  local event_test_widget_key=${event_test_context[0]}
+  local event_test_project_id=${event_test_context[1]}
+
   if curl --fail --silent http://127.0.0.1:8222/jsz >/dev/null 2>&1; then
     echo "Reusing the one-node NATS/JetStream server already listening on 4222"
     "${compose[@]}" rm --stop --force nats >/dev/null 2>&1 || true
@@ -139,10 +196,6 @@ start_stack() {
   )
   pnpm --dir "$repo_root/packages/sdk-js" build
 
-  start_process token-server \
-    python3 -m http.server --bind 127.0.0.1 --directory "$fixture_dir" 18080
-  wait_http "token fixture" http://127.0.0.1:18080/tokens.json
-
   start_process_in_dir session-writer "$capture_dir" \
     env \
       NATS_URL=nats://127.0.0.1:4222 \
@@ -164,12 +217,13 @@ start_stack() {
       NATS_URL=nats://127.0.0.1:4222 \
       PRINT_SINK=false \
       NETWORK_ENRICHMENT_ENABLED=false \
-      HTTP_TOKENS_URL=http://127.0.0.1:18080/tokens.json \
+      HTTP_TOKENS_URL="$token_url" \
+      INTERNAL_API_SECRET="${INTERNAL_API_SECRET:-}" \
       FALLBACK_DIR="$runtime_dir/fallback" \
       ARCHIVE_SPILL_DIR="$runtime_dir/archive-spill" \
       LOG_LEVEL=INFO \
       "$capture_dir/target/debug/events-pipeline"
-  wait_http "event capture" http://127.0.0.1:3000/health/readiness
+  wait_http "event capture" http://127.0.0.1:3000/health/readiness 120
 
   start_process_in_dir event-replay "$capture_dir" \
     env \
@@ -191,16 +245,17 @@ start_stack() {
 
   if curl --fail --silent https://helpin-dev.tryunhide.com/sdk/lib.js >/dev/null 2>&1; then
     echo "Reloading the Caddy process already serving the Helpin development DNS"
-    caddy reload --config - --adapter caddyfile <"$repo_root/Caddyfile.dev"
+    "$caddy_bin" reload --config - --adapter caddyfile <"$repo_root/Caddyfile.dev"
   else
     start_process_with_stdin dev-caddy "$repo_root/Caddyfile.dev" \
-      caddy run --config - --adapter caddyfile
+      "$caddy_bin" run --config - --adapter caddyfile
   fi
   wait_http "Caddy event route" https://helpin-dev.tryunhide.com/sdk/lib.js 120
 
   echo
   echo "Local NATS event pipeline is ready."
-  echo "Event lab: https://helpin-dev-fe.tryunhide.com/event-test/?key=e2e-browser-key&host=https%3A%2F%2Fhelpin-dev.tryunhide.com"
+  echo "Event lab: https://helpin-dev-fe.tryunhide.com/event-test/?key=$event_test_widget_key&host=https%3A%2F%2Fhelpin-dev.tryunhide.com"
+  echo "Workspace: $event_test_project_id"
   echo "Event API: https://helpin-dev.tryunhide.com"
 
   if [[ "${HELPIN_EVENTS_FOREGROUND:-false}" == "true" ]]; then
@@ -224,8 +279,13 @@ show_status() {
     printf '%-18s not ready\n' nats
     failed=1
   fi
+  if fetch_token_registry >/dev/null 2>&1; then
+    printf '%-18s ready (%s)\n' token-registry "$token_url"
+  else
+    printf '%-18s not ready (%s)\n' token-registry "$token_url"
+    failed=1
+  fi
   for entry in \
-    "token-server|http://127.0.0.1:18080/tokens.json" \
     "session-writer|http://127.0.0.1:3010/health/readiness" \
     "event-capture|http://127.0.0.1:3000/health/readiness" \
     "event-proxy|http://127.0.0.1:8095/sdk/lib.js" \
