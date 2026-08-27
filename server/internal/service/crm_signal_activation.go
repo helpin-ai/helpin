@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+const signalDeliveryClaimTimeout = 5 * time.Minute
 
 func (s *CRMSignalService) ListRuleConfigs(ctx context.Context, workspaceID string) ([]model.CRMSignalRuleConfig, error) {
 	if strings.TrimSpace(workspaceID) == "" {
@@ -213,19 +216,23 @@ func (s *CRMSignalService) ListActivationSignals(ctx context.Context, workspaceI
 }
 
 func (s *CRMSignalService) RouteWorkspaceSignals(ctx context.Context, workspaceID string) (int, error) {
+	routed, retryErr := s.retrySignalDeliveries(ctx, workspaceID)
 	policy, err := s.signalRepo.GetActiveRoutingPolicy(ctx, workspaceID)
 	if err != nil || policy == nil {
-		return 0, err
+		return routed, errors.Join(retryErr, err)
 	}
 	signals, err := s.ListActivationSignals(ctx, workspaceID, 50)
 	if err != nil {
-		return 0, err
+		return routed, errors.Join(retryErr, err)
 	}
 	var channels []string
 	if err := json.Unmarshal(policy.Channels, &channels); err != nil {
-		return 0, fmt.Errorf("decode routing policy channels: %w", err)
+		return routed, errors.Join(retryErr, fmt.Errorf("decode routing policy channels: %w", err))
 	}
-	routed := 0
+	var routeErrs []error
+	if retryErr != nil {
+		routeErrs = append(routeErrs, retryErr)
+	}
 	for _, signal := range signals {
 		ownerID := signal.OwnerMemberID
 		if !policy.RouteToOwner {
@@ -236,39 +243,126 @@ func (s *CRMSignalService) RouteWorkspaceSignals(ctx context.Context, workspaceI
 			delivery := &model.CRMSignalDelivery{
 				WorkspaceID: workspaceID, SignalID: signal.ID, PolicyID: policy.ID, PolicyVersion: policy.Version,
 				Channel: channel, RecipientMemberID: ownerID, DestinationTeamID: policy.DestinationTeamID,
-				Status: "routed", DeliveredAt: &now,
+				Status: model.CRMSignalDeliveryPending,
+			}
+			if channel == model.CRMSignalDeliveryFeed {
+				delivery.Status = model.CRMSignalDeliverySent
+				delivery.DeliveredAt = &now
 			}
 			created, createErr := s.signalRepo.CreateSignalDelivery(ctx, delivery)
 			if createErr != nil {
-				return routed, createErr
+				routeErrs = append(routeErrs, createErr)
+				continue
 			}
 			if !created {
 				continue
 			}
-			routed++
-			if channel == model.CRMSignalDeliveryFeed || s.notifications == nil {
+			if channel == model.CRMSignalDeliveryFeed {
+				routed++
 				continue
 			}
-			recipients, recipientErr := s.signalRepo.RoutingRecipientUserIDs(ctx, workspaceID, ownerID, policy.DestinationTeamID)
-			if recipientErr != nil {
-				return routed, recipientErr
+			delivered, deliveryErr := s.emitSignalDelivery(ctx, &signal, delivery)
+			if delivered {
+				routed++
 			}
-			event := model.NotificationEventInput{
-				WorkspaceID: workspaceID, EventType: "crm.signal_ready", EntityType: "crm_signal", EntityID: signal.ID,
-				Title: "Buyer signal ready for review", Body: signal.Summary, Category: "crm_signal",
-				Priority: signalNotificationPriority(signal.Severity), TeamID: signalStringValue(policy.DestinationTeamID),
-				ExplicitRecipients: recipients, SkipFollowers: true, SkipEmailDelivery: channel == model.CRMSignalDeliveryNotification,
-				Metadata: model.JSONB{"rule_key": signalStringValue(signal.RuleKey), "rule_version": signalIntValue(signal.RuleVersion), "score": signal.BusinessPriority},
-			}
-			if channel == model.CRMSignalDeliveryDigest {
-				event.DelayedEmailChannel = "digest"
-			}
-			if err := s.notifications.Emit(ctx, event); err != nil {
-				return routed, err
+			if deliveryErr != nil {
+				routeErrs = append(routeErrs, deliveryErr)
 			}
 		}
 	}
-	return routed, nil
+	return routed, errors.Join(routeErrs...)
+}
+
+func (s *CRMSignalService) retrySignalDeliveries(ctx context.Context, workspaceID string) (int, error) {
+	now := time.Now().UTC()
+	deliveries, err := s.signalRepo.ListRetryableSignalDeliveries(
+		ctx, workspaceID, now.Add(-signalDeliveryClaimTimeout), 100,
+	)
+	if err != nil {
+		return 0, err
+	}
+	routed := 0
+	var retryErrs []error
+	for index := range deliveries {
+		signal, loadErr := s.signalRepo.GetSignal(ctx, workspaceID, deliveries[index].SignalID)
+		if loadErr != nil {
+			retryErrs = append(retryErrs, loadErr)
+			continue
+		}
+		if signal == nil {
+			retryErrs = append(retryErrs, fmt.Errorf("signal %s for queued delivery was not found", deliveries[index].SignalID))
+			continue
+		}
+		delivered, deliveryErr := s.emitSignalDelivery(ctx, signal, &deliveries[index])
+		if delivered {
+			routed++
+		}
+		if deliveryErr != nil {
+			retryErrs = append(retryErrs, deliveryErr)
+		}
+	}
+	return routed, errors.Join(retryErrs...)
+}
+
+func (s *CRMSignalService) emitSignalDelivery(
+	ctx context.Context,
+	signal *model.CRMBuyerSignal,
+	delivery *model.CRMSignalDelivery,
+) (bool, error) {
+	now := time.Now().UTC()
+	claimed, err := s.signalRepo.ClaimSignalDelivery(
+		ctx, delivery.ID, now.Add(-signalDeliveryClaimTimeout), now,
+	)
+	if err != nil || !claimed {
+		return false, err
+	}
+	fail := func(cause error) (bool, error) {
+		message := cause.Error()
+		if len(message) > 1000 {
+			message = message[:1000]
+		}
+		return false, errors.Join(cause, s.signalRepo.MarkSignalDeliveryFailed(ctx, delivery.ID, message))
+	}
+	if s.notifications == nil {
+		return fail(fmt.Errorf("notification emitter is unavailable"))
+	}
+	recipients, err := s.signalRepo.RoutingRecipientUserIDs(
+		ctx, delivery.WorkspaceID, delivery.RecipientMemberID, delivery.DestinationTeamID,
+	)
+	if err != nil {
+		return fail(err)
+	}
+	event := signalNotificationEvent(*signal, *delivery, recipients)
+	if err := s.notifications.Emit(ctx, event); err != nil {
+		return fail(err)
+	}
+	if err := s.signalRepo.MarkSignalDeliverySent(ctx, delivery.ID, time.Now().UTC()); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func signalNotificationEvent(
+	signal model.CRMBuyerSignal,
+	delivery model.CRMSignalDelivery,
+	recipients []string,
+) model.NotificationEventInput {
+	event := model.NotificationEventInput{
+		WorkspaceID: delivery.WorkspaceID, EventType: "crm.signal_ready",
+		EntityType: "crm_signal", EntityID: signal.ID,
+		Title: "Buyer signal ready for review", Body: signal.Summary, Category: "crm_signal",
+		Priority: signalNotificationPriority(signal.Severity),
+		TeamID:   signalStringValue(delivery.DestinationTeamID), ExplicitRecipients: recipients,
+		SkipFollowers: true, SkipEmailDelivery: delivery.Channel == model.CRMSignalDeliveryNotification,
+		Metadata: model.JSONB{
+			"rule_key": signalStringValue(signal.RuleKey), "rule_version": signalIntValue(signal.RuleVersion),
+			"score": signal.BusinessPriority,
+		},
+	}
+	if delivery.Channel == model.CRMSignalDeliveryDigest {
+		event.DelayedEmailChannel = "digest"
+	}
+	return event
 }
 
 func signalNotificationPriority(severity string) string {

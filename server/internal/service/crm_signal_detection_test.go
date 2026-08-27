@@ -132,6 +132,10 @@ func TestSignalDetectionService_PersistsProvenanceAndDedupes(t *testing.T) {
 	if stored.EvidenceExcerpt == nil || *stored.EvidenceExcerpt == "" {
 		t.Fatal("expected evidence_excerpt to be stored")
 	}
+	if stored.RuleKey == nil || *stored.RuleKey != model.CRMSignalRuleConversationExtraction ||
+		stored.RuleVersion == nil || *stored.RuleVersion != signalEvidenceRuleVersion {
+		t.Fatalf("rule provenance = %v@%v", stored.RuleKey, stored.RuleVersion)
+	}
 	if got := stored.Metadata["thread_external_id"]; got != "ext-thread-1" {
 		t.Fatalf("metadata.thread_external_id = %v, want ext-thread-1", got)
 	}

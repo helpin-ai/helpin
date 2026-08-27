@@ -31,9 +31,11 @@ type BackendIdentityPayload = {
   name: string;
   firstName: string;
   lastName: string;
+  phone: string;
+  jobTitle: string;
   company?: CompanyPayload;
-	externalUserId: string;
-	identityVerification?: IdentityVerification;
+  externalUserId: string;
+  identityVerification?: IdentityVerification;
 };
 
 function getIdentityString(value: unknown): string {
@@ -48,16 +50,20 @@ function resolveIdentityPayload(payload: Record<string, any>): BackendIdentityPa
   const firstName = getIdentityString(payload.first_name ?? payload.firstName);
   const lastName = getIdentityString(payload.last_name ?? payload.lastName);
   const name = buildIdentityName(firstName, lastName, getIdentityString(payload.name));
+  const phone = getIdentityString(payload.phone);
+  const jobTitle = getIdentityString(payload.job_title ?? payload.jobTitle);
   const company = resolveCompanyPayload(payload.company);
   return {
     email: getIdentityString(payload.email),
     name,
     firstName,
     lastName,
-		externalUserId: getIdentityString(payload.id ?? payload.external_user_id),
-		...(isObject(payload.identity_verification)
-			? { identityVerification: payload.identity_verification as unknown as IdentityVerification }
-			: {}),
+    phone,
+    jobTitle,
+    externalUserId: getIdentityString(payload.id ?? payload.external_user_id),
+    ...(isObject(payload.identity_verification)
+      ? { identityVerification: payload.identity_verification as unknown as IdentityVerification }
+      : {}),
     ...(company ? { company } : {}),
   };
 }
@@ -806,15 +812,17 @@ export class HelpinClient {
     const namespace = this.config.namespace || 'helpin';
     const nsFunc = (globalThis as any)[namespace];
     if (nsFunc?._widgetManager?.sendSessionUpgrade?.(
-		identity.email,
-		identity.name,
-		source,
-		identity.firstName,
-		identity.lastName,
-		identity.company,
-		identity.externalUserId,
-		identity.identityVerification,
-	)) {
+      identity.email,
+      identity.name,
+      source,
+      identity.firstName,
+      identity.lastName,
+      identity.company,
+      identity.externalUserId,
+      identity.identityVerification,
+      identity.phone,
+      identity.jobTitle,
+    )) {
       return;
     }
 
@@ -830,7 +838,9 @@ export class HelpinClient {
       name: identity.name,
       first_name: identity.firstName,
       last_name: identity.lastName,
-		external_user_id: identity.externalUserId,
+      phone: identity.phone,
+      job_title: identity.jobTitle,
+      external_user_id: identity.externalUserId,
       source,
       company: identity.company,
 		identity_verification: identity.identityVerification,
@@ -841,9 +851,17 @@ export class HelpinClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
-      }).catch((err) => {
-        this.logger.error('Failed to send identify to backend:', err);
-      });
+      })
+        .then((response) => {
+          if (!response.ok) {
+            this.logger.error(
+              `Identify request was rejected with HTTP ${response.status}`,
+            );
+          }
+        })
+        .catch((err) => {
+          this.logger.error('Failed to send identify to backend:', err);
+        });
     }
   }
 

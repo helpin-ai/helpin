@@ -818,7 +818,7 @@ export interface CRMSignalRuleConfig {
   workspace_id?: string;
   rule_key: string;
   version: number;
-  cadence: 'daily' | 'micro_batch';
+  cadence: 'daily' | 'micro_batch' | 'event_driven';
   enabled: boolean;
   shadow_mode: boolean;
   activation_eligible: boolean;

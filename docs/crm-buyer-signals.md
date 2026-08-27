@@ -79,7 +79,9 @@ enqueue the Temporal `SignalDetectionWorkflow`. The LLM returns structured
 signal candidates, but persistence verifies that quoted evidence literally
 exists in normalized source text. Deterministic workflow IDs, source-level
 uniqueness, thread suppression, and evidence fingerprints prevent duplicate
-signals.
+signals. Verified extraction is recorded as the immutable
+`conversation_signal_extraction` detector version. It starts in shadow mode
+and becomes routable only after an admin promotes that exact version.
 
 See [`crm-buyer-signal-ingestion.md`](crm-buyer-signal-ingestion.md) for the
 email ingestion details.
@@ -128,6 +130,12 @@ An event reaching ClickHouse does not guarantee a CRM signal. Before a
 behavioral candidate is stored, the evaluator resolves its external identity to
 a CRM contact, company, or deal. Candidates with no CRM entity are discarded;
 the procurement rule additionally requires an open deal.
+
+SDK identify calls retain both the durable browser `anonymous_id` and the
+customer's `external_user_id` on the CRM identity link. Signed widget HMAC
+proof determines verified trust. This lets later browser, cross-device, or
+server events resolve through either identifier without treating an unverified
+browser claim as verified evidence.
 
 Installing the widget provides website and support behavior. Product-usage
 signals require explicit customer instrumentation, normally as authenticated
@@ -206,7 +214,9 @@ A signal becomes activation-eligible only when:
 6. no matching open task exists.
 
 Routing policies support feed, notification, and digest deliveries. Delivery
-rows make routing idempotent across replicas and restarts. The
+rows make routing idempotent across replicas and restarts. Notification and
+digest rows move through pending, sending, sent, or failed states; failed and
+abandoned sends are reclaimed by a later routing sweep. The
 `buying_signal_to_task` automation template requests only activation-approved
 signals and remains approval-gated.
 

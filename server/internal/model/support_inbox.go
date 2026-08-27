@@ -444,6 +444,7 @@ type CRMIdentityLink struct {
 	ID              string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	AnonymousID     string     `json:"anonymous_id" gorm:"not null;index"`
+	ExternalUserID  *string    `json:"external_user_id,omitempty" gorm:"index"`
 	ContactID       *string    `json:"contact_id,omitempty" gorm:"type:uuid;index"`
 	CompanyID       *string    `json:"company_id,omitempty" gorm:"type:uuid;index"`
 	IdentityMethod  string     `json:"identity_method" gorm:"not null"`
@@ -1085,6 +1086,8 @@ type WidgetIdentityPayload struct {
 	Name                 string                      `json:"name"` // backward-compatible full-name input only
 	FirstName            string                      `json:"first_name,omitempty"`
 	LastName             string                      `json:"last_name,omitempty"`
+	Phone                string                      `json:"phone,omitempty"`
+	JobTitle             string                      `json:"job_title,omitempty"`
 	ExternalUserID       string                      `json:"external_user_id,omitempty"`
 	Source               string                      `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
 	Company              JSONB                       `json:"company,omitempty"`

@@ -242,6 +242,12 @@ func (r *CRMSignalRepository) FindOpenTaskForSignal(ctx context.Context, signal 
 }
 
 func (r *CRMSignalRepository) CreateSignalDelivery(ctx context.Context, delivery *model.CRMSignalDelivery) (bool, error) {
+	if delivery.ID == "" {
+		delivery.ID = uuid.NewString()
+	}
+	if delivery.Status == "" {
+		delivery.Status = model.CRMSignalDeliveryPending
+	}
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&model.CRMSignalDelivery{}).
 		Where("signal_id = ? AND policy_id = ? AND channel = ? AND COALESCE(recipient_member_id, '') = COALESCE(?, '') AND COALESCE(destination_team_id, '') = COALESCE(?, '')",
@@ -257,6 +263,91 @@ func (r *CRMSignalRepository) CreateSignalDelivery(ctx context.Context, delivery
 		return false, fmt.Errorf("create signal delivery: %w", result.Error)
 	}
 	return result.RowsAffected > 0, nil
+}
+
+// ListRetryableSignalDeliveries returns queued, failed, and abandoned sends.
+func (r *CRMSignalRepository) ListRetryableSignalDeliveries(
+	ctx context.Context,
+	workspaceID string,
+	staleBefore time.Time,
+	limit int,
+) ([]model.CRMSignalDelivery, error) {
+	if limit < 1 || limit > 500 {
+		limit = 100
+	}
+	var deliveries []model.CRMSignalDelivery
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND channel <> ?", workspaceID, model.CRMSignalDeliveryFeed).
+		Where("status IN ? OR (status = ? AND (last_attempted_at IS NULL OR last_attempted_at <= ?))",
+			[]string{model.CRMSignalDeliveryPending, model.CRMSignalDeliveryFailed},
+			model.CRMSignalDeliverySending, staleBefore.UTC()).
+		Order("created_at ASC, id ASC").Limit(limit).Find(&deliveries).Error
+	if err != nil {
+		return nil, fmt.Errorf("list retryable signal deliveries: %w", err)
+	}
+	return deliveries, nil
+}
+
+// ClaimSignalDelivery atomically leases one queued delivery for emission.
+func (r *CRMSignalRepository) ClaimSignalDelivery(
+	ctx context.Context,
+	deliveryID string,
+	staleBefore, attemptedAt time.Time,
+) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.CRMSignalDelivery{}).
+		Where("id = ?", deliveryID).
+		Where("status IN ? OR (status = ? AND (last_attempted_at IS NULL OR last_attempted_at <= ?))",
+			[]string{model.CRMSignalDeliveryPending, model.CRMSignalDeliveryFailed},
+			model.CRMSignalDeliverySending, staleBefore.UTC()).
+		Updates(map[string]interface{}{
+			"status":            model.CRMSignalDeliverySending,
+			"attempts":          gorm.Expr("attempts + 1"),
+			"last_attempted_at": attemptedAt.UTC(),
+			"last_error":        nil,
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("claim signal delivery: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// MarkSignalDeliverySent completes a claimed delivery after successful emission.
+func (r *CRMSignalRepository) MarkSignalDeliverySent(
+	ctx context.Context,
+	deliveryID string,
+	deliveredAt time.Time,
+) error {
+	result := r.db.WithContext(ctx).Model(&model.CRMSignalDelivery{}).
+		Where("id = ? AND status = ?", deliveryID, model.CRMSignalDeliverySending).
+		Updates(map[string]interface{}{
+			"status": model.CRMSignalDeliverySent, "delivered_at": deliveredAt.UTC(), "last_error": nil,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("complete signal delivery: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("signal delivery claim was lost")
+	}
+	return nil
+}
+
+// MarkSignalDeliveryFailed releases a claimed delivery for a later retry.
+func (r *CRMSignalRepository) MarkSignalDeliveryFailed(
+	ctx context.Context,
+	deliveryID, message string,
+) error {
+	result := r.db.WithContext(ctx).Model(&model.CRMSignalDelivery{}).
+		Where("id = ? AND status = ?", deliveryID, model.CRMSignalDeliverySending).
+		Updates(map[string]interface{}{
+			"status": model.CRMSignalDeliveryFailed, "delivered_at": nil, "last_error": message,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("fail signal delivery: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("signal delivery claim was lost")
+	}
+	return nil
 }
 
 func (r *CRMSignalRepository) HasSignalDelivery(ctx context.Context, signalID, policyID string) (bool, error) {

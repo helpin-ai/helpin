@@ -22,7 +22,7 @@ func setupSignalRuleRepositoryTest(t *testing.T) (*gorm.DB, *CRMSignalRepository
 		`CREATE TABLE crm_signal_rule_configs (id TEXT PRIMARY KEY, workspace_id TEXT, rule_key TEXT, version INTEGER, cadence TEXT, enabled BOOLEAN, shadow_mode BOOLEAN, activation_eligible BOOLEAN, thresholds BLOB, business_weight REAL, half_life_days REAL, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE crm_signal_evaluator_watermarks (cadence TEXT PRIMARY KEY, watermark DATETIME, lease_owner TEXT, lease_until DATETIME, last_started_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME)`,
-		`CREATE TABLE crm_identity_links (id TEXT PRIMARY KEY, workspace_id TEXT, anonymous_id TEXT, contact_id TEXT, company_id TEXT, identity_method TEXT, identity_trust TEXT, verified_at DATETIME, verifier_version TEXT, created_at DATETIME)`,
+		`CREATE TABLE crm_identity_links (id TEXT PRIMARY KEY, workspace_id TEXT, anonymous_id TEXT, external_user_id TEXT, contact_id TEXT, company_id TEXT, identity_method TEXT, identity_trust TEXT, verified_at DATETIME, verifier_version TEXT, created_at DATETIME)`,
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT)`,
 		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, external_id TEXT)`,
 		`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY, stage_type TEXT)`,
@@ -174,5 +174,34 @@ func TestResolveBehavioralIdentityAndOpenDeal(t *testing.T) {
 	resolvedDeal, err := repo.ResolveOpenDealForIdentity(ctx, "workspace-1", resolvedContact, resolvedCompany)
 	if err != nil || resolvedDeal == nil || *resolvedDeal != dealID {
 		t.Fatalf("resolved deal=%v err=%v", resolvedDeal, err)
+	}
+}
+
+func TestResolveBehavioralIdentityByExternalUserID(t *testing.T) {
+	db, repo := setupSignalRuleRepositoryTest(t)
+	ctx := context.Background()
+	contactID := "contact-1"
+	if err := db.Table("crm_contacts").Create(map[string]interface{}{
+		"id": contactID, "workspace_id": "workspace-1",
+	}).Error; err != nil {
+		t.Fatalf("seed contact: %v", err)
+	}
+	if err := db.Table("crm_identity_links").Create(map[string]interface{}{
+		"id": "link-external", "workspace_id": "workspace-1", "anonymous_id": "anon-old",
+		"external_user_id": "customer-user-42", "contact_id": contactID,
+		"identity_method": model.IdentityMethodSignedWidget,
+		"identity_trust":  model.IdentityTrustVerified, "created_at": time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatalf("seed external identity link: %v", err)
+	}
+
+	resolvedContact, _, method, trust, err := repo.ResolveBehavioralIdentity(
+		ctx, "workspace-1", "", "customer-user-42", "",
+	)
+	if err != nil || resolvedContact == nil || *resolvedContact != contactID {
+		t.Fatalf("resolved contact=%v method=%s trust=%s err=%v", resolvedContact, method, trust, err)
+	}
+	if method != model.IdentityMethodSignedWidget || trust != model.IdentityTrustVerified {
+		t.Fatalf("identity provenance method=%s trust=%s", method, trust)
 	}
 }

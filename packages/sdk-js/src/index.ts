@@ -478,5 +478,9 @@ export {
   LogLevel,
   ClientProperties,
 };
-export type { FormCaptureConfig, InteractionCaptureRule } from './core/types';
+export type {
+  FormCaptureConfig,
+  FormFieldMappingTarget,
+  InteractionCaptureRule,
+} from './core/types';
 export type { ShowArticleOptions } from './core/widget';

@@ -61,7 +61,16 @@ Form, click, and scroll capture are off unless explicitly configured. Form value
 const client = helpinClient({
   widgetKey: 'your-widget-key',
   host: 'https://client.helpin.ai',
-  formCapture: [{ selector: '#demo-request', formId: 'demo-request', fields: ['email', 'company'] }],
+  formCapture: [{
+    selector: '#demo-request',
+    formId: 'demo-request',
+    fields: ['work_email', 'company', 'role'],
+    fieldMappings: {
+      work_email: 'contact.email',
+      company: 'company.name',
+      role: 'contact.job_title',
+    },
+  }],
   interactionCaptureRules: [{
     ruleKey: 'versioned_interaction',
     version: 1,
@@ -72,6 +81,8 @@ const client = helpinClient({
 
 client?.articleView('security-overview');
 ```
+
+Common field names such as `email`, `first_name`, `company`, `phone`, and `role` are mapped automatically. Use `fieldMappings` when a form uses non-standard names, or map a field to `ignore` to disable an automatic mapping. Every captured form still requires an explicit selector, stable form ID, and value allowlist; mappings never expand which values are collected. A form submission creates an untrusted lead identity. Call `id(...)` with a customer-server HMAC proof after login to upgrade it to verified identity.
 
 By default, the widget boots automatically in browser environments when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep the widget dormant until you explicitly call `boot()`, `show()`, `open()`, `openMessages()`, or `openNewMessage()`.
 
@@ -132,6 +143,7 @@ Configure via the `HelpinOptions` object passed to `helpinClient(...)`, or with 
 | `cookieDomain` / `cookieName` | Customize the anonymous visitor ID cookie |
 | `crossDomainLinking` / `domains` | Share the visitor ID across specified domains |
 | `propertyBlacklist` | Omit specific fields from outgoing payloads |
+| `formCapture` | Explicit forms, safe value allowlists, and optional CRM field mappings |
 | `logLevel` | Internal logging verbosity |
 
 **Script tag equivalents:** `data-widget-key`, `data-host`, `data-auto-boot`, `data-namespace`, `data-auto-pageview`, `data-log-level`.

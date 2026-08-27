@@ -163,9 +163,27 @@ func (r *CRMSignalRepository) ResolveBehavioralIdentity(
 	workspaceID, anonymousID, externalUserID, companyExternalID string,
 ) (*string, *string, string, string, error) {
 	var link model.CRMIdentityLink
-	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID).
-		Order("CASE WHEN identity_trust = 'verified' THEN 0 ELSE 1 END, created_at DESC").First(&link).Error
+	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
+	anonymousID = strings.TrimSpace(anonymousID)
+	externalUserID = strings.TrimSpace(externalUserID)
+	var err error
+	switch {
+	case anonymousID != "" && externalUserID != "":
+		err = query.Where("anonymous_id = ? OR external_user_id = ?", anonymousID, externalUserID).
+			Order("CASE WHEN identity_trust = 'verified' THEN 0 ELSE 1 END").
+			Order(clause.Expr{SQL: "CASE WHEN anonymous_id = ? THEN 0 ELSE 1 END", Vars: []interface{}{anonymousID}}).
+			Order("created_at DESC").First(&link).Error
+	case anonymousID != "":
+		err = query.Where("anonymous_id = ?", anonymousID).
+			Order("CASE WHEN identity_trust = 'verified' THEN 0 ELSE 1 END, created_at DESC").
+			First(&link).Error
+	case externalUserID != "":
+		err = query.Where("external_user_id = ?", externalUserID).
+			Order("CASE WHEN identity_trust = 'verified' THEN 0 ELSE 1 END, created_at DESC").
+			First(&link).Error
+	default:
+		err = gorm.ErrRecordNotFound
+	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil, "", "", fmt.Errorf("resolve behavioral identity link: %w", err)
 	}

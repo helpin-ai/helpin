@@ -66,6 +66,11 @@ test('browser events keep the authenticated project through ClickHouse', async (
     'company',
     'role',
   ]);
+  expect((formEvent.event_attributes as Record<string, unknown>).field_mappings).toEqual({
+    email: 'contact.email',
+    company: 'company.name',
+    role: 'contact.job_title',
+  });
 
   let rows: Array<{
     project_id: string;

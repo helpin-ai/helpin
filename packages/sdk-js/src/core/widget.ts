@@ -2269,6 +2269,8 @@ export class WidgetManager {
     company?: Record<string, any>,
     externalUserId: string = '',
     identityVerification?: IdentityVerification,
+    phone: string = '',
+    jobTitle: string = '',
   ): boolean {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', {
@@ -2276,6 +2278,8 @@ export class WidgetManager {
         name,
         first_name: firstName,
         last_name: lastName,
+        phone,
+        job_title: jobTitle,
         source,
         company,
 		external_user_id: externalUserId,

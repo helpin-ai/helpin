@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,6 +12,22 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
+
+type flakySignalNotificationEmitter struct {
+	failures int
+	calls    int
+}
+
+func (f *flakySignalNotificationEmitter) Emit(
+	_ context.Context,
+	_ model.NotificationEventInput,
+) error {
+	f.calls++
+	if f.calls <= f.failures {
+		return errors.New("temporary notification failure")
+	}
+	return nil
+}
 
 func newSignalActivationTestService(t *testing.T) (*gorm.DB, *CRMSignalService) {
 	t.Helper()
@@ -23,7 +40,7 @@ func newSignalActivationTestService(t *testing.T) (*gorm.DB, *CRMSignalService) 
 		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT NOT NULL, source_type TEXT NOT NULL, source_id TEXT, source_thread_id TEXT, summary TEXT NOT NULL, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE crm_signal_feedback (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, signal_id TEXT, member_id TEXT, action TEXT, dismissal_reason TEXT, rule_key TEXT, rule_version INTEGER, signal_domain TEXT, identity_method TEXT, detected_at DATETIME, occurred_at DATETIME, detection_to_event_millis INTEGER, created_at DATETIME)`,
 		`CREATE TABLE crm_signal_routing_policies (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, version INTEGER, enabled BOOLEAN, minimum_priority REAL, required_trust TEXT, route_to_owner BOOLEAN, destination_team_id TEXT, channels BLOB, created_by_member_id TEXT, created_at DATETIME)`,
-		`CREATE TABLE crm_signal_deliveries (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, signal_id TEXT, policy_id TEXT, policy_version INTEGER, channel TEXT, recipient_member_id TEXT, destination_team_id TEXT, status TEXT, delivered_at DATETIME, created_at DATETIME)`,
+		`CREATE TABLE crm_signal_deliveries (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, signal_id TEXT, policy_id TEXT, policy_version INTEGER, channel TEXT, recipient_member_id TEXT, destination_team_id TEXT, status TEXT, delivered_at DATETIME, attempts INTEGER NOT NULL DEFAULT 0, last_attempted_at DATETIME, last_error TEXT, created_at DATETIME)`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {
@@ -186,7 +203,7 @@ func TestSignalDeliveryAndPolicyVersionsAreIdempotentAndReversible(t *testing.T)
 		t.Fatalf("active policy = %+v, err=%v", active, err)
 	}
 	repo := repository.NewCRMSignalRepository(db)
-	delivery := &model.CRMSignalDelivery{ID: "delivery-1", WorkspaceID: "ws-1", SignalID: "signal-1", PolicyID: first.ID, PolicyVersion: 1, Channel: "feed", Status: "routed"}
+	delivery := &model.CRMSignalDelivery{ID: "delivery-1", WorkspaceID: "ws-1", SignalID: "signal-1", PolicyID: first.ID, PolicyVersion: 1, Channel: "feed", Status: model.CRMSignalDeliverySent}
 	created, err := repo.CreateSignalDelivery(ctx, delivery)
 	if err != nil || !created {
 		t.Fatalf("first delivery created=%v err=%v", created, err)
@@ -196,6 +213,80 @@ func TestSignalDeliveryAndPolicyVersionsAreIdempotentAndReversible(t *testing.T)
 	if err != nil || created {
 		t.Fatalf("duplicate delivery created=%v err=%v", created, err)
 	}
+}
+
+func TestRouteWorkspaceSignalsRetriesFailedNotification(t *testing.T) {
+	db, svc := newSignalActivationTestService(t)
+	emitter := &flakySignalNotificationEmitter{failures: 1}
+	svc.SetActivationDependencies(emitter)
+	ctx := context.Background()
+	ruleKey, version := model.CRMSignalRuleConversationExtraction, signalEvidenceRuleVersion
+
+	config := model.CRMSignalRuleConfig{
+		ID: "conversation-live", WorkspaceID: signalActivationStringPtr("ws-1"), RuleKey: ruleKey,
+		Version: version, Cadence: model.CRMSignalRuleCadenceEventDriven, Enabled: true,
+		ShadowMode: false, ActivationEligible: true, BusinessWeight: 30, HalfLifeDays: 30,
+	}
+	if err := db.Create(&config).Error; err != nil {
+		t.Fatalf("seed conversation rule: %v", err)
+	}
+	if err := db.Model(&model.CRMSignalRuleConfig{}).Where("id = ?", config.ID).
+		Update("shadow_mode", false).Error; err != nil {
+		t.Fatalf("promote conversation rule: %v", err)
+	}
+	policy := model.CRMSignalRoutingPolicy{
+		ID: "policy-1", WorkspaceID: "ws-1", Version: 1, Enabled: true,
+		MinimumPriority: 1, RequiredTrust: model.IdentityTrustVerified,
+		Channels: model.JSONBlob(`["notification"]`), CreatedByMemberID: "member-1",
+	}
+	if err := db.Create(&policy).Error; err != nil {
+		t.Fatalf("seed routing policy: %v", err)
+	}
+	signal := model.CRMBuyerSignal{
+		ID: "signal-retry", WorkspaceID: "ws-1", SignalType: model.CRMSignalBuyingIntent,
+		SourceType: model.CRMSignalSourceEmail, Summary: "Buyer requested pricing",
+		Confidence: 1, DetectedAt: time.Now().UTC(), DetectorKind: model.CRMSignalDetectorLLMExtracted,
+		SignalDomain: model.CRMSignalDomainConversation, Polarity: model.CRMSignalPolarityPositive,
+		RuleKey: &ruleKey, RuleVersion: &version,
+		EvidenceIdentityMethod: model.IdentityMethodConnectedMailbox,
+		EvidenceIdentityTrust:  model.IdentityTrustVerified, EvidenceFingerprint: "retry-fingerprint",
+	}
+	if err := db.Create(&signal).Error; err != nil {
+		t.Fatalf("seed signal: %v", err)
+	}
+
+	if routed, err := svc.RouteWorkspaceSignals(ctx, "ws-1"); err == nil || routed != 0 {
+		t.Fatalf("first route routed=%d err=%v, want failed emission", routed, err)
+	}
+	var failed model.CRMSignalDelivery
+	if err := db.First(&failed, "signal_id = ?", signal.ID).Error; err != nil {
+		t.Fatalf("load failed delivery: %v", err)
+	}
+	if failed.Status != model.CRMSignalDeliveryFailed || failed.DeliveredAt != nil || failed.Attempts != 1 {
+		t.Fatalf("failed delivery = %+v", failed)
+	}
+
+	if routed, err := svc.RouteWorkspaceSignals(ctx, "ws-1"); err != nil || routed != 1 {
+		t.Fatalf("retry route routed=%d err=%v", routed, err)
+	}
+	var sent model.CRMSignalDelivery
+	if err := db.First(&sent, "id = ?", failed.ID).Error; err != nil {
+		t.Fatalf("load sent delivery: %v", err)
+	}
+	if sent.Status != model.CRMSignalDeliverySent || sent.DeliveredAt == nil || sent.Attempts != 2 {
+		t.Fatalf("sent delivery = %+v", sent)
+	}
+	var count int64
+	if err := db.Model(&model.CRMSignalDelivery{}).Where("signal_id = ?", signal.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count deliveries: %v", err)
+	}
+	if count != 1 || emitter.calls != 2 {
+		t.Fatalf("delivery count=%d emitter calls=%d", count, emitter.calls)
+	}
+}
+
+func signalActivationStringPtr(value string) *string {
+	return &value
 }
 
 func signalTestContains(values []string, target string) bool {

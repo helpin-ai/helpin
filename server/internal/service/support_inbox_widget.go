@@ -222,6 +222,7 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 		link := model.CRMIdentityLink{
 			WorkspaceID:     session.WorkspaceID,
 			AnonymousID:     session.AnonymousID,
+			ExternalUserID:  optionalStringPtr(identity.ExternalUserID),
 			ContactID:       contactID,
 			CompanyID:       companyID,
 			IdentityMethod:  provenance.method,
@@ -335,6 +336,7 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 		link := model.CRMIdentityLink{
 			WorkspaceID:     workspaceID,
 			AnonymousID:     anonymousID,
+			ExternalUserID:  optionalStringPtr(identity.ExternalUserID),
 			ContactID:       contactID,
 			CompanyID:       companyID,
 			IdentityMethod:  provenance.method,

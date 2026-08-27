@@ -14,6 +14,7 @@ export type {
   EventPayload,
   ClientProperties,
   FormCaptureConfig,
+  FormFieldMappingTarget,
   InteractionCaptureRule,
 } from './core/types';
 

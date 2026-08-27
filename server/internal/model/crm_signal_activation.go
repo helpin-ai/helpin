@@ -17,6 +17,11 @@ const (
 	CRMSignalDeliveryFeed         = "feed"
 	CRMSignalDeliveryNotification = "notification"
 	CRMSignalDeliveryDigest       = "digest"
+
+	CRMSignalDeliveryPending = "pending"
+	CRMSignalDeliverySending = "sending"
+	CRMSignalDeliverySent    = "sent"
+	CRMSignalDeliveryFailed  = "failed"
 )
 
 // CRMSignalFeedback is an immutable review or action event used for quality measurement.
@@ -74,8 +79,11 @@ type CRMSignalDelivery struct {
 	Channel           string     `json:"channel" gorm:"not null"`
 	RecipientMemberID *string    `json:"recipient_member_id,omitempty" gorm:"type:uuid"`
 	DestinationTeamID *string    `json:"destination_team_id,omitempty" gorm:"type:uuid"`
-	Status            string     `json:"status" gorm:"not null;default:'routed'"`
+	Status            string     `json:"status" gorm:"not null;default:'pending'"`
 	DeliveredAt       *time.Time `json:"delivered_at,omitempty"`
+	Attempts          int        `json:"attempts" gorm:"not null;default:0"`
+	LastAttemptedAt   *time.Time `json:"last_attempted_at,omitempty"`
+	LastError         *string    `json:"last_error,omitempty"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 }
 

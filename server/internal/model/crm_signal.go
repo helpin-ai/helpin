@@ -55,12 +55,14 @@ const (
 
 // CRM signal evaluator cadences.
 const (
-	CRMSignalRuleCadenceDaily      = "daily"
-	CRMSignalRuleCadenceMicroBatch = "micro_batch"
+	CRMSignalRuleCadenceDaily       = "daily"
+	CRMSignalRuleCadenceMicroBatch  = "micro_batch"
+	CRMSignalRuleCadenceEventDriven = "event_driven"
 )
 
 // CRM signal rule keys are stable identities independent of signal taxonomy.
 const (
+	CRMSignalRuleConversationExtraction   = "conversation_signal_extraction"
 	CRMSignalRuleSupportVolumeSpike       = "support_volume_spike"
 	CRMSignalRuleUrgentIssueOpenDeal      = "urgent_issue_open_deal"
 	CRMSignalRuleSupportAIEscalation      = "support_ai_escalation"

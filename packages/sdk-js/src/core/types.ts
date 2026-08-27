@@ -27,6 +27,9 @@ export interface UserProps extends EventPayload {
   last_name?: string;
   firstName?: string;
   lastName?: string;
+  phone?: string;
+  job_title?: string;
+  jobTitle?: string;
   company?: CompanyPayload | null;
 	identity_verification?: IdentityVerification;
   [key: string]: any;
@@ -38,15 +41,32 @@ export interface LeadProps extends EventPayload {
   last_name?: string;
   firstName?: string;
   lastName?: string;
+  phone?: string;
+  job_title?: string;
+  jobTitle?: string;
   company?: CompanyPayload | null;
 	id?: string;
 	identity_verification?: IdentityVerification;
 }
 
+export type FormFieldMappingTarget =
+  | 'ignore'
+  | 'contact.email'
+  | 'contact.name'
+  | 'contact.first_name'
+  | 'contact.last_name'
+  | 'contact.phone'
+  | 'contact.job_title'
+  | 'company.id'
+  | 'company.name'
+  | 'company.domain';
+
 export type FormCaptureConfig = {
   selector: string;
   formId: string;
   fields?: string[];
+  fieldMappings?: Record<string, FormFieldMappingTarget>;
+  field_mappings?: Record<string, FormFieldMappingTarget>;
 };
 
 export type InteractionCaptureRule = {

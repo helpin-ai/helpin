@@ -142,6 +142,8 @@ describe('HelpinClient', () => {
             email: 'test@example.com',
             first_name: 'Test',
             last_name: 'User',
+            phone: '+1 555 0100',
+            job_title: 'VP Revenue',
             company: {
               id: 'company123',
               name: 'Test Company',
@@ -167,6 +169,8 @@ describe('HelpinClient', () => {
             email: 'test@example.com',
             first_name: 'Test',
             last_name: 'User',
+            phone: '+1 555 0100',
+            job_title: 'VP Revenue',
             source: 'sdk_identify',
             company: {
               id: 'company123',

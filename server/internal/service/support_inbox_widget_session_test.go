@@ -506,6 +506,7 @@ func TestSupportInboxServiceIdentifyByAnonymousIDRefreshesContactIdentity(t *tes
 		widgetKey   = "wk_widget_identify_refresh"
 		anonymousID = "anon-refresh"
 		email       = "jane@example.com"
+		externalID  = "customer-user-42"
 	)
 
 	seedWorkspace(t, db, workspaceID, "Widget Identify Refresh", "widget-identify-refresh", "user-123")
@@ -606,9 +607,10 @@ func TestSupportInboxServiceIdentifyByAnonymousIDRefreshesContactIdentity(t *tes
 	)
 
 	if err := svc.IdentifyByAnonymousID(ctx, widgetKey, anonymousID, model.WidgetIdentityPayload{
-		Email:  email,
-		Name:   "Jane New",
-		Source: "sdk_identify",
+		Email:          email,
+		Name:           "Jane New",
+		ExternalUserID: externalID,
+		Source:         "sdk_identify",
 	}); err != nil {
 		t.Fatalf("IdentifyByAnonymousID: %v", err)
 	}
@@ -662,6 +664,14 @@ func TestSupportInboxServiceIdentifyByAnonymousIDRefreshesContactIdentity(t *tes
 	}
 	if !updatedSession.UpdatedAt.After(oldTime) {
 		t.Fatalf("session updated_at = %v, want after %v", updatedSession.UpdatedAt, oldTime)
+	}
+	var identityLink model.CRMIdentityLink
+	if err := db.Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID).
+		First(&identityLink).Error; err != nil {
+		t.Fatalf("load identity link: %v", err)
+	}
+	if identityLink.ExternalUserID == nil || *identityLink.ExternalUserID != externalID {
+		t.Fatalf("identity link external_user_id = %v, want %q", identityLink.ExternalUserID, externalID)
 	}
 }
 
@@ -718,6 +728,8 @@ func TestSupportInboxServiceIdentifyByAnonymousIDStoresExplicitFirstAndLastName(
 		Email:     email,
 		FirstName: "Mary Jane",
 		LastName:  "van Dyke",
+		Phone:     "+1 555 0100",
+		JobTitle:  "VP Revenue",
 		Source:    "sdk_identify",
 	}); err != nil {
 		t.Fatalf("IdentifyByAnonymousID: %v", err)
@@ -735,6 +747,33 @@ func TestSupportInboxServiceIdentifyByAnonymousIDStoresExplicitFirstAndLastName(
 	}
 	if contacts[0].LastName == nil || *contacts[0].LastName != "van Dyke" {
 		t.Fatalf("contact last_name = %v, want %q", contacts[0].LastName, "van Dyke")
+	}
+	if contacts[0].Phone == nil || *contacts[0].Phone != "+1 555 0100" {
+		t.Fatalf("contact phone = %v, want %q", contacts[0].Phone, "+1 555 0100")
+	}
+	if contacts[0].JobTitle == nil || *contacts[0].JobTitle != "VP Revenue" {
+		t.Fatalf("contact job_title = %v, want %q", contacts[0].JobTitle, "VP Revenue")
+	}
+
+	if err := svcWithWidgetRepos(installationRepo, conversationRepo, sessionRepo, contactRepo).IdentifyByAnonymousID(ctx, widgetKey, anonymousID, model.WidgetIdentityPayload{
+		Email:     email,
+		FirstName: "Mary Jane",
+		LastName:  "van Dyke",
+		Phone:     "+1 555 0199",
+		JobTitle:  "Chief Revenue Officer",
+		Source:    "sdk_lead",
+	}); err != nil {
+		t.Fatalf("IdentifyByAnonymousID update contact fields: %v", err)
+	}
+	updatedContact, err := contactRepo.GetByEmail(ctx, workspaceID, email)
+	if err != nil || updatedContact == nil {
+		t.Fatalf("get updated contact = %#v, %v", updatedContact, err)
+	}
+	if updatedContact.Phone == nil || *updatedContact.Phone != "+1 555 0199" {
+		t.Fatalf("updated contact phone = %v, want %q", updatedContact.Phone, "+1 555 0199")
+	}
+	if updatedContact.JobTitle == nil || *updatedContact.JobTitle != "Chief Revenue Officer" {
+		t.Fatalf("updated contact job_title = %v, want %q", updatedContact.JobTitle, "Chief Revenue Officer")
 	}
 
 	updatedConversation, err := conversationRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)

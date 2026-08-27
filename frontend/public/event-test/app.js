@@ -77,14 +77,18 @@
   window.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input.url;
     const isEventRequest = /\/api(?:\/v1\/event|\.)/.test(url);
+    const isIdentifyRequest = /\/widget\/identify(?:\?|$)/.test(url);
     const names = isEventRequest ? parseEventNames(init.body) : [];
     if (isEventRequest) log(`Sending ${names.join(', ')}`);
+    if (isIdentifyRequest) log('Sending CRM identify');
     try {
       const response = await nativeFetch(input, init);
       if (isEventRequest) log(`${response.ok ? 'Accepted' : 'Rejected'} ${names.join(', ')} · HTTP ${response.status}`);
+      if (isIdentifyRequest) log(`${response.ok ? 'Accepted' : 'Rejected'} CRM identify · HTTP ${response.status}`);
       return response;
     } catch (error) {
       if (isEventRequest) log(`Network error sending ${names.join(', ')}`);
+      if (isIdentifyRequest) log('Network error sending CRM identify');
       throw error;
     }
   };

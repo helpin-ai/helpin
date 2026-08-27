@@ -19,6 +19,7 @@ const (
 	repeatedThreadSignalWindow    = 24 * time.Hour
 	minimumDetectedConfidence     = 0.6
 	signalEvidenceDetectorVersion = "verified-v3-en"
+	signalEvidenceRuleVersion     = 3
 )
 
 // SignalDetectionService uses LLM to detect buyer signals from various sources.
@@ -200,6 +201,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 			}
 		}
 
+		ruleKey, ruleVersion := model.CRMSignalRuleConversationExtraction, signalEvidenceRuleVersion
 		signal := model.CRMBuyerSignal{
 			WorkspaceID:     payload.WorkspaceID,
 			ContactID:       payload.ContactID,
@@ -214,6 +216,9 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 			Metadata:        metadata,
 			Confidence:      d.Confidence,
 			DetectedAt:      time.Now(),
+			DetectorKind:    model.CRMSignalDetectorLLMExtracted,
+			RuleKey:         &ruleKey,
+			RuleVersion:     &ruleVersion,
 		}
 
 		created, err := s.signalRepo.CreateSignalIfAbsent(ctx, &signal)
