@@ -77,6 +77,9 @@ events-down:
 events-logs:
     ./events-pipeline/scripts/stack.sh logs
 
+events-status:
+    ./events-pipeline/scripts/stack.sh status
+
 events-smoke:
     ./events-pipeline/scripts/smoke.sh
 

@@ -1,5 +1,9 @@
 # PRD: Events Pipeline Reliability & Resilience
 
+> Historical document: this describes the retired Kafka implementation. The
+> current NATS JetStream pipeline contract is documented in
+> [`../../docs/plans/2026-08-25-nats-event-pipeline.md`](../../docs/plans/2026-08-25-nats-event-pipeline.md).
+
 ## Context
 
 Our Rust events-pipeline (capture API + consumer/worker) is functional but lacks production-hardening. After benchmarking against PostHog's mature Rust capture service, we identified critical gaps: silent event loss in Kafka batch sends, no health checks (k8s can't route traffic away from broken pods), no fallback when Kafka is down, and several panic-on-error patterns that crash the entire process. Events are being permanently lost in production today.

@@ -26,7 +26,7 @@
 
         <section class="section" data-reveal style="--i: 1">
           <h2>Boundaries before features.</h2>
-          <p class="lede">Workspace identity is derived from authenticated installation credentials. Payload-supplied project identifiers are discarded before the event reaches Kafka.</p>
+          <p class="lede">Workspace identity is derived from authenticated installation credentials. Payload-supplied project identifiers are discarded before the event reaches JetStream.</p>
           <ol class="security-list">
             <li><div><h3>Tenant binding</h3><p>Every captured event carries the workspace from the matched browser or server credential.</p></div></li>
             <li><div><h3>Evidence provenance</h3><p>Anonymous, claimed, and cryptographically verified identities remain visibly distinct.</p></div></li>
@@ -37,7 +37,7 @@
         <section class="section">
           <p class="eyebrow">Operational controls</p>
           <h2>Failures should be inspectable.</h2>
-          <p class="lede">Kafka exposes raw, enriched, dead-letter, and sessionized stages. Capture falls back to disk when delivery is retryable, and a replay worker drains recovered segments.</p>
+          <p class="lede">NATS JetStream exposes a raw diagnostic archive, sharded enriched work queue, and dead-letter stream. The session writer persists completed events to ClickHouse, while capture falls back to disk for retryable delivery failures.</p>
           <p class="notice">A claimed browser identity remains <strong>untrusted</strong> in the Rust capture boundary. That is expected until signed widget identity is enabled.</p>
         </section>
 

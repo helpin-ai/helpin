@@ -1,10 +1,22 @@
-import { execFileSync } from 'node:child_process';
 import { expect, test } from '@playwright/test';
 
 const widgetKey = process.env.HELPIN_EVENT_TEST_WIDGET_KEY;
 const projectId = process.env.EVENT_TEST_PROJECT_ID;
 const frontendURL = process.env.HELPIN_EVENT_TEST_FRONTEND_URL || 'https://helpin-dev-fe.tryunhide.com';
 const apiURL = process.env.HELPIN_EVENT_TEST_API_URL || 'https://helpin-dev.tryunhide.com';
+const clickhouseURL = process.env.HELPIN_CLICKHOUSE_HTTP_URL || 'http://127.0.0.1:8123';
+
+async function queryClickHouse(query: string): Promise<string> {
+  const endpoint = new URL(clickhouseURL);
+  endpoint.searchParams.set('database', 'usermaven');
+  endpoint.searchParams.set('user', process.env.HELPIN_CLICKHOUSE_USER || 'helpin');
+  endpoint.searchParams.set('password', process.env.HELPIN_CLICKHOUSE_PASSWORD || 'helpin');
+  const response = await fetch(endpoint, { method: 'POST', body: query });
+  if (!response.ok) {
+    throw new Error(`ClickHouse query failed (${response.status}): ${await response.text()}`);
+  }
+  return (await response.text()).trim();
+}
 
 test('browser events keep the authenticated project through ClickHouse', async ({ page }) => {
   test.skip(!widgetKey || !projectId, 'widget key and project ID are required');
@@ -80,11 +92,9 @@ test('browser events keep the authenticated project through ClickHouse', async (
     sessions: string;
   }> = [];
   const expectedStoredEvents = ['pageview', 'pricing_cta_clicked', 'article_view', 'demo_requested'];
-  await expect.poll(() => {
+  await expect.poll(async () => {
     const query = `SELECT toString(project_id) AS project_id, groupUniqArray(event_type) AS event_types, groupUniqArray(identity_method) AS identity_methods, groupUniqArray(identity_trust) AS identity_trusts, toString(uniqExact(session_id)) AS sessions FROM usermaven.events WHERE position(event_attributes, '${runId}') > 0 OR position(raw_event, '${runId}') > 0 GROUP BY project_id FORMAT JSONEachRow`;
-    const output = execFileSync('docker', [
-      'exec', 'helpin-clickhouse', 'clickhouse-client', '--user', 'helpin', '--password', 'helpin', '--query', query,
-    ], { encoding: 'utf8' }).trim();
+    const output = await queryClickHouse(query);
     rows = output ? output.split('\n').map((line) => JSON.parse(line)) : [];
     return rows.length === 1 && expectedStoredEvents.every((name) => rows[0].event_types.includes(name));
   }, { timeout: 60_000, intervals: [1_000, 2_000, 3_000] }).toBe(true);

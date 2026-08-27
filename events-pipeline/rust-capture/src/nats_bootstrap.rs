@@ -55,6 +55,15 @@ fn positive_usize_from_env(name: &str, default: usize) -> Result<usize> {
     Ok(value)
 }
 
+fn stream_replicas_from_env(name: &str, default: usize) -> Result<usize> {
+    let replicas = positive_usize_from_env(name, default)?;
+    anyhow::ensure!(
+        replicas <= 3,
+        "{name} cannot exceed the three-node production cluster"
+    );
+    Ok(replicas)
+}
+
 fn legacy_consumer_name(name: &str) -> bool {
     name.strip_prefix(LEGACY_SHARD_CONSUMER_PREFIX)
         .is_some_and(|suffix| suffix.len() == 3 && suffix.bytes().all(|byte| byte.is_ascii_digit()))
@@ -132,17 +141,12 @@ async fn main() -> Result<()> {
         env::var("EVENTS_WORK_COMPRESSION").ok().as_deref(),
     )?);
     work.storage = work_storage(env::var("EVENTS_WORK_STORAGE").ok().as_deref())?;
-    let work_replicas = positive_usize_from_env("EVENTS_WORK_REPLICAS", 3)?;
-    anyhow::ensure!(
-        work_replicas <= 3,
-        "EVENTS_WORK_REPLICAS cannot exceed the three-node cluster"
-    );
-    work.num_replicas = work_replicas;
-    let configs = [
-        work,
-        raw_archive_stream_config(required_positive_bytes("EVENTS_RAW_MAX_BYTES")?),
-        dlq_stream_config(required_positive_bytes("EVENTS_DLQ_MAX_BYTES")?),
-    ];
+    work.num_replicas = stream_replicas_from_env("EVENTS_WORK_REPLICAS", 3)?;
+    let mut raw = raw_archive_stream_config(required_positive_bytes("EVENTS_RAW_MAX_BYTES")?);
+    raw.num_replicas = stream_replicas_from_env("EVENTS_RAW_REPLICAS", raw.num_replicas)?;
+    let mut dlq = dlq_stream_config(required_positive_bytes("EVENTS_DLQ_MAX_BYTES")?);
+    dlq.num_replicas = stream_replicas_from_env("EVENTS_DLQ_REPLICAS", dlq.num_replicas)?;
+    let configs = [work, raw, dlq];
 
     for config in configs {
         let name = config.name.clone();

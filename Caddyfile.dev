@@ -1,6 +1,8 @@
 helpin-dev.tryunhide.com {
     @event_pipeline path /api/v1/event /api/v1/events /api/v1/s2s/event /api/v1/s2s/event/ /api/v1/s2s/events /api.*
-    reverse_proxy @event_pipeline localhost:3000
+    reverse_proxy @event_pipeline localhost:8095
+    @event_sdk path /sdk/*
+    reverse_proxy @event_sdk localhost:8095
     reverse_proxy localhost:8080
 }
 

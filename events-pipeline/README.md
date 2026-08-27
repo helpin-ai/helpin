@@ -29,6 +29,26 @@ contract; authenticated server evidence can carry verified identity.
 
 ## Local pipeline verification
 
+For a long-running local stack with one JetStream server, one small ClickHouse
+server, one capture process, one replay worker, one session writer, and the
+browser signal lab:
+
+```bash
+just events-up
+just events-status
+```
+
+Follow it with `just events-logs` and stop it with `just events-down`. The
+startup command prints the HTTPS event-lab URL with its local fixture
+credential. Caddy exposes the lab and event API through the existing
+`helpin-dev-fe.tryunhide.com` and `helpin-dev.tryunhide.com` DNS names; the
+underlying local service ports are not intended to be opened publicly.
+The repository's primary `docker-compose.yaml` provides shared application
+infrastructure only; event-pipeline development uses
+`events-pipeline/local/compose.yaml` through these `just` commands.
+
+For isolated verification of the production transport topology:
+
 From the Helpin repository root:
 
 ```bash
@@ -106,9 +126,10 @@ cd server
 go test ./internal/chmigrate
 ```
 
-`events-e2e` is the canonical transport and storage verification. The separate
-browser smoke suite covers browser instrumentation and application-level signal
-generation. The complete local sustained and split-host capacity-test runbook,
+`events-e2e` is the canonical transport and storage verification. The pipeline
+smoke checks authenticated ingestion through JetStream into ClickHouse, while
+the browser smoke suite covers browser instrumentation and application-level
+signal generation. The complete local sustained and split-host capacity-test runbook,
 including enrichment inputs, result files, interpretation, and cleanup, is in
 [`e2e/README.md`](e2e/README.md).
 
