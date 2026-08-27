@@ -591,6 +591,7 @@ func main() {
 	ruleEngine.SetTaskService(pmStoryService)
 	ruleEngine.SetHealthObserver(automationHealthService)
 	ruleEngine.SetTriggerExecutionRepository(triggerExecutionRepo)
+	ruleEngine.SetRunEngine(temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace))
 
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)
