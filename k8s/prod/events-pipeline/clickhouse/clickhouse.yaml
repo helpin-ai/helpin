@@ -28,6 +28,9 @@ spec:
   templates:
     podTemplates:
       - name: default
+        metadata:
+          annotations:
+            helpin.ai/keeper-config-revision: "2026-08-27-1"
         spec:
           affinity:
             nodeAffinity:
