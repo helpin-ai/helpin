@@ -59,7 +59,7 @@ spec:
                   cpu: "1"
                   memory: 2Gi
     volumeClaimTemplates:
-      - name: default
+      - name: log-storage-path
         spec:
           storageClassName: local-path
           accessModes: [ReadWriteOnce]
