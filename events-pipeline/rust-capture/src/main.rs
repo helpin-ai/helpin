@@ -75,11 +75,16 @@ async fn start_main_server() {
         )
         .await;
         databases.start_refresh_loop();
-        let nats_sink = Arc::new(
+        let preload_user_agents = env::var("USER_AGENT_CACHE_PRELOAD_ENABLED")
+            .map(|value| value != "false")
+            .unwrap_or(true);
+        let nats_sink = Arc::new(if preload_user_agents {
             sinks::enriching_nats_sink::EnrichingNatsSink::new_with_preloaded_user_agents(
                 publisher, databases,
-            ),
-        );
+            )
+        } else {
+            sinks::enriching_nats_sink::EnrichingNatsSink::new(publisher, databases)
+        });
 
         let fallback_dir =
             PathBuf::from(env::var("FALLBACK_DIR").unwrap_or_else(|_| "data/fallback".to_string()));

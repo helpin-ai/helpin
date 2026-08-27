@@ -47,10 +47,13 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:25.8
     environment:
-      CLICKHOUSE_DB: usermaven
+      CLICKHOUSE_DB: default
       CLICKHOUSE_USER: helpin
       CLICKHOUSE_PASSWORD: helpin
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - ./clickhouse-replication.xml:/etc/clickhouse-server/config.d/replication.xml:ro
+      - ./clickhouse-local-storage.xml:/etc/clickhouse-server/config.d/events-storage.xml:ro
     ports:
       - "18123:8123"
       - "19000:9000"

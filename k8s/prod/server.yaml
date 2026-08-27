@@ -43,6 +43,13 @@ spec:
             - secretRef:
                 name: helpin-secrets
           env:
+            - name: CLICKHOUSE_API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-eventpipeline-secrets
+                  key: CLICKHOUSE_API_PASSWORD
+            - name: CLICKHOUSE_DSN
+              value: clickhouse://helpin_api:$(CLICKHOUSE_API_PASSWORD)@helpin-clickhouse.helpin.svc.cluster.local:9000/helpin
             - name: RUN_AUTO_MIGRATE
               value: "true"
             - name: MCP_PUBLIC_BASE_URL

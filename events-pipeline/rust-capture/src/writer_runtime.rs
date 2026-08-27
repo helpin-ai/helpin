@@ -103,7 +103,7 @@ impl WriterSettings {
             nats_url: required_env("NATS_URL")?,
             clickhouse_http_url: required_env("CLICKHOUSE_HTTP_URL")?,
             clickhouse_database: env::var("CLICKHOUSE_DATABASE")
-                .unwrap_or_else(|_| "usermaven".to_string()),
+                .unwrap_or_else(|_| "helpin".to_string()),
             clickhouse_user: required_env("CLICKHOUSE_USER")?,
             clickhouse_password: required_env("CLICKHOUSE_PASSWORD")?,
             ordinal,

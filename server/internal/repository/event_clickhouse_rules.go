@@ -102,7 +102,7 @@ func (r *ClickHouseEventRepository) capturedFormRows(ctx context.Context, projec
 		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'form_id'))), ', ') AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND event_type = '$form' AND user_anonymous_id != ''` + formFilter + excludeDetectedBotsSQL + `
 		GROUP BY user_anonymous_id`
 	return r.queryBrowserBehavioralRows(ctx, "configured form submissions", query, args...)
@@ -121,7 +121,7 @@ func (r *ClickHouseEventRepository) identifiedArticleRows(ctx context.Context, p
 		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'article_id'))), ', ') AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND event_type = 'article_view' AND identity_trust != 'untrusted'
 		AND (user_anonymous_id != '' OR user_id != '')` + articleFilter + excludeDetectedBotsSQL + `
 		GROUP BY coalesce(nullIf(user_anonymous_id, ''), user_id), user_anonymous_id`
@@ -136,7 +136,7 @@ func (r *ClickHouseEventRepository) versionedInteractionRows(ctx context.Context
 		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'interaction_type'))), ', ') AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND event_type = '$interaction'
 		AND JSONExtractString(event_attributes, 'capture_rule_key') = ?
 		AND JSONExtractInt(event_attributes, 'capture_rule_version') = ?
@@ -157,7 +157,7 @@ func (r *ClickHouseEventRepository) pathActivityRows(ctx context.Context, projec
 		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(doc_path)), ', ') AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `)
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `)
 		AND _timestamp >= ? AND _timestamp < ? AND event_type = 'pageview'
 		AND multiSearchAnyCaseInsensitive(doc_path, ?) > 0` + trustFilter + excludeDetectedBotsSQL + `
 		AND user_anonymous_id != '' GROUP BY user_anonymous_id HAVING uniqExact(session_id) >= ?`
@@ -172,7 +172,7 @@ func (r *ClickHouseEventRepository) returnedAfterDormancyRows(ctx context.Contex
 		any(identity_trust) AS identity_trust, minIf(_timestamp, _timestamp >= ?) AS observed_at,
 		countIf(_timestamp >= ?) AS event_count, uniqExactIf(session_id, _timestamp >= ?) AS session_count,
 		concat('Returned after ', toString(dateDiff('day', maxIf(_timestamp, _timestamp < ?), minIf(_timestamp, _timestamp >= ?))), ' days') AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND identity_trust='verified' AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
 		HAVING maxIf(_timestamp, _timestamp < ?) > toDateTime64(0,3)
 		AND minIf(_timestamp, _timestamp >= ?) > toDateTime64(0,3)
@@ -197,7 +197,7 @@ func (r *ClickHouseEventRepository) highIntentEventRows(ctx context.Context, pro
 		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(event_type)), ', ') AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND has(?, event_type) AND identity_method='server_event' AND identity_trust='verified'
 		AND (user_anonymous_id != '' OR user_id != '')
 		GROUP BY coalesce(nullIf(user_anonymous_id, ''), user_id), user_anonymous_id`
@@ -212,7 +212,7 @@ func (r *ClickHouseEventRepository) sessionDepthRows(ctx context.Context, projec
 		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
 		countIf(event_type='pageview') AS event_count, 1 AS session_count,
 		concat(toString(countIf(event_type='pageview')), ' pageviews in one session') AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND session_id != ''` + excludeDetectedBotsSQL + ` GROUP BY session_id HAVING countIf(event_type='pageview') >= ?`
 	return r.queryBrowserBehavioralRows(ctx, "session depth spikes", query, args...)
 }
@@ -224,7 +224,7 @@ func (r *ClickHouseEventRepository) newStakeholderRows(ctx context.Context, proj
 		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
 		any(identity_trust) AS identity_trust, min(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count, 'First activity from this account visitor' AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND company_id != '' AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
 		HAVING min(_timestamp) >= ? AND min(_timestamp) < ?`
 	return r.queryBrowserBehavioralRows(ctx, "new account stakeholders", query, args...)
@@ -237,7 +237,7 @@ func (r *ClickHouseEventRepository) anonymousAccountRows(ctx context.Context, pr
 		company_id AS company_external_id, any(identity_method) AS identity_method,
 		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count, 'Anonymous activity from a known account' AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND company_id != '' AND user_id = ''` + excludeDetectedBotsSQL + ` GROUP BY company_id HAVING count() >= ?`
 	return r.queryBrowserBehavioralRows(ctx, "anonymous account traffic", query, args...)
 }
@@ -250,7 +250,7 @@ func (r *ClickHouseEventRepository) campaignReturnRows(ctx context.Context, proj
 		any(identity_trust) AS identity_trust, maxIf(_timestamp, _timestamp >= ?) AS observed_at,
 		countIf(_timestamp >= ?) AS event_count, uniqExactIf(session_id, _timestamp >= ?) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(utm_source)), ', ') AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
 		HAVING min(_timestamp) < ? AND countIf(_timestamp >= ? AND (utm_source != '' OR click_id_gclid != '')) > 0`
 	args = []any{start.UTC(), start.UTC(), start.UTC()}
@@ -269,7 +269,7 @@ func (r *ClickHouseEventRepository) preIdentificationRows(ctx context.Context, p
 		argMax(identity_trust, _timestamp) AS identity_trust, minIf(_timestamp, _timestamp >= ? AND user_id != '') AS observed_at,
 		countIf(user_id='') AS event_count, uniqExactIf(session_id, user_id='') AS session_count,
 		concat(toString(countIf(user_id='')), ' earlier anonymous events') AS evidence
-		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
 		HAVING countIf(_timestamp < ? AND user_id='') > 0 AND countIf(_timestamp >= ? AND user_id!='') > 0`
 	args = []any{start.UTC()}

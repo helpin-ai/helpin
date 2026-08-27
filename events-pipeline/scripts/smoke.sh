@@ -35,7 +35,7 @@ wait_for_http "NATS JetStream" "$nats_monitor_url/jsz"
 clickhouse_query() {
   curl --fail-with-body --silent --show-error \
     --user helpin:helpin \
-    "$clickhouse_http_url/?database=usermaven&default_format=TSVRaw" \
+    "$clickhouse_http_url/?database=helpin&default_format=TSVRaw" \
     --data-binary "$1"
 }
 

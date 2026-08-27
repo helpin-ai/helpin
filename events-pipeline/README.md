@@ -20,7 +20,7 @@ The pipeline:
 - assigns stable anonymous and session identifiers;
 - buffers and replays retryable deliveries;
 - writes the Usermaven-compatible typed event contract to
-  `usermaven.events` in ClickHouse.
+  `helpin.events` in ClickHouse.
 
 The browser never supplies or learns `project_id`. A payload field that looks
 like workspace or project tenancy is not authoritative. Browser identity claims
@@ -82,7 +82,7 @@ backend and migration job require `CLICKHOUSE_DSN`; transport-specific settings
 are defined in the deployment and local stack configuration rather than this
 document.
 
-The final `usermaven.events` table retains the raw normalized event for replay
+The final `helpin.events` table retains the raw normalized event for replay
 and debugging and exposes typed materialized columns for tenant-safe queries.
 Signal evaluators query bounded project sets and time windows; CRM pages never
 query this table synchronously.
@@ -143,10 +143,12 @@ JetStream capacity calculation are in
 [`CAPACITY_BASELINE.md`](CAPACITY_BASELINE.md). That document is the canonical
 deployment-sizing reference; the benchmark's durability caveats apply.
 
-The environment prerequisites, exact secret contract, first Argo CD rollout
-order, and post-deploy checks are in [`DEPLOYMENT.md`](DEPLOYMENT.md). A merge
-builds and tags the workloads, but does not provision the external ClickHouse
-service or the deployment secrets described there.
+The environment prerequisites, exact Doppler contract, first Argo CD rollout
+order, and post-deploy checks are in [`DEPLOYMENT.md`](DEPLOYMENT.md). The
+manifests provision the dedicated Helpin ClickHouse/Keeper resources, NATS, and
+pipeline workloads. The environment-specific Doppler service tokens are
+checked in only as controller-bound SealedSecrets; operators, node labels, the
+Doppler configs, and the R2 bucket remain cluster-operator prerequisites.
 
 ### k6 capture load test
 

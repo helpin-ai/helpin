@@ -168,6 +168,13 @@ spec:
       nodeSelector:
         kubernetes.io/arch: amd64
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.hetzner.com/type
+                    operator: In
+                    values: [cloud]
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
@@ -187,23 +194,23 @@ spec:
             - name: JS_ENCRYPTION_KEY
               valueFrom:
                 secretKeyRef:
-                  name: helpin-eventpipeline-nats-secrets
-                  key: jetstream-encryption-key
+                  name: helpin-eventpipeline-secrets
+                  key: NATS_JETSTREAM_ENCRYPTION_KEY
             - name: NATS_CAPTURE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: helpin-eventpipeline-nats-secrets
-                  key: capture-password
+                  name: helpin-eventpipeline-secrets
+                  key: NATS_CAPTURE_PASSWORD
             - name: NATS_WRITER_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: helpin-eventpipeline-nats-secrets
-                  key: writer-password
+                  name: helpin-eventpipeline-secrets
+                  key: NATS_WRITER_PASSWORD
             - name: NATS_OPS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: helpin-eventpipeline-nats-secrets
-                  key: ops-password
+                  name: helpin-eventpipeline-secrets
+                  key: NATS_OPS_PASSWORD
           ports:
             - name: client
               containerPort: 4222
@@ -258,9 +265,8 @@ spec:
     - metadata:
         name: jetstream
       spec:
+        storageClassName: hcloud-volumes-retain
         accessModes: ["ReadWriteOnce"]
-        # The cluster operator must set storageClassName to the environment's
-        # provisioned-IOPS NVMe class before applying this StatefulSet.
         resources:
           requests:
-            storage: 16Gi
+            storage: 20Gi

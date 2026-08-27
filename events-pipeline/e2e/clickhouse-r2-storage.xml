@@ -19,16 +19,13 @@
             </r2_cache>
         </disks>
         <policies>
-            <r2>
+            <events>
                 <volumes>
                     <main>
                         <disk>r2_cache</disk>
                     </main>
-                    <default>
-                        <disk>default</disk>
-                    </default>
                 </volumes>
-            </r2>
+            </events>
         </policies>
     </storage_configuration>
 </clickhouse>

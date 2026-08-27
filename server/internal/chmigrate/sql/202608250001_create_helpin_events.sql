@@ -1,9 +1,10 @@
--- Migration: create_usermaven_events
-CREATE DATABASE IF NOT EXISTS usermaven;
+-- Migration: create_helpin_events
+CREATE DATABASE IF NOT EXISTS helpin ON CLUSTER helpin
+ENGINE = Replicated('/clickhouse/databases/helpin', '{shard}', '{replica}');
 
--- Usermaven-compatible event contract. The enriched NATS payload is retained
+-- Helpin event contract. The enriched NATS payload is retained
 -- for replay/debugging; typed MATERIALIZED columns are computed once on insert.
-CREATE TABLE IF NOT EXISTS usermaven.events
+CREATE TABLE IF NOT EXISTS helpin.events
 (
     `raw_event` String CODEC(ZSTD(1)),
     `_timestamp` DateTime64(3, 'UTC') MATERIALIZED parseDateTime64BestEffort(JSONExtractString(raw_event, 'timestamp'), 3, 'UTC') CODEC(Delta(4), ZSTD(1)),
@@ -136,8 +137,12 @@ CREATE TABLE IF NOT EXISTS usermaven.events
     INDEX `idx_parsed_ua_bot` parsed_ua_bot TYPE set(8) GRANULARITY 1,
     INDEX `idx_event_type` event_type TYPE bloom_filter(0.01) GRANULARITY 1
 )
-ENGINE = ReplacingMergeTree(_ingest_version)
+ENGINE = ReplicatedReplacingMergeTree(_ingest_version)
 PARTITION BY toYYYYMM(_timestamp)
 ORDER BY (project_id, event_date, event_id)
 TTL _timestamp + INTERVAL 400 DAY DELETE
-SETTINGS index_granularity = 8192;
+SETTINGS
+    index_granularity = 8192,
+    storage_policy = 'events',
+    min_bytes_for_wide_part = 1073741824,
+    min_rows_for_wide_part = 10000000;

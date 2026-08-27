@@ -159,7 +159,7 @@ cleanup() {
     curl --fail-with-body --silent --show-error \
       --user helpin:helpin \
       'http://127.0.0.1:18123/?database=default' \
-      --data-binary 'DROP DATABASE IF EXISTS usermaven SYNC' \
+      --data-binary 'DROP DATABASE IF EXISTS helpin SYNC' \
       >"$run_dir/r2-cleanup.log" 2>&1 || \
       echo "R2 cleanup failed; remove the unique prefix recorded in $run_dir/r2-prefix.txt" >&2
   fi
@@ -188,9 +188,9 @@ wait_clickhouse_stable() {
   for _ in $(seq 1 120); do
     if docker exec "$container_id" sh -c \
       "tr '\000' ' ' </proc/1/cmdline | grep -q clickhouse-server" >/dev/null 2>&1 && \
-      clickhouse_query "SELECT 1" >/dev/null 2>&1; then
+      clickhouse_default_query "SELECT 1" >/dev/null 2>&1; then
       sleep 2
-      if clickhouse_query "SELECT 1" >/dev/null 2>&1; then
+      if clickhouse_default_query "SELECT 1" >/dev/null 2>&1; then
         return 0
       fi
     fi
@@ -280,10 +280,17 @@ sample_jetstream_disk() {
   done
 }
 
+clickhouse_default_query() {
+  curl --fail-with-body --silent --show-error \
+    --user helpin:helpin \
+    'http://127.0.0.1:18123/?database=default&default_format=TSVRaw' \
+    --data-binary "$1"
+}
+
 clickhouse_query() {
   curl --fail-with-body --silent --show-error \
     --user helpin:helpin \
-    'http://127.0.0.1:18123/?database=usermaven&default_format=TSVRaw' \
+    'http://127.0.0.1:18123/?database=helpin&default_format=TSVRaw' \
     --data-binary "$1"
 }
 
@@ -369,22 +376,20 @@ wait_jetstream_cluster
 echo "Applying ClickHouse migrations and building binaries"
 (
   cd "$repo_root/server"
-  env CLICKHOUSE_DSN=clickhouse://helpin:helpin@127.0.0.1:19000/usermaven \
+  env CLICKHOUSE_DSN=clickhouse://helpin:helpin@127.0.0.1:19000/default \
     go run ./cmd/clickhouse-migrate up
 )
 if [[ "$clickhouse_storage" == "r2" ]]; then
-  clickhouse_query "ALTER TABLE events MODIFY SETTING storage_policy = 'r2', min_bytes_for_wide_part = 1073741824, min_rows_for_wide_part = 10000000"
-  clickhouse_query "ALTER TABLE session_seed_events MODIFY SETTING storage_policy = 'r2', min_bytes_for_wide_part = 1073741824, min_rows_for_wide_part = 10000000"
   clickhouse_query "
 SELECT database, name, engine, storage_policy
 FROM system.tables
-WHERE database = 'usermaven'
+WHERE database = 'helpin'
 ORDER BY name
 " >"$run_dir/clickhouse-storage-policy.tsv"
-  events_policy=$(clickhouse_query "SELECT storage_policy FROM system.tables WHERE database = 'usermaven' AND name = 'events'")
-  seed_policy=$(clickhouse_query "SELECT storage_policy FROM system.tables WHERE database = 'usermaven' AND name = 'session_seed_events'")
-  if [[ "$events_policy" != "r2" || "$seed_policy" != "r2" ]]; then
-    echo "ClickHouse migrations did not create the event tables on the R2 storage policy" >&2
+  events_policy=$(clickhouse_query "SELECT storage_policy FROM system.tables WHERE database = 'helpin' AND name = 'events'")
+  seed_policy=$(clickhouse_query "SELECT storage_policy FROM system.tables WHERE database = 'helpin' AND name = 'session_seed_events'")
+  if [[ "$events_policy" != "events" || "$seed_policy" != "default" ]]; then
+    echo "ClickHouse migrations did not put events on R2 and session seeds on local storage" >&2
     cat "$run_dir/clickhouse-storage-policy.tsv" >&2
     exit 1
   fi
@@ -429,7 +434,7 @@ if [[ "$consumers_enabled" == "true" ]]; then
         NATS_CLIENT_CERT_FILE="$E2E_NATS_TLS_DIR/client.crt" \
         NATS_CLIENT_KEY_FILE="$E2E_NATS_TLS_DIR/client.key" \
         CLICKHOUSE_HTTP_URL=http://127.0.0.1:18123 \
-        CLICKHOUSE_DATABASE=usermaven \
+        CLICKHOUSE_DATABASE=helpin \
         CLICKHOUSE_USER=helpin \
         CLICKHOUSE_PASSWORD=helpin \
         WRITER_REPLICAS="$writer_replicas" \
@@ -825,7 +830,7 @@ if [[ "$clickhouse_storage" == "r2" ]]; then
   clickhouse_query "
 SELECT table, disk_name, count() AS active_parts, sum(rows) AS rows, sum(bytes_on_disk) AS bytes_on_disk
 FROM system.parts
-WHERE active AND database = 'usermaven'
+WHERE active AND database = 'helpin'
 GROUP BY table, disk_name
 ORDER BY table, disk_name
 " >"$run_dir/clickhouse-r2-parts.tsv"

@@ -7,17 +7,18 @@ metadata:
     app: helpin-clickhouse-migrate
     env: stage
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
-  backoffLimit: 1
+  backoffLimit: 20
   template:
     metadata:
       labels:
         app: helpin-clickhouse-migrate
         env: stage
     spec:
-      restartPolicy: Never
+      restartPolicy: OnFailure
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -31,9 +32,14 @@ spec:
         - name: migrate
           image: ghcr.io/helpin-ai/helpin/server-migrate:server-v0.95.352-rc.1
           command: ["./clickhouse-migrate", "up"]
-          envFrom:
-            - secretRef:
-                name: helpin-secrets
+          env:
+            - name: CLICKHOUSE_MIGRATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-eventpipeline-secrets
+                  key: CLICKHOUSE_MIGRATION_PASSWORD
+            - name: CLICKHOUSE_DSN
+              value: clickhouse://helpin_migration:$(CLICKHOUSE_MIGRATION_PASSWORD)@helpin-clickhouse.helpin.svc.cluster.local:9000/default
           resources:
             requests:
               cpu: 50m

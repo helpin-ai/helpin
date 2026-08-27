@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TaskOwnerDistribution } from '@/components/pm/TaskOwnerDistribution';
-import { buildTaskOwnerDistribution } from '@/components/pm/taskOwnerDistribution';
+import { buildTaskOwnerDistribution } from '@/components/pm/task-owner-distribution';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { AssignableMember } from '@/lib/types';
 

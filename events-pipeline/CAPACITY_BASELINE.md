@@ -135,10 +135,12 @@ launch ceiling, with burst headroom:
 
 | Production container | Replicas | CPU request / limit | Memory request / limit |
 | --- | ---: | ---: | ---: |
-| capture | 2 | 0.25 / 1 core | 512 MiB / 1 GiB |
+| capture | 2 | 0.25 / 1 core | 512 MiB / 1.5 GiB |
 | replay sidecar | 2 | 0.2 / 0.5 cores | 256 / 512 MiB |
 | session writer | 2 | 0.25 / 1 core | 512 MiB / 1 GiB |
 | NATS | 3 | 0.5 / 2 cores | 1 / 3 GiB |
+| ClickHouse | 2 | 0.5 / 4 cores | 4 / 12 GiB |
+| ClickHouse Keeper | 3 | 0.25 / 1 core | 512 MiB / 2 GiB |
 
 Staging preserves topology at a lower cost and is not continuously provisioned
 as a performance environment:
@@ -149,22 +151,19 @@ as a performance environment:
 | replay sidecar | 2 | 0.1 / 0.25 cores | 256 / 512 MiB |
 | session writer | 2 | 0.1 / 0.5 core | 256 / 512 MiB |
 | NATS | 3 | 0.25 / 1 core | 512 MiB / 2 GiB |
+| ClickHouse | 2 | 0.25 / 2 cores | 2 / 6 GiB |
+| ClickHouse Keeper | 3 | 0.1 / 0.5 core | 256 MiB / 1 GiB |
 
-ClickHouse is external to these manifests. The 300/s run supports a 0.5/2 CPU
-request/limit and 2/4 GiB memory request/limit. Apply the measured 15k
-qualification envelope and a provisioned-IOPS storage class before raising the
-traffic ceiling substantially.
+Staging disables the capture user-agent cache preload to avoid paying its
+cold-start memory cost continuously. Production keeps the preload and uses a
+1.5 GiB limit because the measured cold-start peak exceeded 1 GiB. The
+ClickHouse limits include headroom for merges, two replicas, and the local R2
+cache; the single-host 300/s measurement is not a direct HA sizing result.
 
 Changing `WRITER_REPLICAS` changes durable-consumer shard ownership. Stop all
 writers, set `EVENTS_CONSUMER_REBALANCE_FROM` to the exact active topology, run
-the bootstrap job, and then start the new StatefulSet. The current manifest
-performs the guarded `r003` to `r002` transition.
-
-For the first rollout, pause automatic GitOps reconciliation, scale the writer
-StatefulSet to zero, wait for its pods to terminate, run the bootstrap job with
-`EVENTS_CONSUMER_REBALANCE_FROM=r003`, apply the two-replica StatefulSet, and
-then resume reconciliation. If the live consumer topology is not exactly
-`r003`, stop and use the topology reported by the bootstrap guard.
+the bootstrap job, and then start the new StatefulSet. A new cluster requires
+no rebalance override.
 
 ## Six-hour JetStream capacity
 
@@ -183,9 +182,10 @@ Work, raw, and DLQ streams have a six-hour maximum age. At the launch ceiling:
 Production sets logical caps of 20 GiB for work, 12 GiB for raw, and 2 GiB for
 DLQ. NATS therefore needs a 40 GB logical file-store allowance, while measured
 compressed data for a complete six-hour outage is about 2.4 GB on the busiest
-node including 25% headroom. Each production NATS node receives a 16 GiB PVC;
-stage uses 8 GiB. This retains more than 6x physical headroom at the measured
-mix without provisioning against uncompressed logical bytes.
+node including 25% headroom. Each production NATS node receives a 20 GiB
+retained HCloud PVC; stage uses 10 GiB. This retains more than 6x physical
+headroom at the measured mix without provisioning against uncompressed logical
+bytes.
 
 `max_file_store` is a logical JetStream allowance and is intentionally larger
 than the compressed filesystem. S2 is explicit in the bootstrap manifests.
@@ -193,10 +193,11 @@ Alert at 70% of either PVC or logical allowance and expand before 80%. If the
 physical/logical ratio rises above 25%, reassess the PVC immediately.
 
 The capture fallback remains 10 GiB per capture pod. At 300/s, evenly balanced
-captures can hold roughly six hours of uncompressed enriched envelopes. It is a
-pod-local `emptyDir`: it survives a container restart but not pod replacement
-or node loss. The raw archive is diagnostic and may drop after its smaller
-archive-spill budget during a NATS outage; it must never delay capture.
+captures can hold roughly six hours of uncompressed enriched envelopes. It is
+a retained HCloud volume attached to each capture StatefulSet replica, so it
+survives pod replacement and can be reattached after node loss. The raw archive
+is diagnostic and may drop after its smaller archive-spill budget during a NATS
+outage; it must never delay capture.
 
 Before increasing the rate, recalculate six-hour logical caps, run the same S2
 disk measurement with representative payloads, expand retained PVCs if needed,

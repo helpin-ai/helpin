@@ -126,7 +126,7 @@ Helpin already operates the vendored Usermaven pipeline:
 JS SDK -> Rust capture -> Kafka raw
        -> geo/proxy/bot/UA/privacy enrichment -> Kafka enriched
        -> KStreams sessionization -> Kafka sessionized
-       -> ClickHouse usermaven.events
+       -> ClickHouse helpin.events
 ```
 
 Rows contain anonymous and identified user fields, company fields, URL and campaign context, session IDs, bot/proxy classification, timestamps, custom attributes, and acquisition identifiers. The retroactive worker can restate prior anonymous activity after identification.
@@ -461,7 +461,7 @@ It splits into two tracks with **different dependencies and different start date
 | Track | Evidence source | Depends on | Can start |
 |---|---|---|---|
 | 1a — Cross-module | Postgres: support, PM tasks, calendar, deals, email | §3.7 signal schema only | Immediately, parallel to Phase 0 |
-| 1b — Behavioral | ClickHouse `usermaven.events` | All of Phase 0 | After Phase 0 exits |
+| 1b — Behavioral | ClickHouse `helpin.events` | All of Phase 0 | After Phase 0 exits |
 
 The ordering is deliberate. 1a is the part no competitor can reproduce — they integrate with a support tool; Helpin *is* the support tool — and it requires no Rust deploy, no SDK release, no ClickHouse schema change, and no customer-side backend work. Gating it behind Phase 0 would put the cheapest differentiated work behind the longest pole in the plan.
 

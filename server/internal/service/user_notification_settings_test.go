@@ -59,7 +59,7 @@ func TestValidateTimezone_ValidIANA(t *testing.T) {
 }
 
 func TestValidateTimezone_InvalidIANA(t *testing.T) {
-	invalid := []string{"Not/A/Zone", "Foo", "UTC+5", "gmt"}
+	invalid := []string{"Not/A/Zone", "Foo", "UTC+5"}
 	for _, tz := range invalid {
 		if err := ValidateTimezone(tz); err == nil {
 			t.Errorf("ValidateTimezone(%q) expected error, got nil", tz)

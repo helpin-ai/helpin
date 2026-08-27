@@ -31,7 +31,7 @@ connected email, calendar, support, PM, and CRM records
                                                     \
 browser and authenticated product events             -> durable Postgres signal
   -> authenticated event pipeline                     -> scoring and composition
-  -> ClickHouse usermaven.events                       -> CRM feeds and briefs
+  -> ClickHouse helpin.events                          -> CRM feeds and briefs
   -> ten-minute deterministic behavioral rules        -> controlled activation
 
 normalized external evidence API                     /

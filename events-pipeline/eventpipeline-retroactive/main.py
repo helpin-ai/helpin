@@ -140,7 +140,7 @@ def run_clickhouse_query(start_timestamp, end_timestamp):
     start_timestamp_str = start_timestamp.format('YYYY-MM-DD HH:mm:ss')
     end_timestamp_str = end_timestamp.format('YYYY-MM-DD HH:mm:ss')
     query = f"""
-    INSERT INTO usermaven.events
+    INSERT INTO helpin.events
     (
         raw_event,
         _nats_subject,
@@ -156,7 +156,7 @@ def run_clickhouse_query(start_timestamp, end_timestamp):
             user_anonymous_id,
             argMin(user_id, _timestamp) AS user_id,
             project_id
-        FROM usermaven.events FINAL
+        FROM helpin.events FINAL
         WHERE ((_timestamp >= toDateTime('{start_timestamp_str}')) AND (_timestamp <= toDateTime('{end_timestamp_str}'))) AND (event_type = 'user_identify')
         GROUP BY
             user_anonymous_id,
@@ -185,7 +185,7 @@ def run_clickhouse_query(start_timestamp, end_timestamp):
             _retro_generation,
             project_id,
             user_anonymous_id
-        FROM usermaven.events FINAL
+        FROM helpin.events FINAL
         WHERE ((_timestamp >= (now() - toIntervalMonth(6))) AND (_timestamp <= now())) AND ((project_id, user_anonymous_id) IN (
             SELECT
                 project_id,

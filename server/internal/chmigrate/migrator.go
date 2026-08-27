@@ -202,15 +202,21 @@ func parseMigrationName(filename string) (version string, name string, ok bool) 
 }
 
 func ensureSchemaMigrationsTable(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, `
+		CREATE DATABASE IF NOT EXISTS helpin ON CLUSTER helpin
+		ENGINE = Replicated('/clickhouse/databases/helpin', '{shard}', '{replica}')
+	`); err != nil {
+		return fmt.Errorf("create Helpin ClickHouse database: %w", err)
+	}
 	_, err := db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS schema_migrations
+		CREATE TABLE IF NOT EXISTS helpin.schema_migrations
 		(
 			version String,
 			name String,
 			checksum FixedString(64),
 			applied_at DateTime64(6, 'UTC')
 		)
-		ENGINE = ReplacingMergeTree(applied_at)
+		ENGINE = ReplicatedReplacingMergeTree(applied_at)
 		ORDER BY version
 	`)
 	if err != nil {
@@ -225,7 +231,7 @@ func loadAppliedMigrations(ctx context.Context, db *sql.DB) (map[string]appliedM
 			version,
 			argMax(checksum, applied_at),
 			max(applied_at)
-		FROM schema_migrations
+		FROM helpin.schema_migrations
 		GROUP BY version
 	`)
 	if err != nil {
@@ -266,7 +272,7 @@ func applyMigration(ctx context.Context, db *sql.DB, migration Migration) error 
 		}
 	}
 	if _, err := db.ExecContext(ctx, `
-		INSERT INTO schema_migrations (version, name, checksum, applied_at)
+		INSERT INTO helpin.schema_migrations (version, name, checksum, applied_at)
 		VALUES (?, ?, ?, now64(6))
 	`, migration.Version, migration.Name, migration.Checksum); err != nil {
 		return fmt.Errorf("record ClickHouse schema migration: %w", err)

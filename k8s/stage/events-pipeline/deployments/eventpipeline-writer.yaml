@@ -40,14 +40,38 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.hetzner.com/type
+                    operator: In
+                    values: [cloud]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: helpin-eventpipeline-writer
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: writer
           image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.10-rc.1
           command: ["session-writer"]
-          envFrom:
-            - secretRef:
-                name: helpin-eventpipeline-writer
           env:
+            - name: CLICKHOUSE_HTTP_URL
+              value: http://helpin-clickhouse.helpin.svc.cluster.local:8123
+            - name: CLICKHOUSE_DATABASE
+              value: helpin
+            - name: CLICKHOUSE_USER
+              value: helpin_writer
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-eventpipeline-secrets
+                  key: CLICKHOUSE_WRITER_PASSWORD
             - name: POD_NAME
               valueFrom:
                 fieldRef:
@@ -67,8 +91,8 @@ spec:
             - name: NATS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: helpin-eventpipeline-nats-secrets
-                  key: writer-password
+                  name: helpin-eventpipeline-secrets
+                  key: NATS_WRITER_PASSWORD
             - name: NATS_CA_FILE
               value: /etc/nats/tls/ca.crt
             - name: NATS_CLIENT_CERT_FILE
@@ -122,12 +146,18 @@ spec:
               mountPath: /etc/nats/tls
               readOnly: true
       volumes:
-        - name: poison-spill
-          emptyDir:
-            sizeLimit: 1Gi
         - name: nats-client-tls
           secret:
             secretName: helpin-eventpipeline-nats-writer-tls
+  volumeClaimTemplates:
+    - metadata:
+        name: poison-spill
+      spec:
+        storageClassName: hcloud-volumes-retain
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
 ---
 apiVersion: batch/v1
 kind: Job
@@ -155,6 +185,14 @@ spec:
         runAsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.hetzner.com/type
+                    operator: In
+                    values: [cloud]
       containers:
         - name: bootstrap
           image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.10-rc.1
@@ -167,8 +205,8 @@ spec:
             - name: NATS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: helpin-eventpipeline-nats-secrets
-                  key: ops-password
+                  name: helpin-eventpipeline-secrets
+                  key: NATS_OPS_PASSWORD
             - name: NATS_CA_FILE
               value: /etc/nats/tls/ca.crt
             - name: NATS_CLIENT_CERT_FILE
@@ -189,11 +227,6 @@ spec:
               value: "false"
             - name: WRITER_REPLICAS
               value: "2"
-            # One-shot guard for the stopped-writer r003 -> r002 rebalance.
-            # Remove after the new topology has been reconciled. A later
-            # replica-count change must name its exact active topology.
-            - name: EVENTS_CONSUMER_REBALANCE_FROM
-              value: r003
           resources:
             requests:
               cpu: 25m

@@ -1,7 +1,7 @@
 -- Migration: event_ingestion
 -- Narrow restart index for reconstructing active sessions without scanning the
 -- wide events table. It intentionally retains one hour beyond the work stream.
-CREATE TABLE IF NOT EXISTS usermaven.session_seed_events
+CREATE TABLE IF NOT EXISTS helpin.session_seed_events
 (
     `visitor_shard` UInt8 CODEC(T64, ZSTD(1)),
     `event_received_at` DateTime64(3, 'UTC') CODEC(Delta(4), ZSTD(1)),
@@ -18,14 +18,14 @@ CREATE TABLE IF NOT EXISTS usermaven.session_seed_events
 
     INDEX `idx_seed_event_timestamp` event_timestamp TYPE minmax GRANULARITY 1
 )
-ENGINE = MergeTree
+ENGINE = ReplicatedMergeTree
 PARTITION BY toDate(event_received_at)
 ORDER BY (visitor_shard, event_received_at, project_id, user_anonymous_id, event_id)
 TTL event_received_at + INTERVAL 49 HOUR DELETE
 SETTINGS index_granularity = 8192;
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS usermaven.session_seed_events_mv
-TO usermaven.session_seed_events
+CREATE MATERIALIZED VIEW IF NOT EXISTS helpin.session_seed_events_mv
+TO helpin.session_seed_events
 AS SELECT
     toUInt8(JSONExtractUInt(raw_event, 'visitor_shard')) AS visitor_shard,
     parseDateTime64BestEffort(JSONExtractString(raw_event, 'event_received_at'), 3, 'UTC') AS event_received_at,
@@ -39,5 +39,5 @@ AS SELECT
     _nats_delivery_attempt AS nats_delivery_attempt,
     _retro_generation AS retro_generation,
     _ingest_version AS ingest_version
-FROM usermaven.events
+FROM helpin.events
 WHERE _retro_generation = 0;

@@ -165,9 +165,10 @@ Populate `CLICKHOUSE_R2_ACCESS_KEY_ID` and
 Then add `SUSTAINED_CLICKHOUSE_STORAGE=r2` to a sustained command. The harness
 adds a unique `helpin-sustained/<run-id>/` object prefix, loads an
 environment-backed ClickHouse storage configuration, and verifies that
-`usermaven.events` and `usermaven.session_seed_events` use the `r2` policy.
+`helpin.events` uses the R2-backed `events` policy while
+`helpin.session_seed_events` remains on local storage for fast recovery.
 The R2 profile gives ClickHouse 4 CPUs and 6 GiB, enables a 4 GiB local
-write-through cache, and forces compact parts for these two tables to avoid one
+write-through cache, and forces compact event parts to avoid one
 remote object per column during inserts and immediate merges. Override these
 diagnostic defaults with `CLICKHOUSE_R2_CPUS`, `CLICKHOUSE_R2_MEMORY_LIMIT`, or
 `SUSTAINED_CLICKHOUSE_R2_CACHE_MAX_SIZE` when comparing another resource shape.

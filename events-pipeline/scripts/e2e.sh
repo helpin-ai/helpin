@@ -28,7 +28,7 @@ cleanup() {
     done
     "${compose[@]}" logs --no-color --tail=80 >&2 || true
   fi
-  for pid in "$capture_pid" "${writer_pids[@]}" "$token_pid"; do
+  for pid in "$capture_pid" ${writer_pids[@]+"${writer_pids[@]}"} "$token_pid"; do
     if [[ -n "$pid" ]]; then
       kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
@@ -56,7 +56,7 @@ wait_http() {
 clickhouse_query() {
   curl --fail-with-body --silent --show-error \
     --user helpin:helpin \
-    'http://127.0.0.1:18123/?database=usermaven&default_format=TSVRaw' \
+    'http://127.0.0.1:18123/?database=helpin&default_format=TSVRaw' \
     --data-binary "$1"
 }
 
@@ -107,6 +107,21 @@ raise SystemExit(0 if cluster.get("cluster_size") == 3 and cluster.get("leader")
   return 1
 }
 
+apply_clickhouse_migrations() {
+  for _ in $(seq 1 30); do
+    if (
+      cd "$repo_root/server"
+      env CLICKHOUSE_DSN=clickhouse://helpin:helpin@127.0.0.1:19000/default \
+        go run ./cmd/clickhouse-migrate up
+    ); then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "ClickHouse native endpoint did not stabilize for migrations" >&2
+  return 1
+}
+
 post_event() {
   payload=$1
   curl --fail-with-body --silent --show-error \
@@ -132,7 +147,7 @@ start_writers() {
         NATS_CLIENT_CERT_FILE="$E2E_NATS_TLS_DIR/client.crt" \
         NATS_CLIENT_KEY_FILE="$E2E_NATS_TLS_DIR/client.key" \
         CLICKHOUSE_HTTP_URL=http://127.0.0.1:18123 \
-        CLICKHOUSE_DATABASE=usermaven \
+        CLICKHOUSE_DATABASE=helpin \
         CLICKHOUSE_USER=helpin \
         CLICKHOUSE_PASSWORD=helpin \
         WRITER_REPLICAS="$writer_replicas" \
@@ -169,11 +184,7 @@ wait_http "NATS monitor" http://127.0.0.1:18222/healthz
 wait_jetstream_cluster
 
 echo "Applying ClickHouse migrations and building pipeline binaries"
-(
-  cd "$repo_root/server"
-  env CLICKHOUSE_DSN=clickhouse://helpin:helpin@127.0.0.1:19000/usermaven \
-    go run ./cmd/clickhouse-migrate up
-)
+apply_clickhouse_migrations
 (
   cd "$capture_dir"
   cargo build --bins --jobs "${CARGO_BUILD_JOBS:-2}"

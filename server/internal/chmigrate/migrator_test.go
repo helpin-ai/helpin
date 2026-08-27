@@ -54,7 +54,7 @@ func TestSplitStatementsRejectsUnterminatedSyntax(t *testing.T) {
 	}
 }
 
-func TestUsermavenEventSchemaContract(t *testing.T) {
+func TestHelpinEventSchemaContract(t *testing.T) {
 	migrations, err := loadMigrations()
 	if err != nil {
 		t.Fatalf("load migrations: %v", err)
@@ -72,8 +72,10 @@ func TestUsermavenEventSchemaContract(t *testing.T) {
 		}
 	}
 	for _, contract := range []string{
-		"ENGINE = ReplacingMergeTree(_ingest_version)",
+		"CREATE TABLE IF NOT EXISTS helpin.events",
+		"ENGINE = ReplicatedReplacingMergeTree(_ingest_version)",
 		"ORDER BY (project_id, event_date, event_id)",
+		"storage_policy = 'events'",
 		"parseDateTime64BestEffort(JSONExtractString(raw_event, 'timestamp')",
 	} {
 		if !strings.Contains(baseline, contract) {
@@ -88,7 +90,8 @@ func TestUsermavenEventSchemaContract(t *testing.T) {
 	}
 	ingestion := migrations[2].SQL
 	for _, contract := range []string{
-		"CREATE TABLE IF NOT EXISTS usermaven.session_seed_events",
+		"CREATE TABLE IF NOT EXISTS helpin.session_seed_events",
+		"ENGINE = ReplicatedMergeTree",
 		"INDEX `idx_seed_event_timestamp` event_timestamp TYPE minmax",
 		"JSONExtractString(raw_event, 'project_id')",
 		"TTL event_received_at + INTERVAL 49 HOUR DELETE",

@@ -12,7 +12,7 @@ import (
 
 const maximumEventReadWindow = 366 * 24 * time.Hour
 
-// EventRetentionPolicy is the deployment-owned TTL declared on usermaven.events.
+// EventRetentionPolicy is the deployment-owned TTL declared on helpin.events.
 type EventRetentionPolicy struct {
 	TTLConfigured bool
 	TTLClause     string
@@ -24,8 +24,8 @@ func InspectEventRetentionPolicy(ctx context.Context, db *sql.DB) (EventRetentio
 		return EventRetentionPolicy{}, fmt.Errorf("ClickHouse connection is required")
 	}
 	var ddl string
-	if err := db.QueryRowContext(ctx, `SELECT create_table_query FROM system.tables WHERE database = 'usermaven' AND name = 'events'`).Scan(&ddl); err != nil {
-		return EventRetentionPolicy{}, fmt.Errorf("inspect usermaven.events retention: %w", err)
+	if err := db.QueryRowContext(ctx, `SELECT create_table_query FROM system.tables WHERE database = 'helpin' AND name = 'events'`).Scan(&ddl); err != nil {
+		return EventRetentionPolicy{}, fmt.Errorf("inspect helpin.events retention: %w", err)
 	}
 	return parseEventRetentionDDL(ddl), nil
 }
@@ -105,7 +105,7 @@ func (r *ClickHouseEventRepository) SmokeCount(
 		args = append(args, projectID)
 	}
 	args = append(args, windowStartedAt.UTC(), windowEndedAt.UTC())
-	query := `SELECT uniqExact(event_id) FROM usermaven.events WHERE project_id IN (` +
+	query := `SELECT uniqExact(event_id) FROM helpin.events WHERE project_id IN (` +
 		strings.Join(placeholders, ",") + `) AND _timestamp >= ? AND _timestamp < ?`
 
 	var count int64

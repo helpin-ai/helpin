@@ -175,7 +175,7 @@ print(token["workspace_id"])
   echo "Applying ClickHouse migrations"
   (
     cd "$repo_root/server"
-    env CLICKHOUSE_DSN=clickhouse://helpin:helpin@127.0.0.1:9000/usermaven \
+    env CLICKHOUSE_DSN=clickhouse://helpin:helpin@127.0.0.1:9000/default \
       go run ./cmd/clickhouse-migrate up
   )
 
@@ -200,7 +200,7 @@ print(token["workspace_id"])
     env \
       NATS_URL=nats://127.0.0.1:4222 \
       CLICKHOUSE_HTTP_URL=http://127.0.0.1:8123 \
-      CLICKHOUSE_DATABASE=usermaven \
+      CLICKHOUSE_DATABASE=helpin \
       CLICKHOUSE_USER=helpin \
       CLICKHOUSE_PASSWORD=helpin \
       WRITER_REPLICAS=1 \

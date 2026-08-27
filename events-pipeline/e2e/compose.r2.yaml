@@ -8,4 +8,4 @@ services:
       CLICKHOUSE_R2_ENDPOINT: ${CLICKHOUSE_R2_ENDPOINT:?set CLICKHOUSE_R2_ENDPOINT}
       CLICKHOUSE_R2_CACHE_MAX_SIZE: ${CLICKHOUSE_R2_CACHE_MAX_SIZE:-4Gi}
     volumes:
-      - ./clickhouse-r2-storage.xml:/etc/clickhouse-server/config.d/r2-storage.xml:ro
+      - ./clickhouse-r2-storage.xml:/etc/clickhouse-server/config.d/events-storage.xml:ro

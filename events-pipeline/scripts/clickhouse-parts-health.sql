@@ -15,7 +15,7 @@ SELECT
     formatReadableSize(sum(bytes_on_disk)) AS active_bytes
 FROM system.parts
 WHERE active
-  AND database = 'usermaven'
+  AND database = 'helpin'
   AND table IN ('events', 'session_seed_events')
 GROUP BY database, table, partition
 ORDER BY active_parts DESC;

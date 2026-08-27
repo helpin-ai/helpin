@@ -385,7 +385,7 @@ func TestSupportInboxServiceGetWidgetSessionExtendsActiveSessionNearExpiry(t *te
 		SessionToken: "extend-expiry-session-token",
 		AnonymousID:  "anon-extend-expiry",
 		IsAnonymous:  true,
-		ExpiresAt:    time.Now().Add(15 * time.Minute),
+		ExpiresAt:    time.Now().UTC().Add(15 * time.Minute),
 	}
 	if err := sessionRepo.Create(ctx, session); err != nil {
 		t.Fatalf("create widget session: %v", err)
