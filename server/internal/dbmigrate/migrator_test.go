@@ -203,15 +203,33 @@ func TestSupportEmailRouteVerificationBackfillMigrationContract(t *testing.T) {
 		t.Fatalf("load migrations: %v", err)
 	}
 
+	var prerequisite *Migration
 	var migration *Migration
 	for i := range migrations {
+		if migrations[i].Version == "20260811000350000000" {
+			prerequisite = &migrations[i]
+		}
 		if migrations[i].Version == "202608110004" {
 			migration = &migrations[i]
-			break
 		}
+	}
+	if prerequisite == nil {
+		t.Fatal("expected support email route verification column migration 20260811000350000000 to be registered")
 	}
 	if migration == nil {
 		t.Fatal("expected support email route verification backfill migration 202608110004 to be registered")
+	}
+	if prerequisite.Version >= migration.Version {
+		t.Fatalf("verification column migration %s must sort before backfill migration %s", prerequisite.Version, migration.Version)
+	}
+	prerequisiteSQL := strings.ToLower(strings.Join(strings.Fields(prerequisite.SQL), " "))
+	for _, clause := range []string{
+		"alter table if exists support_email_routes",
+		"add column if not exists forwarding_verified_at timestamptz",
+	} {
+		if !strings.Contains(prerequisiteSQL, clause) {
+			t.Errorf("prerequisite migration SQL missing contract clause %q", clause)
+		}
 	}
 	if migration.Name != "backfill_support_email_route_verification" {
 		t.Fatalf("migration name = %q, want %q", migration.Name, "backfill_support_email_route_verification")
