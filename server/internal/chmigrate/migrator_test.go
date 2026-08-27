@@ -10,10 +10,10 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load migrations: %v", err)
 	}
-	if len(migrations) != 3 {
-		t.Fatalf("migration count = %d, want 3", len(migrations))
+	if len(migrations) != 4 {
+		t.Fatalf("migration count = %d, want 4", len(migrations))
 	}
-	wantVersions := []string{"202608250001", "202608250002", "202608250003"}
+	wantVersions := []string{"202608250001", "202608250002", "202608250003", "202608270001"}
 	for index, want := range wantVersions {
 		if migrations[index].Version != want {
 			t.Errorf("migration %d version = %q, want %q", index, migrations[index].Version, want)
@@ -100,5 +100,19 @@ func TestUsermavenEventSchemaContract(t *testing.T) {
 	}
 	if strings.Contains(ingestion, "ENGINE = Kafka") {
 		t.Fatal("clean-slate ingestion migration must not create a Kafka engine")
+	}
+	aiClassification := migrations[3].SQL
+	for _, contract := range []string{
+		"`parsed_ua_bot_category` LowCardinality(String)",
+		"`parsed_ua_bot_name` LowCardinality(String)",
+		"`parsed_ua_bot_provider` LowCardinality(String)",
+		"INDEX IF NOT EXISTS `idx_parsed_ua_bot_category`",
+	} {
+		if !strings.Contains(aiClassification, contract) {
+			t.Errorf("AI bot classification migration missing contract %q", contract)
+		}
+	}
+	if strings.Contains(aiClassification, "MATERIALIZE COLUMN") {
+		t.Fatal("AI bot classification migration must not rewrite historical event parts")
 	}
 }

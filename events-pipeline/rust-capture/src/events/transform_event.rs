@@ -42,6 +42,9 @@ pub struct TransformedEvent {
     pub location_lon: Option<f64>,
     pub page_title: Option<String>,
     pub parsed_ua_bot: i32,
+    pub parsed_ua_bot_category: String,
+    pub parsed_ua_bot_name: String,
+    pub parsed_ua_bot_provider: String,
     pub parsed_ua_device_brand: Option<String>,
     pub parsed_ua_device_family: Option<String>,
     pub parsed_ua_device_model: Option<String>,
@@ -96,6 +99,9 @@ mod tests {
         assert_eq!(event.visitor_shard, 0);
         assert_eq!(event._is_deleted, 0);
         assert_eq!(event.api_key, "");
+        assert_eq!(event.parsed_ua_bot_category, "");
+        assert_eq!(event.parsed_ua_bot_name, "");
+        assert_eq!(event.parsed_ua_bot_provider, "");
         // Repeat for all fields in your struct
     }
 
@@ -132,6 +138,7 @@ mod tests {
         assert_eq!(event.timestamp, "2023-07-15T10:00:00Z");
         assert_eq!(event._is_deleted, 0);
         assert_eq!(event.api_key, "test_api_key");
+        assert_eq!(event.parsed_ua_bot_category, "");
         // Add similar assertions for the rest of your fields
     }
 }

@@ -1,0 +1,58 @@
+# Official source references:
+# https://developers.openai.com/api/docs/bots
+# https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler
+# https://docs.perplexity.ai/docs/resources/perplexity-crawlers
+# https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers
+# https://developer.amazon.com/amazonbot
+- token: GPTBot
+  name: GPTBot
+  provider: openai
+  category: ai_training
+- token: ClaudeBot
+  name: ClaudeBot
+  provider: anthropic
+  category: ai_training
+- token: OAI-SearchBot
+  name: OAI-SearchBot
+  provider: openai
+  category: ai_search
+- token: Claude-SearchBot
+  name: Claude-SearchBot
+  provider: anthropic
+  category: ai_search
+- token: PerplexityBot
+  name: PerplexityBot
+  provider: perplexity
+  category: ai_search
+- token: ChatGPT-User
+  name: ChatGPT-User
+  provider: openai
+  category: ai_user_fetcher
+- token: Claude-User
+  name: Claude-User
+  provider: anthropic
+  category: ai_user_fetcher
+- token: Perplexity-User
+  name: Perplexity-User
+  provider: perplexity
+  category: ai_user_fetcher
+- token: Google-CloudVertexBot
+  name: Google-CloudVertexBot
+  provider: google
+  category: ai_agent
+- token: OAI-AdsBot
+  name: OAI-AdsBot
+  provider: openai
+  category: ai_other
+- token: Amazonbot
+  name: Amazonbot
+  provider: amazon
+  category: ai_training
+- token: Amzn-SearchBot
+  name: Amzn-SearchBot
+  provider: amazon
+  category: ai_search
+- token: Amzn-User
+  name: Amzn-User
+  provider: amazon
+  category: ai_user_fetcher

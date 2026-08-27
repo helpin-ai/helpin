@@ -16,7 +16,7 @@ use crate::{
     geo::{maxmind::MaxMindResolver, resolver::GeoResolver},
 };
 
-use super::bot_resolver::BotResolver;
+use super::bot_resolver::{BotClassification, BotResolver};
 use super::ua_resolver::UaResolver;
 
 #[derive(Debug)]
@@ -182,12 +182,26 @@ impl EnrichmentHandler {
             .unwrap_or_default();
         let proxy_type = ip2proxy_result.proxy_type.as_deref().unwrap_or("NOPROXY");
 
-        let is_bot = if let Some(user_agent) = &data.event.user_agent {
-            bot_resolver.check_bot(user_agent)
-        } else {
-            true // Treat missing user_agent as a bot
-        };
-        let classification = Self::determine_classification(is_bot, proxy_type);
+        let bot_classification = data
+            .event
+            .user_agent
+            .as_deref()
+            .map(|user_agent| bot_resolver.classify(user_agent))
+            .unwrap_or_else(BotClassification::missing_user_agent);
+        let classification = Self::determine_classification(bot_classification.is_bot, proxy_type);
+        if bot_classification.is_bot {
+            let provider = if bot_classification.provider.is_empty() {
+                "unknown".to_string()
+            } else {
+                bot_classification.provider.clone()
+            };
+            metrics::counter!(
+                "capture_bot_classifications_total",
+                1,
+                "category" => bot_classification.category.clone(),
+                "provider" => provider
+            );
+        }
 
         transformed_event.event_id = data.event_id.to_string();
         transformed_event.identity_method = data.identity_provenance.identity_method.clone();
@@ -279,6 +293,9 @@ impl EnrichmentHandler {
         transformed_event.timestamp = data.event.received_at.clone();
         transformed_event.event_received_at = data.event.received_at.clone();
         transformed_event.parsed_ua_bot = classification;
+        transformed_event.parsed_ua_bot_category = bot_classification.category;
+        transformed_event.parsed_ua_bot_name = bot_classification.name;
+        transformed_event.parsed_ua_bot_provider = bot_classification.provider;
 
         // Check if the API key is a server-side token
         let is_server_side_token = data
@@ -815,5 +832,24 @@ mod tests {
             event.doc_search.is_none(),
             "No query string means doc_search should be None"
         );
+    }
+
+    #[tokio::test]
+    async fn test_ai_user_fetcher_enrichment() {
+        let bot_resolver = BotResolver::new();
+        let ua_parser = UaResolver::new();
+        ua_parser.seed_to_lru_cache().unwrap();
+        let handler = EnrichmentHandler::new();
+        let payload = r#"{"event":{"api_key":"UMYwi4UKqF.18954a1e-95fb-43d9-9808-fe828f85cad7","event_type":"page_view","url":"https://example.com","user_agent":"Mozilla/5.0 (compatible; ChatGPT-User/1.0; +https://openai.com/bot)","user":{"anonymous_id":"ai-fetcher"},"ip":"192.168.1.1","received_at":"2024-05-10T09:08:20.443126000Z","src":"usermaven"},"event_id":"a7a7a7a7-a7a7-47a7-a7a7-a7a7a7a7a7a7"}"#;
+
+        let event = handler
+            .process_payload(payload, None, None, &bot_resolver, &ua_parser)
+            .await
+            .expect("AI user fetcher event should be enriched");
+
+        assert_eq!(event.parsed_ua_bot, 1);
+        assert_eq!(event.parsed_ua_bot_category, "ai_user_fetcher");
+        assert_eq!(event.parsed_ua_bot_provider, "openai");
+        assert_eq!(event.parsed_ua_bot_name, "ChatGPT-User");
     }
 }

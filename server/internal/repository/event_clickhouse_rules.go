@@ -9,6 +9,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+const excludeDetectedBotsSQL = " AND parsed_ua_bot != 'true'"
+
 type behavioralRuleRow struct {
 	AnonymousID       string
 	ExternalUserID    string
@@ -101,9 +103,9 @@ func (r *ClickHouseEventRepository) capturedFormRows(ctx context.Context, projec
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'form_id'))), ', ') AS evidence
 		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
-		AND event_type = '$form' AND user_anonymous_id != ''` + formFilter + `
+		AND event_type = '$form' AND user_anonymous_id != ''` + formFilter + excludeDetectedBotsSQL + `
 		GROUP BY user_anonymous_id`
-	return r.queryBehavioralRows(ctx, "configured form submissions", query, args...)
+	return r.queryBrowserBehavioralRows(ctx, "configured form submissions", query, args...)
 }
 
 func (r *ClickHouseEventRepository) identifiedArticleRows(ctx context.Context, projects []string, start, end time.Time, articleIDs []string) ([]behavioralRuleRow, error) {
@@ -121,9 +123,9 @@ func (r *ClickHouseEventRepository) identifiedArticleRows(ctx context.Context, p
 		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'article_id'))), ', ') AS evidence
 		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND event_type = 'article_view' AND identity_trust != 'untrusted'
-		AND (user_anonymous_id != '' OR user_id != '')` + articleFilter + `
+		AND (user_anonymous_id != '' OR user_id != '')` + articleFilter + excludeDetectedBotsSQL + `
 		GROUP BY coalesce(nullIf(user_anonymous_id, ''), user_id), user_anonymous_id`
-	return r.queryBehavioralRows(ctx, "identified article views", query, args...)
+	return r.queryBrowserBehavioralRows(ctx, "identified article views", query, args...)
 }
 
 func (r *ClickHouseEventRepository) versionedInteractionRows(ctx context.Context, projects []string, start, end time.Time, ruleKey string, version int) ([]behavioralRuleRow, error) {
@@ -138,8 +140,8 @@ func (r *ClickHouseEventRepository) versionedInteractionRows(ctx context.Context
 		AND event_type = '$interaction'
 		AND JSONExtractString(event_attributes, 'capture_rule_key') = ?
 		AND JSONExtractInt(event_attributes, 'capture_rule_version') = ?
-		AND user_anonymous_id != '' GROUP BY user_anonymous_id`
-	return r.queryBehavioralRows(ctx, "versioned captured interactions", query, args...)
+		AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id`
+	return r.queryBrowserBehavioralRows(ctx, "versioned captured interactions", query, args...)
 }
 
 func (r *ClickHouseEventRepository) pathActivityRows(ctx context.Context, projects []string, start, end time.Time, paths []string, minimumSessions int, verifiedOnly bool) ([]behavioralRuleRow, error) {
@@ -157,9 +159,9 @@ func (r *ClickHouseEventRepository) pathActivityRows(ctx context.Context, projec
 		arrayStringConcat(arraySort(groupUniqArray(10)(doc_path)), ', ') AS evidence
 		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `)
 		AND _timestamp >= ? AND _timestamp < ? AND event_type = 'pageview'
-		AND multiSearchAnyCaseInsensitive(doc_path, ?) > 0` + trustFilter + `
+		AND multiSearchAnyCaseInsensitive(doc_path, ?) > 0` + trustFilter + excludeDetectedBotsSQL + `
 		AND user_anonymous_id != '' GROUP BY user_anonymous_id HAVING uniqExact(session_id) >= ?`
-	return r.queryBehavioralRows(ctx, "behavioral path activity", query, args...)
+	return r.queryBrowserBehavioralRows(ctx, "behavioral path activity", query, args...)
 }
 
 func (r *ClickHouseEventRepository) returnedAfterDormancyRows(ctx context.Context, projects []string, lookbackStart, start, end time.Time, dormancyDays int) ([]behavioralRuleRow, error) {
@@ -171,7 +173,7 @@ func (r *ClickHouseEventRepository) returnedAfterDormancyRows(ctx context.Contex
 		countIf(_timestamp >= ?) AS event_count, uniqExactIf(session_id, _timestamp >= ?) AS session_count,
 		concat('Returned after ', toString(dateDiff('day', maxIf(_timestamp, _timestamp < ?), minIf(_timestamp, _timestamp >= ?))), ' days') AS evidence
 		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
-		AND identity_trust='verified' AND user_anonymous_id != '' GROUP BY user_anonymous_id
+		AND identity_trust='verified' AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
 		HAVING maxIf(_timestamp, _timestamp < ?) > toDateTime64(0,3)
 		AND minIf(_timestamp, _timestamp >= ?) > toDateTime64(0,3)
 		AND dateDiff('day', maxIf(_timestamp, _timestamp < ?), minIf(_timestamp, _timestamp >= ?)) >= ?`
@@ -181,7 +183,7 @@ func (r *ClickHouseEventRepository) returnedAfterDormancyRows(ctx context.Contex
 		args = append(args, project)
 	}
 	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC(), start.UTC(), start.UTC(), dormancyDays)
-	return r.queryBehavioralRows(ctx, "known-contact returns", query, args...)
+	return r.queryBrowserBehavioralRows(ctx, "known-contact returns", query, args...)
 }
 
 func (r *ClickHouseEventRepository) highIntentEventRows(ctx context.Context, projects []string, start, end time.Time, eventNames []string) ([]behavioralRuleRow, error) {
@@ -211,8 +213,8 @@ func (r *ClickHouseEventRepository) sessionDepthRows(ctx context.Context, projec
 		countIf(event_type='pageview') AS event_count, 1 AS session_count,
 		concat(toString(countIf(event_type='pageview')), ' pageviews in one session') AS evidence
 		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
-		AND session_id != '' GROUP BY session_id HAVING countIf(event_type='pageview') >= ?`
-	return r.queryBehavioralRows(ctx, "session depth spikes", query, args...)
+		AND session_id != ''` + excludeDetectedBotsSQL + ` GROUP BY session_id HAVING countIf(event_type='pageview') >= ?`
+	return r.queryBrowserBehavioralRows(ctx, "session depth spikes", query, args...)
 }
 
 func (r *ClickHouseEventRepository) newStakeholderRows(ctx context.Context, projects []string, lookbackStart, start, end time.Time) ([]behavioralRuleRow, error) {
@@ -223,9 +225,9 @@ func (r *ClickHouseEventRepository) newStakeholderRows(ctx context.Context, proj
 		any(identity_trust) AS identity_trust, min(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count, 'First activity from this account visitor' AS evidence
 		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
-		AND company_id != '' AND user_anonymous_id != '' GROUP BY user_anonymous_id
+		AND company_id != '' AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
 		HAVING min(_timestamp) >= ? AND min(_timestamp) < ?`
-	return r.queryBehavioralRows(ctx, "new account stakeholders", query, args...)
+	return r.queryBrowserBehavioralRows(ctx, "new account stakeholders", query, args...)
 }
 
 func (r *ClickHouseEventRepository) anonymousAccountRows(ctx context.Context, projects []string, start, end time.Time, minimumEvents int) ([]behavioralRuleRow, error) {
@@ -236,8 +238,8 @@ func (r *ClickHouseEventRepository) anonymousAccountRows(ctx context.Context, pr
 		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count, 'Anonymous activity from a known account' AS evidence
 		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
-		AND company_id != '' AND user_id = '' GROUP BY company_id HAVING count() >= ?`
-	return r.queryBehavioralRows(ctx, "anonymous account traffic", query, args...)
+		AND company_id != '' AND user_id = ''` + excludeDetectedBotsSQL + ` GROUP BY company_id HAVING count() >= ?`
+	return r.queryBrowserBehavioralRows(ctx, "anonymous account traffic", query, args...)
 }
 
 func (r *ClickHouseEventRepository) campaignReturnRows(ctx context.Context, projects []string, lookbackStart, start, end time.Time) ([]behavioralRuleRow, error) {
@@ -249,14 +251,14 @@ func (r *ClickHouseEventRepository) campaignReturnRows(ctx context.Context, proj
 		countIf(_timestamp >= ?) AS event_count, uniqExactIf(session_id, _timestamp >= ?) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(utm_source)), ', ') AS evidence
 		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
-		AND user_anonymous_id != '' GROUP BY user_anonymous_id
+		AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
 		HAVING min(_timestamp) < ? AND countIf(_timestamp >= ? AND (utm_source != '' OR click_id_gclid != '')) > 0`
 	args = []any{start.UTC(), start.UTC(), start.UTC()}
 	for _, project := range projects {
 		args = append(args, project)
 	}
 	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC())
-	return r.queryBehavioralRows(ctx, "campaign returns", query, args...)
+	return r.queryBrowserBehavioralRows(ctx, "campaign returns", query, args...)
 }
 
 func (r *ClickHouseEventRepository) preIdentificationRows(ctx context.Context, projects []string, lookbackStart, start, end time.Time) ([]behavioralRuleRow, error) {
@@ -268,14 +270,25 @@ func (r *ClickHouseEventRepository) preIdentificationRows(ctx context.Context, p
 		countIf(user_id='') AS event_count, uniqExactIf(session_id, user_id='') AS session_count,
 		concat(toString(countIf(user_id='')), ' earlier anonymous events') AS evidence
 		FROM usermaven.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
-		AND user_anonymous_id != '' GROUP BY user_anonymous_id
+		AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
 		HAVING countIf(_timestamp < ? AND user_id='') > 0 AND countIf(_timestamp >= ? AND user_id!='') > 0`
 	args = []any{start.UTC()}
 	for _, project := range projects {
 		args = append(args, project)
 	}
 	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC())
-	return r.queryBehavioralRows(ctx, "pre-identification history", query, args...)
+	return r.queryBrowserBehavioralRows(ctx, "pre-identification history", query, args...)
+}
+
+func (r *ClickHouseEventRepository) queryBrowserBehavioralRows(
+	ctx context.Context,
+	operation, query string,
+	args ...any,
+) ([]behavioralRuleRow, error) {
+	if !strings.Contains(query, excludeDetectedBotsSQL) {
+		return nil, fmt.Errorf("query %s must exclude detected bots", operation)
+	}
+	return r.queryBehavioralRows(ctx, operation, query, args...)
 }
 
 func (r *ClickHouseEventRepository) queryBehavioralRows(ctx context.Context, operation, query string, args ...any) ([]behavioralRuleRow, error) {
