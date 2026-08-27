@@ -112,7 +112,11 @@ The existing `ghcr-helpin-json-key` image-pull secret is also required.
   anti-affinity; capture and writer use soft hostname anti-affinity.
 - Two dedicated ClickHouse nodes must carry
   `node-role.kubernetes.io/worker=clickhouse`, and three dedicated Keeper nodes
-  must carry `node-role.kubernetes.io/worker=pipeline`.
+  must carry `node-role.kubernetes.io/worker=pipeline`. Production additionally
+  selects `topology.kubernetes.io/region=fsn1`, which pins the two Helpin
+  replicas to the existing AX162-S pair instead of the third AX101 ClickHouse
+  host. Stage has exactly two ClickHouse-role hosts, so it needs no additional
+  selector.
 - `hcloud-volumes-retain` and `local-path` StorageClasses must exist. NATS,
   capture fallback, and writer poison spill use retained HCloud volumes. Stage
   creates 10 GiB claims; production NATS uses 20 GiB while capture/writer claims

@@ -177,6 +177,9 @@ spec:
                       - key: node-role.kubernetes.io/worker
                         operator: In
                         values: [clickhouse]
+                      - key: topology.kubernetes.io/region
+                        operator: In
+                        values: [fsn1]
             podAntiAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
                 - labelSelector:
