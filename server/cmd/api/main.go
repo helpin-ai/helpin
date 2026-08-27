@@ -123,17 +123,26 @@ func main() {
 		if parseErr != nil {
 			fatalWithSentry("failed to parse ClickHouse DSN", parseErr)
 		}
+		clickHouseCtx, cancelClickHouse := context.WithTimeout(context.Background(), 5*time.Second)
 		clickHouseDB = clickhouse.OpenDB(clickHouseOptions)
-		if err := clickHouseDB.PingContext(context.Background()); err != nil {
-			fatalWithSentry("failed to ping ClickHouse", err)
+		if err := clickHouseDB.PingContext(clickHouseCtx); err != nil {
+			slog.Warn("ClickHouse unavailable; CRM behavioral signals disabled", "error", err)
+			closeClickHouse(clickHouseDB)
+			clickHouseDB = nil
 		}
-		retention, err := repository.InspectEventRetentionPolicy(context.Background(), clickHouseDB)
-		if err != nil {
-			fatalWithSentry("failed to inspect ClickHouse event retention", err)
+		if clickHouseDB != nil {
+			retention, err := repository.InspectEventRetentionPolicy(clickHouseCtx, clickHouseDB)
+			if err != nil {
+				slog.Warn("ClickHouse event schema unavailable; CRM behavioral signals disabled", "error", err)
+				closeClickHouse(clickHouseDB)
+				clickHouseDB = nil
+			} else {
+				defer closeClickHouse(clickHouseDB)
+				slog.Info("connected to ClickHouse for CRM behavioral signals",
+					"ttl_configured", retention.TTLConfigured, "ttl_clause", retention.TTLClause)
+			}
 		}
-		defer clickHouseDB.Close()
-		slog.Info("connected to ClickHouse for CRM behavioral signals",
-			"ttl_configured", retention.TTLConfigured, "ttl_clause", retention.TTLClause)
+		cancelClickHouse()
 	}
 
 	// Ensure pgcrypto extension is available for gen_random_uuid().
@@ -2285,6 +2294,15 @@ func eventClickHouseOptions(dsn string) (*clickhouse.Options, error) {
 	options.Settings["do_not_merge_across_partitions_select_final"] = 1
 	options.Settings["use_skip_indexes_if_final_exact_mode"] = 1
 	return options, nil
+}
+
+func closeClickHouse(db *sql.DB) {
+	if db == nil {
+		return
+	}
+	if err := db.Close(); err != nil {
+		slog.Warn("failed to close ClickHouse connection", "error", err)
+	}
 }
 
 func parseLogLevel(value string) slog.Level {
