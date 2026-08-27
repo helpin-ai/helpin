@@ -1,0 +1,34 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <r2>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint from_env="CLICKHOUSE_R2_ENDPOINT"/>
+                <access_key_id from_env="CLICKHOUSE_R2_ACCESS_KEY_ID"/>
+                <secret_access_key from_env="CLICKHOUSE_R2_SECRET_ACCESS_KEY"/>
+                <region>auto</region>
+            </r2>
+            <r2_cache>
+                <type>cache</type>
+                <disk>r2</disk>
+                <path>/var/lib/clickhouse/r2-cache/</path>
+                <max_size from_env="CLICKHOUSE_R2_CACHE_MAX_SIZE"/>
+                <cache_on_write_operations>true</cache_on_write_operations>
+            </r2_cache>
+        </disks>
+        <policies>
+            <r2>
+                <volumes>
+                    <main>
+                        <disk>r2_cache</disk>
+                    </main>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                </volumes>
+            </r2>
+        </policies>
+    </storage_configuration>
+</clickhouse>

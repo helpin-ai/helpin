@@ -41,6 +41,9 @@ resource_monitor_enabled=${SUSTAINED_RESOURCE_MONITOR_ENABLED:-true}
 docker_resource_monitor_enabled=${SUSTAINED_DOCKER_RESOURCE_MONITOR_ENABLED:-true}
 jetstream_disk_monitor_enabled=${SUSTAINED_JETSTREAM_DISK_MONITOR_ENABLED:-false}
 resource_sample_interval=${SUSTAINED_RESOURCE_SAMPLE_INTERVAL_SECONDS:-5}
+clickhouse_storage=${SUSTAINED_CLICKHOUSE_STORAGE:-local}
+clickhouse_r2_env_file=${SUSTAINED_CLICKHOUSE_R2_ENV_FILE:-"$repo_root/events-pipeline/e2e/.env.r2"}
+clickhouse_r2_keep_data=${SUSTAINED_CLICKHOUSE_R2_KEEP_DATA:-false}
 expected=$((rate * duration))
 run_id="sustained-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 run_dir=${SUSTAINED_RESULTS_DIR:-"/tmp/helpin-$run_id"}
@@ -58,6 +61,32 @@ k6_status=0
 
 mkdir -p "$run_dir"
 prepare_e2e_nats_tls "$E2E_NATS_TLS_DIR"
+if [[ "$clickhouse_storage" != "local" && "$clickhouse_storage" != "r2" ]]; then
+  echo "SUSTAINED_CLICKHOUSE_STORAGE must be local or r2" >&2
+  exit 1
+fi
+if [[ "$clickhouse_storage" == "r2" ]]; then
+  if [[ ! -f "$clickhouse_r2_env_file" ]]; then
+    echo "R2 credential file is missing: $clickhouse_r2_env_file" >&2
+    echo "Copy events-pipeline/e2e/.env.r2.example to .env.r2 and populate the S3 credential pair." >&2
+    exit 1
+  fi
+  set -a
+  source "$clickhouse_r2_env_file"
+  set +a
+  : "${CLICKHOUSE_R2_ACCESS_KEY_ID:?CLICKHOUSE_R2_ACCESS_KEY_ID must be set in $clickhouse_r2_env_file}"
+  : "${CLICKHOUSE_R2_SECRET_ACCESS_KEY:?CLICKHOUSE_R2_SECRET_ACCESS_KEY must be set in $clickhouse_r2_env_file}"
+  : "${CLICKHOUSE_R2_ENDPOINT:?CLICKHOUSE_R2_ENDPOINT must be set in $clickhouse_r2_env_file}"
+  if [[ "$CLICKHOUSE_R2_ENDPOINT" != https://*.r2.cloudflarestorage.com/* ]]; then
+    echo "CLICKHOUSE_R2_ENDPOINT must be an HTTPS R2 S3 endpoint containing the bucket name" >&2
+    exit 1
+  fi
+  clickhouse_r2_base_endpoint=${CLICKHOUSE_R2_ENDPOINT%/}
+  export CLICKHOUSE_R2_ENDPOINT="$clickhouse_r2_base_endpoint/helpin-sustained/$run_id/"
+  export CLICKHOUSE_R2_CACHE_MAX_SIZE=${SUSTAINED_CLICKHOUSE_R2_CACHE_MAX_SIZE:-4Gi}
+  compose+=(--file "$repo_root/events-pipeline/e2e/compose.r2.yaml")
+  printf 'clickhouse_r2_endpoint=%s\n' "$CLICKHOUSE_R2_ENDPOINT" >"$run_dir/r2-prefix.txt"
+fi
 if [[ -n "$ip2proxy_db_path" && ! -f "$ip2proxy_db_path" ]]; then
   echo "SUSTAINED_IP2PROXY_DB_PATH does not exist: $ip2proxy_db_path" >&2
   exit 1
@@ -122,6 +151,14 @@ cleanup() {
       fi
     done
   fi
+  if [[ "$clickhouse_storage" == "r2" && "$clickhouse_r2_keep_data" != "true" ]]; then
+    curl --fail-with-body --silent --show-error \
+      --user helpin:helpin \
+      'http://127.0.0.1:18123/?database=default' \
+      --data-binary 'DROP DATABASE IF EXISTS usermaven SYNC' \
+      >"$run_dir/r2-cleanup.log" 2>&1 || \
+      echo "R2 cleanup failed; remove the unique prefix recorded in $run_dir/r2-prefix.txt" >&2
+  fi
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
   echo "Sustained E2E results: $run_dir"
   exit "$status"
@@ -138,6 +175,24 @@ wait_http() {
     sleep 1
   done
   echo "$name did not become ready: $url" >&2
+  return 1
+}
+
+wait_clickhouse_stable() {
+  local container_id
+  container_id=$("${compose[@]}" ps -q clickhouse)
+  for _ in $(seq 1 120); do
+    if docker exec "$container_id" sh -c \
+      "tr '\000' ' ' </proc/1/cmdline | grep -q clickhouse-server" >/dev/null 2>&1 && \
+      clickhouse_query "SELECT 1" >/dev/null 2>&1; then
+      sleep 2
+      if clickhouse_query "SELECT 1" >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
+    sleep 1
+  done
+  echo "ClickHouse did not reach a stable post-entrypoint state" >&2
   return 1
 }
 
@@ -296,13 +351,14 @@ assert_no_spill_files() {
   fi
 }
 
-echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size workers=$workers connections=$connections visitors=$visitors print_sink=$print_sink archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas capture_replicas=$capture_replicas work_storage=$work_storage work_replicas=$work_replicas work_in_flight=$work_max_in_flight resource_monitor=$resource_monitor_enabled docker_resource_monitor=$docker_resource_monitor_enabled jetstream_disk_monitor=$jetstream_disk_monitor_enabled resource_sample_interval=$resource_sample_interval"
+echo "Preparing sustained test driver=$load_driver rate=$rate events/s duration=${duration}s target_events=$expected batch_size=$batch_size workers=$workers connections=$connections visitors=$visitors print_sink=$print_sink archive=$raw_archive_enabled consumers=$consumers_enabled consumer_memory=$consumer_memory_storage writer_replicas=$writer_replicas capture_replicas=$capture_replicas work_storage=$work_storage work_replicas=$work_replicas work_in_flight=$work_max_in_flight clickhouse_storage=$clickhouse_storage resource_monitor=$resource_monitor_enabled docker_resource_monitor=$docker_resource_monitor_enabled jetstream_disk_monitor=$jetstream_disk_monitor_enabled resource_sample_interval=$resource_sample_interval"
 echo "Results will be retained in $run_dir"
-printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_storage=%s\nwork_replicas=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\ncapture_replicas=%s\nresource_monitor_enabled=%s\ndocker_resource_monitor_enabled=%s\njetstream_disk_monitor_enabled=%s\nresource_sample_interval_seconds=%s\n' \
-  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_storage" "$work_replicas" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" "$capture_replicas" "$resource_monitor_enabled" "$docker_resource_monitor_enabled" "$jetstream_disk_monitor_enabled" "$resource_sample_interval" >"$run_dir/test.env"
+printf 'run_id=%s\nload_driver=%s\nrate=%s\nduration_seconds=%s\ntarget_events=%s\nbatch_size=%s\nworkers=%s\nconnections=%s\nvisitors=%s\nsource_label=%s\nnetwork_enrichment=%s\nrequire_ip2proxy=%s\nwork_compression=%s\nwork_storage=%s\nwork_replicas=%s\nwork_max_bytes=%s\nwork_max_in_flight=%s\nraw_archive_enabled=%s\nconsumers_enabled=%s\nconsumer_memory_storage=%s\nwriter_replicas=%s\ncapture_replicas=%s\nclickhouse_storage=%s\nresource_monitor_enabled=%s\ndocker_resource_monitor_enabled=%s\njetstream_disk_monitor_enabled=%s\nresource_sample_interval_seconds=%s\n' \
+  "$run_id" "$load_driver" "$rate" "$duration" "$expected" "$batch_size" "$workers" "$connections" "$visitors" "$source_label" "$network_enrichment" "$require_ip2proxy" "$work_compression" "$work_storage" "$work_replicas" "$work_max_bytes" "$work_max_in_flight" "$raw_archive_enabled" "$consumers_enabled" "$consumer_memory_storage" "$writer_replicas" "$capture_replicas" "$clickhouse_storage" "$resource_monitor_enabled" "$docker_resource_monitor_enabled" "$jetstream_disk_monitor_enabled" "$resource_sample_interval" >"$run_dir/test.env"
 
 "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 "${compose[@]}" up --detach --wait
+wait_clickhouse_stable
 wait_http "NATS monitor" http://127.0.0.1:18222/healthz
 wait_jetstream_cluster
 
@@ -312,6 +368,26 @@ echo "Applying ClickHouse migrations and building binaries"
   env CLICKHOUSE_DSN=clickhouse://helpin:helpin@127.0.0.1:19000/usermaven \
     go run ./cmd/clickhouse-migrate up
 )
+if [[ "$clickhouse_storage" == "r2" ]]; then
+  clickhouse_query "ALTER TABLE events MODIFY SETTING storage_policy = 'r2', min_bytes_for_wide_part = 1073741824, min_rows_for_wide_part = 10000000"
+  clickhouse_query "ALTER TABLE session_seed_events MODIFY SETTING storage_policy = 'r2', min_bytes_for_wide_part = 1073741824, min_rows_for_wide_part = 10000000"
+  clickhouse_query "
+SELECT database, name, engine, storage_policy
+FROM system.tables
+WHERE database = 'usermaven'
+ORDER BY name
+" >"$run_dir/clickhouse-storage-policy.tsv"
+  events_policy=$(clickhouse_query "SELECT storage_policy FROM system.tables WHERE database = 'usermaven' AND name = 'events'")
+  seed_policy=$(clickhouse_query "SELECT storage_policy FROM system.tables WHERE database = 'usermaven' AND name = 'session_seed_events'")
+  if [[ "$events_policy" != "r2" || "$seed_policy" != "r2" ]]; then
+    echo "ClickHouse migrations did not create the event tables on the R2 storage policy" >&2
+    cat "$run_dir/clickhouse-storage-policy.tsv" >&2
+    exit 1
+  fi
+  clickhouse_query "SELECT name, type, path FROM system.disks WHERE name IN ('r2', 'r2_cache') ORDER BY name" \
+    >"$run_dir/clickhouse-disks.tsv"
+  clickhouse_query "SHOW CREATE TABLE events" >"$run_dir/clickhouse-events-create.sql"
+fi
 (
   cd "$capture_dir"
   cargo build --release --bins --jobs "${CARGO_BUILD_JOBS:-2}"
@@ -698,6 +774,23 @@ printf '%s\n' "$wrong_session_visitors" >"$run_dir/visitors-with-wrong-session-c
 
 clickhouse_query "$(<"$repo_root/events-pipeline/scripts/clickhouse-parts-health.sql")" \
   >"$run_dir/clickhouse-parts-health.tsv"
+
+if [[ "$clickhouse_storage" == "r2" ]]; then
+  clickhouse_query "
+SELECT table, disk_name, count() AS active_parts, sum(rows) AS rows, sum(bytes_on_disk) AS bytes_on_disk
+FROM system.parts
+WHERE active AND database = 'usermaven'
+GROUP BY table, disk_name
+ORDER BY table, disk_name
+" >"$run_dir/clickhouse-r2-parts.tsv"
+  clickhouse_query "
+SELECT event, value
+FROM system.events
+WHERE positionCaseInsensitive(event, 'S3') > 0
+   OR positionCaseInsensitive(event, 'ObjectStorage') > 0
+ORDER BY event
+" >"$run_dir/clickhouse-r2-events.tsv"
+fi
 
 RUN_DIR="$run_dir" DRAIN_SECONDS="$drain_seconds" python3 - <<'PY'
 import csv

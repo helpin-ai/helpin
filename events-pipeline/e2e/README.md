@@ -114,6 +114,47 @@ and raw archive enabled. It achieved exact 180,010-event parity, a one-second
 drain, and p99 8.58 ms. The capacity baseline records its complete resource and
 disk results.
 
+## Cloudflare R2-backed ClickHouse test
+
+ClickHouse authenticates to R2 through its S3-compatible API. Create an R2
+**Object Read & Write** token scoped only to the `helpin-clickhouse` bucket and
+use the generated **Access Key ID** and **Secret Access Key**. A general
+Cloudflare API bearer token is not accepted by the ClickHouse S3 disk.
+
+Keep credentials in the ignored local file:
+
+```bash
+cp events-pipeline/e2e/.env.r2.example events-pipeline/e2e/.env.r2
+chmod 600 events-pipeline/e2e/.env.r2
+```
+
+Populate `CLICKHOUSE_R2_ACCESS_KEY_ID` and
+`CLICKHOUSE_R2_SECRET_ACCESS_KEY`; leave the checked-in EU endpoint unchanged.
+Then add `SUSTAINED_CLICKHOUSE_STORAGE=r2` to a sustained command. The harness
+adds a unique `helpin-sustained/<run-id>/` object prefix, loads an
+environment-backed ClickHouse storage configuration, and verifies that
+`usermaven.events` and `usermaven.session_seed_events` use the `r2` policy.
+The R2 profile gives ClickHouse 4 CPUs and 6 GiB, enables a 4 GiB local
+write-through cache, and forces compact parts for these two tables to avoid one
+remote object per column during inserts and immediate merges. Override these
+diagnostic defaults with `CLICKHOUSE_R2_CPUS`, `CLICKHOUSE_R2_MEMORY_LIMIT`, or
+`SUSTAINED_CLICKHOUSE_R2_CACHE_MAX_SIZE` when comparing another resource shape.
+
+The unique R2 prefix is recorded in `r2-prefix.txt`. By default the cleanup trap
+drops the test database synchronously before stopping ClickHouse. If cleanup
+cannot reach ClickHouse, delete that recorded prefix manually. Set
+`SUSTAINED_CLICKHOUSE_R2_KEEP_DATA=true` only when the objects must remain for
+inspection.
+
+The 15,000-event/s direct-R2 qualification uses three writer replicas. A
+manually shortened 3m46s slice accepted and stored 3,388,020 events with exact
+row and event-ID parity, no dropped iterations or redeliveries, and no consumer
+pending backlog. HTTP latency was p50 2.84 ms, p95 79.22 ms, and p99 188.16 ms.
+Two writers were slightly below this diagnostic rate, but remain ample for the
+initial 300-event/s production allocation. The writer path therefore batches
+up to 16,384 rows or 48 MiB and waits at most two seconds; three replicas are a
+capacity-test setting, not the launch default.
+
 ## Split target and remote generator
 
 Use this layout for an open-loop capacity test. It keeps k6 CPU, sockets, and

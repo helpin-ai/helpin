@@ -34,9 +34,9 @@ use crate::writer_store::{
 
 const WORK_STREAM_NAME: &str = "EVENTS_ENRICHED_V1";
 const WRITER_DLQ_SUBJECT: &str = "events.dlq.v1.writer";
-const INSERT_MAX_ROWS: usize = 8_192;
-const INSERT_MAX_BYTES: usize = 16 * 1024 * 1024;
-const INSERT_MAX_WAIT: Duration = Duration::from_secs(1);
+const INSERT_MAX_ROWS: usize = 16_384;
+const INSERT_MAX_BYTES: usize = 48 * 1024 * 1024;
+const INSERT_MAX_WAIT: Duration = Duration::from_secs(2);
 const NATS_PUBLISH_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_INITIAL_DELAY: Duration = Duration::from_millis(250);
 const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
@@ -941,18 +941,18 @@ mod tests {
     }
 
     #[test]
-    fn insert_round_fills_capacity_or_flushes_after_one_second() {
+    fn insert_round_fills_capacity_or_flushes_after_two_seconds() {
         assert_eq!(next_pull_max_messages(0), WRITER_PULL_MAX_MESSAGES);
-        assert_eq!(next_pull_max_messages(999), 7_193);
+        assert_eq!(next_pull_max_messages(999), 15_385);
         assert!(!should_flush_insert_round(
             999,
             1_000,
-            Duration::from_millis(999)
+            Duration::from_millis(1_999)
         ));
         assert!(should_flush_insert_round(
             999,
             1_000,
-            Duration::from_secs(1)
+            Duration::from_secs(2)
         ));
         assert!(should_flush_insert_round(
             INSERT_MAX_ROWS,

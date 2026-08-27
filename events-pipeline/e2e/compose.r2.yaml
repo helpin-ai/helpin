@@ -1,0 +1,11 @@
+services:
+  clickhouse:
+    cpus: ${CLICKHOUSE_R2_CPUS:-4}
+    mem_limit: ${CLICKHOUSE_R2_MEMORY_LIMIT:-6g}
+    environment:
+      CLICKHOUSE_R2_ACCESS_KEY_ID: ${CLICKHOUSE_R2_ACCESS_KEY_ID:?set CLICKHOUSE_R2_ACCESS_KEY_ID}
+      CLICKHOUSE_R2_SECRET_ACCESS_KEY: ${CLICKHOUSE_R2_SECRET_ACCESS_KEY:?set CLICKHOUSE_R2_SECRET_ACCESS_KEY}
+      CLICKHOUSE_R2_ENDPOINT: ${CLICKHOUSE_R2_ENDPOINT:?set CLICKHOUSE_R2_ENDPOINT}
+      CLICKHOUSE_R2_CACHE_MAX_SIZE: ${CLICKHOUSE_R2_CACHE_MAX_SIZE:-4Gi}
+    volumes:
+      - ./clickhouse-r2-storage.xml:/etc/clickhouse-server/config.d/r2-storage.xml:ro
