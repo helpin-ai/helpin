@@ -11,6 +11,32 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+// ValidateSignalEntityScope prevents external evidence from creating cross-workspace references.
+func (r *CRMSignalRepository) ValidateSignalEntityScope(ctx context.Context, workspaceID string, contactID, dealID, companyID *string) error {
+	checks := []struct {
+		name  string
+		id    *string
+		model interface{}
+	}{
+		{name: "contact", id: contactID, model: &model.CRMContact{}},
+		{name: "deal", id: dealID, model: &model.CRMDeal{}},
+		{name: "company", id: companyID, model: &model.CRMCompany{}},
+	}
+	for _, check := range checks {
+		if check.id == nil || *check.id == "" {
+			continue
+		}
+		var count int64
+		if err := r.db.WithContext(ctx).Model(check.model).Where("workspace_id = ? AND id = ?", workspaceID, *check.id).Count(&count).Error; err != nil {
+			return fmt.Errorf("validate external evidence %s: %w", check.name, err)
+		}
+		if count == 0 {
+			return fmt.Errorf("%s not found in this workspace", check.name)
+		}
+	}
+	return nil
+}
+
 func (r *CRMSignalRepository) GetSignalRuleConfigVersion(ctx context.Context, workspaceID, ruleKey string, version int) (*model.CRMSignalRuleConfig, error) {
 	var config model.CRMSignalRuleConfig
 	err := r.db.WithContext(ctx).

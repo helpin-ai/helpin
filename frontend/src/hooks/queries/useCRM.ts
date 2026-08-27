@@ -917,6 +917,20 @@ export function useDismissBuyerSignal(wsId: string, contactId?: string, dealId?:
   })
 }
 
+export function useBuyerSignalFeedback(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ signalId, action }: { signalId: string; action: 'reviewed' | 'acted' }) =>
+      unwrap(await (action === 'acted' ? crmSignalService.acted(wsId, signalId) : crmSignalService.review(wsId, signalId))),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+      if (contactId) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, contactId) })
+      if (dealId) qc.invalidateQueries({ queryKey: queryKeys.crm.dealSignals(wsId, dealId) })
+      if (companyId) qc.invalidateQueries({ queryKey: queryKeys.crm.companySignals(wsId, companyId) })
+    },
+  })
+}
+
 export function useContactSummary(wsId: string, contactId: string) {
   return useQuery({
     queryKey: queryKeys.crm.contactSummary(wsId, contactId),

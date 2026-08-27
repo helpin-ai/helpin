@@ -148,8 +148,11 @@ func validCRMSignalSourceType(sourceType string) bool {
 }
 
 // DeleteSignal removes a buyer signal.
-func (s *CRMSignalService) DeleteSignal(ctx context.Context, id string) error {
-	return s.signalRepo.DeleteSignal(ctx, id)
+func (s *CRMSignalService) DeleteSignal(ctx context.Context, workspaceID, id string) error {
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(id) == "" {
+		return fmt.Errorf("workspace_id and signal_id are required")
+	}
+	return s.signalRepo.DeleteSignal(ctx, workspaceID, id)
 }
 
 // DismissSignal hides a signal until the detector observes materially changed evidence.

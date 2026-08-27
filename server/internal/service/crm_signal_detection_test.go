@@ -204,12 +204,12 @@ func TestSignalDetectionService_BatchBindsSignalToDeclaredSource(t *testing.T) {
 	db := setupCRMSignalDetectionTestDB(t)
 	repo := repository.NewCRMSignalRepository(db)
 	svc := NewSignalDetectionService(&fakeLLMProvider{content: `[
-		{"source_type":"email","source_id":"message-2","signal_type":"timeline_signal","summary":"The buyer needs a decision this month.","confidence":0.94,"raw_evidence":"We need to decide this month."}
+		{"source_type":"email","source_id":"message-2","signal_type":"timeline_signal","summary":"The buyer needs a decision by September 15.","confidence":0.94,"raw_evidence":"We need to decide by September 15, 2026.","timeline_date":"2026-09-15"}
 	]`}, repo, &fakeSummaryRequester{})
 	contact1, contact2 := "contact-1", "contact-2"
 	payloads := []model.SignalSourcePayload{
 		{WorkspaceID: "ws-1", SourceType: model.CRMSignalSourceEmail, SourceID: "message-1", ContactID: &contact1, Body: "Please send the overview."},
-		{WorkspaceID: "ws-1", SourceType: model.CRMSignalSourceEmail, SourceID: "message-2", ContactID: &contact2, Body: "We need to decide this month."},
+		{WorkspaceID: "ws-1", SourceType: model.CRMSignalSourceEmail, SourceID: "message-2", ContactID: &contact2, Body: "We need to decide by September 15, 2026."},
 	}
 	signals, err := svc.DetectSignals(context.Background(), payloads)
 	if err != nil {
@@ -220,5 +220,8 @@ func TestSignalDetectionService_BatchBindsSignalToDeclaredSource(t *testing.T) {
 	}
 	if signals[0].ContactID == nil || *signals[0].ContactID != contact2 {
 		t.Fatalf("contact_id = %v, want %s", signals[0].ContactID, contact2)
+	}
+	if got := signals[0].Metadata["timeline_date"]; got != "2026-09-15" {
+		t.Fatalf("metadata.timeline_date = %v, want 2026-09-15", got)
 	}
 }

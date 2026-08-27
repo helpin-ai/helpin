@@ -75,6 +75,20 @@ func TestCRMSignalRepositoryDismissalPersistsUntilEvidenceChanges(t *testing.T) 
 	if err != nil || total != 1 || len(rows) != 1 || rows[0].DismissedAt != nil {
 		t.Fatalf("refreshed list = %#v, total=%d, err=%v; want visible", rows, total, err)
 	}
+	otherSignal := &model.CRMBuyerSignal{
+		ID: "signal-other-workspace", WorkspaceID: "ws-2", SignalType: model.CRMSignalRiskSignal,
+		SourceType: model.CRMSignalSourceManual, Summary: "Other tenant", Confidence: .8, DetectedAt: time.Now().UTC(),
+	}
+	if err := repo.CreateSignal(ctx, otherSignal); err != nil {
+		t.Fatalf("create other workspace signal: %v", err)
+	}
+	if err := repo.DeleteSignal(ctx, "ws-1", otherSignal.ID); err == nil {
+		t.Fatal("expected cross-workspace delete to fail")
+	}
+	var remaining int64
+	if err := db.Model(&model.CRMBuyerSignal{}).Where("id = ?", otherSignal.ID).Count(&remaining).Error; err != nil || remaining != 1 {
+		t.Fatalf("other workspace signal remaining=%d err=%v", remaining, err)
+	}
 }
 
 func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testing.T) {
@@ -108,9 +122,9 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 	}
 	contactID, dealID, companyID := "contact-1", "deal-1", "company-1"
 	signals := []model.CRMBuyerSignal{
-		{ID: "direct", WorkspaceID: "ws-1", CompanyID: &companyID, SignalType: model.CRMSignalRiskSignal, SourceType: model.CRMSignalSourceSupport, Summary: "Escalation", Confidence: .9, DetectedAt: now},
-		{ID: "contact", WorkspaceID: "ws-1", ContactID: &contactID, SignalType: model.CRMSignalBuyingIntent, SourceType: model.CRMSignalSourceEmail, Summary: "Pricing", Confidence: .9, DetectedAt: now.Add(-time.Minute)},
-		{ID: "deal", WorkspaceID: "ws-1", DealID: &dealID, SignalType: model.CRMSignalTimelineSignal, SourceType: model.CRMSignalSourceMeeting, Summary: "Deadline", Confidence: .9, DetectedAt: now.Add(-2 * time.Minute)},
+		{ID: "direct", WorkspaceID: "ws-1", CompanyID: &companyID, SignalType: model.CRMSignalRiskSignal, SourceType: model.CRMSignalSourceSupport, SignalDomain: model.CRMSignalDomainSupport, Summary: "Escalation", Confidence: .9, DetectedAt: now},
+		{ID: "contact", WorkspaceID: "ws-1", ContactID: &contactID, SignalType: model.CRMSignalBuyingIntent, SourceType: model.CRMSignalSourceEmail, SignalDomain: model.CRMSignalDomainConversation, Summary: "Pricing", Confidence: .9, DetectedAt: now.Add(-time.Minute)},
+		{ID: "deal", WorkspaceID: "ws-1", DealID: &dealID, SignalType: model.CRMSignalTimelineSignal, SourceType: model.CRMSignalSourceMeeting, SignalDomain: model.CRMSignalDomainConversation, Summary: "Deadline", Confidence: .9, DetectedAt: now.Add(-2 * time.Minute)},
 		{ID: "weak", WorkspaceID: "ws-1", ContactID: &contactID, SignalType: model.CRMSignalCompetitorMention, SourceType: model.CRMSignalSourceEmail, Summary: "Maybe", Confidence: .59, DetectedAt: now},
 	}
 	for i := range signals {
@@ -127,6 +141,23 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 	}
 	if rows[1].ContactName != "Ava Buyer" || rows[2].DealName != "Expansion" || rows[2].DealDisplayID != "DEAL-7" {
 		t.Fatalf("context not hydrated: %#v", rows)
+	}
+	supportDomain := model.CRMSignalDomainSupport
+	filtered, err := NewCRMSignalRepository(db).ListWorkspaceSignalCandidates(context.Background(), "ws-1", model.CRMBuyerSignalListFilters{
+		Query: &model.QueryFilterGroup{Logic: model.QueryFilterLogicAnd, Rules: []model.QueryFilterRule{{
+			Field: "domain", Operator: model.QueryFilterOpIs, Value: &supportDomain,
+		}}},
+	}, now, 0)
+	if err != nil || len(filtered) != 1 || filtered[0].ID != "direct" {
+		t.Fatalf("query-builder filtered signals=%#v err=%v", filtered, err)
+	}
+	_, err = NewCRMSignalRepository(db).ListWorkspaceSignalCandidates(context.Background(), "ws-1", model.CRMBuyerSignalListFilters{
+		Query: &model.QueryFilterGroup{Rules: []model.QueryFilterRule{{
+			Field: "domain", Operator: model.QueryFilterOpContains, Value: &supportDomain,
+		}}},
+	}, now, 0)
+	if err == nil {
+		t.Fatal("expected invalid enum query-builder operator to fail")
 	}
 }
 

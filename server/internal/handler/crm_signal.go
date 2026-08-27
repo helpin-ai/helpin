@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -127,8 +129,18 @@ func (h *CRMSignalHandler) ActivateRuleVersion(w http.ResponseWriter, r *http.Re
 }
 
 func (h *CRMSignalHandler) SignalBrief(w http.ResponseWriter, r *http.Request) {
-	brief, err := h.signalService.GetSignalBrief(r.Context(), getWorkspaceID(r), signalListFiltersFromRequest(r))
+	filters, err := signalListFiltersFromRequest(r)
 	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid filters query")
+		return
+	}
+	brief, err := h.signalService.GetSignalBrief(r.Context(), getWorkspaceID(r), filters)
+	if err != nil {
+		var validationErr *querybuilder.ValidationError
+		if errors.As(err, &validationErr) {
+			writeError(w, http.StatusBadRequest, validationErr.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -151,11 +163,20 @@ func (h *CRMSignalHandler) ListSignals(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
-	filters := signalListFiltersFromRequest(r)
+	filters, err := signalListFiltersFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid filters query")
+		return
+	}
 	pagination := queryPagination(r)
 
 	signals, total, err := h.signalService.ListSignals(r.Context(), workspaceID, filters, pagination)
 	if err != nil {
+		var validationErr *querybuilder.ValidationError
+		if errors.As(err, &validationErr) {
+			writeError(w, http.StatusBadRequest, validationErr.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -176,15 +197,29 @@ func (h *CRMSignalHandler) ListWorkspaceFeed(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
-	feed, err := h.signalService.ListWorkspaceSignalFeed(r.Context(), workspaceID, signalListFiltersFromRequest(r), queryPagination(r))
+	filters, err := signalListFiltersFromRequest(r)
 	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid filters query")
+		return
+	}
+	feed, err := h.signalService.ListWorkspaceSignalFeed(r.Context(), workspaceID, filters, queryPagination(r))
+	if err != nil {
+		var validationErr *querybuilder.ValidationError
+		if errors.As(err, &validationErr) {
+			writeError(w, http.StatusBadRequest, validationErr.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, feed)
 }
 
-func signalListFiltersFromRequest(r *http.Request) model.CRMBuyerSignalListFilters {
+func signalListFiltersFromRequest(r *http.Request) (model.CRMBuyerSignalListFilters, error) {
+	queryFilters, err := queryFilterGroup(r, "filters")
+	if err != nil {
+		return model.CRMBuyerSignalListFilters{}, err
+	}
 	filters := model.CRMBuyerSignalListFilters{
 		ContactID: queryStringPtr(r, "contact_id"), DealID: queryStringPtr(r, "deal_id"),
 		CompanyID: queryStringPtr(r, "account_id"), SignalType: queryStringPtr(r, "signal_type"),
@@ -192,6 +227,7 @@ func signalListFiltersFromRequest(r *http.Request) model.CRMBuyerSignalListFilte
 		SignalDomain: queryStringPtr(r, "domain"), Polarity: queryStringPtr(r, "polarity"),
 		EvidenceIdentityTrust: queryStringPtr(r, "trust"), Status: queryStringPtr(r, "status"),
 		Severity: queryStringPtr(r, "severity"),
+		Query:    queryFilters,
 	}
 	if filters.CompanyID == nil {
 		filters.CompanyID = queryStringPtr(r, "company_id")
@@ -201,7 +237,7 @@ func signalListFiltersFromRequest(r *http.Request) model.CRMBuyerSignalListFilte
 			filters.MaxAgeDays = &days
 		}
 	}
-	return filters
+	return filters, nil
 }
 
 // CreateSignal handles POST /api/crm/signals.
@@ -250,7 +286,7 @@ func (h *CRMSignalHandler) IngestExternalEvidence(w http.ResponseWriter, r *http
 // DeleteSignal handles DELETE /api/crm/signals/{id}.
 func (h *CRMSignalHandler) DeleteSignal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.signalService.DeleteSignal(r.Context(), id); err != nil {
+	if err := h.signalService.DeleteSignal(r.Context(), getWorkspaceID(r), id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

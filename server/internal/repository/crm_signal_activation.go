@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -69,24 +70,38 @@ func (r *CRMSignalRepository) RecordSignalFeedback(ctx context.Context, signal *
 func (r *CRMSignalRepository) ListSignalPrecision(ctx context.Context, workspaceID string) ([]model.CRMSignalPrecisionRow, error) {
 	var rows []model.CRMSignalPrecisionRow
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT workspace_id,
-		       COALESCE(rule_key, 'llm_extracted') AS rule_key,
-		       COALESCE(rule_version, 0) AS rule_version,
-		       signal_domain,
-		       identity_method,
+		WITH ranked AS (
+			SELECT feedback.*,
+			       ROW_NUMBER() OVER (PARTITION BY signal_id ORDER BY occurred_at DESC, created_at DESC, id DESC) AS feedback_rank
+			FROM crm_signal_feedback feedback
+			WHERE workspace_id = ?
+		), latest AS (
+			SELECT * FROM ranked WHERE feedback_rank = 1
+		), first_reviews AS (
+			SELECT signal_id, MIN(detection_to_event_millis) AS review_millis
+			FROM crm_signal_feedback
+			WHERE workspace_id = ?
+			GROUP BY signal_id
+		)
+		SELECT latest.workspace_id,
+		       COALESCE(latest.rule_key, 'llm_extracted') AS rule_key,
+		       COALESCE(latest.rule_version, 0) AS rule_version,
+		       latest.signal_domain,
+		       latest.identity_method,
 		       COUNT(*) AS reviewed_count,
-		       SUM(CASE WHEN action = 'acted' OR dismissal_reason IN ('handled', 'bad_timing', 'irrelevant') THEN 1 ELSE 0 END) AS valid_count,
-		       SUM(CASE WHEN dismissal_reason IN ('incorrect_evidence', 'wrong_entity', 'duplicate') THEN 1 ELSE 0 END) AS incorrect_count,
-		       SUM(CASE WHEN action = 'acted' THEN 1 ELSE 0 END) AS acted_count,
-		       CASE WHEN COUNT(*) = 0 THEN 0 ELSE
-		         1.0 * SUM(CASE WHEN action = 'acted' OR dismissal_reason IN ('handled', 'bad_timing', 'irrelevant') THEN 1 ELSE 0 END) / COUNT(*)
+		       SUM(CASE WHEN latest.action = 'acted' OR latest.dismissal_reason IN ('handled', 'bad_timing', 'irrelevant') THEN 1 ELSE 0 END) AS valid_count,
+		       SUM(CASE WHEN latest.dismissal_reason IN ('incorrect_evidence', 'wrong_entity', 'duplicate') THEN 1 ELSE 0 END) AS incorrect_count,
+		       SUM(CASE WHEN latest.action = 'acted' THEN 1 ELSE 0 END) AS acted_count,
+		       CASE WHEN SUM(CASE WHEN latest.action IN ('acted', 'dismissed') THEN 1 ELSE 0 END) = 0 THEN 0 ELSE
+		         1.0 * SUM(CASE WHEN latest.action = 'acted' OR latest.dismissal_reason IN ('handled', 'bad_timing', 'irrelevant') THEN 1 ELSE 0 END)
+		         / SUM(CASE WHEN latest.action IN ('acted', 'dismissed') THEN 1 ELSE 0 END)
 		       END AS precision,
-		       CAST(AVG(CASE WHEN action IN ('reviewed', 'dismissed') THEN detection_to_event_millis END) AS BIGINT) AS average_review_millis,
-		       CAST(AVG(CASE WHEN action = 'acted' THEN detection_to_event_millis END) AS BIGINT) AS average_action_millis
-		FROM crm_signal_feedback
-		WHERE workspace_id = ?
-		GROUP BY workspace_id, COALESCE(rule_key, 'llm_extracted'), COALESCE(rule_version, 0), signal_domain, identity_method
-		ORDER BY reviewed_count DESC, rule_key, rule_version`, workspaceID).Scan(&rows).Error
+		       CAST(AVG(first_reviews.review_millis) AS BIGINT) AS average_review_millis,
+		       CAST(AVG(CASE WHEN latest.action = 'acted' THEN latest.detection_to_event_millis END) AS BIGINT) AS average_action_millis
+		FROM latest
+		JOIN first_reviews ON first_reviews.signal_id = latest.signal_id
+		GROUP BY latest.workspace_id, COALESCE(latest.rule_key, 'llm_extracted'), COALESCE(latest.rule_version, 0), latest.signal_domain, latest.identity_method
+		ORDER BY reviewed_count DESC, rule_key, rule_version`, workspaceID, workspaceID).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("report signal precision: %w", err)
 	}
@@ -141,21 +156,41 @@ func (r *CRMSignalRepository) ActivateRoutingPolicyVersion(ctx context.Context, 
 
 func (r *CRMSignalRepository) ActivateRuleVersion(ctx context.Context, workspaceID, ruleKey string, version int) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		scope := tx.Model(&model.CRMSignalRuleConfig{}).Where("rule_key = ? AND (workspace_id = ? OR (? = '' AND workspace_id IS NULL))", ruleKey, workspaceID, workspaceID)
-		var count int64
-		if err := scope.Where("version = ?", version).Count(&count).Error; err != nil {
-			return err
-		}
-		if count == 0 {
+		var source model.CRMSignalRuleConfig
+		err := tx.Where("rule_key = ? AND version = ? AND (workspace_id = ? OR workspace_id IS NULL)", ruleKey, version, workspaceID).
+			Order("CASE WHEN workspace_id IS NULL THEN 1 ELSE 0 END").First(&source).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("rule version not found")
 		}
-		if err := scope.Update("enabled", false).Error; err != nil {
+		if err != nil {
 			return err
 		}
-		result := tx.Model(&model.CRMSignalRuleConfig{}).
-			Where("rule_key = ? AND version = ? AND (workspace_id = ? OR (? = '' AND workspace_id IS NULL))", ruleKey, version, workspaceID, workspaceID).
-			Update("enabled", true)
-		return result.Error
+		if !source.ActivationEligible {
+			return fmt.Errorf("rule version is context-only and cannot be activated")
+		}
+		if err := tx.Model(&model.CRMSignalRuleConfig{}).
+			Where("workspace_id = ? AND rule_key = ?", workspaceID, ruleKey).
+			Update("enabled", false).Error; err != nil {
+			return err
+		}
+		if source.WorkspaceID != nil {
+			return tx.Model(&model.CRMSignalRuleConfig{}).Where("id = ?", source.ID).
+				Updates(map[string]interface{}{"enabled": true, "shadow_mode": false}).Error
+		}
+		workspaceConfig := source
+		workspaceConfig.ID = uuid.NewString()
+		workspaceConfig.WorkspaceID = &workspaceID
+		workspaceConfig.Enabled = true
+		workspaceConfig.ShadowMode = false
+		workspaceConfig.CreatedAt = time.Time{}
+		workspaceConfig.UpdatedAt = time.Time{}
+		if err := tx.Create(&workspaceConfig).Error; err != nil {
+			return err
+		}
+		// GORM's default:true tag replaces a false zero value during Create, so
+		// explicitly persist the promotion out of shadow mode.
+		return tx.Model(&model.CRMSignalRuleConfig{}).Where("id = ?", workspaceConfig.ID).
+			Update("shadow_mode", false).Error
 	})
 }
 

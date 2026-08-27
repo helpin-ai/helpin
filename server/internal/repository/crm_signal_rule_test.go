@@ -29,6 +29,7 @@ func setupSignalRuleRepositoryTest(t *testing.T) (*gorm.DB, *CRMSignalRepository
 		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, stage_id TEXT, updated_at DATETIME)`,
 		`CREATE TABLE crm_associations (id TEXT PRIMARY KEY, workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
 		`CREATE TABLE support_conversations (id TEXT PRIMARY KEY, workspace_id TEXT, crm_company_id TEXT, crm_contact_id TEXT, subject TEXT, ai_escalated_at DATETIME)`,
+		`CREATE TABLE pm_tasks (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, task_type TEXT, completed BOOLEAN, completed_at DATETIME)`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {
@@ -36,6 +37,30 @@ func setupSignalRuleRepositoryTest(t *testing.T) (*gorm.DB, *CRMSignalRepository
 		}
 	}
 	return db, NewCRMSignalRepository(db)
+}
+
+func TestRequestedFeatureShippedRuleOnlyUsesFeatureTasks(t *testing.T) {
+	db, repo := setupSignalRuleRepositoryTest(t)
+	start := time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)
+	end := start.Add(48 * time.Hour)
+	for _, statement := range []string{
+		`INSERT INTO pm_tasks VALUES ('chore-1', 'workspace-1', 'Clean up records', 'chore', true, '2026-08-22 12:00:00')`,
+		`INSERT INTO pm_tasks VALUES ('feature-1', 'workspace-1', 'Requested dashboard', 'feature', true, '2026-08-22 13:00:00')`,
+		`INSERT INTO crm_associations VALUES ('assoc-chore', 'workspace-1', 'task', 'chore-1', 'company', 'company-1')`,
+		`INSERT INTO crm_associations VALUES ('assoc-feature', 'workspace-1', 'task', 'feature-1', 'company', 'company-1')`,
+		`INSERT INTO crm_associations VALUES ('assoc-request', 'workspace-1', 'support_conversation', 'conversation-1', 'task', 'feature-1')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("seed feature rule evidence: %v", err)
+		}
+	}
+	candidates, err := repo.EvaluatePostgresSignalRule(context.Background(), model.CRMSignalRuleConfig{RuleKey: model.CRMSignalRuleRequestedFeatureShipped}, start, end)
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("candidates=%#v err=%v", candidates, err)
+	}
+	if candidates[0].SourceID == nil || *candidates[0].SourceID != "feature-1" {
+		t.Fatalf("candidate source = %#v, want feature-1", candidates[0].SourceID)
+	}
 }
 
 func TestAdditionalCaptureRuleDimensions(t *testing.T) {

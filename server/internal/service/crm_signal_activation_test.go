@@ -19,6 +19,7 @@ func newSignalActivationTestService(t *testing.T) (*gorm.DB, *CRMSignalService) 
 		t.Fatalf("open sqlite: %v", err)
 	}
 	statements := []string{
+		`CREATE TABLE crm_signal_rule_configs (id TEXT PRIMARY KEY, workspace_id TEXT, rule_key TEXT, version INTEGER, cadence TEXT, enabled BOOLEAN, shadow_mode BOOLEAN, activation_eligible BOOLEAN, thresholds BLOB, business_weight REAL, half_life_days REAL, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT NOT NULL, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT NOT NULL, source_type TEXT NOT NULL, source_id TEXT, source_thread_id TEXT, summary TEXT NOT NULL, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE crm_signal_feedback (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, signal_id TEXT, member_id TEXT, action TEXT, dismissal_reason TEXT, rule_key TEXT, rule_version INTEGER, signal_domain TEXT, identity_method TEXT, detected_at DATETIME, occurred_at DATETIME, detection_to_event_millis INTEGER, created_at DATETIME)`,
 		`CREATE TABLE crm_signal_routing_policies (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))), workspace_id TEXT, version INTEGER, enabled BOOLEAN, minimum_priority REAL, required_trust TEXT, route_to_owner BOOLEAN, destination_team_id TEXT, channels BLOB, created_by_member_id TEXT, created_at DATETIME)`,
@@ -31,6 +32,69 @@ func newSignalActivationTestService(t *testing.T) (*gorm.DB, *CRMSignalService) 
 	}
 	repo := repository.NewCRMSignalRepository(db)
 	return db, NewCRMSignalService(repo, nil)
+}
+
+func TestSignalPrecisionCountsLatestOutcomeOnce(t *testing.T) {
+	db, svc := newSignalActivationTestService(t)
+	signal := model.CRMBuyerSignal{
+		ID: "signal-1", WorkspaceID: "ws-1", SignalType: model.CRMSignalBuyingIntent,
+		SourceType: model.CRMSignalSourceEmail, Summary: "Asked for pricing", Confidence: .9,
+		DetectedAt: time.Now().UTC().Add(-time.Hour), DetectorKind: model.CRMSignalDetectorRuleDerived,
+		SignalDomain: model.CRMSignalDomainConversation, EvidenceIdentityMethod: "connected_mailbox",
+	}
+	if err := db.Create(&signal).Error; err != nil {
+		t.Fatalf("create signal: %v", err)
+	}
+	if err := svc.RecordSignalFeedback(context.Background(), "ws-1", signal.ID, "member-1", model.CRMSignalFeedbackReviewed, ""); err != nil {
+		t.Fatalf("review signal: %v", err)
+	}
+	if err := svc.RecordSignalFeedback(context.Background(), "ws-1", signal.ID, "member-1", model.CRMSignalFeedbackActed, ""); err != nil {
+		t.Fatalf("act on signal: %v", err)
+	}
+	report, err := svc.SignalPrecisionReport(context.Background(), "ws-1")
+	if err != nil || len(report) != 1 {
+		t.Fatalf("precision report = %+v, err=%v", report, err)
+	}
+	if report[0].ReviewedCount != 1 || report[0].ActedCount != 1 || report[0].Precision != 1 {
+		t.Fatalf("precision dimensions = %+v", report[0])
+	}
+}
+
+func TestActivateRuleVersionPromotesGlobalRuleForWorkspace(t *testing.T) {
+	db, svc := newSignalActivationTestService(t)
+	global := model.CRMSignalRuleConfig{
+		ID: "global-v2", RuleKey: model.CRMSignalRuleRepeatedPricingActivity, Version: 2,
+		Cadence: model.CRMSignalRuleCadenceDaily, Enabled: true, ShadowMode: true,
+		ActivationEligible: true, Thresholds: model.JSONB{"minimum_count": 2}, BusinessWeight: 15, HalfLifeDays: 30,
+	}
+	if err := db.Create(&global).Error; err != nil {
+		t.Fatalf("seed global rule: %v", err)
+	}
+	if err := svc.ActivateRuleVersion(context.Background(), "ws-1", global.RuleKey, global.Version); err != nil {
+		t.Fatalf("activate rule: %v", err)
+	}
+	var workspaceConfig model.CRMSignalRuleConfig
+	if err := db.Where("workspace_id = ? AND rule_key = ? AND version = ?", "ws-1", global.RuleKey, global.Version).First(&workspaceConfig).Error; err != nil {
+		t.Fatalf("load workspace config: %v", err)
+	}
+	if !workspaceConfig.Enabled || workspaceConfig.ShadowMode || !workspaceConfig.ActivationEligible || workspaceConfig.ID == global.ID {
+		t.Fatalf("workspace config = %+v", workspaceConfig)
+	}
+}
+
+func TestActivateRuleVersionRejectsContextOnlyRule(t *testing.T) {
+	db, svc := newSignalActivationTestService(t)
+	global := model.CRMSignalRuleConfig{
+		ID: "global-context", RuleKey: model.CRMSignalRuleExternalEvidence, Version: 1,
+		Cadence: model.CRMSignalRuleCadenceDaily, Enabled: true, ShadowMode: true,
+		ActivationEligible: false, Thresholds: model.JSONB{}, BusinessWeight: 5, HalfLifeDays: 30,
+	}
+	if err := db.Create(&global).Error; err != nil {
+		t.Fatalf("seed context rule: %v", err)
+	}
+	if err := svc.ActivateRuleVersion(context.Background(), "ws-1", global.RuleKey, global.Version); err == nil {
+		t.Fatal("expected context-only rule activation to fail")
+	}
 }
 
 func TestSignalFeedbackRequiresReasonAndReportsPrecision(t *testing.T) {

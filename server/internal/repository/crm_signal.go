@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
 
 const minimumAutomatedSignalConfidence = 0.6
@@ -90,9 +91,20 @@ func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *
 
 // ListSignals returns buyer signals with optional filters.
 func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination) ([]model.CRMBuyerSignal, int64, error) {
-	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).Where("workspace_id = ?", workspaceID)
-	if !filters.IncludeDismissed {
-		query = query.Where("dismissed_at IS NULL")
+	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).Where("crm_buyer_signals.workspace_id = ?", workspaceID)
+	if filters.Query != nil {
+		var err error
+		query, err = querybuilder.ApplyGORM(query, filters.Query, crmSignalFilterDefinitions)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	if filters.Status != nil && *filters.Status == "dismissed" {
+		query = query.Where("crm_buyer_signals.dismissed_at IS NOT NULL")
+	} else if filters.Status != nil && *filters.Status == "all" {
+		// Include both active and dismissed signals.
+	} else if !filters.IncludeDismissed {
+		query = query.Where("crm_buyer_signals.dismissed_at IS NULL")
 	}
 	if !filters.IncludeLowConfidence {
 		query = query.Where(
@@ -117,6 +129,25 @@ func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID strin
 	}
 	if filters.SourceType != nil && *filters.SourceType != "" {
 		query = query.Where("source_type = ?", *filters.SourceType)
+	}
+	if filters.SignalDomain != nil && *filters.SignalDomain != "" {
+		query = query.Where("signal_domain = ?", *filters.SignalDomain)
+	}
+	if filters.Polarity != nil && *filters.Polarity != "" {
+		query = query.Where("polarity = ?", *filters.Polarity)
+	}
+	if filters.EvidenceIdentityTrust != nil && *filters.EvidenceIdentityTrust != "" {
+		query = query.Where("evidence_identity_trust = ?", *filters.EvidenceIdentityTrust)
+	}
+	if filters.MaxAgeDays != nil && *filters.MaxAgeDays > 0 {
+		query = query.Where("detected_at >= ?", time.Now().UTC().Add(-time.Duration(*filters.MaxAgeDays)*24*time.Hour))
+	}
+	if filters.OwnerMemberID != nil && strings.TrimSpace(*filters.OwnerMemberID) != "" {
+		ownerID := strings.TrimSpace(*filters.OwnerMemberID)
+		query = query.Where(`(
+			EXISTS (SELECT 1 FROM crm_deals d WHERE d.workspace_id = crm_buyer_signals.workspace_id AND d.id = crm_buyer_signals.deal_id AND d.owner_member_id = ?)
+			OR EXISTS (SELECT 1 FROM crm_companies c WHERE c.workspace_id = crm_buyer_signals.workspace_id AND c.id = crm_buyer_signals.company_id AND c.owner_member_id = ?)
+		)`, ownerID, ownerID)
 	}
 
 	var total int64
@@ -318,9 +349,13 @@ func (r *CRMSignalRepository) DismissSignal(ctx context.Context, workspaceID, id
 }
 
 // DeleteSignal removes a buyer signal.
-func (r *CRMSignalRepository) DeleteSignal(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.CRMBuyerSignal{}).Error; err != nil {
-		return fmt.Errorf("delete buyer signal: %w", err)
+func (r *CRMSignalRepository) DeleteSignal(ctx context.Context, workspaceID, id string) error {
+	result := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, id).Delete(&model.CRMBuyerSignal{})
+	if result.Error != nil {
+		return fmt.Errorf("delete buyer signal: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("buyer signal not found")
 	}
 	return nil
 }

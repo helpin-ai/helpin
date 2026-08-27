@@ -322,6 +322,8 @@ export const crmSignalService = {
   ingestExternalEvidence: (payload: IngestCRMSignalExternalEvidenceRequest) => api.post<CRMSignalExternalEvidence>(`/crm/signals/external-evidence${qs(payload.workspace_id)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/signals/${id}${qs(workspaceId)}`),
   dismiss: (workspaceId: string, id: string, reason: import('../crmTypes').CRMSignalDismissalReason) => api.post(`/crm/signals/${id}/dismiss${qs(workspaceId)}`, { reason }),
+  review: (workspaceId: string, id: string) => api.post(`/crm/signals/${id}/review${qs(workspaceId)}`, {}),
+  acted: (workspaceId: string, id: string) => api.post(`/crm/signals/${id}/acted${qs(workspaceId)}`, {}),
   listByContact: (workspaceId: string, contactId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listByDeal: (workspaceId: string, dealId: string, page?: number) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),

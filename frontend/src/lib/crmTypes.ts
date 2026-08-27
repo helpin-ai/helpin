@@ -817,6 +817,7 @@ export interface CRMSignalFeedFilters {
   status?: 'active' | 'dismissed' | 'all';
   max_age_days?: number;
   page?: number;
+  filters?: string;
 }
 
 export interface CreateCRMBuyerSignalRequest {

@@ -5,7 +5,7 @@ import {
   Alert01Icon, Award01Icon, ChartIncreaseIcon, Clock01Icon,
   Mail01Icon, MoreVerticalIcon, Shield01Icon, UserGroupIcon, ZapIcon,
 } from '@/lib/icons';
-import { useCompanySignals, useContactSignals, useDealSignals, useDismissBuyerSignal, useEmailAccounts, useWorkspaceMembers } from '@/hooks/queries';
+import { useBuyerSignalFeedback, useCompanySignals, useContactSignals, useDealSignals, useDismissBuyerSignal, useEmailAccounts, useWorkspaceMembers } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMBuyerSignal, CRMSignalDismissalReason, CRMSignalType } from '@/lib/crmTypes';
 import { cn } from '@/lib/utils';
@@ -97,6 +97,7 @@ export function BuyerSignals({ workspaceId, contactId, dealId, companyId, presen
   const dealQuery = useDealSignals(workspaceId, dealId ?? '');
   const companyQuery = useCompanySignals(workspaceId, companyId ?? '');
   const dismiss = useDismissBuyerSignal(workspaceId, contactId, dealId, companyId);
+  const feedback = useBuyerSignalFeedback(workspaceId, contactId, dealId, companyId);
   const query = contactId ? contactQuery : dealId ? dealQuery : companyQuery;
   const signals = (query.data?.data ?? []) as CRMBuyerSignal[];
   const overview = presentation === 'overview';
@@ -125,9 +126,15 @@ export function BuyerSignals({ workspaceId, contactId, dealId, companyId, presen
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="absolute right-3 top-3.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100" title="Dismiss signal" aria-label="Dismiss signal" disabled={dismiss.isPending}><MoreVerticalIcon className="h-4 w-4" /></button>
+                <button type="button" className="absolute right-3 top-3.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100" title="Signal actions" aria-label="Signal actions" disabled={dismiss.isPending || feedback.isPending}><MoreVerticalIcon className="h-4 w-4" /></button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => feedback.mutate({ signalId: signal.id, action: 'reviewed' }, { onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be marked reviewed') })}>
+                  Mark reviewed
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => feedback.mutate({ signalId: signal.id, action: 'acted' }, { onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be marked acted') })}>
+                  Mark acted on
+                </DropdownMenuItem>
                 {dismissalReasons.map((reason) => (
                   <DropdownMenuItem key={reason.value} onSelect={() => dismiss.mutate({ signalId: signal.id, reason: reason.value }, { onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be dismissed') })}>
                     {reason.label}

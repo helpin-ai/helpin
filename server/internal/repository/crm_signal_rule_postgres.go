@@ -227,7 +227,14 @@ func (r *CRMSignalRepository) featureShippedCandidates(ctx context.Context, star
 		FROM pm_tasks t JOIN crm_associations a ON a.workspace_id = t.workspace_id AND (
 			(a.from_object_type = 'task' AND a.from_object_id = t.id AND a.to_object_type = 'company')
 			OR (a.to_object_type = 'task' AND a.to_object_id = t.id AND a.from_object_type = 'company'))
-		WHERE t.completed = true AND t.completed_at >= ? AND t.completed_at < ?
+		WHERE t.completed = true AND t.task_type = 'feature'
+			AND EXISTS (
+				SELECT 1 FROM crm_associations request_source
+				WHERE request_source.workspace_id = t.workspace_id
+					AND ((request_source.from_object_type = 'task' AND request_source.from_object_id = t.id AND request_source.to_object_type = 'support_conversation')
+						OR (request_source.to_object_type = 'task' AND request_source.to_object_id = t.id AND request_source.from_object_type = 'support_conversation'))
+			)
+			AND t.completed_at >= ? AND t.completed_at < ?
 	`, start, end).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("evaluate shipped requested features: %w", err)

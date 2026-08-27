@@ -94,7 +94,7 @@ The daily evaluator derives signals from trusted Postgres relationships:
 | `urgent_issue_open_deal` | high-priority support issue on an active deal |
 | `support_ai_escalation` | support conversation escalated to a human |
 | `support_csat_deterioration` | recent CSAT decline versus account baseline |
-| `requested_feature_shipped` | linked PM request reached a shipped state |
+| `requested_feature_shipped` | support-requested, company-linked PM feature task completed |
 | `deal_stage_stalled` | time in stage exceeded the configured threshold |
 | `deal_gone_dark` | no inbound activity in the configured period |
 | `champion_quiet` | a known champion stopped responding |
@@ -138,7 +138,10 @@ server events.
 `POST /api/crm/signals/external-evidence` accepts normalized funding, hiring,
 job-change, technology, leadership, and third-party-intent evidence. The
 ingestion contract, provenance, and idempotency are implemented. Provider
-connectors are not; external evidence remains context-only by default.
+connectors are not; external evidence remains context-only by default. The
+admin-only endpoint requires a workspace-owned CRM target and normalizes
+provider identity to probabilistic trust instead of accepting caller-declared
+identity provenance.
 
 ## Evaluation and idempotency
 
@@ -178,6 +181,10 @@ All seeded deterministic rule versions start in `shadow_mode=true`. Shadow
 rules evaluate and store signals, but cannot route notifications or create
 tasks. This is the expected safe default.
 
+CRM admins promote an activation-eligible global rule version by creating its
+workspace policy copy. Promotion enables that version and clears shadow mode
+for the workspace; context-only rule versions cannot be promoted.
+
 A signal becomes activation-eligible only when:
 
 1. its exact rule version is enabled, activation-enabled, and no longer in
@@ -195,14 +202,17 @@ signals and remains approval-gated.
 
 Users can mark a signal reviewed, acted, or dismissed with one of the supported
 reasons. Precision reports retain rule version, trust, source, domain, and
-detection-to-feedback timing so promotion decisions can be evidence-based.
+detection-to-feedback timing so promotion decisions can be evidence-based. A
+signal contributes once using its latest feedback outcome, so review followed
+by action does not inflate the precision denominator.
 
 ## Product and API surfaces
 
 Signals appear in CRM Insights and on contact, company, and deal pages. The
-workspace feed supports owner, account, domain, polarity, severity, age, trust,
-and status filters. Account and meeting briefs group corroborating evidence and
-explain what changed.
+workspace feed uses the shared query builder for owner, account, domain,
+polarity, signal type, detection date, and identity trust, with additional
+computed severity, age, and status controls. Account and meeting briefs group
+corroborating evidence and explain what changed.
 
 Primary routes under `/api/crm`:
 
@@ -220,7 +230,9 @@ Primary routes under `/api/crm`:
 | POST | `/signals/{id}/acted` | record action |
 | POST | `/signals/external-evidence` | ingest normalized provider evidence |
 
-All routes are workspace-scoped and protected by CRM RBAC.
+All routes are workspace-scoped and protected by CRM RBAC. Routing policy,
+rule promotion, and external-evidence ingestion routes require CRM admin
+permission.
 
 ## Operations and migrations
 

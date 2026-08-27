@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { QueryBuilderPopover } from "@/components/ui/query-builder/QueryBuilderPopover";
 import {
   Select,
   SelectContent,
@@ -12,17 +13,16 @@ import { useCompanies, useSignalWorkspaceFeed } from "@/hooks/queries/useCRM";
 import { useWorkspaceMembers } from "@/hooks/queries";
 import {
   Activity01Icon,
-  FilterHorizontalIcon,
   Layers01Icon,
 } from "@/lib/icons";
 import type {
   CRMSignalAccountStory,
-  CRMSignalDomain,
   CRMSignalFeedFilters,
-  CRMSignalPolarity,
   CRMSignalSeverity,
 } from "@/lib/crmTypes";
 import { cn, timeAgo } from "@/lib/utils";
+import { buildCRMSignalQueryFields } from "@/lib/crmSignalQueryBuilder";
+import { serializeQueryFilterGroup, type QueryFilterGroup } from "@/lib/queryBuilder";
 
 const domainLabels: Record<string, string> = {
   conversation: "Conversation",
@@ -199,7 +199,11 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
     status: "active",
     max_age_days: 90,
   });
-  const feed = useSignalWorkspaceFeed(workspaceId, filters);
+  const [queryFilters, setQueryFilters] = useState<QueryFilterGroup>();
+  const feed = useSignalWorkspaceFeed(workspaceId, {
+    ...filters,
+    filters: serializeQueryFilterGroup(queryFilters),
+  });
   const companies = useCompanies(workspaceId, { per_page: 100 });
   const members = useWorkspaceMembers(workspaceId);
   const ownerNames = useMemo(
@@ -211,6 +215,13 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
         ]),
       ),
     [members.data],
+  );
+  const queryFields = useMemo(
+    () => buildCRMSignalQueryFields(
+      (members.data ?? []).map((member) => ({ id: member.id, label: member.full_name || member.email || "Unnamed member" })),
+      (companies.data?.data ?? []).map((company) => ({ id: company.id, label: company.name })),
+    ),
+    [companies.data?.data, members.data],
   );
   const setFilter = <K extends keyof CRMSignalFeedFilters>(
     key: K,
@@ -250,73 +261,7 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 py-3">
-        <FilterHorizontalIcon className="mr-1 h-3.5 w-3.5 text-muted-foreground" />
-        <Select
-          value={filters.owner_member_id ?? "all"}
-          onValueChange={(value) => setFilter("owner_member_id", value)}
-        >
-          <SelectTrigger className={selectClassName}>
-            <SelectValue placeholder="Owner" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All owners</SelectItem>
-            {(members.data ?? []).map((member) => (
-              <SelectItem key={member.id} value={member.id}>
-                {member.full_name || member.email || "Unnamed member"}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.account_id ?? "all"}
-          onValueChange={(value) => setFilter("account_id", value)}
-        >
-          <SelectTrigger className={selectClassName}>
-            <SelectValue placeholder="Account" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All accounts</SelectItem>
-            {(companies.data?.data ?? []).map((company) => (
-              <SelectItem key={company.id} value={company.id}>
-                {company.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.domain ?? "all"}
-          onValueChange={(value) =>
-            setFilter("domain", value as CRMSignalDomain | "all")
-          }
-        >
-          <SelectTrigger className={selectClassName}>
-            <SelectValue placeholder="Domain" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All domains</SelectItem>
-            {Object.entries(domainLabels).map(([value, label]) => (
-              <SelectItem key={value} value={value}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.polarity ?? "all"}
-          onValueChange={(value) =>
-            setFilter("polarity", value as CRMSignalPolarity | "all")
-          }
-        >
-          <SelectTrigger className={selectClassName}>
-            <SelectValue placeholder="Polarity" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Any polarity</SelectItem>
-            <SelectItem value="positive">Momentum</SelectItem>
-            <SelectItem value="negative">Risk</SelectItem>
-            <SelectItem value="neutral">Neutral</SelectItem>
-          </SelectContent>
-        </Select>
+        <QueryBuilderPopover fields={queryFields} value={queryFilters} onApply={setQueryFilters} triggerLabel="Filter signals" />
         <Select
           value={filters.severity ?? "all"}
           onValueChange={(value) =>
@@ -331,20 +276,6 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
             <SelectItem value="high">High</SelectItem>
             <SelectItem value="medium">Medium</SelectItem>
             <SelectItem value="low">Low</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.trust ?? "all"}
-          onValueChange={(value) => setFilter("trust", value)}
-        >
-          <SelectTrigger className={selectClassName}>
-            <SelectValue placeholder="Trust" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Any trust</SelectItem>
-            <SelectItem value="verified">Verified</SelectItem>
-            <SelectItem value="probabilistic">Probabilistic</SelectItem>
-            <SelectItem value="untrusted">Untrusted</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -382,12 +313,12 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
             <SelectItem value="180">Last 180 days</SelectItem>
           </SelectContent>
         </Select>
-        {Object.values(filters).some((value) => value !== undefined) ? (
+        {Object.values(filters).some((value) => value !== undefined) || queryFilters ? (
           <Button
             variant="ghost"
             size="sm"
             className="h-8 px-2 text-xs"
-            onClick={() => setFilters({ status: "all" })}
+            onClick={() => { setFilters({ status: "all" }); setQueryFilters(undefined); }}
           >
             Clear
           </Button>

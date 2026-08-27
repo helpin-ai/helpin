@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
 
 // GetLatestSignalScoringConfig returns the newest workspace override or global config.
@@ -40,13 +41,21 @@ func (r *CRMSignalRepository) ListLatestRuleScoringConfigs(ctx context.Context, 
 	return effective, nil
 }
 
-// ListWorkspaceSignalCandidates returns a bounded set for composition. Score
-// and severity filters are applied after scoring by the service.
+// ListWorkspaceSignalCandidates returns signals for composition. A zero limit
+// requests the complete workspace set; score and severity filters are applied
+// after scoring by the service.
 func (r *CRMSignalRepository) ListWorkspaceSignalCandidates(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, now time.Time, limit int) ([]model.CRMBuyerSignal, error) {
-	if limit < 1 || limit > 500 {
+	if limit < 0 || limit > 5000 {
 		limit = 500
 	}
 	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).Where("crm_buyer_signals.workspace_id = ?", workspaceID)
+	if filters.Query != nil {
+		var err error
+		query, err = querybuilder.ApplyGORM(query, filters.Query, crmSignalFilterDefinitions)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if filters.Status != nil && *filters.Status == "dismissed" {
 		query = query.Where("dismissed_at IS NOT NULL")
 	} else if filters.Status == nil || *filters.Status == "active" {
@@ -87,7 +96,11 @@ func (r *CRMSignalRepository) ListWorkspaceSignalCandidates(ctx context.Context,
 		)`, ownerID, ownerID)
 	}
 	var signals []model.CRMBuyerSignal
-	if err := query.Order("detected_at DESC, id DESC").Limit(limit).Find(&signals).Error; err != nil {
+	query = query.Order("detected_at DESC, id DESC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Find(&signals).Error; err != nil {
 		return nil, fmt.Errorf("list workspace signal candidates: %w", err)
 	}
 	if err := r.hydrateSignalContext(ctx, workspaceID, signals); err != nil {

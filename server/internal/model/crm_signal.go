@@ -254,4 +254,5 @@ type CRMBuyerSignalListFilters struct {
 	Status                *string
 	Severity              *string
 	MaxAgeDays            *int
+	Query                 *QueryFilterGroup
 }

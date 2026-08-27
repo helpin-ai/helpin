@@ -10,6 +10,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const state = vi.hoisted(() => ({
   dismiss: vi.fn(),
+  feedback: vi.fn(),
   companyData: {
     data: [{
       id: 'signal-1', workspace_id: 'ws-1', signal_type: 'buying_intent', source_type: 'email',
@@ -26,6 +27,7 @@ vi.mock('@/hooks/queries', () => ({
   useContactSignals: () => ({ data: { data: [] }, isLoading: false }),
   useDealSignals: () => ({ data: { data: [] }, isLoading: false }),
   useDismissBuyerSignal: () => ({ mutate: state.dismiss, isPending: false }),
+  useBuyerSignalFeedback: () => ({ mutate: state.feedback, isPending: false }),
   useEmailAccounts: () => ({ data: [] }),
   useWorkspaceMembers: () => ({ data: [] }),
 }));

@@ -193,7 +193,7 @@ func (s *CRMSignalService) ListWorkspaceSignalFeed(ctx context.Context, workspac
 		return nil, fmt.Errorf("workspace_id is required")
 	}
 	now := time.Now().UTC()
-	signals, err := s.signalRepo.ListWorkspaceSignalCandidates(ctx, workspaceID, filters, now, 500)
+	signals, err := s.signalRepo.ListWorkspaceSignalCandidates(ctx, workspaceID, filters, now, 0)
 	if err != nil {
 		return nil, err
 	}
