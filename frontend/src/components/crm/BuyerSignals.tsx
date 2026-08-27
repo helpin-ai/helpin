@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 
 import {
   Alert01Icon, Award01Icon, ChartIncreaseIcon, Clock01Icon,
-  Mail01Icon, MoreVerticalIcon, Shield01Icon, UserGroupIcon, ZapIcon,
+  CheckmarkCircle02Icon, Mail01Icon, MoreVerticalIcon, Shield01Icon, UserGroupIcon, ZapIcon,
 } from '@/lib/icons';
 import { useBuyerSignalFeedback, useCompanySignals, useContactSignals, useDealSignals, useDismissBuyerSignal, useEmailAccounts, useWorkspaceMembers } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -66,6 +66,13 @@ function sourceAction(signal: CRMBuyerSignal) {
   return 'View activity';
 }
 
+function canOpenSource(signal: CRMBuyerSignal, onOpenSource?: (signal: CRMBuyerSignal) => void) {
+  if (!onOpenSource) return false;
+  if (signal.source_type === 'email') return !!signal.source_thread_id;
+  if (signal.source_type === 'support') return !!signal.source_thread_id;
+  return ['meeting', 'note', 'call'].includes(signal.source_type) && !!signal.source_id;
+}
+
 function BuyerSignalsEmptyState({ workspaceId }: { workspaceId: string }) {
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? '');
   const accounts = useEmailAccounts(workspaceId);
@@ -102,7 +109,7 @@ export function BuyerSignals({ workspaceId, contactId, dealId, companyId, presen
   const signals = (query.data?.data ?? []) as CRMBuyerSignal[];
   const overview = presentation === 'overview';
 
-  if (query.isLoading) return overview ? <div className="px-4 pb-6 pt-1 sm:px-6 lg:px-10"><div className="h-16 animate-pulse bg-muted/35" /></div> : null;
+  if (query.isLoading) return <div className={cn(overview ? 'px-4 pb-6 pt-1 sm:px-6 lg:px-10' : 'py-2')}><div className="h-16 animate-pulse rounded bg-muted/35" /></div>;
   if (signals.length === 0) return overview ? <BuyerSignalsEmptyState workspaceId={workspaceId} /> : <div className="border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">No signals yet</div>;
 
   return (
@@ -121,22 +128,28 @@ export function BuyerSignals({ workspaceId, contactId, dealId, companyId, presen
                 <span className={cn('shrink-0 text-[11.5px] font-semibold uppercase tracking-[0.03em]', tone.word)}>{config.toneLabel}</span>
                 <time className="ml-auto shrink-0 text-[11.5px] text-muted-foreground/60">{formatDistanceToNow(new Date(signal.detected_at), { addSuffix: true })}</time>
               </div>
+              {signal.acted_at || signal.reviewed_at ? (
+                <div className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                  <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
+                  {signal.acted_at ? 'Acted on' : 'Reviewed'}
+                </div>
+              ) : null}
               <p className="mt-1 max-w-[700px] text-[13px] leading-[1.6] text-muted-foreground [text-wrap:pretty]">{signal.evidence_excerpt || signal.summary}</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground/60"><span>{sourceLabel(signal)}</span>{signal.contact_name ? <><span className="h-2.5 w-px bg-border" /><span>{signal.contact_name}</span></> : null}{signal.deal_name ? <><span className="h-2.5 w-px bg-border" /><span>{signal.deal_display_id ? `${signal.deal_display_id} · ` : ''}{signal.deal_name}</span></> : null}<span className="h-2.5 w-px bg-border" /><button type="button" className="text-orange-700 hover:text-orange-800 dark:text-orange-400" onClick={() => onOpenSource?.(signal)}>{sourceAction(signal)}</button></div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground/60"><span>{sourceLabel(signal)}</span>{signal.contact_name ? <><span className="h-2.5 w-px bg-border" /><span>{signal.contact_name}</span></> : null}{signal.deal_name ? <><span className="h-2.5 w-px bg-border" /><span>{signal.deal_display_id ? `${signal.deal_display_id} · ` : ''}{signal.deal_name}</span></> : null}{canOpenSource(signal, onOpenSource) ? <><span className="h-2.5 w-px bg-border" /><button type="button" className="font-medium text-orange-700 hover:text-orange-800 dark:text-orange-400" onClick={() => onOpenSource?.(signal)}>{sourceAction(signal)}</button></> : null}</div>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button type="button" className="absolute right-3 top-3.5 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100" title="Signal actions" aria-label="Signal actions" disabled={dismiss.isPending || feedback.isPending}><MoreVerticalIcon className="h-4 w-4" /></button>
+                <button type="button" className="absolute right-3 top-3.5 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:opacity-55 sm:group-hover:opacity-100 sm:focus:opacity-100" title="Signal actions" aria-label="Signal actions" disabled={dismiss.isPending || feedback.isPending}><MoreVerticalIcon className="h-4 w-4" /></button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => feedback.mutate({ signalId: signal.id, action: 'reviewed' }, { onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be marked reviewed') })}>
-                  Mark reviewed
+                <DropdownMenuItem disabled={!!signal.reviewed_at || !!signal.acted_at} onSelect={() => feedback.mutate({ signalId: signal.id, action: 'reviewed' }, { onSuccess: () => toast.success('Signal marked reviewed'), onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be marked reviewed') })}>
+                  {signal.reviewed_at || signal.acted_at ? 'Reviewed' : 'Mark reviewed'}
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => feedback.mutate({ signalId: signal.id, action: 'acted' }, { onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be marked acted') })}>
-                  Mark acted on
+                <DropdownMenuItem disabled={!!signal.acted_at} onSelect={() => feedback.mutate({ signalId: signal.id, action: 'acted' }, { onSuccess: () => toast.success('Signal marked acted on'), onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be marked acted') })}>
+                  {signal.acted_at ? 'Acted on' : 'Mark acted on'}
                 </DropdownMenuItem>
                 {dismissalReasons.map((reason) => (
-                  <DropdownMenuItem key={reason.value} onSelect={() => dismiss.mutate({ signalId: signal.id, reason: reason.value }, { onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be dismissed') })}>
+                  <DropdownMenuItem key={reason.value} onSelect={() => dismiss.mutate({ signalId: signal.id, reason: reason.value }, { onSuccess: () => toast.success('Signal dismissed'), onError: (error) => toast.error(error instanceof Error ? error.message : 'Signal could not be dismissed') })}>
                     {reason.label}
                   </DropdownMenuItem>
                 ))}

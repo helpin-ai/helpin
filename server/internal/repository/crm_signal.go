@@ -38,6 +38,35 @@ func (r *CRMSignalRepository) CreateSignal(ctx context.Context, signal *model.CR
 	return nil
 }
 
+// ValidateSignalReferences prevents a manually entered signal from linking to
+// CRM records outside its workspace.
+func (r *CRMSignalRepository) ValidateSignalReferences(ctx context.Context, workspaceID string, contactID, dealID, companyID *string) error {
+	checks := []struct {
+		label string
+		table string
+		id    *string
+	}{
+		{label: "contact", table: "crm_contacts", id: contactID},
+		{label: "deal", table: "crm_deals", id: dealID},
+		{label: "company", table: "crm_companies", id: companyID},
+	}
+	for _, check := range checks {
+		if check.id == nil || strings.TrimSpace(*check.id) == "" {
+			continue
+		}
+		var count int64
+		if err := r.db.WithContext(ctx).Table(check.table).
+			Where("workspace_id = ? AND id = ?", workspaceID, strings.TrimSpace(*check.id)).
+			Count(&count).Error; err != nil {
+			return fmt.Errorf("validate signal %s: %w", check.label, err)
+		}
+		if count == 0 {
+			return fmt.Errorf("%s not found in workspace", check.label)
+		}
+	}
+	return nil
+}
+
 // CreateSignalIfAbsent inserts a buyer signal once for a given source and signal type.
 func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *model.CRMBuyerSignal) (bool, error) {
 	if signal == nil {
@@ -465,14 +494,20 @@ func ensureSignalDimensions(signal *model.CRMBuyerSignal) {
 		}
 	}
 	if signal.EvidenceIdentityMethod == "" {
-		if signal.SourceType == model.CRMSignalSourceSupport {
+		if signal.SourceType == model.CRMSignalSourceManual {
+			signal.EvidenceIdentityMethod = model.IdentityMethodManualEntry
+		} else if signal.SourceType == model.CRMSignalSourceSupport {
 			signal.EvidenceIdentityMethod = model.IdentityMethodVerifiedSupport
 		} else {
 			signal.EvidenceIdentityMethod = model.IdentityMethodConnectedMailbox
 		}
 	}
 	if signal.EvidenceIdentityTrust == "" {
-		signal.EvidenceIdentityTrust = model.IdentityTrustVerified
+		if signal.SourceType == model.CRMSignalSourceManual {
+			signal.EvidenceIdentityTrust = model.IdentityTrustUntrusted
+		} else {
+			signal.EvidenceIdentityTrust = model.IdentityTrustVerified
+		}
 	}
 }
 

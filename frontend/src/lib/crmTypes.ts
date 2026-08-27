@@ -723,7 +723,7 @@ export interface CRMBuyerSignal {
   metadata?: CRMSignalMetadata;
   confidence: number;
   detected_at: string;
-  detector_kind?: 'llm_extracted' | 'rule_derived';
+  detector_kind?: 'llm_extracted' | 'rule_derived' | 'manual';
   signal_domain?: CRMSignalDomain;
   polarity?: CRMSignalPolarity;
   rule_key?: string;
@@ -738,6 +738,12 @@ export interface CRMBuyerSignal {
   evidence_fingerprint?: string;
   dismissed_at?: string;
   dismissed_by_member_id?: string;
+  dismissal_reason?: CRMSignalDismissalReason;
+  reviewed_at?: string;
+  acted_at?: string;
+  activation_eligible?: boolean;
+  activation_blockers?: string[];
+  existing_open_task_id?: string;
   created_at: string;
 }
 
@@ -807,6 +813,46 @@ export interface CRMSignalWorkspaceFeed {
   heuristic: boolean;
 }
 
+export interface CRMSignalRuleConfig {
+  id: string;
+  workspace_id?: string;
+  rule_key: string;
+  version: number;
+  cadence: 'daily' | 'micro_batch';
+  enabled: boolean;
+  shadow_mode: boolean;
+  activation_eligible: boolean;
+  business_weight: number;
+}
+
+export interface CRMSignalPrecisionRow {
+  workspace_id: string;
+  rule_key: string;
+  rule_version: number;
+  signal_domain: CRMSignalDomain;
+  identity_method: string;
+  reviewed_count: number;
+  valid_count: number;
+  incorrect_count: number;
+  acted_count: number;
+  precision: number;
+  average_review_millis: number;
+  average_action_millis: number;
+}
+
+export interface CRMSignalRoutingPolicy {
+  id: string;
+  workspace_id: string;
+  version: number;
+  enabled: boolean;
+  minimum_priority: number;
+  required_trust: string;
+  route_to_owner: boolean;
+  destination_team_id?: string;
+  channels: string[];
+  created_at: string;
+}
+
 export interface CRMSignalFeedFilters {
   owner_member_id?: string;
   account_id?: string;
@@ -817,6 +863,7 @@ export interface CRMSignalFeedFilters {
   status?: 'active' | 'dismissed' | 'all';
   max_age_days?: number;
   page?: number;
+  per_page?: number;
   filters?: string;
 }
 
@@ -826,9 +873,6 @@ export interface CreateCRMBuyerSignalRequest {
   deal_id?: string;
   company_id?: string;
   signal_type: CRMSignalType;
-  source_type?: CRMSignalSourceType;
-  source_id?: string;
-  source_thread_id?: string;
   summary: string;
   evidence_excerpt?: string;
   metadata?: Record<string, unknown>;
@@ -945,8 +989,14 @@ export interface CRMSuggestion {
   title: string;
   description?: string;
   context: Record<string, unknown>;
+  signal_ids?: string[];
+  signals?: CRMBuyerSignal[];
   status: CRMSuggestionStatus;
+  dismissal_reason?: CRMSignalDismissalReason;
   confidence: number;
+  execution_status?: 'pending' | 'succeeded' | 'failed';
+  executed_at?: string;
+  execution_error?: string;
   created_at: string;
   updated_at: string;
 }

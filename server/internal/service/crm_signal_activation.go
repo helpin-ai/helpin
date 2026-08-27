@@ -4,11 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func (s *CRMSignalService) ListRuleConfigs(ctx context.Context, workspaceID string) ([]model.CRMSignalRuleConfig, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	configs, err := s.signalRepo.ListLatestRuleConfigs(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]model.CRMSignalRuleConfig, 0, len(configs))
+	for _, config := range configs {
+		rows = append(rows, config)
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].RuleKey < rows[j].RuleKey })
+	return rows, nil
+}
 
 func validSignalDismissalReason(reason string) bool {
 	switch reason {

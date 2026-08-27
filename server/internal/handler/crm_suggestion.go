@@ -53,7 +53,7 @@ func (h *CRMSuggestionHandler) List(w http.ResponseWriter, r *http.Request) {
 // Get handles GET /api/crm/suggestions/{id}.
 func (h *CRMSuggestionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	suggestion, err := h.suggestionService.GetByID(r.Context(), id)
+	suggestion, err := h.suggestionService.GetByID(r.Context(), getWorkspaceID(r), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -68,9 +68,12 @@ func (h *CRMSuggestionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.WorkspaceID == "" {
-		req.WorkspaceID = getWorkspaceID(r)
+	workspaceID := getWorkspaceID(r)
+	if req.WorkspaceID != "" && req.WorkspaceID != workspaceID {
+		writeError(w, http.StatusBadRequest, "workspace does not match request scope")
+		return
 	}
+	req.WorkspaceID = workspaceID
 	suggestion, err := h.suggestionService.Create(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -87,7 +90,7 @@ func (h *CRMSuggestionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	suggestion, err := h.suggestionService.Update(r.Context(), id, req)
+	suggestion, err := h.suggestionService.Update(r.Context(), getWorkspaceID(r), id, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -98,7 +101,7 @@ func (h *CRMSuggestionHandler) Update(w http.ResponseWriter, r *http.Request) {
 // Delete handles DELETE /api/crm/suggestions/{id}.
 func (h *CRMSuggestionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.suggestionService.Delete(r.Context(), id); err != nil {
+	if err := h.suggestionService.Delete(r.Context(), getWorkspaceID(r), id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -112,7 +115,7 @@ func (h *CRMSuggestionHandler) Accept(w http.ResponseWriter, r *http.Request) {
 	// Body is optional
 	_ = decodeJSON(r, &edits)
 
-	suggestion, err := h.suggestionService.AcceptSuggestion(r.Context(), id, edits)
+	suggestion, err := h.suggestionService.AcceptSuggestion(r.Context(), getWorkspaceID(r), id, edits)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -123,7 +126,14 @@ func (h *CRMSuggestionHandler) Accept(w http.ResponseWriter, r *http.Request) {
 // Dismiss handles POST /api/crm/suggestions/{id}/dismiss.
 func (h *CRMSuggestionHandler) Dismiss(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	suggestion, err := h.suggestionService.DismissSuggestion(r.Context(), id)
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "a dismissal reason is required")
+		return
+	}
+	suggestion, err := h.suggestionService.DismissSuggestion(r.Context(), getWorkspaceID(r), id, req.Reason)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

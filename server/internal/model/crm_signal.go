@@ -17,6 +17,7 @@ const (
 const (
 	CRMSignalDetectorLLMExtracted = "llm_extracted"
 	CRMSignalDetectorRuleDerived  = "rule_derived"
+	CRMSignalDetectorManual       = "manual"
 )
 
 // CRM signal domains describe the independent evidence axis.
@@ -112,8 +113,8 @@ type CRMBuyerSignal struct {
 	RuleVersion            *int       `json:"rule_version,omitempty"`
 	WindowStartedAt        *time.Time `json:"window_started_at,omitempty" gorm:"type:timestamptz"`
 	WindowEndedAt          *time.Time `json:"window_ended_at,omitempty" gorm:"type:timestamptz"`
-	EvidenceIdentityMethod string     `json:"evidence_identity_method" gorm:"not null;default:'connected_mailbox';index"`
-	EvidenceIdentityTrust  string     `json:"evidence_identity_trust" gorm:"not null;default:'verified';index"`
+	EvidenceIdentityMethod string     `json:"evidence_identity_method" gorm:"not null;default:'manual_entry';index"`
+	EvidenceIdentityTrust  string     `json:"evidence_identity_trust" gorm:"not null;default:'untrusted';index"`
 	EvidenceFingerprint    string     `json:"evidence_fingerprint,omitempty" gorm:"not null;default:'';index"`
 	DismissedAt            *time.Time `json:"dismissed_at,omitempty" gorm:"index"`
 	DismissedByMemberID    *string    `json:"dismissed_by_member_id,omitempty" gorm:"type:uuid"`
@@ -207,27 +208,15 @@ func (CRMDealHealthScore) TableName() string { return "crm_deal_health_scores" }
 
 // CreateCRMBuyerSignalRequest is the payload for creating a buyer signal.
 type CreateCRMBuyerSignalRequest struct {
-	WorkspaceID            string                 `json:"workspace_id"`
-	ContactID              *string                `json:"contact_id"`
-	DealID                 *string                `json:"deal_id"`
-	CompanyID              *string                `json:"company_id"`
-	SignalType             string                 `json:"signal_type"`
-	SourceType             string                 `json:"source_type"`
-	SourceID               *string                `json:"source_id"`
-	SourceThreadID         *string                `json:"source_thread_id"`
-	Summary                string                 `json:"summary"`
-	EvidenceExcerpt        *string                `json:"evidence_excerpt"`
-	Metadata               map[string]interface{} `json:"metadata"`
-	Confidence             *float64               `json:"confidence"`
-	DetectorKind           string                 `json:"detector_kind,omitempty"`
-	SignalDomain           string                 `json:"signal_domain,omitempty"`
-	Polarity               string                 `json:"polarity,omitempty"`
-	RuleKey                *string                `json:"rule_key,omitempty"`
-	RuleVersion            *int                   `json:"rule_version,omitempty"`
-	WindowStartedAt        *time.Time             `json:"window_started_at,omitempty"`
-	WindowEndedAt          *time.Time             `json:"window_ended_at,omitempty"`
-	EvidenceIdentityMethod string                 `json:"evidence_identity_method,omitempty"`
-	EvidenceIdentityTrust  string                 `json:"evidence_identity_trust,omitempty"`
+	WorkspaceID     string                 `json:"workspace_id"`
+	ContactID       *string                `json:"contact_id"`
+	DealID          *string                `json:"deal_id"`
+	CompanyID       *string                `json:"company_id"`
+	SignalType      string                 `json:"signal_type"`
+	Summary         string                 `json:"summary"`
+	EvidenceExcerpt *string                `json:"evidence_excerpt"`
+	Metadata        map[string]interface{} `json:"metadata"`
+	Confidence      *float64               `json:"confidence"`
 }
 
 // CreateCRMDealHealthScoreRequest is the payload for creating a deal health score.

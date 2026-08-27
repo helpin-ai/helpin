@@ -867,6 +867,41 @@ export function useSignalWorkspaceFeed(wsId: string, filters?: CRMSignalFeedFilt
   })
 }
 
+export function useSignalOperations(wsId: string) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.signals(wsId), 'operations'],
+    queryFn: async () => {
+      const [precision, rules, policy] = await Promise.all([
+        unwrap(await crmSignalService.precision(wsId)),
+        unwrap(await crmSignalService.rules(wsId)),
+        unwrap(await crmSignalService.routingPolicy(wsId)),
+      ])
+      return { precision: precision.data, rules: rules.data, policy }
+    },
+    enabled: !!wsId,
+  })
+}
+
+export function useActivateSignalRule(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ ruleKey, version }: { ruleKey: string; version: number }) => unwrap(await crmSignalService.activateRule(wsId, ruleKey, version)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
+  })
+}
+
+export function useSaveSignalRoutingPolicy(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: { minimum_priority: number; required_trust: string; route_to_owner: boolean; channels: string[] }) => {
+      const policy = unwrap(await crmSignalService.createRoutingPolicy(wsId, payload))
+      unwrap(await crmSignalService.activateRoutingPolicy(wsId, policy.version))
+      return policy
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
+  })
+}
+
 export function useContactSignals(wsId: string, contactId: string) {
   return useQuery({
     queryKey: queryKeys.crm.contactSignals(wsId, contactId),
@@ -1067,10 +1102,10 @@ export function useUpdateSuggestion(wsId: string) {
 
 // ── Phase D: Deal Automation ──
 
-export function usePendingSuggestions(wsId: string) {
+export function usePendingSuggestions(wsId: string, page = 1) {
   return useQuery({
-    queryKey: queryKeys.crm.suggestions(wsId, 'pending'),
-    queryFn: async () => unwrap(await crmSuggestionService.list(wsId, { status: 'pending' })),
+    queryKey: [...queryKeys.crm.suggestions(wsId, 'pending'), page],
+    queryFn: async () => unwrap(await crmSuggestionService.list(wsId, { status: 'pending', page, per_page: 20 })),
     enabled: !!wsId,
   })
 }
@@ -1089,7 +1124,7 @@ export function useAcceptSuggestion(wsId: string) {
 export function useDismissSuggestion(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (id: string) => unwrap(await crmSuggestionService.dismiss(wsId, id)),
+    mutationFn: async ({ id, reason }: { id: string; reason: import('@/lib/crmTypes').CRMSignalDismissalReason }) => unwrap(await crmSuggestionService.dismiss(wsId, id, reason)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crm'] })
     },

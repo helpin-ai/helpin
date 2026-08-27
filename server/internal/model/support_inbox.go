@@ -416,6 +416,7 @@ const (
 	IdentityMethodVerifiedSupport  = "verified_support"
 	IdentityMethodConnectedMailbox = "connected_mailbox"
 	IdentityMethodServerEvent      = "server_event"
+	IdentityMethodManualEntry      = "manual_entry"
 
 	IdentityTrustUntrusted     = "untrusted"
 	IdentityTrustProbabilistic = "probabilistic"

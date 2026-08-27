@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { QueryBuilderPopover } from "@/components/ui/query-builder/QueryBuilderPopover";
@@ -13,9 +14,11 @@ import { useCompanies, useSignalWorkspaceFeed } from "@/hooks/queries/useCRM";
 import { useWorkspaceMembers } from "@/hooks/queries";
 import {
   Activity01Icon,
+  ArrowRight01Icon,
   Layers01Icon,
 } from "@/lib/icons";
 import type {
+  CRMBuyerSignal,
   CRMSignalAccountStory,
   CRMSignalFeedFilters,
   CRMSignalSeverity,
@@ -23,6 +26,7 @@ import type {
 import { cn, timeAgo } from "@/lib/utils";
 import { buildCRMSignalQueryFields } from "@/lib/crmSignalQueryBuilder";
 import { serializeQueryFilterGroup, type QueryFilterGroup } from "@/lib/queryBuilder";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const domainLabels: Record<string, string> = {
   conversation: "Conversation",
@@ -51,23 +55,50 @@ function impactLabel(story: CRMSignalAccountStory) {
   return "Context";
 }
 
+function priorityLabel(story: CRMSignalAccountStory) {
+  if (story.severity === "high") return "Act now";
+  if (story.severity === "medium") return "Review soon";
+  return "Monitor";
+}
+
+function entityLabel(story: CRMSignalAccountStory) {
+  if (story.entity_type === "company") return "company";
+  if (story.entity_type === "deal") return "deal";
+  if (story.entity_type === "contact") return "contact";
+  return "evidence";
+}
+
+function recommendedNextStep(story: CRMSignalAccountStory) {
+  const types = new Set(story.signals.map((signal) => signal.signal_type));
+  if (story.polarity === "negative" || types.has("risk_signal") || types.has("objection")) {
+    return "Review the latest concern, confirm an owner, and plan the next response.";
+  }
+  if (types.has("timeline_signal") || types.has("budget_signal")) {
+    return "Confirm timing and decision criteria while the buying window is active.";
+  }
+  if (types.has("champion_signal")) {
+    return "Engage the champion and map the remaining decision makers.";
+  }
+  return "Review the evidence and choose a concrete follow-up while intent is fresh.";
+}
+
 function StoryRow({
   story,
   ownerName,
+  onOpen,
+  onOpenSignal,
+  canOpenSignal,
 }: {
   story: CRMSignalAccountStory;
   ownerName?: string;
+  onOpen?: () => void;
+  onOpenSignal?: (signal: CRMBuyerSignal) => void;
+  canOpenSignal?: (signal: CRMBuyerSignal) => boolean;
 }) {
-  const confidence = story.signals.length
-    ? Math.round(
-        (story.signals.reduce((sum, signal) => sum + signal.confidence, 0) /
-          story.signals.length) *
-          100,
-      )
-    : 0;
+  const verifiedSources = story.signals.filter((signal) => signal.evidence_identity_trust === "verified").length;
   return (
     <article className="border-t border-border/55 first:border-t-0">
-      <div className="grid gap-4 px-1 py-5 md:grid-cols-[minmax(0,1fr)_150px]">
+      <div className="grid gap-4 px-1 py-5 md:grid-cols-[minmax(0,1fr)_180px]">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate text-[15px] font-semibold tracking-[-0.012em]">
@@ -85,13 +116,23 @@ function StoryRow({
                 severityClass(story.severity),
               )}
             >
-              {story.severity}
+              {priorityLabel(story)}
             </Badge>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {story.change_summary}
+            {story.change_summary} · {impactLabel(story)}
             {ownerName ? ` · ${ownerName}` : ""}
           </p>
+          <div className="mt-3 max-w-2xl">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Why now</p>
+            <p className="mt-1 text-[13px] leading-5 text-foreground/90">
+              {story.signals[0]?.summary || "New customer evidence needs review."}
+            </p>
+          </div>
+          <div className="mt-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Recommended next step</p>
+            <p className="mt-1 text-xs leading-5 text-foreground/80">{recommendedNextStep(story)}</p>
+          </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {story.domains.map((domain) => (
               <span
@@ -104,22 +145,16 @@ function StoryRow({
           </div>
         </div>
         <div className="flex items-start justify-between gap-5 md:block md:text-right">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-              Business priority
-            </p>
-            <p className="mt-0.5 text-2xl font-semibold tabular-nums tracking-[-0.04em]">
-              {Math.round(story.priority)}
-            </p>
+          <div className="text-xs text-muted-foreground">
+            <p>{story.signals.length} evidence source{story.signals.length === 1 ? "" : "s"}</p>
+            <p className="mt-1">{verifiedSources} identity verified</p>
           </div>
-          <div className="md:mt-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-              Evidence certainty
-            </p>
-            <p className="mt-0.5 text-sm font-medium tabular-nums">
-              {confidence}%
-            </p>
-          </div>
+          {onOpen ? (
+            <Button size="sm" className="mt-3 h-8 gap-1.5" onClick={onOpen}>
+              Open {entityLabel(story)}
+              <ArrowRight01Icon className="h-3.5 w-3.5" />
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -128,9 +163,7 @@ function StoryRow({
           <Layers01Icon className="h-3.5 w-3.5" />
           Inspect {story.signals.length} source
           {story.signals.length === 1 ? "" : "s"}
-          <span className="text-muted-foreground">
-            · {impactLabel(story)} · score model v{story.score_version}
-          </span>
+          <span className="text-muted-foreground">· evidence and scoring details</span>
         </summary>
         <div className="mt-2 divide-y divide-border/50 border-y border-border/50">
           {story.signals.map((signal) => (
@@ -162,6 +195,7 @@ function StoryRow({
                     "unknown identity"}{" "}
                   · {signal.evidence_identity_trust || "unknown"} trust
                 </p>
+                {onOpenSignal && canOpenSignal?.(signal) ? <button type="button" className="mt-1.5 text-[11px] font-medium text-orange-700 hover:text-orange-800 dark:text-orange-400" onClick={() => onOpenSignal(signal)}>Open exact source</button> : null}
               </div>
               <dl className="grid grid-cols-2 gap-x-3 text-right text-[11px] md:block">
                 <div className="md:flex md:justify-between">
@@ -176,15 +210,6 @@ function StoryRow({
                     {Math.round(signal.confidence * 100)}%
                   </dd>
                 </div>
-                <div className="col-span-2 mt-1 hidden justify-between md:flex">
-                  <dt className="text-muted-foreground">Weight × decay</dt>
-                  <dd className="tabular-nums">
-                    {String(signal.score_factors?.business_weight ?? "—")} ×{" "}
-                    {typeof signal.score_factors?.recency_factor === "number"
-                      ? signal.score_factors.recency_factor.toFixed(2)
-                      : "—"}
-                  </dd>
-                </div>
               </dl>
             </div>
           ))}
@@ -195,9 +220,13 @@ function StoryRow({
 }
 
 export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
+  const navigate = useNavigate();
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? "");
   const [filters, setFilters] = useState<CRMSignalFeedFilters>({
     status: "active",
     max_age_days: 90,
+    page: 1,
+    per_page: 20,
   });
   const [queryFilters, setQueryFilters] = useState<QueryFilterGroup>();
   const feed = useSignalWorkspaceFeed(workspaceId, {
@@ -230,9 +259,33 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
     setFilters((current) => ({
       ...current,
       [key]: value === "all" ? undefined : value,
+      page: 1,
     }));
   };
   const stories = feed.data?.data ?? [];
+  const page = feed.data?.page ?? filters.page ?? 1;
+  const pageCount = Math.max(1, Math.ceil((feed.data?.total ?? 0) / (filters.per_page ?? 20)));
+
+  const openStory = (story: CRMSignalAccountStory) => {
+    if (!workspaceSlug || !story.entity_id) return;
+    if (story.entity_type === "company") void navigate({ to: "/w/$slug/crm/companies/$companyId", params: { slug: workspaceSlug, companyId: story.entity_id } } as never);
+    if (story.entity_type === "contact") void navigate({ to: "/w/$slug/crm/contacts/$contactId", params: { slug: workspaceSlug, contactId: story.entity_id } } as never);
+    if (story.entity_type === "deal") void navigate({ to: "/w/$slug/crm/deals/$dealId", params: { slug: workspaceSlug, dealId: story.entity_id } } as never);
+  };
+  const canOpenSignal = (signal: CRMBuyerSignal) => {
+    if (signal.source_type === "email") return !!signal.source_thread_id && (!!signal.contact_id || !!signal.company_id);
+    if (signal.source_type === "meeting") return !!signal.source_id;
+    if (signal.source_type === "support") return !!signal.source_thread_id;
+    if (signal.source_type === "note" || signal.source_type === "call") return !!signal.contact_id || !!signal.company_id;
+    return false;
+  };
+  const openSignal = (signal: CRMBuyerSignal) => {
+    if (!workspaceSlug || !canOpenSignal(signal)) return;
+    if (signal.source_type === "meeting" && signal.source_id) void navigate({ to: "/w/$slug/crm/meetings/$meetingId", params: { slug: workspaceSlug, meetingId: signal.source_id } } as never);
+    else if (signal.source_type === "support" && signal.source_thread_id) void navigate({ to: "/w/$slug/support/$conversationId", params: { slug: workspaceSlug, conversationId: signal.source_thread_id } } as never);
+    else if (signal.contact_id) void navigate({ to: "/w/$slug/crm/contacts/$contactId", params: { slug: workspaceSlug, contactId: signal.contact_id }, search: signal.source_type === "email" ? { tab: "emails", thread: signal.source_thread_id } : { tab: signal.source_type === "note" ? "notes" : "calls" } } as never);
+    else if (signal.company_id) void navigate({ to: "/w/$slug/crm/companies/$companyId", params: { slug: workspaceSlug, companyId: signal.company_id }, search: signal.source_type === "email" ? { tab: "emails", thread: signal.source_thread_id } : { tab: signal.source_type === "note" ? "notes" : "calls" } } as never);
+  };
 
   return (
     <section aria-labelledby="account-stories-title">
@@ -244,24 +297,18 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
               id="account-stories-title"
               className="text-base font-semibold tracking-[-0.01em]"
             >
-              Account stories
+              Signal inbox
             </h2>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Corroborated evidence, ranked by business importance—not model
-            certainty.
+            What changed, why it matters, and where to follow up.
           </p>
         </div>
-        {feed.data ? (
-          <p className="text-[11px] text-muted-foreground">
-            Scoring v{feed.data.score_version}
-            {feed.data.heuristic ? " · heuristic, pending calibration" : ""}
-          </p>
-        ) : null}
+        {feed.data ? <p className="text-[11px] text-muted-foreground">{feed.data.total} ranked stor{feed.data.total === 1 ? "y" : "ies"}</p> : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 py-3">
-        <QueryBuilderPopover fields={queryFields} value={queryFilters} onApply={setQueryFilters} triggerLabel="Filter signals" />
+        <QueryBuilderPopover fields={queryFields} value={queryFilters} onApply={(value) => { setQueryFilters(value); setFilters((current) => ({ ...current, page: 1 })); }} triggerLabel="Filter signals" />
         <Select
           value={filters.severity ?? "all"}
           onValueChange={(value) =>
@@ -283,7 +330,7 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
           onValueChange={(value) =>
             setFilters((current) => ({
               ...current,
-              status: value as "active" | "dismissed" | "all",
+              status: value as "active" | "dismissed" | "all", page: 1,
             }))
           }
         >
@@ -318,7 +365,7 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
             variant="ghost"
             size="sm"
             className="h-8 px-2 text-xs"
-            onClick={() => { setFilters({ status: "all" }); setQueryFilters(undefined); }}
+            onClick={() => { setFilters({ status: "active", max_age_days: 90, page: 1, per_page: 20 }); setQueryFilters(undefined); }}
           >
             Clear
           </Button>
@@ -351,8 +398,20 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
                   ? ownerNames.get(story.owner_member_id)
                   : undefined
               }
+              onOpen={story.entity_type === "unresolved" ? undefined : () => openStory(story)}
+              onOpenSignal={story.signals.some(canOpenSignal) ? openSignal : undefined}
+              canOpenSignal={canOpenSignal}
             />
           ))}
+          {pageCount > 1 ? (
+            <div className="flex items-center justify-between border-t border-border/60 py-4 text-xs text-muted-foreground">
+              <span>Page {page} of {pageCount}</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="h-8" disabled={page <= 1 || feed.isFetching} onClick={() => setFilters((current) => ({ ...current, page: Math.max(1, page - 1) }))}>Previous</Button>
+                <Button variant="outline" size="sm" className="h-8" disabled={page >= pageCount || feed.isFetching} onClick={() => setFilters((current) => ({ ...current, page: Math.min(pageCount, page + 1) }))}>Next</Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </section>

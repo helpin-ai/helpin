@@ -3,21 +3,18 @@ import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { CRMSearchResults } from '@/components/crm/CRMSearchResults';
 import { SignalWorkspaceFeed } from '@/components/crm/SignalWorkspaceFeed';
+import { SuggestionCard } from '@/components/crm/SuggestionCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Activity01Icon,
-  Alert01Icon,
-  BulbIcon,
   ChartIncreaseIcon,
   CheckmarkCircle02Icon,
-  DollarCircleIcon,
   FavouriteIcon,
   Mail01Icon,
   Search01Icon,
   SparklesIcon,
-  Tick01Icon,
 } from '@/lib/icons';
 import {
   useAcceptSuggestion,
@@ -29,17 +26,9 @@ import {
 import { useTitle } from '@/hooks/useTitle';
 import { cn, timeAgo } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { CRMDealHealthScore, CRMSuggestion } from '@/lib/crmTypes';
+import type { CRMDealHealthScore, CRMSignalDismissalReason, CRMSuggestion } from '@/lib/crmTypes';
 
 type Tone = 'neutral' | 'good' | 'warn' | 'danger' | 'accent';
-
-const suggestionTypeConfig: Record<CRMSuggestion['suggestion_type'], { label: string; icon: typeof BulbIcon; tone: Tone }> = {
-  deal_create: { label: 'New deal', icon: DollarCircleIcon, tone: 'good' },
-  deal_advance: { label: 'Stage advance', icon: ChartIncreaseIcon, tone: 'accent' },
-  follow_up: { label: 'Follow up', icon: Mail01Icon, tone: 'neutral' },
-  enrichment: { label: 'Enrichment', icon: BulbIcon, tone: 'neutral' },
-  risk_alert: { label: 'Risk alert', icon: Alert01Icon, tone: 'danger' },
-};
 
 function toneClasses(tone: Tone) {
   switch (tone) {
@@ -218,7 +207,7 @@ function ReviewQueue({
   isLoading: boolean;
   hasSignals: boolean;
   onAccept: (id: string) => void;
-  onDismiss: (id: string) => void;
+  onDismiss: (id: string, reason: CRMSignalDismissalReason) => void;
   isMutating: boolean;
   onViewAll: () => void;
 }) {
@@ -249,46 +238,7 @@ function ReviewQueue({
             }
           />
         ) : (
-          suggestions.slice(0, 4).map((suggestion) => {
-            const config = suggestionTypeConfig[suggestion.suggestion_type] ?? {
-              label: suggestion.suggestion_type.replace(/_/g, ' '),
-              icon: BulbIcon,
-              tone: 'neutral' as const,
-            };
-            const Icon = config.icon;
-            const confidence = Math.round(suggestion.confidence * 100);
-
-            return (
-              <div key={suggestion.id} className="rounded-lg border p-3">
-                <div className="flex items-start gap-3">
-                  <div className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border', toneClasses(config.tone))}>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className={cn('text-[11px]', toneClasses(config.tone))}>
-                        {config.label}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">{confidence}% confidence</span>
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-sm font-medium leading-5">{suggestion.title}</p>
-                    {suggestion.description ? (
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{suggestion.description}</p>
-                    ) : null}
-                    <div className="mt-3 flex gap-2">
-                      <Button size="xs" onClick={() => onAccept(suggestion.id)} disabled={isMutating}>
-                        <Tick01Icon className="h-3 w-3" />
-                        Approve
-                      </Button>
-                      <Button size="xs" variant="ghost" onClick={() => onDismiss(suggestion.id)} disabled={isMutating}>
-                        Dismiss
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+          suggestions.slice(0, 4).map((suggestion) => <SuggestionCard key={suggestion.id} suggestion={suggestion} onAccept={onAccept} onDismiss={onDismiss} isAccepting={isMutating} isDismissing={isMutating} compact />)
         )}
       </CardContent>
     </Card>
@@ -330,7 +280,7 @@ function HealthRow({ healthScore }: { healthScore: CRMDealHealthScore }) {
 }
 
 export function InsightsPage() {
-  useTitle('CRM Insights');
+  useTitle('CRM Signals');
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
@@ -348,12 +298,11 @@ export function InsightsPage() {
     [suggestionsData],
   );
   const signalStats = useMemo(() => {
-    const recentHighConfidence = signals.filter((signal) => signal.confidence >= 0.8).length;
-    const avgConfidence = signals.length
-      ? Math.round((signals.reduce((sum, signal) => sum + signal.confidence, 0) / signals.length) * 100)
-      : 0;
-    const linkedThreads = signals.filter((signal) => !!signal.source_thread_id).length;
-    return { recentHighConfidence, avgConfidence, linkedThreads };
+    const highPriority = signals.filter((signal) => signal.severity === 'high').length;
+    const verified = signals.filter((signal) => signal.evidence_identity_trust === 'verified').length;
+    const verifiedShare = signals.length ? Math.round((verified / signals.length) * 100) : 0;
+    const linkedSources = signals.filter((signal) => !!signal.source_thread_id || !!signal.source_id).length;
+    return { highPriority, verifiedShare, linkedSources };
   }, [signals]);
   const healthStats = useMemo(() => {
     const atRisk = healthScores.filter((score) => score.score < 40).length;
@@ -373,8 +322,8 @@ export function InsightsPage() {
     );
   };
 
-  const handleDismiss = (id: string) => {
-    dismissSuggestion.mutate(id, {
+  const handleDismiss = (id: string, reason: CRMSignalDismissalReason) => {
+    dismissSuggestion.mutate({ id, reason }, {
       onSuccess: () => toast.success('Suggestion dismissed'),
       onError: (error) => toast.error(`Failed to dismiss: ${error.message}`),
     });
@@ -410,8 +359,8 @@ export function InsightsPage() {
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Insights</h1>
-            <p className="text-sm text-muted-foreground">Buyer signals, suggested actions, and deal health in one place.</p>
+            <h1 className="text-xl font-semibold tracking-tight">Signal inbox</h1>
+            <p className="text-sm text-muted-foreground">See what changed, why it matters, and what to do next.</p>
           </div>
           {suggestions.length > 0 ? (
             <Button variant="outline" size="sm" onClick={goToReview} disabled={!wsSlug}>
@@ -438,29 +387,29 @@ export function InsightsPage() {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <StatTile
                 label="Buyer signals"
-                value={signalsLoading ? '-' : signals.length}
-                detail={`${signalStats.recentHighConfidence} high confidence`}
+                value={signalsLoading ? '-' : signalsData?.total ?? 0}
+                detail={`${signalStats.highPriority} high priority in recent results`}
                 icon={Activity01Icon}
                 tone="accent"
               />
               <StatTile
                 label="Pending review"
-                value={suggestionsLoading ? '-' : suggestions.length}
-                detail={suggestions.length === 1 ? '1 suggested action' : `${suggestions.length} suggested actions`}
+                value={suggestionsLoading ? '-' : suggestionsData?.total ?? 0}
+                detail={(suggestionsData?.total ?? 0) === 1 ? '1 recommended action' : `${suggestionsData?.total ?? 0} recommended actions`}
                 icon={SparklesIcon}
                 tone={suggestions.length > 0 ? 'warn' : 'neutral'}
               />
               <StatTile
                 label="Deal health"
-                value={healthLoading ? '-' : healthScores.length}
+                value={healthLoading ? '-' : healthData?.total ?? 0}
                 detail={`${healthStats.healthy} healthy, ${healthStats.atRisk} at risk`}
                 icon={FavouriteIcon}
                 tone={healthStats.atRisk > 0 ? 'danger' : healthScores.length > 0 ? 'good' : 'neutral'}
               />
               <StatTile
-                label="Signal quality"
-                value={signalsLoading || signals.length === 0 ? '-' : `${signalStats.avgConfidence}%`}
-                detail={signals.length === 0 ? 'Waiting for signals' : `${signalStats.linkedThreads} linked threads`}
+                label="Verified evidence"
+                value={signalsLoading || signals.length === 0 ? '-' : `${signalStats.verifiedShare}%`}
+                detail={signals.length === 0 ? 'Waiting for signals' : `${signalStats.linkedSources} exact sources in recent results`}
                 icon={CheckmarkCircle02Icon}
                 tone={signals.length > 0 ? 'good' : 'neutral'}
               />

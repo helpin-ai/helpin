@@ -1604,6 +1604,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/brief", h.CRMSignal.SignalBrief)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/{id}/signal-brief", h.CRMSignal.MeetingSignalBrief)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/precision", h.CRMSignal.PrecisionReport)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/signals/rules", h.CRMSignal.ListRuleConfigs)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/routing-policy", h.CRMSignal.GetRoutingPolicy)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/routing-policy", h.CRMSignal.CreateRoutingPolicy)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/routing-policy/versions/{version}/activate", h.CRMSignal.ActivateRoutingPolicy)

@@ -78,6 +78,15 @@ func (h *CRMSignalHandler) PrecisionReport(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
 }
 
+func (h *CRMSignalHandler) ListRuleConfigs(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.signalService.ListRuleConfigs(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+}
+
 func (h *CRMSignalHandler) GetRoutingPolicy(w http.ResponseWriter, r *http.Request) {
 	policy, err := h.signalService.GetRoutingPolicy(r.Context(), getWorkspaceID(r))
 	if err != nil {
@@ -247,9 +256,12 @@ func (h *CRMSignalHandler) CreateSignal(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.WorkspaceID == "" {
-		req.WorkspaceID = getWorkspaceID(r)
+	workspaceID := getWorkspaceID(r)
+	if req.WorkspaceID != "" && req.WorkspaceID != workspaceID {
+		writeError(w, http.StatusBadRequest, "workspace does not match request scope")
+		return
 	}
+	req.WorkspaceID = workspaceID
 	signal, err := h.signalService.CreateSignal(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

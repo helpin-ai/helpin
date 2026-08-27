@@ -58,6 +58,16 @@ describe('BuyerSignals company roll-up', () => {
     expect(container.textContent).toContain('Please send enterprise pricing.');
     expect(container.textContent).toContain('Ava Buyer');
     expect(container.textContent).toContain('DEAL-7 · Expansion');
-    expect(container.textContent).toContain('Open thread');
+    expect(container.textContent).not.toContain('Open thread');
+  });
+
+  it('only renders a source action when the parent can open it', () => {
+    const openSource = vi.fn();
+    act(() => root.render(<BuyerSignals workspaceId="ws-1" companyId="company-1" presentation="overview" onOpenSource={openSource} />));
+
+    const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === 'Open thread');
+    expect(button).toBeTruthy();
+    act(() => button?.click());
+    expect(openSource).toHaveBeenCalledWith(expect.objectContaining({ id: 'signal-1' }));
   });
 });

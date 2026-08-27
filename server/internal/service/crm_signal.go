@@ -92,37 +92,29 @@ func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRM
 		return nil, fmt.Errorf("confidence must be between 0 and 1")
 	}
 
-	sourceType := model.CRMSignalSourceManual
-	if req.SourceType != "" {
-		sourceType = req.SourceType
-	}
-	if !validCRMSignalSourceType(sourceType) {
-		return nil, fmt.Errorf("invalid source_type")
+	if err := s.signalRepo.ValidateSignalReferences(ctx, req.WorkspaceID, req.ContactID, req.DealID, req.CompanyID); err != nil {
+		return nil, err
 	}
 
+	// This endpoint records a user's assertion. Extraction, deterministic-rule,
+	// and provider evidence are created by their dedicated server-side paths so
+	// callers cannot claim verified identity or an activated rule version.
 	signal := &model.CRMBuyerSignal{
 		WorkspaceID:            req.WorkspaceID,
 		ContactID:              req.ContactID,
 		DealID:                 req.DealID,
 		CompanyID:              req.CompanyID,
 		SignalType:             req.SignalType,
-		SourceType:             sourceType,
-		SourceID:               req.SourceID,
-		SourceThreadID:         req.SourceThreadID,
+		SourceType:             model.CRMSignalSourceManual,
 		Summary:                req.Summary,
 		EvidenceExcerpt:        req.EvidenceExcerpt,
 		Metadata:               model.JSONB(req.Metadata),
 		Confidence:             confidence,
 		DetectedAt:             time.Now(),
-		DetectorKind:           req.DetectorKind,
-		SignalDomain:           req.SignalDomain,
-		Polarity:               req.Polarity,
-		RuleKey:                req.RuleKey,
-		RuleVersion:            req.RuleVersion,
-		WindowStartedAt:        req.WindowStartedAt,
-		WindowEndedAt:          req.WindowEndedAt,
-		EvidenceIdentityMethod: req.EvidenceIdentityMethod,
-		EvidenceIdentityTrust:  req.EvidenceIdentityTrust,
+		DetectorKind:           model.CRMSignalDetectorManual,
+		SignalDomain:           model.CRMSignalDomainConversation,
+		EvidenceIdentityMethod: model.IdentityMethodManualEntry,
+		EvidenceIdentityTrust:  model.IdentityTrustUntrusted,
 	}
 
 	if err := s.signalRepo.CreateSignal(ctx, signal); err != nil {
@@ -135,16 +127,6 @@ func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRM
 		}
 	}
 	return signal, nil
-}
-
-func validCRMSignalSourceType(sourceType string) bool {
-	switch sourceType {
-	case model.CRMSignalSourceEmail, model.CRMSignalSourceMeeting, model.CRMSignalSourceNote,
-		model.CRMSignalSourceCall, model.CRMSignalSourceManual, model.CRMSignalSourceSupport:
-		return true
-	default:
-		return false
-	}
 }
 
 // DeleteSignal removes a buyer signal.

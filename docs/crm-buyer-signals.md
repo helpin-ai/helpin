@@ -58,7 +58,7 @@ taxonomy:
 
 | Dimension | Values or purpose |
 |---|---|
-| `detector_kind` | `llm_extracted` or `rule_derived` |
+| `detector_kind` | `llm_extracted`, `rule_derived`, or `manual` |
 | `signal_domain` | conversation, web behavior, product usage, support, delivery, relationship, or market |
 | `polarity` | positive, negative, or neutral |
 | `rule_key`, `rule_version` | immutable detector identity and semantics |
@@ -68,7 +68,7 @@ taxonomy:
 | feedback state | reviewed, dismissed with reason, or acted |
 
 The model lives in `server/internal/model/crm_signal*.go`. Schema changes are in
-`server/internal/dbmigrate/sql/20260824*_crm_signal_*.sql`.
+the versioned `server/internal/dbmigrate/sql/*_crm_signal_*.sql` migrations.
 
 ## Signal producers
 
@@ -143,6 +143,16 @@ admin-only endpoint requires a workspace-owned CRM target and normalizes
 provider identity to probabilistic trust instead of accepting caller-declared
 identity provenance.
 
+### Manual context
+
+`POST /api/crm/signals` creates a user assertion, not verified extracted
+evidence. The server always records these rows with `source_type=manual`,
+`detector_kind=manual`, `identity_method=manual_entry`, and untrusted identity.
+Rule identity, source identity, and activation fields are not accepted from the
+client. Contact, company, and deal references must belong to the route
+workspace. Manual context can inform a seller, but cannot impersonate a
+promoted rule version.
+
 ## Evaluation and idempotency
 
 `CRMSignalRuleEvaluator` runs two coordinated schedules:
@@ -208,11 +218,19 @@ by action does not inflate the precision denominator.
 
 ## Product and API surfaces
 
-Signals appear in CRM Insights and on contact, company, and deal pages. The
-workspace feed uses the shared query builder for owner, account, domain,
+Signals appear in the CRM Signal Inbox and on contact, company, and deal pages.
+The inbox leads with why the evidence matters now, a recommended next step,
+and navigation to the resolved CRM record; detailed scoring stays behind an
+evidence disclosure. The workspace feed uses the shared query builder for owner, account, domain,
 polarity, signal type, detection date, and identity trust, with additional
 computed severity, age, and status controls. Account and meeting briefs group
 corroborating evidence and explain what changed.
+
+Review suggestions retain their supporting signal IDs. Review cards display
+that evidence and preview immediate deal creation or stage changes before
+approval. Approval atomically claims one pending suggestion before execution,
+and dismissal requires a calibration reason. Suggestion reads and mutations,
+plus every execution target, are workspace-scoped.
 
 Primary routes under `/api/crm`:
 
@@ -223,6 +241,7 @@ Primary routes under `/api/crm`:
 | GET | `/signals/brief` | current account/deal signal brief |
 | GET | `/meetings/{id}/signal-brief` | meeting-specific brief |
 | GET | `/signals/precision` | rule feedback and precision report |
+| GET | `/signals/rules` | effective shadow/live rule versions |
 | GET/POST | `/signals/routing-policy` | inspect or create a policy version |
 | POST | `/signals/rules/{ruleKey}/versions/{version}/activate` | activate a rule version |
 | POST | `/signals/{id}/review` | record review |

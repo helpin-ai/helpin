@@ -41,6 +41,25 @@ func (r *CRMSignalRepository) ListLatestRuleScoringConfigs(ctx context.Context, 
 	return effective, nil
 }
 
+// ListLatestRuleConfigs returns the effective newest version of every rule,
+// including disabled and context-only rules for the admin calibration UI.
+func (r *CRMSignalRepository) ListLatestRuleConfigs(ctx context.Context, workspaceID string) (map[string]model.CRMSignalRuleConfig, error) {
+	var configs []model.CRMSignalRuleConfig
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? OR workspace_id IS NULL", workspaceID).
+		Order("rule_key, CASE WHEN workspace_id IS NULL THEN 1 ELSE 0 END, version DESC").
+		Find(&configs).Error; err != nil {
+		return nil, fmt.Errorf("list latest rule configs: %w", err)
+	}
+	effective := make(map[string]model.CRMSignalRuleConfig, len(configs))
+	for _, config := range configs {
+		if _, exists := effective[config.RuleKey]; !exists {
+			effective[config.RuleKey] = config
+		}
+	}
+	return effective, nil
+}
+
 // ListWorkspaceSignalCandidates returns signals for composition. A zero limit
 // requests the complete workspace set; score and severity filters are applied
 // after scoring by the service.
