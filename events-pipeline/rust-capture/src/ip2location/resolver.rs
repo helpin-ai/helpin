@@ -74,6 +74,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "requires a licensed IP2Proxy database fixture"]
     fn test_ip2proxy_resolver() {
         let resolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
         println!("Resolver: {:?}", resolver.lookup("38.153.15.49").unwrap());

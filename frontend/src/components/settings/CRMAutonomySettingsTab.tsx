@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useAutonomySettings, useUpdateAutonomySettings } from '@/hooks/queries/useCRM';
+import { useState } from 'react';
+import { useActivateSignalRule, useAutonomySettings, useSaveSignalRoutingPolicy, useSignalOperations, useUpdateAutonomySettings } from '@/hooks/queries/useCRM';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -8,27 +8,56 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
+import { Badge } from '@/components/ui/badge';
+import { useConfirm } from '@/components/ui/confirm-dialog';
 
 export function CRMAutonomySettingsTab({ workspaceId }: { workspaceId: string }) {
   const { data: settings, isLoading } = useAutonomySettings(workspaceId);
   const updateSettings = useUpdateAutonomySettings(workspaceId);
+  const signalOperations = useSignalOperations(workspaceId);
+  const activateRule = useActivateSignalRule(workspaceId);
+  const saveRoutingPolicy = useSaveSignalRoutingPolicy(workspaceId);
+  const confirm = useConfirm();
   const [saving, setSaving] = useState(false);
 
-  const [enabled, setEnabled] = useState(true);
-  const [autoCreateDeals, setAutoCreateDeals] = useState(true);
-  const [autoProgressDeals, setAutoProgressDeals] = useState(true);
-  const [autoExecuteThreshold, setAutoExecuteThreshold] = useState(0.9);
-  const [reviewThreshold, setReviewThreshold] = useState(0.7);
+  const [enabledOverride, setEnabled] = useState<boolean>();
+  const [autoCreateDealsOverride, setAutoCreateDeals] = useState<boolean>();
+  const [autoProgressDealsOverride, setAutoProgressDeals] = useState<boolean>();
+  const [autoExecuteThresholdOverride, setAutoExecuteThreshold] = useState<number>();
+  const [reviewThresholdOverride, setReviewThreshold] = useState<number>();
+  const [minimumPriorityOverride, setMinimumPriority] = useState<number>();
+  const [requiredTrustOverride, setRequiredTrust] = useState<string>();
+  const enabled = enabledOverride ?? settings?.enabled ?? true;
+  const autoCreateDeals = autoCreateDealsOverride ?? settings?.auto_create_deals ?? true;
+  const autoProgressDeals = autoProgressDealsOverride ?? settings?.auto_progress_deals ?? true;
+  const autoExecuteThreshold = autoExecuteThresholdOverride ?? settings?.auto_execute_threshold ?? 0.9;
+  const reviewThreshold = reviewThresholdOverride ?? settings?.review_threshold ?? 0.7;
+  const minimumPriority = minimumPriorityOverride ?? signalOperations.data?.policy?.minimum_priority ?? 20;
+  const requiredTrust = requiredTrustOverride ?? signalOperations.data?.policy?.required_trust ?? 'verified';
 
-  useEffect(() => {
-    if (settings) {
-      setEnabled(settings.enabled);
-      setAutoCreateDeals(settings.auto_create_deals);
-      setAutoProgressDeals(settings.auto_progress_deals);
-      setAutoExecuteThreshold(settings.auto_execute_threshold);
-      setReviewThreshold(settings.review_threshold);
+  const handleActivateRule = async (ruleKey: string, version: number) => {
+    const accepted = await confirm({
+      title: `Make ${ruleKey.replace(/_/g, ' ')} v${version} live?`,
+      description: 'This promotes the exact rule version for this workspace. Only evidence that also passes identity, priority, deduplication, and routing policy can become actionable.',
+      confirmText: 'Promote version',
+    });
+    if (!accepted) return;
+    try {
+      await activateRule.mutateAsync({ ruleKey, version });
+      toast.success('Signal rule promoted');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Signal rule could not be promoted');
     }
-  }, [settings]);
+  };
+
+  const handleSaveRouting = async () => {
+    try {
+      await saveRoutingPolicy.mutateAsync({ minimum_priority: minimumPriority, required_trust: requiredTrust, route_to_owner: true, channels: ['feed'] });
+      toast.success('Signal routing policy activated');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Routing policy could not be saved');
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -54,16 +83,16 @@ export function CRMAutonomySettingsTab({ workspaceId }: { workspaceId: string })
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Self-Driving CRM</CardTitle>
+          <CardTitle className="text-base">Deal recommendations</CardTitle>
           <CardDescription>
-            Configure how aggressively the system auto-creates and advances deals based on detected buyer signals.
+            Configure LLM-assisted deal creation and stage recommendations. Signal extraction confidence and recommendation confidence are evaluated separately.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <Label className="text-sm font-medium">Enable Automation</Label>
-              <p className="text-xs text-muted-foreground">Master switch for all CRM automation</p>
+              <Label className="text-sm font-medium">Enable deal recommendations</Label>
+              <p className="text-xs text-muted-foreground">Allow CRM activity to produce deal suggestions</p>
             </div>
             <Switch checked={enabled} onCheckedChange={setEnabled} />
           </div>
@@ -72,16 +101,16 @@ export function CRMAutonomySettingsTab({ workspaceId }: { workspaceId: string })
 
           <div className="flex items-center justify-between">
             <div>
-              <Label className="text-sm font-medium">Auto-Create Deals</Label>
-              <p className="text-xs text-muted-foreground">Automatically create deals when buying intent is detected</p>
+              <Label className="text-sm font-medium">Create-deal recommendations</Label>
+              <p className="text-xs text-muted-foreground">Suggest a deal when corroborated activity shows buying intent</p>
             </div>
             <Switch checked={autoCreateDeals} onCheckedChange={setAutoCreateDeals} disabled={!enabled} />
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <Label className="text-sm font-medium">Auto-Progress Deals</Label>
-              <p className="text-xs text-muted-foreground">Automatically advance deal stages based on signals</p>
+              <Label className="text-sm font-medium">Stage-change recommendations</Label>
+              <p className="text-xs text-muted-foreground">Suggest the next stage when recent evidence shows real progress</p>
             </div>
             <Switch checked={autoProgressDeals} onCheckedChange={setAutoProgressDeals} disabled={!enabled} />
           </div>
@@ -90,8 +119,8 @@ export function CRMAutonomySettingsTab({ workspaceId }: { workspaceId: string })
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Auto-Execute Threshold</Label>
-              <p className="text-xs text-muted-foreground">Signals above this confidence are executed without review</p>
+              <Label className="text-sm font-medium">Direct execution threshold</Label>
+              <p className="text-xs text-muted-foreground">Recommendation confidence required after every supporting rule version passes activation policy</p>
               <Select
                 value={String(autoExecuteThreshold)}
                 onValueChange={(v) => {
@@ -111,8 +140,8 @@ export function CRMAutonomySettingsTab({ workspaceId }: { workspaceId: string })
             </div>
 
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Review Threshold</Label>
-              <p className="text-xs text-muted-foreground">Signals between this and auto-execute create pending suggestions</p>
+              <Label className="text-sm font-medium">Review threshold</Label>
+              <p className="text-xs text-muted-foreground">Recommendation confidence required to enter the human review queue</p>
               <Select
                 value={String(reviewThreshold)}
                 onValueChange={(v) => {
@@ -135,10 +164,86 @@ export function CRMAutonomySettingsTab({ workspaceId }: { workspaceId: string })
           <div className="rounded-md border p-3 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">How it works:</p>
             <ul className="mt-1 list-inside list-disc space-y-0.5">
-              <li>Confidence &ge; {(autoExecuteThreshold * 100).toFixed(0)}%: auto-executed (no review needed)</li>
-              <li>Confidence {(reviewThreshold * 100).toFixed(0)}%&ndash;{(autoExecuteThreshold * 100).toFixed(0)}%: pending review in the Review feed</li>
-              <li>Confidence &lt; {(reviewThreshold * 100).toFixed(0)}%: low-priority suggestion</li>
+              <li>Recommendation confidence &ge; {(autoExecuteThreshold * 100).toFixed(0)}%: direct execution only when every supporting signal is verified and its exact rule version is live</li>
+              <li>Recommendation confidence {(reviewThreshold * 100).toFixed(0)}%&ndash;{(autoExecuteThreshold * 100).toFixed(0)}%: pending review</li>
+              <li>Unversioned, shadow, or lower-trust evidence always requires review, regardless of confidence</li>
             </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Signal activation and routing</CardTitle>
+          <CardDescription>Rules start in shadow mode. Promote an exact version only after reviewing its evidence, then control which eligible signals enter the inbox.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Minimum business priority</Label>
+              <Select value={String(minimumPriority)} onValueChange={(value) => setMinimumPriority(Number(value))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[10, 15, 20, 25, 30, 40, 50].map((value) => <SelectItem key={value} value={String(value)}>{value}+</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Required identity trust</Label>
+              <Select value={requiredTrust} onValueChange={setRequiredTrust}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="verified">Verified only</SelectItem>
+                  <SelectItem value="probabilistic">Probabilistic or verified</SelectItem>
+                  <SelectItem value="untrusted">All identity levels</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
+            <div>
+              <p className="text-sm font-medium">Active routing policy</p>
+              <p className="text-xs text-muted-foreground">{signalOperations.data?.policy ? `Version ${signalOperations.data.policy.version} · owner feed routing` : 'No active policy. Signals remain context-only.'}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => void handleSaveRouting()} disabled={saveRoutingPolicy.isPending}>{saveRoutingPolicy.isPending ? 'Activating…' : 'Save and activate policy'}</Button>
+          </div>
+
+          <Separator />
+
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Rule versions</p>
+                <p className="text-xs text-muted-foreground">Precision is based on explicit review feedback, never extraction confidence.</p>
+              </div>
+              <Badge variant="outline">{signalOperations.data?.rules.length ?? 0} rules</Badge>
+            </div>
+            {signalOperations.isLoading ? <Skeleton className="mt-3 h-24 w-full" /> : (
+              <div className="mt-3 divide-y rounded-md border">
+                {(signalOperations.data?.rules ?? []).map((rule) => {
+                  const samples = (signalOperations.data?.precision ?? []).filter((row) => row.rule_key === rule.rule_key && row.rule_version === rule.version);
+                  const reviewed = samples.reduce((sum, row) => sum + row.reviewed_count, 0);
+                  const valid = samples.reduce((sum, row) => sum + row.valid_count, 0);
+                  const precision = reviewed > 0 ? Math.round((valid / reviewed) * 100) : null;
+                  const live = rule.activation_eligible && !rule.shadow_mode;
+                  const status = !rule.enabled ? 'Disabled' : !rule.activation_eligible ? 'Context only' : live ? 'Live' : 'Shadow';
+                  return (
+                    <div key={`${rule.rule_key}:${rule.version}`} className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium">{rule.rule_key.replace(/_/g, ' ')}</p>
+                          <Badge variant={live ? 'default' : 'secondary'}>{status}</Badge>
+                          <span className="text-xs text-muted-foreground">v{rule.version}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{reviewed > 0 ? `${precision}% precision · ${reviewed} reviewed · ${samples.reduce((sum, row) => sum + row.acted_count, 0)} acted on` : 'No reviewed sample yet'}</p>
+                      </div>
+                      {rule.enabled && rule.activation_eligible && !live ? <Button variant="outline" size="sm" className="h-8" onClick={() => void handleActivateRule(rule.rule_key, rule.version)} disabled={activateRule.isPending}>Promote v{rule.version}</Button> : null}
+                    </div>
+                  );
+                })}
+                {(signalOperations.data?.rules.length ?? 0) === 0 ? <p className="px-3 py-6 text-sm text-muted-foreground">No signal rule versions are available.</p> : null}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

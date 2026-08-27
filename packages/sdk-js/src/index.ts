@@ -193,7 +193,8 @@ function initializeNamespacedClient(
       openMessages: () => widgetManager.openMessages(),
       openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
       openConversation: (id: string) => widgetManager.openConversation(id),
-      openArticle: (articleKey: string, options?: ShowArticleOptions) => widgetManager.openArticle(articleKey, options),
+      openArticle: (articleKey: string, options?: ShowArticleOptions) =>
+        client.openArticle(articleKey, options),
       onOpen: (cb: (...args: any[]) => void) => widgetManager.onOpen(cb),
       onClose: (cb: (...args: any[]) => void) => widgetManager.onClose(cb),
       onUnreadCountChange: (cb: (...args: any[]) => void) => widgetManager.onUnreadCountChange(cb),
@@ -215,6 +216,7 @@ function initializeNamespacedClient(
   const syncMethods = [
     'track',
     'lead',
+    'articleView',
     'pageview',
     'set',
     'unset',
@@ -375,7 +377,13 @@ if (isWindowAvailable()) {
           openMessages: () => widgetManager.openMessages(),
           openNewMessage: (content?: string) => widgetManager.openNewMessage(content),
           openConversation: (id: string) => widgetManager.openConversation(id),
-          openArticle: (articleKey: string, options?: ShowArticleOptions) => widgetManager.openArticle(articleKey, options),
+          openArticle: (articleKey: string, options?: ShowArticleOptions) => {
+            analyticsClient?.articleView(articleKey, {
+              collection_id: options?.collectionId,
+              space_id: options?.spaceId,
+            });
+            widgetManager.openArticle(articleKey, options);
+          },
           onOpen: (cb: (...a: any[]) => void) => widgetManager.onOpen(cb),
           onClose: (cb: (...a: any[]) => void) => widgetManager.onClose(cb),
           onUnreadCountChange: (cb: (...a: any[]) => void) => widgetManager.onUnreadCountChange(cb),
@@ -470,4 +478,9 @@ export {
   LogLevel,
   ClientProperties,
 };
+export type {
+  FormCaptureConfig,
+  FormFieldMappingTarget,
+  InteractionCaptureRule,
+} from './core/types';
 export type { ShowArticleOptions } from './core/widget';

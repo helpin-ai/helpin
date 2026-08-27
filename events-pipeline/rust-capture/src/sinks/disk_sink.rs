@@ -1,11 +1,12 @@
 use super::{EventSink, EventTypes};
 use crate::api::CaptureError;
+use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -42,15 +43,27 @@ impl Clone for DiskSink {
 
 impl DiskSink {
     pub fn new(base_dir: PathBuf) -> Self {
+        let max_segment_bytes =
+            positive_u64_from_env("FALLBACK_MAX_SEGMENT_BYTES", DEFAULT_MAX_SEGMENT_BYTES);
+        let max_segment_age_secs = positive_u64_from_env(
+            "FALLBACK_MAX_SEGMENT_AGE_SECS",
+            DEFAULT_MAX_SEGMENT_AGE_SECS,
+        );
+        Self::with_limits(base_dir, max_segment_bytes, max_segment_age_secs)
+    }
+
+    fn with_limits(base_dir: PathBuf, max_segment_bytes: u64, max_segment_age_secs: u64) -> Self {
         Self::ensure_directories(&base_dir);
         Self::recover_orphaned_segments(&base_dir);
 
-        DiskSink {
+        let sink = DiskSink {
             base_dir,
             segment: Arc::new(Mutex::new(None)),
-            max_segment_bytes: DEFAULT_MAX_SEGMENT_BYTES,
-            max_segment_age_secs: DEFAULT_MAX_SEGMENT_AGE_SECS,
-        }
+            max_segment_bytes,
+            max_segment_age_secs,
+        };
+        sink.start_rotation_task();
+        sink
     }
 
     #[cfg(test)]
@@ -59,12 +72,7 @@ impl DiskSink {
         max_segment_bytes: u64,
         max_segment_age_secs: u64,
     ) -> Self {
-        let sink = Self::new(base_dir);
-        DiskSink {
-            max_segment_bytes,
-            max_segment_age_secs,
-            ..sink
-        }
+        Self::with_limits(base_dir, max_segment_bytes, max_segment_age_secs)
     }
 
     pub fn pending_dir(&self) -> PathBuf {
@@ -196,6 +204,9 @@ impl DiskSink {
         segment.file.flush().map_err(|e| {
             CaptureError::NonRetryableSinkError(format!("Failed to flush segment: {}", e))
         })?;
+        segment.file.sync_all().map_err(|e| {
+            CaptureError::NonRetryableSinkError(format!("Failed to fsync segment: {}", e))
+        })?;
         drop(segment.file);
 
         if segment.size > 0 {
@@ -240,6 +251,41 @@ impl DiskSink {
         segment.size >= self.max_segment_bytes
             || segment.created_at.elapsed().as_secs() >= self.max_segment_age_secs
     }
+
+    fn start_rotation_task(&self) {
+        if tokio::runtime::Handle::try_current().is_err() {
+            return;
+        }
+        let sink = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                let mut guard = sink.segment.lock().await;
+                let expired = guard
+                    .as_ref()
+                    .map(|segment| sink.needs_rotation(segment))
+                    .unwrap_or(false);
+                if !expired {
+                    continue;
+                }
+                if let Some(segment) = guard.take() {
+                    if let Err(error) = Self::finalize_segment(segment) {
+                        tracing::error!(%error, "failed to finalize expired fallback segment");
+                    }
+                }
+            }
+        });
+    }
+}
+
+fn positive_u64_from_env(name: &str, default: u64) -> u64 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
 }
 
 #[async_trait]
@@ -287,6 +333,9 @@ impl EventSink for DiskSink {
         segment.file.flush().map_err(|e| {
             CaptureError::NonRetryableSinkError(format!("Failed to flush disk segment: {}", e))
         })?;
+        segment.file.sync_data().map_err(|e| {
+            CaptureError::NonRetryableSinkError(format!("Failed to fsync disk segment: {}", e))
+        })?;
 
         metrics::counter!("capture_disk_events_written_total", events.len() as u64);
         tracing::debug!(
@@ -314,6 +363,7 @@ mod tests {
                 ..Default::default()
             },
             event_id: Uuid::new_v4(),
+            ..Default::default()
         })
     }
 
@@ -327,6 +377,7 @@ mod tests {
                 ..Default::default()
             },
             event_id: Uuid::new_v4(),
+            ..Default::default()
         })
     }
 
@@ -451,6 +502,24 @@ mod tests {
             2,
             "Should have 2 segments after age-based rotation"
         );
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_expired_segment_finalizes_without_another_write() {
+        let dir = std::env::temp_dir().join(format!("disk_sink_idle_age_{}", Uuid::new_v4()));
+        let sink = DiskSink::with_rotation(dir.clone(), u64::MAX, 1);
+
+        sink.send(make_test_event("only-event")).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(2_100)).await;
+
+        let files = fs::read_dir(dir.join("pending"))
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "jsonl"))
+            .count();
+        assert_eq!(files, 1, "idle segment should become replayable");
 
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -584,10 +653,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_dir_returns_error() {
-        let sink = DiskSink::new(PathBuf::from("/nonexistent/deeply/nested/fallback"));
+        let blocking_file =
+            std::env::temp_dir().join(format!("disk_sink_invalid_{}", Uuid::new_v4()));
+        fs::write(&blocking_file, "not a directory").unwrap();
+        let sink = DiskSink::new(blocking_file.join("fallback"));
 
         let result = sink.send(make_test_event("key")).await;
         assert!(result.is_err(), "Writing to invalid path should fail");
+        fs::remove_file(blocking_file).unwrap();
     }
 
     #[tokio::test]

@@ -279,7 +279,16 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
             <EntitySummaryCard workspaceId={wsId} dealId={dealId} presentation="compact" />
             <div className="min-w-0">
               <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Deal health <DealHealthScore workspaceId={wsId} dealId={dealId} compact /></div>
-              <BuyerSignals workspaceId={wsId} dealId={dealId} presentation="compact" />
+              <BuyerSignals
+                workspaceId={wsId}
+                dealId={dealId}
+                presentation="compact"
+                onOpenSource={(signal) => {
+                  if (signal.source_type === 'email' && signal.source_thread_id) setEmailThreadId(signal.source_thread_id);
+                  else if (signal.source_type === 'meeting' && signal.source_id) void closeThen(() => navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: signal.source_id } } as never));
+                  else if (signal.source_type === 'support' && signal.source_thread_id) void closeThen(() => navigate({ to: '/w/$slug/support/$conversationId', params: { slug: wsSlug, conversationId: signal.source_thread_id } } as never));
+                }}
+              />
             </div>
           </section>
 

@@ -38,7 +38,7 @@ describe('workspace rail navigation', () => {
       'Deals',
       'Meetings',
       'Review',
-      'Insights',
+      'Signals',
     ]);
   });
 });

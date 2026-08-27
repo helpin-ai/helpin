@@ -42,7 +42,14 @@ import type {
   CRMEnrichmentResult,
   CreateCRMEnrichmentRequest,
   CRMBuyerSignal,
+  CRMSignalExternalEvidence,
+  CRMSignalWorkspaceFeed,
+  CRMSignalPrecisionRow,
+  CRMSignalRoutingPolicy,
+  CRMSignalRuleConfig,
+  CRMSignalFeedFilters,
   CreateCRMBuyerSignalRequest,
+  IngestCRMSignalExternalEvidenceRequest,
   CRMEntitySummary,
   CRMIntelligenceRefreshResult,
   CRMDealHealthScore,
@@ -302,6 +309,7 @@ export const crmEnrichmentService = {
 };
 
 export const crmSignalService = {
+  feed: (workspaceId: string, filters?: CRMSignalFeedFilters) => api.get<CRMSignalWorkspaceFeed>(`/crm/signals/feed${qs(workspaceId)}${filterQuery({ ...(filters ?? {}) })}`),
   list: (
     workspaceId: string,
     filters?: {
@@ -314,8 +322,17 @@ export const crmSignalService = {
     },
   ) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/signals${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   create: (payload: CreateCRMBuyerSignalRequest) => api.post<CRMBuyerSignal>(`/crm/signals${qs(payload.workspace_id)}`, payload),
+  ingestExternalEvidence: (payload: IngestCRMSignalExternalEvidenceRequest) => api.post<CRMSignalExternalEvidence>(`/crm/signals/external-evidence${qs(payload.workspace_id)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/signals/${id}${qs(workspaceId)}`),
-  dismiss: (workspaceId: string, id: string) => api.post(`/crm/signals/${id}/dismiss${qs(workspaceId)}`, {}),
+  dismiss: (workspaceId: string, id: string, reason: import('../crmTypes').CRMSignalDismissalReason) => api.post(`/crm/signals/${id}/dismiss${qs(workspaceId)}`, { reason }),
+  review: (workspaceId: string, id: string) => api.post(`/crm/signals/${id}/review${qs(workspaceId)}`, {}),
+  acted: (workspaceId: string, id: string) => api.post(`/crm/signals/${id}/acted${qs(workspaceId)}`, {}),
+  precision: (workspaceId: string) => api.get<{ data: CRMSignalPrecisionRow[] }>(`/crm/signals/precision${qs(workspaceId)}`),
+  rules: (workspaceId: string) => api.get<{ data: CRMSignalRuleConfig[] }>(`/crm/signals/rules${qs(workspaceId)}`),
+  routingPolicy: (workspaceId: string) => api.get<CRMSignalRoutingPolicy | null>(`/crm/signals/routing-policy${qs(workspaceId)}`),
+  createRoutingPolicy: (workspaceId: string, payload: { minimum_priority: number; required_trust: string; route_to_owner: boolean; channels: string[] }) => api.post<CRMSignalRoutingPolicy>(`/crm/signals/routing-policy${qs(workspaceId)}`, payload),
+  activateRoutingPolicy: (workspaceId: string, version: number) => api.post(`/crm/signals/routing-policy/versions/${version}/activate${qs(workspaceId)}`, {}),
+  activateRule: (workspaceId: string, ruleKey: string, version: number) => api.post(`/crm/signals/rules/${encodeURIComponent(ruleKey)}/versions/${version}/activate${qs(workspaceId)}`, {}),
   listByContact: (workspaceId: string, contactId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
   listByDeal: (workspaceId: string, dealId: string, page?: number) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
@@ -350,6 +367,7 @@ export const crmSuggestionService = {
       object_id?: string;
       status?: string;
       page?: number;
+      per_page?: number;
     },
   ) => api.get<CRMPaginatedResponse<CRMSuggestion[]>>(`/crm/suggestions${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   get: (workspaceId: string, id: string) => api.get<CRMSuggestion>(`/crm/suggestions/${id}${qs(workspaceId)}`),
@@ -357,7 +375,7 @@ export const crmSuggestionService = {
   update: (workspaceId: string, id: string, payload: UpdateCRMSuggestionRequest) => api.put<CRMSuggestion>(`/crm/suggestions/${id}${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/suggestions/${id}${qs(workspaceId)}`),
   accept: (workspaceId: string, id: string, edits?: Record<string, unknown>) => api.post<CRMSuggestion>(`/crm/suggestions/${id}/accept${qs(workspaceId)}`, edits || {}),
-  dismiss: (workspaceId: string, id: string) => api.post<CRMSuggestion>(`/crm/suggestions/${id}/dismiss${qs(workspaceId)}`, {}),
+  dismiss: (workspaceId: string, id: string, reason: import('../crmTypes').CRMSignalDismissalReason) => api.post<CRMSuggestion>(`/crm/suggestions/${id}/dismiss${qs(workspaceId)}`, { reason }),
 };
 
 export const crmWritingProfileService = {

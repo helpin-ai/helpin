@@ -49,6 +49,83 @@ func TestLoadDefaultsQueryExpansionToGPT56Luna(t *testing.T) {
 	}
 }
 
+func TestLoadLeavesCRMCompletionRoutesOnBuiltInDefaults(t *testing.T) {
+	setRequiredConfigEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.CRMLLMProvider != "" || cfg.CRMLLMModel != "" || cfg.CRMLLMOpenRouterProvider != "" ||
+		cfg.CRMLLMFallbackProvider != "" || cfg.CRMLLMFallbackModel != "" || cfg.CRMLLMFallbackOpenRouterProvider != "" ||
+		cfg.CRMMeetingFallbackProvider != "" || cfg.CRMMeetingFallbackModel != "" || cfg.CRMMeetingFallbackOpenRouterProvider != "" {
+		t.Fatalf(
+			"unexpected CRM route overrides: primary=%q/%q via %q, fallback=%q/%q via %q, meeting fallback=%q/%q via %q",
+			cfg.CRMLLMProvider, cfg.CRMLLMModel, cfg.CRMLLMOpenRouterProvider,
+			cfg.CRMLLMFallbackProvider, cfg.CRMLLMFallbackModel, cfg.CRMLLMFallbackOpenRouterProvider,
+			cfg.CRMMeetingFallbackProvider, cfg.CRMMeetingFallbackModel, cfg.CRMMeetingFallbackOpenRouterProvider,
+		)
+	}
+}
+
+func TestLoadParsesCRMCompletionRouteOverrides(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("CRM_LLM_PROVIDER", " openrouter ")
+	t.Setenv("CRM_LLM_MODEL", " anthropic/claude-sonnet-5 ")
+	t.Setenv("CRM_LLM_OPENROUTER_PROVIDER", " anthropic ")
+	t.Setenv("CRM_LLM_FALLBACK_PROVIDER", " openrouter ")
+	t.Setenv("CRM_LLM_FALLBACK_MODEL", " openai/gpt-5.6-luna ")
+	t.Setenv("CRM_LLM_FALLBACK_OPENROUTER_PROVIDER", " openai ")
+	t.Setenv("CRM_MEETING_LLM_FALLBACK_PROVIDER", " openrouter ")
+	t.Setenv("CRM_MEETING_LLM_FALLBACK_MODEL", " google/gemini-3.7-flash ")
+	t.Setenv("CRM_MEETING_LLM_FALLBACK_OPENROUTER_PROVIDER", " google-vertex/global ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.CRMLLMProvider != "openrouter" || cfg.CRMLLMModel != "anthropic/claude-sonnet-5" || cfg.CRMLLMOpenRouterProvider != "anthropic" {
+		t.Fatalf("primary CRM route = %q/%q via %q", cfg.CRMLLMProvider, cfg.CRMLLMModel, cfg.CRMLLMOpenRouterProvider)
+	}
+	if cfg.CRMLLMFallbackProvider != "openrouter" || cfg.CRMLLMFallbackModel != "openai/gpt-5.6-luna" || cfg.CRMLLMFallbackOpenRouterProvider != "openai" {
+		t.Fatalf("fallback CRM route = %q/%q via %q", cfg.CRMLLMFallbackProvider, cfg.CRMLLMFallbackModel, cfg.CRMLLMFallbackOpenRouterProvider)
+	}
+	if cfg.CRMMeetingFallbackProvider != "openrouter" || cfg.CRMMeetingFallbackModel != "google/gemini-3.7-flash" || cfg.CRMMeetingFallbackOpenRouterProvider != "google-vertex/global" {
+		t.Fatalf("meeting fallback route = %q/%q via %q", cfg.CRMMeetingFallbackProvider, cfg.CRMMeetingFallbackModel, cfg.CRMMeetingFallbackOpenRouterProvider)
+	}
+}
+
+func TestLoadRejectsPartialCRMCompletionRouteOverrides(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		env  string
+	}{
+		{name: "primary", env: "CRM_LLM_PROVIDER"},
+		{name: "fallback", env: "CRM_LLM_FALLBACK_MODEL"},
+		{name: "meeting fallback", env: "CRM_MEETING_LLM_FALLBACK_PROVIDER"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setRequiredConfigEnv(t)
+			t.Setenv(test.env, "openrouter")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), "must be set together") {
+				t.Fatalf("expected paired route error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsOpenRouterSelectionForDirectProvider(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("CRM_LLM_PROVIDER", "anthropic")
+	t.Setenv("CRM_LLM_MODEL", "claude-sonnet-5")
+	t.Setenv("CRM_LLM_OPENROUTER_PROVIDER", "anthropic")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "requires the corresponding LLM provider to be openrouter") {
+		t.Fatalf("expected OpenRouter selection error, got %v", err)
+	}
+}
+
 func TestLoadAllowsCommandRouterDefaultsToBeOverridden(t *testing.T) {
 	setRequiredConfigEnv(t)
 	t.Setenv("COMMAND_ROUTER_LLM_PROVIDER", "anthropic")

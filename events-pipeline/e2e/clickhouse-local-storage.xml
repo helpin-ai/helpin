@@ -1,0 +1,15 @@
+<clickhouse>
+    <!-- Keep the table DDL identical in local and Kubernetes environments.
+         Kubernetes maps this policy to R2; hermetic tests map it locally. -->
+    <storage_configuration>
+        <policies>
+            <events>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                    </main>
+                </volumes>
+            </events>
+        </policies>
+    </storage_configuration>
+</clickhouse>

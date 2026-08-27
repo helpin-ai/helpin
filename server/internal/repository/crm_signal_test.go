@@ -21,8 +21,12 @@ func TestCRMSignalRepositoryDismissalPersistsUntilEvidenceChanges(t *testing.T) 
 		signal_type TEXT NOT NULL, source_type TEXT NOT NULL DEFAULT 'manual', source_id TEXT,
 		source_thread_id TEXT, summary TEXT NOT NULL, evidence_excerpt TEXT,
 		metadata BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)), confidence REAL NOT NULL DEFAULT 0,
-		detected_at DATETIME NOT NULL, evidence_fingerprint TEXT NOT NULL DEFAULT '',
-		dismissed_at DATETIME, dismissed_by_member_id TEXT, created_at DATETIME
+		detected_at DATETIME NOT NULL, detector_kind TEXT NOT NULL DEFAULT 'llm_extracted',
+		signal_domain TEXT NOT NULL DEFAULT 'conversation', polarity TEXT NOT NULL DEFAULT 'neutral',
+		rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME,
+		evidence_identity_method TEXT NOT NULL DEFAULT 'connected_mailbox',
+		evidence_identity_trust TEXT NOT NULL DEFAULT 'verified', evidence_fingerprint TEXT NOT NULL DEFAULT '',
+		dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create signal schema: %v", err)
 	}
@@ -71,6 +75,20 @@ func TestCRMSignalRepositoryDismissalPersistsUntilEvidenceChanges(t *testing.T) 
 	if err != nil || total != 1 || len(rows) != 1 || rows[0].DismissedAt != nil {
 		t.Fatalf("refreshed list = %#v, total=%d, err=%v; want visible", rows, total, err)
 	}
+	otherSignal := &model.CRMBuyerSignal{
+		ID: "signal-other-workspace", WorkspaceID: "ws-2", SignalType: model.CRMSignalRiskSignal,
+		SourceType: model.CRMSignalSourceManual, Summary: "Other tenant", Confidence: .8, DetectedAt: time.Now().UTC(),
+	}
+	if err := repo.CreateSignal(ctx, otherSignal); err != nil {
+		t.Fatalf("create other workspace signal: %v", err)
+	}
+	if err := repo.DeleteSignal(ctx, "ws-1", otherSignal.ID); err == nil {
+		t.Fatal("expected cross-workspace delete to fail")
+	}
+	var remaining int64
+	if err := db.Model(&model.CRMBuyerSignal{}).Where("id = ?", otherSignal.ID).Count(&remaining).Error; err != nil || remaining != 1 {
+		t.Fatalf("other workspace signal remaining=%d err=%v", remaining, err)
+	}
 }
 
 func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testing.T) {
@@ -79,9 +97,10 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 		t.Fatalf("open sqlite: %v", err)
 	}
 	statements := []string{
-		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, created_at DATETIME)`,
+		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, first_name TEXT, last_name TEXT)`,
-		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, display_id TEXT)`,
+		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, display_id TEXT, amount REAL, probability INTEGER, owner_member_id TEXT)`,
+		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, domain TEXT, owner_member_id TEXT)`,
 		`CREATE TABLE crm_associations (workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
 	}
 	for _, statement := range statements {
@@ -92,7 +111,8 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 	now := time.Now().UTC()
 	for _, statement := range []string{
 		`INSERT INTO crm_contacts VALUES ('contact-1','ws-1','Ava','Buyer')`,
-		`INSERT INTO crm_deals VALUES ('deal-1','ws-1','Expansion','DEAL-7')`,
+		`INSERT INTO crm_deals (id, workspace_id, name, display_id) VALUES ('deal-1','ws-1','Expansion','DEAL-7')`,
+		`INSERT INTO crm_companies (id, workspace_id, name, domain) VALUES ('company-1','ws-1','Acme','acme.test')`,
 		`INSERT INTO crm_associations VALUES ('ws-1','contact','contact-1','company','company-1')`,
 		`INSERT INTO crm_associations VALUES ('ws-1','deal','deal-1','contact','contact-1')`,
 	} {
@@ -102,9 +122,9 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 	}
 	contactID, dealID, companyID := "contact-1", "deal-1", "company-1"
 	signals := []model.CRMBuyerSignal{
-		{ID: "direct", WorkspaceID: "ws-1", CompanyID: &companyID, SignalType: model.CRMSignalRiskSignal, SourceType: model.CRMSignalSourceSupport, Summary: "Escalation", Confidence: .9, DetectedAt: now},
-		{ID: "contact", WorkspaceID: "ws-1", ContactID: &contactID, SignalType: model.CRMSignalBuyingIntent, SourceType: model.CRMSignalSourceEmail, Summary: "Pricing", Confidence: .9, DetectedAt: now.Add(-time.Minute)},
-		{ID: "deal", WorkspaceID: "ws-1", DealID: &dealID, SignalType: model.CRMSignalTimelineSignal, SourceType: model.CRMSignalSourceMeeting, Summary: "Deadline", Confidence: .9, DetectedAt: now.Add(-2 * time.Minute)},
+		{ID: "direct", WorkspaceID: "ws-1", CompanyID: &companyID, SignalType: model.CRMSignalRiskSignal, SourceType: model.CRMSignalSourceSupport, SignalDomain: model.CRMSignalDomainSupport, Summary: "Escalation", Confidence: .9, DetectedAt: now},
+		{ID: "contact", WorkspaceID: "ws-1", ContactID: &contactID, SignalType: model.CRMSignalBuyingIntent, SourceType: model.CRMSignalSourceEmail, SignalDomain: model.CRMSignalDomainConversation, Summary: "Pricing", Confidence: .9, DetectedAt: now.Add(-time.Minute)},
+		{ID: "deal", WorkspaceID: "ws-1", DealID: &dealID, SignalType: model.CRMSignalTimelineSignal, SourceType: model.CRMSignalSourceMeeting, SignalDomain: model.CRMSignalDomainConversation, Summary: "Deadline", Confidence: .9, DetectedAt: now.Add(-2 * time.Minute)},
 		{ID: "weak", WorkspaceID: "ws-1", ContactID: &contactID, SignalType: model.CRMSignalCompetitorMention, SourceType: model.CRMSignalSourceEmail, Summary: "Maybe", Confidence: .59, DetectedAt: now},
 	}
 	for i := range signals {
@@ -121,6 +141,23 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 	}
 	if rows[1].ContactName != "Ava Buyer" || rows[2].DealName != "Expansion" || rows[2].DealDisplayID != "DEAL-7" {
 		t.Fatalf("context not hydrated: %#v", rows)
+	}
+	supportDomain := model.CRMSignalDomainSupport
+	filtered, err := NewCRMSignalRepository(db).ListWorkspaceSignalCandidates(context.Background(), "ws-1", model.CRMBuyerSignalListFilters{
+		Query: &model.QueryFilterGroup{Logic: model.QueryFilterLogicAnd, Rules: []model.QueryFilterRule{{
+			Field: "domain", Operator: model.QueryFilterOpIs, Value: &supportDomain,
+		}}},
+	}, now, 0)
+	if err != nil || len(filtered) != 1 || filtered[0].ID != "direct" {
+		t.Fatalf("query-builder filtered signals=%#v err=%v", filtered, err)
+	}
+	_, err = NewCRMSignalRepository(db).ListWorkspaceSignalCandidates(context.Background(), "ws-1", model.CRMBuyerSignalListFilters{
+		Query: &model.QueryFilterGroup{Rules: []model.QueryFilterRule{{
+			Field: "domain", Operator: model.QueryFilterOpContains, Value: &supportDomain,
+		}}},
+	}, now, 0)
+	if err == nil {
+		t.Fatal("expected invalid enum query-builder operator to fail")
 	}
 }
 

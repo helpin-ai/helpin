@@ -1,167 +1,102 @@
-# Rust Capture (Events Pipeline)
+# Rust event capture
 
-Usermaven's event ingestion service built in Rust.
-Handles event capture from frontend/backend SDKs, authentication, enrichment, and reliable delivery to Kafka.
+The capture service authenticates SDK requests, validates timestamps, performs
+stateless enrichment inline, and publishes versioned envelopes to JetStream.
+Kafka and Kafka Streams are not part of this pipeline.
 
-## Architecture
-
-```
-Client SDKs
-    |
-    v
-[Capture API] ---> [KafkaSink] ---> Kafka (primary path)
-    :3000              |
-                       v (on Kafka failure)
-                  [FallbackSink] ---> [DiskSink] ---> data/fallback/pending/
-                                                           |
-                                                   [Replay Worker] ---> Kafka
+```text
+SDK -> capture -> events.enriched.v1.<visitor-shard> -> session writer -> ClickHouse
+               \-> events.raw.v1
 ```
 
-### Binaries
+The capture process waits only for the work-stream acknowledgement. It publishes
+the privacy-normalized diagnostic archive in bounded background tasks, so an
+archive outage cannot delay a valid response. A work publish failure is fsynced
+to `FALLBACK_DIR`; the replay worker later runs the same enrichment and NATS
+publish path. The deployment must put this directory on an encrypted persistent
+volume.
 
-| Binary | Entry point | Description |
-|--------|------------|-------------|
-| `events-pipeline` | `src/main.rs` | Capture API server (default) |
-| `consumer` | `src/consumers/simple_consumer.rs` | Kafka consumer with enrichment (production) |
-| `worker` | `src/consumers/async_consumer.rs` | Async Kafka consumer (alternative) |
-| `replay-worker` | `src/replay_worker.rs` | Replays disk-buffered events back to Kafka |
+## Binaries
 
-### Sinks
+| Binary | Purpose |
+| --- | --- |
+| `events-pipeline` | HTTP capture API and inline enrichment |
+| `replay-worker` | Replays fsynced capture spill to NATS |
+| `nats-bootstrap` | Reconciles the three JetStream stream definitions |
+| `session-writer` | Sessionizes shard batches and inserts them into ClickHouse |
 
-- **KafkaSink** (`src/sinks/kafka_event_sink.rs`) -- Primary sink. Produces events to Kafka with partitioning by project ID. Includes `ClientContext` stats callback for broker health detection.
-- **DiskSink** (`src/sinks/disk_sink.rs`) -- Writes events to rotating JSONL segment files under `data/fallback/pending/`. Atomic writes via `.tmp` rename. Rotates at 10MB or 60s.
-- **FallbackSink** (`src/sinks/fallback_sink.rs`) -- Wraps KafkaSink + DiskSink. On retryable Kafka errors, transparently falls back to disk. Non-retryable errors propagate.
-- **PrintSink** (`src/sinks/print_sink.rs`) -- Logs events to stdout. Used for local development.
+`nats-bootstrap` requires `NATS_URL`, `EVENTS_WORK_MAX_BYTES`,
+`EVENTS_RAW_MAX_BYTES`, and `EVENTS_DLQ_MAX_BYTES`. It creates an R3
+WorkQueue/DiscardNew work stream, an R1 diagnostic raw archive, and an R3 DLQ.
+All are file-backed, S2-compressed, and bounded to a six-hour maximum age.
 
-### Health checks
-
-| Endpoint | Purpose | Used by |
-|----------|---------|---------|
-| `GET /health/liveness` | Returns 200 if process is alive | k8s livenessProbe |
-| `GET /health/readiness` | Returns 200 normally, 503 during graceful shutdown | k8s readinessProbe |
-| `GET /health/status` | JSON with component health (Kafka broker status) | Debugging/dashboards |
-
-On SIGTERM: marks pod not-ready, waits 5s for k8s endpoint updates, then shuts down gracefully.
-Readiness stays 200 even when Kafka is down because FallbackSink buffers events to disk.
-
-### Reliability features
-
-- **Typed error handling** -- `CaptureError` enum with retryable vs non-retryable distinction. SDKs can decide whether to retry based on HTTP status code.
-- **Kafka health detection** -- `rdkafka::ClientContext` stats callback (every 10s) detects broker connectivity and updates `HealthRegistry`. Exposed via `/health/status` and `capture_kafka_health` gauge.
-- **Request timeout** -- Configurable middleware (default 60s) prevents stuck connections from exhausting file descriptors. Returns 504 on timeout.
-- **Body size limit** -- Configurable max request body (default 2MB). Returns 413 on oversized payloads.
-- **Kafka send timeout** -- Configurable timeout per Kafka produce (default 20s). No more `Timeout::Never` blocking forever.
-- **Batch error handling** -- `send_batch` checks every result and aborts on first failure (no silent event loss).
-- **Consumer manual offset commits** -- `enable.auto.commit=false`. Offsets committed only after successful downstream send (at-least-once semantics).
-- **No panics in capture path** -- All `.unwrap()` replaced with proper error returns.
-
-### Metrics
-
-Prometheus metrics exposed on `:3001/metrics`:
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `http_requests_total` | Counter | Request count by method/path/status |
-| `http_requests_duration_seconds` | Histogram | Request latency |
-| `capture_errors_total` | Counter | Capture errors by error type |
-| `capture_fallback_failovers_total` | Counter | Times FallbackSink fell back to disk |
-| `capture_request_timeout_total` | Counter | Requests that hit the timeout |
-| `capture_kafka_health` | Gauge | 1.0 = healthy, 0.0 = unhealthy |
-| `capture_kafka_brokers_up` | Gauge | Number of brokers in UP state |
-| `capture_kafka_callback_queue_depth` | Gauge | rdkafka internal reply queue depth |
-| `capture_kafka_producer_queue_depth` | Gauge | Messages queued in producer |
-| `replay_files_processed_total` | Counter | Fallback files replayed |
-| `replay_events_total` | Counter | Events replayed from disk |
-
-## Getting started
-
-### Prerequisites
-
-- Rust toolchain (`rustup`)
-- Docker + Docker Compose (for Kafka)
-
-### Environment variables
-
-Copy `.env.example` to `.env` and adjust:
+## Local development
 
 ```bash
 cp .env.example .env
-```
-
-Key variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PRINT_SINK` | `false` | Use PrintSink instead of Kafka |
-| `KAFKA_BROKERS` | `localhost:9092` | Kafka bootstrap servers |
-| `KAFKA_TOPIC` | -- | Topic for captured events |
-| `KAFKA_AUTH` | `false` | Enable Kafka authentication |
-| `KAFKA_SECURITY_PROTOCOL` | `SASL_SSL` | `SASL_SSL`, `SSL`, or `PLAINTEXT` |
-| `HTTP_TOKENS_URL` | -- | URL to fetch valid API tokens |
-| `LOG_LEVEL` | `INFO` | Tracing log level |
-| `SENTRY_DSN` | -- | Sentry DSN for error reporting |
-| `MAX_BODY_SIZE` | `2097152` | Max request body in bytes (2MB) |
-| `KAFKA_SEND_TIMEOUT_SECS` | `20` | Timeout per Kafka produce |
-| `REQUEST_TIMEOUT_SECS` | `60` | HTTP request timeout |
-| `FALLBACK_DIR` | `data/fallback` | Directory for disk fallback files |
-| `REPLAY_BATCH_SIZE` | `100` | Events per replay batch |
-| `REPLAY_POLL_INTERVAL_SECS` | `5` | Replay worker poll interval |
-| `REPLAY_CLEANUP_HOURS` | `24` | Hours before cleaning completed files |
-
-### Development with PrintSink
-
-```bash
 PRINT_SINK=true cargo run
+cargo test --lib pipeline::tests
+cargo test --lib writer::tests
 ```
 
-### Development with Kafka
+Set `PRINT_SINK=false` and `NATS_URL` to exercise JetStream. With network
+enrichment enabled, capture and replay download missing MaxMind and IP2Proxy
+databases at startup using `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY`, and
+`IP2PROXY_DOWNLOADER_URL`. They refresh MaxMind every 12 hours and IP2Proxy
+every 24 hours; `MAXMIND_DB_REFRESH_INTERVAL_SECS` and
+`IP2PROXY_DB_REFRESH_INTERVAL_SECS` override those intervals. Download or load
+failures fail open, and `NETWORK_ENRICHMENT_ENABLED=false` disables both for
+credential-free development.
 
-```bash
-cd events-pipeline
-docker-compose up -d
-cd rust-capture
-cargo run
-```
+For a local writer process set `NATS_URL`, `CLICKHOUSE_HTTP_URL`,
+`CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `WRITER_REPLICAS`, and
+`WRITER_ORDINAL`. It reconstructs active sessions from `session_seed_events`,
+pulls bounded batches from one multi-subject durable consumer per writer, and
+sends AckProgress until ClickHouse and any terminal DLQ publication have
+completed. The 100 logical subjects are assigned in balanced contiguous ranges;
+the current two-writer topology owns 50 subjects per writer.
+Production mounts the private NATS CA and role-specific client certificate
+through the `NATS_*_FILE` variables shown in `.env.example`.
 
-### Running the consumer
+The API listens on `:3000`, metrics on `:3001`, and exposes
+`/health/liveness`, `/health/readiness`, and `/health/status`. NATS health is
+reported separately while readiness remains true during a broker outage when
+the durable spill is writable.
 
-```bash
-cargo run --bin consumer
-```
+Capture uses separate named NATS connections for durable work, the raw archive,
+and capture DLQ traffic. The session writer likewise separates its work
+consumer and DLQ publisher connections. Capture spills work immediately when
+the work client is pending, disconnected, or has 512 publish acknowledgements
+in flight; this keeps a large HTTP burst out of the async-NATS client queue.
+Set `NATS_WORK_MAX_IN_FLIGHT` to tune that cap. Connected work and DLQ publishes
+wait up to 1.5 seconds for the JetStream acknowledgement; each non-critical
+background archive publish waits 250 ms.
 
-### Running tests
+At most 4,096 archive operations may be in flight; overload drops only the
+diagnostic copy and increments `capture_raw_archive_dropped_total`.
+`RAW_ARCHIVE_ENABLED=false` completely disables its connection, background
+publishes, replay, and spill for an isolation run. Override publish timeouts
+with `NATS_WORK_PUBLISH_TIMEOUT_MS`, `NATS_ARCHIVE_PUBLISH_TIMEOUT_MS`, and
+`NATS_DLQ_PUBLISH_TIMEOUT_MS`. `capture_publish_latency_seconds{stream,result}`
+records every outcome; `capture_work_publish_saturated_total` records work sent
+directly to the durable fallback because the explicit limit was full.
+Fallback segments become replayable after 10 MiB or 60 seconds even when no
+later request arrives. `FALLBACK_MAX_SEGMENT_BYTES` and
+`FALLBACK_MAX_SEGMENT_AGE_SECS` tune those boundaries.
 
-```bash
-cargo test
-```
+`nats-bootstrap` accepts `EVENTS_CONSUMERS_ENABLED=false` for a disposable
+capture-only isolation run and `EVENTS_CONSUMER_MEMORY_STORAGE=true` for a
+consumer-state storage A/B test. Do not disable consumers on a persistent
+environment without a deliberate backlog and recovery plan.
 
-### Sending test events
+Changing `WRITER_REPLICAS` is a coordinated topology migration, not an online
+Kafka-style consumer-group rebalance. Stop and drain every writer, set the
+StatefulSet replica count and both writer/bootstrap `WRITER_REPLICAS` values,
+then run `nats-bootstrap` with `EVENTS_CONSUMER_REBALANCE_FROM` equal to the
+observed topology (`legacy`, `r003`, `r004`, and so on). Bootstrap refuses a
+different or missing guard, snapshots each shard's safe seed floor into the new
+consumer metadata, removes the old non-overlapping WorkQueue filters, and
+creates the new consumers. Start writers only after bootstrap succeeds.
 
-```bash
-# See bin-request-examples/ for sample curl scripts
-./bin-request-examples/send-event.sh
-```
-
-## API routes
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/v1/event` | Capture single/batch events |
-| `POST` | `/api/v1/events` | Capture single/batch events |
-| `POST` | `/api/v1/s2s/event` | Server-to-server event capture |
-| `POST` | `/api/v1/s2s/events` | Server-to-server event capture |
-| `POST` | `/api.:ignored` | Randomized endpoint for ad-blocker bypass |
-| `GET` | `/health/liveness` | Liveness probe |
-| `GET` | `/health/readiness` | Readiness probe |
-| `GET` | `/health/status` | Detailed health status |
-
-## K8s deployment
-
-The capture API runs as a Deployment with a `replay-worker` sidecar:
-
-- **main** container: runs `events-pipeline` binary on port 3000
-- **replay-worker** sidecar: runs `replay-worker` binary, shares `fallback-volume` with main
-- **fallback-volume**: `emptyDir` (10Gi limit) mounted at `/app/data/fallback`
-- Metrics server on port 3001
-
-Both containers must use the same image tag since `replay-worker` is built from the same Cargo workspace.
+The complete runtime, storage, sessionization, and acceptance contract is in
+[`../../docs/plans/2026-08-25-nats-event-pipeline.md`](../../docs/plans/2026-08-25-nats-event-pipeline.md).

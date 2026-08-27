@@ -7,8 +7,9 @@ use crate::events::{
 };
 
 pub mod disk_sink;
+pub mod enriching_nats_sink;
 pub mod fallback_sink;
-pub mod kafka_event_sink;
+pub mod nats_event_sink;
 pub mod print_sink;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,11 +31,19 @@ impl EventTypes {
 
     pub fn project_id(&self) -> String {
         match self {
-            EventTypes::Processed(event) => {
-                let api_key = event.event.api_key.clone();
-                let first_element = api_key.split('.').next().unwrap_or("");
-                first_element.to_string()
-            }
+            EventTypes::Processed(event) => event
+                .authorization
+                .as_ref()
+                .map(|credential| credential.workspace_id.clone())
+                .unwrap_or_else(|| {
+                    event
+                        .event
+                        .api_key
+                        .split('.')
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                }),
             EventTypes::Transformed(event) => event.project_id.clone(),
             EventTypes::Failed(event) => event.project_id.clone(),
         }

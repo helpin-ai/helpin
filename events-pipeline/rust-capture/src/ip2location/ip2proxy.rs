@@ -59,6 +59,7 @@ mod tests {
     use crate::ip2location::resolver::IP2ProxyResolver;
 
     #[test]
+    #[ignore = "requires a licensed IP2Proxy database fixture"]
     fn test_ip2proxy_wrapper() {
         let resolver = IP2ProxyResolver::new("data/IP2PROXY-IP-PROXYTYPE-COUNTRY.BIN").unwrap();
         let wrapper = IP2ProxyWrapper::new(&resolver);

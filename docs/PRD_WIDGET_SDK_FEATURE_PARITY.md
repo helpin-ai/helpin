@@ -1,5 +1,9 @@
 # PRD: Helpin Widget SDK — Feature Parity & Architecture Improvements
 
+> Historical architecture note: Kafka references in this parity assessment
+> describe the retired event pipeline. Current analytics transport uses NATS
+> JetStream; widget contact identity writes directly to the Helpin API.
+
 ## Context
 
 When the help widget is opened via auto-boot (`data-widget-key` script attribute), the WebSocket never connects. Root cause: `boot({ key, host })` has no `user` object, so it only calls `fetchWidgetConfig()` — never `initializeSession()` or `connectWebSocket()`.

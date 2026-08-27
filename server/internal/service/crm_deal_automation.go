@@ -196,7 +196,8 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 		}
 
 		// Apply autonomy thresholds
-		if inference.Confidence >= autonomy.AutoExecuteThreshold {
+		activationApproved := s.allSignalsActivationEligible(ctx, workspaceID, sigs)
+		if inference.Confidence >= autonomy.AutoExecuteThreshold && activationApproved {
 			// Auto-create deal
 			deal, err := s.autoCreateDeal(ctx, workspaceID, contactID, defaultPipeline.ID, firstStage.ID, *inference)
 			if err != nil {
@@ -215,6 +216,7 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 				Title:           "Auto-created deal: " + inference.DealName,
 				Description:     &inference.Reasoning,
 				Context:         model.JSONB(dealContext),
+				SignalIDs:       crmSignalIDs(sigs),
 				Status:          model.CRMSuggestionStatusAccepted,
 				ExecutionStatus: model.CRMSuggestionExecutionSucceeded,
 				ExecutedAt:      &executedAt,
@@ -233,6 +235,7 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 				Title:          "Suggested deal: " + inference.DealName,
 				Description:    &description,
 				Context:        model.JSONB(dealContext),
+				SignalIDs:      crmSignalIDs(sigs),
 				Status:         model.CRMSuggestionStatusPending,
 				Confidence:     inference.Confidence,
 			}
@@ -334,7 +337,8 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 		}
 
 		objectType := "deal"
-		if inference.Confidence >= autonomy.AutoExecuteThreshold && targetStage != nil {
+		activationApproved := s.allSignalsActivationEligible(ctx, workspaceID, recentSignals)
+		if inference.Confidence >= autonomy.AutoExecuteThreshold && targetStage != nil && activationApproved {
 			// Auto-advance
 			deal.StageID = targetStage.ID
 			deal.Pipeline = nil
@@ -353,6 +357,7 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 				Title:           fmt.Sprintf("Auto-advanced '%s' to %s", deal.Name, inference.RecommendedStage),
 				Description:     &inference.Reasoning,
 				Context:         model.JSONB(progressionContext),
+				SignalIDs:       crmSignalIDs(recentSignals),
 				Status:          model.CRMSuggestionStatusAccepted,
 				ExecutionStatus: model.CRMSuggestionExecutionSucceeded,
 				ExecutedAt:      &executedAt,
@@ -371,6 +376,7 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 				Title:          fmt.Sprintf("Advance '%s' to %s", deal.Name, inference.RecommendedStage),
 				Description:    &inference.Reasoning,
 				Context:        model.JSONB(progressionContext),
+				SignalIDs:      crmSignalIDs(recentSignals),
 				Status:         model.CRMSuggestionStatusPending,
 				Confidence:     inference.Confidence,
 			}
@@ -381,6 +387,40 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 	}
 
 	return nil
+}
+
+func crmSignalIDs(signals []model.CRMBuyerSignal) model.StringArray {
+	ids := make(model.StringArray, 0, len(signals))
+	for _, signal := range signals {
+		if signal.ID != "" {
+			ids = append(ids, signal.ID)
+		}
+	}
+	return ids
+}
+
+func (s *DealAutomationService) allSignalsActivationEligible(ctx context.Context, workspaceID string, signals []model.CRMBuyerSignal) bool {
+	if len(signals) == 0 {
+		return false
+	}
+	policy, err := s.signalRepo.GetActiveRoutingPolicy(ctx, workspaceID)
+	if err != nil || policy == nil {
+		return false
+	}
+	for _, signal := range signals {
+		if signal.ID == "" || signal.EvidenceIdentityTrust != model.IdentityTrustVerified || signal.RuleKey == nil || signal.RuleVersion == nil {
+			return false
+		}
+		config, err := s.signalRepo.GetSignalRuleConfigVersion(ctx, workspaceID, *signal.RuleKey, *signal.RuleVersion)
+		if err != nil || config == nil || !config.Enabled || config.ShadowMode || !config.ActivationEligible {
+			return false
+		}
+		delivered, err := s.signalRepo.HasSignalDelivery(ctx, signal.ID, policy.ID)
+		if err != nil || !delivered {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *DealAutomationService) getContactDeals(ctx context.Context, workspaceID, contactID string) []model.CRMDeal {

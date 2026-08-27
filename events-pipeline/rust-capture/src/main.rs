@@ -1,5 +1,7 @@
 use dotenv::dotenv;
-use metrics_recorder::metrics_app;
+use events_pipeline::metrics_recorder::metrics_app;
+use events_pipeline::utils::time::SystemTime;
+use events_pipeline::{auth, enrichment, health, router, sinks};
 use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -7,21 +9,6 @@ use std::sync::Arc;
 use tokio::signal;
 use tracing_subscriber::EnvFilter;
 
-use crate::utils::time::SystemTime;
-
-mod api;
-mod auth;
-mod capture;
-mod consumers;
-mod enrichment;
-mod events;
-mod geo;
-mod health;
-mod ip2location;
-mod metrics_recorder;
-mod router;
-mod sinks;
-mod utils;
 use tracing_subscriber::{fmt, prelude::*};
 
 #[tokio::main]
@@ -62,10 +49,7 @@ async fn start_main_server() {
     tracing::info!("Application booting");
 
     let tokens = auth::http_tokens::HttpTokens::new().await;
-    tracing::info!(
-        "tokens loaded: {:?}",
-        tokens.lock().map(|t| t.tokens.len()).unwrap_or(0)
-    );
+    tracing::info!("tokens loaded: {:?}", tokens.len());
 
     let health_registry = health::HealthRegistry::new();
 
@@ -78,20 +62,36 @@ async fn start_main_server() {
             health_registry.clone(),
         )
     } else {
-        tracing::info!("Using kafka sink with disk fallback");
-        let brokers = env::var("KAFKA_BROKERS").expect("Expected KAFKA_BROKERS");
-        let topic = env::var("KAFKA_TOPIC").expect("Expected KAFKA_TOPIC");
-        let kafka_sink = Arc::new(
-            sinks::kafka_event_sink::KafkaSink::new(topic, brokers, health_registry.clone())
-                .expect("Failed to create Kafka sink"),
-        );
+        tracing::info!("Using inline enrichment and NATS with durable disk fallback");
+        let nats_url = env::var("NATS_URL").expect("Expected NATS_URL");
+        let publisher =
+            sinks::nats_event_sink::NatsEventPublisher::new(nats_url, health_registry.clone());
+
+        let network_enrichment_enabled = env::var("NETWORK_ENRICHMENT_ENABLED")
+            .map(|value| value != "false")
+            .unwrap_or(true);
+        let databases = enrichment::database_state::EnrichmentDatabaseState::initialize(
+            network_enrichment_enabled,
+        )
+        .await;
+        databases.start_refresh_loop();
+        let preload_user_agents = env::var("USER_AGENT_CACHE_PRELOAD_ENABLED")
+            .map(|value| value != "false")
+            .unwrap_or(true);
+        let nats_sink = Arc::new(if preload_user_agents {
+            sinks::enriching_nats_sink::EnrichingNatsSink::new_with_preloaded_user_agents(
+                publisher, databases,
+            )
+        } else {
+            sinks::enriching_nats_sink::EnrichingNatsSink::new(publisher, databases)
+        });
 
         let fallback_dir =
             PathBuf::from(env::var("FALLBACK_DIR").unwrap_or_else(|_| "data/fallback".to_string()));
         let disk_sink = Arc::new(sinks::disk_sink::DiskSink::new(fallback_dir));
-        let fallback_sink = sinks::fallback_sink::FallbackSink::new(kafka_sink, disk_sink);
+        let fallback_sink = sinks::fallback_sink::FallbackSink::new(nats_sink, disk_sink);
 
-        tracing::info!("Kafka sink with disk fallback initialized");
+        tracing::info!("NATS sink with disk fallback initialized");
         router::router(
             SystemTime {},
             fallback_sink,
@@ -100,7 +100,7 @@ async fn start_main_server() {
         )
     };
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], env_port("CAPTURE_HTTP_PORT", 3000)));
     tracing::info!("listening on {}", addr);
 
     axum::Server::bind(&addr)
@@ -113,13 +113,31 @@ async fn start_main_server() {
 async fn start_metrics_server() {
     let app = metrics_app();
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3001));
+    let addr = SocketAddr::from(([0, 0, 0, 0], env_port("CAPTURE_METRICS_PORT", 3001)));
     tracing::debug!("listening on {} for metrics server", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .with_graceful_shutdown(wait_for_signal())
         .await
         .unwrap()
+}
+
+fn env_port(name: &str, default: u16) -> u16 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port > 0)
+        .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::env_port;
+
+    #[test]
+    fn capture_ports_use_defaults_when_unconfigured() {
+        assert_eq!(env_port("HELPIN_TEST_MISSING_CAPTURE_PORT", 3000), 3000);
+    }
 }
 
 async fn wait_for_signal() {

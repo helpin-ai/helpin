@@ -361,10 +361,69 @@ func (r *SupportInboxInstallationRepository) ListAllActive(ctx context.Context) 
 
 // RegenerateKeys updates just the widget_key and secret_key columns.
 func (r *SupportInboxInstallationRepository) RegenerateKeys(ctx context.Context, id, widgetKey, secretKey string) error {
-	if err := r.db.WithContext(ctx).Model(&model.SupportWidgetInstallation{}).
-		Where("id = ?", id).
-		Updates(map[string]interface{}{"widget_key": widgetKey, "secret_key": secretKey}).Error; err != nil {
-		return fmt.Errorf("regenerate widget keys: %w", err)
+	return r.rotateKeys(ctx, id, &widgetKey, secretKey, "")
+}
+
+// RotateSecret rotates only the server/signing secret and retains its read alias.
+func (r *SupportInboxInstallationRepository) RotateSecret(ctx context.Context, id, secretKey, actorUserID string) error {
+	return r.rotateKeys(ctx, id, nil, secretKey, actorUserID)
+}
+
+func (r *SupportInboxInstallationRepository) rotateKeys(
+	ctx context.Context,
+	id string,
+	widgetKey *string,
+	secretKey, actorUserID string,
+) error {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var installation model.SupportWidgetInstallation
+		if err := tx.Where("id = ?", id).First(&installation).Error; err != nil {
+			return fmt.Errorf("get widget installation for rotation: %w", err)
+		}
+
+		now := time.Now().UTC()
+		aliases := []model.WorkspaceEventProjectAlias{{
+			WorkspaceID: installation.WorkspaceID,
+			ProjectID:   installation.SecretKey,
+			Source:      "retired_server_secret",
+			ValidFrom:   &installation.CreatedAt,
+			ValidTo:     &now,
+		}}
+		updates := map[string]interface{}{"secret_key": secretKey}
+		if widgetKey != nil {
+			aliases = append(aliases, model.WorkspaceEventProjectAlias{
+				WorkspaceID: installation.WorkspaceID,
+				ProjectID:   installation.WidgetKey,
+				Source:      "retired_widget_key",
+				ValidFrom:   &installation.CreatedAt,
+				ValidTo:     &now,
+			})
+			updates["widget_key"] = *widgetKey
+		}
+		for i := range aliases {
+			if err := tx.Where("project_id = ?", aliases[i].ProjectID).
+				FirstOrCreate(&aliases[i]).Error; err != nil {
+				return fmt.Errorf("retain event project alias: %w", err)
+			}
+		}
+		if err := tx.Model(&model.SupportWidgetInstallation{}).
+			Where("id = ?", id).Updates(updates).Error; err != nil {
+			return fmt.Errorf("rotate widget credentials: %w", err)
+		}
+		if actorUserID != "" {
+			audit := model.SupportCredentialRotationAudit{
+				WorkspaceID:    installation.WorkspaceID,
+				InstallationID: installation.ID,
+				ActorUserID:    actorUserID,
+				RotationKind:   "server_signing_secret",
+			}
+			if err := tx.Create(&audit).Error; err != nil {
+				return fmt.Errorf("audit widget secret rotation: %w", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	return nil
 }
@@ -2319,6 +2378,36 @@ func (r *SupportInboxSessionRepository) UpdateSessionsByAnonymousID(ctx context.
 		).
 		Updates(updates).Error; err != nil {
 		return fmt.Errorf("backfill session identity: %w", err)
+	}
+	return nil
+}
+
+// UpgradeIdentityProvenanceByAnonymousID records stronger identity evidence without downgrading
+// an existing verified identity.
+func (r *SupportInboxSessionRepository) UpgradeIdentityProvenanceByAnonymousID(
+	ctx context.Context,
+	workspaceID, anonymousID, method, trust string,
+	verifiedAt *time.Time,
+	verifierVersion *string,
+) error {
+	updates := map[string]interface{}{
+		"identity_method": method,
+		"identity_trust":  trust,
+	}
+	if verifiedAt != nil {
+		updates["identity_verified_at"] = *verifiedAt
+	}
+	if verifierVersion != nil {
+		updates["identity_verifier_version"] = *verifierVersion
+	}
+
+	query := r.db.WithContext(ctx).Model(&model.SupportWidgetSession{}).
+		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID)
+	if trust != model.IdentityTrustVerified {
+		query = query.Where("identity_trust <> ?", model.IdentityTrustVerified)
+	}
+	if err := query.Updates(updates).Error; err != nil {
+		return fmt.Errorf("upgrade session identity provenance: %w", err)
 	}
 	return nil
 }

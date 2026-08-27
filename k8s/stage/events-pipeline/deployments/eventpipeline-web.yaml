@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: helpin-eventpipeline-web
   labels:
@@ -7,11 +7,10 @@ metadata:
   namespace: helpin
 spec:
   replicas: 2
-  strategy:
+  serviceName: helpin-eventpipeline-web-headless
+  podManagementPolicy: Parallel
+  updateStrategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   selector:
     matchLabels:
       app: helpin-eventpipeline-web
@@ -20,6 +19,22 @@ spec:
       labels:
         app: helpin-eventpipeline-web
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node.hetzner.com/type
+                    operator: In
+                    values: [cloud]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: helpin-eventpipeline-web
+                topologyKey: kubernetes.io/hostname
       imagePullSecrets:
         - name: ghcr-helpin-json-key
       # TLS init container commented out — using SCRAM auth for now.
@@ -33,18 +48,68 @@ spec:
       #         mountPath: /data/tls
       containers:
         - name: main
-          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.10-rc.1
-          command: ["./target/release/events-pipeline"]
-          envFrom:
-            - secretRef:
-                name: helpin-secrets
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.11-rc.1
+          command: ["events-pipeline"]
+          env:
+            - name: INTERNAL_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-secrets
+                  key: INTERNAL_API_SECRET
+            - name: MAXMIND_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-secrets
+                  key: MAXMIND_ACCOUNT_ID
+                  optional: true
+            - name: MAXMIND_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-secrets
+                  key: MAXMIND_LICENSE_KEY
+                  optional: true
+            - name: IP2PROXY_DOWNLOADER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-secrets
+                  key: IP2PROXY_DOWNLOADER_URL
+                  optional: true
+            - name: HTTP_TOKENS_URL
+              value: http://helpin-server-svc.helpin.svc.cluster.local:8080/api/internal/widget-tokens
+            - name: NETWORK_ENRICHMENT_ENABLED
+              value: "true"
+            - name: USER_AGENT_CACHE_PRELOAD_ENABLED
+              value: "false"
+            - name: NATS_URL
+              value: tls://helpin-eventpipeline-nats.helpin.svc.cluster.local:4222
+            - name: NATS_USERNAME
+              value: capture
+            - name: NATS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-eventpipeline-secrets
+                  key: NATS_CAPTURE_PASSWORD
+            - name: NATS_CA_FILE
+              value: /etc/nats/tls/ca.crt
+            - name: NATS_CLIENT_CERT_FILE
+              value: /etc/nats/tls/tls.crt
+            - name: NATS_CLIENT_KEY_FILE
+              value: /etc/nats/tls/tls.key
+            - name: ARCHIVE_SPILL_DIR
+              value: /app/data/archive-spill/capture
+            - name: ARCHIVE_SPILL_MAX_BYTES
+              value: "536870912"
+            - name: NATS_WORK_MAX_IN_FLIGHT
+              value: "512"
+            - name: RAW_ARCHIVE_ENABLED
+              value: "true"
           resources:
             limits:
-              cpu: "3"
-              memory: 4092Mi
+              cpu: 500m
+              memory: 768Mi
             requests:
-              cpu: "2"
-              memory: 2Gi
+              cpu: 100m
+              memory: 256Mi
           ports:
             - containerPort: 80
           readinessProbe:
@@ -73,26 +138,103 @@ spec:
           volumeMounts:
             - name: fallback-volume
               mountPath: /app/data/fallback
+            - name: archive-spill-volume
+              mountPath: /app/data/archive-spill
+            - name: nats-client-tls
+              mountPath: /etc/nats/tls
+              readOnly: true
         - name: replay-worker
-          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.10-rc.1
-          command: ["./target/release/replay-worker"]
-          envFrom:
-            - secretRef:
-                name: helpin-secrets
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.11-rc.1
+          command: ["replay-worker"]
+          env:
+            - name: MAXMIND_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-secrets
+                  key: MAXMIND_ACCOUNT_ID
+                  optional: true
+            - name: MAXMIND_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-secrets
+                  key: MAXMIND_LICENSE_KEY
+                  optional: true
+            - name: IP2PROXY_DOWNLOADER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-secrets
+                  key: IP2PROXY_DOWNLOADER_URL
+                  optional: true
+            - name: NETWORK_ENRICHMENT_ENABLED
+              value: "true"
+            - name: NATS_URL
+              value: tls://helpin-eventpipeline-nats.helpin.svc.cluster.local:4222
+            - name: NATS_USERNAME
+              value: capture
+            - name: NATS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: helpin-eventpipeline-secrets
+                  key: NATS_CAPTURE_PASSWORD
+            - name: NATS_CA_FILE
+              value: /etc/nats/tls/ca.crt
+            - name: NATS_CLIENT_CERT_FILE
+              value: /etc/nats/tls/tls.crt
+            - name: NATS_CLIENT_KEY_FILE
+              value: /etc/nats/tls/tls.key
+            - name: ARCHIVE_SPILL_DIR
+              value: /app/data/archive-spill/replay
+            - name: ARCHIVE_SPILL_MAX_BYTES
+              value: "536870912"
+            - name: NATS_WORK_MAX_IN_FLIGHT
+              value: "512"
+            - name: RAW_ARCHIVE_ENABLED
+              value: "true"
           resources:
             limits:
-              cpu: "500m"
+              cpu: "250m"
               memory: 512Mi
             requests:
-              cpu: "200m"
+              cpu: "100m"
               memory: 256Mi
           volumeMounts:
             - name: fallback-volume
               mountPath: /app/data/fallback
+            - name: archive-spill-volume
+              mountPath: /app/data/archive-spill
+            - name: nats-client-tls
+              mountPath: /etc/nats/tls
+              readOnly: true
       volumes:
-        - name: fallback-volume
+        - name: archive-spill-volume
           emptyDir:
-            sizeLimit: 10Gi
+            sizeLimit: 512Mi
+        - name: nats-client-tls
+          secret:
+            secretName: helpin-eventpipeline-nats-capture-tls
+  volumeClaimTemplates:
+    - metadata:
+        name: fallback-volume
+      spec:
+        storageClassName: hcloud-volumes-retain
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: helpin-eventpipeline-web-headless
+  namespace: helpin
+spec:
+  clusterIP: None
+  selector:
+    app: helpin-eventpipeline-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
 ---
 apiVersion: v1
 kind: Service

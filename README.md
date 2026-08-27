@@ -2,6 +2,10 @@
 
 Monorepo for the Helpin app, embedded widget SDK, shared widget components, and the standalone widget bundle.
 
+Engineering documentation starts at [docs/README.md](docs/README.md). The
+canonical buyer-signals reference is
+[docs/crm-buyer-signals.md](docs/crm-buyer-signals.md).
+
 ## Main Packages
 
 - `frontend/`: main React app
@@ -10,6 +14,8 @@ Monorepo for the Helpin app, embedded widget SDK, shared widget components, and 
 - `packages/sdk-js/`: embeddable `lib.js` SDK loader and widget runtime
 - `widget/`: standalone non-SDK widget bundle
 - `server/`: Go API and workers
+- `events-pipeline/`: capture, JetStream delivery, session writers, sustained
+  test harness, and the [15k events/s capacity baseline](events-pipeline/CAPACITY_BASELINE.md)
 
 ## Widget Paths
 

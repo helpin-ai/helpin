@@ -684,8 +684,9 @@ func TestWebSearchToolCatalogDocumentsProviderPrecedence(t *testing.T) {
 		if tool.Name != "web_search" {
 			continue
 		}
-		if !strings.Contains(tool.Description, "Exa is preferred") ||
-			!strings.Contains(tool.Description, "fallback for compatible fast searches") {
+		if !strings.Contains(tool.Description, "TinyFish is preferred") ||
+			!strings.Contains(tool.Description, "Exa handles advanced searches") ||
+			!strings.Contains(tool.Description, "Brave remains the final compatible fallback") {
 			t.Fatalf("web_search description omits provider selection contract: %q", tool.Description)
 		}
 		return

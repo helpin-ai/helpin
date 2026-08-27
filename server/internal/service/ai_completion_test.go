@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -151,5 +152,46 @@ func TestAICompletionServiceDoesNotFallbackOnUsagePreflightFailure(t *testing.T)
 	}
 	if len(provider.requests) != 0 {
 		t.Fatalf("provider requests = %d, want 0", len(provider.requests))
+	}
+}
+
+func TestAICompletionServiceAppliesPerRouteOpenRouterProviderSelection(t *testing.T) {
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &scriptedAICompletionProvider{errors: map[string]error{
+		"deepseek/deepseek-v4-flash-0731": &llm.ProviderError{Provider: "openrouter", StatusCode: 429},
+	}}
+	registry := NewAICompletionRouteRegistry(CRMCompletionRouteConfig{
+		Primary: AICompletionRoute{
+			Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", OpenRouterProvider: "together",
+		},
+		Fallback: AICompletionRoute{
+			Provider: "openrouter", Model: "openai/gpt-5.6-luna", OpenRouterProvider: "openai",
+		},
+	})
+	service := NewAICompletionService(provider, NewAIUsageService(catalog, &fakeAIUsageStore{}, nil), registry)
+	request := validAICompletionRequest()
+	request.Chat.ProviderOptions = json.RawMessage(`{"require_parameters":true}`)
+
+	if _, err := service.Complete(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("provider requests = %d, want 2", len(provider.requests))
+	}
+	for index, wantProvider := range []string{"together", "openai"} {
+		var options struct {
+			Order             []string `json:"order"`
+			AllowFallbacks    bool     `json:"allow_fallbacks"`
+			RequireParameters bool     `json:"require_parameters"`
+		}
+		if err := json.Unmarshal(provider.requests[index].ProviderOptions, &options); err != nil {
+			t.Fatalf("request %d provider options: %v", index, err)
+		}
+		if len(options.Order) != 1 || options.Order[0] != wantProvider || options.AllowFallbacks || !options.RequireParameters {
+			t.Fatalf("request %d provider options = %#v", index, options)
+		}
 	}
 }

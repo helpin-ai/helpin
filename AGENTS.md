@@ -259,16 +259,25 @@ go run ./cmd/migrate create <name>   # Scaffold new migration file
 - Methods: `PutObject`, `DeleteObject`, `PublicURL`, `GeneratePresignedPutURL/GetURL`
 - Public URLs via `HasPublicURL()` check
 
-### CRM Self-Driving Architecture
+### CRM Intelligence and Buyer Signals
 
-The CRM module includes a "self-driving" automation layer that reads email threads, calendar events, and support conversations, detects sales signals via LLM, and autonomously creates/advances deals.
+Canonical reference: `docs/crm-buyer-signals.md`
+
+The CRM intelligence layer combines verified conversation extraction with
+versioned deterministic rules over CRM, support, PM, calendar, and behavioral
+evidence. Signals are stored in Postgres, scored separately from extraction
+confidence, and remain activation-gated by rule version, identity trust,
+business priority, deduplication, and routing policy.
 
 **Key packages:**
 - `internal/crypto/` — AES-256-GCM token encryption (`CRM_ENCRYPTION_KEY` env)
 - `internal/oauth/` — Gmail OAuth2 flow (scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`, `calendar.readonly`)
 - `internal/sync/` — Gmail REST API client (message sync, send, token auto-refresh)
 - `internal/llm/` — Model-agnostic LLM interface (`Provider` interface with Claude + OpenAI adapters)
-- `internal/service/crm_signal_detection.go` — LLM-powered signal extraction from emails/calendar/support
+- `internal/service/crm_signal_detection.go` — verified LLM signal extraction from emails/calendar/support
+- `internal/service/crm_signal_rule_evaluator.go` — daily and behavioral deterministic rules
+- `internal/service/crm_signal_score.go` — explainable ranking and composition
+- `internal/service/crm_signal_activation.go` — versioned activation, routing, and feedback
 - `internal/service/crm_deal_automation.go` — Auto-create/progress deals based on signal confidence
 
 **Temporal Workflows:**
@@ -278,14 +287,24 @@ The CRM module includes a "self-driving" automation layer that reads email threa
 | `SignalDetectionWorkflow` | Event-driven (child of sync/support) | Extract buyer signals via LLM |
 | `DealManagementCronWorkflow` | Hourly cron | Evaluate deal progression |
 
+Deterministic rule evaluation is backend-owned rather than Temporal-owned: the
+API runs daily Postgres rules and ten-minute behavioral rules with global
+watermarks and leases.
+
 **Autonomy Thresholds** (`CRMAutonomySettings` model):
 - `auto_execute_threshold` (default 0.9) — signals above this auto-create/advance deals
 - `review_threshold` (default 0.7) — signals between review and auto-execute create pending suggestions
 - Below review threshold: low-priority suggestions
 
-**Signal Types** (7): `buying_intent`, `budget_signal`, `authority_signal`, `need_signal`, `timeline_signal`, `competitor_mention`, `churn_risk`
+**Signal Types** (7): `buying_intent`, `objection`, `competitor_mention`,
+`budget_signal`, `timeline_signal`, `champion_signal`, `risk_signal`
 
-**Signal Sources**: `email`, `meeting`, `call`, `support`
+**Signal Sources**: conversation records, support, CRM, PM, web behavior,
+instrumented product usage, and normalized external evidence.
+
+All seeded deterministic rules start in shadow mode. Do not describe signals as
+autonomously actionable unless the exact rule version and routing policy have
+been promoted through the activation gates.
 
 **Support → CRM Bridge**: Support tickets auto-match to CRM contacts by email. If no contact exists, one is auto-created with `lifecycle_stage=subscriber`, `source=support`.
 
@@ -296,10 +315,12 @@ The CRM module includes a "self-driving" automation layer that reads email threa
 | `GMAIL_CLIENT_ID` | Yes (if Gmail) | Google OAuth client ID |
 | `GMAIL_CLIENT_SECRET` | Yes (if Gmail) | Google OAuth client secret |
 | `GMAIL_OAUTH_REDIRECT_URL` | Yes (if Gmail) | OAuth redirect URL |
-| `CRM_LLM_PROVIDER` | No | `claude` (default) or `openai` |
-| `CRM_LLM_API_KEY` | Only if openai | OpenAI API key |
-| `CRM_LLM_BASE_URL` | Only if openai | OpenAI-compatible base URL |
-| `CRM_LLM_MODEL` | Only if openai | Model name for OpenAI provider |
+| `CRM_LLM_PROVIDER` / `CRM_LLM_MODEL` | No | Optional CRM primary-route override; empty preserves OpenRouter DeepSeek V4 Flash |
+| `CRM_LLM_OPENROUTER_PROVIDER` | No | Optional OpenRouter infrastructure provider for the primary route |
+| `CRM_LLM_FALLBACK_PROVIDER` / `CRM_LLM_FALLBACK_MODEL` | No | Optional general CRM fallback override; empty preserves OpenRouter GPT-5.6 Luna |
+| `CRM_LLM_FALLBACK_OPENROUTER_PROVIDER` | No | Optional OpenRouter infrastructure provider for the general fallback |
+| `CRM_MEETING_LLM_FALLBACK_PROVIDER` / `CRM_MEETING_LLM_FALLBACK_MODEL` | No | Optional meeting fallback override; empty preserves OpenRouter Gemini 3.7 Flash |
+| `CRM_MEETING_LLM_FALLBACK_OPENROUTER_PROVIDER` | No | Optional OpenRouter infrastructure provider for the meeting fallback |
 
 ### Agents And Automation Model
 

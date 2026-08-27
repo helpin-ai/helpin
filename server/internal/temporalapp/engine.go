@@ -55,8 +55,15 @@ func (e *RunEngine) StopRuleSchedule(ctx context.Context, ruleID string) error {
 		return nil
 	}
 	workflowID := WorkflowIDForRuleSchedule(ruleID)
-	_ = e.client.TerminateWorkflow(ctx, workflowID, "", "rule schedule removed")
-	return nil
+	err := e.client.TerminateWorkflow(ctx, workflowID, "", "rule schedule removed")
+	if err == nil {
+		return nil
+	}
+	var notFound *serviceerror.NotFound
+	if errors.As(err, &notFound) {
+		return nil
+	}
+	return fmt.Errorf("terminate rule schedule workflow %q: %w", workflowID, err)
 }
 
 // QueueDocsEmbeddingSync enqueues or signals a durable help-center embedding sync for one space.
