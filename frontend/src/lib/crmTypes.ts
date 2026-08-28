@@ -799,6 +799,8 @@ export interface CRMSignalAccountStory {
   domains: CRMSignalDomain[];
   latest_detected_at: string;
   changed_since: number;
+  evidence_source_count: number;
+  changed_evidence_source_count: number;
   change_summary: string;
   score_version: number;
   score_factors: Record<string, unknown>;

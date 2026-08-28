@@ -262,22 +262,45 @@ func (r *ClickHouseEventRepository) campaignReturnRows(ctx context.Context, proj
 }
 
 func (r *ClickHouseEventRepository) preIdentificationRows(ctx context.Context, projects []string, lookbackStart, start, end time.Time) ([]behavioralRuleRow, error) {
-	projectSQL, args := clickHouseProjectFilter(projects)
-	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC())
-	query := `SELECT user_anonymous_id AS anonymous_id, argMax(user_id, _timestamp) AS external_user_id,
-		argMax(company_id, _timestamp) AS company_external_id, argMax(identity_method, _timestamp) AS identity_method,
-		argMax(identity_trust, _timestamp) AS identity_trust, minIf(_timestamp, _timestamp >= ? AND user_id != '') AS observed_at,
-		countIf(user_id='') AS event_count, uniqExactIf(session_id, user_id='') AS session_count,
-		concat(toString(countIf(user_id='')), ' earlier anonymous events') AS evidence
-		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
-		AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
-		HAVING countIf(_timestamp < ? AND user_id='') > 0 AND countIf(_timestamp >= ? AND user_id!='') > 0`
-	args = []any{start.UTC()}
+	query, args := preIdentificationRuleQuery(projects, lookbackStart, start, end)
+	return r.queryBrowserBehavioralRows(ctx, "pre-identification history", query, args...)
+}
+
+func preIdentificationRuleQuery(projects []string, lookbackStart, start, end time.Time) (string, []any) {
+	projectSQL, _ := clickHouseProjectFilter(projects)
+	query := `WITH identity_transitions AS (
+		SELECT user_anonymous_id, minIf(_timestamp, user_id != '') AS identified_at
+		FROM helpin.events FINAL
+		WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		AND user_anonymous_id != ''` + excludeDetectedBotsSQL + `
+		GROUP BY user_anonymous_id
+		HAVING identified_at >= ? AND identified_at < ?
+	)
+	SELECT event.user_anonymous_id AS anonymous_id,
+		argMinIf(event.user_id, event._timestamp, event.user_id != '') AS external_user_id,
+		argMax(event.company_id, event._timestamp) AS company_external_id,
+		argMinIf(event.identity_method, event._timestamp, event.user_id != '') AS identity_method,
+		argMinIf(event.identity_trust, event._timestamp, event.user_id != '') AS identity_trust,
+		transition.identified_at AS observed_at,
+		countIf(event.user_id = '' AND event._timestamp < transition.identified_at) AS event_count,
+		uniqExactIf(event.session_id, event.user_id = '' AND event._timestamp < transition.identified_at) AS session_count,
+		concat(toString(event_count), ' earlier anonymous events') AS evidence
+	FROM helpin.events AS event FINAL
+	INNER JOIN identity_transitions AS transition USING (user_anonymous_id)
+	WHERE event.project_id IN (` + projectSQL + `) AND event._timestamp >= ? AND event._timestamp < ?
+	AND event.user_anonymous_id != '' AND event.parsed_ua_bot != 'true'
+	GROUP BY event.user_anonymous_id, transition.identified_at
+	HAVING event_count > 0`
+	args := make([]any, 0, len(projects)*2+6)
 	for _, project := range projects {
 		args = append(args, project)
 	}
-	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC())
-	return r.queryBrowserBehavioralRows(ctx, "pre-identification history", query, args...)
+	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), end.UTC())
+	for _, project := range projects {
+		args = append(args, project)
+	}
+	args = append(args, lookbackStart.UTC(), end.UTC())
+	return query, args
 }
 
 func (r *ClickHouseEventRepository) queryBrowserBehavioralRows(
@@ -350,7 +373,7 @@ func behavioralRuleDimensions(ruleKey string) (string, string, string, string, s
 	case model.CRMSignalRuleHighIntentProductEvent:
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainProductUsage, model.CRMSignalPolarityPositive, model.CRMSignalSourceProduct, "High-intent product event"
 	case model.CRMSignalRuleSessionDepthSpike:
-		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityPositive, model.CRMSignalSourceWeb, "Session depth spiked"
+		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityNeutral, model.CRMSignalSourceWeb, "Deep browsing session"
 	case model.CRMSignalRuleNewAccountStakeholder:
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainRelationship, model.CRMSignalPolarityPositive, model.CRMSignalSourceWeb, "New stakeholder appeared at a known account"
 	case model.CRMSignalRuleAnonymousAccountTraffic:

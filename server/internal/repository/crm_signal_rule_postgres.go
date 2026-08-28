@@ -23,7 +23,7 @@ func (r *CRMSignalRepository) EvaluatePostgresSignalRule(
 	case model.CRMSignalRuleUrgentIssueOpenDeal:
 		return r.urgentIssueOpenDealCandidates(ctx, windowEndedAt)
 	case model.CRMSignalRuleSupportAIEscalation:
-		return r.supportEscalationCandidates(ctx, windowStartedAt, windowEndedAt)
+		return r.supportEscalationCandidates(ctx, config, windowStartedAt, windowEndedAt)
 	case model.CRMSignalRuleSupportCSATDeterioration:
 		return r.supportCSATCandidates(ctx, config, windowEndedAt)
 	case model.CRMSignalRuleRequestedFeatureShipped:
@@ -135,7 +135,7 @@ func (r *CRMSignalRepository) urgentIssueOpenDealCandidates(ctx context.Context,
 	return result, nil
 }
 
-func (r *CRMSignalRepository) supportEscalationCandidates(ctx context.Context, start, end time.Time) ([]model.CRMSignalRuleCandidate, error) {
+func (r *CRMSignalRepository) supportEscalationCandidates(ctx context.Context, config model.CRMSignalRuleConfig, start, end time.Time) ([]model.CRMSignalRuleCandidate, error) {
 	var rows []struct {
 		WorkspaceID string
 		CompanyID   *string
@@ -154,10 +154,14 @@ func (r *CRMSignalRepository) supportEscalationCandidates(ctx context.Context, s
 		return nil, fmt.Errorf("evaluate support escalations: %w", err)
 	}
 	result := make([]model.CRMSignalRuleCandidate, 0, len(rows))
+	signalType, polarity := model.CRMSignalRiskSignal, model.CRMSignalPolarityNegative
+	if config.Version >= 2 {
+		signalType, polarity = model.CRMSignalTimelineSignal, model.CRMSignalPolarityNeutral
+	}
 	for _, row := range rows {
 		sourceID := row.SourceID
-		result = append(result, candidate(row.WorkspaceID, model.CRMSignalRuleSupportAIEscalation, model.CRMSignalRiskSignal,
-			model.CRMSignalDomainSupport, model.CRMSignalPolarityNegative, model.CRMSignalSourceSupport,
+		result = append(result, candidate(row.WorkspaceID, model.CRMSignalRuleSupportAIEscalation, signalType,
+			model.CRMSignalDomainSupport, polarity, model.CRMSignalSourceSupport,
 			row.ContactID, nil, row.CompanyID, row.ObservedAt, "Support conversation escalated to a human", row.Subject,
 			model.JSONB{"source_refs": []string{"support_conversation:" + sourceID}}))
 		result[len(result)-1].SourceID = &sourceID
@@ -503,7 +507,13 @@ func candidate(
 }
 
 func fingerprintRuleCandidate(item model.CRMSignalRuleCandidate) string {
-	parts := []string{item.WorkspaceID, item.RuleKey, item.Summary, item.EvidenceExcerpt,
+	summary := item.Summary
+	// The session-depth rule was originally mislabeled as a spike. Keep its
+	// evidence identity stable while correcting the user-facing description.
+	if item.RuleKey == model.CRMSignalRuleSessionDepthSpike && summary == "Deep browsing session" {
+		summary = "Session depth spiked"
+	}
+	parts := []string{item.WorkspaceID, item.RuleKey, summary, item.EvidenceExcerpt,
 		item.ObservedAt.UTC().Format(time.RFC3339Nano), item.AnonymousID, item.ExternalUserID, item.CompanyExternalID}
 	for _, value := range []*string{item.ContactID, item.DealID, item.CompanyID, item.SourceID} {
 		if value != nil {

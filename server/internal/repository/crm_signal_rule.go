@@ -130,7 +130,7 @@ func (r *CRMSignalRepository) CreateRuleSignalIfAbsent(ctx context.Context, sign
 	}
 	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
 		Where("workspace_id = ? AND rule_key = ? AND rule_version = ?", signal.WorkspaceID, *signal.RuleKey, *signal.RuleVersion).
-		Where("window_started_at = ? AND window_ended_at = ? AND evidence_fingerprint = ?", signal.WindowStartedAt.UTC(), signal.WindowEndedAt.UTC(), signal.EvidenceFingerprint)
+		Where("evidence_fingerprint = ?", signal.EvidenceFingerprint)
 	query = nullableSignalID(query, "contact_id", signal.ContactID)
 	query = nullableSignalID(query, "deal_id", signal.DealID)
 	query = nullableSignalID(query, "company_id", signal.CompanyID)

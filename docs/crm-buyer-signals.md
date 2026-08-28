@@ -94,7 +94,7 @@ The daily evaluator derives signals from trusted Postgres relationships:
 |---|---|
 | `support_volume_spike` | recent support volume versus account baseline |
 | `urgent_issue_open_deal` | high-priority support issue on an active deal |
-| `support_ai_escalation` | support conversation escalated to a human |
+| `support_ai_escalation` | support conversation escalated to a human (neutral operational context in v2) |
 | `support_csat_deterioration` | recent CSAT decline versus account baseline |
 | `requested_feature_shipped` | support-requested, company-linked PM feature task completed |
 | `deal_stage_stalled` | time in stage exceeded the configured threshold |
@@ -118,11 +118,11 @@ The behavioral evaluator runs at startup and every ten minutes when
 | `known_contact_returned` | verified identity may be promoted |
 | `high_intent_product_event` | authenticated server event with verified identity may be promoted |
 | `configured_form_submission` | verified identity may be promoted |
-| `session_depth_spike` | context only |
+| `session_depth_spike` | context only; shown as a deep browsing session after the configured pageview threshold, with no historical-baseline claim |
 | `new_account_stakeholder` | context only |
 | `anonymous_account_traffic` | context only |
 | `campaign_attributed_return` | context only |
-| `pre_identification_history` | context only |
+| `pre_identification_history` | context only; emitted once when the visitor's first identified event makes earlier anonymous activity attributable |
 | `identified_article_view` | context only |
 | `versioned_interaction` | disabled and context only by default |
 
@@ -192,6 +192,13 @@ Responses expose `business_priority`, `signed_impact`, `severity`,
 `score_version`, and the complete factor breakdown. Initial weights and
 half-lives are configurable heuristics and require calibration against won,
 lost, expansion, and churn outcomes.
+
+Composition correlates signals that describe the same underlying evidence
+source before summing account priority. Support and email signals use their
+conversation or thread ID, standalone sources use their source ID, and other
+signals fall back to the evidence fingerprint. All signals remain inspectable,
+but each source contributes one priority, one directional impact, and one
+representative domain to compound scoring.
 
 ## Activation and feedback
 

@@ -70,8 +70,11 @@ function entityLabel(story: CRMSignalAccountStory) {
 
 function recommendedNextStep(story: CRMSignalAccountStory) {
   const types = new Set(story.signals.map((signal) => signal.signal_type));
-  if (story.polarity === "negative" || types.has("risk_signal") || types.has("objection")) {
+  if (story.polarity === "negative") {
     return "Review the latest concern, confirm an owner, and plan the next response.";
+  }
+  if (story.polarity === "neutral") {
+    return "Use this as supporting context and wait for stronger or verified intent before following up.";
   }
   if (types.has("timeline_signal") || types.has("budget_signal")) {
     return "Confirm timing and decision criteria while the buying window is active.";
@@ -80,6 +83,17 @@ function recommendedNextStep(story: CRMSignalAccountStory) {
     return "Engage the champion and map the remaining decision makers.";
   }
   return "Review the evidence and choose a concrete follow-up while intent is fresh.";
+}
+
+function storyEvidenceNoun(story: CRMSignalAccountStory) {
+  const usesSupportConversations =
+    story.signals.length > 0 &&
+    story.signals.every(
+      (signal) =>
+        signal.source_type === "support" &&
+        Boolean(signal.source_thread_id || signal.source_id),
+    );
+  return usesSupportConversations ? "conversation" : "source";
 }
 
 function StoryRow({
@@ -96,6 +110,7 @@ function StoryRow({
   canOpenSignal?: (signal: CRMBuyerSignal) => boolean;
 }) {
   const verifiedSources = story.signals.filter((signal) => signal.evidence_identity_trust === "verified").length;
+  const evidenceNoun = storyEvidenceNoun(story);
   return (
     <article className="border-t border-border/55 first:border-t-0">
       <div className="grid gap-4 px-1 py-5 md:grid-cols-[minmax(0,1fr)_180px]">
@@ -146,8 +161,8 @@ function StoryRow({
         </div>
         <div className="flex items-start justify-between gap-5 md:block md:text-right">
           <div className="text-xs text-muted-foreground">
-            <p>{story.signals.length} evidence source{story.signals.length === 1 ? "" : "s"}</p>
-            <p className="mt-1">{verifiedSources} identity verified</p>
+            <p>{story.evidence_source_count} {evidenceNoun}{story.evidence_source_count === 1 ? "" : "s"}</p>
+            <p className="mt-1">{story.signals.length} signal{story.signals.length === 1 ? "" : "s"} · {verifiedSources} identity verified</p>
           </div>
           {onOpen ? (
             <Button size="sm" className="mt-3 h-8 gap-1.5" onClick={onOpen}>
@@ -161,8 +176,9 @@ function StoryRow({
       <details className="group pb-4">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-1 py-1 text-xs font-medium text-foreground/75 hover:text-foreground">
           <Layers01Icon className="h-3.5 w-3.5" />
-          Inspect {story.signals.length} source
-          {story.signals.length === 1 ? "" : "s"}
+          Inspect {story.signals.length} signal
+          {story.signals.length === 1 ? "" : "s"} from {story.evidence_source_count} {evidenceNoun}
+          {story.evidence_source_count === 1 ? "" : "s"}
           <span className="text-muted-foreground">· evidence and scoring details</span>
         </summary>
         <div className="mt-2 divide-y divide-border/50 border-y border-border/50">

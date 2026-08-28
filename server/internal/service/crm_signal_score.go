@@ -28,7 +28,7 @@ type signalScoringProfile struct {
 
 func defaultSignalScoringProfile() signalScoringProfile {
 	return signalScoringProfile{
-		version: 1, heuristic: true,
+		version: 2, heuristic: true,
 		signalWeights: map[string]float64{
 			model.CRMSignalBuyingIntent: 15, model.CRMSignalBudgetSignal: 12,
 			model.CRMSignalTimelineSignal: 10, model.CRMSignalChampionSignal: 12,
@@ -61,7 +61,7 @@ func (s *CRMSignalService) loadSignalScoringProfile(ctx context.Context, workspa
 	if err != nil {
 		slog.WarnContext(ctx, "using default CRM signal scoring profile", "error", err, "workspace_id", workspaceID)
 	} else {
-		profile.version, profile.heuristic = config.Version, config.Heuristic
+		profile.version, profile.heuristic = max(profile.version, config.Version), config.Heuristic
 		mergeFloatMap(profile.signalWeights, config.Parameters["signal_weights"])
 		mergeFloatMap(profile.halfLives, config.Parameters["half_lives_days"])
 		mergeFloatMap(profile.domainWeights, config.Parameters["domain_weights"])
@@ -154,6 +154,8 @@ func signalDirection(signal *model.CRMBuyerSignal) float64 {
 		return -1
 	case model.CRMSignalPolarityPositive:
 		return 1
+	case model.CRMSignalPolarityNeutral:
+		return 0
 	}
 	switch signal.SignalType {
 	case model.CRMSignalObjection, model.CRMSignalCompetitorMention, model.CRMSignalRiskSignal:
@@ -238,8 +240,6 @@ func composeSignalStories(signals []model.CRMBuyerSignal, profile signalScoringP
 			grouped[key] = story
 		}
 		story.Signals = append(story.Signals, signal)
-		story.Priority += signal.BusinessPriority
-		story.SignedImpact += signal.SignedImpact
 		if signal.DetectedAt.After(story.LatestDetectedAt) {
 			story.LatestDetectedAt = signal.DetectedAt
 		}
@@ -249,18 +249,34 @@ func composeSignalStories(signals []model.CRMBuyerSignal, profile signalScoringP
 	}
 	stories := make([]model.CRMSignalAccountStory, 0, len(grouped))
 	for _, story := range grouped {
-		domains := map[string]struct{}{}
+		observedDomains := map[string]struct{}{}
+		sourceGroups := map[string][]model.CRMBuyerSignal{}
 		for _, signal := range story.Signals {
+			sourceKey := signalEvidenceSourceKey(signal)
+			sourceGroups[sourceKey] = append(sourceGroups[sourceKey], signal)
 			if !signal.DetectedAt.Before(compoundAfter) {
-				domains[signal.SignalDomain] = struct{}{}
+				observedDomains[signal.SignalDomain] = struct{}{}
 			}
 		}
-		story.Domains = make([]string, 0, len(domains))
-		for domain := range domains {
+		story.EvidenceSourceCount = len(sourceGroups)
+		independentDomains := map[string]struct{}{}
+		for _, sourceSignals := range sourceGroups {
+			priority, signedImpact, representativeDomain, changed := signalSourceContribution(sourceSignals, compoundAfter, changedAfter)
+			story.Priority += priority
+			story.SignedImpact += signedImpact
+			if representativeDomain != "" {
+				independentDomains[representativeDomain] = struct{}{}
+			}
+			if changed {
+				story.ChangedEvidenceSourceCount++
+			}
+		}
+		story.Domains = make([]string, 0, len(observedDomains))
+		for domain := range observedDomains {
 			story.Domains = append(story.Domains, domain)
 		}
 		sort.Strings(story.Domains)
-		boost := math.Min(profile.maxCompoundBoost, math.Max(0, float64(len(domains)-1))*profile.compoundBoostPerDomain)
+		boost := math.Min(profile.maxCompoundBoost, math.Max(0, float64(len(independentDomains)-1))*profile.compoundBoostPerDomain)
 		story.Priority = roundScore(math.Min(100, story.Priority*(1+boost)))
 		story.SignedImpact = roundScore(story.SignedImpact * (1 + boost))
 		story.Severity = signalSeverity(story.Priority)
@@ -270,7 +286,13 @@ func composeSignalStories(signals []model.CRMBuyerSignal, profile signalScoringP
 		} else if story.SignedImpact < -0.01 {
 			story.Polarity = model.CRMSignalPolarityNegative
 		}
-		story.ScoreFactors = model.JSONB{"independent_domains": len(domains), "compound_boost": roundScore(boost), "signal_count": len(story.Signals), "heuristic": profile.heuristic}
+		story.ScoreFactors = model.JSONB{
+			"independent_domains": len(independentDomains), "observed_domains": len(observedDomains),
+			"compound_boost": roundScore(boost), "signal_count": len(story.Signals),
+			"evidence_source_count":   story.EvidenceSourceCount,
+			"correlated_signal_count": len(story.Signals) - story.EvidenceSourceCount,
+			"source_correlation":      "canonical_source_v1", "heuristic": profile.heuristic,
+		}
 		story.ChangeSummary = signalStoryChangeSummary(*story)
 		sort.SliceStable(story.Signals, func(i, j int) bool { return story.Signals[i].BusinessPriority > story.Signals[j].BusinessPriority })
 		stories = append(stories, *story)
@@ -282,6 +304,74 @@ func composeSignalStories(signals []model.CRMBuyerSignal, profile signalScoringP
 		return stories[i].Priority > stories[j].Priority
 	})
 	return stories
+}
+
+func signalEvidenceSourceKey(signal model.CRMBuyerSignal) string {
+	sourceType := strings.ToLower(strings.TrimSpace(signal.SourceType))
+	if sourceType == "" {
+		sourceType = "unknown"
+	}
+	if signal.SourceThreadID != nil && strings.TrimSpace(*signal.SourceThreadID) != "" {
+		return sourceType + ":thread:" + strings.TrimSpace(*signal.SourceThreadID)
+	}
+	if signal.SourceID != nil && strings.TrimSpace(*signal.SourceID) != "" {
+		kind := "source"
+		if sourceType == model.CRMSignalSourceSupport {
+			kind = "thread"
+		}
+		return sourceType + ":" + kind + ":" + strings.TrimSpace(*signal.SourceID)
+	}
+	if strings.TrimSpace(signal.EvidenceFingerprint) != "" {
+		return sourceType + ":evidence:" + strings.TrimSpace(signal.EvidenceFingerprint)
+	}
+	return "signal:" + signal.ID
+}
+
+func signalSourceContribution(signals []model.CRMBuyerSignal, compoundAfter, changedAfter time.Time) (float64, float64, string, bool) {
+	var prioritySignal, directionalSignal *model.CRMBuyerSignal
+	var recentPrioritySignal, recentDirectionalSignal *model.CRMBuyerSignal
+	changed := false
+	for index := range signals {
+		signal := &signals[index]
+		if prioritySignal == nil || signal.BusinessPriority > prioritySignal.BusinessPriority ||
+			(signal.BusinessPriority == prioritySignal.BusinessPriority && signal.DetectedAt.After(prioritySignal.DetectedAt)) {
+			prioritySignal = signal
+		}
+		if math.Abs(signal.SignedImpact) > 0.01 && (directionalSignal == nil || math.Abs(signal.SignedImpact) > math.Abs(directionalSignal.SignedImpact) ||
+			(math.Abs(signal.SignedImpact) == math.Abs(directionalSignal.SignedImpact) && signal.DetectedAt.After(directionalSignal.DetectedAt))) {
+			directionalSignal = signal
+		}
+		if !signal.DetectedAt.Before(compoundAfter) {
+			if recentPrioritySignal == nil || signal.BusinessPriority > recentPrioritySignal.BusinessPriority ||
+				(signal.BusinessPriority == recentPrioritySignal.BusinessPriority && signal.DetectedAt.After(recentPrioritySignal.DetectedAt)) {
+				recentPrioritySignal = signal
+			}
+			if math.Abs(signal.SignedImpact) > 0.01 && (recentDirectionalSignal == nil || math.Abs(signal.SignedImpact) > math.Abs(recentDirectionalSignal.SignedImpact) ||
+				(math.Abs(signal.SignedImpact) == math.Abs(recentDirectionalSignal.SignedImpact) && signal.DetectedAt.After(recentDirectionalSignal.DetectedAt))) {
+				recentDirectionalSignal = signal
+			}
+		}
+		if signal.DetectedAt.After(changedAfter) {
+			changed = true
+		}
+	}
+	if prioritySignal == nil {
+		return 0, 0, "", changed
+	}
+	priority := prioritySignal.BusinessPriority
+	signedImpact := 0.0
+	if directionalSignal != nil {
+		signedImpact = math.Max(-priority, math.Min(priority, directionalSignal.SignedImpact))
+	}
+	representative := recentDirectionalSignal
+	if representative == nil {
+		representative = recentPrioritySignal
+	}
+	domain := ""
+	if representative != nil {
+		domain = representative.SignalDomain
+	}
+	return priority, signedImpact, domain, changed
 }
 
 func signalStoryEntity(signal model.CRMBuyerSignal) (string, string, string) {
@@ -298,14 +388,33 @@ func signalStoryEntity(signal model.CRMBuyerSignal) (string, string, string) {
 }
 
 func signalStoryChangeSummary(story model.CRMSignalAccountStory) string {
-	if story.ChangedSince == 0 {
+	if story.ChangedEvidenceSourceCount == 0 {
 		return "No new evidence in the last 7 days"
 	}
 	domainLabel := "domain"
 	if len(story.Domains) != 1 {
 		domainLabel = "domains"
 	}
-	return fmt.Sprintf("%d new signal%s across %d %s", story.ChangedSince, plural(story.ChangedSince), len(story.Domains), domainLabel)
+	sourceLabel := "evidence source"
+	if signalStoryUsesSupportConversations(story.Signals) {
+		sourceLabel = "conversation"
+	}
+	return fmt.Sprintf("%d new %s%s · %d signal%s across %d %s", story.ChangedEvidenceSourceCount,
+		sourceLabel, plural(story.ChangedEvidenceSourceCount), story.ChangedSince, plural(story.ChangedSince), len(story.Domains), domainLabel)
+}
+
+func signalStoryUsesSupportConversations(signals []model.CRMBuyerSignal) bool {
+	if len(signals) == 0 {
+		return false
+	}
+	for _, signal := range signals {
+		if signal.SourceType != model.CRMSignalSourceSupport ||
+			((signal.SourceThreadID == nil || strings.TrimSpace(*signal.SourceThreadID) == "") &&
+				(signal.SourceID == nil || strings.TrimSpace(*signal.SourceID) == "")) {
+			return false
+		}
+	}
+	return true
 }
 
 func plural(count int) string {
