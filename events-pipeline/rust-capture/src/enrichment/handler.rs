@@ -5,6 +5,7 @@ use std::error::Error;
 use std::fmt;
 
 use crate::auth::authorization::CredentialKind;
+use crate::commercial_event_catalog_generated::SERVER_ONLY_COMPANY_FIELDS;
 use crate::events::event::ProcessedEvent;
 use crate::events::failed_event::FailedEvent;
 use crate::events::transform_event::TransformedEvent;
@@ -361,10 +362,23 @@ impl EnrichmentHandler {
         // Company object transformations
 
         if let Some(company) = &data.event.company {
-            let company_custom = company.get("custom").unwrap_or(&default_json);
-            let company_custom_str = match company_custom {
+            let mut company_custom = company
+                .get("custom")
+                .cloned()
+                .unwrap_or(default_json.clone());
+            if !company_custom.is_object() {
+                company_custom = serde_json::json!({});
+            }
+            if let Some(custom) = company_custom.as_object_mut() {
+                for field in SERVER_ONLY_COMPANY_FIELDS {
+                    if let Some(value) = company.get(*field) {
+                        custom.insert((*field).to_string(), value.clone());
+                    }
+                }
+            }
+            let company_custom_str = match &company_custom {
                 serde_json::Value::Object(obj) if obj.is_empty() => "{}".to_string(),
-                _ => to_string(company_custom).unwrap_or_else(|e| {
+                _ => to_string(&company_custom).unwrap_or_else(|e| {
                     eprintln!("Failed to serialize custom company data: {}", e);
                     "".to_string()
                 }),

@@ -3,10 +3,13 @@ package repository
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -44,9 +47,118 @@ func (r *CRMSignalRepository) EvaluatePostgresSignalRule(
 		return r.committeeExpandedCandidates(ctx, config, windowStartedAt, windowEndedAt)
 	case model.CRMSignalRuleBuyingCommitteeShrank:
 		return r.committeeShrankCandidates(ctx, config, windowEndedAt)
+	case model.CRMSignalRuleActivationStalled:
+		return r.activationStalledCandidates(ctx, config, windowEndedAt)
+	case model.CRMSignalRuleCapacitySaturation:
+		return r.capacitySaturationCandidates(ctx, config, windowEndedAt)
 	default:
 		return nil, fmt.Errorf("unsupported Postgres signal rule %q", config.RuleKey)
 	}
+}
+
+func (r *CRMSignalRepository) activationStalledCandidates(ctx context.Context, config model.CRMSignalRuleConfig, end time.Time) ([]model.CRMSignalRuleCandidate, error) {
+	days := ruleInt(config.Thresholds, "days_without_first_value", 7)
+	type row struct {
+		WorkspaceID       string
+		CompanyID         string
+		OnboardingStarted time.Time
+	}
+	var rows []row
+	err := r.db.WithContext(ctx).Raw(`SELECT state.workspace_id, state.company_id,
+		(state.state->>'onboarding_started_at')::timestamptz AS onboarding_started
+		FROM crm_company_commercial_states state
+		WHERE state.state ? 'onboarding_started_at' AND NOT (state.state ? 'first_value_at')
+		AND (state.state->>'onboarding_started_at')::timestamptz <= ?`, end.AddDate(0, 0, -days)).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("evaluate activation stalled: %w", err)
+	}
+	result := []model.CRMSignalRuleCandidate{}
+	for _, row := range rows {
+		scope := row.OnboardingStarted.UTC().Format(time.RFC3339Nano)
+		emit, err := r.transitionSignalCondition(ctx, row.WorkspaceID, row.CompanyID, config.RuleKey,
+			config.Version, model.CRMCommercialMotionOnboarding, scope, true, false, float64(end.Sub(row.OnboardingStarted).Hours()/24), end)
+		if err != nil {
+			return nil, err
+		}
+		if !emit {
+			continue
+		}
+		companyID := row.CompanyID
+		item := candidate(row.WorkspaceID, config.RuleKey, model.CRMSignalRiskSignal,
+			model.CRMSignalDomainProductUsage, model.CRMSignalPolarityNegative, model.CRMSignalSourceProduct,
+			nil, nil, &companyID, end, "Account activation stalled",
+			fmt.Sprintf("No first value %d days after onboarding started", days), model.JSONB{"scope_key": scope})
+		item.EvidenceIdentityMethod, item.EvidenceIdentityTrust = model.IdentityMethodServerEvent, model.IdentityTrustVerified
+		item.EvidenceFingerprint = fingerprintRuleCandidate(item)
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func (r *CRMSignalRepository) capacitySaturationCandidates(ctx context.Context, config model.CRMSignalRuleConfig, end time.Time) ([]model.CRMSignalRuleCandidate, error) {
+	type row struct {
+		WorkspaceID, CompanyID    string
+		SeatsUsed, SeatsPurchased float64
+	}
+	var rows []row
+	err := r.db.WithContext(ctx).Raw(`SELECT state.workspace_id, state.company_id,
+		(state.state->>'seats_used')::double precision AS seats_used,
+		(state.state->>'seats_purchased')::double precision AS seats_purchased
+		FROM crm_company_commercial_states state
+		WHERE state.state ? 'seats_used' AND state.state ? 'seats_purchased'
+		AND (state.state->>'seats_purchased')::double precision > 0`).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("evaluate capacity saturation: %w", err)
+	}
+	result := []model.CRMSignalRuleCandidate{}
+	for _, row := range rows {
+		ratio := row.SeatsUsed / row.SeatsPurchased
+		emit, err := r.transitionSignalCondition(ctx, row.WorkspaceID, row.CompanyID, config.RuleKey,
+			config.Version, model.CRMCommercialMotionExpansion, "seats", ratio >= 0.85, ratio <= 0.80, ratio, end)
+		if err != nil {
+			return nil, err
+		}
+		if !emit {
+			continue
+		}
+		companyID := row.CompanyID
+		item := candidate(row.WorkspaceID, config.RuleKey, model.CRMSignalBuyingIntent,
+			model.CRMSignalDomainProductUsage, model.CRMSignalPolarityPositive, model.CRMSignalSourceProduct,
+			nil, nil, &companyID, end, "Account is approaching seat capacity",
+			fmt.Sprintf("%.0f of %.0f seats are in use", row.SeatsUsed, row.SeatsPurchased), model.JSONB{"capacity_ratio": ratio})
+		item.EvidenceIdentityMethod, item.EvidenceIdentityTrust = model.IdentityMethodServerEvent, model.IdentityTrustVerified
+		item.EvidenceFingerprint = fingerprintRuleCandidate(item)
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func (r *CRMSignalRepository) transitionSignalCondition(
+	ctx context.Context, workspaceID, companyID, ruleKey string, ruleVersion int,
+	motion, scopeKey string, condition, rearm bool, value float64, now time.Time,
+) (bool, error) {
+	var state model.CRMSignalConditionState
+	query := r.db.WithContext(ctx).Where("workspace_id = ? AND company_id = ? AND rule_key = ? AND rule_version = ? AND motion = ? AND scope_key = ?",
+		workspaceID, companyID, ruleKey, ruleVersion, motion, scopeKey)
+	err := query.First(&state).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, err
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		state = model.CRMSignalConditionState{WorkspaceID: workspaceID, CompanyID: companyID, RuleKey: ruleKey,
+			RuleVersion: ruleVersion, Motion: motion, ScopeKey: scopeKey, Armed: true}
+	}
+	state.LastValue = &value
+	emit := state.Armed && condition
+	if emit {
+		state.Armed, state.TriggeredAt = false, &now
+	} else if !state.Armed && rearm {
+		state.Armed, state.RearmedAt = true, &now
+	}
+	if err := r.db.WithContext(ctx).Save(&state).Error; err != nil {
+		return false, fmt.Errorf("save signal condition state: %w", err)
+	}
+	return emit, nil
 }
 
 type supportVolumeSpikeRow struct {

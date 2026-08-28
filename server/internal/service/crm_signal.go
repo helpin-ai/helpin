@@ -75,6 +75,54 @@ func (s *CRMSignalService) ListSignals(ctx context.Context, workspaceID string, 
 	return signals, total, nil
 }
 
+// SignalShadowGate returns the objective Phase 1 release readiness checks.
+func (s *CRMSignalService) SignalShadowGate(ctx context.Context, workspaceID string) (*model.CRMSignalShadowGate, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.signalRepo.GetSignalShadowGate(ctx, workspaceID)
+}
+
+// ReconcileDealMotionSignals removes ghost rows immediately after a deal leaves a motion.
+func (s *CRMSignalService) ReconcileDealMotionSignals(ctx context.Context, workspaceID, dealID string) error {
+	if err := s.signalRepo.ReconcileDealMotionSignals(ctx, workspaceID, dealID); err != nil {
+		return err
+	}
+	return s.RefreshEntityMotionSignals(ctx, workspaceID, "deal", dealID)
+}
+
+// ReconcilePipelineMotionSignals applies a new inherited pipeline motion to existing deals.
+func (s *CRMSignalService) ReconcilePipelineMotionSignals(ctx context.Context, workspaceID, pipelineID string) error {
+	return s.signalRepo.ReconcilePipelineMotionSignals(ctx, workspaceID, pipelineID)
+}
+
+// RefreshEntityMotionSignals resolves and persists current motion state outside detection.
+func (s *CRMSignalService) RefreshEntityMotionSignals(ctx context.Context, workspaceID, entityType, entityID string) error {
+	return s.signalRepo.RefreshEntityMotionSignals(ctx, workspaceID, entityType, entityID, time.Now().UTC())
+}
+
+// RefreshContactCompanyMotionSignals refreshes accounts affected by a contact lifecycle change.
+func (s *CRMSignalService) RefreshContactCompanyMotionSignals(ctx context.Context, workspaceID, contactID string) error {
+	companyIDs, err := s.signalRepo.ListContactCompanyIDs(ctx, workspaceID, contactID)
+	if err != nil {
+		return err
+	}
+	for _, companyID := range companyIDs {
+		if err := s.RefreshEntityMotionSignals(ctx, workspaceID, "company", companyID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RecordSignalBatchSuppression persists a holiday/workspace anomaly guard decision.
+func (s *CRMSignalService) RecordSignalBatchSuppression(
+	ctx context.Context, workspaceID, ruleKey string, ruleVersion, eligible, tripped int,
+	start, end time.Time, reason string,
+) error {
+	return s.signalRepo.RecordSignalBatchSuppression(ctx, workspaceID, ruleKey, ruleVersion, eligible, tripped, start, end, reason)
+}
+
 // CreateSignal creates a new buyer signal.
 func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRMBuyerSignalRequest) (*model.CRMBuyerSignal, error) {
 	if req.WorkspaceID == "" || req.SignalType == "" || req.Summary == "" {

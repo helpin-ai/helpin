@@ -273,6 +273,7 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			linkedin_url TEXT,
 			headquarters TEXT,
 			owner_member_id TEXT,
+			customer_success_owner_member_id TEXT,
 			custom_properties BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -282,6 +283,7 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
 			is_default BOOLEAN NOT NULL DEFAULT 0,
+			default_commercial_motion TEXT NOT NULL DEFAULT 'new_business',
 			position INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -307,6 +309,7 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			currency TEXT NOT NULL DEFAULT 'USD',
 			close_date DATETIME,
 			owner_member_id TEXT,
+			commercial_motion TEXT,
 			probability INTEGER,
 			custom_properties BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

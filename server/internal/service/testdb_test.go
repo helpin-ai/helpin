@@ -1162,6 +1162,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			linkedin_url TEXT,
 			headquarters TEXT,
 			owner_member_id TEXT,
+			customer_success_owner_member_id TEXT,
 			custom_properties TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME,
 			updated_at DATETIME

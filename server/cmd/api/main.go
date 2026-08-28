@@ -385,12 +385,23 @@ func main() {
 			// CRM Phase 4: Intelligence
 			&model.CRMEnrichmentResult{},
 			&model.CRMBuyerSignal{},
+			&model.CRMSignalObservation{},
+			&model.CRMSignalInterpretationConfig{},
+			&model.CRMSignalMotionState{},
 			&model.CRMSignalRuleConfig{},
 			&model.CRMSignalEvaluationRun{},
 			&model.CRMSignalEvaluatorWatermark{},
 			&model.CRMSignalScoringConfig{},
 			&model.CRMSignalFeedback{},
 			&model.CRMSignalRoutingPolicy{},
+			&model.CRMSignalRoutingSettings{},
+			&model.CRMSignalRolloutSettings{},
+			&model.CRMCompanyCommercialState{},
+			&model.CRMCompanyCommercialStateHistory{},
+			&model.CRMCompanyCommercialStateHealth{},
+			&model.CRMSignalConditionState{},
+			&model.CRMUsageWeekdayBaseline{},
+			&model.CRMSignalBatchSuppression{},
 			&model.CRMSignalDelivery{},
 			&model.CRMSignalExternalEvidence{},
 			&model.CRMEntitySummary{},
@@ -1399,6 +1410,9 @@ func main() {
 	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService).
 		SetHealthScoreDependencies(crmDealRepo).
 		SetActivationDependencies(notificationService)
+	crmContactService.SetMotionSignalRefresher(crmSignalService)
+	crmCompanyService.SetMotionSignalRefresher(crmSignalService)
+	crmDealService.SetMotionSignalReconciler(crmSignalService)
 	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
@@ -2005,6 +2019,25 @@ func main() {
 		signalRuleEvaluator.Run(signalRuleCtx)
 	}()
 
+	// Materialize server-authenticated company state only after a workspace has
+	// passed the Phase 1 shadow gate and explicitly cut over.
+	commercialStateCtx, commercialStateCancel := context.WithCancel(context.Background())
+	commercialStateDone := make(chan struct{})
+	commercialStateSync := service.NewCRMCommercialStateSynchronizer(crmSignalService, crmSignalRepo, eventProjectRepo, clickHouseDB)
+	go func() {
+		defer close(commercialStateDone)
+		commercialStateSync.Run(commercialStateCtx)
+	}()
+
+	// Rebuild workspace-local weekday baselines daily under a replica lease.
+	usageBaselineCtx, usageBaselineCancel := context.WithCancel(context.Background())
+	usageBaselineDone := make(chan struct{})
+	usageBaselineSync := service.NewCRMUsageBaselineSynchronizer(crmSignalRepo, eventProjectRepo, clickHouseDB)
+	go func() {
+		defer close(usageBaselineDone)
+		usageBaselineSync.Run(usageBaselineCtx)
+	}()
+
 	// Route only policy-eligible, versioned signals. Delivery rows make every
 	// channel idempotent across replicas and restarts.
 	signalRouteDone := make(chan struct{})
@@ -2236,6 +2269,8 @@ func main() {
 	customerIOOutboxCancel()
 	productAnalyticsCancel()
 	signalRuleCancel()
+	commercialStateCancel()
+	usageBaselineCancel()
 	settlementCancel()
 	periodCancel()
 	reservationCancel()
@@ -2268,6 +2303,16 @@ func main() {
 	case <-signalRuleDone:
 	case <-time.After(6 * time.Second):
 		slog.Warn("CRM signal rule evaluator did not stop before shutdown timeout")
+	}
+	select {
+	case <-commercialStateDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("CRM commercial-state synchronizer did not stop before shutdown timeout")
+	}
+	select {
+	case <-usageBaselineDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("CRM usage-baseline synchronizer did not stop before shutdown timeout")
 	}
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()

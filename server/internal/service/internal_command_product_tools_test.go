@@ -421,6 +421,7 @@ func createProductToolCRMTables(t *testing.T, db *gorm.DB) {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
+			default_commercial_motion TEXT NOT NULL DEFAULT 'new_business',
 			position INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -442,6 +443,7 @@ func createProductToolCRMTables(t *testing.T, db *gorm.DB) {
 			stage_id TEXT NOT NULL,
 			amount REAL,
 			currency TEXT NOT NULL DEFAULT 'USD',
+			commercial_motion TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

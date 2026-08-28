@@ -128,7 +128,7 @@ func TestCRMSignalRepositoryListSignalsByCompanyRollsUpCanonicalSignals(t *testi
 		{ID: "weak", WorkspaceID: "ws-1", ContactID: &contactID, SignalType: model.CRMSignalCompetitorMention, SourceType: model.CRMSignalSourceEmail, Summary: "Maybe", Confidence: .59, DetectedAt: now},
 	}
 	for i := range signals {
-		if err := db.Create(&signals[i]).Error; err != nil {
+		if err := legacySignalCreateDB(db).Create(&signals[i]).Error; err != nil {
 			t.Fatalf("create signal: %v", err)
 		}
 	}
@@ -197,5 +197,253 @@ func TestCRMSignalRepositorySavesBoundedHealthSnapshotsAndListsLatestPerDeal(t *
 	}
 	if total != 1 || len(rows) != 1 || rows[0].Score != 80 {
 		t.Fatalf("latest rows = %#v, total=%d; want one score of 80", rows, total)
+	}
+}
+
+func TestStoredSignalGroupDirectionDetectsSupersessionFlip(t *testing.T) {
+	negative := model.CRMBuyerSignal{
+		ID: "negative", Polarity: model.CRMSignalPolarityNegative,
+		BusinessWeightSnapshot: 20, Confidence: 1,
+	}
+	positive := model.CRMBuyerSignal{
+		ID: "positive", Polarity: model.CRMSignalPolarityPositive,
+		BusinessWeightSnapshot: 12, Confidence: 1,
+	}
+	signals := []model.CRMBuyerSignal{negative, positive}
+	if got := storedSignalGroupDirection(signals, nil); got != -1 {
+		t.Fatalf("direction before supersession = %d, want -1", got)
+	}
+	if got := storedSignalGroupDirection(signals, map[string]bool{"negative": true}); got != 1 {
+		t.Fatalf("direction after supersession = %d, want 1", got)
+	}
+}
+
+func TestSignalMeaningFingerprintIsEntityScoped(t *testing.T) {
+	contactA, contactB := "contact-a", "contact-b"
+	base := model.CRMBuyerSignal{
+		WorkspaceID: "workspace", EvidenceFingerprint: "same-evidence",
+		CommercialMotion: model.CRMCommercialMotionConversion,
+		SignalType:       model.CRMSignalBuyingIntent, Polarity: model.CRMSignalPolarityPositive,
+		InterpretationVersion: 1,
+	}
+	first, second := base, base
+	first.ContactID, second.ContactID = &contactA, &contactB
+	if signalMeaningFingerprint(first) == signalMeaningFingerprint(second) {
+		t.Fatal("identical evidence on different contacts must not collide")
+	}
+}
+
+func TestPrepareSignalInterpretationsPersistsUnmappedObservationOnly(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:crm-unmapped-observation?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	statements := []string{
+		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, commercial_motion TEXT)`,
+		`CREATE TABLE crm_signal_interpretation_configs (
+			id TEXT PRIMARY KEY, workspace_id TEXT, rule_key TEXT, rule_version INTEGER,
+			motion TEXT, observation_signal_type TEXT, version INTEGER, signal_type TEXT,
+			polarity TEXT, business_weight REAL, half_life_days REAL,
+			recommended_action_key TEXT, recommended_action_label TEXT, enabled BOOLEAN,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE crm_signal_observations (
+			id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT,
+			rule_key TEXT, rule_version INTEGER, detector_kind TEXT, signal_domain TEXT,
+			source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT,
+			evidence_excerpt TEXT, metadata BLOB, confidence REAL, observed_at DATETIME,
+			window_started_at DATETIME, window_ended_at DATETIME, identity_method TEXT,
+			identity_trust TEXT, evidence_fingerprint TEXT, motions_at_detection BLOB,
+			context_snapshot BLOB, replay_calibration_excluded BOOLEAN, created_at DATETIME,
+			UNIQUE(workspace_id, rule_key, rule_version, evidence_fingerprint, contact_id, deal_id, company_id)
+		)`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create schema: %v", err)
+		}
+	}
+	ruleKey, version := "unmapped_rule", 1
+	signal := &model.CRMBuyerSignal{
+		WorkspaceID: "workspace-1", RuleKey: &ruleKey, RuleVersion: &version,
+		SignalType: model.CRMSignalBuyingIntent, SourceType: model.CRMSignalSourceCRM,
+		Summary: "Unmapped evidence", Confidence: 1, DetectedAt: time.Now().UTC(),
+		EvidenceFingerprint: "unmapped-evidence",
+	}
+	rows, err := NewCRMSignalRepository(db).prepareSignalInterpretations(context.Background(), signal)
+	if err != nil {
+		t.Fatalf("prepareSignalInterpretations: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("unmapped observation produced signals: %#v", rows)
+	}
+	var observations int64
+	if err := db.Table("crm_signal_observations").Count(&observations).Error; err != nil || observations != 1 {
+		t.Fatalf("observation count=%d err=%v", observations, err)
+	}
+}
+
+func TestPersistSignalMotionStateKeepsOutOfOrderHistory(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:crm-motion-state-history?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE crm_signal_motion_states (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, entity_type TEXT NOT NULL,
+		entity_id TEXT NOT NULL, resolver_version INTEGER NOT NULL, motions BLOB NOT NULL,
+		input_snapshot BLOB NOT NULL, effective_at DATETIME NOT NULL, created_at DATETIME,
+		UNIQUE(workspace_id, entity_type, entity_id, resolver_version, effective_at)
+	)`).Error; err != nil {
+		t.Fatalf("create motion state: %v", err)
+	}
+	companyID := "company-1"
+	newer := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	repo := NewCRMSignalRepository(db)
+	for _, effectiveAt := range []time.Time{newer, newer.Add(-24 * time.Hour)} {
+		signal := &model.CRMBuyerSignal{WorkspaceID: "workspace-1", CompanyID: &companyID, DetectedAt: effectiveAt}
+		if err := repo.persistSignalMotionState(context.Background(), signal,
+			[]string{model.CRMCommercialMotionRetention}, model.JSONB{"at": effectiveAt.Format(time.RFC3339)}); err != nil {
+			t.Fatalf("persist motion state: %v", err)
+		}
+	}
+	var states []model.CRMSignalMotionState
+	if err := db.Order("effective_at DESC").Find(&states).Error; err != nil {
+		t.Fatalf("list motion states: %v", err)
+	}
+	if len(states) != 2 || !states[0].EffectiveAt.Equal(newer) {
+		t.Fatalf("motion history = %#v; want two snapshots with newest current", states)
+	}
+}
+
+func TestPersistSignalMotionStateSkipsUnchangedSnapshots(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:crm-motion-state-dedupe?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE crm_signal_motion_states (
+		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, entity_type TEXT NOT NULL,
+		entity_id TEXT NOT NULL, resolver_version INTEGER NOT NULL, motions BLOB NOT NULL,
+		input_snapshot BLOB NOT NULL, effective_at DATETIME NOT NULL, created_at DATETIME,
+		UNIQUE(workspace_id, entity_type, entity_id, resolver_version, effective_at)
+	)`).Error; err != nil {
+		t.Fatalf("create motion state: %v", err)
+	}
+	contactID := "contact-1"
+	repo := NewCRMSignalRepository(db)
+	for _, effectiveAt := range []time.Time{
+		time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC),
+		time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC),
+	} {
+		signal := &model.CRMBuyerSignal{WorkspaceID: "workspace-1", ContactID: &contactID, DetectedAt: effectiveAt}
+		if err := repo.persistSignalMotionState(context.Background(), signal,
+			[]string{model.CRMCommercialMotionRetention}, model.JSONB{"lifecycle_stage": "customer"}); err != nil {
+			t.Fatalf("persist motion state: %v", err)
+		}
+	}
+	var count int64
+	if err := db.Table("crm_signal_motion_states").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("motion state count=%d err=%v; want one unchanged snapshot", count, err)
+	}
+}
+
+func TestContactMotionRefreshDoesNotSupersedeDealScopedSignal(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:crm-contact-motion-deal-scope?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, lifecycle_stage TEXT, lead_status TEXT)`,
+		`CREATE TABLE crm_signal_motion_states (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, entity_type TEXT NOT NULL,
+			entity_id TEXT NOT NULL, resolver_version INTEGER NOT NULL, motions BLOB NOT NULL,
+			input_snapshot BLOB NOT NULL, effective_at DATETIME NOT NULL, created_at DATETIME,
+			UNIQUE(workspace_id, entity_type, entity_id, resolver_version, effective_at)
+		)`,
+		`CREATE TABLE crm_buyer_signals (
+			id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT,
+			commercial_motion TEXT, polarity TEXT, business_weight_snapshot REAL, confidence REAL,
+			dismissed_at DATETIME, superseded_at DATETIME, superseded_reason TEXT,
+			direction_changed_by_supersession BOOLEAN DEFAULT 0
+		)`,
+		`INSERT INTO crm_contacts VALUES ('contact-1', 'workspace-1', 'customer', '')`,
+		`INSERT INTO crm_buyer_signals VALUES ('contact-only', 'workspace-1', 'contact-1', NULL, NULL, 'conversion', 'positive', 10, 1, NULL, NULL, NULL, 0)`,
+		`INSERT INTO crm_buyer_signals VALUES ('deal-scoped', 'workspace-1', 'contact-1', 'deal-1', NULL, 'conversion', 'positive', 10, 1, NULL, NULL, NULL, 0)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("seed schema: %v", err)
+		}
+	}
+	if err := NewCRMSignalRepository(db).RefreshEntityMotionSignals(
+		context.Background(), "workspace-1", "contact", "contact-1", time.Now().UTC(),
+	); err != nil {
+		t.Fatalf("refresh contact motion signals: %v", err)
+	}
+	var rows []struct {
+		ID           string
+		SupersededAt *time.Time
+	}
+	if err := db.Table("crm_buyer_signals").Order("id").Scan(&rows).Error; err != nil {
+		t.Fatalf("load signals: %v", err)
+	}
+	if len(rows) != 2 || rows[0].ID != "contact-only" || rows[0].SupersededAt == nil {
+		t.Fatalf("contact-only signal was not superseded: %#v", rows)
+	}
+	if rows[1].ID != "deal-scoped" || rows[1].SupersededAt != nil {
+		t.Fatalf("deal-scoped signal was superseded by contact refresh: %#v", rows)
+	}
+}
+
+func TestCommercialStateMotionsAreApplicabilityNotLaneMembership(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	motions := map[string]struct{}{}
+	addCommercialStateMotions(motions, model.JSONB{
+		"subscription_status":   "active",
+		"onboarding_started_at": now.Add(-10 * 24 * time.Hour).Format(time.RFC3339),
+		"renewal_at":            now.Add(60 * 24 * time.Hour).Format(time.RFC3339),
+	}, now)
+	for _, motion := range []string{
+		model.CRMCommercialMotionOnboarding, model.CRMCommercialMotionAdoption,
+		model.CRMCommercialMotionRetention, model.CRMCommercialMotionRenewal,
+	} {
+		if _, ok := motions[motion]; !ok {
+			t.Fatalf("resolved applicability missing %s: %#v", motion, motions)
+		}
+	}
+}
+
+func TestCompanyRelationshipMotionsIncludeDealsLinkedThroughContacts(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:crm-company-indirect-deal-motion?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, lifecycle_stage TEXT)`,
+		`CREATE TABLE crm_associations (workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
+		`CREATE TABLE crm_pipelines (id TEXT PRIMARY KEY, default_commercial_motion TEXT)`,
+		`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY, stage_type TEXT)`,
+		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, pipeline_id TEXT, stage_id TEXT, commercial_motion TEXT)`,
+		`INSERT INTO crm_contacts VALUES ('contact-1', 'ws-1', 'customer')`,
+		`INSERT INTO crm_pipelines VALUES ('pipeline-1', 'expansion')`,
+		`INSERT INTO crm_pipeline_stages VALUES ('stage-1', 'open')`,
+		`INSERT INTO crm_deals VALUES ('deal-1', 'ws-1', 'pipeline-1', 'stage-1', NULL)`,
+		`INSERT INTO crm_associations VALUES ('ws-1', 'contact', 'contact-1', 'company', 'company-1')`,
+		`INSERT INTO crm_associations VALUES ('ws-1', 'deal', 'deal-1', 'contact', 'contact-1')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("seed schema: %v", err)
+		}
+	}
+	motions := map[string]struct{}{}
+	snapshot := model.JSONB{}
+	if err := NewCRMSignalRepository(db).addCompanyRelationshipMotions(
+		context.Background(), "ws-1", "company-1", motions, snapshot,
+	); err != nil {
+		t.Fatalf("addCompanyRelationshipMotions: %v", err)
+	}
+	if _, ok := motions[model.CRMCommercialMotionExpansion]; !ok {
+		t.Fatalf("indirect expansion deal missing from motions: %#v", motions)
+	}
+	if got, ok := snapshot["open_deal_motions"].([]string); !ok || len(got) != 1 || got[0] != "expansion" {
+		t.Fatalf("open-deal snapshot = %#v", snapshot["open_deal_motions"])
 	}
 }

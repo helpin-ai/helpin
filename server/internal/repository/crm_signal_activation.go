@@ -108,6 +108,55 @@ func (r *CRMSignalRepository) ListSignalPrecision(ctx context.Context, workspace
 	return rows, nil
 }
 
+// ListSignalOutcomeCalibration evaluates retention rules against later,
+// server-authenticated subscription state rather than rep feedback.
+func (r *CRMSignalRepository) ListSignalOutcomeCalibration(ctx context.Context, workspaceID string, horizonDays int) ([]model.CRMSignalOutcomeCalibrationRow, error) {
+	if horizonDays < 30 || horizonDays > 180 {
+		horizonDays = 90
+	}
+	var rows []model.CRMSignalOutcomeCalibrationRow
+	err := r.db.WithContext(ctx).Raw(`WITH evaluated AS (
+		SELECT signal.workspace_id, signal.rule_key, signal.rule_version,
+			signal.commercial_motion, signal.evidence_identity_method AS identity_method,
+			(EXISTS (
+				SELECT 1 FROM crm_company_commercial_state_history outcome
+				WHERE outcome.workspace_id = signal.workspace_id AND outcome.company_id = signal.company_id
+				AND outcome.applied_to_current = true
+				AND outcome.state_updated_at > signal.detected_at
+				AND outcome.state_updated_at <= signal.detected_at + (? * interval '1 day')
+				AND (outcome.state_snapshot->>'subscription_status' IN ('past_due','cancel_scheduled','canceled')
+					OR (outcome.state_snapshot ? 'mrr_minor'
+						AND signal.interpretation_snapshot->'commercial_state' ? 'mrr_minor'
+						AND (outcome.state_snapshot->>'mrr_minor')::numeric <
+							(signal.interpretation_snapshot->'commercial_state'->>'mrr_minor')::numeric))
+			)) AS matched,
+			(signal.detected_at <= now() - (? * interval '1 day') OR EXISTS (
+				SELECT 1 FROM crm_company_commercial_state_history outcome
+				WHERE outcome.workspace_id = signal.workspace_id AND outcome.company_id = signal.company_id
+				AND outcome.applied_to_current = true
+				AND outcome.state_updated_at > signal.detected_at
+				AND outcome.state_updated_at <= signal.detected_at + (? * interval '1 day')
+			)) AS matured
+		FROM crm_buyer_signals signal
+		WHERE signal.workspace_id = ? AND signal.company_id IS NOT NULL
+		AND signal.rule_key IS NOT NULL AND signal.replay_calibration_excluded = false
+		AND signal.commercial_motion = 'retention'
+	)
+	SELECT workspace_id, rule_key, rule_version, commercial_motion, identity_method,
+		COUNT(*) FILTER (WHERE matured) AS matured_signals,
+		COUNT(*) FILTER (WHERE matured AND matched) AS outcome_matched,
+		CASE WHEN COUNT(*) FILTER (WHERE matured) = 0 THEN 0 ELSE
+			COUNT(*) FILTER (WHERE matured AND matched)::double precision /
+			COUNT(*) FILTER (WHERE matured)::double precision END AS outcome_precision,
+		? AS horizon_days
+	FROM evaluated GROUP BY workspace_id, rule_key, rule_version, commercial_motion, identity_method
+	ORDER BY matured_signals DESC, rule_key, rule_version, identity_method`, horizonDays, horizonDays, horizonDays, workspaceID, horizonDays).Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("report signal outcome calibration: %w", err)
+	}
+	return rows, nil
+}
+
 func (r *CRMSignalRepository) GetActiveRoutingPolicy(ctx context.Context, workspaceID string) (*model.CRMSignalRoutingPolicy, error) {
 	var policy model.CRMSignalRoutingPolicy
 	err := r.db.WithContext(ctx).Where("workspace_id = ? AND enabled = ?", workspaceID, true).Order("version DESC").First(&policy).Error
@@ -118,6 +167,72 @@ func (r *CRMSignalRepository) GetActiveRoutingPolicy(ctx context.Context, worksp
 		return nil, fmt.Errorf("get signal routing policy: %w", err)
 	}
 	return &policy, nil
+}
+
+// GetSignalRoutingSettings returns mutable workspace routing defaults.
+func (r *CRMSignalRepository) GetSignalRoutingSettings(ctx context.Context, workspaceID string) (*model.CRMSignalRoutingSettings, error) {
+	var settings model.CRMSignalRoutingSettings
+	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).First(&settings).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return &model.CRMSignalRoutingSettings{WorkspaceID: workspaceID, MinimumLanePriority: 5}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get signal routing settings: %w", err)
+	}
+	return &settings, nil
+}
+
+// SaveSignalRoutingSettings validates and persists mutable workspace routing defaults.
+func (r *CRMSignalRepository) SaveSignalRoutingSettings(ctx context.Context, settings *model.CRMSignalRoutingSettings) error {
+	if settings.DefaultSignalOwnerMemberID != nil {
+		var count int64
+		if err := r.db.WithContext(ctx).Model(&model.WorkspaceMember{}).
+			Where("workspace_id = ? AND id = ? AND status = ?", settings.WorkspaceID,
+				*settings.DefaultSignalOwnerMemberID, model.WorkspaceMemberStatusActive).
+			Count(&count).Error; err != nil {
+			return fmt.Errorf("validate default signal owner: %w", err)
+		}
+		if count == 0 {
+			return fmt.Errorf("default signal owner must be an active workspace member")
+		}
+	}
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "workspace_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"default_signal_owner_member_id", "minimum_lane_priority", "updated_at"}),
+	}).Create(settings).Error
+}
+
+// GetSignalRolloutSettings returns the workspace motion-spine rollout state.
+func (r *CRMSignalRepository) GetSignalRolloutSettings(ctx context.Context, workspaceID string) (*model.CRMSignalRolloutSettings, error) {
+	if !r.db.Migrator().HasTable(&model.CRMSignalRolloutSettings{}) {
+		// Compatibility for pre-spine schemas used by migrations and isolated
+		// tests. Production schemas always have an explicit shadow/live row.
+		return &model.CRMSignalRolloutSettings{WorkspaceID: workspaceID, Mode: model.CRMSignalRolloutLive}, nil
+	}
+	var settings model.CRMSignalRolloutSettings
+	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).First(&settings).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return &model.CRMSignalRolloutSettings{WorkspaceID: workspaceID, Mode: model.CRMSignalRolloutShadow}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get signal rollout settings: %w", err)
+	}
+	return &settings, nil
+}
+
+// ActivateSignalRollout marks a workspace live after the service validates its gate.
+func (r *CRMSignalRepository) ActivateSignalRollout(ctx context.Context, workspaceID, memberID string, activatedAt time.Time) error {
+	settings := model.CRMSignalRolloutSettings{
+		ID: uuid.NewString(), WorkspaceID: workspaceID, Mode: model.CRMSignalRolloutLive,
+		ActivatedAt: &activatedAt, ActivatedByMemberID: &memberID,
+	}
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "workspace_id"}},
+		DoUpdates: clause.Assignments(map[string]interface{}{
+			"mode": model.CRMSignalRolloutLive, "activated_at": activatedAt,
+			"activated_by_member_id": memberID, "updated_at": activatedAt,
+		}),
+	}).Create(&settings).Error
 }
 
 func (r *CRMSignalRepository) CreateRoutingPolicy(ctx context.Context, policy *model.CRMSignalRoutingPolicy) error {

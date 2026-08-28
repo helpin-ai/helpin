@@ -759,6 +759,7 @@ func TestAutomationActivityResolvesTargetDisplayInfo(t *testing.T) {
 			pipeline_id TEXT NOT NULL,
 			stage_id TEXT NOT NULL,
 			currency TEXT NOT NULL,
+			commercial_motion TEXT,
 			custom_properties TEXT,
 			created_at DATETIME,
 			updated_at DATETIME

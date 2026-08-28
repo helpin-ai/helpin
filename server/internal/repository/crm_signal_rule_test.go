@@ -186,6 +186,35 @@ func TestSignalRuleConfigLeaseAndIdempotency(t *testing.T) {
 	}
 }
 
+func TestWorkspaceScopedWatermarksAdvanceIndependently(t *testing.T) {
+	_, repo := setupSignalRuleRepositoryTest(t)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	initial := now.Add(-366 * 24 * time.Hour)
+	firstKey := "commercial_state_sync:workspace-1"
+	secondKey := "commercial_state_sync:workspace-2"
+	for _, key := range []string{firstKey, secondKey} {
+		if _, acquired, err := repo.TryAcquireSignalEvaluatorLease(ctx, key, "pod-a", now, time.Minute, initial); err != nil || !acquired {
+			t.Fatalf("acquire %s: acquired=%v err=%v", key, acquired, err)
+		}
+	}
+	if err := repo.ReleaseSignalEvaluatorLease(ctx, firstKey, "pod-a", now); err != nil {
+		t.Fatalf("release healthy workspace: %v", err)
+	}
+	if err := repo.AbandonSignalEvaluatorLease(ctx, secondKey, "pod-a"); err != nil {
+		t.Fatalf("abandon failed workspace: %v", err)
+	}
+	later := now.Add(10 * time.Minute)
+	firstWatermark, acquired, err := repo.TryAcquireSignalEvaluatorLease(ctx, firstKey, "pod-b", later, time.Minute, initial)
+	if err != nil || !acquired || !firstWatermark.Equal(now) {
+		t.Fatalf("healthy workspace watermark=%v acquired=%v err=%v", firstWatermark, acquired, err)
+	}
+	secondWatermark, acquired, err := repo.TryAcquireSignalEvaluatorLease(ctx, secondKey, "pod-b", later, time.Minute, initial)
+	if err != nil || !acquired || !secondWatermark.Equal(initial) {
+		t.Fatalf("failed workspace watermark=%v acquired=%v err=%v", secondWatermark, acquired, err)
+	}
+}
+
 func TestResolveBehavioralIdentityAndOpenDeal(t *testing.T) {
 	db, repo := setupSignalRuleRepositoryTest(t)
 	ctx := context.Background()

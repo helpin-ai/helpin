@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/helpin-ai/helpin/server/internal/eventcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -18,6 +19,8 @@ const (
 	signalRuleLeaseDuration     = 20 * time.Minute
 	signalRuleDailyOverlap      = 48 * time.Hour
 	signalRuleMicroBatchOverlap = 15 * time.Minute
+	signalMotionStateRetention  = 400 * 24 * time.Hour
+	usageBaselineRetention      = 90 * 24 * time.Hour
 )
 
 // CRMSignalRuleEvaluator turns bounded first-party evidence into durable signals.
@@ -125,6 +128,20 @@ func (e *CRMSignalRuleEvaluator) RunSweep(ctx context.Context, cadence string) (
 			slog.WarnContext(ctx, "CRM signal rule failed", "rule_key", config.RuleKey, "rule_version", config.Version, "error", evaluateErr)
 		}
 	}
+	if cadence == model.CRMSignalRuleCadenceDaily {
+		motionStates, pruneErr := e.signals.PruneSignalMotionStates(ctx, now.Add(-signalMotionStateRetention))
+		if pruneErr != nil {
+			slog.WarnContext(ctx, "CRM signal motion-state retention failed", "error", pruneErr)
+		} else if motionStates > 0 {
+			slog.InfoContext(ctx, "pruned CRM signal motion-state history", "rows", motionStates)
+		}
+		baselines, pruneErr := e.signals.PruneUsageWeekdayBaselines(ctx, now.Add(-usageBaselineRetention))
+		if pruneErr != nil {
+			slog.WarnContext(ctx, "CRM usage-baseline retention failed", "error", pruneErr)
+		} else if baselines > 0 {
+			slog.InfoContext(ctx, "pruned CRM usage-baseline history", "rows", baselines)
+		}
+	}
 	if result.FailedRules > 0 {
 		_ = e.signals.AbandonSignalEvaluatorLease(ctx, cadence, e.owner)
 		return result, fmt.Errorf("%d signal rules failed", result.FailedRules)
@@ -152,7 +169,7 @@ func (e *CRMSignalRuleEvaluator) evaluateRule(ctx context.Context, config model.
 	if config.RuleKey == model.CRMSignalRuleExternalEvidence {
 		return nil, nil
 	}
-	if config.Cadence == model.CRMSignalRuleCadenceDaily {
+	if config.Cadence == model.CRMSignalRuleCadenceDaily && !eventBackedCustomerRule(config.RuleKey) {
 		return e.signals.EvaluatePostgresSignalRule(ctx, config, start, end)
 	}
 	if e.eventsDB == nil || e.projects == nil {
@@ -168,20 +185,163 @@ func (e *CRMSignalRuleEvaluator) evaluateRule(ctx context.Context, config model.
 		if err != nil {
 			return nil, err
 		}
-		volume, err := reader.SmokeCount(ctx, start, end)
+		timezone, err := e.signals.GetWorkspaceTimezone(ctx, workspaceID)
 		if err != nil {
 			return nil, err
 		}
-		if volume == 0 {
-			continue
+		reader.SetTimezone(timezone)
+		if !eventBackedCustomerRule(config.RuleKey) {
+			volume, err := reader.SmokeCount(ctx, start, end)
+			if err != nil {
+				return nil, err
+			}
+			if volume == 0 {
+				continue
+			}
 		}
-		candidates, err := reader.EvaluateBehavioralSignalRule(ctx, config, start, end)
+		var candidates []model.CRMSignalRuleCandidate
+		if eventBackedCustomerRule(config.RuleKey) {
+			candidates, err = e.evaluatePersistedBaselineRule(ctx, reader, config, workspaceID, timezone, end)
+		} else {
+			candidates, err = reader.EvaluateBehavioralSignalRule(ctx, config, start, end)
+		}
 		if err != nil {
 			return nil, err
+		}
+		if config.RuleKey == model.CRMSignalRuleUsageDecline && len(candidates) > 0 {
+			eligible, _ := candidates[0].Metadata["eligible_accounts"].(int)
+			if eligible == 0 {
+				if value, ok := candidates[0].Metadata["eligible_accounts"].(float64); ok {
+					eligible = int(value)
+				}
+			}
+			if ShouldSuppressUsageDeclineBatch(eligible, len(candidates)) {
+				if err := e.signals.RecordSignalBatchSuppression(ctx, workspaceID, config.RuleKey, config.Version,
+					eligible, len(candidates), start, end, "workspace_wide_usage_anomaly"); err != nil {
+					return nil, err
+				}
+				continue
+			}
 		}
 		result = append(result, candidates...)
 	}
 	return result, nil
+}
+
+func (e *CRMSignalRuleEvaluator) evaluatePersistedBaselineRule(
+	ctx context.Context,
+	reader *repository.ClickHouseEventRepository,
+	config model.CRMSignalRuleConfig,
+	workspaceID, timezone string,
+	end time.Time,
+) ([]model.CRMSignalRuleCandidate, error) {
+	metricKey := "feature_used"
+	spike := false
+	if config.RuleKey == model.CRMSignalRuleWorkflowFailureSpike {
+		metricKey, spike = "workflow_failed", true
+	}
+	baselines, err := e.signals.ListLatestUsageWeekdayBaselines(ctx, workspaceID, metricKey)
+	if err != nil {
+		return nil, err
+	}
+	type accountBaseline struct {
+		externalID     string
+		expected       map[int]float64
+		identityMethod string
+		completeWeeks  int
+	}
+	accounts := map[string]*accountBaseline{}
+	for _, row := range baselines {
+		account := accounts[row.CompanyID]
+		if account == nil {
+			account = &accountBaseline{externalID: row.CompanyExternalID, expected: map[int]float64{}, identityMethod: row.IdentityMethod, completeWeeks: row.CompleteWeeks}
+			accounts[row.CompanyID] = account
+		}
+		account.expected[row.Weekday] = row.MedianValue
+		if row.CompleteWeeks < account.completeWeeks {
+			account.completeWeeks = row.CompleteWeeks
+		}
+		if account.identityMethod != row.IdentityMethod {
+			account.identityMethod = "mixed_verified"
+		}
+	}
+	recent, err := reader.ListRecentUsageDays(ctx, metricKey, end, timezone)
+	if err != nil {
+		return nil, err
+	}
+	type dailyValue struct {
+		value          float64
+		identityMethod string
+	}
+	recentByCompany := map[string]map[string]dailyValue{}
+	for _, row := range recent {
+		if recentByCompany[row.CompanyExternalID] == nil {
+			recentByCompany[row.CompanyExternalID] = map[string]dailyValue{}
+		}
+		recentByCompany[row.CompanyExternalID][row.Day.Format("2006-01-02")] = dailyValue{value: row.Value, identityMethod: row.IdentityMethod}
+	}
+	localEndUTC, err := workspaceLocalMidnightUTC(end, timezone)
+	if err != nil {
+		return nil, fmt.Errorf("load workspace timezone: %w", err)
+	}
+	location, _ := time.LoadLocation(timezone)
+	localEnd := localEndUTC.In(location)
+	eligible := 0
+	rows := make([]repository.BehavioralRuleEvidence, 0)
+	for _, account := range accounts {
+		if account.externalID == "" || len(account.expected) != 7 || account.completeWeeks < 8 {
+			continue
+		}
+		if !spike {
+			valid := true
+			for _, expected := range account.expected {
+				if expected <= 0 {
+					valid = false
+					break
+				}
+			}
+			if !valid {
+				continue
+			}
+		}
+		eligible++
+		trippedDays, recentTotal, expectedTotal := 0, 0.0, 0.0
+		identityMethods := map[string]struct{}{}
+		for offset := -7; offset < 0; offset++ {
+			day := localEnd.AddDate(0, 0, offset)
+			actual := recentByCompany[account.externalID][day.Format("2006-01-02")]
+			expected := account.expected[int(day.Weekday())]
+			recentTotal += actual.value
+			expectedTotal += expected
+			if actual.identityMethod != "" {
+				identityMethods[actual.identityMethod] = struct{}{}
+			}
+			if (!spike && actual.value < expected*0.60) || (spike && actual.value >= 3 && actual.value > expected*2.0) {
+				trippedDays++
+			}
+		}
+		if trippedDays < 5 {
+			continue
+		}
+		identityMethod := account.identityMethod
+		if len(identityMethods) == 1 {
+			for value := range identityMethods {
+				identityMethod = value
+			}
+		} else if len(identityMethods) > 1 {
+			identityMethod = "mixed_verified"
+		}
+		rows = append(rows, repository.BehavioralRuleEvidence{
+			CompanyExternalID: account.externalID, IdentityMethod: identityMethod,
+			IdentityTrust: model.IdentityTrustVerified, ObservedAt: localEnd.UTC(),
+			EventCount: int(recentTotal), SessionCount: trippedDays, EventName: metricKey,
+			Evidence: fmt.Sprintf("%d of 7 days outside weekday baseline; actual %.0f, expected %.1f", trippedDays, recentTotal, expectedTotal),
+		})
+	}
+	for index := range rows {
+		rows[index].EligibleAccounts = eligible
+	}
+	return repository.BuildBehavioralCandidates(config, workspaceID, rows), nil
 }
 
 func (e *CRMSignalRuleEvaluator) persistCandidate(
@@ -193,7 +353,10 @@ func (e *CRMSignalRuleEvaluator) persistCandidate(
 	if candidate == nil {
 		return false, nil
 	}
-	if config.Cadence == model.CRMSignalRuleCadenceMicroBatch {
+	if !commercialCandidateOriginAllowed(candidate) {
+		return false, nil
+	}
+	if config.Cadence == model.CRMSignalRuleCadenceMicroBatch || strings.TrimSpace(candidate.CompanyExternalID) != "" {
 		contactID, companyID, _, _, err := e.signals.ResolveBehavioralIdentity(ctx, candidate.WorkspaceID,
 			candidate.AnonymousID, candidate.ExternalUserID, candidate.CompanyExternalID)
 		if err != nil {
@@ -232,6 +395,25 @@ func (e *CRMSignalRuleEvaluator) persistCandidate(
 		EvidenceFingerprint: candidate.EvidenceFingerprint,
 	}
 	return e.signals.CreateRuleSignalIfAbsent(ctx, signal)
+}
+
+func eventBackedCustomerRule(ruleKey string) bool {
+	return ruleKey == model.CRMSignalRuleUsageDecline || ruleKey == model.CRMSignalRuleWorkflowFailureSpike
+}
+
+func commercialCandidateOriginAllowed(candidate *model.CRMSignalRuleCandidate) bool {
+	if candidate == nil {
+		return false
+	}
+	eventName, ok := candidate.Metadata["event_type"].(string)
+	requiresServerEvent := candidate.RuleKey == model.CRMSignalRulePaymentFailed ||
+		candidate.RuleKey == model.CRMSignalRuleDowngradeRequested ||
+		candidate.RuleKey == model.CRMSignalRuleWorkflowFailureSpike
+	if requiresServerEvent && (!ok || !eventcatalog.IsServerOnlyEvent(eventName)) {
+		return false
+	}
+	return !ok || !eventcatalog.IsServerOnlyEvent(eventName) ||
+		candidate.EvidenceIdentityMethod == model.IdentityMethodServerEvent
 }
 
 func (e *CRMSignalRuleEvaluator) recordRuleRun(ctx context.Context, config model.CRMSignalRuleConfig, start, end, started time.Time, candidates, inserted int, ruleErr error) {

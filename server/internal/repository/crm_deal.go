@@ -245,9 +245,10 @@ func (r *CRMDealRepository) SeedDefaultPipeline(ctx context.Context, workspaceID
 	}
 
 	pipeline := &model.CRMPipeline{
-		WorkspaceID: workspaceID,
-		Name:        "Sales Pipeline",
-		IsDefault:   true,
+		WorkspaceID:             workspaceID,
+		Name:                    "Sales Pipeline",
+		IsDefault:               true,
+		DefaultCommercialMotion: model.CRMDealMotionNewBusiness,
 		Stages: []model.CRMPipelineStage{
 			{Name: "Appointment Scheduled", StageType: "open", Position: 0, Probability: 20},
 			{Name: "Qualified to Buy", StageType: "open", Position: 1, Probability: 40},

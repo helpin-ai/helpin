@@ -7,19 +7,24 @@ const (
 	CRMStageTypeOpen = "open"
 	CRMStageTypeWon  = "won"
 	CRMStageTypeLost = "lost"
+
+	CRMDealMotionNewBusiness = "new_business"
+	CRMDealMotionExpansion   = "expansion"
+	CRMDealMotionRenewal     = "renewal"
 )
 
 // CRMPipeline represents a sales pipeline.
 type CRMPipeline struct {
-	ID          string             `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string             `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name        string             `json:"name" gorm:"not null"`
-	IsDefault   bool               `json:"is_default" gorm:"not null;default:false"`
-	Position    int                `json:"position" gorm:"not null;default:0"`
-	DealCount   int64              `json:"deal_count" gorm:"-"`
-	Stages      []CRMPipelineStage `json:"stages,omitempty" gorm:"foreignKey:PipelineID"`
-	CreatedAt   time.Time          `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time          `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                      string             `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID             string             `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name                    string             `json:"name" gorm:"not null"`
+	IsDefault               bool               `json:"is_default" gorm:"not null;default:false"`
+	DefaultCommercialMotion string             `json:"default_commercial_motion" gorm:"not null;default:'new_business';index"`
+	Position                int                `json:"position" gorm:"not null;default:0"`
+	DealCount               int64              `json:"deal_count" gorm:"-"`
+	Stages                  []CRMPipelineStage `json:"stages,omitempty" gorm:"foreignKey:PipelineID"`
+	CreatedAt               time.Time          `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt               time.Time          `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (CRMPipeline) TableName() string { return "crm_pipelines" }
@@ -50,6 +55,7 @@ type CRMDeal struct {
 	Currency         string            `json:"currency" gorm:"not null;default:'USD'"`
 	CloseDate        *time.Time        `json:"close_date" gorm:"type:date"`
 	OwnerMemberID    *string           `json:"owner_member_id" gorm:"type:uuid;index"`
+	CommercialMotion *string           `json:"commercial_motion,omitempty" gorm:"index"`
 	Probability      *int              `json:"probability"`
 	CustomProperties JSONB             `json:"custom_properties" gorm:"type:jsonb;default:'{}'"`
 	Pipeline         *CRMPipeline      `json:"pipeline,omitempty" gorm:"foreignKey:PipelineID"`
@@ -62,10 +68,11 @@ func (CRMDeal) TableName() string { return "crm_deals" }
 
 // CreateCRMPipelineRequest is the payload for creating a pipeline.
 type CreateCRMPipelineRequest struct {
-	WorkspaceID string                       `json:"workspace_id"`
-	Name        string                       `json:"name"`
-	IsDefault   *bool                        `json:"is_default"`
-	Stages      []CreateCRMPipelineStageItem `json:"stages"`
+	WorkspaceID             string                       `json:"workspace_id"`
+	Name                    string                       `json:"name"`
+	IsDefault               *bool                        `json:"is_default"`
+	DefaultCommercialMotion *string                      `json:"default_commercial_motion"`
+	Stages                  []CreateCRMPipelineStageItem `json:"stages"`
 }
 
 // CreateCRMPipelineStageItem is a stage within a pipeline create request.
@@ -78,9 +85,10 @@ type CreateCRMPipelineStageItem struct {
 
 // UpdateCRMPipelineRequest is the payload for updating a pipeline.
 type UpdateCRMPipelineRequest struct {
-	Name      *string                      `json:"name"`
-	IsDefault *bool                        `json:"is_default"`
-	Stages    []UpdateCRMPipelineStageItem `json:"stages"`
+	Name                    *string                      `json:"name"`
+	IsDefault               *bool                        `json:"is_default"`
+	DefaultCommercialMotion *string                      `json:"default_commercial_motion"`
+	Stages                  []UpdateCRMPipelineStageItem `json:"stages"`
 }
 
 // UpdateCRMPipelineStageItem is a stage within a pipeline update request.
@@ -103,25 +111,28 @@ type CreateCRMDealRequest struct {
 	Currency         *string                `json:"currency"`
 	CloseDate        *time.Time             `json:"close_date"`
 	OwnerMemberID    *string                `json:"owner_member_id"`
+	CommercialMotion *string                `json:"commercial_motion"`
 	Probability      *int                   `json:"probability"`
 	CustomProperties map[string]interface{} `json:"custom_properties"`
 }
 
 // UpdateCRMDealRequest is the payload for updating a deal.
 type UpdateCRMDealRequest struct {
-	Name             *string                `json:"name"`
-	PipelineID       *string                `json:"pipeline_id"`
-	StageID          *string                `json:"stage_id"`
-	Amount           *float64               `json:"amount"`
-	ClearAmount      bool                   `json:"clear_amount"`
-	Currency         *string                `json:"currency"`
-	CloseDate        *time.Time             `json:"close_date"`
-	ClearCloseDate   bool                   `json:"clear_close_date"`
-	OwnerMemberID    *string                `json:"owner_member_id"`
-	ClearOwner       bool                   `json:"clear_owner"`
-	Probability      *int                   `json:"probability"`
-	ClearProbability bool                   `json:"clear_probability"`
-	CustomProperties map[string]interface{} `json:"custom_properties"`
+	Name                  *string                `json:"name"`
+	PipelineID            *string                `json:"pipeline_id"`
+	StageID               *string                `json:"stage_id"`
+	Amount                *float64               `json:"amount"`
+	ClearAmount           bool                   `json:"clear_amount"`
+	Currency              *string                `json:"currency"`
+	CloseDate             *time.Time             `json:"close_date"`
+	ClearCloseDate        bool                   `json:"clear_close_date"`
+	OwnerMemberID         *string                `json:"owner_member_id"`
+	ClearOwner            bool                   `json:"clear_owner"`
+	CommercialMotion      *string                `json:"commercial_motion"`
+	ClearCommercialMotion bool                   `json:"clear_commercial_motion"`
+	Probability           *int                   `json:"probability"`
+	ClearProbability      bool                   `json:"clear_probability"`
+	CustomProperties      map[string]interface{} `json:"custom_properties"`
 }
 
 // CRMDealListFilters applies filters when listing deals.

@@ -23,6 +23,19 @@ type CRMContactService struct {
 	entitlementSvc *EntitlementService
 	wsPublisher    websocket.EventPublisher
 	summaryRefresh CompanySummaryRefreshRequester
+	motionSignals  interface {
+		RefreshEntityMotionSignals(ctx context.Context, workspaceID, entityType, entityID string) error
+		RefreshContactCompanyMotionSignals(ctx context.Context, workspaceID, contactID string) error
+	}
+}
+
+// SetMotionSignalRefresher keeps lifecycle-derived applicability current.
+func (s *CRMContactService) SetMotionSignalRefresher(refresher interface {
+	RefreshEntityMotionSignals(ctx context.Context, workspaceID, entityType, entityID string) error
+	RefreshContactCompanyMotionSignals(ctx context.Context, workspaceID, contactID string) error
+}) *CRMContactService {
+	s.motionSignals = refresher
+	return s
 }
 
 // SetCompanySummaryRefresh enables linked-account summary invalidation after contact changes.
@@ -219,6 +232,7 @@ func (s *CRMContactService) Create(ctx context.Context, req model.CreateCRMConta
 		Attributes: map[string]any{"entity_id": contact.ID, "lifecycle_stage": contact.LifecycleStage, "module": "crm"},
 	})
 	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
+	s.refreshContactSignalMotions(ctx, contact.WorkspaceID, contact.ID)
 	return contact, nil
 }
 
@@ -418,7 +432,20 @@ func (s *CRMContactService) UpdateWithActor(
 		})
 	}
 	s.requestCompanySummaryRefresh(ctx, contact.WorkspaceID, contact.ID)
+	s.refreshContactSignalMotions(ctx, contact.WorkspaceID, contact.ID)
 	return contact, nil
+}
+
+func (s *CRMContactService) refreshContactSignalMotions(ctx context.Context, workspaceID, contactID string) {
+	if s.motionSignals == nil {
+		return
+	}
+	if err := s.motionSignals.RefreshEntityMotionSignals(ctx, workspaceID, "contact", contactID); err != nil {
+		slog.ErrorContext(ctx, "failed to refresh contact signal motions", "error", err, "workspace_id", workspaceID, "contact_id", contactID)
+	}
+	if err := s.motionSignals.RefreshContactCompanyMotionSignals(ctx, workspaceID, contactID); err != nil {
+		slog.ErrorContext(ctx, "failed to refresh related company signal motions", "error", err, "workspace_id", workspaceID, "contact_id", contactID)
+	}
 }
 
 func normalizedOptionalString(value *string) string {

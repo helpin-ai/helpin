@@ -871,14 +871,35 @@ export function useSignalOperations(wsId: string) {
   return useQuery({
     queryKey: [...queryKeys.crm.signals(wsId), 'operations'],
     queryFn: async () => {
-      const [precision, rules, policy] = await Promise.all([
+      const [precision, outcomes, rules, policy, routingSettings, rollout, shadowGate, shadowPreview] = await Promise.all([
         unwrap(await crmSignalService.precision(wsId)),
+		unwrap(await crmSignalService.outcomes(wsId)),
         unwrap(await crmSignalService.rules(wsId)),
         unwrap(await crmSignalService.routingPolicy(wsId)),
+		unwrap(await crmSignalService.routingSettings(wsId)),
+		unwrap(await crmSignalService.rollout(wsId)),
+		unwrap(await crmSignalService.shadowGate(wsId)),
+		unwrap(await crmSignalService.shadowPreview(wsId)),
       ])
-      return { precision: precision.data, rules: rules.data, policy }
+      return { precision: precision.data, outcomes: outcomes.data, rules: rules.data, policy, routingSettings, rollout, shadowGate, shadowPreview }
     },
     enabled: !!wsId,
+  })
+}
+
+export function useUpdateSignalRoutingSettings(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: { default_signal_owner_member_id?: string; clear_default_signal_owner?: boolean; minimum_lane_priority?: number }) => unwrap(await crmSignalService.updateRoutingSettings(wsId, payload)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
+  })
+}
+
+export function useActivateSignalRollout(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => unwrap(await crmSignalService.activateRollout(wsId)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
   })
 }
 

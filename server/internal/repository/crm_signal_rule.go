@@ -123,6 +123,20 @@ func (r *CRMSignalRepository) CreateRuleSignalIfAbsent(ctx context.Context, sign
 	if signal == nil || signal.RuleKey == nil || signal.RuleVersion == nil || signal.WindowStartedAt == nil || signal.WindowEndedAt == nil {
 		return false, fmt.Errorf("complete rule identity and evidence window are required")
 	}
+	if r.db.Migrator().HasColumn(&model.CRMBuyerSignal{}, "commercial_motion") {
+		rows, err := r.prepareSignalInterpretations(ctx, signal)
+		if err != nil {
+			return false, err
+		}
+		created, primary, err := insertInterpretedSignals(r.db.WithContext(ctx), rows)
+		if err != nil {
+			return false, fmt.Errorf("create interpreted rule signal: %w", err)
+		}
+		if primary != nil {
+			*signal = *primary
+		}
+		return created, nil
+	}
 	ensureSignalDimensions(signal)
 	ensureSignalEvidenceFingerprint(signal)
 	if signal.ID == "" {
@@ -141,7 +155,7 @@ func (r *CRMSignalRepository) CreateRuleSignalIfAbsent(ctx context.Context, sign
 	if count > 0 {
 		return false, nil
 	}
-	if err := r.db.WithContext(ctx).Create(signal).Error; err != nil {
+	if err := legacySignalCreateDB(r.db.WithContext(ctx)).Create(signal).Error; err != nil {
 		if isDuplicateKeyError(err) {
 			return false, nil
 		}

@@ -66,11 +66,75 @@ func (s *CRMSignalService) RecordSignalFeedback(ctx context.Context, workspaceID
 	return s.signalRepo.RecordSignalFeedback(ctx, signal, memberID, action, reasonPtr, time.Now().UTC())
 }
 
+// GetSignalRoutingSettings returns mutable workspace routing defaults.
+func (s *CRMSignalService) GetSignalRoutingSettings(ctx context.Context, workspaceID string) (*model.CRMSignalRoutingSettings, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.signalRepo.GetSignalRoutingSettings(ctx, workspaceID)
+}
+
+// UpdateSignalRoutingSettings saves mutable workspace routing defaults.
+func (s *CRMSignalService) UpdateSignalRoutingSettings(
+	ctx context.Context,
+	workspaceID string,
+	req model.UpdateCRMSignalRoutingSettingsRequest,
+) (*model.CRMSignalRoutingSettings, error) {
+	settings, err := s.signalRepo.GetSignalRoutingSettings(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if req.ClearDefaultSignalOwner {
+		settings.DefaultSignalOwnerMemberID = nil
+	} else if req.DefaultSignalOwnerMemberID != nil {
+		settings.DefaultSignalOwnerMemberID = req.DefaultSignalOwnerMemberID
+	}
+	if req.MinimumLanePriority != nil {
+		if *req.MinimumLanePriority < 0 || *req.MinimumLanePriority > 100 {
+			return nil, fmt.Errorf("minimum_lane_priority must be between 0 and 100")
+		}
+		settings.MinimumLanePriority = *req.MinimumLanePriority
+	}
+	if err := s.signalRepo.SaveSignalRoutingSettings(ctx, settings); err != nil {
+		return nil, err
+	}
+	return s.signalRepo.GetSignalRoutingSettings(ctx, workspaceID)
+}
+
+// GetSignalRolloutSettings returns the current shadow/live state.
+func (s *CRMSignalService) GetSignalRolloutSettings(ctx context.Context, workspaceID string) (*model.CRMSignalRolloutSettings, error) {
+	return s.signalRepo.GetSignalRolloutSettings(ctx, workspaceID)
+}
+
+// ActivateSignalRollout enforces the objective shadow gate before cutover.
+func (s *CRMSignalService) ActivateSignalRollout(ctx context.Context, workspaceID, memberID string) (*model.CRMSignalRolloutSettings, error) {
+	gate, err := s.signalRepo.GetSignalShadowGate(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if !gate.Eligible {
+		return nil, fmt.Errorf("motion-aware signal rollout is not eligible: observations=%d unmapped=%.4f duplicates=%.4f immutable_violations=%d",
+			gate.ObservationCount, gate.UnmappedObservationRate, gate.DuplicateFingerprintRate, gate.ImmutableMeaningViolations)
+	}
+	if err := s.signalRepo.ActivateSignalRollout(ctx, workspaceID, memberID, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	return s.signalRepo.GetSignalRolloutSettings(ctx, workspaceID)
+}
+
 func (s *CRMSignalService) SignalPrecisionReport(ctx context.Context, workspaceID string) ([]model.CRMSignalPrecisionRow, error) {
 	if strings.TrimSpace(workspaceID) == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
 	return s.signalRepo.ListSignalPrecision(ctx, workspaceID)
+}
+
+// SignalOutcomeCalibrationReport joins signals to subsequent subscription state.
+func (s *CRMSignalService) SignalOutcomeCalibrationReport(ctx context.Context, workspaceID string, horizonDays int) ([]model.CRMSignalOutcomeCalibrationRow, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.signalRepo.ListSignalOutcomeCalibration(ctx, workspaceID, horizonDays)
 }
 
 func (s *CRMSignalService) CreateRoutingPolicy(ctx context.Context, workspaceID, memberID string, req model.CreateCRMSignalRoutingPolicyRequest) (*model.CRMSignalRoutingPolicy, error) {
@@ -187,6 +251,13 @@ func (s *CRMSignalService) setSignalActivation(ctx context.Context, signal *mode
 func (s *CRMSignalService) ListActivationSignals(ctx context.Context, workspaceID string, limit int) ([]model.CRMBuyerSignal, error) {
 	if limit < 1 || limit > 50 {
 		limit = 20
+	}
+	rollout, err := s.signalRepo.GetSignalRolloutSettings(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if rollout.Mode != model.CRMSignalRolloutLive {
+		return []model.CRMBuyerSignal{}, nil
 	}
 	policy, err := s.signalRepo.GetActiveRoutingPolicy(ctx, workspaceID)
 	if err != nil {

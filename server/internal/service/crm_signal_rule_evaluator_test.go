@@ -34,9 +34,9 @@ func TestPersistBehavioralCandidateKeepsUntrustedEvidenceContextOnly(t *testing.
 		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE crm_identity_links (id TEXT PRIMARY KEY, workspace_id TEXT, anonymous_id TEXT, external_user_id TEXT, contact_id TEXT, company_id TEXT, identity_method TEXT, identity_trust TEXT, verified_at DATETIME, verifier_version TEXT, created_at DATETIME)`,
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT)`,
-		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, external_id TEXT)`,
+		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, external_id TEXT, customer_success_owner_member_id TEXT)`,
 		`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY, stage_type TEXT)`,
-		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, stage_id TEXT, updated_at DATETIME)`,
+		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT, stage_id TEXT, commercial_motion TEXT, updated_at DATETIME)`,
 		`CREATE TABLE crm_associations (id TEXT PRIMARY KEY, workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {

@@ -15,11 +15,14 @@ import {
   PlusSignIcon,
   LayoutTwoColumnIcon,
 	ZapIcon,
+	UserIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCompany, useUpdateCompany, useDeleteCompany, useCompanyTimeline, useCompanyAssociations } from '@/hooks/queries';
@@ -42,6 +45,8 @@ import { CompanyContactsView, CompanyDealsView, CompanyMeetingsView, CompanySupp
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { BuyerSignals } from '@/components/crm/BuyerSignals';
 import { useTitle } from '@/hooks/useTitle';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { findAssignableMember } from '@/lib/assignableMembers';
 import { cn } from '@/lib/utils';
 import type { CRMCompanyTimelineFilter, CRMCompanyTimelineItem, UpdateCRMCompanyRequest } from '@/lib/crmTypes';
 import type { CompanyDetailTab } from '@/lib/companyDetailTabs';
@@ -55,6 +60,7 @@ interface FormState {
   description: string;
   linkedin_url: string;
   headquarters: string;
+	customer_success_owner_member_id: string;
 }
 
 const companyDetailTabLabels: Array<{
@@ -97,6 +103,7 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
   const callsTimeline = useCompanyTimeline(wsId, companyId, 'call', activeTab === 'calls');
   const { data: associations, refetch: refetchAssociations } = useCompanyAssociations(wsId, companyId);
   const updateCompany = useUpdateCompany(wsId);
+	const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
   const deleteCompany = useDeleteCompany(wsId);
 
   const [form, setForm] = useState<FormState | null>(null);
@@ -131,6 +138,7 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
         description: company.description ?? '',
         linkedin_url: company.linkedin_url ?? '',
         headquarters: company.headquarters ?? '',
+		customer_success_owner_member_id: company.customer_success_owner_member_id ?? '',
       });
     }
   }, [company]);
@@ -308,7 +316,39 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
             placeholder="None"
           />
         </MetadataRow>
+		<MetadataRow icon={UserIcon} label="CS owner">
+			<MemberPickerPopover
+				value={form.customer_success_owner_member_id || '__none__'}
+				members={assignableMembers}
+				noneLabel="Unassigned"
+				onChange={(value) => updateField('customer_success_owner_member_id', value === '__none__' ? '' : value,
+					value === '__none__' ? { clear_customer_success_owner: true } : { customer_success_owner_member_id: value })}
+				renderTrigger={() => {
+					const owner = findAssignableMember(assignableMembers, form.customer_success_owner_member_id);
+					return owner ? <><UserAvatar name={owner.display_name || owner.email} avatarUrl={owner.avatar_url} avatarStyle={owner.avatar_style} avatarSeed={owner.avatar_seed} avatarBackgroundMode={owner.avatar_background_mode} avatarBackgroundColor={owner.avatar_background_color} className="h-4 w-4" fallbackClassName="text-[7px]" /><span className="truncate">{owner.display_name || owner.email}</span></> : <span className="text-muted-foreground">Unassigned</span>;
+				}}
+			/>
+		</MetadataRow>
       </div>
+		{company.commercial_state_health ? (
+			<div className="mt-5 rounded-md border border-border/70 bg-muted/20 p-3">
+				<div className="flex items-center gap-2">
+					<ZapIcon className="h-3.5 w-3.5 text-muted-foreground" />
+					<p className="text-xs font-semibold">Commercial-state integration</p>
+				</div>
+				<p className="mt-2 text-xs text-muted-foreground">
+					{company.commercial_state_health.last_accepted_at
+						? `Last accepted ${new Date(company.commercial_state_health.last_accepted_at).toLocaleString()}`
+						: 'No accepted state update yet'}
+				</p>
+				{company.commercial_state_health.rejected_update_count > 0 ? (
+					<p className="mt-1 text-xs text-destructive">
+						{company.commercial_state_health.rejected_update_count} rejected update{company.commercial_state_health.rejected_update_count === 1 ? '' : 's'}
+						{company.commercial_state_health.last_rejection_reason ? ` · ${company.commercial_state_health.last_rejection_reason}` : ''}
+					</p>
+				) : null}
+			</div>
+		) : null}
       <EnrichmentRailCard workspaceId={wsId} objectType="company" objectId={companyId} presentation="borderless" />
       <AssociationsList workspaceId={wsId} slug={wsSlug} associations={associations ?? []} currentObjectType="company" currentObjectId={companyId} onAssociationRemoved={() => refetchAssociations()} />
     </>

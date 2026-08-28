@@ -385,3 +385,43 @@ func TestAgentModelTierBackfillMigrationContract(t *testing.T) {
 	}
 	t.Fatal("expected agent model tier migration 202608210001 to be registered")
 }
+
+func TestCRMSignalInterpretationCoverageMigrationIsGuarded(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	var spine, customer *Migration
+	for i := range migrations {
+		switch migrations[i].Version {
+		case "202608280003":
+			spine = &migrations[i]
+		case "202608280004":
+			customer = &migrations[i]
+		}
+	}
+	if spine == nil || customer == nil {
+		t.Fatalf("motion migrations missing: spine=%v customer=%v", spine != nil, customer != nil)
+	}
+	spineSQL := strings.ToLower(strings.Join(strings.Fields(spine.SQL), " "))
+	for _, clause := range []string{
+		"join mappings on mappings.rule_key = cfg.rule_key",
+		"where cfg.enabled = true",
+		"conversation_signal_extraction",
+		"external_provider_evidence",
+	} {
+		if !strings.Contains(spineSQL, clause) {
+			t.Fatalf("motion spine is missing mapping coverage clause %q", clause)
+		}
+	}
+	customerSQL := strings.ToLower(strings.Join(strings.Fields(customer.SQL), " "))
+	for _, clause := range []string{
+		"enabled crm signal rules lack interpretation mappings",
+		"interpretation.rule_version = cfg.version",
+		"interpretation.enabled = true",
+	} {
+		if !strings.Contains(customerSQL, clause) {
+			t.Fatalf("customer foundation is missing mapping assertion %q", clause)
+		}
+	}
+}
