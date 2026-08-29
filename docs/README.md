@@ -10,14 +10,14 @@ current document links to them explicitly.
 - [`AGENTS_AND_AUTOMATION.md`](AGENTS_AND_AUTOMATION.md) — agent ownership,
   execution, and automation contracts.
 - [`CRM_MODULE.md`](CRM_MODULE.md) — CRM module overview.
-- [`crm-buyer-signals.md`](crm-buyer-signals.md) — canonical buyer-signal
+- [`crm-signals.md`](crm-signals.md) — canonical CRM-signal
   architecture, rule catalogue, activation model, and operations.
 - [`internal-tools-framework.md`](internal-tools-framework.md) — built-in tool
   contracts and execution.
 
 ## CRM references
 
-- [`crm-buyer-signal-ingestion.md`](crm-buyer-signal-ingestion.md) —
+- [`crm-signal-ingestion.md`](crm-signal-ingestion.md) —
   conversation and email signal extraction.
 - [`crm-email-sync.md`](crm-email-sync.md) — CRM mailbox synchronization.
 - [`crm-entity-summaries.md`](crm-entity-summaries.md) — contact, company, and
@@ -25,7 +25,7 @@ current document links to them explicitly.
 
 The dated
 [`crm-buyer-signals-assessment.md`](crm-buyer-signals-assessment.md) is retained
-for historical design rationale. Use `crm-buyer-signals.md` for current status.
+for historical design rationale. Use `crm-signals.md` for current status.
 
 ## Runtime and integrations
 

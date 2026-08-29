@@ -30,7 +30,7 @@ import {
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { DealHealthScore } from '@/components/crm/DealHealthScore';
-import { BuyerSignals } from '@/components/crm/BuyerSignals';
+import { EntitySignals } from '@/components/crm/EntitySignals';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
@@ -40,7 +40,7 @@ import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { useTitle } from '@/hooks/useTitle';
 import { findAssignableMember } from '@/lib/assignableMembers';
-import type { CRMTimelineFilter, CRMTimelineItem, UpdateCRMDealRequest } from '@/lib/crmTypes';
+import type { CRMDealCommercialMotion, CRMTimelineFilter, CRMTimelineItem, UpdateCRMDealRequest } from '@/lib/crmTypes';
 
 interface FormState {
   name: string;
@@ -51,6 +51,7 @@ interface FormState {
   close_date: string;
   probability: string;
   owner_member_id: string;
+	commercial_motion: CRMDealCommercialMotion | 'inherit';
 }
 
 interface DealDetailPageProps {
@@ -135,6 +136,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
         close_date: deal.close_date ? deal.close_date.slice(0, 10) : '',
         probability: deal.probability != null ? String(deal.probability) : '',
         owner_member_id: deal.owner_member_id ?? '',
+		commercial_motion: deal.commercial_motion ?? 'inherit',
       });
     });
     return () => { cancelled = true; };
@@ -279,7 +281,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
             <EntitySummaryCard workspaceId={wsId} dealId={dealId} presentation="compact" />
             <div className="min-w-0">
               <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Deal health <DealHealthScore workspaceId={wsId} dealId={dealId} compact /></div>
-              <BuyerSignals
+              <EntitySignals
                 workspaceId={wsId}
                 dealId={dealId}
                 presentation="compact"
@@ -336,6 +338,21 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
                 <SidebarPopoverSelect value={form.currency} options={['USD', 'EUR', 'GBP', 'CAD', 'AUD'].map((currency) => ({ value: currency, label: currency }))} onChange={(currency) => updateField('currency', currency, { currency })} renderTrigger={() => <span className="text-muted-foreground">{form.currency}</span>} triggerClassName="px-1" width="w-28" />
               </div>
             </MetadataRow>
+			<MetadataRow icon={Tag01Icon} label="Motion">
+				<SidebarPopoverSelect
+					value={form.commercial_motion}
+					options={[
+						{ value: 'inherit', label: `Inherit ${currentPipeline?.default_commercial_motion?.replace('_', ' ') ?? 'pipeline default'}` },
+						{ value: 'new_business', label: 'New business' },
+						{ value: 'expansion', label: 'Expansion' },
+						{ value: 'renewal', label: 'Renewal' },
+					]}
+					onChange={(value) => updateField('commercial_motion', value as FormState['commercial_motion'],
+						value === 'inherit' ? { clear_commercial_motion: true } : { commercial_motion: value as CRMDealCommercialMotion })}
+					renderTrigger={() => <span className="capitalize">{form.commercial_motion === 'inherit' ? `Inherit ${currentPipeline?.default_commercial_motion?.replace('_', ' ') ?? ''}` : form.commercial_motion.replace('_', ' ')}</span>}
+					triggerClassName="-ml-1.5"
+				/>
+			</MetadataRow>
             <MetadataRow icon={Calendar01Icon} label="Close date">
               <input className="w-full bg-transparent outline-none" type="date" value={form.close_date} onChange={(event) => updateField('close_date', event.target.value, { close_date: event.target.value ? `${event.target.value}T00:00:00Z` : undefined })} />
             </MetadataRow>

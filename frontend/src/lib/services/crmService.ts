@@ -41,14 +41,18 @@ import type {
   UpdateCRMCalendarEventRequest,
   CRMEnrichmentResult,
   CreateCRMEnrichmentRequest,
-  CRMBuyerSignal,
+  CRMSignal,
   CRMSignalExternalEvidence,
   CRMSignalWorkspaceFeed,
   CRMSignalPrecisionRow,
   CRMSignalRoutingPolicy,
+	CRMSignalRoutingSettings,
+	CRMSignalRolloutSettings,
+	CRMSignalShadowGate,
+	CRMSignalOutcomeCalibrationRow,
   CRMSignalRuleConfig,
   CRMSignalFeedFilters,
-  CreateCRMBuyerSignalRequest,
+  CreateCRMSignalRequest,
   IngestCRMSignalExternalEvidenceRequest,
   CRMEntitySummary,
   CRMIntelligenceRefreshResult,
@@ -309,7 +313,14 @@ export const crmEnrichmentService = {
 };
 
 export const crmSignalService = {
-  feed: (workspaceId: string, filters?: CRMSignalFeedFilters) => api.get<CRMSignalWorkspaceFeed>(`/crm/signals/feed${qs(workspaceId)}${filterQuery({ ...(filters ?? {}) })}`),
+  feed: (workspaceId: string, filters?: CRMSignalFeedFilters) => {
+    const { lane_pages: lanePages, ...plainFilters } = filters ?? {};
+    const laneFilters = Object.fromEntries(
+      Object.entries(lanePages ?? {}).map(([motion, page]) => [`lane_${motion}_page`, page]),
+    );
+    return api.get<CRMSignalWorkspaceFeed>(`/crm/signals/feed${qs(workspaceId)}${filterQuery({ ...plainFilters, ...laneFilters })}`);
+  },
+  shadowPreview: (workspaceId: string) => api.get<CRMSignalWorkspaceFeed>(`/crm/signals/shadow-preview${qs(workspaceId)}&per_page=5`),
   list: (
     workspaceId: string,
     filters?: {
@@ -320,23 +331,29 @@ export const crmSignalService = {
       source_type?: string;
       page?: number;
     },
-  ) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/signals${qs(workspaceId)}${filterQuery(filters ?? {})}`),
-  create: (payload: CreateCRMBuyerSignalRequest) => api.post<CRMBuyerSignal>(`/crm/signals${qs(payload.workspace_id)}`, payload),
+  ) => api.get<CRMPaginatedResponse<CRMSignal[]>>(`/crm/signals${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  create: (payload: CreateCRMSignalRequest) => api.post<CRMSignal>(`/crm/signals${qs(payload.workspace_id)}`, payload),
   ingestExternalEvidence: (payload: IngestCRMSignalExternalEvidenceRequest) => api.post<CRMSignalExternalEvidence>(`/crm/signals/external-evidence${qs(payload.workspace_id)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/signals/${id}${qs(workspaceId)}`),
   dismiss: (workspaceId: string, id: string, reason: import('../crmTypes').CRMSignalDismissalReason) => api.post(`/crm/signals/${id}/dismiss${qs(workspaceId)}`, { reason }),
   review: (workspaceId: string, id: string) => api.post(`/crm/signals/${id}/review${qs(workspaceId)}`, {}),
   acted: (workspaceId: string, id: string) => api.post(`/crm/signals/${id}/acted${qs(workspaceId)}`, {}),
   precision: (workspaceId: string) => api.get<{ data: CRMSignalPrecisionRow[] }>(`/crm/signals/precision${qs(workspaceId)}`),
+	outcomes: (workspaceId: string) => api.get<{ data: CRMSignalOutcomeCalibrationRow[] }>(`/crm/signals/outcomes${qs(workspaceId)}`),
   rules: (workspaceId: string) => api.get<{ data: CRMSignalRuleConfig[] }>(`/crm/signals/rules${qs(workspaceId)}`),
+	shadowGate: (workspaceId: string) => api.get<CRMSignalShadowGate>(`/crm/signals/shadow-gate${qs(workspaceId)}`),
+	rollout: (workspaceId: string) => api.get<CRMSignalRolloutSettings>(`/crm/signals/rollout${qs(workspaceId)}`),
+	activateRollout: (workspaceId: string) => api.post<CRMSignalRolloutSettings>(`/crm/signals/rollout/activate${qs(workspaceId)}`, {}),
+	routingSettings: (workspaceId: string) => api.get<CRMSignalRoutingSettings>(`/crm/signals/routing-settings${qs(workspaceId)}`),
+	updateRoutingSettings: (workspaceId: string, payload: { default_signal_owner_member_id?: string; clear_default_signal_owner?: boolean; minimum_lane_priority?: number }) => api.put<CRMSignalRoutingSettings>(`/crm/signals/routing-settings${qs(workspaceId)}`, payload),
   routingPolicy: (workspaceId: string) => api.get<CRMSignalRoutingPolicy | null>(`/crm/signals/routing-policy${qs(workspaceId)}`),
   createRoutingPolicy: (workspaceId: string, payload: { minimum_priority: number; required_trust: string; route_to_owner: boolean; channels: string[] }) => api.post<CRMSignalRoutingPolicy>(`/crm/signals/routing-policy${qs(workspaceId)}`, payload),
   activateRoutingPolicy: (workspaceId: string, version: number) => api.post(`/crm/signals/routing-policy/versions/${version}/activate${qs(workspaceId)}`, {}),
   activateRule: (workspaceId: string, ruleKey: string, version: number) => api.post(`/crm/signals/rules/${encodeURIComponent(ruleKey)}/versions/${version}/activate${qs(workspaceId)}`, {}),
   listByContact: (workspaceId: string, contactId: string, page?: number) =>
-    api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
-  listByDeal: (workspaceId: string, dealId: string, page?: number) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
-  listByCompany: (workspaceId: string, companyId: string, page?: number) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/companies/${companyId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+    api.get<CRMPaginatedResponse<CRMSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listByDeal: (workspaceId: string, dealId: string, page?: number) => api.get<CRMPaginatedResponse<CRMSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listByCompany: (workspaceId: string, companyId: string, page?: number) => api.get<CRMPaginatedResponse<CRMSignal[]>>(`/crm/companies/${companyId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
 };
 
 export const crmSummaryService = {

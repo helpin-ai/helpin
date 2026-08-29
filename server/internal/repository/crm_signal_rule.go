@@ -119,18 +119,32 @@ func (r *CRMSignalRepository) FinishSignalEvaluationRun(
 }
 
 // CreateRuleSignalIfAbsent applies the durable evaluator idempotency key.
-func (r *CRMSignalRepository) CreateRuleSignalIfAbsent(ctx context.Context, signal *model.CRMBuyerSignal) (bool, error) {
+func (r *CRMSignalRepository) CreateRuleSignalIfAbsent(ctx context.Context, signal *model.CRMSignal) (bool, error) {
 	if signal == nil || signal.RuleKey == nil || signal.RuleVersion == nil || signal.WindowStartedAt == nil || signal.WindowEndedAt == nil {
 		return false, fmt.Errorf("complete rule identity and evidence window are required")
+	}
+	if r.db.Migrator().HasColumn(&model.CRMSignal{}, "commercial_motion") {
+		rows, err := r.prepareSignalInterpretations(ctx, signal)
+		if err != nil {
+			return false, err
+		}
+		created, primary, err := insertInterpretedSignals(r.db.WithContext(ctx), rows)
+		if err != nil {
+			return false, fmt.Errorf("create interpreted rule signal: %w", err)
+		}
+		if primary != nil {
+			*signal = *primary
+		}
+		return created, nil
 	}
 	ensureSignalDimensions(signal)
 	ensureSignalEvidenceFingerprint(signal)
 	if signal.ID == "" {
 		signal.ID = uuid.NewString()
 	}
-	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND rule_key = ? AND rule_version = ?", signal.WorkspaceID, *signal.RuleKey, *signal.RuleVersion).
-		Where("window_started_at = ? AND window_ended_at = ? AND evidence_fingerprint = ?", signal.WindowStartedAt.UTC(), signal.WindowEndedAt.UTC(), signal.EvidenceFingerprint)
+		Where("evidence_fingerprint = ?", signal.EvidenceFingerprint)
 	query = nullableSignalID(query, "contact_id", signal.ContactID)
 	query = nullableSignalID(query, "deal_id", signal.DealID)
 	query = nullableSignalID(query, "company_id", signal.CompanyID)
@@ -141,7 +155,7 @@ func (r *CRMSignalRepository) CreateRuleSignalIfAbsent(ctx context.Context, sign
 	if count > 0 {
 		return false, nil
 	}
-	if err := r.db.WithContext(ctx).Create(signal).Error; err != nil {
+	if err := legacySignalCreateDB(r.db.WithContext(ctx)).Create(signal).Error; err != nil {
 		if isDuplicateKeyError(err) {
 			return false, nil
 		}

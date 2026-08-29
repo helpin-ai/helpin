@@ -51,7 +51,7 @@ func TestMiraPresetDefinitionUsesNativeHelpinTools(t *testing.T) {
 		"add_task_comment",
 		"list_deals",
 		"list_contacts",
-		"list_buyer_signals",
+		"list_crm_signals",
 		"add_deal_note",
 		"web_search",
 		"fetch_url",

@@ -26,15 +26,33 @@ func NewCRMSignalRepository(db *gorm.DB) *CRMSignalRepository {
 	return &CRMSignalRepository{db: db}
 }
 
-// ── Buyer Signals ──
+// ── CRM Signals ──
 
-// CreateSignal inserts a buyer signal.
-func (r *CRMSignalRepository) CreateSignal(ctx context.Context, signal *model.CRMBuyerSignal) error {
-	ensureSignalDimensions(signal)
-	ensureSignalEvidenceFingerprint(signal)
-	if err := r.db.WithContext(ctx).Create(signal).Error; err != nil {
-		return fmt.Errorf("create buyer signal: %w", err)
+// CreateSignal inserts a CRM signal.
+func (r *CRMSignalRepository) CreateSignal(ctx context.Context, signal *model.CRMSignal) error {
+	if !r.db.Migrator().HasColumn(&model.CRMSignal{}, "commercial_motion") {
+		ensureSignalDimensions(signal)
+		ensureSignalEvidenceFingerprint(signal)
+		if err := legacySignalCreateDB(r.db.WithContext(ctx)).Create(signal).Error; err != nil {
+			return fmt.Errorf("create CRM signal: %w", err)
+		}
+		return nil
 	}
+	rows, err := r.prepareSignalInterpretations(ctx, signal)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return fmt.Errorf("signal has no applicable commercial interpretation")
+	}
+	created, primary, err := insertInterpretedSignals(r.db.WithContext(ctx), rows)
+	if err != nil {
+		return fmt.Errorf("create CRM signal: %w", err)
+	}
+	if !created || primary == nil {
+		return fmt.Errorf("CRM signal already exists")
+	}
+	*signal = *primary
 	return nil
 }
 
@@ -67,14 +85,32 @@ func (r *CRMSignalRepository) ValidateSignalReferences(ctx context.Context, work
 	return nil
 }
 
-// CreateSignalIfAbsent inserts a buyer signal once for a given source and signal type.
-func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *model.CRMBuyerSignal) (bool, error) {
+// CreateSignalIfAbsent inserts a CRM signal once for a given source and signal type.
+func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *model.CRMSignal) (bool, error) {
 	if signal == nil {
 		return false, nil
 	}
+	if !r.db.Migrator().HasColumn(&model.CRMSignal{}, "commercial_motion") {
+		return r.createLegacySignalIfAbsent(ctx, signal)
+	}
+	rows, err := r.prepareSignalInterpretations(ctx, signal)
+	if err != nil {
+		return false, err
+	}
+	created, primary, err := insertInterpretedSignals(r.db.WithContext(ctx), rows)
+	if err != nil {
+		return false, fmt.Errorf("create interpreted signal if absent: %w", err)
+	}
+	if primary != nil {
+		*signal = *primary
+	}
+	return created, nil
+}
+
+func (r *CRMSignalRepository) createLegacySignalIfAbsent(ctx context.Context, signal *model.CRMSignal) (bool, error) {
 	ensureSignalDimensions(signal)
 	ensureSignalEvidenceFingerprint(signal)
-	var existing model.CRMBuyerSignal
+	var existing model.CRMSignal
 	err := r.db.WithContext(ctx).
 		Where("workspace_id = ?", signal.WorkspaceID).
 		Where("source_type = ?", signal.SourceType).
@@ -101,26 +137,37 @@ func (r *CRMSignalRepository) CreateSignalIfAbsent(ctx context.Context, signal *
 			"dismissed_at":             nil, "dismissed_by_member_id": nil,
 		}
 		if err := r.db.WithContext(ctx).Model(&existing).Updates(updates).Error; err != nil {
-			return false, fmt.Errorf("refresh buyer signal evidence: %w", err)
+			return false, fmt.Errorf("refresh CRM signal evidence: %w", err)
 		}
 		return true, nil
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, fmt.Errorf("lookup buyer signal by source: %w", err)
+		return false, fmt.Errorf("lookup CRM signal by source: %w", err)
 	}
 
-	if err := r.db.WithContext(ctx).Create(signal).Error; err != nil {
+	if err := legacySignalCreateDB(r.db.WithContext(ctx)).Create(signal).Error; err != nil {
 		if isDuplicateKeyError(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("create buyer signal if absent: %w", err)
+		return false, fmt.Errorf("create CRM signal if absent: %w", err)
 	}
 	return true, nil
 }
 
-// ListSignals returns buyer signals with optional filters.
-func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination) ([]model.CRMBuyerSignal, int64, error) {
-	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).Where("crm_buyer_signals.workspace_id = ?", workspaceID)
+func legacySignalCreateDB(db *gorm.DB) *gorm.DB {
+	return db.Omit(
+		"observation_id", "commercial_motion", "interpretation_version",
+		"business_weight_snapshot", "half_life_days_snapshot", "interpretation_snapshot",
+		"meaning_fingerprint", "recommended_action_key", "recommended_action_label",
+		"replay_calibration_excluded", "superseded_at", "superseded_reason",
+		"direction_changed_by_supersession",
+	)
+}
+
+// ListSignals returns CRM signals with optional filters.
+func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters, pagination model.PMPagination) ([]model.CRMSignal, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).Where("crm_signals.workspace_id = ?", workspaceID)
+	hasSupersession := r.db.Migrator().HasColumn(&model.CRMSignal{}, "superseded_at")
 	if filters.Query != nil {
 		var err error
 		query, err = querybuilder.ApplyGORM(query, filters.Query, crmSignalFilterDefinitions)
@@ -129,11 +176,16 @@ func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID strin
 		}
 	}
 	if filters.Status != nil && *filters.Status == "dismissed" {
-		query = query.Where("crm_buyer_signals.dismissed_at IS NOT NULL")
+		query = query.Where("crm_signals.dismissed_at IS NOT NULL")
+	} else if hasSupersession && filters.Status != nil && *filters.Status == "superseded" {
+		query = query.Where("crm_signals.superseded_at IS NOT NULL")
 	} else if filters.Status != nil && *filters.Status == "all" {
 		// Include both active and dismissed signals.
 	} else if !filters.IncludeDismissed {
-		query = query.Where("crm_buyer_signals.dismissed_at IS NULL")
+		query = query.Where("crm_signals.dismissed_at IS NULL")
+		if hasSupersession {
+			query = query.Where("crm_signals.superseded_at IS NULL")
+		}
 	}
 	if !filters.IncludeLowConfidence {
 		query = query.Where(
@@ -165,37 +217,53 @@ func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID strin
 	if filters.Polarity != nil && *filters.Polarity != "" {
 		query = query.Where("polarity = ?", *filters.Polarity)
 	}
+	if r.db.Migrator().HasColumn(&model.CRMSignal{}, "commercial_motion") && filters.CommercialMotion != nil && *filters.CommercialMotion != "" {
+		query = query.Where("commercial_motion = ?", *filters.CommercialMotion)
+	}
 	if filters.EvidenceIdentityTrust != nil && *filters.EvidenceIdentityTrust != "" {
 		query = query.Where("evidence_identity_trust = ?", *filters.EvidenceIdentityTrust)
 	}
 	if filters.MaxAgeDays != nil && *filters.MaxAgeDays > 0 {
 		query = query.Where("detected_at >= ?", time.Now().UTC().Add(-time.Duration(*filters.MaxAgeDays)*24*time.Hour))
 	}
-	if filters.OwnerMemberID != nil && strings.TrimSpace(*filters.OwnerMemberID) != "" {
-		ownerID := strings.TrimSpace(*filters.OwnerMemberID)
-		query = query.Where(`(
-			EXISTS (SELECT 1 FROM crm_deals d WHERE d.workspace_id = crm_buyer_signals.workspace_id AND d.id = crm_buyer_signals.deal_id AND d.owner_member_id = ?)
-			OR EXISTS (SELECT 1 FROM crm_companies c WHERE c.workspace_id = crm_buyer_signals.workspace_id AND c.id = crm_buyer_signals.company_id AND c.owner_member_id = ?)
-		)`, ownerID, ownerID)
-	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("count buyer signals: %w", err)
-	}
-
-	var signals []model.CRMBuyerSignal
+	ownerFiltered := filters.OwnerMemberID != nil && strings.TrimSpace(*filters.OwnerMemberID) != ""
+	var signals []model.CRMSignal
 	offset := (pagination.Page - 1) * pagination.PerPage
 	if pagination.Offset != nil {
 		offset = *pagination.Offset
 	}
-	if err := query.Order("detected_at DESC").Offset(offset).Limit(pagination.PerPage).Find(&signals).Error; err != nil {
-		return nil, 0, fmt.Errorf("list buyer signals: %w", err)
+	listQuery := query.Order("detected_at DESC")
+	if !ownerFiltered {
+		listQuery = listQuery.Offset(offset).Limit(pagination.PerPage)
+	}
+	if err := listQuery.Find(&signals).Error; err != nil {
+		return nil, 0, fmt.Errorf("list CRM signals: %w", err)
 	}
 	if err := r.hydrateSignalContext(ctx, workspaceID, signals); err != nil {
 		return nil, 0, err
 	}
+	if ownerFiltered {
+		signals = filterSignalsByResolvedOwner(signals, strings.TrimSpace(*filters.OwnerMemberID))
+		total := int64(len(signals))
+		start := min(offset, len(signals))
+		end := min(start+pagination.PerPage, len(signals))
+		return signals[start:end], total, nil
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count CRM signals: %w", err)
+	}
 	return signals, total, nil
+}
+
+func filterSignalsByResolvedOwner(signals []model.CRMSignal, ownerMemberID string) []model.CRMSignal {
+	filtered := signals[:0]
+	for _, signal := range signals {
+		if signal.OwnerMemberID != nil && *signal.OwnerMemberID == ownerMemberID {
+			filtered = append(filtered, signal)
+		}
+	}
+	return filtered
 }
 
 // ListSignalsByCompany returns canonical signals related to a company directly,
@@ -204,14 +272,14 @@ func (r *CRMSignalRepository) ListSignalsByCompany(
 	ctx context.Context,
 	workspaceID, companyID string,
 	pagination model.PMPagination,
-) ([]model.CRMBuyerSignal, int64, error) {
-	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
-		Where("crm_buyer_signals.workspace_id = ?", workspaceID).
-		Where("crm_buyer_signals.dismissed_at IS NULL").
-		Where("crm_buyer_signals.source_type = ? OR crm_buyer_signals.confidence >= ?", model.CRMSignalSourceManual, minimumAutomatedSignalConfidence).
+) ([]model.CRMSignal, int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
+		Where("crm_signals.workspace_id = ?", workspaceID).
+		Where("crm_signals.dismissed_at IS NULL").
+		Where("crm_signals.source_type = ? OR crm_signals.confidence >= ?", model.CRMSignalSourceManual, minimumAutomatedSignalConfidence).
 		Where(`(
-			crm_buyer_signals.company_id = ?
-			OR crm_buyer_signals.contact_id IN (
+			crm_signals.company_id = ?
+			OR crm_signals.contact_id IN (
 				SELECT CASE WHEN ca.from_object_type = 'contact' THEN ca.from_object_id ELSE ca.to_object_id END
 				FROM crm_associations ca
 				WHERE ca.workspace_id = ? AND (
@@ -219,7 +287,7 @@ func (r *CRMSignalRepository) ListSignalsByCompany(
 					OR (ca.to_object_type = 'contact' AND ca.from_object_type = 'company' AND ca.from_object_id = ?)
 				)
 			)
-			OR crm_buyer_signals.deal_id IN (
+			OR crm_signals.deal_id IN (
 				SELECT d.id FROM crm_deals d WHERE d.workspace_id = ? AND EXISTS (
 					SELECT 1 FROM crm_associations da WHERE da.workspace_id = d.workspace_id AND (
 						(da.from_object_type = 'deal' AND da.from_object_id = d.id AND da.to_object_type = 'company' AND da.to_object_id = ?)
@@ -237,10 +305,13 @@ func (r *CRMSignalRepository) ListSignalsByCompany(
 			)
 		)`, companyID, workspaceID, companyID, companyID, workspaceID,
 			companyID, companyID, companyID, companyID, companyID, companyID)
+	if r.db.Migrator().HasColumn(&model.CRMSignal{}, "superseded_at") {
+		query = query.Where("crm_signals.superseded_at IS NULL")
+	}
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("count company buyer signals: %w", err)
+		return nil, 0, fmt.Errorf("count company CRM signals: %w", err)
 	}
 	page, perPage := pagination.Page, pagination.PerPage
 	if page < 1 {
@@ -249,9 +320,9 @@ func (r *CRMSignalRepository) ListSignalsByCompany(
 	if perPage < 1 || perPage > 100 {
 		perPage = 25
 	}
-	var signals []model.CRMBuyerSignal
+	var signals []model.CRMSignal
 	if err := query.Order("detected_at DESC, id DESC").Offset((page - 1) * perPage).Limit(perPage).Find(&signals).Error; err != nil {
-		return nil, 0, fmt.Errorf("list company buyer signals: %w", err)
+		return nil, 0, fmt.Errorf("list company CRM signals: %w", err)
 	}
 	if err := r.hydrateSignalContext(ctx, workspaceID, signals); err != nil {
 		return nil, 0, err
@@ -259,7 +330,7 @@ func (r *CRMSignalRepository) ListSignalsByCompany(
 	return signals, total, nil
 }
 
-func (r *CRMSignalRepository) hydrateSignalContext(ctx context.Context, workspaceID string, signals []model.CRMBuyerSignal) error {
+func (r *CRMSignalRepository) hydrateSignalContext(ctx context.Context, workspaceID string, signals []model.CRMSignal) error {
 	contactIDs := make([]string, 0, len(signals))
 	dealIDs := make([]string, 0, len(signals))
 	for i := range signals {
@@ -309,17 +380,75 @@ func (r *CRMSignalRepository) hydrateSignalContext(ctx context.Context, workspac
 		}
 	}
 	type companyRow struct {
-		ID, Name      string
-		Domain        *string
-		OwnerMemberID *string
+		ID, Name                     string
+		Domain                       *string
+		OwnerMemberID                *string
+		CustomerSuccessOwnerMemberID *string
 	}
 	var companies []companyRow
 	if len(companyIDs) > 0 && r.db.Migrator().HasTable("crm_companies") {
+		companySelect := "id, name, domain, owner_member_id, NULL AS customer_success_owner_member_id"
+		if r.db.Migrator().HasColumn(&model.CRMCompany{}, "customer_success_owner_member_id") {
+			companySelect = "id, name, domain, owner_member_id, customer_success_owner_member_id"
+		}
 		if err := r.db.WithContext(ctx).Table("crm_companies").
-			Select("id, name, domain, owner_member_id").
+			Select(companySelect).
 			Where("workspace_id = ? AND id IN ?", workspaceID, companyIDs).Scan(&companies).Error; err != nil {
 			return fmt.Errorf("hydrate signal companies: %w", err)
 		}
+	}
+	activeMemberIDs := map[string]bool{}
+	hasWorkspaceMembers := r.db.Migrator().HasTable(&model.WorkspaceMember{})
+	if hasWorkspaceMembers {
+		var members []model.WorkspaceMember
+		if err := r.db.WithContext(ctx).Model(&model.WorkspaceMember{}).
+			Select("id, user_id, role").
+			Where("workspace_id = ? AND status = ?", workspaceID, model.WorkspaceMemberStatusActive).
+			Find(&members).Error; err != nil {
+			return fmt.Errorf("hydrate active signal owners: %w", err)
+		}
+		for _, member := range members {
+			activeMemberIDs[member.ID] = true
+		}
+	}
+	var defaultOwnerMemberID *string
+	if r.db.Migrator().HasTable(&model.CRMSignalRoutingSettings{}) {
+		var settings model.CRMSignalRoutingSettings
+		err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).First(&settings).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("hydrate signal routing settings: %w", err)
+		}
+		defaultOwnerMemberID = settings.DefaultSignalOwnerMemberID
+	}
+	var workspaceOwnerMemberID *string
+	if hasWorkspaceMembers {
+		var owner model.WorkspaceMember
+		ownerQuery := r.db.WithContext(ctx).Model(&model.WorkspaceMember{}).
+			Where("workspace_id = ? AND status = ?", workspaceID, model.WorkspaceMemberStatusActive)
+		if r.db.Migrator().HasTable(&model.Workspace{}) {
+			var workspace model.Workspace
+			if err := r.db.WithContext(ctx).Select("owner_id").Where("id = ?", workspaceID).First(&workspace).Error; err == nil {
+				ownerQuery = ownerQuery.Where("user_id = ?", workspace.OwnerID)
+			} else {
+				ownerQuery = ownerQuery.Where("role = ?", model.RoleOwner)
+			}
+		} else {
+			ownerQuery = ownerQuery.Where("role = ?", model.RoleOwner)
+		}
+		if err := ownerQuery.Order("created_at ASC").First(&owner).Error; err == nil {
+			workspaceOwnerMemberID = &owner.ID
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("hydrate workspace signal owner: %w", err)
+		}
+	}
+	eligibleOwner := func(memberID *string) *string {
+		if memberID == nil || strings.TrimSpace(*memberID) == "" {
+			return nil
+		}
+		if hasWorkspaceMembers && !activeMemberIDs[*memberID] {
+			return nil
+		}
+		return memberID
 	}
 	contactNames := make(map[string]string, len(contacts))
 	for _, contact := range contacts {
@@ -346,7 +475,7 @@ func (r *CRMSignalRepository) hydrateSignalContext(ctx context.Context, workspac
 			ranking := dealRankingRows[*signals[i].DealID]
 			signals[i].DealName, signals[i].DealDisplayID = deal.Name, deal.DisplayID
 			signals[i].DealAmount = ranking.Amount
-			signals[i].OwnerMemberID = ranking.OwnerMemberID
+			signals[i].OwnerMemberID = eligibleOwner(ranking.OwnerMemberID)
 			signals[i].DealStageProbability = ranking.Probability
 		}
 		if signals[i].CompanyID != nil {
@@ -355,9 +484,21 @@ func (r *CRMSignalRepository) hydrateSignalContext(ctx context.Context, workspac
 			if company.Domain != nil {
 				signals[i].AccountDomain = *company.Domain
 			}
-			if signals[i].OwnerMemberID == nil {
-				signals[i].OwnerMemberID = company.OwnerMemberID
+			customerMotion := signals[i].CommercialMotion == model.CRMCommercialMotionOnboarding ||
+				signals[i].CommercialMotion == model.CRMCommercialMotionAdoption ||
+				signals[i].CommercialMotion == model.CRMCommercialMotionRetention
+			if customerMotion {
+				signals[i].OwnerMemberID = eligibleOwner(company.CustomerSuccessOwnerMemberID)
 			}
+			if signals[i].OwnerMemberID == nil {
+				signals[i].OwnerMemberID = eligibleOwner(company.OwnerMemberID)
+			}
+		}
+		if signals[i].OwnerMemberID == nil {
+			signals[i].OwnerMemberID = eligibleOwner(defaultOwnerMemberID)
+		}
+		if signals[i].OwnerMemberID == nil {
+			signals[i].OwnerMemberID = workspaceOwnerMemberID
 		}
 	}
 	return nil
@@ -365,26 +506,26 @@ func (r *CRMSignalRepository) hydrateSignalContext(ctx context.Context, workspac
 
 // DismissSignal hides a signal for the workspace until its evidence changes.
 func (r *CRMSignalRepository) DismissSignal(ctx context.Context, workspaceID, id, memberID string, dismissedAt time.Time) error {
-	result := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+	result := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND id = ?", workspaceID, id).
 		Updates(map[string]interface{}{"dismissed_at": dismissedAt, "dismissed_by_member_id": memberID})
 	if result.Error != nil {
-		return fmt.Errorf("dismiss buyer signal: %w", result.Error)
+		return fmt.Errorf("dismiss CRM signal: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("buyer signal not found")
+		return fmt.Errorf("CRM signal not found")
 	}
 	return nil
 }
 
-// DeleteSignal removes a buyer signal.
+// DeleteSignal removes a CRM signal.
 func (r *CRMSignalRepository) DeleteSignal(ctx context.Context, workspaceID, id string) error {
-	result := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, id).Delete(&model.CRMBuyerSignal{})
+	result := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, id).Delete(&model.CRMSignal{})
 	if result.Error != nil {
-		return fmt.Errorf("delete buyer signal: %w", result.Error)
+		return fmt.Errorf("delete CRM signal: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("buyer signal not found")
+		return fmt.Errorf("CRM signal not found")
 	}
 	return nil
 }
@@ -397,7 +538,7 @@ func (r *CRMSignalRepository) HasRecentSignalForThread(ctx context.Context, work
 	}
 	var count int64
 	query := r.db.WithContext(ctx).
-		Model(&model.CRMBuyerSignal{}).
+		Model(&model.CRMSignal{}).
 		Where("workspace_id = ?", workspaceID).
 		Where("source_thread_id = ?", threadID).
 		Where("signal_type = ?", signalType).
@@ -411,32 +552,147 @@ func (r *CRMSignalRepository) HasRecentSignalForThread(ctx context.Context, work
 	return count > 0, nil
 }
 
-// ReconcileAutomatedSignalsForSource removes stale model-created signals after
+// ReconcileAutomatedSignalsForSource supersedes stale model-created signals after
 // a source has been analyzed successfully. Manually-created signals are never
 // affected by source reconciliation.
 func (r *CRMSignalRepository) ReconcileAutomatedSignalsForSource(ctx context.Context, workspaceID, sourceType, sourceID string, keepTypes []string) error {
 	if workspaceID == "" || sourceType == "" || sourceID == "" {
 		return nil
 	}
-	query := r.db.WithContext(ctx).Where(
-		"workspace_id = ? AND source_type = ? AND source_id = ? AND source_type <> ?",
-		workspaceID, sourceType, sourceID, model.CRMSignalSourceManual,
-	)
-	if len(keepTypes) > 0 {
-		query = query.Where("signal_type NOT IN ?", keepTypes)
+	baseQuery := func() *gorm.DB {
+		query := r.db.WithContext(ctx).Where(
+			"workspace_id = ? AND source_type = ? AND source_id = ? AND source_type <> ?",
+			workspaceID, sourceType, sourceID, model.CRMSignalSourceManual,
+		)
+		if len(keepTypes) > 0 {
+			query = query.Where("signal_type NOT IN ?", keepTypes)
+		}
+		return query
 	}
-	if err := query.Delete(&model.CRMBuyerSignal{}).Error; err != nil {
-		return fmt.Errorf("reconcile buyer signals for source: %w", err)
+	if r.db.Migrator().HasColumn(&model.CRMSignal{}, "superseded_at") {
+		now := time.Now().UTC()
+		var stale []model.CRMSignal
+		if err := baseQuery().Find(&stale).Error; err != nil {
+			return fmt.Errorf("load CRM signals to supersede: %w", err)
+		}
+		directionFlipSignalIDs := make([]string, 0)
+		seenGroups := map[string]bool{}
+		for _, signal := range stale {
+			groupKey := signalEntityMotionKey(signal)
+			if seenGroups[groupKey] {
+				continue
+			}
+			seenGroups[groupKey] = true
+			active := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
+				Where("workspace_id = ? AND commercial_motion = ? AND dismissed_at IS NULL AND superseded_at IS NULL",
+					signal.WorkspaceID, signal.CommercialMotion)
+			active = nullableSignalID(active, "contact_id", signal.ContactID)
+			active = nullableSignalID(active, "deal_id", signal.DealID)
+			active = nullableSignalID(active, "company_id", signal.CompanyID)
+			var groupSignals []model.CRMSignal
+			if err := active.Find(&groupSignals).Error; err != nil {
+				return fmt.Errorf("load signal direction before supersession: %w", err)
+			}
+			staleIDs := map[string]bool{}
+			for _, candidate := range stale {
+				if signalEntityMotionKey(candidate) == groupKey {
+					staleIDs[candidate.ID] = true
+				}
+			}
+			beforeDirection := storedSignalGroupDirection(groupSignals, nil)
+			afterDirection := storedSignalGroupDirection(groupSignals, staleIDs)
+			if beforeDirection != 0 && afterDirection != 0 && beforeDirection != afterDirection {
+				var target *model.CRMSignal
+				for index := range groupSignals {
+					candidate := &groupSignals[index]
+					if staleIDs[candidate.ID] {
+						continue
+					}
+					if target == nil || storedSignalMagnitude(*candidate) > storedSignalMagnitude(*target) {
+						target = candidate
+					}
+				}
+				if target != nil {
+					directionFlipSignalIDs = append(directionFlipSignalIDs, target.ID)
+				}
+			}
+		}
+		if err := baseQuery().Model(&model.CRMSignal{}).Updates(map[string]interface{}{
+			"superseded_at": now, "superseded_reason": "source_reinterpreted",
+		}).Error; err != nil {
+			return fmt.Errorf("supersede CRM signals for source: %w", err)
+		}
+		if len(directionFlipSignalIDs) > 0 {
+			if err := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
+				Where("workspace_id = ? AND id IN ?", workspaceID, directionFlipSignalIDs).
+				Update("direction_changed_by_supersession", true).Error; err != nil {
+				return fmt.Errorf("mark supersession direction change: %w", err)
+			}
+		}
+		return nil
+	}
+	if err := baseQuery().Delete(&model.CRMSignal{}).Error; err != nil {
+		return fmt.Errorf("reconcile legacy CRM signals for source: %w", err)
 	}
 	return nil
 }
 
+func storedSignalMagnitude(signal model.CRMSignal) float64 {
+	strength := signal.BusinessWeightSnapshot
+	if strength <= 0 {
+		strength = 1
+	}
+	if signal.Confidence > 0 {
+		strength *= signal.Confidence
+	}
+	return strength
+}
+
+func signalEntityMotionKey(signal model.CRMSignal) string {
+	parts := []string{signal.WorkspaceID, signal.CommercialMotion}
+	for _, id := range []*string{signal.ContactID, signal.DealID, signal.CompanyID} {
+		if id == nil {
+			parts = append(parts, "")
+		} else {
+			parts = append(parts, *id)
+		}
+	}
+	return strings.Join(parts, "\x00")
+}
+
+func storedSignalGroupDirection(signals []model.CRMSignal, excluded map[string]bool) int {
+	impact := 0.0
+	for _, signal := range signals {
+		if excluded[signal.ID] {
+			continue
+		}
+		strength := storedSignalMagnitude(signal)
+		switch signal.Polarity {
+		case model.CRMSignalPolarityNegative:
+			impact -= strength
+		case model.CRMSignalPolarityPositive:
+			impact += strength
+		}
+	}
+	if impact > 0 {
+		return 1
+	}
+	if impact < 0 {
+		return -1
+	}
+	return 0
+}
+
 // ListSignalsForDealSince returns verified, visible signals used by the
 // deterministic deal-health scorer.
-func (r *CRMSignalRepository) ListSignalsForDealSince(ctx context.Context, workspaceID, dealID string, since time.Time) ([]model.CRMBuyerSignal, error) {
-	var signals []model.CRMBuyerSignal
-	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND deal_id = ? AND dismissed_at IS NULL AND detected_at >= ?", workspaceID, dealID, since).
+func (r *CRMSignalRepository) ListSignalsForDealSince(ctx context.Context, workspaceID, dealID string, since time.Time) ([]model.CRMSignal, error) {
+	var signals []model.CRMSignal
+	query := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND deal_id = ? AND dismissed_at IS NULL AND detected_at >= ?", workspaceID, dealID, since)
+	if r.db.Migrator().HasColumn(&model.CRMSignal{}, "superseded_at") {
+		query = query.Where("superseded_at IS NULL")
+	}
+	err := query.
 		Where("source_type = ? OR confidence >= ?", model.CRMSignalSourceManual, minimumAutomatedSignalConfidence).
 		Order("detected_at DESC, id DESC").
 		Find(&signals).Error
@@ -454,7 +710,7 @@ func isDuplicateKeyError(err error) bool {
 	return strings.Contains(message, "duplicate key") || strings.Contains(message, "unique constraint")
 }
 
-func ensureSignalEvidenceFingerprint(signal *model.CRMBuyerSignal) {
+func ensureSignalEvidenceFingerprint(signal *model.CRMSignal) {
 	if signal == nil || strings.TrimSpace(signal.EvidenceFingerprint) != "" {
 		return
 	}
@@ -472,7 +728,7 @@ func ensureSignalEvidenceFingerprint(signal *model.CRMBuyerSignal) {
 	signal.EvidenceFingerprint = fmt.Sprintf("%x", sum)
 }
 
-func ensureSignalDimensions(signal *model.CRMBuyerSignal) {
+func ensureSignalDimensions(signal *model.CRMSignal) {
 	if signal == nil {
 		return
 	}
@@ -482,6 +738,9 @@ func ensureSignalDimensions(signal *model.CRMBuyerSignal) {
 	if signal.SignalDomain == "" {
 		signal.SignalDomain = model.CRMSignalDomainConversation
 	}
+	// Detectors may omit observation polarity. This fallback normalizes only the
+	// motion-agnostic observation; a commercial signal is still impossible
+	// without an explicit interpretation mapping, which may override it.
 	if signal.Polarity == "" {
 		switch signal.SignalType {
 		case model.CRMSignalBuyingIntent, model.CRMSignalBudgetSignal,

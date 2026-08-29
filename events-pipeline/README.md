@@ -5,8 +5,8 @@ originally derived from Usermaven, but Helpin's tenancy, identity, deployment,
 and ClickHouse contracts are authoritative here. The old documentation site
 under `events-pipeline/docs` is retained only as upstream historical reference.
 
-Buyer-signal behavior built on these events is documented in
-[`../docs/crm-buyer-signals.md`](../docs/crm-buyer-signals.md).
+CRM-signal behavior built on these events is documented in
+[`../docs/crm-signals.md`](../docs/crm-signals.md).
 
 ## Responsibilities
 

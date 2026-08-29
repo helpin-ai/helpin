@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn, timeAgo } from '@/lib/utils'
-import type { CRMBuyerSignal, CRMSignalDismissalReason, CRMSuggestion } from '@/lib/crmTypes'
+import type { CRMSignal, CRMSignalDismissalReason, CRMSuggestion } from '@/lib/crmTypes'
 import { useConfirm } from '@/components/ui/confirm-dialog'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -170,14 +170,14 @@ export function SuggestionCard({ suggestion, onAccept, onDismiss, isAccepting, i
     const accepted = await confirm({ title: approval.title, description: approval.description, confirmText: approval.label })
     if (accepted) onAccept(suggestion.id)
   }
-  const canOpenEvidence = (signal: CRMBuyerSignal) => {
+  const canOpenEvidence = (signal: CRMSignal) => {
     if (!workspaceSlug) return false
     if (signal.source_type === 'email') return !!signal.source_thread_id && (!!signal.contact_id || !!signal.company_id)
     if (signal.source_type === 'meeting') return !!signal.source_id
     if (signal.source_type === 'support') return !!signal.source_thread_id
     return false
   }
-  const openEvidence = (signal: CRMBuyerSignal) => {
+  const openEvidence = (signal: CRMSignal) => {
     if (!canOpenEvidence(signal)) return
     if (signal.source_type === 'meeting' && signal.source_id) void navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: workspaceSlug, meetingId: signal.source_id } } as never)
     else if (signal.source_type === 'support' && signal.source_thread_id) void navigate({ to: '/w/$slug/support/$conversationId', params: { slug: workspaceSlug, conversationId: signal.source_thread_id } } as never)

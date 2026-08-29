@@ -14,6 +14,9 @@ use uuid::Uuid;
 
 use crate::api::{CaptureError, CaptureResponse, CaptureResponseCode};
 use crate::auth::authorization::{self, AuthorizedCredential, CredentialKind};
+use crate::commercial_event_catalog_generated::{
+    has_server_only_company_field, is_server_only_event,
+};
 use crate::events::event::{
     Event, EventFormData, EventIdentityProvenance, EventQuery, ProcessedEvent,
 };
@@ -97,6 +100,15 @@ pub fn process_single_event(
     mut event: Event,
     authorization: &AuthorizedCredential,
 ) -> Result<ProcessedEvent, CaptureError> {
+    if authorization.credential_kind == CredentialKind::Browser
+        && (is_server_only_event(&event.event_type)
+            || event
+                .company
+                .as_ref()
+                .is_some_and(has_server_only_company_field))
+    {
+        return Err(CaptureError::ForbiddenCommercialEvent);
+    }
     let identity_provenance = event_identity_provenance(&event, authorization);
     event.user.remove("identity_verification");
     event.api_key = authorization.installation_id.clone();
@@ -367,6 +379,62 @@ mod tests {
 
         assert_eq!(processed.event.api_key, authorization.installation_id);
         assert!(!processed.event.user.contains_key("identity_verification"));
+    }
+
+    #[test]
+    fn browser_credentials_cannot_submit_reserved_commercial_events() {
+        let event = Event {
+            api_key: String::from("test_key"),
+            event_type: String::from("payment_failed"),
+            user: HashMap::new(),
+            ..Default::default()
+        };
+
+        let result = process_single_event(event, &test_authorization());
+        assert!(matches!(
+            result,
+            Err(crate::api::CaptureError::ForbiddenCommercialEvent)
+        ));
+    }
+
+    #[test]
+    fn browser_credentials_cannot_submit_commercial_state() {
+        let event = Event {
+            api_key: String::from("test_key"),
+            event_type: String::from("group"),
+            user: HashMap::new(),
+            company: Some(HashMap::from([(
+                String::from("commercial_state"),
+                json!({"subscription_status": "active"}),
+            )])),
+            ..Default::default()
+        };
+
+        let result = process_single_event(event, &test_authorization());
+        assert!(matches!(
+            result,
+            Err(crate::api::CaptureError::ForbiddenCommercialEvent)
+        ));
+    }
+
+    #[test]
+    fn browser_credentials_cannot_hide_commercial_state_in_custom_fields() {
+        let event = Event {
+            api_key: String::from("test_key"),
+            event_type: String::from("group"),
+            user: HashMap::new(),
+            company: Some(HashMap::from([(
+                String::from("custom"),
+                json!({"commercial_state": {"subscription_status": "active"}}),
+            )])),
+            ..Default::default()
+        };
+
+        let result = process_single_event(event, &test_authorization());
+        assert!(matches!(
+            result,
+            Err(crate::api::CaptureError::ForbiddenCommercialEvent)
+        ));
     }
 
     #[tokio::test]

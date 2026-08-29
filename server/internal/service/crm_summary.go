@@ -359,14 +359,14 @@ func (s *CRMSummaryService) refreshIntelligenceNow(ctx context.Context, workspac
 	payloads, err := s.collectIntelligenceEvidence(ctx, workspaceID, entityType, entityID)
 	if err != nil {
 		slog.WarnContext(ctx, "CRM intelligence evidence collection failed", "error", err, "workspace_id", workspaceID, "entity_type", entityType, "entity_id", entityID)
-		result.Warnings = append(result.Warnings, "Buyer signals could not be refreshed. The summary was generated from available evidence.")
+		result.Warnings = append(result.Warnings, "CRM signals could not be refreshed. The summary was generated from available evidence.")
 	} else {
 		result.SourcesAnalyzed = len(payloads)
 		if len(payloads) > 0 && s.signalDetector != nil {
 			signals, detectErr := s.signalDetector.DetectSignals(ctx, payloads)
 			if detectErr != nil {
 				slog.WarnContext(ctx, "CRM intelligence signal detection failed", "error", detectErr, "workspace_id", workspaceID, "entity_type", entityType, "entity_id", entityID)
-				result.Warnings = append(result.Warnings, "Buyer signals could not be refreshed. The summary was generated from available evidence.")
+				result.Warnings = append(result.Warnings, "CRM signals could not be refreshed. The summary was generated from available evidence.")
 			} else {
 				result.SignalsDetected = len(signals)
 			}
@@ -740,7 +740,7 @@ type summaryPromptEntity struct {
 	OpenDeals      []dealSummarySnapshot    `json:"open_deals,omitempty"`
 	LinkedContacts []contactSummarySnapshot `json:"linked_contacts,omitempty"`
 	RecentEmails   []summaryEmailSnippet    `json:"recent_emails,omitempty"`
-	BuyerSignals   []summarySignalSnippet   `json:"buyer_signals,omitempty"`
+	Signals   []summarySignalSnippet   `json:"signals,omitempty"`
 	RelatedDeals   []dealSummarySnapshot    `json:"related_deals,omitempty"`
 	RelatedTasks   []summaryTaskSnapshot    `json:"related_tasks,omitempty"`
 	RelatedSupport []summarySupportSnapshot `json:"related_support,omitempty"`
@@ -870,7 +870,7 @@ func (s *CRMSummaryService) generateContactSummary(ctx context.Context, workspac
 		Companies:      companies,
 		OpenDeals:      openDeals,
 		RecentEmails:   messages,
-		BuyerSignals:   signals,
+		Signals:   signals,
 		RecentActivity: recentActivity,
 	}
 	payloadJSON, err := json.Marshal(payload)
@@ -928,7 +928,7 @@ func (s *CRMSummaryService) generateDealSummary(ctx context.Context, workspaceID
 		LinkedContacts: contacts,
 		Companies:      companies,
 		RecentEmails:   messages,
-		BuyerSignals:   signals,
+		Signals:   signals,
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -1045,7 +1045,7 @@ func (s *CRMSummaryService) generateCompanySummary(ctx context.Context, workspac
 		RelatedDeals:   dealSnapshots,
 		RelatedTasks:   taskSnapshots,
 		RelatedSupport: supportSnapshots,
-		BuyerSignals:   signalSnapshots,
+		Signals:   signalSnapshots,
 		RecentActivity: activities,
 	}
 	payloadJSON, err := json.Marshal(payload)
@@ -1238,7 +1238,7 @@ func (s *CRMSummaryService) addSignalReadiness(
 	if s.signalRepo == nil || readiness == nil || readiness.Ready {
 		return nil
 	}
-	rows, _, err := s.signalRepo.ListSignals(ctx, workspaceID, model.CRMBuyerSignalListFilters{ContactID: &contactID}, model.PMPagination{Page: 1, PerPage: crmSummaryContactSignalLimit})
+	rows, _, err := s.signalRepo.ListSignals(ctx, workspaceID, model.CRMSignalListFilters{ContactID: &contactID}, model.PMPagination{Page: 1, PerPage: crmSummaryContactSignalLimit})
 	if err != nil {
 		return err
 	}
@@ -1325,7 +1325,7 @@ func summaryReadinessLabel(kind string) string {
 	case model.CRMTimelineFilterSupport:
 		return "Support activity"
 	case "signal":
-		return "Buyer signal"
+		return "CRM signal"
 	default:
 		return "CRM activity"
 	}
@@ -1382,7 +1382,7 @@ func (s *CRMSummaryService) loadSummaryEvidence(ctx context.Context, workspaceID
 	emailLimit := crmSummaryContactEmailLimit
 	signalLimit := crmSummaryContactSignalLimit
 	emailFilters := model.CRMEmailMessageListFilters{}
-	signalFilters := model.CRMBuyerSignalListFilters{}
+	signalFilters := model.CRMSignalListFilters{}
 	if entityType == model.CRMObjectDeal {
 		emailSince = now.AddDate(0, 0, -crmSummarySignalWindowDays)
 		emailLimit = crmSummaryDealEmailLimit
@@ -1644,7 +1644,7 @@ You will receive a JSON object for a contact, company, or deal.
 
 Goals:
 - summarize current momentum and recent changes
-- highlight notable buyer signals, risks, and likely next step
+- highlight notable CRM signals, risks, and likely next step
 - stay grounded in the provided CRM evidence only
 - for companies, synthesize the account state across stakeholders, opportunities, product work, support, meetings, and communication
 

@@ -28,7 +28,7 @@ func (s *CRMCalendarService) SetCompanySummaryRefresh(refresh CompanySummaryRefr
 	return s
 }
 
-// SetSignalDetection enables versioned buyer-signal analysis for calendar
+// SetSignalDetection enables versioned CRM-signal analysis for calendar
 // events and stale-signal cleanup when an event is removed.
 func (s *CRMCalendarService) SetSignalDetection(starter interface {
 	StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
@@ -175,7 +175,7 @@ func (s *CRMCalendarService) enqueueSignalDetection(ctx context.Context, event *
 		return
 	}
 	if err := s.signalStarter.StartSignalDetection(ctx, crmsignal.CalendarWorkflowKey(*payload), []model.SignalSourcePayload{*payload}); err != nil {
-		slog.WarnContext(ctx, "calendar buyer signal enqueue failed", "error", err, "calendar_event_id", event.ID)
+		slog.WarnContext(ctx, "calendar CRM signal enqueue failed", "error", err, "calendar_event_id", event.ID)
 	}
 }
 
@@ -184,7 +184,7 @@ func (s *CRMCalendarService) reconcileDeletedSignals(ctx context.Context, event 
 		return
 	}
 	if err := s.signalRepo.ReconcileAutomatedSignalsForSource(ctx, event.WorkspaceID, model.CRMSignalSourceMeeting, event.ID, nil); err != nil {
-		slog.WarnContext(ctx, "deleted calendar event retained stale buyer signals", "error", err, "calendar_event_id", event.ID)
+		slog.WarnContext(ctx, "deleted calendar event retained stale CRM signals", "error", err, "calendar_event_id", event.ID)
 	}
 }
 

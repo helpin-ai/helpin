@@ -140,7 +140,7 @@ func aiSectionRunToolsForAgent(agent *model.Agent) []string {
 		"publish_ai_section_candidate",
 		"list_deals",
 		"list_contacts",
-		"list_buyer_signals",
+		"list_crm_signals",
 	}
 	allowedSet := make(map[string]bool, len(agentTools))
 	for _, tool := range agentTools {

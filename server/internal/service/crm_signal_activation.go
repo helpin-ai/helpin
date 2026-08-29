@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -61,9 +62,67 @@ func (s *CRMSignalService) RecordSignalFeedback(ctx context.Context, workspaceID
 		return err
 	}
 	if signal == nil {
-		return fmt.Errorf("buyer signal not found")
+		return fmt.Errorf("CRM signal not found")
 	}
 	return s.signalRepo.RecordSignalFeedback(ctx, signal, memberID, action, reasonPtr, time.Now().UTC())
+}
+
+// GetSignalRoutingSettings returns mutable workspace routing defaults.
+func (s *CRMSignalService) GetSignalRoutingSettings(ctx context.Context, workspaceID string) (*model.CRMSignalRoutingSettings, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.signalRepo.GetSignalRoutingSettings(ctx, workspaceID)
+}
+
+// UpdateSignalRoutingSettings saves mutable workspace routing defaults.
+func (s *CRMSignalService) UpdateSignalRoutingSettings(
+	ctx context.Context,
+	workspaceID string,
+	req model.UpdateCRMSignalRoutingSettingsRequest,
+) (*model.CRMSignalRoutingSettings, error) {
+	settings, err := s.signalRepo.GetSignalRoutingSettings(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if req.ClearDefaultSignalOwner {
+		settings.DefaultSignalOwnerMemberID = nil
+	} else if req.DefaultSignalOwnerMemberID != nil {
+		settings.DefaultSignalOwnerMemberID = req.DefaultSignalOwnerMemberID
+	}
+	if req.MinimumLanePriority != nil {
+		if *req.MinimumLanePriority < 0 || *req.MinimumLanePriority > 100 {
+			return nil, fmt.Errorf("minimum_lane_priority must be between 0 and 100")
+		}
+		settings.MinimumLanePriority = *req.MinimumLanePriority
+	}
+	if err := s.signalRepo.SaveSignalRoutingSettings(ctx, settings); err != nil {
+		return nil, err
+	}
+	return s.signalRepo.GetSignalRoutingSettings(ctx, workspaceID)
+}
+
+// GetSignalRolloutSettings returns the current shadow/live state.
+func (s *CRMSignalService) GetSignalRolloutSettings(ctx context.Context, workspaceID string) (*model.CRMSignalRolloutSettings, error) {
+	return s.signalRepo.GetSignalRolloutSettings(ctx, workspaceID)
+}
+
+// ActivateSignalRollout returns a workspace to live. Workspaces are live by
+// default, so this is the recovery path for an explicit shadow opt-out and is
+// deliberately not gated. Readiness stays observable through SignalShadowGate.
+func (s *CRMSignalService) ActivateSignalRollout(ctx context.Context, workspaceID, memberID string) (*model.CRMSignalRolloutSettings, error) {
+	if gate, err := s.signalRepo.GetSignalShadowGate(ctx, workspaceID); err != nil {
+		slog.WarnContext(ctx, "signal shadow gate unavailable during activation", "error", err, "workspace_id", workspaceID)
+	} else if !gate.Eligible {
+		slog.WarnContext(ctx, "activating motion-aware signals below gate thresholds",
+			"workspace_id", workspaceID, "observations", gate.ObservationCount,
+			"unmapped_rate", gate.UnmappedObservationRate, "duplicate_rate", gate.DuplicateFingerprintRate,
+			"immutable_violations", gate.ImmutableMeaningViolations)
+	}
+	if err := s.signalRepo.ActivateSignalRollout(ctx, workspaceID, memberID, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	return s.signalRepo.GetSignalRolloutSettings(ctx, workspaceID)
 }
 
 func (s *CRMSignalService) SignalPrecisionReport(ctx context.Context, workspaceID string) ([]model.CRMSignalPrecisionRow, error) {
@@ -71,6 +130,14 @@ func (s *CRMSignalService) SignalPrecisionReport(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("workspace_id is required")
 	}
 	return s.signalRepo.ListSignalPrecision(ctx, workspaceID)
+}
+
+// SignalOutcomeCalibrationReport joins signals to subsequent subscription state.
+func (s *CRMSignalService) SignalOutcomeCalibrationReport(ctx context.Context, workspaceID string, horizonDays int) ([]model.CRMSignalOutcomeCalibrationRow, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.signalRepo.ListSignalOutcomeCalibration(ctx, workspaceID, horizonDays)
 }
 
 func (s *CRMSignalService) CreateRoutingPolicy(ctx context.Context, workspaceID, memberID string, req model.CreateCRMSignalRoutingPolicyRequest) (*model.CRMSignalRoutingPolicy, error) {
@@ -150,7 +217,7 @@ func signalTrustRank(trust string) (int, bool) {
 	}
 }
 
-func (s *CRMSignalService) setSignalActivation(ctx context.Context, signal *model.CRMBuyerSignal, policy *model.CRMSignalRoutingPolicy, profile signalScoringProfile) {
+func (s *CRMSignalService) setSignalActivation(ctx context.Context, signal *model.CRMSignal, policy *model.CRMSignalRoutingPolicy, profile signalScoringProfile) {
 	blockers := []string{}
 	if signal.DismissedAt != nil {
 		blockers = append(blockers, "dismissed")
@@ -184,24 +251,31 @@ func (s *CRMSignalService) setSignalActivation(ctx context.Context, signal *mode
 	signal.ActivationEligible = len(blockers) == 0
 }
 
-func (s *CRMSignalService) ListActivationSignals(ctx context.Context, workspaceID string, limit int) ([]model.CRMBuyerSignal, error) {
+func (s *CRMSignalService) ListActivationSignals(ctx context.Context, workspaceID string, limit int) ([]model.CRMSignal, error) {
 	if limit < 1 || limit > 50 {
 		limit = 20
+	}
+	rollout, err := s.signalRepo.GetSignalRolloutSettings(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if rollout.Mode != model.CRMSignalRolloutLive {
+		return []model.CRMSignal{}, nil
 	}
 	policy, err := s.signalRepo.GetActiveRoutingPolicy(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	if policy == nil {
-		return []model.CRMBuyerSignal{}, nil
+		return []model.CRMSignal{}, nil
 	}
-	filters := model.CRMBuyerSignalListFilters{}
+	filters := model.CRMSignalListFilters{}
 	signals, err := s.signalRepo.ListWorkspaceSignalCandidates(ctx, workspaceID, filters, time.Now().UTC(), 500)
 	if err != nil {
 		return nil, err
 	}
 	profile := s.loadSignalScoringProfile(ctx, workspaceID)
-	eligible := make([]model.CRMBuyerSignal, 0, limit)
+	eligible := make([]model.CRMSignal, 0, limit)
 	for index := range signals {
 		profile.scoreSignal(&signals[index], time.Now().UTC())
 		s.setSignalActivation(ctx, &signals[index], policy, profile)
@@ -306,7 +380,7 @@ func (s *CRMSignalService) retrySignalDeliveries(ctx context.Context, workspaceI
 
 func (s *CRMSignalService) emitSignalDelivery(
 	ctx context.Context,
-	signal *model.CRMBuyerSignal,
+	signal *model.CRMSignal,
 	delivery *model.CRMSignalDelivery,
 ) (bool, error) {
 	now := time.Now().UTC()
@@ -343,14 +417,14 @@ func (s *CRMSignalService) emitSignalDelivery(
 }
 
 func signalNotificationEvent(
-	signal model.CRMBuyerSignal,
+	signal model.CRMSignal,
 	delivery model.CRMSignalDelivery,
 	recipients []string,
 ) model.NotificationEventInput {
 	event := model.NotificationEventInput{
 		WorkspaceID: delivery.WorkspaceID, EventType: "crm.signal_ready",
 		EntityType: "crm_signal", EntityID: signal.ID,
-		Title: "Buyer signal ready for review", Body: signal.Summary, Category: "crm_signal",
+		Title: "CRM signal ready for review", Body: signal.Summary, Category: "crm_signal",
 		Priority: signalNotificationPriority(signal.Severity),
 		TeamID:   signalStringValue(delivery.DestinationTeamID), ExplicitRecipients: recipients,
 		SkipFollowers: true, SkipEmailDelivery: delivery.Channel == model.CRMSignalDeliveryNotification,
@@ -386,13 +460,13 @@ func signalIntValue(value *int) int {
 	return *value
 }
 
-func (s *CRMSignalService) GetSignalBrief(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters) (*model.CRMSignalBrief, error) {
+func (s *CRMSignalService) GetSignalBrief(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters) (*model.CRMSignalBrief, error) {
 	feed, err := s.ListWorkspaceSignalFeed(ctx, workspaceID, filters, model.PMPagination{Page: 1, PerPage: 1})
 	if err != nil {
 		return nil, err
 	}
 	if len(feed.Data) == 0 {
-		return &model.CRMSignalBrief{GeneratedAt: time.Now().UTC(), WhatChanged: []string{}, Sources: []model.CRMBuyerSignal{}}, nil
+		return &model.CRMSignalBrief{GeneratedAt: time.Now().UTC(), WhatChanged: []string{}, Sources: []model.CRMSignal{}}, nil
 	}
 	story := feed.Data[0]
 	activationReady := false

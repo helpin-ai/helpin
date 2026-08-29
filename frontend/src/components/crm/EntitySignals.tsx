@@ -5,9 +5,9 @@ import {
   Alert01Icon, Award01Icon, ChartIncreaseIcon, Clock01Icon,
   CheckmarkCircle02Icon, Mail01Icon, MoreVerticalIcon, Shield01Icon, UserGroupIcon, ZapIcon,
 } from '@/lib/icons';
-import { useBuyerSignalFeedback, useCompanySignals, useContactSignals, useDealSignals, useDismissBuyerSignal, useEmailAccounts, useWorkspaceMembers } from '@/hooks/queries';
+import { useCRMSignalFeedback, useCompanySignals, useContactSignals, useDealSignals, useDismissCRMSignal, useEmailAccounts, useWorkspaceMembers } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { CRMBuyerSignal, CRMSignalDismissalReason, CRMSignalType } from '@/lib/crmTypes';
+import type { CRMSignal, CRMSignalDismissalReason, CRMSignalType } from '@/lib/crmTypes';
 import { cn } from '@/lib/utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
@@ -39,16 +39,16 @@ const dismissalReasons: Array<{ value: CRMSignalDismissalReason; label: string }
   { value: 'bad_timing', label: 'Bad timing' },
 ];
 
-interface BuyerSignalsProps {
+interface EntitySignalsProps {
   workspaceId: string;
   contactId?: string;
   dealId?: string;
   companyId?: string;
   presentation?: 'default' | 'compact' | 'overview';
-  onOpenSource?: (signal: CRMBuyerSignal) => void;
+  onOpenSource?: (signal: CRMSignal) => void;
 }
 
-function sourceLabel(signal: CRMBuyerSignal) {
+function sourceLabel(signal: CRMSignal) {
   if (signal.source_type === 'email') return signal.metadata?.mailbox_email ? `Email · ${signal.metadata.mailbox_email}` : 'Email';
   if (signal.source_type === 'meeting') return 'Meeting';
   if (signal.source_type === 'call') return 'Call';
@@ -57,7 +57,7 @@ function sourceLabel(signal: CRMBuyerSignal) {
   return 'CRM activity';
 }
 
-function sourceAction(signal: CRMBuyerSignal) {
+function sourceAction(signal: CRMSignal) {
   if (signal.source_type === 'email') return 'Open thread';
   if (signal.source_type === 'meeting') return 'Open meeting';
   if (signal.source_type === 'call') return 'View call';
@@ -66,14 +66,14 @@ function sourceAction(signal: CRMBuyerSignal) {
   return 'View activity';
 }
 
-function canOpenSource(signal: CRMBuyerSignal, onOpenSource?: (signal: CRMBuyerSignal) => void) {
+function canOpenSource(signal: CRMSignal, onOpenSource?: (signal: CRMSignal) => void) {
   if (!onOpenSource) return false;
   if (signal.source_type === 'email') return !!signal.source_thread_id;
   if (signal.source_type === 'support') return !!signal.source_thread_id;
   return ['meeting', 'note', 'call'].includes(signal.source_type) && !!signal.source_id;
 }
 
-function BuyerSignalsEmptyState({ workspaceId }: { workspaceId: string }) {
+function EntitySignalsEmptyState({ workspaceId }: { workspaceId: string }) {
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? '');
   const accounts = useEmailAccounts(workspaceId);
   const members = useWorkspaceMembers(workspaceId);
@@ -99,18 +99,18 @@ function BuyerSignalsEmptyState({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-export function BuyerSignals({ workspaceId, contactId, dealId, companyId, presentation = 'default', onOpenSource }: BuyerSignalsProps) {
+export function EntitySignals({ workspaceId, contactId, dealId, companyId, presentation = 'default', onOpenSource }: EntitySignalsProps) {
   const contactQuery = useContactSignals(workspaceId, contactId ?? '');
   const dealQuery = useDealSignals(workspaceId, dealId ?? '');
   const companyQuery = useCompanySignals(workspaceId, companyId ?? '');
-  const dismiss = useDismissBuyerSignal(workspaceId, contactId, dealId, companyId);
-  const feedback = useBuyerSignalFeedback(workspaceId, contactId, dealId, companyId);
+  const dismiss = useDismissCRMSignal(workspaceId, contactId, dealId, companyId);
+  const feedback = useCRMSignalFeedback(workspaceId, contactId, dealId, companyId);
   const query = contactId ? contactQuery : dealId ? dealQuery : companyQuery;
-  const signals = (query.data?.data ?? []) as CRMBuyerSignal[];
+  const signals = (query.data?.data ?? []) as CRMSignal[];
   const overview = presentation === 'overview';
 
   if (query.isLoading) return <div className={cn(overview ? 'px-4 pb-6 pt-1 sm:px-6 lg:px-10' : 'py-2')}><div className="h-16 animate-pulse rounded bg-muted/35" /></div>;
-  if (signals.length === 0) return overview ? <BuyerSignalsEmptyState workspaceId={workspaceId} /> : <div className="border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">No signals yet</div>;
+  if (signals.length === 0) return overview ? <EntitySignalsEmptyState workspaceId={workspaceId} /> : <div className="border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">No signals yet</div>;
 
   return (
     <div className={cn(overview ? 'border-t border-border/40' : 'space-y-2')}>

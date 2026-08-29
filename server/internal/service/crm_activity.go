@@ -144,7 +144,7 @@ func (s *CRMActivityService) Update(ctx context.Context, id string, req model.Up
 	}
 	if currentSourceType := crmActivitySignalSourceType(activity.ActivityType); s.signalRepo != nil && previousSourceType != "" && previousSourceType != currentSourceType {
 		if err := s.signalRepo.ReconcileAutomatedSignalsForSource(ctx, activity.WorkspaceID, previousSourceType, activity.ID, nil); err != nil {
-			slog.WarnContext(ctx, "updated CRM activity retained buyer signals from its previous type", "error", err, "activity_id", activity.ID)
+			slog.WarnContext(ctx, "updated CRM activity retained CRM signals from its previous type", "error", err, "activity_id", activity.ID)
 		}
 	}
 	s.requestCompanySummaryRefresh(ctx, activity)
@@ -167,7 +167,7 @@ func (s *CRMActivityService) Delete(ctx context.Context, id string) error {
 	if s.signalRepo != nil {
 		if sourceType := crmActivitySignalSourceType(activity.ActivityType); sourceType != "" {
 			if err := s.signalRepo.ReconcileAutomatedSignalsForSource(ctx, activity.WorkspaceID, sourceType, activity.ID, nil); err != nil {
-				slog.WarnContext(ctx, "deleted CRM activity retained stale buyer signals", "error", err, "activity_id", activity.ID)
+				slog.WarnContext(ctx, "deleted CRM activity retained stale CRM signals", "error", err, "activity_id", activity.ID)
 			}
 		}
 	}
@@ -187,7 +187,7 @@ func (s *CRMActivityService) enqueueSignalDetection(ctx context.Context, activit
 	if body == "" {
 		if s.signalRepo != nil {
 			if err := s.signalRepo.ReconcileAutomatedSignalsForSource(ctx, activity.WorkspaceID, sourceType, activity.ID, nil); err != nil {
-				slog.WarnContext(ctx, "empty CRM activity retained stale buyer signals", "error", err, "activity_id", activity.ID)
+				slog.WarnContext(ctx, "empty CRM activity retained stale CRM signals", "error", err, "activity_id", activity.ID)
 			}
 		}
 		return
@@ -204,7 +204,7 @@ func (s *CRMActivityService) enqueueSignalDetection(ctx context.Context, activit
 	}
 	key := fmt.Sprintf("activity-%s-%d", activity.ID, versionAt.UnixNano())
 	if err := s.signalStarter.StartSignalDetection(ctx, key, []model.SignalSourcePayload{payload}); err != nil {
-		slog.WarnContext(ctx, "CRM activity buyer signal enqueue failed", "error", err, "activity_id", activity.ID)
+		slog.WarnContext(ctx, "CRM activity CRM signal enqueue failed", "error", err, "activity_id", activity.ID)
 	}
 }
 

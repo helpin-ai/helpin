@@ -129,7 +129,7 @@ const COMPARISON_FEATURES: Array<{
   { name: 'Contacts', starter: '5,000', growth: 'Unlimited' },
   { name: 'Deals', starter: true, growth: true },
   { name: 'Gmail sync', starter: true, growth: true },
-  { name: 'Buyer signal detection', starter: true, growth: true },
+  { name: 'CRM signal detection', starter: true, growth: true },
   { name: 'Deal automation', starter: false, growth: true },
   { name: 'AI Agents', category: true },
   { name: 'Included AI usage', starter: '100% each month', growth: '100% each month' },

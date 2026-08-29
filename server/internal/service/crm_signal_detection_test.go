@@ -32,7 +32,7 @@ func setupCRMSignalDetectionTestDB(t *testing.T) *gorm.DB {
 	}
 
 	statements := []string{
-		`CREATE TABLE crm_buyer_signals (
+		`CREATE TABLE crm_signals (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			contact_id TEXT,
@@ -64,9 +64,9 @@ func setupCRMSignalDetectionTestDB(t *testing.T) *gorm.DB {
 			acted_at DATETIME,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
-		`CREATE INDEX idx_crm_signals_source_thread ON crm_buyer_signals(source_thread_id)`,
+		`CREATE INDEX idx_crm_signals_source_thread ON crm_signals(source_thread_id)`,
 		`CREATE UNIQUE INDEX idx_crm_signals_workspace_source_type_source_id_signal_type_unique
-			ON crm_buyer_signals(workspace_id, source_type, source_id, signal_type)
+			ON crm_signals(workspace_id, source_type, source_id, signal_type)
 			WHERE source_id IS NOT NULL`,
 	}
 	for _, stmt := range statements {
@@ -122,8 +122,8 @@ func TestSignalDetectionService_PersistsProvenanceAndDedupes(t *testing.T) {
 		t.Fatalf("signals on rerun = %d, want 0", len(signals))
 	}
 
-	var stored model.CRMBuyerSignal
-	if err := db.Table("crm_buyer_signals").First(&stored).Error; err != nil {
+	var stored model.CRMSignal
+	if err := db.Table("crm_signals").First(&stored).Error; err != nil {
 		t.Fatalf("load stored signal: %v", err)
 	}
 	if stored.SourceThreadID == nil || *stored.SourceThreadID != "thread-1" {
@@ -143,7 +143,7 @@ func TestSignalDetectionService_PersistsProvenanceAndDedupes(t *testing.T) {
 		t.Fatalf("metadata.message_direction = %v, want inbound", got)
 	}
 	var count int64
-	if err := db.Table("crm_buyer_signals").Count(&count).Error; err != nil {
+	if err := db.Table("crm_signals").Count(&count).Error; err != nil {
 		t.Fatalf("count signals: %v", err)
 	}
 	if count != 1 {

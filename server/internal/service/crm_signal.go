@@ -49,17 +49,17 @@ func NewCRMSignalService(signalRepo *repository.CRMSignalRepository, summaryRefr
 }
 
 // ListCompanySignals returns signals rolled up through company relationships.
-func (s *CRMSignalService) ListCompanySignals(ctx context.Context, workspaceID, companyID string, pagination model.PMPagination) ([]model.CRMBuyerSignal, int64, error) {
+func (s *CRMSignalService) ListCompanySignals(ctx context.Context, workspaceID, companyID string, pagination model.PMPagination) ([]model.CRMSignal, int64, error) {
 	if workspaceID == "" || companyID == "" {
 		return nil, 0, fmt.Errorf("workspace_id and company_id are required")
 	}
 	return s.signalRepo.ListSignalsByCompany(ctx, workspaceID, companyID, pagination)
 }
 
-// ── Buyer Signals ──
+// ── CRM Signals ──
 
-// ListSignals returns buyer signals with filters and pagination.
-func (s *CRMSignalService) ListSignals(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination) ([]model.CRMBuyerSignal, int64, error) {
+// ListSignals returns CRM signals with filters and pagination.
+func (s *CRMSignalService) ListSignals(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters, pagination model.PMPagination) ([]model.CRMSignal, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
@@ -75,8 +75,56 @@ func (s *CRMSignalService) ListSignals(ctx context.Context, workspaceID string, 
 	return signals, total, nil
 }
 
-// CreateSignal creates a new buyer signal.
-func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRMBuyerSignalRequest) (*model.CRMBuyerSignal, error) {
+// SignalShadowGate returns the objective Phase 1 release readiness checks.
+func (s *CRMSignalService) SignalShadowGate(ctx context.Context, workspaceID string) (*model.CRMSignalShadowGate, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return s.signalRepo.GetSignalShadowGate(ctx, workspaceID)
+}
+
+// ReconcileDealMotionSignals removes ghost rows immediately after a deal leaves a motion.
+func (s *CRMSignalService) ReconcileDealMotionSignals(ctx context.Context, workspaceID, dealID string) error {
+	if err := s.signalRepo.ReconcileDealMotionSignals(ctx, workspaceID, dealID); err != nil {
+		return err
+	}
+	return s.RefreshEntityMotionSignals(ctx, workspaceID, "deal", dealID)
+}
+
+// ReconcilePipelineMotionSignals applies a new inherited pipeline motion to existing deals.
+func (s *CRMSignalService) ReconcilePipelineMotionSignals(ctx context.Context, workspaceID, pipelineID string) error {
+	return s.signalRepo.ReconcilePipelineMotionSignals(ctx, workspaceID, pipelineID)
+}
+
+// RefreshEntityMotionSignals resolves and persists current motion state outside detection.
+func (s *CRMSignalService) RefreshEntityMotionSignals(ctx context.Context, workspaceID, entityType, entityID string) error {
+	return s.signalRepo.RefreshEntityMotionSignals(ctx, workspaceID, entityType, entityID, time.Now().UTC())
+}
+
+// RefreshContactCompanyMotionSignals refreshes accounts affected by a contact lifecycle change.
+func (s *CRMSignalService) RefreshContactCompanyMotionSignals(ctx context.Context, workspaceID, contactID string) error {
+	companyIDs, err := s.signalRepo.ListContactCompanyIDs(ctx, workspaceID, contactID)
+	if err != nil {
+		return err
+	}
+	for _, companyID := range companyIDs {
+		if err := s.RefreshEntityMotionSignals(ctx, workspaceID, "company", companyID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RecordSignalBatchSuppression persists a holiday/workspace anomaly guard decision.
+func (s *CRMSignalService) RecordSignalBatchSuppression(
+	ctx context.Context, workspaceID, ruleKey string, ruleVersion, eligible, tripped int,
+	start, end time.Time, reason string,
+) error {
+	return s.signalRepo.RecordSignalBatchSuppression(ctx, workspaceID, ruleKey, ruleVersion, eligible, tripped, start, end, reason)
+}
+
+// CreateSignal creates a new CRM signal.
+func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRMSignalRequest) (*model.CRMSignal, error) {
 	if req.WorkspaceID == "" || req.SignalType == "" || req.Summary == "" {
 		return nil, fmt.Errorf("workspace_id, signal_type, and summary are required")
 	}
@@ -99,7 +147,7 @@ func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRM
 	// This endpoint records a user's assertion. Extraction, deterministic-rule,
 	// and provider evidence are created by their dedicated server-side paths so
 	// callers cannot claim verified identity or an activated rule version.
-	signal := &model.CRMBuyerSignal{
+	signal := &model.CRMSignal{
 		WorkspaceID:            req.WorkspaceID,
 		ContactID:              req.ContactID,
 		DealID:                 req.DealID,
@@ -129,7 +177,7 @@ func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRM
 	return signal, nil
 }
 
-// DeleteSignal removes a buyer signal.
+// DeleteSignal removes a CRM signal.
 func (s *CRMSignalService) DeleteSignal(ctx context.Context, workspaceID, id string) error {
 	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(id) == "" {
 		return fmt.Errorf("workspace_id and signal_id are required")
@@ -217,11 +265,11 @@ func (s *CRMSignalService) calculateAndStoreDealHealthScore(ctx context.Context,
 	return health, nil
 }
 
-func calculateDealHealthScore(deal *model.CRMDeal, signals []model.CRMBuyerSignal, now time.Time) (int, model.JSONB) {
+func calculateDealHealthScore(deal *model.CRMDeal, signals []model.CRMSignal, now time.Time) (int, model.JSONB) {
 	return calculateDealHealthScoreWithProfile(deal, signals, defaultSignalScoringProfile(), now)
 }
 
-func calculateDealHealthScoreWithProfile(deal *model.CRMDeal, signals []model.CRMBuyerSignal, profile signalScoringProfile, now time.Time) (int, model.JSONB) {
+func calculateDealHealthScoreWithProfile(deal *model.CRMDeal, signals []model.CRMSignal, profile signalScoringProfile, now time.Time) (int, model.JSONB) {
 	if deal.Stage != nil {
 		switch deal.Stage.StageType {
 		case model.CRMStageTypeWon:
@@ -318,7 +366,7 @@ func (s *CRMSignalService) CreateHealthScore(ctx context.Context, req model.Crea
 	return score, nil
 }
 
-func (s *CRMSignalService) requestSummaryRefresh(ctx context.Context, signal *model.CRMBuyerSignal) {
+func (s *CRMSignalService) requestSummaryRefresh(ctx context.Context, signal *model.CRMSignal) {
 	if s == nil || s.summaryRefresh == nil || signal == nil {
 		return
 	}

@@ -22,7 +22,7 @@ const (
 	signalEvidenceRuleVersion     = 3
 )
 
-// SignalDetectionService uses LLM to detect buyer signals from various sources.
+// SignalDetectionService uses LLM to detect CRM signals from various sources.
 type SignalDetectionService struct {
 	llmProvider    llm.Provider
 	signalRepo     *repository.CRMSignalRepository
@@ -66,8 +66,8 @@ type DetectedSignal struct {
 	TimelineDate string  `json:"timeline_date,omitempty"`
 }
 
-// DetectSignals analyzes source payloads and detects buyer signals.
-func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []model.SignalSourcePayload) ([]model.CRMBuyerSignal, error) {
+// DetectSignals analyzes source payloads and detects CRM signals.
+func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []model.SignalSourcePayload) ([]model.CRMSignal, error) {
 	if len(payloads) == 0 {
 		return nil, nil
 	}
@@ -100,7 +100,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 		RetryInvalidOutput: true,
 		ValidateResponse: func(response *llm.ChatResponse) error {
 			if response == nil || strings.TrimSpace(response.Content) == "" {
-				return fmt.Errorf("buyer signal model returned an empty response")
+				return fmt.Errorf("CRM signal model returned an empty response")
 			}
 			detected, parseErr := parseDetectedSignals(response.Content)
 			if parseErr != nil {
@@ -117,7 +117,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 				}
 				_, knownSource := payloadsByKey[signalSourceKey(item.SourceType, item.SourceID)]
 				if !knownSource || !validDetectedSignalType(item.SignalType) {
-					return fmt.Errorf("buyer signal model returned an unknown source or signal type")
+					return fmt.Errorf("CRM signal model returned an unknown source or signal type")
 				}
 				if languageErr := validateEnglishCRMNarrative(item.Summary); languageErr != nil {
 					return languageErr
@@ -153,8 +153,8 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 		reconcileSource[key] = true
 	}
 
-	// Create buyer signal records against the exact source declared by the model.
-	var signals []model.CRMBuyerSignal
+	// Create CRM signal records against the exact source declared by the model.
+	var signals []model.CRMSignal
 	for _, d := range detected {
 		if len(payloads) == 1 {
 			if strings.TrimSpace(d.SourceType) == "" {
@@ -167,7 +167,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 		key := signalSourceKey(d.SourceType, d.SourceID)
 		payload, knownSource := payloadsByKey[key]
 		if !knownSource || !validDetectedSignalType(d.SignalType) {
-			slog.InfoContext(ctx, "skipping buyer signal with unknown source or type", "source_type", d.SourceType, "source_id", d.SourceID, "signal_type", d.SignalType)
+			slog.InfoContext(ctx, "skipping CRM signal with unknown source or type", "source_type", d.SourceType, "source_id", d.SourceID, "signal_type", d.SignalType)
 			continue
 		}
 		if d.Confidence < minimumDetectedConfidence {
@@ -176,7 +176,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 		evidence, verified := verifiedSignalEvidence(payload, d.RawEvidence)
 		if !verified {
 			reconcileSource[key] = false
-			slog.InfoContext(ctx, "skipping unverified buyer signal evidence", "workspace_id", payload.WorkspaceID, "source_type", payload.SourceType, "source_id", payload.SourceID, "signal_type", d.SignalType)
+			slog.InfoContext(ctx, "skipping unverified CRM signal evidence", "workspace_id", payload.WorkspaceID, "source_type", payload.SourceType, "source_id", payload.SourceID, "signal_type", d.SignalType)
 			continue
 		}
 
@@ -186,7 +186,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 				return nil, err
 			}
 			if exists {
-				slog.Info("skipping repeated thread-level buyer signal", "workspace_id", payload.WorkspaceID, "thread_id", *payload.SourceThreadID, "signal_type", d.SignalType)
+				slog.Info("skipping repeated thread-level CRM signal", "workspace_id", payload.WorkspaceID, "thread_id", *payload.SourceThreadID, "signal_type", d.SignalType)
 				continue
 			}
 		}
@@ -195,14 +195,14 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 		if d.SignalType == model.CRMSignalTimelineSignal && strings.TrimSpace(d.TimelineDate) != "" {
 			parsedDate, parseErr := time.Parse("2006-01-02", strings.TrimSpace(d.TimelineDate))
 			if parseErr != nil {
-				slog.InfoContext(ctx, "ignoring invalid buyer signal timeline date", "workspace_id", payload.WorkspaceID, "source_id", payload.SourceID)
+				slog.InfoContext(ctx, "ignoring invalid CRM signal timeline date", "workspace_id", payload.WorkspaceID, "source_id", payload.SourceID)
 			} else {
 				metadata["timeline_date"] = parsedDate.Format("2006-01-02")
 			}
 		}
 
 		ruleKey, ruleVersion := model.CRMSignalRuleConversationExtraction, signalEvidenceRuleVersion
-		signal := model.CRMBuyerSignal{
+		signal := model.CRMSignal{
 			WorkspaceID:     payload.WorkspaceID,
 			ContactID:       payload.ContactID,
 			DealID:          payload.DealID,
@@ -278,7 +278,7 @@ func validDetectedSignalType(signalType string) bool {
 	}
 }
 
-const signalDetectionSystemPrompt = `You are a sales intelligence analyst. Analyze the provided communication data and detect buyer signals.
+const signalDetectionSystemPrompt = `You are a sales intelligence analyst. Analyze the provided communication data and detect CRM signals.
 
 Signal types to detect:
 1. "buying_intent" — prospect shows interest in purchasing, asks about pricing, requests demos, mentions evaluating solutions
@@ -301,7 +301,7 @@ For each detected signal, provide:
 Return a JSON array of detected signals. If no signals are detected, return an empty array [].
 Only detect signals that are clearly present — avoid false positives. Be conservative with confidence scores.
 Never infer a timeline_date from vague phrases such as "soon", "next quarter", or "in a few weeks".
-Treat inbound customer language as primary evidence. Do not interpret the seller's outbound pitch, internal task state, or deal-stage movement as a buyer signal.
+Treat inbound customer language as primary evidence. Do not interpret the seller's outbound pitch, internal task state, or deal-stage movement as a CRM signal.
 For calendar sources, attendee response status and event cancellation are factual evidence; do not treat the organizer's meeting title or description alone as buyer intent.
 Write generated summaries in English even when the source evidence is in another language. Keep raw_evidence as an exact excerpt in its original language.
 
@@ -349,7 +349,7 @@ func normalizedSignalText(value string) string {
 	return crmtext.Normalize(value)
 }
 
-func (s *SignalDetectionService) requestSummaryRefresh(ctx context.Context, signal model.CRMBuyerSignal) {
+func (s *SignalDetectionService) requestSummaryRefresh(ctx context.Context, signal model.CRMSignal) {
 	if s == nil {
 		return
 	}

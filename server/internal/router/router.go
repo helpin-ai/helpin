@@ -1601,11 +1601,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Signals — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/feed", h.CRMSignal.ListWorkspaceFeed)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/signals/shadow-preview", h.CRMSignal.ListWorkspaceShadowPreview)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/signals/shadow-gate", h.CRMSignal.ShadowGate)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/rollout", h.CRMSignal.GetRolloutSettings)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/rollout/activate", h.CRMSignal.ActivateRollout)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/brief", h.CRMSignal.SignalBrief)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/meetings/{id}/signal-brief", h.CRMSignal.MeetingSignalBrief)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/precision", h.CRMSignal.PrecisionReport)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/signals/outcomes", h.CRMSignal.OutcomeCalibrationReport)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Get("/signals/rules", h.CRMSignal.ListRuleConfigs)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/routing-policy", h.CRMSignal.GetRoutingPolicy)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/signals/routing-settings", h.CRMSignal.GetRoutingSettings)
+				r.With(requirePerm(authorization.PermCRMAdmin)).Put("/signals/routing-settings", h.CRMSignal.UpdateRoutingSettings)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/routing-policy", h.CRMSignal.CreateRoutingPolicy)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/routing-policy/versions/{version}/activate", h.CRMSignal.ActivateRoutingPolicy)
 				r.With(requirePerm(authorization.PermCRMAdmin)).Post("/signals/rules/{ruleKey}/versions/{version}/activate", h.CRMSignal.ActivateRuleVersion)

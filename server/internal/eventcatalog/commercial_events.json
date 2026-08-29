@@ -1,0 +1,14 @@
+{
+  "server_only_event_names": [
+    "commercial_state_updated",
+    "downgrade_requested",
+    "payment_failed",
+    "subscription_canceled",
+    "subscription_changed",
+    "subscription_renewed",
+    "workflow_failed"
+  ],
+  "server_only_company_fields": [
+    "commercial_state"
+  ]
+}

@@ -582,7 +582,7 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 	}
 	if a.signalIngestion != nil {
 		if _, err := a.signalIngestion.EnqueueEmailMessage(ctx, message.ID); err != nil {
-			slog.ErrorContext(ctx, "failed to enqueue crm buyer signal detection from email sync", "error", err, "workspace_id", account.WorkspaceID, "account_id", account.ID, "message_id", message.ID)
+			slog.ErrorContext(ctx, "failed to enqueue crm CRM signal detection from email sync", "error", err, "workspace_id", account.WorkspaceID, "account_id", account.ID, "message_id", message.ID)
 		}
 	}
 	a.requestSummaryRefreshForMessage(ctx, message, "gmail_sync")

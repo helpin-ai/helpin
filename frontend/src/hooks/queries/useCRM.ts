@@ -40,7 +40,7 @@ import type {
   CreateCRMCalendarEventRequest,
   UpdateCRMCalendarEventRequest,
   CreateCRMEnrichmentRequest,
-  CreateCRMBuyerSignalRequest,
+  CreateCRMSignalRequest,
   CreateCRMDealHealthScoreRequest,
   CreateCRMSuggestionRequest,
   UpdateCRMSuggestionRequest,
@@ -848,7 +848,7 @@ export function useApplyEnrichmentSuggestion(wsId: string) {
   })
 }
 
-export function useBuyerSignals(
+export function useCRMSignals(
   wsId: string,
   filters?: { contact_id?: string; deal_id?: string; company_id?: string; signal_type?: string },
 ) {
@@ -871,14 +871,35 @@ export function useSignalOperations(wsId: string) {
   return useQuery({
     queryKey: [...queryKeys.crm.signals(wsId), 'operations'],
     queryFn: async () => {
-      const [precision, rules, policy] = await Promise.all([
+      const [precision, outcomes, rules, policy, routingSettings, rollout, shadowGate, shadowPreview] = await Promise.all([
         unwrap(await crmSignalService.precision(wsId)),
+		unwrap(await crmSignalService.outcomes(wsId)),
         unwrap(await crmSignalService.rules(wsId)),
         unwrap(await crmSignalService.routingPolicy(wsId)),
+		unwrap(await crmSignalService.routingSettings(wsId)),
+		unwrap(await crmSignalService.rollout(wsId)),
+		unwrap(await crmSignalService.shadowGate(wsId)),
+		unwrap(await crmSignalService.shadowPreview(wsId)),
       ])
-      return { precision: precision.data, rules: rules.data, policy }
+      return { precision: precision.data, outcomes: outcomes.data, rules: rules.data, policy, routingSettings, rollout, shadowGate, shadowPreview }
     },
     enabled: !!wsId,
+  })
+}
+
+export function useUpdateSignalRoutingSettings(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: { default_signal_owner_member_id?: string; clear_default_signal_owner?: boolean; minimum_lane_priority?: number }) => unwrap(await crmSignalService.updateRoutingSettings(wsId, payload)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
+  })
+}
+
+export function useActivateSignalRollout(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => unwrap(await crmSignalService.activateRollout(wsId)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
   })
 }
 
@@ -926,10 +947,10 @@ export function useCompanySignals(wsId: string, companyId: string) {
   })
 }
 
-export function useCreateBuyerSignal(wsId: string) {
+export function useCreateCRMSignal(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: CreateCRMBuyerSignalRequest) => unwrap(await crmSignalService.create(data)),
+    mutationFn: async (data: CreateCRMSignalRequest) => unwrap(await crmSignalService.create(data)),
     onSuccess: (_result, data) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
       if (data.contact_id) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, data.contact_id) })
@@ -939,7 +960,7 @@ export function useCreateBuyerSignal(wsId: string) {
   })
 }
 
-export function useDismissBuyerSignal(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
+export function useDismissCRMSignal(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ signalId, reason }: { signalId: string; reason: import('@/lib/crmTypes').CRMSignalDismissalReason }) => unwrap(await crmSignalService.dismiss(wsId, signalId, reason)),
@@ -952,7 +973,7 @@ export function useDismissBuyerSignal(wsId: string, contactId?: string, dealId?:
   })
 }
 
-export function useBuyerSignalFeedback(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
+export function useCRMSignalFeedback(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ signalId, action }: { signalId: string; action: 'reviewed' | 'acted' }) =>

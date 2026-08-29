@@ -12,20 +12,20 @@ import {
 } from "@/components/ui/select";
 import { useCompanies, useSignalWorkspaceFeed } from "@/hooks/queries/useCRM";
 import { useWorkspaceMembers } from "@/hooks/queries";
-import {
-  Activity01Icon,
-  ArrowRight01Icon,
-  Layers01Icon,
-} from "@/lib/icons";
+import { Activity01Icon, ArrowRight01Icon, Layers01Icon } from "@/lib/icons";
 import type {
-  CRMBuyerSignal,
+  CRMSignal,
   CRMSignalAccountStory,
   CRMSignalFeedFilters,
   CRMSignalSeverity,
+  CRMCommercialMotion,
 } from "@/lib/crmTypes";
 import { cn, timeAgo } from "@/lib/utils";
 import { buildCRMSignalQueryFields } from "@/lib/crmSignalQueryBuilder";
-import { serializeQueryFilterGroup, type QueryFilterGroup } from "@/lib/queryBuilder";
+import {
+  serializeQueryFilterGroup,
+  type QueryFilterGroup,
+} from "@/lib/queryBuilder";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const domainLabels: Record<string, string> = {
@@ -37,6 +37,23 @@ const domainLabels: Record<string, string> = {
   relationship: "Relationship",
   market: "Market",
 };
+
+const motionLabels: Record<CRMCommercialMotion, string> = {
+  prospecting: "Prospecting",
+  conversion: "Conversion",
+  onboarding: "Onboarding",
+  adoption: "Adoption",
+  expansion: "Expansion",
+  renewal: "Renewal",
+  retention: "Retention",
+};
+
+function motionLabel(motion: CRMCommercialMotion | string) {
+  return (
+    motionLabels[motion as CRMCommercialMotion] ??
+    motion.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase())
+  );
+}
 
 const selectClassName =
   "h-8 min-w-[128px] border-border/70 bg-transparent text-xs shadow-none";
@@ -69,17 +86,24 @@ function entityLabel(story: CRMSignalAccountStory) {
 }
 
 function recommendedNextStep(story: CRMSignalAccountStory) {
-  const types = new Set(story.signals.map((signal) => signal.signal_type));
-  if (story.polarity === "negative" || types.has("risk_signal") || types.has("objection")) {
-    return "Review the latest concern, confirm an owner, and plan the next response.";
+  if (story.needs_judgment) {
+    return "Opposing evidence is close. Review both directions before choosing a next step.";
   }
-  if (types.has("timeline_signal") || types.has("budget_signal")) {
-    return "Confirm timing and decision criteria while the buying window is active.";
-  }
-  if (types.has("champion_signal")) {
-    return "Engage the champion and map the remaining decision makers.";
-  }
-  return "Review the evidence and choose a concrete follow-up while intent is fresh.";
+  return (
+    story.recommended_action_label ??
+    "Review the evidence and choose a concrete follow-up."
+  );
+}
+
+function storyEvidenceNoun(story: CRMSignalAccountStory) {
+  const usesSupportConversations =
+    story.signals.length > 0 &&
+    story.signals.every(
+      (signal) =>
+        signal.source_type === "support" &&
+        Boolean(signal.source_thread_id || signal.source_id),
+    );
+  return usesSupportConversations ? "conversation" : "source";
 }
 
 function StoryRow({
@@ -92,10 +116,13 @@ function StoryRow({
   story: CRMSignalAccountStory;
   ownerName?: string;
   onOpen?: () => void;
-  onOpenSignal?: (signal: CRMBuyerSignal) => void;
-  canOpenSignal?: (signal: CRMBuyerSignal) => boolean;
+  onOpenSignal?: (signal: CRMSignal) => void;
+  canOpenSignal?: (signal: CRMSignal) => boolean;
 }) {
-  const verifiedSources = story.signals.filter((signal) => signal.evidence_identity_trust === "verified").length;
+  const verifiedSources = story.signals.filter(
+    (signal) => signal.evidence_identity_trust === "verified",
+  ).length;
+  const evidenceNoun = storyEvidenceNoun(story);
   return (
     <article className="border-t border-border/55 first:border-t-0">
       <div className="grid gap-4 px-1 py-5 md:grid-cols-[minmax(0,1fr)_180px]">
@@ -118,20 +145,45 @@ function StoryRow({
             >
               {priorityLabel(story)}
             </Badge>
+            <Badge variant="outline" className="rounded-sm text-[10px]">
+              {motionLabel(story.commercial_motion)}
+            </Badge>
+            {story.other_active_motions?.map((motion) => (
+              <Badge
+                key={motion}
+                variant="outline"
+                className="rounded-sm text-[10px] text-muted-foreground"
+              >
+                Also {motionLabel(motion).toLowerCase()}
+              </Badge>
+            ))}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             {story.change_summary} · {impactLabel(story)}
             {ownerName ? ` · ${ownerName}` : ""}
           </p>
           <div className="mt-3 max-w-2xl">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Why now</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              Why now
+            </p>
             <p className="mt-1 text-[13px] leading-5 text-foreground/90">
-              {story.signals[0]?.summary || "New customer evidence needs review."}
+              {story.signals[0]?.summary ||
+                "New customer evidence needs review."}
             </p>
           </div>
           <div className="mt-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Recommended next step</p>
-            <p className="mt-1 text-xs leading-5 text-foreground/80">{recommendedNextStep(story)}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              Recommended next step
+            </p>
+            <p className="mt-1 text-xs leading-5 text-foreground/80">
+              {recommendedNextStep(story)}
+            </p>
+            {story.direction_changed_by_supersession ? (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Direction changed because older evidence was superseded, not
+                because new evidence arrived.
+              </p>
+            ) : null}
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {story.domains.map((domain) => (
@@ -146,8 +198,15 @@ function StoryRow({
         </div>
         <div className="flex items-start justify-between gap-5 md:block md:text-right">
           <div className="text-xs text-muted-foreground">
-            <p>{story.signals.length} evidence source{story.signals.length === 1 ? "" : "s"}</p>
-            <p className="mt-1">{verifiedSources} identity verified</p>
+            <p>
+              {story.evidence_source_count} {evidenceNoun}
+              {story.evidence_source_count === 1 ? "" : "s"}
+            </p>
+            <p className="mt-1">
+              {story.signals.length} signal
+              {story.signals.length === 1 ? "" : "s"} · {verifiedSources}{" "}
+              identity verified
+            </p>
           </div>
           {onOpen ? (
             <Button size="sm" className="mt-3 h-8 gap-1.5" onClick={onOpen}>
@@ -161,9 +220,13 @@ function StoryRow({
       <details className="group pb-4">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-1 py-1 text-xs font-medium text-foreground/75 hover:text-foreground">
           <Layers01Icon className="h-3.5 w-3.5" />
-          Inspect {story.signals.length} source
-          {story.signals.length === 1 ? "" : "s"}
-          <span className="text-muted-foreground">· evidence and scoring details</span>
+          Inspect {story.signals.length} signal
+          {story.signals.length === 1 ? "" : "s"} from{" "}
+          {story.evidence_source_count} {evidenceNoun}
+          {story.evidence_source_count === 1 ? "" : "s"}
+          <span className="text-muted-foreground">
+            · evidence and scoring details
+          </span>
         </summary>
         <div className="mt-2 divide-y divide-border/50 border-y border-border/50">
           {story.signals.map((signal) => (
@@ -195,7 +258,15 @@ function StoryRow({
                     "unknown identity"}{" "}
                   · {signal.evidence_identity_trust || "unknown"} trust
                 </p>
-                {onOpenSignal && canOpenSignal?.(signal) ? <button type="button" className="mt-1.5 text-[11px] font-medium text-orange-700 hover:text-orange-800 dark:text-orange-400" onClick={() => onOpenSignal(signal)}>Open exact source</button> : null}
+                {onOpenSignal && canOpenSignal?.(signal) ? (
+                  <button
+                    type="button"
+                    className="mt-1.5 text-[11px] font-medium text-orange-700 hover:text-orange-800 dark:text-orange-400"
+                    onClick={() => onOpenSignal(signal)}
+                  >
+                    Open exact source
+                  </button>
+                ) : null}
               </div>
               <dl className="grid grid-cols-2 gap-x-3 text-right text-[11px] md:block">
                 <div className="md:flex md:justify-between">
@@ -221,7 +292,9 @@ function StoryRow({
 
 export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
-  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? "");
+  const workspaceSlug = useWorkspaceStore(
+    (state) => state.currentWorkspace?.slug ?? "",
+  );
   const [filters, setFilters] = useState<CRMSignalFeedFilters>({
     status: "active",
     max_age_days: 90,
@@ -229,9 +302,13 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
     per_page: 20,
   });
   const [queryFilters, setQueryFilters] = useState<QueryFilterGroup>();
+  const [lanePages, setLanePages] = useState<
+    Partial<Record<CRMCommercialMotion, number>>
+  >({});
   const feed = useSignalWorkspaceFeed(workspaceId, {
     ...filters,
     filters: serializeQueryFilterGroup(queryFilters),
+    lane_pages: lanePages,
   });
   const companies = useCompanies(workspaceId, { per_page: 100 });
   const members = useWorkspaceMembers(workspaceId);
@@ -246,10 +323,17 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
     [members.data],
   );
   const queryFields = useMemo(
-    () => buildCRMSignalQueryFields(
-      (members.data ?? []).map((member) => ({ id: member.id, label: member.full_name || member.email || "Unnamed member" })),
-      (companies.data?.data ?? []).map((company) => ({ id: company.id, label: company.name })),
-    ),
+    () =>
+      buildCRMSignalQueryFields(
+        (members.data ?? []).map((member) => ({
+          id: member.id,
+          label: member.full_name || member.email || "Unnamed member",
+        })),
+        (companies.data?.data ?? []).map((company) => ({
+          id: company.id,
+          label: company.name,
+        })),
+      ),
     [companies.data?.data, members.data],
   );
   const setFilter = <K extends keyof CRMSignalFeedFilters>(
@@ -261,30 +345,74 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
       [key]: value === "all" ? undefined : value,
       page: 1,
     }));
+    setLanePages({});
   };
-  const stories = feed.data?.data ?? [];
-  const page = feed.data?.page ?? filters.page ?? 1;
-  const pageCount = Math.max(1, Math.ceil((feed.data?.total ?? 0) / (filters.per_page ?? 20)));
+  const lanes = feed.data?.lanes ?? [];
+  const stories = lanes.flatMap((lane) => lane.data);
 
   const openStory = (story: CRMSignalAccountStory) => {
     if (!workspaceSlug || !story.entity_id) return;
-    if (story.entity_type === "company") void navigate({ to: "/w/$slug/crm/companies/$companyId", params: { slug: workspaceSlug, companyId: story.entity_id } } as never);
-    if (story.entity_type === "contact") void navigate({ to: "/w/$slug/crm/contacts/$contactId", params: { slug: workspaceSlug, contactId: story.entity_id } } as never);
-    if (story.entity_type === "deal") void navigate({ to: "/w/$slug/crm/deals/$dealId", params: { slug: workspaceSlug, dealId: story.entity_id } } as never);
+    if (story.entity_type === "company")
+      void navigate({
+        to: "/w/$slug/crm/companies/$companyId",
+        params: { slug: workspaceSlug, companyId: story.entity_id },
+      } as never);
+    if (story.entity_type === "contact")
+      void navigate({
+        to: "/w/$slug/crm/contacts/$contactId",
+        params: { slug: workspaceSlug, contactId: story.entity_id },
+      } as never);
+    if (story.entity_type === "deal")
+      void navigate({
+        to: "/w/$slug/crm/deals/$dealId",
+        params: { slug: workspaceSlug, dealId: story.entity_id },
+      } as never);
   };
-  const canOpenSignal = (signal: CRMBuyerSignal) => {
-    if (signal.source_type === "email") return !!signal.source_thread_id && (!!signal.contact_id || !!signal.company_id);
+  const canOpenSignal = (signal: CRMSignal) => {
+    if (signal.source_type === "email")
+      return (
+        !!signal.source_thread_id &&
+        (!!signal.contact_id || !!signal.company_id)
+      );
     if (signal.source_type === "meeting") return !!signal.source_id;
     if (signal.source_type === "support") return !!signal.source_thread_id;
-    if (signal.source_type === "note" || signal.source_type === "call") return !!signal.contact_id || !!signal.company_id;
+    if (signal.source_type === "note" || signal.source_type === "call")
+      return !!signal.contact_id || !!signal.company_id;
     return false;
   };
-  const openSignal = (signal: CRMBuyerSignal) => {
+  const openSignal = (signal: CRMSignal) => {
     if (!workspaceSlug || !canOpenSignal(signal)) return;
-    if (signal.source_type === "meeting" && signal.source_id) void navigate({ to: "/w/$slug/crm/meetings/$meetingId", params: { slug: workspaceSlug, meetingId: signal.source_id } } as never);
-    else if (signal.source_type === "support" && signal.source_thread_id) void navigate({ to: "/w/$slug/support/$conversationId", params: { slug: workspaceSlug, conversationId: signal.source_thread_id } } as never);
-    else if (signal.contact_id) void navigate({ to: "/w/$slug/crm/contacts/$contactId", params: { slug: workspaceSlug, contactId: signal.contact_id }, search: signal.source_type === "email" ? { tab: "emails", thread: signal.source_thread_id } : { tab: signal.source_type === "note" ? "notes" : "calls" } } as never);
-    else if (signal.company_id) void navigate({ to: "/w/$slug/crm/companies/$companyId", params: { slug: workspaceSlug, companyId: signal.company_id }, search: signal.source_type === "email" ? { tab: "emails", thread: signal.source_thread_id } : { tab: signal.source_type === "note" ? "notes" : "calls" } } as never);
+    if (signal.source_type === "meeting" && signal.source_id)
+      void navigate({
+        to: "/w/$slug/crm/meetings/$meetingId",
+        params: { slug: workspaceSlug, meetingId: signal.source_id },
+      } as never);
+    else if (signal.source_type === "support" && signal.source_thread_id)
+      void navigate({
+        to: "/w/$slug/support/$conversationId",
+        params: {
+          slug: workspaceSlug,
+          conversationId: signal.source_thread_id,
+        },
+      } as never);
+    else if (signal.contact_id)
+      void navigate({
+        to: "/w/$slug/crm/contacts/$contactId",
+        params: { slug: workspaceSlug, contactId: signal.contact_id },
+        search:
+          signal.source_type === "email"
+            ? { tab: "emails", thread: signal.source_thread_id }
+            : { tab: signal.source_type === "note" ? "notes" : "calls" },
+      } as never);
+    else if (signal.company_id)
+      void navigate({
+        to: "/w/$slug/crm/companies/$companyId",
+        params: { slug: workspaceSlug, companyId: signal.company_id },
+        search:
+          signal.source_type === "email"
+            ? { tab: "emails", thread: signal.source_thread_id }
+            : { tab: signal.source_type === "note" ? "notes" : "calls" },
+      } as never);
   };
 
   return (
@@ -304,11 +432,24 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
             What changed, why it matters, and where to follow up.
           </p>
         </div>
-        {feed.data ? <p className="text-[11px] text-muted-foreground">{feed.data.total} ranked stor{feed.data.total === 1 ? "y" : "ies"}</p> : null}
+        {feed.data ? (
+          <p className="text-[11px] text-muted-foreground">
+            {feed.data.total} ranked stor{feed.data.total === 1 ? "y" : "ies"}
+          </p>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border/50 py-3">
-        <QueryBuilderPopover fields={queryFields} value={queryFilters} onApply={(value) => { setQueryFilters(value); setFilters((current) => ({ ...current, page: 1 })); }} triggerLabel="Filter signals" />
+        <QueryBuilderPopover
+          fields={queryFields}
+          value={queryFilters}
+          onApply={(value) => {
+            setQueryFilters(value);
+            setFilters((current) => ({ ...current, page: 1 }));
+            setLanePages({});
+          }}
+          triggerLabel="Filter signals"
+        />
         <Select
           value={filters.severity ?? "all"}
           onValueChange={(value) =>
@@ -330,7 +471,8 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
           onValueChange={(value) =>
             setFilters((current) => ({
               ...current,
-              status: value as "active" | "dismissed" | "all", page: 1,
+              status: value as "active" | "dismissed" | "superseded" | "all",
+              page: 1,
             }))
           }
         >
@@ -341,6 +483,27 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
             <SelectItem value="all">Any status</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="dismissed">Dismissed</SelectItem>
+            <SelectItem value="superseded">Superseded</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={filters.motion ?? "all"}
+          onValueChange={(value) =>
+            setFilter("motion", value as CRMCommercialMotion | "all")
+          }
+        >
+          <SelectTrigger className={selectClassName}>
+            <SelectValue placeholder="Motion" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any motion</SelectItem>
+            {(
+              Object.entries(motionLabels) as [CRMCommercialMotion, string][]
+            ).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select
@@ -360,12 +523,22 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
             <SelectItem value="180">Last 180 days</SelectItem>
           </SelectContent>
         </Select>
-        {Object.values(filters).some((value) => value !== undefined) || queryFilters ? (
+        {Object.values(filters).some((value) => value !== undefined) ||
+        queryFilters ? (
           <Button
             variant="ghost"
             size="sm"
             className="h-8 px-2 text-xs"
-            onClick={() => { setFilters({ status: "active", max_age_days: 90, page: 1, per_page: 20 }); setQueryFilters(undefined); }}
+            onClick={() => {
+              setFilters({
+                status: "active",
+                max_age_days: 90,
+                page: 1,
+                per_page: 20,
+              });
+              setQueryFilters(undefined);
+              setLanePages({});
+            }}
           >
             Clear
           </Button>
@@ -382,36 +555,84 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
         </div>
       ) : stories.length === 0 ? (
         <div className="py-12">
-          <p className="text-sm font-medium">No stories match these filters</p>
+          <p className="text-sm font-medium">
+            {feed.data?.rollout_mode === "shadow"
+              ? "Signal inbox is still in shadow evaluation"
+              : "No stories match these filters"}
+          </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Broaden the time window or include lower-trust context.
+            {feed.data?.rollout_mode === "shadow"
+              ? "Admins can inspect the separate shadow preview and take the workspace live after its quality gate passes."
+              : "Broaden the time window or include lower-trust context."}
           </p>
         </div>
       ) : (
-        <div>
-          {stories.map((story) => (
-            <StoryRow
-              key={story.id}
-              story={story}
-              ownerName={
-                story.owner_member_id
-                  ? ownerNames.get(story.owner_member_id)
-                  : undefined
-              }
-              onOpen={story.entity_type === "unresolved" ? undefined : () => openStory(story)}
-              onOpenSignal={story.signals.some(canOpenSignal) ? openSignal : undefined}
-              canOpenSignal={canOpenSignal}
-            />
-          ))}
-          {pageCount > 1 ? (
-            <div className="flex items-center justify-between border-t border-border/60 py-4 text-xs text-muted-foreground">
-              <span>Page {page} of {pageCount}</span>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="h-8" disabled={page <= 1 || feed.isFetching} onClick={() => setFilters((current) => ({ ...current, page: Math.max(1, page - 1) }))}>Previous</Button>
-                <Button variant="outline" size="sm" className="h-8" disabled={page >= pageCount || feed.isFetching} onClick={() => setFilters((current) => ({ ...current, page: Math.min(pageCount, page + 1) }))}>Next</Button>
-              </div>
-            </div>
-          ) : null}
+        <div className="space-y-7">
+          {lanes.map((lane) => {
+            const motion = lane.commercial_motion;
+            const pageCount = Math.max(1, Math.ceil(lane.total / lane.per_page));
+            return (
+              <section key={motion} aria-labelledby={`signal-motion-${motion}`}>
+                <div className="flex items-end justify-between gap-3 border-b border-border/60 pb-2">
+                  <div>
+                    <h3
+                      id={`signal-motion-${motion}`}
+                      className="text-sm font-semibold"
+                    >
+                      {motionLabel(motion)}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {lane.total} evidence-gated account
+                      {lane.total === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  {pageCount > 1 ? (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{lane.page} / {pageCount}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2"
+                        disabled={lane.page <= 1 || feed.isFetching}
+                        onClick={() => setLanePages((current) => ({ ...current, [motion]: lane.page - 1 }))}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2"
+                        disabled={lane.page >= pageCount || feed.isFetching}
+                        onClick={() => setLanePages((current) => ({ ...current, [motion]: lane.page + 1 }))}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+                {lane.data.map((story) => (
+                  <StoryRow
+                    key={story.id}
+                    story={story}
+                    ownerName={
+                      story.owner_member_id
+                        ? ownerNames.get(story.owner_member_id)
+                        : undefined
+                    }
+                    onOpen={
+                      story.entity_type === "unresolved"
+                        ? undefined
+                        : () => openStory(story)
+                    }
+                    onOpenSignal={
+                      story.signals.some(canOpenSignal) ? openSignal : undefined
+                    }
+                    canOpenSignal={canOpenSignal}
+                  />
+                ))}
+              </section>
+            );
+          })}
         </div>
       )}
     </section>

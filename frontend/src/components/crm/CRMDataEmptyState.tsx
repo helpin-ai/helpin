@@ -100,7 +100,7 @@ const EMPTY_COPY: Record<CRMDataEmptyKind, {
   companies: {
     icon: Building03Icon,
     title: 'No companies yet',
-    description: 'Company records group people into accounts so deals, support conversations, and buyer signals land against the right organization.',
+    description: 'Company records group people into accounts so deals, support conversations, and CRM signals land against the right organization.',
     createLabel: 'Create company',
     importLabel: 'Import companies',
     points: [

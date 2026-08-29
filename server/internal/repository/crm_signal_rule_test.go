@@ -21,7 +21,7 @@ func setupSignalRuleRepositoryTest(t *testing.T) (*gorm.DB, *CRMSignalRepository
 	statements := []string{
 		`CREATE TABLE crm_signal_rule_configs (id TEXT PRIMARY KEY, workspace_id TEXT, rule_key TEXT, version INTEGER, cadence TEXT, enabled BOOLEAN, shadow_mode BOOLEAN, activation_eligible BOOLEAN, thresholds BLOB, business_weight REAL, half_life_days REAL, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE crm_signal_evaluator_watermarks (cadence TEXT PRIMARY KEY, watermark DATETIME, lease_owner TEXT, lease_until DATETIME, last_started_at DATETIME, updated_at DATETIME)`,
-		`CREATE TABLE crm_buyer_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME)`,
+		`CREATE TABLE crm_signals (id TEXT PRIMARY KEY, workspace_id TEXT, contact_id TEXT, deal_id TEXT, company_id TEXT, signal_type TEXT, source_type TEXT, source_id TEXT, source_thread_id TEXT, summary TEXT, evidence_excerpt TEXT, metadata BLOB, confidence REAL, detected_at DATETIME, detector_kind TEXT, signal_domain TEXT, polarity TEXT, rule_key TEXT, rule_version INTEGER, window_started_at DATETIME, window_ended_at DATETIME, evidence_identity_method TEXT, evidence_identity_trust TEXT, evidence_fingerprint TEXT, dismissed_at DATETIME, dismissed_by_member_id TEXT, dismissal_reason TEXT, reviewed_at DATETIME, acted_at DATETIME, created_at DATETIME)`,
 		`CREATE TABLE crm_identity_links (id TEXT PRIMARY KEY, workspace_id TEXT, anonymous_id TEXT, external_user_id TEXT, contact_id TEXT, company_id TEXT, identity_method TEXT, identity_trust TEXT, verified_at DATETIME, verifier_version TEXT, created_at DATETIME)`,
 		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT)`,
 		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT, external_id TEXT)`,
@@ -65,17 +65,32 @@ func TestRequestedFeatureShippedRuleOnlyUsesFeatureTasks(t *testing.T) {
 
 func TestAdditionalCaptureRuleDimensions(t *testing.T) {
 	tests := []struct {
-		rule, wantSummary string
+		rule, wantSummary, wantPolarity string
 	}{
-		{model.CRMSignalRuleConfiguredForm, "Configured high-intent form submitted"},
-		{model.CRMSignalRuleIdentifiedArticleView, "Identified contact viewed a relevant article"},
-		{model.CRMSignalRuleVersionedInteraction, "Versioned high-intent interaction observed"},
+		{model.CRMSignalRuleConfiguredForm, "Configured high-intent form submitted", model.CRMSignalPolarityPositive},
+		{model.CRMSignalRuleIdentifiedArticleView, "Identified contact viewed a relevant article", model.CRMSignalPolarityNeutral},
+		{model.CRMSignalRuleVersionedInteraction, "Versioned high-intent interaction observed", model.CRMSignalPolarityNeutral},
+		{model.CRMSignalRuleSessionDepthSpike, "Deep browsing session", model.CRMSignalPolarityNeutral},
 	}
 	for _, test := range tests {
-		_, domain, _, source, summary := behavioralRuleDimensions(test.rule)
-		if domain != model.CRMSignalDomainWebBehavior || source != model.CRMSignalSourceWeb || summary != test.wantSummary {
-			t.Fatalf("rule %s dimensions = domain %s source %s summary %q", test.rule, domain, source, summary)
+		_, domain, polarity, source, summary := behavioralRuleDimensions(test.rule)
+		if domain != model.CRMSignalDomainWebBehavior || source != model.CRMSignalSourceWeb || summary != test.wantSummary || polarity != test.wantPolarity {
+			t.Fatalf("rule %s dimensions = domain %s polarity %s source %s summary %q", test.rule, domain, polarity, source, summary)
 		}
+	}
+}
+
+func TestDeepSessionPresentationKeepsLegacyEvidenceFingerprint(t *testing.T) {
+	observed := time.Date(2026, 8, 27, 10, 30, 0, 0, time.UTC)
+	legacy := model.CRMSignalRuleCandidate{
+		WorkspaceID: "workspace-1", RuleKey: model.CRMSignalRuleSessionDepthSpike,
+		Summary: "Session depth spiked", EvidenceExcerpt: "6 pageviews in one session",
+		ObservedAt: observed, AnonymousID: "anonymous-1",
+	}
+	corrected := legacy
+	corrected.Summary = "Deep browsing session"
+	if fingerprintRuleCandidate(legacy) != fingerprintRuleCandidate(corrected) {
+		t.Fatal("presentation correction must not change the durable evidence fingerprint")
 	}
 }
 
@@ -96,6 +111,18 @@ func TestEvaluateSupportEscalationRule(t *testing.T) {
 	}
 	if candidates[0].EvidenceIdentityMethod != model.IdentityMethodVerifiedSupport || candidates[0].EvidenceIdentityTrust != model.IdentityTrustVerified {
 		t.Fatalf("candidate provenance=%#v", candidates[0])
+	}
+	if candidates[0].SignalType != model.CRMSignalRiskSignal || candidates[0].Polarity != model.CRMSignalPolarityNegative {
+		t.Fatalf("v1 dimensions=%#v", candidates[0])
+	}
+
+	config.Version = 2
+	candidates, err = repo.EvaluatePostgresSignalRule(context.Background(), config, start, end)
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("v2 candidates=%#v err=%v", candidates, err)
+	}
+	if candidates[0].SignalType != model.CRMSignalTimelineSignal || candidates[0].Polarity != model.CRMSignalPolarityNeutral {
+		t.Fatalf("v2 dimensions=%#v", candidates[0])
 	}
 }
 
@@ -129,7 +156,7 @@ func TestSignalRuleConfigLeaseAndIdempotency(t *testing.T) {
 	start, end := now.Add(-24*time.Hour), now
 	rule, version := model.CRMSignalRuleDealGoneDark, 2
 	dealID := "deal-1"
-	signal := &model.CRMBuyerSignal{
+	signal := &model.CRMSignal{
 		WorkspaceID: "workspace-1", DealID: &dealID, SignalType: model.CRMSignalRiskSignal,
 		SourceType: model.CRMSignalSourceCRM, Summary: "Deal went dark", Confidence: 1, DetectedAt: start,
 		DetectorKind: model.CRMSignalDetectorRuleDerived, RuleKey: &rule, RuleVersion: &version,
@@ -143,6 +170,48 @@ func TestSignalRuleConfigLeaseAndIdempotency(t *testing.T) {
 	created, err = repo.CreateRuleSignalIfAbsent(ctx, signal)
 	if err != nil || created {
 		t.Fatalf("duplicate rule signal created=%v err=%v", created, err)
+	}
+	signal.ID = ""
+	laterStart, laterEnd := start.Add(time.Hour), end.Add(time.Hour)
+	signal.WindowStartedAt, signal.WindowEndedAt = &laterStart, &laterEnd
+	created, err = repo.CreateRuleSignalIfAbsent(ctx, signal)
+	if err != nil || created {
+		t.Fatalf("overlap-window duplicate created=%v err=%v", created, err)
+	}
+	signal.ID = ""
+	signal.EvidenceFingerprint = "fingerprint-2"
+	created, err = repo.CreateRuleSignalIfAbsent(ctx, signal)
+	if err != nil || !created {
+		t.Fatalf("changed evidence created=%v err=%v", created, err)
+	}
+}
+
+func TestWorkspaceScopedWatermarksAdvanceIndependently(t *testing.T) {
+	_, repo := setupSignalRuleRepositoryTest(t)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	initial := now.Add(-366 * 24 * time.Hour)
+	firstKey := "commercial_state_sync:workspace-1"
+	secondKey := "commercial_state_sync:workspace-2"
+	for _, key := range []string{firstKey, secondKey} {
+		if _, acquired, err := repo.TryAcquireSignalEvaluatorLease(ctx, key, "pod-a", now, time.Minute, initial); err != nil || !acquired {
+			t.Fatalf("acquire %s: acquired=%v err=%v", key, acquired, err)
+		}
+	}
+	if err := repo.ReleaseSignalEvaluatorLease(ctx, firstKey, "pod-a", now); err != nil {
+		t.Fatalf("release healthy workspace: %v", err)
+	}
+	if err := repo.AbandonSignalEvaluatorLease(ctx, secondKey, "pod-a"); err != nil {
+		t.Fatalf("abandon failed workspace: %v", err)
+	}
+	later := now.Add(10 * time.Minute)
+	firstWatermark, acquired, err := repo.TryAcquireSignalEvaluatorLease(ctx, firstKey, "pod-b", later, time.Minute, initial)
+	if err != nil || !acquired || !firstWatermark.Equal(now) {
+		t.Fatalf("healthy workspace watermark=%v acquired=%v err=%v", firstWatermark, acquired, err)
+	}
+	secondWatermark, acquired, err := repo.TryAcquireSignalEvaluatorLease(ctx, secondKey, "pod-b", later, time.Minute, initial)
+	if err != nil || !acquired || !secondWatermark.Equal(initial) {
+		t.Fatalf("failed workspace watermark=%v acquired=%v err=%v", secondWatermark, acquired, err)
 	}
 }
 

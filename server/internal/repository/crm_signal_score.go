@@ -63,11 +63,12 @@ func (r *CRMSignalRepository) ListLatestRuleConfigs(ctx context.Context, workspa
 // ListWorkspaceSignalCandidates returns signals for composition. A zero limit
 // requests the complete workspace set; score and severity filters are applied
 // after scoring by the service.
-func (r *CRMSignalRepository) ListWorkspaceSignalCandidates(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, now time.Time, limit int) ([]model.CRMBuyerSignal, error) {
+func (r *CRMSignalRepository) ListWorkspaceSignalCandidates(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters, now time.Time, limit int) ([]model.CRMSignal, error) {
 	if limit < 0 || limit > 5000 {
 		limit = 500
 	}
-	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).Where("crm_buyer_signals.workspace_id = ?", workspaceID)
+	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).Where("crm_signals.workspace_id = ?", workspaceID)
+	hasSupersession := r.db.Migrator().HasColumn(&model.CRMSignal{}, "superseded_at")
 	if filters.Query != nil {
 		var err error
 		query, err = querybuilder.ApplyGORM(query, filters.Query, crmSignalFilterDefinitions)
@@ -77,8 +78,13 @@ func (r *CRMSignalRepository) ListWorkspaceSignalCandidates(ctx context.Context,
 	}
 	if filters.Status != nil && *filters.Status == "dismissed" {
 		query = query.Where("dismissed_at IS NOT NULL")
+	} else if hasSupersession && filters.Status != nil && *filters.Status == "superseded" {
+		query = query.Where("superseded_at IS NOT NULL")
 	} else if filters.Status == nil || *filters.Status == "active" {
 		query = query.Where("dismissed_at IS NULL")
+		if hasSupersession {
+			query = query.Where("superseded_at IS NULL")
+		}
 	}
 	if filters.CompanyID != nil && *filters.CompanyID != "" {
 		query = query.Where("company_id = ?", *filters.CompanyID)
@@ -101,22 +107,19 @@ func (r *CRMSignalRepository) ListWorkspaceSignalCandidates(ctx context.Context,
 	if filters.Polarity != nil && *filters.Polarity != "" {
 		query = query.Where("polarity = ?", *filters.Polarity)
 	}
+	if r.db.Migrator().HasColumn(&model.CRMSignal{}, "commercial_motion") && filters.CommercialMotion != nil && *filters.CommercialMotion != "" {
+		query = query.Where("commercial_motion = ?", *filters.CommercialMotion)
+	}
 	if filters.EvidenceIdentityTrust != nil && *filters.EvidenceIdentityTrust != "" {
 		query = query.Where("evidence_identity_trust = ?", *filters.EvidenceIdentityTrust)
 	}
 	if filters.MaxAgeDays != nil && *filters.MaxAgeDays > 0 {
 		query = query.Where("detected_at >= ?", now.Add(-time.Duration(*filters.MaxAgeDays)*24*time.Hour))
 	}
-	if filters.OwnerMemberID != nil && strings.TrimSpace(*filters.OwnerMemberID) != "" {
-		ownerID := strings.TrimSpace(*filters.OwnerMemberID)
-		query = query.Where(`(
-			EXISTS (SELECT 1 FROM crm_deals d WHERE d.workspace_id = crm_buyer_signals.workspace_id AND d.id = crm_buyer_signals.deal_id AND d.owner_member_id = ?)
-			OR EXISTS (SELECT 1 FROM crm_companies c WHERE c.workspace_id = crm_buyer_signals.workspace_id AND c.id = crm_buyer_signals.company_id AND c.owner_member_id = ?)
-		)`, ownerID, ownerID)
-	}
-	var signals []model.CRMBuyerSignal
+	var signals []model.CRMSignal
 	query = query.Order("detected_at DESC, id DESC")
-	if limit > 0 {
+	ownerFiltered := filters.OwnerMemberID != nil && strings.TrimSpace(*filters.OwnerMemberID) != ""
+	if limit > 0 && !ownerFiltered {
 		query = query.Limit(limit)
 	}
 	if err := query.Find(&signals).Error; err != nil {
@@ -124,6 +127,12 @@ func (r *CRMSignalRepository) ListWorkspaceSignalCandidates(ctx context.Context,
 	}
 	if err := r.hydrateSignalContext(ctx, workspaceID, signals); err != nil {
 		return nil, err
+	}
+	if ownerFiltered {
+		signals = filterSignalsByResolvedOwner(signals, strings.TrimSpace(*filters.OwnerMemberID))
+		if limit > 0 && len(signals) > limit {
+			signals = signals[:limit]
+		}
 	}
 	return signals, nil
 }

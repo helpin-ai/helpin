@@ -38,7 +38,7 @@ func (f *fakeSummaryRequester) RequestDealRefresh(ctx context.Context, workspace
 	return nil
 }
 
-func TestCRMEmailService_CreateMessageEnqueuesBuyerSignalDetection(t *testing.T) {
+func TestCRMEmailService_CreateMessageEnqueuesSignalDetection(t *testing.T) {
 	db := setupCRMEmailLifecycleTestDB(t)
 	emailRepo := repository.NewCRMEmailRepository(db)
 	contactRepo := repository.NewCRMContactRepository(db)
@@ -98,7 +98,7 @@ func TestCRMEmailService_CreateMessageEnqueuesBuyerSignalDetection(t *testing.T)
 	}
 }
 
-func TestCRMEmailService_SendEmailEnqueuesBuyerSignalDetection(t *testing.T) {
+func TestCRMEmailService_SendEmailEnqueuesSignalDetection(t *testing.T) {
 	db := setupCRMEmailLifecycleTestDB(t)
 	emailRepo := repository.NewCRMEmailRepository(db)
 	contactRepo := repository.NewCRMContactRepository(db)

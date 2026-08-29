@@ -137,7 +137,7 @@ function DealsEmptyState({
           </div>
           <h2 className="mt-4 text-lg font-semibold">{hasPipeline ? 'No deals in this pipeline yet' : 'Set up your sales pipeline'}</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-            Deals give sales work a home: stage, owner, amount, close date, linked contacts, buyer signals, and AI review suggestions.
+            Deals give sales work a home: stage, owner, amount, close date, linked contacts, CRM signals, and AI review suggestions.
             The preview shows how the board starts to look once opportunities are flowing.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
@@ -178,7 +178,7 @@ function DealsEmptyState({
             </div>
             <p className="text-sm font-medium">Attach intelligence</p>
           </div>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">Buyer signals and health scores become more useful when they can attach to real deals.</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">CRM signals and health scores become more useful when they can attach to real deals.</p>
         </div>
         <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center gap-2">
