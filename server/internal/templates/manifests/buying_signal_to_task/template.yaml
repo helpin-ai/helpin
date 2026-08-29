@@ -20,13 +20,13 @@ agent:
       - destination_state_id: {{destination_state_id}}
       - max_tasks: {{max_tasks}}
 
-      Treat these values as resolved configuration. Call list_buyer_signals with activation_only=true. The server returns only signals whose immutable rule version is activation-enabled and that pass identity trust, business-priority, delivery dedupe, and existing-open-task gates. Never create work from a signal returned without activation_eligible=true. Buyer signals can mean different things: budget, objections, an internal champion, timeline, deal risk, competitor pressure, or direct buying intent. Do not treat every signal as the same generic "ready to buy" event.
+      Treat these values as resolved configuration. Call list_crm_signals with activation_only=true. The server returns only signals whose immutable rule version is activation-enabled and that pass identity trust, business-priority, delivery dedupe, and existing-open-task gates. Never create work from a signal returned without activation_eligible=true. Buyer signals can mean different things: budget, objections, an internal champion, timeline, deal risk, competitor pressure, or direct buying intent. Do not treat every signal as the same generic "ready to buy" event.
 
       Create one clear follow-up task per account/contact situation, not one task per raw signal when several signals point to the same next action. Include signal evidence, contact/account context, recommended next step, owner/team context when inferable, and urgency. Use external_id crm-signal:<evidence_fingerprint> when the value is available so retries remain idempotent. Re-check list_tasks before every creation; if a matching open task exists, add a comment only when the new signal materially changes the situation. Stop after max_tasks meaningful tasks; do not fill the quota with weak signals.
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [list_buyer_signals, list_tasks, create_task, add_task_comment, list_workspace_teams, list_team_workflows_with_stages]
+    allowed_tools: [list_crm_signals, list_tasks, create_task, add_task_comment, list_workspace_teams, list_team_workflows_with_stages]
     allowed_targets: [workspace, task]
     approval_mode: always
 trigger:

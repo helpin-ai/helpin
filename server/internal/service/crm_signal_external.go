@@ -88,7 +88,7 @@ func (s *CRMSignalService) IngestExternalEvidence(ctx context.Context, req model
 	fingerprint := sha256.Sum256([]byte(strings.Join([]string{req.Provider, req.ProviderEvidenceID, req.RuleKey, fmt.Sprint(req.RuleVersion)}, "\x00")))
 	ruleKey, ruleVersion := req.RuleKey, req.RuleVersion
 	windowStart, windowEnd := req.ObservedAt.UTC(), req.ObservedAt.UTC().Add(time.Nanosecond)
-	signal := &model.CRMBuyerSignal{
+	signal := &model.CRMSignal{
 		WorkspaceID: req.WorkspaceID, ContactID: req.ContactID, DealID: req.DealID, CompanyID: req.CompanyID,
 		SignalType: req.SignalType, SourceType: model.CRMSignalSourceExternal,
 		Summary: req.Summary, EvidenceExcerpt: req.EvidenceExcerpt,

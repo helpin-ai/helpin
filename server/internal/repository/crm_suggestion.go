@@ -42,12 +42,12 @@ func (r *CRMSuggestionRepository) hydrateSignals(ctx context.Context, suggestion
 	if len(ids) == 0 {
 		return nil
 	}
-	var signals []model.CRMBuyerSignal
+	var signals []model.CRMSignal
 	workspaceID := suggestions[0].WorkspaceID
 	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id IN ?", workspaceID, ids).Find(&signals).Error; err != nil {
 		return fmt.Errorf("load suggestion signals: %w", err)
 	}
-	byID := make(map[string]model.CRMBuyerSignal, len(signals))
+	byID := make(map[string]model.CRMSignal, len(signals))
 	for _, signal := range signals {
 		byID[signal.ID] = signal
 	}
@@ -66,7 +66,7 @@ func (r *CRMSuggestionRepository) ValidateSignalIDs(ctx context.Context, workspa
 		return nil
 	}
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+	if err := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND id IN ?", workspaceID, ids).Count(&count).Error; err != nil {
 		return fmt.Errorf("validate suggestion signals: %w", err)
 	}

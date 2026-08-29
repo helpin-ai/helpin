@@ -43,7 +43,7 @@ type CRMSignalAccountStory struct {
 	ChangeSummary                  string           `json:"change_summary"`
 	ScoreVersion                   int              `json:"score_version"`
 	ScoreFactors                   JSONB            `json:"score_factors"`
-	Signals                        []CRMBuyerSignal `json:"signals"`
+	Signals                        []CRMSignal `json:"signals"`
 }
 
 // CRMSignalWorkspaceFeed is the ranked, explainable workspace read model.

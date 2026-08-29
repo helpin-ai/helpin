@@ -158,7 +158,7 @@ func (a *EmailSyncActivities) enqueueCalendarSignalDetection(ctx context.Context
 		return
 	}
 	if err := a.calendarSignalStarter.StartSignalDetection(ctx, crmsignal.CalendarWorkflowKey(*payload), []model.SignalSourcePayload{*payload}); err != nil {
-		slog.WarnContext(ctx, "synced calendar buyer signal enqueue failed", "error", err, "calendar_event_id", event.ID)
+		slog.WarnContext(ctx, "synced calendar CRM signal enqueue failed", "error", err, "calendar_event_id", event.ID)
 	}
 }
 
@@ -167,7 +167,7 @@ func (a *EmailSyncActivities) reconcileDeletedCalendarSignals(ctx context.Contex
 		return
 	}
 	if err := a.calendarSignalRepo.ReconcileAutomatedSignalsForSource(ctx, event.WorkspaceID, model.CRMSignalSourceMeeting, event.ID, nil); err != nil {
-		slog.WarnContext(ctx, "deleted synced calendar event retained buyer signals", "error", err, "calendar_event_id", event.ID)
+		slog.WarnContext(ctx, "deleted synced calendar event retained CRM signals", "error", err, "calendar_event_id", event.ID)
 	}
 }
 

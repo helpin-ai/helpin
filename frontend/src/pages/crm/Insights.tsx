@@ -18,7 +18,7 @@ import {
 } from '@/lib/icons';
 import {
   useAcceptSuggestion,
-  useBuyerSignals,
+  useCRMSignals,
   useDismissSuggestion,
   useHealthScores,
   usePendingSuggestions,
@@ -117,7 +117,7 @@ function IntelligenceReadinessState({
           </div>
           <h2 className="mt-4 text-lg font-semibold">No CRM intelligence yet</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Insights appear after Helpin has CRM activity to analyze. Connect email or add CRM records, then buyer signals,
+            Insights appear after Helpin has CRM activity to analyze. Connect email or add CRM records, then CRM signals,
             review suggestions, and deal health scores will show here when there is enough evidence.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
@@ -138,7 +138,7 @@ function IntelligenceReadinessState({
 
         <div className="space-y-3">
           <div className="rounded-lg border bg-muted/20 p-4">
-            <p className="text-sm font-medium">What creates buyer signals</p>
+            <p className="text-sm font-medium">What creates CRM signals</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               Email threads, meetings, support conversations, notes, and CRM activity can produce signals such as intent,
               budget, objections, risk, and timeline pressure.
@@ -234,7 +234,7 @@ function ReviewQueue({
             description={
               hasSignals
                 ? 'The signal feed has activity, but nothing currently crosses the review threshold for manual approval.'
-                : 'Suggested actions will appear after buyer signals point to a deal, follow-up, enrichment, or risk worth reviewing.'
+                : 'Suggested actions will appear after CRM signals point to a deal, follow-up, enrichment, or risk worth reviewing.'
             }
           />
         ) : (
@@ -285,7 +285,7 @@ export function InsightsPage() {
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const wsSlug = currentWorkspace?.slug ?? '';
-  const { data: signalsData, isLoading: signalsLoading } = useBuyerSignals(wsId, {});
+  const { data: signalsData, isLoading: signalsLoading } = useCRMSignals(wsId, {});
   const { data: healthData, isLoading: healthLoading } = useHealthScores(wsId);
   const { data: suggestionsData, isLoading: suggestionsLoading } = usePendingSuggestions(wsId);
   const acceptSuggestion = useAcceptSuggestion(wsId);
@@ -386,7 +386,7 @@ export function InsightsPage() {
           <>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <StatTile
-                label="Buyer signals"
+                label="CRM signals"
                 value={signalsLoading ? '-' : signalsData?.total ?? 0}
                 detail={`${signalStats.highPriority} high priority in recent results`}
                 icon={Activity01Icon}
@@ -447,7 +447,7 @@ export function InsightsPage() {
                         title={signals.length > 0 ? 'Health scores need deal activity' : 'No deal health scores yet'}
                         description={
                           signals.length > 0
-                            ? 'Buyer signals are flowing, but deal health needs linked deals, activity history, and progression signals.'
+                            ? 'CRM signals are flowing, but deal health needs linked deals, activity history, and progression signals.'
                             : 'Scores will appear after deals have enough activity, signals, and progression history.'
                         }
                       />

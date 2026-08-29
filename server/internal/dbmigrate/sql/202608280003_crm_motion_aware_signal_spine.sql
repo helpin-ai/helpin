@@ -248,12 +248,19 @@ CREATE TABLE IF NOT EXISTS crm_signal_routing_settings (
 CREATE TABLE IF NOT EXISTS crm_signal_rollout_settings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id uuid NOT NULL UNIQUE,
-    mode text NOT NULL DEFAULT 'shadow' CHECK (mode IN ('shadow', 'live')),
+    mode text NOT NULL DEFAULT 'live' CHECK (mode IN ('shadow', 'live')),
     activated_at timestamptz,
     activated_by_member_id uuid,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- The legacy signal corpus was deleted above and the legacy feed was not in
+-- production use, so there is no baseline to shadow against. Every workspace
+-- starts live; shadow remains available as a per-workspace opt-out.
+INSERT INTO crm_signal_rollout_settings (workspace_id, mode, activated_at)
+SELECT id, 'live', now() FROM workspaces
+ON CONFLICT (workspace_id) DO NOTHING;
 
 ALTER TABLE crm_buyer_signals ADD COLUMN IF NOT EXISTS observation_id uuid;
 ALTER TABLE crm_buyer_signals

@@ -30,19 +30,19 @@ func TestDealAutomationRequiresCompletedSignalActivation(t *testing.T) {
 	repo := repository.NewCRMSignalRepository(db)
 	svc := &DealAutomationService{signalRepo: repo}
 	ruleKey, version := model.CRMSignalRuleKnownContactReturned, 3
-	signal := model.CRMBuyerSignal{ID: "signal-1", WorkspaceID: "ws-1", RuleKey: &ruleKey, RuleVersion: &version, EvidenceIdentityTrust: model.IdentityTrustVerified}
+	signal := model.CRMSignal{ID: "signal-1", WorkspaceID: "ws-1", RuleKey: &ruleKey, RuleVersion: &version, EvidenceIdentityTrust: model.IdentityTrustVerified}
 
-	if svc.allSignalsActivationEligible(context.Background(), "ws-1", []model.CRMBuyerSignal{signal}) {
+	if svc.allSignalsActivationEligible(context.Background(), "ws-1", []model.CRMSignal{signal}) {
 		t.Fatal("live rule without a completed routing delivery must not execute directly")
 	}
 	if err := db.Exec(`INSERT INTO crm_signal_deliveries (id, workspace_id, signal_id, policy_id, policy_version, channel, status) VALUES ('delivery-1', 'ws-1', 'signal-1', 'policy-1', 1, 'feed', 'routed')`).Error; err != nil {
 		t.Fatalf("seed delivery: %v", err)
 	}
-	if !svc.allSignalsActivationEligible(context.Background(), "ws-1", []model.CRMBuyerSignal{signal}) {
+	if !svc.allSignalsActivationEligible(context.Background(), "ws-1", []model.CRMSignal{signal}) {
 		t.Fatal("verified exact rule version with active-policy delivery should be eligible")
 	}
 	signal.EvidenceIdentityTrust = model.IdentityTrustProbabilistic
-	if svc.allSignalsActivationEligible(context.Background(), "ws-1", []model.CRMBuyerSignal{signal}) {
+	if svc.allSignalsActivationEligible(context.Background(), "ws-1", []model.CRMSignal{signal}) {
 		t.Fatal("lower-trust evidence must not execute directly")
 	}
 }

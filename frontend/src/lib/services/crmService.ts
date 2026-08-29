@@ -41,7 +41,7 @@ import type {
   UpdateCRMCalendarEventRequest,
   CRMEnrichmentResult,
   CreateCRMEnrichmentRequest,
-  CRMBuyerSignal,
+  CRMSignal,
   CRMSignalExternalEvidence,
   CRMSignalWorkspaceFeed,
   CRMSignalPrecisionRow,
@@ -52,7 +52,7 @@ import type {
 	CRMSignalOutcomeCalibrationRow,
   CRMSignalRuleConfig,
   CRMSignalFeedFilters,
-  CreateCRMBuyerSignalRequest,
+  CreateCRMSignalRequest,
   IngestCRMSignalExternalEvidenceRequest,
   CRMEntitySummary,
   CRMIntelligenceRefreshResult,
@@ -331,8 +331,8 @@ export const crmSignalService = {
       source_type?: string;
       page?: number;
     },
-  ) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/signals${qs(workspaceId)}${filterQuery(filters ?? {})}`),
-  create: (payload: CreateCRMBuyerSignalRequest) => api.post<CRMBuyerSignal>(`/crm/signals${qs(payload.workspace_id)}`, payload),
+  ) => api.get<CRMPaginatedResponse<CRMSignal[]>>(`/crm/signals${qs(workspaceId)}${filterQuery(filters ?? {})}`),
+  create: (payload: CreateCRMSignalRequest) => api.post<CRMSignal>(`/crm/signals${qs(payload.workspace_id)}`, payload),
   ingestExternalEvidence: (payload: IngestCRMSignalExternalEvidenceRequest) => api.post<CRMSignalExternalEvidence>(`/crm/signals/external-evidence${qs(payload.workspace_id)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/signals/${id}${qs(workspaceId)}`),
   dismiss: (workspaceId: string, id: string, reason: import('../crmTypes').CRMSignalDismissalReason) => api.post(`/crm/signals/${id}/dismiss${qs(workspaceId)}`, { reason }),
@@ -351,9 +351,9 @@ export const crmSignalService = {
   activateRoutingPolicy: (workspaceId: string, version: number) => api.post(`/crm/signals/routing-policy/versions/${version}/activate${qs(workspaceId)}`, {}),
   activateRule: (workspaceId: string, ruleKey: string, version: number) => api.post(`/crm/signals/rules/${encodeURIComponent(ruleKey)}/versions/${version}/activate${qs(workspaceId)}`, {}),
   listByContact: (workspaceId: string, contactId: string, page?: number) =>
-    api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
-  listByDeal: (workspaceId: string, dealId: string, page?: number) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
-  listByCompany: (workspaceId: string, companyId: string, page?: number) => api.get<CRMPaginatedResponse<CRMBuyerSignal[]>>(`/crm/companies/${companyId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+    api.get<CRMPaginatedResponse<CRMSignal[]>>(`/crm/contacts/${contactId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listByDeal: (workspaceId: string, dealId: string, page?: number) => api.get<CRMPaginatedResponse<CRMSignal[]>>(`/crm/deals/${dealId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
+  listByCompany: (workspaceId: string, companyId: string, page?: number) => api.get<CRMPaginatedResponse<CRMSignal[]>>(`/crm/companies/${companyId}/signals${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
 };
 
 export const crmSummaryService = {

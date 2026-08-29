@@ -422,7 +422,7 @@ func (r *CRMSignalRepository) championQuietCandidates(ctx context.Context, confi
 			COALESCE((SELECT MAX(m.sent_at) FROM crm_email_messages m
 				JOIN crm_email_message_contacts mc ON mc.message_id=m.id AND mc.workspace_id=m.workspace_id
 				WHERE m.workspace_id=s.workspace_id AND mc.contact_id=s.contact_id AND m.direction='inbound'), s.detected_at) AS observed_at
-		FROM crm_buyer_signals s
+		FROM crm_signals s
 		JOIN crm_deals d ON d.id=s.deal_id AND d.workspace_id=s.workspace_id
 		JOIN crm_pipeline_stages ps ON ps.id=d.stage_id AND ps.stage_type='open'
 		WHERE s.signal_type='champion_signal' AND s.contact_id IS NOT NULL AND s.detected_at >= ?
@@ -450,7 +450,7 @@ func (r *CRMSignalRepository) timelineLapsedCandidates(ctx context.Context, conf
 			SELECT s.*, CASE WHEN COALESCE(NULLIF(s.metadata->>'timeline_date',''), NULLIF(s.metadata->>'date',''))
 				~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN COALESCE(NULLIF(s.metadata->>'timeline_date',''),
 				NULLIF(s.metadata->>'date',''))::timestamptz END AS promised_at
-			FROM crm_buyer_signals s WHERE s.signal_type='timeline_signal'
+			FROM crm_signals s WHERE s.signal_type='timeline_signal'
 		)
 		SELECT s.workspace_id, s.contact_id, s.deal_id, s.id AS source_id, s.summary AS subject,
 			s.promised_at AS observed_at

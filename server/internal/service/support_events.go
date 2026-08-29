@@ -61,7 +61,7 @@ func NewSupportEventService(
 	}
 }
 
-// SetSignalDetection enables buyer-signal detection for customer messages.
+// SetSignalDetection enables CRM-signal detection for customer messages.
 func (s *SupportEventService) SetSignalDetection(
 	messageRepo *repository.SupportMessageRepository,
 	conversationRepo *repository.SupportConversationRepository,
@@ -101,7 +101,7 @@ func (s *SupportEventService) RecordEvent(ctx context.Context, input SupportEven
 	}
 	if event.EventType == model.SupportEventCustomerMessageCreated {
 		if err := s.enqueueSupportSignalDetection(ctx, event); err != nil {
-			s.logger.WarnContext(ctx, "support buyer signal enqueue failed", "error", err, "message_id", stringPointerValue(event.MessageID))
+			s.logger.WarnContext(ctx, "support CRM signal enqueue failed", "error", err, "message_id", stringPointerValue(event.MessageID))
 		}
 	}
 

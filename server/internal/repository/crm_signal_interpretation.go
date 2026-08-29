@@ -23,12 +23,12 @@ const crmSignalInterpretationVersion = 1
 // Test databases that still model the legacy schema keep the legacy single-row behavior.
 func (r *CRMSignalRepository) prepareSignalInterpretations(
 	ctx context.Context,
-	signal *model.CRMBuyerSignal,
-) ([]model.CRMBuyerSignal, error) {
+	signal *model.CRMSignal,
+) ([]model.CRMSignal, error) {
 	ensureSignalDimensions(signal)
 	ensureSignalEvidenceFingerprint(signal)
-	if !r.db.Migrator().HasColumn(&model.CRMBuyerSignal{}, "commercial_motion") {
-		return []model.CRMBuyerSignal{*signal}, nil
+	if !r.db.Migrator().HasColumn(&model.CRMSignal{}, "commercial_motion") {
+		return []model.CRMSignal{*signal}, nil
 	}
 
 	motions, snapshot, err := r.resolveSignalMotions(ctx, signal)
@@ -43,7 +43,7 @@ func (r *CRMSignalRepository) prepareSignalInterpretations(
 		return nil, err
 	}
 
-	rows := make([]model.CRMBuyerSignal, 0, len(motions))
+	rows := make([]model.CRMSignal, 0, len(motions))
 	for _, motion := range motions {
 		config, err := r.findSignalInterpretation(ctx, signal, motion)
 		if err != nil {
@@ -96,7 +96,7 @@ func (r *CRMSignalRepository) prepareSignalInterpretations(
 
 func (r *CRMSignalRepository) persistSignalMotionState(
 	ctx context.Context,
-	signal *model.CRMBuyerSignal,
+	signal *model.CRMSignal,
 	motions []string,
 	snapshot model.JSONB,
 ) error {
@@ -158,7 +158,7 @@ func (r *CRMSignalRepository) PruneSignalMotionStates(ctx context.Context, befor
 
 func (r *CRMSignalRepository) findSignalInterpretation(
 	ctx context.Context,
-	signal *model.CRMBuyerSignal,
+	signal *model.CRMSignal,
 	motion string,
 ) (*model.CRMSignalInterpretationConfig, error) {
 	if !r.db.Migrator().HasTable(&model.CRMSignalInterpretationConfig{}) {
@@ -185,7 +185,7 @@ func (r *CRMSignalRepository) findSignalInterpretation(
 	return nil, fmt.Errorf("load signal interpretation: %w", err)
 }
 
-func (r *CRMSignalRepository) snapshotSignalScoringMeaning(ctx context.Context, signal *model.CRMBuyerSignal) error {
+func (r *CRMSignalRepository) snapshotSignalScoringMeaning(ctx context.Context, signal *model.CRMSignal) error {
 	if signal.BusinessWeightSnapshot <= 0 || signal.HalfLifeDaysSnapshot <= 0 {
 		weight, halfLife := defaultSignalMeaning(signal.SignalType)
 		if signal.BusinessWeightSnapshot <= 0 {
@@ -264,7 +264,7 @@ func defaultSignalHalfLife(signalType string) float64 {
 
 // ReconcileDealMotionSignals supersedes active interpretations when a deal leaves its motion.
 func (r *CRMSignalRepository) ReconcileDealMotionSignals(ctx context.Context, workspaceID, dealID string) error {
-	if !r.db.Migrator().HasColumn(&model.CRMBuyerSignal{}, "superseded_at") ||
+	if !r.db.Migrator().HasColumn(&model.CRMSignal{}, "superseded_at") ||
 		!r.db.Migrator().HasColumn(&model.CRMDeal{}, "commercial_motion") {
 		return nil
 	}
@@ -289,7 +289,7 @@ func (r *CRMSignalRepository) ReconcileDealMotionSignals(ctx context.Context, wo
 		dealMotion = strings.TrimSpace(*deal.CommercialMotion)
 	}
 	activeMotion := commercialMotionForDealMotion(dealMotion)
-	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND deal_id = ? AND superseded_at IS NULL", workspaceID, dealID)
 	if deal.StageType == model.CRMStageTypeOpen {
 		query = query.Where("commercial_motion <> ?", activeMotion)
@@ -330,10 +330,10 @@ func (r *CRMSignalRepository) RefreshEntityMotionSignals(
 	effectiveAt time.Time,
 ) error {
 	if !r.db.Migrator().HasTable(&model.CRMSignalMotionState{}) ||
-		!r.db.Migrator().HasColumn(&model.CRMBuyerSignal{}, "superseded_at") {
+		!r.db.Migrator().HasColumn(&model.CRMSignal{}, "superseded_at") {
 		return nil
 	}
-	signal := model.CRMBuyerSignal{WorkspaceID: workspaceID, DetectedAt: effectiveAt}
+	signal := model.CRMSignal{WorkspaceID: workspaceID, DetectedAt: effectiveAt}
 	switch entityType {
 	case "company":
 		signal.CompanyID = &entityID
@@ -365,10 +365,10 @@ func (r *CRMSignalRepository) RefreshEntityMotionSignals(
 			return query
 		}
 	}
-	query := entityScope(r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+	query := entityScope(r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND dismissed_at IS NULL AND superseded_at IS NULL", workspaceID)).
 		Where("commercial_motion NOT IN ?", motions)
-	var stale []model.CRMBuyerSignal
+	var stale []model.CRMSignal
 	if err := query.Find(&stale).Error; err != nil {
 		return fmt.Errorf("load motion-exit signals: %w", err)
 	}
@@ -381,8 +381,8 @@ func (r *CRMSignalRepository) RefreshEntityMotionSignals(
 		staleIDs[candidate.ID] = true
 		staleIDList = append(staleIDList, candidate.ID)
 	}
-	var allActive []model.CRMBuyerSignal
-	active := entityScope(r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).Where(
+	var allActive []model.CRMSignal
+	active := entityScope(r.db.WithContext(ctx).Model(&model.CRMSignal{}).Where(
 		"workspace_id = ? AND dismissed_at IS NULL AND superseded_at IS NULL", workspaceID,
 	))
 	if err := active.Find(&allActive).Error; err != nil {
@@ -390,7 +390,7 @@ func (r *CRMSignalRepository) RefreshEntityMotionSignals(
 	}
 	beforeDirection := storedSignalGroupDirection(allActive, nil)
 	afterDirection := storedSignalGroupDirection(allActive, staleIDs)
-	if err := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+	if err := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND id IN ? AND superseded_at IS NULL", workspaceID, staleIDList).
 		Updates(map[string]interface{}{
 			"superseded_at": effectiveAt, "superseded_reason": "motion_exit",
@@ -398,7 +398,7 @@ func (r *CRMSignalRepository) RefreshEntityMotionSignals(
 		return fmt.Errorf("supersede signals after motion exit: %w", err)
 	}
 	if beforeDirection != 0 && afterDirection != 0 && beforeDirection != afterDirection {
-		var target *model.CRMBuyerSignal
+		var target *model.CRMSignal
 		for index := range allActive {
 			candidate := &allActive[index]
 			if staleIDs[candidate.ID] {
@@ -409,7 +409,7 @@ func (r *CRMSignalRepository) RefreshEntityMotionSignals(
 			}
 		}
 		if target != nil {
-			if updateErr := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+			if updateErr := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 				Where("workspace_id = ? AND id = ?", workspaceID, target.ID).
 				Update("direction_changed_by_supersession", true).Error; updateErr != nil {
 				return fmt.Errorf("mark motion supersession direction change: %w", updateErr)
@@ -434,7 +434,7 @@ func (r *CRMSignalRepository) ListContactCompanyIDs(ctx context.Context, workspa
 
 func (r *CRMSignalRepository) resolveSignalMotions(
 	ctx context.Context,
-	signal *model.CRMBuyerSignal,
+	signal *model.CRMSignal,
 ) ([]string, model.JSONB, error) {
 	snapshot := model.JSONB{}
 	motions := map[string]struct{}{}
@@ -648,7 +648,7 @@ func commercialMotionForDealMotion(dealMotion string) string {
 
 func (r *CRMSignalRepository) persistSignalObservation(
 	ctx context.Context,
-	signal *model.CRMBuyerSignal,
+	signal *model.CRMSignal,
 	motions []string,
 	snapshot model.JSONB,
 ) (*string, error) {
@@ -697,7 +697,7 @@ func (r *CRMSignalRepository) persistSignalObservation(
 	return &existing.ID, nil
 }
 
-func signalMeaningFingerprint(signal model.CRMBuyerSignal) string {
+func signalMeaningFingerprint(signal model.CRMSignal) string {
 	parts := []string{
 		signal.WorkspaceID, signal.EvidenceFingerprint, signal.CommercialMotion, signal.SignalType, signal.Polarity,
 		fmt.Sprintf("%d", signal.InterpretationVersion),
@@ -716,7 +716,7 @@ func signalMeaningFingerprint(signal model.CRMBuyerSignal) string {
 	return fmt.Sprintf("%x", sum)
 }
 
-func signalInterpretationRuleKey(signal *model.CRMBuyerSignal) string {
+func signalInterpretationRuleKey(signal *model.CRMSignal) string {
 	if signal != nil && signal.RuleKey != nil && strings.TrimSpace(*signal.RuleKey) != "" {
 		return strings.TrimSpace(*signal.RuleKey)
 	}
@@ -733,10 +733,10 @@ func cloneJSONB(source model.JSONB) model.JSONB {
 
 func insertInterpretedSignals(
 	tx *gorm.DB,
-	rows []model.CRMBuyerSignal,
-) (bool, *model.CRMBuyerSignal, error) {
+	rows []model.CRMSignal,
+) (bool, *model.CRMSignal, error) {
 	created := false
-	var primary *model.CRMBuyerSignal
+	var primary *model.CRMSignal
 	for index := range rows {
 		if rows[index].ID == "" {
 			rows[index].ID = uuid.NewString()

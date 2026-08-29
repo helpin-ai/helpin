@@ -43,7 +43,7 @@ import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { DesktopDetailRail } from '@/components/crm/DesktopDetailRail';
 import { CompanyContactsView, CompanyDealsView, CompanyMeetingsView, CompanySupportView } from '@/components/crm/CompanyDetailCollections';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
-import { BuyerSignals } from '@/components/crm/BuyerSignals';
+import { EntitySignals } from '@/components/crm/EntitySignals';
 import { useTitle } from '@/hooks/useTitle';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { findAssignableMember } from '@/lib/assignableMembers';
@@ -478,12 +478,12 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
                 }}
                 onTaskCreated={() => void timeline.refetch()}
               />
-              <section aria-label="Buyer signals" className="border-b border-border/60">
+              <section aria-label="CRM signals" className="border-b border-border/60">
                 <div className="flex items-center gap-2 px-4 pb-2 pt-5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 sm:px-6 lg:px-10">
                   <ZapIcon className="h-[15px] w-[15px] text-muted-foreground" />
-                  Buyer signals
+                  CRM signals
                 </div>
-                <BuyerSignals
+                <EntitySignals
                   workspaceId={wsId}
                   companyId={companyId}
                   presentation="overview"

@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-// CRM buyer signal types.
+// CRM CRM signal types.
 const (
 	CRMSignalBuyingIntent      = "buying_intent"
 	CRMSignalObjection         = "objection"
@@ -107,8 +107,8 @@ const (
 	CRMSignalRuleDowngradeRequested   = "downgrade_requested"
 )
 
-// CRMBuyerSignal represents a detected buyer signal in CRM interactions.
-type CRMBuyerSignal struct {
+// CRMSignal represents a detected CRM signal in CRM interactions.
+type CRMSignal struct {
 	ID                             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID                    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	ContactID                      *string    `json:"contact_id" gorm:"type:uuid;index"`
@@ -170,7 +170,7 @@ type CRMBuyerSignal struct {
 	ExistingOpenTaskID             *string    `json:"existing_open_task_id,omitempty" gorm:"-"`
 }
 
-func (CRMBuyerSignal) TableName() string { return "crm_buyer_signals" }
+func (CRMSignal) TableName() string { return "crm_signals" }
 
 // CRMSignalObservation stores source evidence before commercial interpretation.
 type CRMSignalObservation struct {
@@ -306,8 +306,8 @@ type CRMDealHealthScore struct {
 
 func (CRMDealHealthScore) TableName() string { return "crm_deal_health_scores" }
 
-// CreateCRMBuyerSignalRequest is the payload for creating a buyer signal.
-type CreateCRMBuyerSignalRequest struct {
+// CreateCRMSignalRequest is the payload for creating a CRM signal.
+type CreateCRMSignalRequest struct {
 	WorkspaceID     string                 `json:"workspace_id"`
 	ContactID       *string                `json:"contact_id"`
 	DealID          *string                `json:"deal_id"`
@@ -327,8 +327,8 @@ type CreateCRMDealHealthScoreRequest struct {
 	Factors     map[string]interface{} `json:"factors"`
 }
 
-// CRMBuyerSignalListFilters applies filters when listing signals.
-type CRMBuyerSignalListFilters struct {
+// CRMSignalListFilters applies filters when listing signals.
+type CRMSignalListFilters struct {
 	ContactID             *string
 	DealID                *string
 	CompanyID             *string

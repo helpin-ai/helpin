@@ -40,7 +40,7 @@ import type {
   CreateCRMCalendarEventRequest,
   UpdateCRMCalendarEventRequest,
   CreateCRMEnrichmentRequest,
-  CreateCRMBuyerSignalRequest,
+  CreateCRMSignalRequest,
   CreateCRMDealHealthScoreRequest,
   CreateCRMSuggestionRequest,
   UpdateCRMSuggestionRequest,
@@ -848,7 +848,7 @@ export function useApplyEnrichmentSuggestion(wsId: string) {
   })
 }
 
-export function useBuyerSignals(
+export function useCRMSignals(
   wsId: string,
   filters?: { contact_id?: string; deal_id?: string; company_id?: string; signal_type?: string },
 ) {
@@ -947,10 +947,10 @@ export function useCompanySignals(wsId: string, companyId: string) {
   })
 }
 
-export function useCreateBuyerSignal(wsId: string) {
+export function useCreateCRMSignal(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: CreateCRMBuyerSignalRequest) => unwrap(await crmSignalService.create(data)),
+    mutationFn: async (data: CreateCRMSignalRequest) => unwrap(await crmSignalService.create(data)),
     onSuccess: (_result, data) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
       if (data.contact_id) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, data.contact_id) })
@@ -960,7 +960,7 @@ export function useCreateBuyerSignal(wsId: string) {
   })
 }
 
-export function useDismissBuyerSignal(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
+export function useDismissCRMSignal(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ signalId, reason }: { signalId: string; reason: import('@/lib/crmTypes').CRMSignalDismissalReason }) => unwrap(await crmSignalService.dismiss(wsId, signalId, reason)),
@@ -973,7 +973,7 @@ export function useDismissBuyerSignal(wsId: string, contactId?: string, dealId?:
   })
 }
 
-export function useBuyerSignalFeedback(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
+export function useCRMSignalFeedback(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ signalId, action }: { signalId: string; action: 'reviewed' | 'acted' }) =>

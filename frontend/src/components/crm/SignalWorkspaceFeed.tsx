@@ -14,7 +14,7 @@ import { useCompanies, useSignalWorkspaceFeed } from "@/hooks/queries/useCRM";
 import { useWorkspaceMembers } from "@/hooks/queries";
 import { Activity01Icon, ArrowRight01Icon, Layers01Icon } from "@/lib/icons";
 import type {
-  CRMBuyerSignal,
+  CRMSignal,
   CRMSignalAccountStory,
   CRMSignalFeedFilters,
   CRMSignalSeverity,
@@ -116,8 +116,8 @@ function StoryRow({
   story: CRMSignalAccountStory;
   ownerName?: string;
   onOpen?: () => void;
-  onOpenSignal?: (signal: CRMBuyerSignal) => void;
-  canOpenSignal?: (signal: CRMBuyerSignal) => boolean;
+  onOpenSignal?: (signal: CRMSignal) => void;
+  canOpenSignal?: (signal: CRMSignal) => boolean;
 }) {
   const verifiedSources = story.signals.filter(
     (signal) => signal.evidence_identity_trust === "verified",
@@ -368,7 +368,7 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
         params: { slug: workspaceSlug, dealId: story.entity_id },
       } as never);
   };
-  const canOpenSignal = (signal: CRMBuyerSignal) => {
+  const canOpenSignal = (signal: CRMSignal) => {
     if (signal.source_type === "email")
       return (
         !!signal.source_thread_id &&
@@ -380,7 +380,7 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
       return !!signal.contact_id || !!signal.company_id;
     return false;
   };
-  const openSignal = (signal: CRMBuyerSignal) => {
+  const openSignal = (signal: CRMSignal) => {
     if (!workspaceSlug || !canOpenSignal(signal)) return;
     if (signal.source_type === "meeting" && signal.source_id)
       void navigate({

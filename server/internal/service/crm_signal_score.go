@@ -105,7 +105,7 @@ func jsonFloat(value interface{}, fallback float64) float64 {
 	}
 }
 
-func (profile signalScoringProfile) scoreSignal(signal *model.CRMBuyerSignal, now time.Time) {
+func (profile signalScoringProfile) scoreSignal(signal *model.CRMSignal, now time.Time) {
 	weight, halfLife := profile.signalWeights[signal.SignalType], profile.halfLives[signal.SignalType]
 	if signal.BusinessWeightSnapshot > 0 {
 		weight = signal.BusinessWeightSnapshot
@@ -157,7 +157,7 @@ func (profile signalScoringProfile) scoreSignal(signal *model.CRMBuyerSignal, no
 	}
 }
 
-func signalDirection(signal *model.CRMBuyerSignal) float64 {
+func signalDirection(signal *model.CRMSignal) float64 {
 	switch signal.Polarity {
 	case model.CRMSignalPolarityNegative:
 		return -1
@@ -174,7 +174,7 @@ func signalDirection(signal *model.CRMBuyerSignal) float64 {
 	}
 }
 
-func signalEntityMultiplier(signal *model.CRMBuyerSignal) float64 {
+func signalEntityMultiplier(signal *model.CRMSignal) float64 {
 	multiplier := 1.0
 	if signal.DealStageProbability != nil {
 		multiplier *= 0.8 + math.Max(0, math.Min(100, float64(*signal.DealStageProbability)))/250
@@ -199,22 +199,22 @@ func signalSeverity(priority float64) string {
 func roundScore(value float64) float64 { return math.Round(value*100) / 100 }
 
 // ListWorkspaceSignalFeed returns ranked account stories with their source evidence.
-func (s *CRMSignalService) ListWorkspaceSignalFeed(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination) (*model.CRMSignalWorkspaceFeed, error) {
+func (s *CRMSignalService) ListWorkspaceSignalFeed(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters, pagination model.PMPagination) (*model.CRMSignalWorkspaceFeed, error) {
 	return s.listWorkspaceSignalFeed(ctx, workspaceID, filters, pagination, nil, false)
 }
 
 // ListWorkspaceSignalShadowPreview exposes shadow composition only to the
 // admin-only preview route.
-func (s *CRMSignalService) ListWorkspaceSignalShadowPreview(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination, lanePages map[string]int) (*model.CRMSignalWorkspaceFeed, error) {
+func (s *CRMSignalService) ListWorkspaceSignalShadowPreview(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters, pagination model.PMPagination, lanePages map[string]int) (*model.CRMSignalWorkspaceFeed, error) {
 	return s.listWorkspaceSignalFeed(ctx, workspaceID, filters, pagination, lanePages, true)
 }
 
 // ListWorkspaceSignalLanes returns independently paginated motion queues.
-func (s *CRMSignalService) ListWorkspaceSignalLanes(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination, lanePages map[string]int) (*model.CRMSignalWorkspaceFeed, error) {
+func (s *CRMSignalService) ListWorkspaceSignalLanes(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters, pagination model.PMPagination, lanePages map[string]int) (*model.CRMSignalWorkspaceFeed, error) {
 	return s.listWorkspaceSignalFeed(ctx, workspaceID, filters, pagination, lanePages, false)
 }
 
-func (s *CRMSignalService) listWorkspaceSignalFeed(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination, lanePages map[string]int, includeShadow bool) (*model.CRMSignalWorkspaceFeed, error) {
+func (s *CRMSignalService) listWorkspaceSignalFeed(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters, pagination model.PMPagination, lanePages map[string]int, includeShadow bool) (*model.CRMSignalWorkspaceFeed, error) {
 	if strings.TrimSpace(workspaceID) == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -305,7 +305,7 @@ func paginateSignalLanes(stories []model.CRMSignalAccountStory, page, perPage in
 	return lanes, flattened
 }
 
-func composeSignalStories(signals []model.CRMBuyerSignal, profile signalScoringProfile, now time.Time) []model.CRMSignalAccountStory {
+func composeSignalStories(signals []model.CRMSignal, profile signalScoringProfile, now time.Time) []model.CRMSignalAccountStory {
 	grouped := map[string]*model.CRMSignalAccountStory{}
 	changedAfter := now.Add(-7 * 24 * time.Hour)
 	compoundAfter := now.Add(-time.Duration(profile.compoundWindowDays*24) * time.Hour)
@@ -319,7 +319,7 @@ func composeSignalStories(signals []model.CRMBuyerSignal, profile signalScoringP
 		story := grouped[key]
 		if story == nil {
 			sum := sha256.Sum256([]byte(key))
-			story = &model.CRMSignalAccountStory{ID: fmt.Sprintf("%x", sum[:12]), EntityType: entityType, EntityID: entityID, AccountName: accountName, AccountDomain: signal.AccountDomain, OwnerMemberID: signal.OwnerMemberID, CommercialMotion: motion, LatestDetectedAt: signal.DetectedAt, ScoreVersion: profile.version, Signals: []model.CRMBuyerSignal{}}
+			story = &model.CRMSignalAccountStory{ID: fmt.Sprintf("%x", sum[:12]), EntityType: entityType, EntityID: entityID, AccountName: accountName, AccountDomain: signal.AccountDomain, OwnerMemberID: signal.OwnerMemberID, CommercialMotion: motion, LatestDetectedAt: signal.DetectedAt, ScoreVersion: profile.version, Signals: []model.CRMSignal{}}
 			grouped[key] = story
 		}
 		story.Signals = append(story.Signals, signal)
@@ -333,7 +333,7 @@ func composeSignalStories(signals []model.CRMBuyerSignal, profile signalScoringP
 	stories := make([]model.CRMSignalAccountStory, 0, len(grouped))
 	for _, story := range grouped {
 		observedDomains := map[string]struct{}{}
-		sourceGroups := map[string][]model.CRMBuyerSignal{}
+		sourceGroups := map[string][]model.CRMSignal{}
 		for _, signal := range story.Signals {
 			sourceKey := signalEvidenceSourceKey(signal)
 			sourceGroups[sourceKey] = append(sourceGroups[sourceKey], signal)
@@ -438,7 +438,7 @@ func composeSignalStories(signals []model.CRMBuyerSignal, profile signalScoringP
 	return stories
 }
 
-func signalEvidenceSourceKey(signal model.CRMBuyerSignal) string {
+func signalEvidenceSourceKey(signal model.CRMSignal) string {
 	sourceType := strings.ToLower(strings.TrimSpace(signal.SourceType))
 	if sourceType == "" {
 		sourceType = "unknown"
@@ -459,9 +459,9 @@ func signalEvidenceSourceKey(signal model.CRMBuyerSignal) string {
 	return "signal:" + signal.ID
 }
 
-func signalSourceContribution(signals []model.CRMBuyerSignal, compoundAfter, changedAfter time.Time) (float64, float64, string, bool) {
-	var prioritySignal, directionalSignal *model.CRMBuyerSignal
-	var recentPrioritySignal, recentDirectionalSignal *model.CRMBuyerSignal
+func signalSourceContribution(signals []model.CRMSignal, compoundAfter, changedAfter time.Time) (float64, float64, string, bool) {
+	var prioritySignal, directionalSignal *model.CRMSignal
+	var recentPrioritySignal, recentDirectionalSignal *model.CRMSignal
 	changed := false
 	for index := range signals {
 		signal := &signals[index]
@@ -506,7 +506,7 @@ func signalSourceContribution(signals []model.CRMBuyerSignal, compoundAfter, cha
 	return priority, signedImpact, domain, changed
 }
 
-func signalStoryEntity(signal model.CRMBuyerSignal) (string, string, string) {
+func signalStoryEntity(signal model.CRMSignal) (string, string, string) {
 	if signal.CompanyID != nil && *signal.CompanyID != "" {
 		return "company", *signal.CompanyID, firstSignalValue(signal.AccountName, "Unnamed account")
 	}
@@ -535,7 +535,7 @@ func signalStoryChangeSummary(story model.CRMSignalAccountStory) string {
 		sourceLabel, plural(story.ChangedEvidenceSourceCount), story.ChangedSince, plural(story.ChangedSince), len(story.Domains), domainLabel)
 }
 
-func signalStoryUsesSupportConversations(signals []model.CRMBuyerSignal) bool {
+func signalStoryUsesSupportConversations(signals []model.CRMSignal) bool {
 	if len(signals) == 0 {
 		return false
 	}

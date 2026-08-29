@@ -263,7 +263,7 @@ func (h *CRMSignalHandler) ListSignals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if signals == nil {
-		signals = []model.CRMBuyerSignal{}
+		signals = []model.CRMSignal{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data":  signals,
@@ -329,12 +329,12 @@ func signalLanePages(r *http.Request) map[string]int {
 	return pages
 }
 
-func signalListFiltersFromRequest(r *http.Request) (model.CRMBuyerSignalListFilters, error) {
+func signalListFiltersFromRequest(r *http.Request) (model.CRMSignalListFilters, error) {
 	queryFilters, err := queryFilterGroup(r, "filters")
 	if err != nil {
-		return model.CRMBuyerSignalListFilters{}, err
+		return model.CRMSignalListFilters{}, err
 	}
-	filters := model.CRMBuyerSignalListFilters{
+	filters := model.CRMSignalListFilters{
 		ContactID: queryStringPtr(r, "contact_id"), DealID: queryStringPtr(r, "deal_id"),
 		CompanyID: queryStringPtr(r, "account_id"), SignalType: queryStringPtr(r, "signal_type"),
 		SourceType: queryStringPtr(r, "source_type"), OwnerMemberID: queryStringPtr(r, "owner_member_id"),
@@ -357,7 +357,7 @@ func signalListFiltersFromRequest(r *http.Request) (model.CRMBuyerSignalListFilt
 
 // CreateSignal handles POST /api/crm/signals.
 func (h *CRMSignalHandler) CreateSignal(w http.ResponseWriter, r *http.Request) {
-	var req model.CreateCRMBuyerSignalRequest
+	var req model.CreateCRMSignalRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -470,7 +470,7 @@ func (h *CRMSignalHandler) ListByContact(w http.ResponseWriter, r *http.Request)
 	contactID := chi.URLParam(r, "id")
 	pagination := queryPagination(r)
 
-	filters := model.CRMBuyerSignalListFilters{
+	filters := model.CRMSignalListFilters{
 		ContactID: &contactID,
 	}
 	signals, total, err := h.signalService.ListSignals(r.Context(), workspaceID, filters, pagination)
@@ -479,7 +479,7 @@ func (h *CRMSignalHandler) ListByContact(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if signals == nil {
-		signals = []model.CRMBuyerSignal{}
+		signals = []model.CRMSignal{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data":  signals,
@@ -494,7 +494,7 @@ func (h *CRMSignalHandler) ListByDeal(w http.ResponseWriter, r *http.Request) {
 	dealID := chi.URLParam(r, "id")
 	pagination := queryPagination(r)
 
-	filters := model.CRMBuyerSignalListFilters{
+	filters := model.CRMSignalListFilters{
 		DealID: &dealID,
 	}
 	signals, total, err := h.signalService.ListSignals(r.Context(), workspaceID, filters, pagination)
@@ -503,7 +503,7 @@ func (h *CRMSignalHandler) ListByDeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if signals == nil {
-		signals = []model.CRMBuyerSignal{}
+		signals = []model.CRMSignal{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data":  signals,
@@ -519,11 +519,11 @@ func (h *CRMSignalHandler) ListByCompany(w http.ResponseWriter, r *http.Request)
 	pagination := queryPagination(r)
 	signals, total, err := h.signalService.ListCompanySignals(r.Context(), workspaceID, companyID, pagination)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "buyer signals could not be loaded")
+		writeError(w, http.StatusInternalServerError, "CRM signals could not be loaded")
 		return
 	}
 	if signals == nil {
-		signals = []model.CRMBuyerSignal{}
+		signals = []model.CRMSignal{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": signals, "total": total, "page": pagination.Page})
 }

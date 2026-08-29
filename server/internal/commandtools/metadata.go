@@ -172,10 +172,10 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: paginatedQuerySchema(50, 20, "Maximum number of contacts to return. Defaults to 20, max 50."),
 	},
 	{
-		CommandName: "crm.list_buyer_signals",
-		Alias:       "list_buyer_signals",
+		CommandName: "crm.list_crm_signals",
+		Alias:       "list_crm_signals",
 		Category:    "CRM",
-		Description: "List detected buyer signals from emails, meetings, and support conversations.",
+		Description: "List detected CRM signals from emails, meetings, and support conversations.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

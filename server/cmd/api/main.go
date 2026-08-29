@@ -384,7 +384,7 @@ func main() {
 			&model.CRMCalendarSeriesPreference{},
 			// CRM Phase 4: Intelligence
 			&model.CRMEnrichmentResult{},
-			&model.CRMBuyerSignal{},
+			&model.CRMSignal{},
 			&model.CRMSignalObservation{},
 			&model.CRMSignalInterpretationConfig{},
 			&model.CRMSignalMotionState{},
@@ -487,10 +487,6 @@ func main() {
 	slog.Info("startup: running MigrateCRMEmailAssociations")
 	if err := repository.MigrateCRMEmailAssociations(db); err != nil {
 		fatalWithSentry("failed to migrate crm email associations", err)
-	}
-	slog.Info("startup: running MigrateCRMSignalSchema")
-	if err := repository.MigrateCRMSignalSchema(db); err != nil {
-		fatalWithSentry("failed to migrate crm signal schema", err)
 	}
 	slog.Info("startup: running MigrateCRMSummarySchema")
 	if err := repository.MigrateCRMSummarySchema(db); err != nil {

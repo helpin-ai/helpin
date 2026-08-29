@@ -49,17 +49,17 @@ func NewCRMSignalService(signalRepo *repository.CRMSignalRepository, summaryRefr
 }
 
 // ListCompanySignals returns signals rolled up through company relationships.
-func (s *CRMSignalService) ListCompanySignals(ctx context.Context, workspaceID, companyID string, pagination model.PMPagination) ([]model.CRMBuyerSignal, int64, error) {
+func (s *CRMSignalService) ListCompanySignals(ctx context.Context, workspaceID, companyID string, pagination model.PMPagination) ([]model.CRMSignal, int64, error) {
 	if workspaceID == "" || companyID == "" {
 		return nil, 0, fmt.Errorf("workspace_id and company_id are required")
 	}
 	return s.signalRepo.ListSignalsByCompany(ctx, workspaceID, companyID, pagination)
 }
 
-// ── Buyer Signals ──
+// ── CRM Signals ──
 
-// ListSignals returns buyer signals with filters and pagination.
-func (s *CRMSignalService) ListSignals(ctx context.Context, workspaceID string, filters model.CRMBuyerSignalListFilters, pagination model.PMPagination) ([]model.CRMBuyerSignal, int64, error) {
+// ListSignals returns CRM signals with filters and pagination.
+func (s *CRMSignalService) ListSignals(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters, pagination model.PMPagination) ([]model.CRMSignal, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
@@ -123,8 +123,8 @@ func (s *CRMSignalService) RecordSignalBatchSuppression(
 	return s.signalRepo.RecordSignalBatchSuppression(ctx, workspaceID, ruleKey, ruleVersion, eligible, tripped, start, end, reason)
 }
 
-// CreateSignal creates a new buyer signal.
-func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRMBuyerSignalRequest) (*model.CRMBuyerSignal, error) {
+// CreateSignal creates a new CRM signal.
+func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRMSignalRequest) (*model.CRMSignal, error) {
 	if req.WorkspaceID == "" || req.SignalType == "" || req.Summary == "" {
 		return nil, fmt.Errorf("workspace_id, signal_type, and summary are required")
 	}
@@ -147,7 +147,7 @@ func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRM
 	// This endpoint records a user's assertion. Extraction, deterministic-rule,
 	// and provider evidence are created by their dedicated server-side paths so
 	// callers cannot claim verified identity or an activated rule version.
-	signal := &model.CRMBuyerSignal{
+	signal := &model.CRMSignal{
 		WorkspaceID:            req.WorkspaceID,
 		ContactID:              req.ContactID,
 		DealID:                 req.DealID,
@@ -177,7 +177,7 @@ func (s *CRMSignalService) CreateSignal(ctx context.Context, req model.CreateCRM
 	return signal, nil
 }
 
-// DeleteSignal removes a buyer signal.
+// DeleteSignal removes a CRM signal.
 func (s *CRMSignalService) DeleteSignal(ctx context.Context, workspaceID, id string) error {
 	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(id) == "" {
 		return fmt.Errorf("workspace_id and signal_id are required")
@@ -265,11 +265,11 @@ func (s *CRMSignalService) calculateAndStoreDealHealthScore(ctx context.Context,
 	return health, nil
 }
 
-func calculateDealHealthScore(deal *model.CRMDeal, signals []model.CRMBuyerSignal, now time.Time) (int, model.JSONB) {
+func calculateDealHealthScore(deal *model.CRMDeal, signals []model.CRMSignal, now time.Time) (int, model.JSONB) {
 	return calculateDealHealthScoreWithProfile(deal, signals, defaultSignalScoringProfile(), now)
 }
 
-func calculateDealHealthScoreWithProfile(deal *model.CRMDeal, signals []model.CRMBuyerSignal, profile signalScoringProfile, now time.Time) (int, model.JSONB) {
+func calculateDealHealthScoreWithProfile(deal *model.CRMDeal, signals []model.CRMSignal, profile signalScoringProfile, now time.Time) (int, model.JSONB) {
 	if deal.Stage != nil {
 		switch deal.Stage.StageType {
 		case model.CRMStageTypeWon:
@@ -366,7 +366,7 @@ func (s *CRMSignalService) CreateHealthScore(ctx context.Context, req model.Crea
 	return score, nil
 }
 
-func (s *CRMSignalService) requestSummaryRefresh(ctx context.Context, signal *model.CRMBuyerSignal) {
+func (s *CRMSignalService) requestSummaryRefresh(ctx context.Context, signal *model.CRMSignal) {
 	if s == nil || s.summaryRefresh == nil || signal == nil {
 		return
 	}

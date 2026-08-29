@@ -384,7 +384,7 @@ func (e *CRMSignalRuleEvaluator) persistCandidate(
 	candidate.Metadata["rule_version"] = config.Version
 	ruleKey, version := config.RuleKey, config.Version
 	evidence := strings.TrimSpace(candidate.EvidenceExcerpt)
-	signal := &model.CRMBuyerSignal{
+	signal := &model.CRMSignal{
 		WorkspaceID: candidate.WorkspaceID, ContactID: candidate.ContactID, DealID: candidate.DealID, CompanyID: candidate.CompanyID,
 		SignalType: candidate.SignalType, SourceType: candidate.SourceType, SourceID: candidate.SourceID,
 		Summary: candidate.Summary, EvidenceExcerpt: &evidence, Metadata: candidate.Metadata,

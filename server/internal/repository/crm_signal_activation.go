@@ -14,23 +14,23 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func (r *CRMSignalRepository) GetSignal(ctx context.Context, workspaceID, signalID string) (*model.CRMBuyerSignal, error) {
-	var signal model.CRMBuyerSignal
+func (r *CRMSignalRepository) GetSignal(ctx context.Context, workspaceID, signalID string) (*model.CRMSignal, error) {
+	var signal model.CRMSignal
 	err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, signalID).First(&signal).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get buyer signal: %w", err)
+		return nil, fmt.Errorf("get CRM signal: %w", err)
 	}
-	signals := []model.CRMBuyerSignal{signal}
+	signals := []model.CRMSignal{signal}
 	if err := r.hydrateSignalContext(ctx, workspaceID, signals); err != nil {
 		return nil, err
 	}
 	return &signals[0], nil
 }
 
-func (r *CRMSignalRepository) RecordSignalFeedback(ctx context.Context, signal *model.CRMBuyerSignal, memberID, action string, reason *string, occurredAt time.Time) error {
+func (r *CRMSignalRepository) RecordSignalFeedback(ctx context.Context, signal *model.CRMSignal, memberID, action string, reason *string, occurredAt time.Time) error {
 	elapsedMillis := occurredAt.Sub(signal.DetectedAt).Milliseconds()
 	if elapsedMillis < 0 {
 		elapsedMillis = 0
@@ -55,13 +55,13 @@ func (r *CRMSignalRepository) RecordSignalFeedback(ctx context.Context, signal *
 		case model.CRMSignalFeedbackActed:
 			updates["acted_at"] = occurredAt
 		}
-		result := tx.Model(&model.CRMBuyerSignal{}).
+		result := tx.Model(&model.CRMSignal{}).
 			Where("workspace_id = ? AND id = ?", signal.WorkspaceID, signal.ID).Updates(updates)
 		if result.Error != nil {
 			return fmt.Errorf("update signal feedback state: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("buyer signal not found")
+			return fmt.Errorf("CRM signal not found")
 		}
 		return nil
 	})
@@ -137,7 +137,7 @@ func (r *CRMSignalRepository) ListSignalOutcomeCalibration(ctx context.Context, 
 				AND outcome.state_updated_at > signal.detected_at
 				AND outcome.state_updated_at <= signal.detected_at + (? * interval '1 day')
 			)) AS matured
-		FROM crm_buyer_signals signal
+		FROM crm_signals signal
 		WHERE signal.workspace_id = ? AND signal.company_id IS NOT NULL
 		AND signal.rule_key IS NOT NULL AND signal.replay_calibration_excluded = false
 		AND signal.commercial_motion = 'retention'
@@ -206,13 +206,16 @@ func (r *CRMSignalRepository) SaveSignalRoutingSettings(ctx context.Context, set
 func (r *CRMSignalRepository) GetSignalRolloutSettings(ctx context.Context, workspaceID string) (*model.CRMSignalRolloutSettings, error) {
 	if !r.db.Migrator().HasTable(&model.CRMSignalRolloutSettings{}) {
 		// Compatibility for pre-spine schemas used by migrations and isolated
-		// tests. Production schemas always have an explicit shadow/live row.
+		// tests.
 		return &model.CRMSignalRolloutSettings{WorkspaceID: workspaceID, Mode: model.CRMSignalRolloutLive}, nil
 	}
 	var settings model.CRMSignalRolloutSettings
 	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).First(&settings).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return &model.CRMSignalRolloutSettings{WorkspaceID: workspaceID, Mode: model.CRMSignalRolloutShadow}, nil
+		// Workspaces created after the spine migration have no row yet. The
+		// legacy corpus was deleted, so there is nothing to shadow against and
+		// live is the useful default. Shadow remains an explicit opt-out.
+		return &model.CRMSignalRolloutSettings{WorkspaceID: workspaceID, Mode: model.CRMSignalRolloutLive}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get signal rollout settings: %w", err)
@@ -283,6 +286,21 @@ func (r *CRMSignalRepository) ActivateRuleVersion(ctx context.Context, workspace
 		if !source.ActivationEligible {
 			return fmt.Errorf("rule version is context-only and cannot be activated")
 		}
+		// Interpretation lookup matches rule_version exactly, so activating a
+		// version with no mapping would silently stop producing signals for
+		// this rule. Refuse instead of going quiet.
+		if r.db.Migrator().HasTable(&model.CRMSignalInterpretationConfig{}) {
+			var interpretations int64
+			if err := tx.Model(&model.CRMSignalInterpretationConfig{}).
+				Where("enabled = ? AND rule_key = ? AND rule_version = ?", true, ruleKey, version).
+				Where("workspace_id = ? OR workspace_id IS NULL", workspaceID).
+				Count(&interpretations).Error; err != nil {
+				return fmt.Errorf("verify rule interpretation coverage: %w", err)
+			}
+			if interpretations == 0 {
+				return fmt.Errorf("rule version %s@%d has no enabled commercial interpretation", ruleKey, version)
+			}
+		}
 		if err := tx.Model(&model.CRMSignalRuleConfig{}).
 			Where("workspace_id = ? AND rule_key = ?", workspaceID, ruleKey).
 			Update("enabled", false).Error; err != nil {
@@ -310,7 +328,7 @@ func (r *CRMSignalRepository) ActivateRuleVersion(ctx context.Context, workspace
 }
 
 // FindOpenTaskForSignal checks both canonical CRM associations and the stable signal fingerprint.
-func (r *CRMSignalRepository) FindOpenTaskForSignal(ctx context.Context, signal model.CRMBuyerSignal) (*string, error) {
+func (r *CRMSignalRepository) FindOpenTaskForSignal(ctx context.Context, signal model.CRMSignal) (*string, error) {
 	if !r.db.Migrator().HasTable(&model.PMTask{}) {
 		return nil, nil
 	}
@@ -501,18 +519,18 @@ func (r *CRMSignalRepository) RoutingRecipientUserIDs(ctx context.Context, works
 	return ids, nil
 }
 
-func (r *CRMSignalRepository) SignalFiltersForMeeting(ctx context.Context, workspaceID, meetingID string) (model.CRMBuyerSignalListFilters, error) {
+func (r *CRMSignalRepository) SignalFiltersForMeeting(ctx context.Context, workspaceID, meetingID string) (model.CRMSignalListFilters, error) {
 	if !r.db.Migrator().HasTable(&model.CRMAssociation{}) {
-		return model.CRMBuyerSignalListFilters{}, fmt.Errorf("meeting associations are unavailable")
+		return model.CRMSignalListFilters{}, fmt.Errorf("meeting associations are unavailable")
 	}
 	var associations []model.CRMAssociation
 	if err := r.db.WithContext(ctx).Where(
 		"workspace_id = ? AND ((from_object_type = ? AND from_object_id = ?) OR (to_object_type = ? AND to_object_id = ?))",
 		workspaceID, model.CRMObjectMeeting, meetingID, model.CRMObjectMeeting, meetingID,
 	).Find(&associations).Error; err != nil {
-		return model.CRMBuyerSignalListFilters{}, fmt.Errorf("load meeting signal associations: %w", err)
+		return model.CRMSignalListFilters{}, fmt.Errorf("load meeting signal associations: %w", err)
 	}
-	filters := model.CRMBuyerSignalListFilters{}
+	filters := model.CRMSignalListFilters{}
 	for _, association := range associations {
 		kind, id := association.ToObjectType, association.ToObjectID
 		if kind == model.CRMObjectMeeting {

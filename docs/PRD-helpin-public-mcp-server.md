@@ -190,7 +190,7 @@ Primitive tools can create a task or read a document, but users want outcomes: p
 
 ### 6.4 Sales or CRM user
 
-**Job:** “Review buyer signals and deal context, record a useful note, and move work forward from my preferred assistant.”
+**Job:** “Review CRM signals and deal context, record a useful note, and move work forward from my preferred assistant.”
 
 ### 6.5 Automation builder
 
@@ -320,7 +320,7 @@ Helpin settings include **Settings → Integrations → MCP** with:
 | `search` | Cross-product and Docs search | Yes, read-only |
 | `pm` | Tasks, comments, workflow state, epics, dependencies | User choice |
 | `docs` | Documents, blocks, search, create, and bounded updates | User choice |
-| `crm` | Contacts, deals, buyer signals, notes, stages | User choice |
+| `crm` | Contacts, deals, CRM signals, notes, stages | User choice |
 | `support` | Conversations, messages, knowledge context, reply drafts | User choice |
 | `agents` | Agent discovery, run start/status/cancel, interactions | User choice |
 | `git` | Connected repositories and release/task context | User choice |
@@ -411,7 +411,7 @@ Publishing and approved change-proposal application are deferred until server-si
 | `get_contact` | New | Read | Compact contact and association view. |
 | `list_deals` | Existing command | Read | Filter by stage, owner, activity, and updated time. |
 | `get_deal` | New | Read | Include stage, associations, signals, and recent summary. |
-| `list_buyer_signals` | Existing command | Read | Preserve source provenance. |
+| `list_crm_signals` | Existing command | Read | Preserve source provenance. |
 | `add_deal_note` | Existing command | Write | Add actor/client attribution. |
 | `update_deal_stage` | Existing command | Write | Validate pipeline transition and idempotency. |
 
@@ -475,7 +475,7 @@ Initial prompts:
 - `plan_feature` — research workspace context, produce a PRD, create tasks, and establish dependencies.
 - `triage_customer_issue` — inspect a support conversation, search knowledge, draft a response, and create product follow-up.
 - `prepare_release` — reconcile tasks and repository context, identify gaps, and create a release document.
-- `review_pipeline` — review deals and buyer signals, record grounded notes, and suggest next actions.
+- `review_pipeline` — review deals and CRM signals, record grounded notes, and suggest next actions.
 - `delegate_to_helpin_agent` — select an agent, start a run, poll, and surface interactions or results.
 
 Prompts must list required toolsets/scopes and never claim capabilities that may not be available.

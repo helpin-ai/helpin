@@ -1,10 +1,10 @@
 # CRM Module
 
-AI-driven CRM integrated with Helpin's PM, Docs, Support, and Agent modules. HubSpot-compatible data model with zero-touch pipeline management, buyer signal detection, and automated outbound sequences.
+AI-driven CRM integrated with Helpin's PM, Docs, Support, and Agent modules. HubSpot-compatible data model with zero-touch pipeline management, CRM signal detection, and automated outbound sequences.
 
-For buyer-signal architecture, rule definitions, activation safety, and local
+For CRM-signal architecture, rule definitions, activation safety, and local
 operations, use the canonical
-[`crm-buyer-signals.md`](crm-buyer-signals.md) reference. This module overview
+[`crm-signals.md`](crm-signals.md) reference. This module overview
 does not duplicate that changing rule catalogue.
 
 ## Architecture
@@ -95,7 +95,7 @@ signal ingestion are documented in [`crm-email-sync.md`](crm-email-sync.md).
 
 **CRMEnrichmentResult** — Contact/company enrichment data from Apollo, AI, or manual sources with confidence scores.
 
-**CRMBuyerSignal** — Durable, explainable evidence from verified conversation
+**CRMSignal** — Durable, explainable evidence from verified conversation
 extraction and versioned deterministic rules across support, delivery, CRM,
 relationship, web, product, and external domains. The stable signal taxonomy is
 `buying_intent`, `objection`, `competitor_mention`, `budget_signal`,
@@ -231,7 +231,7 @@ All endpoints are under `/api/crm/` and require workspace context (`X-Workspace-
 |--------|------|-----------|-------------|
 | GET | `/crm/enrichments` | crm.read | List enrichments |
 | POST | `/crm/enrichments` | crm.edit | Create enrichment |
-| GET | `/crm/signals` | crm.read | List buyer signals |
+| GET | `/crm/signals` | crm.read | List CRM signals |
 | POST | `/crm/signals` | crm.edit | Create signal |
 | GET | `/crm/signals/feed` | crm.read | Ranked workspace signal feed |
 | GET | `/crm/signals/brief` | crm.read | Current signal brief |
@@ -318,7 +318,7 @@ CRM appears as a primary rail item (Briefcase icon) with sub-navigation:
 | `ActivityTimeline` | Shared activity log with type-specific icons |
 | `EmailTimeline` | Email thread viewer for contact/deal detail |
 | `CalendarEvents` | Calendar event list |
-| `BuyerSignals` | Signal badges and detail cards |
+| `EntitySignals` | Signal badges and detail cards |
 | `DealHealthScore` | Visual health score indicator |
 | `SuggestionsPanel` | AI suggestion cards with accept/dismiss |
 | `EnrichmentCard` | Enrichment data display |
@@ -411,7 +411,7 @@ frontend/src/components/crm/
   ContactsTable.tsx, CompaniesTable.tsx, DealsTable.tsx,
   DealBoard.tsx, ActivityTimeline.tsx, EmailTimeline.tsx,
   CalendarEvents.tsx, EmailAccountConnect.tsx,
-  BuyerSignals.tsx, DealHealthScore.tsx, SuggestionsPanel.tsx,
+  EntitySignals.tsx, DealHealthScore.tsx, SuggestionsPanel.tsx,
   EnrichmentCard.tsx, PropertyEditor.tsx, PropertySettings.tsx,
   PipelineSettings.tsx, ListManager.tsx, CRMImportWizard.tsx,
   SequenceBuilder.tsx, SequenceDetail.tsx, SequenceEnrollments.tsx,

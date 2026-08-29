@@ -119,7 +119,7 @@ func (s *IngestionService) EnqueueEmailMessage(ctx context.Context, messageID st
 		return nil, err
 	}
 	if skipReason != "" {
-		slog.InfoContext(ctx, "crm buyer signal ingestion skipped", "workspace_id", message.WorkspaceID, "message_id", message.ID, "thread_id", stringValue(message.ThreadID), "skip_reason", skipReason, "contact_count", len(message.ContactIDs), "has_deal", message.DealID != nil)
+		slog.InfoContext(ctx, "crm CRM signal ingestion skipped", "workspace_id", message.WorkspaceID, "message_id", message.ID, "thread_id", stringValue(message.ThreadID), "skip_reason", skipReason, "contact_count", len(message.ContactIDs), "has_deal", message.DealID != nil)
 		return &IngestionResult{SkipReason: skipReason}, nil
 	}
 	if payload == nil {
@@ -134,7 +134,7 @@ func (s *IngestionService) EnqueueEmailMessage(ctx context.Context, messageID st
 		return nil, err
 	}
 
-	slog.InfoContext(ctx, "crm buyer signal ingestion enqueued", "workspace_id", message.WorkspaceID, "message_id", message.ID, "thread_id", stringValue(message.ThreadID), "workflow_id", WorkflowIDForMessage(message.ID), "payloads", len(payloads))
+	slog.InfoContext(ctx, "crm CRM signal ingestion enqueued", "workspace_id", message.WorkspaceID, "message_id", message.ID, "thread_id", stringValue(message.ThreadID), "workflow_id", WorkflowIDForMessage(message.ID), "payloads", len(payloads))
 	return &IngestionResult{
 		Started:      true,
 		PayloadCount: len(payloads),

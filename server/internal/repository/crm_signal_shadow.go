@@ -33,7 +33,7 @@ func (r *CRMSignalRepository) GetSignalShadowGate(
 		)
 		SELECT COUNT(*) AS total,
 		       COUNT(*) FILTER (WHERE NOT EXISTS (
-			   SELECT 1 FROM crm_buyer_signals s
+			   SELECT 1 FROM crm_signals s
 			   WHERE s.observation_id = observation_motions.id
 			     AND s.commercial_motion = observation_motions.motion
 		   )) AS unmapped
@@ -50,7 +50,7 @@ func (r *CRMSignalRepository) GetSignalShadowGate(
 		         COALESCE(CAST(contact_id AS TEXT), '') || ':' ||
 		         COALESCE(CAST(deal_id AS TEXT), '') || ':' ||
 		         COALESCE(CAST(company_id AS TEXT), '')) AS distinct_count
-		FROM crm_buyer_signals
+		FROM crm_signals
 		WHERE workspace_id = ? AND meaning_fingerprint <> ''`, workspaceID).
 		Scan(&duplicateRows).Error; err != nil {
 		return nil, fmt.Errorf("calculate signal duplicate rate: %w", err)
@@ -63,7 +63,7 @@ func (r *CRMSignalRepository) GetSignalShadowGate(
 			float64(duplicateRows.Total)
 	}
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM crm_buyer_signals
+		SELECT COUNT(*) FROM crm_signals
 		WHERE workspace_id = ? AND meaning_fingerprint <> '' AND (
 			commercial_motion <> interpretation_snapshot->>'motion'
 			OR signal_type <> interpretation_snapshot->>'signal_type'

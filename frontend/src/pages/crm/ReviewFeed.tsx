@@ -174,7 +174,7 @@ function QueueClearState({
           <div className="rounded-lg border bg-muted/20 p-4">
             <p className="text-sm font-medium">Where to look next</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Use Insights to see raw buyer signals. Use thresholds when the queue is too noisy or too quiet.
+              Use Insights to see raw CRM signals. Use thresholds when the queue is too noisy or too quiet.
             </p>
           </div>
         </div>

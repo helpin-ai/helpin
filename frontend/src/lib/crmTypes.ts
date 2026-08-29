@@ -764,7 +764,7 @@ export interface CRMSignalMetadata {
   mailbox_email?: string;
 }
 
-export interface CRMBuyerSignal {
+export interface CRMSignal {
   id: string;
   workspace_id: string;
   contact_id?: string;
@@ -885,7 +885,7 @@ export interface CRMSignalAccountStory {
   change_summary: string;
   score_version: number;
   score_factors: Record<string, unknown>;
-  signals: CRMBuyerSignal[];
+  signals: CRMSignal[];
 }
 
 export interface CRMSignalWorkspaceFeed {
@@ -996,7 +996,7 @@ export interface CRMSignalFeedFilters {
   lane_pages?: Partial<Record<CRMCommercialMotion, number>>;
 }
 
-export interface CreateCRMBuyerSignalRequest {
+export interface CreateCRMSignalRequest {
   workspace_id: string;
   contact_id?: string;
   deal_id?: string;
@@ -1128,7 +1128,7 @@ export interface CRMSuggestion {
   description?: string;
   context: Record<string, unknown>;
   signal_ids?: string[];
-  signals?: CRMBuyerSignal[];
+  signals?: CRMSignal[];
   status: CRMSuggestionStatus;
   dismissal_reason?: CRMSignalDismissalReason;
   confidence: number;

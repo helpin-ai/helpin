@@ -30,7 +30,7 @@ import {
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { DealHealthScore } from '@/components/crm/DealHealthScore';
-import { BuyerSignals } from '@/components/crm/BuyerSignals';
+import { EntitySignals } from '@/components/crm/EntitySignals';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
@@ -281,7 +281,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
             <EntitySummaryCard workspaceId={wsId} dealId={dealId} presentation="compact" />
             <div className="min-w-0">
               <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Deal health <DealHealthScore workspaceId={wsId} dealId={dealId} compact /></div>
-              <BuyerSignals
+              <EntitySignals
                 workspaceId={wsId}
                 dealId={dealId}
                 presentation="compact"

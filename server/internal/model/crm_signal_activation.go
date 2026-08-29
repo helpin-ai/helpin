@@ -123,6 +123,6 @@ type CRMSignalBrief struct {
 	Priority        float64          `json:"business_priority"`
 	Severity        string           `json:"severity"`
 	ScoreVersion    int              `json:"score_version"`
-	Sources         []CRMBuyerSignal `json:"sources"`
+	Sources         []CRMSignal `json:"sources"`
 	ActivationReady bool             `json:"activation_ready"`
 }

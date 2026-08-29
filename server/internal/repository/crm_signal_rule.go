@@ -119,11 +119,11 @@ func (r *CRMSignalRepository) FinishSignalEvaluationRun(
 }
 
 // CreateRuleSignalIfAbsent applies the durable evaluator idempotency key.
-func (r *CRMSignalRepository) CreateRuleSignalIfAbsent(ctx context.Context, signal *model.CRMBuyerSignal) (bool, error) {
+func (r *CRMSignalRepository) CreateRuleSignalIfAbsent(ctx context.Context, signal *model.CRMSignal) (bool, error) {
 	if signal == nil || signal.RuleKey == nil || signal.RuleVersion == nil || signal.WindowStartedAt == nil || signal.WindowEndedAt == nil {
 		return false, fmt.Errorf("complete rule identity and evidence window are required")
 	}
-	if r.db.Migrator().HasColumn(&model.CRMBuyerSignal{}, "commercial_motion") {
+	if r.db.Migrator().HasColumn(&model.CRMSignal{}, "commercial_motion") {
 		rows, err := r.prepareSignalInterpretations(ctx, signal)
 		if err != nil {
 			return false, err
@@ -142,7 +142,7 @@ func (r *CRMSignalRepository) CreateRuleSignalIfAbsent(ctx context.Context, sign
 	if signal.ID == "" {
 		signal.ID = uuid.NewString()
 	}
-	query := r.db.WithContext(ctx).Model(&model.CRMBuyerSignal{}).
+	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND rule_key = ? AND rule_version = ?", signal.WorkspaceID, *signal.RuleKey, *signal.RuleVersion).
 		Where("evidence_fingerprint = ?", signal.EvidenceFingerprint)
 	query = nullableSignalID(query, "contact_id", signal.ContactID)

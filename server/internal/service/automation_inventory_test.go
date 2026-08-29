@@ -360,7 +360,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	}
 
 	if got := len(itemsByCatalog["crm.buyer_signal_ingestion"]); got != 1 {
-		t.Fatalf("expected 1 buyer signal ingestion item, got %d", got)
+		t.Fatalf("expected 1 CRM signal ingestion item, got %d", got)
 	}
 	if got := len(itemsByCatalog["crm.contact_summary_refresh"]); got != 1 {
 		t.Fatalf("expected 1 contact summary item, got %d", got)
@@ -384,12 +384,12 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		t.Fatalf("expected 1 sprint move-unfinished item, got %d", got)
 	}
 
-	buyerSignal := itemsByCatalog["crm.buyer_signal_ingestion"][0]
-	if !buyerSignal.Enabled {
-		t.Fatal("expected buyer signal ingestion to be enabled with an active mailbox")
+	signalIngestion := itemsByCatalog["crm.buyer_signal_ingestion"][0]
+	if !signalIngestion.Enabled {
+		t.Fatal("expected CRM signal ingestion to be enabled with an active mailbox")
 	}
-	if buyerSignal.Health.Status != model.AutomationHealthHealthy {
-		t.Fatalf("expected buyer signal ingestion health to be healthy, got %s", buyerSignal.Health.Status)
+	if signalIngestion.Health.Status != model.AutomationHealthHealthy {
+		t.Fatalf("expected CRM signal ingestion health to be healthy, got %s", signalIngestion.Health.Status)
 	}
 
 	epicAutoComplete := itemsByCatalog["pm.epic_auto_complete"][0]

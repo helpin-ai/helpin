@@ -411,7 +411,7 @@ Important implementation direction:
 - Do not power gap inbox page loads by scanning raw events. Gap pages should read from gap, topic, evidence, suggestion, and snapshot tables.
 - Compute aggregate metrics periodically into `support_coverage_snapshots`.
 - Plan for retention: keep recent raw events hot, then archive or compact older events once they have been reflected in gaps, evidence, and snapshots.
-- Keep the existing SDK/events-pipeline/Kafka/ClickHouse path for high-volume product and visitor analytics. Do not make ClickHouse the source of truth for Coverage v1.
+- Keep the existing SDK/events-pipeline/NATS JetStream/ClickHouse path for high-volume product and visitor analytics. Do not make ClickHouse the source of truth for Coverage v1.
 - Do not use Redis as the event source of truth. Redis remains appropriate for ephemeral locks, presence, WebSocket relay, and delayed outboxes.
 - A later Support Analytics product may export or replicate `support_events` into ClickHouse, but Coverage v1 should not depend on that pipeline.
 
@@ -1136,7 +1136,7 @@ support/docs/widget/AI backend
 Product and visitor analytics:
 SDK/widget/browser/server analytics
   -> existing events pipeline
-  -> Kafka/sessionization
+  -> NATS JetStream/session writer
   -> ClickHouse
   -> future analytics dashboards
 ```

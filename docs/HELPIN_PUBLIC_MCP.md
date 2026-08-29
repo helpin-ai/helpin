@@ -26,7 +26,7 @@ The server exposes Helpin capabilities across:
 - workspace context and search
 - projects and tasks
 - documents
-- CRM contacts, deals, and buyer signals
+- CRM contacts, deals, and CRM signals
 - support conversations and public messages
 - Helpin agents and durable agent runs
 
@@ -263,7 +263,7 @@ The fully enabled catalog contains exactly 45 tools. `tools/list` returns only t
 | `get_crm_contact` | Read | Loads one CRM contact and verifies workspace ownership | `PermCRMRead` + CRM module |
 | `list_deals` | Read | Lists a bounded set of deals with core pipeline context | `PermCRMRead` + CRM module |
 | `get_crm_deal` | Read | Loads one CRM deal and verifies workspace ownership | `PermCRMRead` + CRM module |
-| `list_buyer_signals` | Read | Lists buyer signals with their existing Helpin provenance | `PermCRMRead` + CRM module |
+| `list_crm_signals` | Read | Lists CRM signals with their existing Helpin provenance | `PermCRMRead` + CRM module |
 | `add_deal_note` | Write | Adds a note to a deal through the canonical CRM command | `PermCRMEdit` + CRM module |
 | `update_deal_stage` | Write | Updates a deal stage using existing pipeline validation | `PermCRMEdit` + CRM module |
 

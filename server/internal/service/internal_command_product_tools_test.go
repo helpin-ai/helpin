@@ -28,7 +28,7 @@ func TestProductToolCommandDefinitionsExposeNativeAliases(t *testing.T) {
 		{command: "support.update_conversation_status", alias: "update_conversation_status", category: "Support", mutating: true},
 		{command: "crm.list_deals", alias: "list_deals", category: "CRM", mutating: false},
 		{command: "crm.list_contacts", alias: "list_contacts", category: "CRM", mutating: false},
-		{command: "crm.list_buyer_signals", alias: "list_buyer_signals", category: "CRM", mutating: false},
+		{command: "crm.list_crm_signals", alias: "list_crm_signals", category: "CRM", mutating: false},
 		{command: "crm.create_deal", alias: "create_crm_deal", category: "CRM / Operations", mutating: true},
 		{command: "docs.search_documents", alias: "search_documents", category: "Docs", mutating: false},
 		{command: "docs.insert_document_artifact", alias: "insert_document_artifact", category: "Docs", mutating: true},
@@ -447,7 +447,7 @@ func createProductToolCRMTables(t *testing.T, db *gorm.DB) {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE crm_buyer_signals (
+		`CREATE TABLE crm_signals (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			contact_id TEXT,
@@ -491,9 +491,9 @@ func createProductToolCRMTables(t *testing.T, db *gorm.DB) {
 		"stage-1", "pipe-1", "Qualified", now, now)
 	mustExec(t, db, `INSERT INTO crm_deals (id, workspace_id, name, pipeline_id, stage_id, amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		"deal-1", "ws-1", "Acme expansion", "pipe-1", "stage-1", 4200.0, now, now)
-	mustExec(t, db, `INSERT INTO crm_buyer_signals (id, workspace_id, deal_id, signal_type, summary, confidence, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	mustExec(t, db, `INSERT INTO crm_signals (id, workspace_id, deal_id, signal_type, summary, confidence, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		"signal-1", "ws-1", "deal-1", "buying_intent", "Asked for pricing", 0.92, now, now)
-	mustExec(t, db, `INSERT INTO crm_buyer_signals (id, workspace_id, deal_id, signal_type, summary, confidence, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	mustExec(t, db, `INSERT INTO crm_signals (id, workspace_id, deal_id, signal_type, summary, confidence, detected_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		"signal-2", "ws-1", "deal-2", "risk_signal", "Went quiet", 0.71, now, now)
 }
 
@@ -590,7 +590,7 @@ func TestCRMListContactsCommandReturnsContactSummaries(t *testing.T) {
 	}
 }
 
-func TestCRMListBuyerSignalsCommandFiltersByDeal(t *testing.T) {
+func TestCRMListSignalsCommandFiltersByDeal(t *testing.T) {
 	db := newTestDB(t)
 	createProductToolCRMTables(t, db)
 
@@ -601,9 +601,9 @@ func TestCRMListBuyerSignalsCommandFiltersByDeal(t *testing.T) {
 		WorkspaceID: "ws-1",
 		TargetType:  "workspace",
 		TargetID:    "ws-1",
-	}, "crm.list_buyer_signals", json.RawMessage(`{"deal_id":"deal-1"}`))
+	}, "crm.list_crm_signals", json.RawMessage(`{"deal_id":"deal-1"}`))
 	if err != nil {
-		t.Fatalf("crm.list_buyer_signals returned error: %v", err)
+		t.Fatalf("crm.list_crm_signals returned error: %v", err)
 	}
 	var result struct {
 		Signals []struct {
@@ -612,7 +612,7 @@ func TestCRMListBuyerSignalsCommandFiltersByDeal(t *testing.T) {
 			Summary    string  `json:"summary"`
 			Confidence float64 `json:"confidence"`
 			DealID     *string `json:"deal_id"`
-		} `json:"buyer_signals"`
+		} `json:"signals"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("unmarshal output: %v\n%s", err, string(output))

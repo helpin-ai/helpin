@@ -205,7 +205,7 @@ func (r *CRMSummaryRepository) ListRecentlyTouchedContactRefreshInputs(ctx conte
 			WHERE crm_email_messages.sent_at >= ?
 			UNION
 			SELECT workspace_id, contact_id
-			FROM crm_buyer_signals
+			FROM crm_signals
 			WHERE contact_id IS NOT NULL AND detected_at >= ?
 		) recent_contacts
 		ORDER BY workspace_id ASC, contact_id ASC

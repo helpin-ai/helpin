@@ -10,7 +10,7 @@ import (
 
 func TestSignalScoringKeepsConfidenceAndBusinessWeightSeparate(t *testing.T) {
 	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
-	signal := model.CRMBuyerSignal{
+	signal := model.CRMSignal{
 		SignalType: model.CRMSignalBuyingIntent, SignalDomain: model.CRMSignalDomainConversation,
 		Polarity: model.CRMSignalPolarityPositive, Confidence: 0.8,
 		EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now,
@@ -26,7 +26,7 @@ func TestSignalScoringKeepsConfidenceAndBusinessWeightSeparate(t *testing.T) {
 
 func TestSignalRescoringCannotChangeSnapshottedMeaning(t *testing.T) {
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
-	signal := model.CRMBuyerSignal{
+	signal := model.CRMSignal{
 		SignalType: model.CRMSignalRiskSignal, SignalDomain: model.CRMSignalDomainProductUsage,
 		CommercialMotion: model.CRMCommercialMotionRetention, Polarity: model.CRMSignalPolarityNegative,
 		MeaningFingerprint: "immutable-meaning", BusinessWeightSnapshot: 17, HalfLifeDaysSnapshot: 11,
@@ -50,7 +50,7 @@ func TestComposeSignalStoriesBoostsOnlyIndependentDomains(t *testing.T) {
 	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
 	companyID := "company-1"
 	profile := defaultSignalScoringProfile()
-	signals := []model.CRMBuyerSignal{
+	signals := []model.CRMSignal{
 		{ID: "one", CompanyID: &companyID, AccountName: "Acme", SignalType: model.CRMSignalBuyingIntent, SignalDomain: model.CRMSignalDomainConversation, Polarity: model.CRMSignalPolarityPositive, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
 		{ID: "two", CompanyID: &companyID, AccountName: "Acme", SignalType: model.CRMSignalBudgetSignal, SignalDomain: model.CRMSignalDomainWebBehavior, Polarity: model.CRMSignalPolarityPositive, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
 	}
@@ -69,20 +69,20 @@ func TestComposeSignalStoriesBoostsOnlyIndependentDomains(t *testing.T) {
 func TestComposeSignalStoriesCorrelatesSignalsFromSupportConversations(t *testing.T) {
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	companyID := "company-1"
-	signals := make([]model.CRMBuyerSignal, 0, 6)
+	signals := make([]model.CRMSignal, 0, 6)
 	for index, signedImpact := range []float64{8, 8, -8} {
 		threadID := []string{"conversation-1", "conversation-2", "conversation-3"}[index]
 		messageID := []string{"message-1", "message-2", "message-3"}[index]
 		detectedAt := now.Add(-time.Duration(index) * time.Hour)
 		signals = append(signals,
-			model.CRMBuyerSignal{
+			model.CRMSignal{
 				ID: "escalation-" + threadID, CompanyID: &companyID, AccountName: "Acme",
 				SignalType: model.CRMSignalTimelineSignal, SignalDomain: model.CRMSignalDomainSupport,
 				SourceType: model.CRMSignalSourceSupport, SourceID: &threadID,
 				Polarity: model.CRMSignalPolarityNeutral, BusinessPriority: 11,
 				DetectedAt: detectedAt,
 			},
-			model.CRMBuyerSignal{
+			model.CRMSignal{
 				ID: "extracted-" + messageID, CompanyID: &companyID, AccountName: "Acme",
 				SignalType: model.CRMSignalBuyingIntent, SignalDomain: model.CRMSignalDomainConversation,
 				SourceType: model.CRMSignalSourceSupport, SourceID: &messageID, SourceThreadID: &threadID,
@@ -112,8 +112,8 @@ func TestComposeSignalStoriesCorrelatesSignalsFromSupportConversations(t *testin
 }
 
 func TestSignalEvidenceSourceKeyFallsBackToFingerprint(t *testing.T) {
-	first := model.CRMBuyerSignal{ID: "signal-1", SourceType: model.CRMSignalSourceWeb, EvidenceFingerprint: "evidence-1"}
-	second := model.CRMBuyerSignal{ID: "signal-2", SourceType: model.CRMSignalSourceWeb, EvidenceFingerprint: "evidence-1"}
+	first := model.CRMSignal{ID: "signal-1", SourceType: model.CRMSignalSourceWeb, EvidenceFingerprint: "evidence-1"}
+	second := model.CRMSignal{ID: "signal-2", SourceType: model.CRMSignalSourceWeb, EvidenceFingerprint: "evidence-1"}
 	if signalEvidenceSourceKey(first) != signalEvidenceSourceKey(second) {
 		t.Fatal("matching fingerprints should identify one evidence source")
 	}
@@ -126,7 +126,7 @@ func TestSignalEvidenceSourceKeyFallsBackToFingerprint(t *testing.T) {
 func TestComposeSignalStoriesKeepsOpposingEvidenceInsideOneSource(t *testing.T) {
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	companyID, sourceID := "company-1", "product-window-1"
-	signals := []model.CRMBuyerSignal{
+	signals := []model.CRMSignal{
 		{ID: "expansion", CompanyID: &companyID, SourceType: model.CRMSignalSourceProduct, SourceID: &sourceID,
 			CommercialMotion: model.CRMCommercialMotionExpansion, Polarity: model.CRMSignalPolarityPositive,
 			BusinessPriority: 10, SignedImpact: 10, DetectedAt: now},
@@ -162,7 +162,7 @@ func TestPaginateSignalLanesRanksAndPagesEachMotionIndependently(t *testing.T) {
 
 func TestSignalScoringDiscountsUntrustedIdentity(t *testing.T) {
 	now := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
-	verified := model.CRMBuyerSignal{SignalType: model.CRMSignalBuyingIntent, SignalDomain: model.CRMSignalDomainWebBehavior, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now}
+	verified := model.CRMSignal{SignalType: model.CRMSignalBuyingIntent, SignalDomain: model.CRMSignalDomainWebBehavior, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now}
 	anonymous := verified
 	anonymous.EvidenceIdentityTrust = model.IdentityTrustUntrusted
 	profile := defaultSignalScoringProfile()
@@ -177,7 +177,7 @@ func TestNeutralSignalRanksWithoutCreatingMomentum(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	companyID := "company-1"
 	ruleKey := model.CRMSignalRuleSessionDepthSpike
-	signal := model.CRMBuyerSignal{
+	signal := model.CRMSignal{
 		ID: "deep-session", CompanyID: &companyID, AccountName: "Acme",
 		SignalType: model.CRMSignalBuyingIntent, SignalDomain: model.CRMSignalDomainWebBehavior,
 		Polarity: model.CRMSignalPolarityNeutral, Confidence: 1,
@@ -188,7 +188,7 @@ func TestNeutralSignalRanksWithoutCreatingMomentum(t *testing.T) {
 	if signal.BusinessPriority <= 0 || signal.SignedImpact != 0 {
 		t.Fatalf("neutral score priority=%v signed impact=%v, want ranked context with zero impact", signal.BusinessPriority, signal.SignedImpact)
 	}
-	stories := composeSignalStories([]model.CRMBuyerSignal{signal}, profile, now)
+	stories := composeSignalStories([]model.CRMSignal{signal}, profile, now)
 	if len(stories) != 1 || stories[0].Polarity != model.CRMSignalPolarityNeutral || stories[0].Priority <= 0 {
 		t.Fatalf("neutral story = %#v", stories)
 	}

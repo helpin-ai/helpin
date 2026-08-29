@@ -1,6 +1,6 @@
-# CRM Buyer Signals
+# CRM Signals
 
-This is the canonical engineering and operations reference for Helpin buyer
+This is the canonical engineering and operations reference for Helpin CRM
 signals. It describes the implemented system. Historical design decisions and
 the original phase plan remain in
 [`crm-buyer-signals-assessment.md`](crm-buyer-signals-assessment.md), but that
@@ -8,7 +8,7 @@ assessment is not a statement of current implementation status.
 
 ## Purpose
 
-Buyer signals turn evidence already owned by Helpin into explainable CRM
+CRM signals turn evidence already owned by Helpin into explainable CRM
 intelligence. Evidence can come from conversations, support, delivery work,
 deal state, website behavior, instrumented product activity, or normalized
 external providers.
@@ -35,9 +35,14 @@ The system deliberately separates:
 
 Phase 1 can be released and calibrated using existing evidence producers.
 Phase 2 collection, state materialization, baselines, and rule evaluation run
-for event-enabled workspaces during shadow mode so history is warm before
-cutover. Workspace rollout and per-rule shadow/activation policy gate only
-user-visible feeds and downstream actions.
+for all event-enabled workspaces regardless of rollout mode, so history is warm
+whenever a workspace is looked at. Workspace rollout and per-rule
+shadow/activation policy gate only user-visible feeds and downstream actions.
+
+Workspaces are **live by default**. The legacy signal corpus was deleted at the
+motion-spine migration and the legacy feed was not in production use, so there
+is no baseline to shadow against. `shadow` remains available as an explicit
+per-workspace opt-out.
 
 ## Architecture
 
@@ -56,7 +61,7 @@ normalized external evidence API                     /
 
 Postgres is the CRM source of truth. ClickHouse stores high-volume behavioral
 evidence; CRM pages do not query it synchronously. Evaluators aggregate bounded
-ClickHouse evidence and write durable `crm_buyer_signals` rows to Postgres.
+ClickHouse evidence and write durable `crm_signals` rows to Postgres.
 
 ## Signal data model
 
@@ -102,7 +107,7 @@ signals. Verified extraction is recorded as the immutable
 `conversation_signal_extraction` detector version. It starts in shadow mode
 and becomes routable only after an admin promotes that exact version.
 
-See [`crm-buyer-signal-ingestion.md`](crm-buyer-signal-ingestion.md) for the
+See [`crm-signal-ingestion.md`](crm-signal-ingestion.md) for the
 email ingestion details.
 
 ### Daily first-party rules
@@ -203,7 +208,7 @@ set and input snapshot to resolver history. Late evidence cannot overwrite a
 newer snapshot. Identical resolver snapshots are not rewritten, and the audit
 retains 400 days; the signal's own immutable snapshot remains authoritative
 after audit retention. A versioned `(rule_key, rule_version, motion)` mapping then
-creates one `crm_buyer_signals` row per applicable interpretation. No mapping
+creates one `crm_signals` row per applicable interpretation. No mapping
 means no commercial signal; the observation remains visible to mapping-coverage
 metrics. Signal
 type, polarity, recommended action, business weight, half-life, and mapping
@@ -277,6 +282,12 @@ CRM admins promote an activation-eligible global rule version by creating its
 workspace policy copy. Promotion enables that version and clears shadow mode
 for the workspace; context-only rule versions cannot be promoted.
 
+Promotion also requires at least one enabled interpretation for that exact
+`(rule_key, rule_version)`, visible to the workspace. Interpretation lookup
+matches the version exactly, so promoting an unmapped version would leave the
+rule producing observations and no signals. Activation is refused instead.
+Publish the interpretation rows for a new rule version before activating it.
+
 A signal becomes activation-eligible only when:
 
 1. its exact rule version is enabled, activation-enabled, and no longer in
@@ -307,13 +318,18 @@ not replay legacy evidence; if replay is added later, replay-created signals
 must set `replay_calibration_excluded` because today's motion cannot be treated
 as the motion at the original event time.
 
-### Shadow release gate
+### Release readiness gate
 
-Phase 1 remains in shadow mode until a workspace has at least 100 observations,
+A workspace is considered release-ready when it has at least 100 observations,
 an unmapped-observation rate below 5%, a duplicate fingerprint-and-motion rate
 below 1%, and zero immutable-meaning violations. The last condition is a hard
 test invariant: two rescores may change priority, never stored motion, type,
 polarity, or meaning fingerprint. `GET /signals/shadow-gate` exposes the gate.
+
+The gate is diagnostic rather than blocking. Workspaces start live, so
+`POST /signals/rollout/activate` is the recovery path out of an explicit shadow
+opt-out; it records a warning when the thresholds are not met instead of
+refusing, so activating below the bar stays visible in logs.
 
 ## Product and API surfaces
 
@@ -352,9 +368,9 @@ Primary routes under `/api/crm`:
 | GET | `/meetings/{id}/signal-brief` | meeting-specific brief |
 | GET | `/signals/precision` | rule feedback and precision report |
 | GET | `/signals/outcomes` | delayed subscription-outcome calibration |
-| GET | `/signals/shadow-gate` | objective Phase 1 shadow-release gate |
-| GET | `/signals/rollout` | current workspace shadow/live cutover state |
-| POST | `/signals/rollout/activate` | activate a workspace after its shadow gate passes |
+| GET | `/signals/shadow-gate` | objective release-readiness gate (diagnostic) |
+| GET | `/signals/rollout` | current workspace shadow/live state; live by default |
+| POST | `/signals/rollout/activate` | return a workspace to live after a shadow opt-out |
 | GET | `/signals/rules` | effective shadow/live rule versions |
 | GET/PUT | `/signals/routing-settings` | dedicated default signal ownership |
 | GET/POST | `/signals/routing-policy` | inspect or create a policy version |
@@ -440,9 +456,9 @@ rather than disappearing from the baseline. Baselines rebuild in a separately
 leased daily job, resolve company IDs and write rows in batches, and rules read
 the persisted values while scanning only the seven recent local-calendar days.
 Superseded baseline windows retain 90 days for diagnosis and are pruned by the
-daily evaluator thereafter. Baseline leases are workspace-scoped and begin in
-shadow mode, allowing the eight-week eligibility history to mature before live
-feed activation.
+daily evaluator thereafter. Baseline leases are workspace-scoped and run
+regardless of rollout mode, so the eight-week eligibility history matures even
+for a workspace that has opted into shadow.
 A workspace anomaly guard suppresses
 a decline batch only with at least 100 eligible accounts and a 35% trip rate;
 smaller workspaces rely on the five-of-seven rule. Suppressions are persisted
@@ -545,7 +561,7 @@ For a behavioral signal test, also ensure:
 4. the API has `CLICKHOUSE_DSN` configured; and
 5. the ten-minute evaluator has run.
 
-Then inspect `crm_signal_evaluation_runs` and `crm_buyer_signals` in Postgres or
+Then inspect `crm_signal_evaluation_runs` and `crm_signals` in Postgres or
 open CRM Insights. A stored signal is expected to remain activation-blocked
 while its rule version is in shadow mode.
 
@@ -572,13 +588,13 @@ pipeline operations and migration commands.
 | activation and feedback | `server/internal/service/crm_signal_activation.go` |
 | API handlers and routes | `server/internal/handler/crm_signal.go`, `server/internal/router/router.go` |
 | frontend feed | `frontend/src/components/crm/SignalWorkspaceFeed.tsx` |
-| entity signal panels | `frontend/src/components/crm/BuyerSignals.tsx` |
+| entity signal panels | `frontend/src/components/crm/EntitySignals.tsx` |
 | SDK capture | `packages/sdk-js/src/core` |
 | event pipeline | `events-pipeline/` |
 
 ## Related documents
 
-- [`crm-buyer-signal-ingestion.md`](crm-buyer-signal-ingestion.md) — email and
+- [`crm-signal-ingestion.md`](crm-signal-ingestion.md) — email and
   conversation ingestion details.
 - [`crm-entity-summaries.md`](crm-entity-summaries.md) — downstream summary
   refresh and provenance.
