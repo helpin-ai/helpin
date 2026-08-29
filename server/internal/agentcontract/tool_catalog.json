@@ -2137,8 +2137,8 @@
       "presets": []
     },
     {
-      "name": "list_buyer_signals",
-      "description": "List detected buyer signals from emails, meetings, and support conversations.",
+      "name": "list_crm_signals",
+      "description": "List detected CRM signals from emails, meetings, and support conversations.",
       "category": "CRM",
       "input_schema": {
         "properties": {

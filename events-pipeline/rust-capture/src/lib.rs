@@ -1,6 +1,7 @@
 pub mod api;
 pub mod auth;
 mod capture;
+pub mod commercial_event_catalog_generated;
 pub mod enrichment;
 pub mod events;
 pub mod geo;

@@ -18,7 +18,18 @@ type CRMCompanyService struct {
 	companyRepo    *repository.CRMCompanyRepository
 	timelineRepo   *repository.CRMCompanyTimelineRepository
 	summaryRefresh CompanySummaryRefreshRequester
+	motionSignals  interface {
+		RefreshEntityMotionSignals(ctx context.Context, workspaceID, entityType, entityID string) error
+	}
 	productAnalyticsEmitter
+}
+
+// SetMotionSignalRefresher keeps company motion state current outside detection runs.
+func (s *CRMCompanyService) SetMotionSignalRefresher(refresher interface {
+	RefreshEntityMotionSignals(ctx context.Context, workspaceID, entityType, entityID string) error
+}) *CRMCompanyService {
+	s.motionSignals = refresher
+	return s
 }
 
 // SetCompanySummaryRefresh enables summary invalidation after company changes.
@@ -199,20 +210,21 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 	}
 
 	company := &model.CRMCompany{
-		WorkspaceID:      req.WorkspaceID,
-		DisplayID:        displayID,
-		ExternalID:       req.ExternalID,
-		Name:             strings.TrimSpace(req.Name),
-		Domain:           req.Domain,
-		Industry:         req.Industry,
-		EmployeeCount:    req.EmployeeCount,
-		AnnualRevenue:    req.AnnualRevenue,
-		Description:      req.Description,
-		LogoURL:          req.LogoURL,
-		LinkedInURL:      req.LinkedInURL,
-		Headquarters:     req.Headquarters,
-		OwnerMemberID:    req.OwnerMemberID,
-		CustomProperties: model.JSONB(req.CustomProperties),
+		WorkspaceID:                  req.WorkspaceID,
+		DisplayID:                    displayID,
+		ExternalID:                   req.ExternalID,
+		Name:                         strings.TrimSpace(req.Name),
+		Domain:                       req.Domain,
+		Industry:                     req.Industry,
+		EmployeeCount:                req.EmployeeCount,
+		AnnualRevenue:                req.AnnualRevenue,
+		Description:                  req.Description,
+		LogoURL:                      req.LogoURL,
+		LinkedInURL:                  req.LinkedInURL,
+		Headquarters:                 req.Headquarters,
+		OwnerMemberID:                req.OwnerMemberID,
+		CustomerSuccessOwnerMemberID: req.CustomerSuccessOwnerMemberID,
+		CustomProperties:             model.JSONB(req.CustomProperties),
 	}
 
 	if err := s.companyRepo.Create(ctx, company); err != nil {
@@ -225,6 +237,7 @@ func (s *CRMCompanyService) Create(ctx context.Context, req model.CreateCRMCompa
 		Attributes: map[string]any{"entity_id": company.ID, "industry": company.Industry, "module": "crm"},
 	})
 	s.requestCompanySummaryRefresh(ctx, company.WorkspaceID, company.ID)
+	s.refreshCompanySignalMotions(ctx, company.WorkspaceID, company.ID)
 	return company, nil
 }
 
@@ -277,6 +290,11 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 	} else if req.OwnerMemberID != nil {
 		company.OwnerMemberID = req.OwnerMemberID
 	}
+	if req.ClearCustomerSuccessOwner {
+		company.CustomerSuccessOwnerMemberID = nil
+	} else if req.CustomerSuccessOwnerMemberID != nil {
+		company.CustomerSuccessOwnerMemberID = req.CustomerSuccessOwnerMemberID
+	}
 	if req.CustomProperties != nil {
 		company.CustomProperties = model.JSONB(req.CustomProperties)
 	}
@@ -285,7 +303,17 @@ func (s *CRMCompanyService) Update(ctx context.Context, id string, req model.Upd
 		return nil, err
 	}
 	s.requestCompanySummaryRefresh(ctx, company.WorkspaceID, company.ID)
+	s.refreshCompanySignalMotions(ctx, company.WorkspaceID, company.ID)
 	return company, nil
+}
+
+func (s *CRMCompanyService) refreshCompanySignalMotions(ctx context.Context, workspaceID, companyID string) {
+	if s.motionSignals == nil {
+		return
+	}
+	if err := s.motionSignals.RefreshEntityMotionSignals(ctx, workspaceID, "company", companyID); err != nil {
+		slog.ErrorContext(ctx, "failed to refresh company signal motions", "error", err, "workspace_id", workspaceID, "company_id", companyID)
+	}
 }
 
 // Delete removes a company.

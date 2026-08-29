@@ -716,7 +716,7 @@ func (s *CRMEmailService) SendEmail(ctx context.Context, workspaceID, accountID,
 			slog.ErrorContext(ctx, "failed to refresh sent email thread contacts", "error", err, "thread_id", *threadID)
 		}
 	}
-	s.enqueueBuyerSignalDetection(ctx, message.ID)
+	s.enqueueSignalDetection(ctx, message.ID)
 	s.requestSummaryRefreshForMessage(ctx, message, "manual_send")
 
 	slog.InfoContext(ctx, "email sent", "account_id", accountID, "message_id", sendResult.ID, "to", to)
@@ -914,7 +914,7 @@ func (s *CRMEmailService) ReplyToThread(ctx context.Context, workspaceID, thread
 	} else if err := s.emailRepo.RefreshThreadContactIDs(ctx, thread.ID); err != nil {
 		slog.ErrorContext(ctx, "failed to refresh reply thread contacts", "error", err, "thread_id", thread.ID)
 	}
-	s.enqueueBuyerSignalDetection(ctx, message.ID)
+	s.enqueueSignalDetection(ctx, message.ID)
 	s.requestSummaryRefreshForMessage(ctx, message, "thread_reply")
 	return message, nil
 }
@@ -1143,7 +1143,7 @@ func (s *CRMEmailService) CreateMessage(ctx context.Context, req model.CreateCRM
 			slog.ErrorContext(ctx, "failed to refresh manual message thread contacts", "error", err, "thread_id", *req.ThreadID)
 		}
 	}
-	s.enqueueBuyerSignalDetection(ctx, message.ID)
+	s.enqueueSignalDetection(ctx, message.ID)
 	s.requestSummaryRefreshForMessage(ctx, message, "manual_create")
 	return message, nil
 }
@@ -1310,12 +1310,12 @@ func (s *CRMEmailService) populateHasSyncedData(ctx context.Context, accounts []
 	return nil
 }
 
-func (s *CRMEmailService) enqueueBuyerSignalDetection(ctx context.Context, messageID string) {
+func (s *CRMEmailService) enqueueSignalDetection(ctx context.Context, messageID string) {
 	if s == nil || s.signalIngestion == nil || messageID == "" {
 		return
 	}
 	if _, err := s.signalIngestion.EnqueueEmailMessage(ctx, messageID); err != nil {
-		slog.ErrorContext(ctx, "failed to enqueue crm buyer signal detection", "error", err, "message_id", messageID)
+		slog.ErrorContext(ctx, "failed to enqueue crm CRM signal detection", "error", err, "message_id", messageID)
 	}
 }
 

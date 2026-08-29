@@ -1,13 +1,13 @@
 # CRM Conversation Signal Ingestion
 
 This is the implementation-detail reference for conversation and email signal
-extraction. The canonical cross-domain buyer-signals architecture, rule
+extraction. The canonical cross-domain CRM-signals architecture, rule
 catalogue, scoring, and activation model lives in
-[`crm-buyer-signals.md`](crm-buyer-signals.md). The canonical platform model for
+[`crm-signals.md`](crm-signals.md). The canonical platform model for
 agents, built-in automations, and automation rules lives in
 [`AGENTS_AND_AUTOMATION.md`](AGENTS_AND_AUTOMATION.md).
 
-This document explains how synced CRM email becomes stored LLM-extracted buyer
+This document explains how synced CRM email becomes stored LLM-extracted CRM
 signals, where idempotency is enforced, what gets skipped, and which product
 surfaces consume those signals. It does not describe deterministic Postgres or
 ClickHouse rules.
@@ -22,11 +22,11 @@ The implemented pipeline does four things:
 1. take already-stored CRM email messages
 2. decide whether each message is eligible for signal detection
 3. enqueue one Temporal workflow per eligible message
-4. persist auditable buyer signals with provenance and duplicate suppression
+4. persist auditable CRM signals with provenance and duplicate suppression
 
 This is a background system automation. It is not a user-visible agent class and it does not run through PM/support explicit agent queues.
 
-Contact, company, and deal summaries consume these stored buyer signals and are
+Contact, company, and deal summaries consume these stored CRM signals and are
 documented separately in
 [`crm-entity-summaries.md`](crm-entity-summaries.md).
 
@@ -34,15 +34,15 @@ documented separately in
 
 Gmail is the source of truth for mailbox contents.
 
-Buyer-signal ingestion does **not** read raw Gmail payloads directly. It runs from CRM-owned normalized email records already stored in Postgres:
+CRM-signal ingestion does **not** read raw Gmail payloads directly. It runs from CRM-owned normalized email records already stored in Postgres:
 
 - `crm_email_messages`
 - `crm_email_threads`
 - `crm_email_message_contacts`
 
-The buyer-signal records themselves are stored in:
+The CRM-signal records themselves are stored in:
 
-- `crm_buyer_signals`
+- `crm_signals`
 
 ## Main components
 
@@ -50,7 +50,7 @@ The buyer-signal records themselves are stored in:
 - `email_sync_activities.go` persists Gmail-synced messages.
 - `crmsignal.IngestionService` decides whether a stored message should trigger signal detection and starts the workflow.
 - `SignalDetectionWorkflow` runs the async detection path on the `automation-default` queue.
-- `SignalDetectionService` calls the LLM and stores resulting buyer signals.
+- `SignalDetectionService` calls the LLM and stores resulting CRM signals.
 - `CRMSignalRepository` enforces source-level idempotency and repeated-thread suppression checks.
 
 Primary implementation files:
@@ -66,7 +66,7 @@ Primary implementation files:
 
 ## Trigger points
 
-Buyer-signal ingestion is triggered only after a CRM email message has been successfully stored.
+CRM-signal ingestion is triggered only after a CRM email message has been successfully stored.
 
 Current trigger points:
 
@@ -247,24 +247,24 @@ This reduces repeated budget/timeline/champion/risk events from noisy active thr
 
 ## Failure behavior
 
-Buyer-signal ingestion is downstream from CRM email storage.
+CRM-signal ingestion is downstream from CRM email storage.
 
 Important rules:
 
 - if enqueue fails, the CRM email message is still stored
 - if workflow execution fails, mailbox sync still succeeds
 - if LLM detection fails, no signal row is written, but the email remains durable
-- retries should not create duplicate buyer signals because persistence is idempotent
+- retries should not create duplicate CRM signals because persistence is idempotent
 
 This separation is intentional. CRM email sync is the durability path. Signal detection is derived automation.
 
 ## Product surfaces that consume the signals
 
-Current CRM surfaces reading stored buyer signals:
+Current CRM surfaces reading stored CRM signals:
 
-- CRM contact detail buyer-signal panel
-- CRM company detail buyer-signal panel
-- CRM deal detail buyer-signal panel
+- CRM contact detail CRM-signal panel
+- CRM company detail CRM-signal panel
+- CRM deal detail CRM-signal panel
 - ranked workspace feed on CRM Insights
 - account and meeting signal briefs
 
@@ -294,7 +294,7 @@ does not describe:
 - contact, company, and deal summaries.
 
 Those implemented paths are covered by
-[`crm-buyer-signals.md`](crm-buyer-signals.md) and
+[`crm-signals.md`](crm-signals.md) and
 [`crm-entity-summaries.md`](crm-entity-summaries.md).
 
 ## Current limitations and follow-ups
@@ -316,9 +316,9 @@ When a signal is missing:
 3. verify the message has exactly one associated contact or an attached deal
 4. verify it was not a multi-contact/no-deal skip
 5. check logs for:
-   - `crm buyer signal ingestion skipped`
-   - `crm buyer signal ingestion enqueued`
-   - `failed to enqueue crm buyer signal detection`
+   - `crm CRM signal ingestion skipped`
+   - `crm CRM signal ingestion enqueued`
+   - `failed to enqueue crm CRM signal detection`
 6. check whether a same-thread same-type signal already exists in the last 24 hours
 
 When duplicate signals appear:
@@ -329,6 +329,6 @@ When duplicate signals appear:
 
 ## Related docs
 
-- [`crm-buyer-signals.md`](crm-buyer-signals.md)
+- [`crm-signals.md`](crm-signals.md)
 - [`crm-email-sync.md`](crm-email-sync.md)
 - [`crm-entity-summaries.md`](crm-entity-summaries.md)

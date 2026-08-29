@@ -57,7 +57,7 @@ import {
   useCreateAssociation,
   useDeleteAssociation,
 } from '@/hooks/queries';
-import { BuyerSignals } from '@/components/crm/BuyerSignals';
+import { EntitySignals } from '@/components/crm/EntitySignals';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
@@ -118,7 +118,7 @@ type ContactSidebarSection = 'primary-company' | 'other-companies' | 'deals' | '
 export const contactDetailOverviewGridClassName = 'grid-cols-1 lg:grid-cols-[1fr_360px]';
 export const contactDetailCollapsedGridClassName = 'grid-cols-1 lg:grid-cols-[minmax(0,1fr)_40px]';
 export const contactDetailOverviewContentClassName = 'mt-0';
-export const buyerSignalsSectionClassName = '';
+export const signalsSectionClassName = '';
 export const contactDetailOverviewSectionOrder = ['summary_signals', 'activity'] as const;
 export const contactDetailSidebarSectionTitles = ['Details', 'Enrichment', 'Company', 'Deals', 'Open tasks', 'Support'] as const;
 export const contactDetailDefaultFieldKeys = [
@@ -1087,12 +1087,12 @@ export function ContactDetailPage({
                 }}
                 onTaskCreated={refreshContactActivity}
               />
-              <section aria-label="Buyer signals" className="border-b border-border/60">
+              <section aria-label="CRM signals" className="border-b border-border/60">
                 <div className="flex items-center gap-2 px-4 pb-2 pt-5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 sm:px-6 lg:px-10">
                   <ZapIcon className="h-[15px] w-[15px] text-muted-foreground" />
-                  Buyer signals
+                  CRM signals
                 </div>
-                <BuyerSignals
+                <EntitySignals
                   workspaceId={wsId}
                   contactId={contactId}
                   presentation="overview"

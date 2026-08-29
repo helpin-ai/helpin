@@ -56,6 +56,36 @@ func TestEventProjectAliasCannotCrossWorkspaces(t *testing.T) {
 	}
 }
 
+func TestListAllActiveEventWorkspaceIDsDoesNotRequireLiveRollout(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:event-workspaces-shadow?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE support_widget_installations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL)`,
+		`INSERT INTO support_widget_installations VALUES ('one', 'workspace-shadow', 1)`,
+		`INSERT INTO support_widget_installations VALUES ('two', 'workspace-live', 1)`,
+		`INSERT INTO support_widget_installations VALUES ('three', 'workspace-disabled', 0)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("seed event workspaces: %v", err)
+		}
+	}
+	workspaceIDs, err := NewEventProjectRepository(db).ListAllActiveEventWorkspaceIDs(context.Background())
+	if err != nil {
+		t.Fatalf("list event workspaces: %v", err)
+	}
+	want := []string{"workspace-live", "workspace-shadow"}
+	if len(workspaceIDs) != len(want) {
+		t.Fatalf("workspace IDs=%v, want %v", workspaceIDs, want)
+	}
+	for index := range want {
+		if workspaceIDs[index] != want[index] {
+			t.Fatalf("workspace IDs=%v, want %v", workspaceIDs, want)
+		}
+	}
+}
+
 func createEventProjectAliasTestTable(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Exec(`CREATE TABLE workspace_event_project_aliases (

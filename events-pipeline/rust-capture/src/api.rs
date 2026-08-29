@@ -34,6 +34,7 @@ pub enum CaptureError {
     NonRetryableSinkError(String),
     EventTooBig(String),
     PayloadTooLarge,
+    ForbiddenCommercialEvent,
 }
 
 impl CaptureError {
@@ -47,6 +48,7 @@ impl CaptureError {
             CaptureError::NonRetryableSinkError(_) => "non_retryable_sink_error",
             CaptureError::EventTooBig(_) => "event_too_big",
             CaptureError::PayloadTooLarge => "payload_too_large",
+            CaptureError::ForbiddenCommercialEvent => "forbidden_commercial_event",
         }
     }
 }
@@ -64,6 +66,10 @@ impl std::fmt::Display for CaptureError {
             CaptureError::NonRetryableSinkError(msg) => write!(f, "Sink error: {}", msg),
             CaptureError::EventTooBig(msg) => write!(f, "Event too big: {}", msg),
             CaptureError::PayloadTooLarge => write!(f, "Payload too large"),
+            CaptureError::ForbiddenCommercialEvent => write!(
+                f,
+                "Commercial state and billing events require a server credential"
+            ),
         }
     }
 }
@@ -79,6 +85,7 @@ impl IntoResponse for CaptureError {
             CaptureError::NonRetryableSinkError(_) => StatusCode::BAD_REQUEST,
             CaptureError::EventTooBig(_) => StatusCode::PAYLOAD_TOO_LARGE,
             CaptureError::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            CaptureError::ForbiddenCommercialEvent => StatusCode::FORBIDDEN,
         };
 
         metrics::increment_counter!("capture_errors_total", "error" => self.to_metric_tag());

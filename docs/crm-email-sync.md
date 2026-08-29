@@ -29,7 +29,7 @@ This document focuses only on mailbox lifecycle, contact creation, message assoc
 - `EmailSyncActivities` does first-sync backfill, incremental sync, checkpoint persistence, and message storage.
 - `GmailSyncClient` wraps Gmail APIs for mailbox profile, messages, history, token refresh, and send.
 - `crmemail.Resolver` normalizes participants, matches contacts, and auto-creates contacts when allowed.
-- `crmsignal.IngestionService` evaluates stored CRM email messages and enqueues buyer-signal detection for eligible messages.
+- `crmsignal.IngestionService` evaluates stored CRM email messages and enqueues CRM-signal detection for eligible messages.
 - `CRMSummaryService` requests and generates contact/deal summaries after email and signal activity.
 - `CRMEmailRepository` persists accounts, threads, messages, message-contact links, and thread contact caches.
 
@@ -396,7 +396,7 @@ Once the message and associations are stored:
 - the email becomes visible in CRM inbox and contact/deal email views
 - multi-contact messages are queryable from all associated contacts
 - thread contact membership is reflected in thread filters
-- eligible stored CRM email messages can enqueue buyer-signal detection as a downstream automation
+- eligible stored CRM email messages can enqueue CRM-signal detection as a downstream automation
 - reconnect resumes the same mailbox history if the mailbox was disconnected but not purged
 
 ## Troubleshooting and debugging notes

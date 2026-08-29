@@ -3,8 +3,8 @@
 Monorepo for the Helpin app, embedded widget SDK, shared widget components, and the standalone widget bundle.
 
 Engineering documentation starts at [docs/README.md](docs/README.md). The
-canonical buyer-signals reference is
-[docs/crm-buyer-signals.md](docs/crm-buyer-signals.md).
+canonical CRM signals reference is
+[docs/crm-signals.md](docs/crm-signals.md).
 
 ## Main Packages
 

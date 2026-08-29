@@ -273,6 +273,7 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			linkedin_url TEXT,
 			headquarters TEXT,
 			owner_member_id TEXT,
+			customer_success_owner_member_id TEXT,
 			custom_properties BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -282,6 +283,7 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
 			is_default BOOLEAN NOT NULL DEFAULT 0,
+			default_commercial_motion TEXT NOT NULL DEFAULT 'new_business',
 			position INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -307,6 +309,7 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			currency TEXT NOT NULL DEFAULT 'USD',
 			close_date DATETIME,
 			owner_member_id TEXT,
+			commercial_motion TEXT,
 			probability INTEGER,
 			custom_properties BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -353,7 +356,7 @@ func setupCRMSummaryTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (message_id, contact_id, participant_role)
 		)`,
-		`CREATE TABLE crm_buyer_signals (
+		`CREATE TABLE crm_signals (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			contact_id TEXT,
@@ -443,7 +446,7 @@ func TestCRMSummaryService_RefreshContactSummaryPersistsReady(t *testing.T) {
 		"msg-1", "ws-1", "acct-1", "buyer@example.com", `["owner@example.com"]`, `[]`, "Pricing follow-up", "We have budget approved and want pricing this week.", "inbound", now.Add(-2*time.Hour), "contact-1")
 	mustExecSummary(t, db, `INSERT INTO crm_email_message_contacts (message_id, contact_id, participant_role, workspace_id) VALUES (?, ?, ?, ?)`,
 		"msg-1", "contact-1", "from", "ws-1")
-	mustExecSummary(t, db, `INSERT INTO crm_buyer_signals (id, workspace_id, contact_id, deal_id, signal_type, source_type, source_id, summary, metadata, confidence, detected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS BLOB), ?, ?)`,
+	mustExecSummary(t, db, `INSERT INTO crm_signals (id, workspace_id, contact_id, deal_id, signal_type, source_type, source_id, summary, metadata, confidence, detected_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS BLOB), ?, ?)`,
 		"signal-1", "ws-1", "contact-1", "deal-1", "buying_intent", "email", "msg-1", "Prospect requested pricing and confirmed budget.", `{}`, 0.91, now.Add(-time.Hour))
 
 	requestedAt := now.Add(-30 * time.Second)

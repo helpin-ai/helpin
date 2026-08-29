@@ -13,7 +13,7 @@ func TestCalculateDealHealthScoreUsesStageRecencyAndDecayedSignals(t *testing.T)
 		ID: "deal-1", WorkspaceID: "workspace-1", UpdatedAt: now,
 		Stage: &model.CRMPipelineStage{StageType: model.CRMStageTypeOpen, Probability: 50},
 	}
-	signals := []model.CRMBuyerSignal{
+	signals := []model.CRMSignal{
 		{SignalType: model.CRMSignalBuyingIntent, SourceType: model.CRMSignalSourceEmail, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
 		{SignalType: model.CRMSignalBudgetSignal, SourceType: model.CRMSignalSourceEmail, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
 	}
@@ -30,7 +30,7 @@ func TestCalculateDealHealthScoreUsesStageRecencyAndDecayedSignals(t *testing.T)
 func TestCalculateDealHealthScoreBoostsIndependentDomains(t *testing.T) {
 	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
 	deal := &model.CRMDeal{UpdatedAt: now, Stage: &model.CRMPipelineStage{StageType: model.CRMStageTypeOpen, Probability: 50}}
-	signals := []model.CRMBuyerSignal{
+	signals := []model.CRMSignal{
 		{SignalType: model.CRMSignalBuyingIntent, SignalDomain: model.CRMSignalDomainConversation, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
 		{SignalType: model.CRMSignalBudgetSignal, SignalDomain: model.CRMSignalDomainWebBehavior, Confidence: 1, EvidenceIdentityTrust: model.IdentityTrustVerified, DetectedAt: now},
 	}

@@ -78,6 +78,54 @@ func (h *CRMSignalHandler) PrecisionReport(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
 }
 
+// OutcomeCalibrationReport reports delayed subscription outcomes separately from rep feedback.
+func (h *CRMSignalHandler) OutcomeCalibrationReport(w http.ResponseWriter, r *http.Request) {
+	horizonDays, _ := strconv.Atoi(r.URL.Query().Get("horizon_days"))
+	rows, err := h.signalService.SignalOutcomeCalibrationReport(r.Context(), getWorkspaceID(r), horizonDays)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": rows})
+}
+
+// ShadowGate reports whether a workspace meets the motion-spine release thresholds.
+func (h *CRMSignalHandler) ShadowGate(w http.ResponseWriter, r *http.Request) {
+	gate, err := h.signalService.SignalShadowGate(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "signal shadow gate could not be calculated")
+		return
+	}
+	writeJSON(w, http.StatusOK, gate)
+}
+
+// GetRolloutSettings returns whether the workspace is still shadowing or live.
+func (h *CRMSignalHandler) GetRolloutSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.signalService.GetSignalRolloutSettings(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "signal rollout settings could not be loaded")
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+// ActivateRollout cuts a workspace over only after its objective shadow gate passes.
+func (h *CRMSignalHandler) ActivateRollout(w http.ResponseWriter, r *http.Request) {
+	actor := authorization.GetActor(r.Context())
+	if actor == nil || actor.WorkspaceMemberID == "" {
+		writeError(w, http.StatusForbidden, "workspace membership is required")
+		return
+	}
+	settings, err := h.signalService.ActivateSignalRollout(
+		r.Context(), getWorkspaceID(r), actor.WorkspaceMemberID,
+	)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
 func (h *CRMSignalHandler) ListRuleConfigs(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.signalService.ListRuleConfigs(r.Context(), getWorkspaceID(r))
 	if err != nil {
@@ -94,6 +142,31 @@ func (h *CRMSignalHandler) GetRoutingPolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, policy)
+}
+
+// GetRoutingSettings returns mutable signal ownership defaults.
+func (h *CRMSignalHandler) GetRoutingSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.signalService.GetSignalRoutingSettings(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "signal routing settings could not be loaded")
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+// UpdateRoutingSettings updates mutable signal ownership defaults.
+func (h *CRMSignalHandler) UpdateRoutingSettings(w http.ResponseWriter, r *http.Request) {
+	var req model.UpdateCRMSignalRoutingSettingsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	settings, err := h.signalService.UpdateSignalRoutingSettings(r.Context(), getWorkspaceID(r), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
 }
 
 func (h *CRMSignalHandler) CreateRoutingPolicy(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +263,7 @@ func (h *CRMSignalHandler) ListSignals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if signals == nil {
-		signals = []model.CRMBuyerSignal{}
+		signals = []model.CRMSignal{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data":  signals,
@@ -211,7 +284,7 @@ func (h *CRMSignalHandler) ListWorkspaceFeed(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "invalid filters query")
 		return
 	}
-	feed, err := h.signalService.ListWorkspaceSignalFeed(r.Context(), workspaceID, filters, queryPagination(r))
+	feed, err := h.signalService.ListWorkspaceSignalLanes(r.Context(), workspaceID, filters, queryPagination(r), signalLanePages(r))
 	if err != nil {
 		var validationErr *querybuilder.ValidationError
 		if errors.As(err, &validationErr) {
@@ -224,19 +297,52 @@ func (h *CRMSignalHandler) ListWorkspaceFeed(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, feed)
 }
 
-func signalListFiltersFromRequest(r *http.Request) (model.CRMBuyerSignalListFilters, error) {
+// ListWorkspaceShadowPreview handles the admin-only shadow composition route.
+func (h *CRMSignalHandler) ListWorkspaceShadowPreview(w http.ResponseWriter, r *http.Request) {
+	filters, err := signalListFiltersFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid filters query")
+		return
+	}
+	feed, err := h.signalService.ListWorkspaceSignalShadowPreview(
+		r.Context(), getWorkspaceID(r), filters, queryPagination(r), signalLanePages(r),
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "signal shadow preview could not be loaded")
+		return
+	}
+	writeJSON(w, http.StatusOK, feed)
+}
+
+func signalLanePages(r *http.Request) map[string]int {
+	pages := map[string]int{}
+	for _, motion := range []string{
+		model.CRMCommercialMotionProspecting, model.CRMCommercialMotionConversion,
+		model.CRMCommercialMotionOnboarding, model.CRMCommercialMotionAdoption,
+		model.CRMCommercialMotionExpansion, model.CRMCommercialMotionRenewal,
+		model.CRMCommercialMotionRetention,
+	} {
+		if page, err := strconv.Atoi(r.URL.Query().Get("lane_" + motion + "_page")); err == nil && page > 0 {
+			pages[motion] = page
+		}
+	}
+	return pages
+}
+
+func signalListFiltersFromRequest(r *http.Request) (model.CRMSignalListFilters, error) {
 	queryFilters, err := queryFilterGroup(r, "filters")
 	if err != nil {
-		return model.CRMBuyerSignalListFilters{}, err
+		return model.CRMSignalListFilters{}, err
 	}
-	filters := model.CRMBuyerSignalListFilters{
+	filters := model.CRMSignalListFilters{
 		ContactID: queryStringPtr(r, "contact_id"), DealID: queryStringPtr(r, "deal_id"),
 		CompanyID: queryStringPtr(r, "account_id"), SignalType: queryStringPtr(r, "signal_type"),
 		SourceType: queryStringPtr(r, "source_type"), OwnerMemberID: queryStringPtr(r, "owner_member_id"),
 		SignalDomain: queryStringPtr(r, "domain"), Polarity: queryStringPtr(r, "polarity"),
 		EvidenceIdentityTrust: queryStringPtr(r, "trust"), Status: queryStringPtr(r, "status"),
-		Severity: queryStringPtr(r, "severity"),
-		Query:    queryFilters,
+		Severity:         queryStringPtr(r, "severity"),
+		CommercialMotion: queryStringPtr(r, "motion"),
+		Query:            queryFilters,
 	}
 	if filters.CompanyID == nil {
 		filters.CompanyID = queryStringPtr(r, "company_id")
@@ -251,7 +357,7 @@ func signalListFiltersFromRequest(r *http.Request) (model.CRMBuyerSignalListFilt
 
 // CreateSignal handles POST /api/crm/signals.
 func (h *CRMSignalHandler) CreateSignal(w http.ResponseWriter, r *http.Request) {
-	var req model.CreateCRMBuyerSignalRequest
+	var req model.CreateCRMSignalRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -364,7 +470,7 @@ func (h *CRMSignalHandler) ListByContact(w http.ResponseWriter, r *http.Request)
 	contactID := chi.URLParam(r, "id")
 	pagination := queryPagination(r)
 
-	filters := model.CRMBuyerSignalListFilters{
+	filters := model.CRMSignalListFilters{
 		ContactID: &contactID,
 	}
 	signals, total, err := h.signalService.ListSignals(r.Context(), workspaceID, filters, pagination)
@@ -373,7 +479,7 @@ func (h *CRMSignalHandler) ListByContact(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if signals == nil {
-		signals = []model.CRMBuyerSignal{}
+		signals = []model.CRMSignal{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data":  signals,
@@ -388,7 +494,7 @@ func (h *CRMSignalHandler) ListByDeal(w http.ResponseWriter, r *http.Request) {
 	dealID := chi.URLParam(r, "id")
 	pagination := queryPagination(r)
 
-	filters := model.CRMBuyerSignalListFilters{
+	filters := model.CRMSignalListFilters{
 		DealID: &dealID,
 	}
 	signals, total, err := h.signalService.ListSignals(r.Context(), workspaceID, filters, pagination)
@@ -397,7 +503,7 @@ func (h *CRMSignalHandler) ListByDeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if signals == nil {
-		signals = []model.CRMBuyerSignal{}
+		signals = []model.CRMSignal{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data":  signals,
@@ -413,11 +519,11 @@ func (h *CRMSignalHandler) ListByCompany(w http.ResponseWriter, r *http.Request)
 	pagination := queryPagination(r)
 	signals, total, err := h.signalService.ListCompanySignals(r.Context(), workspaceID, companyID, pagination)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "buyer signals could not be loaded")
+		writeError(w, http.StatusInternalServerError, "CRM signals could not be loaded")
 		return
 	}
 	if signals == nil {
-		signals = []model.CRMBuyerSignal{}
+		signals = []model.CRMSignal{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": signals, "total": total, "page": pagination.Page})
 }

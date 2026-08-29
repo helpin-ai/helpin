@@ -3,7 +3,7 @@
 > **Historical design record.** This assessment preserves the decisions and
 > implementation plan used to build the system; phase language and open-item
 > lists below are not current status. Use
-> [`crm-buyer-signals.md`](crm-buyer-signals.md) as the canonical implemented
+> [`crm-signals.md`](crm-signals.md) as the canonical implemented
 > architecture and operations reference.
 
 Assessed: 2026-08-23. Updated after the CRM signal reliability fixes and review of Helpin's vendored events pipeline and the upstream Usermaven implementation.
@@ -379,7 +379,7 @@ Store provenance on widget sessions and CRM identity-link operations. Add first-
 
 ### 3.7 Signal schema foundation
 
-Add nullable/backfilled fields to `crm_buyer_signals`:
+Add nullable/backfilled fields to `crm_signals`:
 
 - `detector_kind`: `llm_extracted` or `rule_derived`;
 - `signal_domain`: `conversation`, `web_behavior`, `product_usage`, `support`, `delivery`, `relationship`, or `market`;
@@ -629,7 +629,7 @@ Summaries must distinguish context-only untrusted behavior from verified evidenc
 
 ### Existing surfaces
 
-- `frontend/src/components/crm/BuyerSignals.tsx`
+- `frontend/src/components/crm/EntitySignals.tsx`
 - `frontend/src/components/crm/EntitySummaryCard.tsx`
 - `frontend/src/pages/crm/Insights.tsx`
 - `server/internal/templates/manifests/buying_signal_to_task/template.yaml`
@@ -676,7 +676,7 @@ Two further mechanisms belong in the same work:
 
 ## Related internal docs
 
-- `docs/crm-buyer-signal-ingestion.md` — update separately for calendar and verification behavior.
+- `docs/crm-signal-ingestion.md` — update separately for calendar and verification behavior.
 - `docs/crm-entity-summaries.md` — update separately for company summaries.
 - `docs/PRD-widget-identify-crm-leads.md`
 - `docs/PRD_WIDGET_SDK_FEATURE_PARITY.md`

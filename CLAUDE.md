@@ -321,14 +321,33 @@ Every workspace has a `workspace_key` (2-5 uppercase letters, e.g. `HLP`) stored
 - Methods: `PutObject`, `DeleteObject`, `PublicURL`, `GeneratePresignedPutURL/GetURL`
 - Public URLs via `HasPublicURL()` check
 
-### CRM Intelligence and Buyer Signals
+### CRM Intelligence and CRM Signals
 
-Canonical reference: `docs/crm-buyer-signals.md`
+Canonical reference: `docs/crm-signals.md`
 
 The CRM intelligence layer combines verified conversation extraction with
 versioned deterministic rules across CRM, support, PM, calendar, and behavioral
 evidence. Signals remain activation-gated by exact rule version, identity trust,
 business priority, deduplication, and routing policy.
+
+Evidence and meaning are separate concerns:
+
+- **observation** — immutable, motion-agnostic evidence from one detector
+  (`crm_signal_observations`)
+- **commercial motion** — which commercial context the account is in, resolved
+  per entity and concurrent by design: `prospecting`, `conversion`,
+  `onboarding`, `adoption`, `expansion`, `renewal`, `retention`
+- **interpretation** — a versioned `(rule_key, rule_version, motion)` mapping to
+  signal type, polarity, weight, half-life, and recommended action
+  (`crm_signal_interpretation_configs`)
+
+One observation produces one signal per applicable motion, so the same evidence
+can mean expansion intent in one lane and retention risk in another. Meaning is
+snapshotted at detection and is immutable; read-time rescoring may change
+magnitude only. An observation with no mapping deliberately produces no signal.
+
+Deals carry a `commercial_motion` inherited from
+`crm_pipelines.default_commercial_motion` unless overridden per deal.
 
 **Key packages:**
 - `internal/crypto/` — AES-256-GCM token encryption (`CRM_ENCRYPTION_KEY` env)
@@ -337,15 +356,19 @@ business priority, deduplication, and routing policy.
 - `internal/llm/` — Model-agnostic LLM interface (`Provider` interface with Claude + OpenAI adapters)
 - `internal/service/crm_signal_detection.go` — verified LLM signal extraction from emails/calendar/support
 - `internal/service/crm_signal_rule_evaluator.go` — daily and behavioral deterministic rules
-- `internal/service/crm_signal_score.go` — explainable ranking and composition
-- `internal/service/crm_signal_activation.go` — versioned activation, routing, and feedback
+- `internal/repository/crm_signal_interpretation.go` — motion resolver, observations, interpretation, motion-exit supersession
+- `internal/service/crm_signal_score.go` — explainable ranking and `(entity, motion)` lane composition
+- `internal/service/crm_signal_activation.go` — versioned activation, routing, rollout, and feedback
+- `internal/service/crm_commercial_state.go` / `crm_commercial_state_sync.go` — server-authenticated company state patches and materialization
+- `internal/service/crm_usage_baseline_sync.go` — daily workspace-local weekday baselines
+- `internal/eventcatalog/` — shared server-only event catalog; generated into Go and Rust by `scripts/generate-commercial-event-catalog.go`
 - `internal/service/crm_deal_automation.go` — Auto-create/progress deals based on signal confidence
 
 **Temporal Workflows:**
 | Workflow | Schedule | Purpose |
 |----------|----------|---------|
 | `EmailSyncWorkflow` | Long-running per account (5min poll) | Gmail backfill + incremental sync |
-| `SignalDetectionWorkflow` | Event-driven (child of sync/support) | Extract buyer signals via LLM |
+| `SignalDetectionWorkflow` | Event-driven (child of sync/support) | Extract CRM signals via LLM |
 | `DealManagementCronWorkflow` | Hourly cron | Evaluate deal progression |
 
 Deterministic rule evaluation is backend-owned rather than Temporal-owned: the
@@ -362,9 +385,22 @@ watermarks and leases.
 **Signal Sources**: conversation records, support, CRM, PM, web behavior,
 instrumented product usage, and normalized external evidence.
 
-All seeded deterministic rules start in shadow mode. Do not describe them as
-autonomously actionable unless their exact version and routing policy have been
-promoted through the activation gates.
+**Two independent gates** — do not conflate them:
+
+- **Workspace rollout** (`crm_signal_rollout_settings.mode`) controls whether
+  motion lanes and routing are visible. Workspaces are **live by default**;
+  `shadow` is an explicit per-workspace opt-out. Detection, commercial-state
+  materialization, and baseline building run regardless of mode so history is
+  warm.
+- **Per-rule policy** (`shadow_mode` / `activation_eligible` on
+  `crm_signal_rule_configs`) controls whether a rule version may create
+  downstream work. All seeded deterministic rules start in rule-level shadow
+  mode. Do not describe them as autonomously actionable unless their exact
+  version and routing policy have been promoted through the activation gates.
+
+Activating a rule version requires an enabled interpretation for that exact
+`(rule_key, rule_version)`; activation is refused otherwise, because the lookup
+matches the version exactly and an unmapped version would silently go quiet.
 
 **Support → CRM Bridge**: Support tickets auto-match to CRM contacts by email. If no contact exists, one is auto-created with `lifecycle_stage=subscriber`, `source=support`.
 

@@ -71,6 +71,8 @@ func CanonicalToolName(name string) string {
 		return "read_files"
 	case "search_files", "ripgrep", "grep":
 		return "repository_search"
+	case "list_buyer_signals":
+		return "list_crm_signals"
 	case "find_symbol":
 		return "read_symbol"
 	case "find_callers", "find_callees":

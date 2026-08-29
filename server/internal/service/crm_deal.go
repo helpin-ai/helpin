@@ -18,11 +18,24 @@ type CRMDealService struct {
 	activity       *PMActivityService
 	timelineRepo   *repository.CRMCompanyTimelineRepository
 	summaryRefresh CompanySummaryRefreshRequester
+	motionSignals  interface {
+		ReconcileDealMotionSignals(ctx context.Context, workspaceID, dealID string) error
+		ReconcilePipelineMotionSignals(ctx context.Context, workspaceID, pipelineID string) error
+	}
 }
 
 // SetCompanySummaryRefresh enables account-summary invalidation after deal changes.
 func (s *CRMDealService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMDealService {
 	s.summaryRefresh = refresh
+	return s
+}
+
+// SetMotionSignalReconciler enables immediate signal supersession on motion exit.
+func (s *CRMDealService) SetMotionSignalReconciler(reconciler interface {
+	ReconcileDealMotionSignals(ctx context.Context, workspaceID, dealID string) error
+	ReconcilePipelineMotionSignals(ctx context.Context, workspaceID, pipelineID string) error
+}) *CRMDealService {
+	s.motionSignals = reconciler
 	return s
 }
 
@@ -156,11 +169,19 @@ func (s *CRMDealService) CreatePipeline(ctx context.Context, req model.CreateCRM
 	if req.IsDefault != nil {
 		isDefault = *req.IsDefault
 	}
+	defaultMotion := model.CRMDealMotionNewBusiness
+	if req.DefaultCommercialMotion != nil {
+		defaultMotion = strings.TrimSpace(*req.DefaultCommercialMotion)
+	}
+	if !validCRMDealCommercialMotion(defaultMotion) {
+		return nil, fmt.Errorf("invalid default_commercial_motion")
+	}
 
 	pipeline := &model.CRMPipeline{
-		WorkspaceID: req.WorkspaceID,
-		Name:        strings.TrimSpace(req.Name),
-		IsDefault:   isDefault,
+		WorkspaceID:             req.WorkspaceID,
+		Name:                    strings.TrimSpace(req.Name),
+		IsDefault:               isDefault,
+		DefaultCommercialMotion: defaultMotion,
 	}
 
 	// Build stages
@@ -199,6 +220,13 @@ func (s *CRMDealService) UpdatePipeline(ctx context.Context, id string, req mode
 	if req.IsDefault != nil {
 		pipeline.IsDefault = *req.IsDefault
 	}
+	if req.DefaultCommercialMotion != nil {
+		motion := strings.TrimSpace(*req.DefaultCommercialMotion)
+		if !validCRMDealCommercialMotion(motion) {
+			return nil, fmt.Errorf("invalid default_commercial_motion")
+		}
+		pipeline.DefaultCommercialMotion = motion
+	}
 
 	if err := s.dealRepo.UpdatePipeline(ctx, pipeline); err != nil {
 		return nil, err
@@ -220,6 +248,11 @@ func (s *CRMDealService) UpdatePipeline(ctx context.Context, id string, req mode
 		}
 		if err := s.dealRepo.ReplaceStages(ctx, id, stages); err != nil {
 			return nil, err
+		}
+	}
+	if s.motionSignals != nil {
+		if err := s.motionSignals.ReconcilePipelineMotionSignals(ctx, pipeline.WorkspaceID, pipeline.ID); err != nil {
+			slog.ErrorContext(ctx, "reconcile pipeline commercial-motion signals", "error", err, "pipeline_id", pipeline.ID)
 		}
 	}
 
@@ -316,6 +349,14 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		currency = *req.Currency
 	}
 
+	var commercialMotion *string
+	if req.CommercialMotion != nil {
+		motion := strings.TrimSpace(*req.CommercialMotion)
+		if !validCRMDealCommercialMotion(motion) {
+			return nil, fmt.Errorf("invalid commercial_motion")
+		}
+		commercialMotion = &motion
+	}
 	deal := &model.CRMDeal{
 		WorkspaceID:      req.WorkspaceID,
 		DisplayID:        displayID,
@@ -326,10 +367,10 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		Currency:         currency,
 		CloseDate:        req.CloseDate,
 		OwnerMemberID:    req.OwnerMemberID,
+		CommercialMotion: commercialMotion,
 		Probability:      req.Probability,
 		CustomProperties: model.JSONB(req.CustomProperties),
 	}
-
 	if err := s.dealRepo.Create(ctx, deal); err != nil {
 		return nil, err
 	}
@@ -420,6 +461,15 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 	} else if req.OwnerMemberID != nil {
 		deal.OwnerMemberID = req.OwnerMemberID
 	}
+	if req.ClearCommercialMotion {
+		deal.CommercialMotion = nil
+	} else if req.CommercialMotion != nil {
+		motion := strings.TrimSpace(*req.CommercialMotion)
+		if !validCRMDealCommercialMotion(motion) {
+			return nil, fmt.Errorf("invalid commercial_motion")
+		}
+		deal.CommercialMotion = &motion
+	}
 	if req.ClearProbability {
 		deal.Probability = nil
 	} else if req.Probability != nil {
@@ -439,6 +489,11 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 	updated, err := s.dealRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if s.motionSignals != nil {
+		if err := s.motionSignals.ReconcileDealMotionSignals(ctx, updated.WorkspaceID, updated.ID); err != nil {
+			slog.ErrorContext(ctx, "reconcile deal commercial-motion signals", "error", err, "deal_id", updated.ID)
+		}
 	}
 	if previousStageID != updated.StageID {
 		stageType := ""
@@ -468,6 +523,15 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 	}
 	s.requestCompanySummaryRefresh(ctx, updated.WorkspaceID, updated.ID)
 	return updated, nil
+}
+
+func validCRMDealCommercialMotion(value string) bool {
+	switch value {
+	case model.CRMDealMotionNewBusiness, model.CRMDealMotionExpansion, model.CRMDealMotionRenewal:
+		return true
+	default:
+		return false
+	}
 }
 
 // Delete removes a deal.

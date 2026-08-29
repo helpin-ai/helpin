@@ -18,7 +18,7 @@ Phase 1b turns CRM activity into durable, system-owned summary artifacts.
 The implementation goal is:
 
 1. generate a current summary for a contact or deal from stored CRM evidence
-2. refresh that summary automatically as new CRM email activity and buyer signals arrive
+2. refresh that summary automatically as new CRM email activity and CRM signals arrive
 3. preserve the last good summary when a refresh fails
 4. surface the summary on the existing CRM detail pages
 
@@ -36,7 +36,7 @@ Phase 1b added the following concrete capabilities:
 - durable summary storage for `contact` and `deal` entities
 - event-driven summary refresh requests from:
   - CRM email persistence
-  - buyer-signal persistence
+  - CRM-signal persistence
 - deterministic Temporal workflows for per-entity summary generation
 - daily reconciliation for:
   - open deals
@@ -72,12 +72,12 @@ Files updated to trigger or consume summary refreshes:
 
 ## Architecture at a glance
 
-The summary system is a downstream intelligence layer on top of CRM email sync and buyer-signal ingestion.
+The summary system is a downstream intelligence layer on top of CRM email sync and CRM-signal ingestion.
 
 High-level flow:
 
 1. CRM email sync or manual CRM email persistence stores a message.
-2. Buyer-signal ingestion may later store structured signals from that message.
+2. CRM-signal ingestion may later store structured signals from that message.
 3. Either of those events requests a summary refresh for the affected contact or deal.
 4. The request upserts `crm_entity_summaries` and starts a deterministic Temporal workflow.
 5. The workflow waits through a short debounce window.
@@ -102,7 +102,7 @@ The summary data plane is:
 - source records:
   - `crm_email_messages`
   - `crm_email_message_contacts`
-  - `crm_buyer_signals`
+  - `crm_signals`
   - CRM contacts, deals, companies, and associations
 - derived record:
   - `crm_entity_summaries`
@@ -226,7 +226,7 @@ Primary implementation files:
 
 ### Signal-driven path
 
-1. Buyer-signal ingestion persists a new `crm_buyer_signals` row.
+1. CRM-signal ingestion persists a new `crm_signals` row.
 2. The signal service requests summary refresh for any linked contact and/or deal.
 3. The same summary workflow path runs as above.
 
@@ -244,7 +244,7 @@ Primary implementation files:
 Summary refreshes are requested from exactly two runtime sources:
 
 1. after CRM email message persistence and association resolution
-2. after successful buyer-signal persistence
+2. after successful CRM-signal persistence
 
 Current email trigger points:
 
@@ -254,8 +254,8 @@ Current email trigger points:
 
 Current signal trigger points:
 
-- detected buyer signals in `SignalDetectionService`
-- manually created buyer signals in `CRMSignalService`
+- detected CRM signals in `SignalDetectionService`
+- manually created CRM signals in `CRMSignalService`
 
 ## Trigger rules
 
@@ -269,9 +269,9 @@ When a CRM email message is stored:
 
 That last rule is the current precision-first policy. It avoids ambiguous contact attribution at the summary layer.
 
-### From buyer signals
+### From CRM signals
 
-When a buyer signal is persisted:
+When a CRM signal is persisted:
 
 - if `contact_id` exists, request a contact summary refresh
 - if `deal_id` exists, request a deal summary refresh
@@ -321,7 +321,7 @@ There is also a daily cron workflow:
 It requests refreshes for:
 
 - all open deals
-- contacts with CRM email or buyer-signal activity in the last `30 days`
+- contacts with CRM email or CRM-signal activity in the last `30 days`
 
 The daily job does not generate summaries directly. It reuses the same request flow as event-driven refreshes.
 
@@ -339,7 +339,7 @@ Contact summaries assemble:
 - linked companies
 - up to `5` open associated deals
 - up to `12` recent associated emails from the last `45 days`
-- up to `10` buyer signals from the last `60 days`
+- up to `10` CRM signals from the last `60 days`
 
 ### Deal summaries
 
@@ -349,7 +349,7 @@ Deal summaries assemble:
 - linked contacts
 - linked companies
 - up to `16` recent associated emails from the last `60 days`
-- up to `10` buyer signals from the last `60 days`
+- up to `10` CRM signals from the last `60 days`
 
 ### Email evidence rules
 
@@ -408,16 +408,16 @@ It also stores a source window:
 - `source_window_start`
 - `source_window_end`
 
-Those bounds are derived from the timestamps of emails and buyer signals actually used in the generation run.
+Those bounds are derived from the timestamps of emails and CRM signals actually used in the generation run.
 
 ## Failure behavior
 
-Summary generation is downstream from CRM email sync and buyer-signal ingestion.
+Summary generation is downstream from CRM email sync and CRM-signal ingestion.
 
 Important rules:
 
 - summary refresh failure does not block email persistence
-- summary refresh failure does not block buyer-signal persistence
+- summary refresh failure does not block CRM-signal persistence
 - if a previous summary exists, failure marks the row `stale`
 - if no usable summary exists yet, failure marks the row `error`
 
@@ -469,7 +469,7 @@ The query layer polls every 15 seconds while a summary is:
 
 Phase order now looks like:
 
-- Phase 1a: buyer-signal ingestion
+- Phase 1a: CRM-signal ingestion
 - Phase 1b: entity summaries
 - Phase 1c: automation taxonomy / trigger framework
 - Phase 2: deal automation and review feed consuming the signal + summary layer
@@ -477,7 +477,7 @@ Phase order now looks like:
 That means summaries are not the intelligence foundation by themselves. They depend on:
 
 - CRM email sync
-- buyer-signal ingestion
+- CRM-signal ingestion
 
 And later work should depend on them rather than rebuilding their own ad hoc context layer.
 

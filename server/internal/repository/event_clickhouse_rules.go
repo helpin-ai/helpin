@@ -11,7 +11,7 @@ import (
 
 const excludeDetectedBotsSQL = " AND parsed_ua_bot != 'true'"
 
-type behavioralRuleRow struct {
+type BehavioralRuleEvidence struct {
 	AnonymousID       string
 	ExternalUserID    string
 	CompanyExternalID string
@@ -21,6 +21,16 @@ type behavioralRuleRow struct {
 	EventCount        int
 	SessionCount      int
 	Evidence          string
+	EventName         string
+	EligibleAccounts  int
+}
+
+type behavioralRuleRow = BehavioralRuleEvidence
+
+// BuildBehavioralCandidates applies the canonical dimensions and fingerprint
+// contract to evidence evaluated outside ClickHouse SQL.
+func BuildBehavioralCandidates(config model.CRMSignalRuleConfig, workspaceID string, rows []BehavioralRuleEvidence) []model.CRMSignalRuleCandidate {
+	return behavioralCandidates(config, workspaceID, rows)
 }
 
 // EvaluateBehavioralSignalRule returns aggregate, tenant-bound event evidence.
@@ -80,6 +90,14 @@ func (r *ClickHouseEventRepository) EvaluateBehavioralSignalRule(
 			ruleStrings(config.Thresholds, "article_ids", nil))
 	case model.CRMSignalRuleVersionedInteraction:
 		rows, err = r.versionedInteractionRows(ctx, projects, windowStartedAt, windowEndedAt, config.RuleKey, config.Version)
+	case model.CRMSignalRuleUsageDecline:
+		return nil, fmt.Errorf("usage decline requires persisted weekday baselines")
+	case model.CRMSignalRuleWorkflowFailureSpike:
+		return nil, fmt.Errorf("workflow failure spike requires persisted weekday baselines")
+	case model.CRMSignalRulePaymentFailed:
+		rows, err = r.commercialEdgeRows(ctx, projects, windowStartedAt, windowEndedAt, "payment_failed")
+	case model.CRMSignalRuleDowngradeRequested:
+		rows, err = r.commercialEdgeRows(ctx, projects, windowStartedAt, windowEndedAt, "downgrade_requested")
 	default:
 		return nil, fmt.Errorf("unsupported behavioral signal rule %q", config.RuleKey)
 	}
@@ -87,6 +105,23 @@ func (r *ClickHouseEventRepository) EvaluateBehavioralSignalRule(
 		return nil, err
 	}
 	return behavioralCandidates(config, r.workspaceID, rows), nil
+}
+
+func (r *ClickHouseEventRepository) commercialEdgeRows(
+	ctx context.Context, projects []string, start, end time.Time, eventName string,
+) ([]behavioralRuleRow, error) {
+	projectSQL, args := clickHouseProjectFilter(projects)
+	args = append(args, start.UTC(), end.UTC(), eventName)
+	query := `SELECT '' AS anonymous_id, '' AS external_user_id, company_id AS company_external_id,
+		any(identity_method) AS identity_method, any(identity_trust) AS identity_trust,
+		max(_timestamp) AS observed_at, count() AS event_count, uniqExact(session_id) AS session_count,
+		concat(toString(count()), ' ', any(event_type), ' event(s)') AS evidence,
+		any(event_type) AS event_name, 0 AS eligible_accounts
+		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `)
+		AND _timestamp >= ? AND _timestamp < ? AND event_type = ?
+		AND identity_method = 'server_event' AND identity_trust = 'verified' AND company_id != ''
+		GROUP BY company_id`
+	return r.queryBehavioralRows(ctx, "commercial edge events", query, args...)
 }
 
 func (r *ClickHouseEventRepository) capturedFormRows(ctx context.Context, projects []string, start, end time.Time, formIDs []string) ([]behavioralRuleRow, error) {
@@ -262,22 +297,45 @@ func (r *ClickHouseEventRepository) campaignReturnRows(ctx context.Context, proj
 }
 
 func (r *ClickHouseEventRepository) preIdentificationRows(ctx context.Context, projects []string, lookbackStart, start, end time.Time) ([]behavioralRuleRow, error) {
-	projectSQL, args := clickHouseProjectFilter(projects)
-	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC())
-	query := `SELECT user_anonymous_id AS anonymous_id, argMax(user_id, _timestamp) AS external_user_id,
-		argMax(company_id, _timestamp) AS company_external_id, argMax(identity_method, _timestamp) AS identity_method,
-		argMax(identity_trust, _timestamp) AS identity_trust, minIf(_timestamp, _timestamp >= ? AND user_id != '') AS observed_at,
-		countIf(user_id='') AS event_count, uniqExactIf(session_id, user_id='') AS session_count,
-		concat(toString(countIf(user_id='')), ' earlier anonymous events') AS evidence
-		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
-		AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
-		HAVING countIf(_timestamp < ? AND user_id='') > 0 AND countIf(_timestamp >= ? AND user_id!='') > 0`
-	args = []any{start.UTC()}
+	query, args := preIdentificationRuleQuery(projects, lookbackStart, start, end)
+	return r.queryBrowserBehavioralRows(ctx, "pre-identification history", query, args...)
+}
+
+func preIdentificationRuleQuery(projects []string, lookbackStart, start, end time.Time) (string, []any) {
+	projectSQL, _ := clickHouseProjectFilter(projects)
+	query := `WITH identity_transitions AS (
+		SELECT user_anonymous_id, minIf(_timestamp, user_id != '') AS identified_at
+		FROM helpin.events FINAL
+		WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
+		AND user_anonymous_id != ''` + excludeDetectedBotsSQL + `
+		GROUP BY user_anonymous_id
+		HAVING identified_at >= ? AND identified_at < ?
+	)
+	SELECT event.user_anonymous_id AS anonymous_id,
+		argMinIf(event.user_id, event._timestamp, event.user_id != '') AS external_user_id,
+		argMax(event.company_id, event._timestamp) AS company_external_id,
+		argMinIf(event.identity_method, event._timestamp, event.user_id != '') AS identity_method,
+		argMinIf(event.identity_trust, event._timestamp, event.user_id != '') AS identity_trust,
+		transition.identified_at AS observed_at,
+		countIf(event.user_id = '' AND event._timestamp < transition.identified_at) AS event_count,
+		uniqExactIf(event.session_id, event.user_id = '' AND event._timestamp < transition.identified_at) AS session_count,
+		concat(toString(event_count), ' earlier anonymous events') AS evidence
+	FROM helpin.events AS event FINAL
+	INNER JOIN identity_transitions AS transition USING (user_anonymous_id)
+	WHERE event.project_id IN (` + projectSQL + `) AND event._timestamp >= ? AND event._timestamp < ?
+	AND event.user_anonymous_id != '' AND event.parsed_ua_bot != 'true'
+	GROUP BY event.user_anonymous_id, transition.identified_at
+	HAVING event_count > 0`
+	args := make([]any, 0, len(projects)*2+6)
 	for _, project := range projects {
 		args = append(args, project)
 	}
-	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC())
-	return r.queryBrowserBehavioralRows(ctx, "pre-identification history", query, args...)
+	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), end.UTC())
+	for _, project := range projects {
+		args = append(args, project)
+	}
+	args = append(args, lookbackStart.UTC(), end.UTC())
+	return query, args
 }
 
 func (r *ClickHouseEventRepository) queryBrowserBehavioralRows(
@@ -297,12 +355,20 @@ func (r *ClickHouseEventRepository) queryBehavioralRows(ctx context.Context, ope
 		return nil, fmt.Errorf("query %s: %w", operation, err)
 	}
 	defer rows.Close()
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s columns: %w", operation, err)
+	}
 	result := make([]behavioralRuleRow, 0)
 	for rows.Next() {
 		var row behavioralRuleRow
-		if err := rows.Scan(&row.AnonymousID, &row.ExternalUserID, &row.CompanyExternalID,
+		destinations := []interface{}{&row.AnonymousID, &row.ExternalUserID, &row.CompanyExternalID,
 			&row.IdentityMethod, &row.IdentityTrust, &row.ObservedAt, &row.EventCount,
-			&row.SessionCount, &row.Evidence); err != nil {
+			&row.SessionCount, &row.Evidence}
+		if len(columns) == 11 {
+			destinations = append(destinations, &row.EventName, &row.EligibleAccounts)
+		}
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, fmt.Errorf("scan %s: %w", operation, err)
 		}
 		result = append(result, row)
@@ -330,7 +396,8 @@ func behavioralCandidates(config model.CRMSignalRuleConfig, workspaceID string, 
 		item := candidate(workspaceID, config.RuleKey, signalType, domain, polarity, sourceType,
 			nil, nil, nil, row.ObservedAt, summary, row.Evidence,
 			model.JSONB{"event_count": row.EventCount, "session_count": row.SessionCount, "shadow_mode": config.ShadowMode,
-				"activation_eligible": config.ActivationEligible})
+				"activation_eligible": config.ActivationEligible, "event_type": row.EventName,
+				"eligible_accounts": row.EligibleAccounts})
 		item.AnonymousID, item.ExternalUserID, item.CompanyExternalID = row.AnonymousID, row.ExternalUserID, row.CompanyExternalID
 		item.EvidenceIdentityMethod, item.EvidenceIdentityTrust = row.IdentityMethod, row.IdentityTrust
 		item.EvidenceFingerprint = fingerprintRuleCandidate(item)
@@ -350,7 +417,7 @@ func behavioralRuleDimensions(ruleKey string) (string, string, string, string, s
 	case model.CRMSignalRuleHighIntentProductEvent:
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainProductUsage, model.CRMSignalPolarityPositive, model.CRMSignalSourceProduct, "High-intent product event"
 	case model.CRMSignalRuleSessionDepthSpike:
-		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityPositive, model.CRMSignalSourceWeb, "Session depth spiked"
+		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityNeutral, model.CRMSignalSourceWeb, "Deep browsing session"
 	case model.CRMSignalRuleNewAccountStakeholder:
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainRelationship, model.CRMSignalPolarityPositive, model.CRMSignalSourceWeb, "New stakeholder appeared at a known account"
 	case model.CRMSignalRuleAnonymousAccountTraffic:
@@ -363,6 +430,14 @@ func behavioralRuleDimensions(ruleKey string) (string, string, string, string, s
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityNeutral, model.CRMSignalSourceWeb, "Identified contact viewed a relevant article"
 	case model.CRMSignalRuleVersionedInteraction:
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityNeutral, model.CRMSignalSourceWeb, "Versioned high-intent interaction observed"
+	case model.CRMSignalRuleUsageDecline:
+		return model.CRMSignalRiskSignal, model.CRMSignalDomainProductUsage, model.CRMSignalPolarityNegative, model.CRMSignalSourceProduct, "Account usage declined against its weekday baseline"
+	case model.CRMSignalRuleWorkflowFailureSpike:
+		return model.CRMSignalRiskSignal, model.CRMSignalDomainProductUsage, model.CRMSignalPolarityNegative, model.CRMSignalSourceProduct, "Workflow failures spiked against the weekday baseline"
+	case model.CRMSignalRulePaymentFailed:
+		return model.CRMSignalRiskSignal, model.CRMSignalDomainProductUsage, model.CRMSignalPolarityNegative, model.CRMSignalSourceProduct, "Payment failed"
+	case model.CRMSignalRuleDowngradeRequested:
+		return model.CRMSignalRiskSignal, model.CRMSignalDomainProductUsage, model.CRMSignalPolarityNegative, model.CRMSignalSourceProduct, "Downgrade requested"
 	default:
 		return model.CRMSignalBuyingIntent, model.CRMSignalDomainWebBehavior, model.CRMSignalPolarityNeutral, model.CRMSignalSourceWeb, "Pre-identification activity became attributable"
 	}

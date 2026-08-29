@@ -52,7 +52,7 @@ func (r *CRMSignalRepository) GetSignalRuleConfigVersion(ctx context.Context, wo
 }
 
 // IngestExternalEvidence atomically stores normalized evidence and its signal.
-func (r *CRMSignalRepository) IngestExternalEvidence(ctx context.Context, evidence *model.CRMSignalExternalEvidence, signal *model.CRMBuyerSignal) (bool, error) {
+func (r *CRMSignalRepository) IngestExternalEvidence(ctx context.Context, evidence *model.CRMSignalExternalEvidence, signal *model.CRMSignal) (bool, error) {
 	created := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Clauses(clause.OnConflict{

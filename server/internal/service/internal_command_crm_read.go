@@ -10,7 +10,7 @@ import (
 )
 
 // registerCRMReadCommands registers command-backed variants of the native
-// read-only CRM tools (list_deals, list_contacts, list_buyer_signals).
+// read-only CRM tools (list_deals, list_contacts, list_crm_signals).
 func (s *InternalCommandService) registerCRMReadCommands() {
 	s.register(InternalCommandDefinition{
 		Name:     "crm.list_deals",
@@ -27,11 +27,11 @@ func (s *InternalCommandService) registerCRMReadCommands() {
 		Execute:  s.executeListContacts,
 	})
 	s.register(InternalCommandDefinition{
-		Name:     "crm.list_buyer_signals",
+		Name:     "crm.list_crm_signals",
 		Module:   "crm",
 		Mutating: false,
-		Tool:     mustCommandToolMetadata("crm.list_buyer_signals"),
-		Execute:  s.executeListBuyerSignals,
+		Tool:     mustCommandToolMetadata("crm.list_crm_signals"),
+		Execute:  s.executeListSignals,
 	})
 }
 
@@ -100,7 +100,7 @@ func (s *InternalCommandService) executeListContacts(ctx context.Context, meta m
 	return mustJSON(response), nil
 }
 
-func (s *InternalCommandService) executeListBuyerSignals(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+func (s *InternalCommandService) executeListSignals(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 	if s.crmSignalService == nil {
 		return nil, fmt.Errorf("CRM signal service is not configured")
 	}
@@ -112,7 +112,7 @@ func (s *InternalCommandService) executeListBuyerSignals(ctx context.Context, me
 	}
 	if len(input) > 0 {
 		if err := json.Unmarshal(input, &req); err != nil {
-			return nil, fmt.Errorf("parse list buyer signals input: %w", err)
+			return nil, fmt.Errorf("parse list CRM signals input: %w", err)
 		}
 	}
 	limit := req.Limit
@@ -129,17 +129,17 @@ func (s *InternalCommandService) executeListBuyerSignals(ctx context.Context, me
 	if dealID == nil && strings.TrimSpace(meta.TargetType) == "crm_deal" && strings.TrimSpace(meta.TargetID) != "" {
 		dealID = stringPtrOrNil(meta.TargetID)
 	}
-	var signals []model.CRMBuyerSignal
+	var signals []model.CRMSignal
 	var total int64
 	var err error
 	if req.ActivationOnly {
 		signals, err = s.crmSignalService.ListActivationSignals(ctx, meta.WorkspaceID, limit)
 		total = int64(len(signals))
 	} else {
-		signals, total, err = s.crmSignalService.ListSignals(ctx, meta.WorkspaceID, model.CRMBuyerSignalListFilters{DealID: dealID}, model.PMPagination{Page: 1, PerPage: limit, Offset: &req.Offset})
+		signals, total, err = s.crmSignalService.ListSignals(ctx, meta.WorkspaceID, model.CRMSignalListFilters{DealID: dealID}, model.PMPagination{Page: 1, PerPage: limit, Offset: &req.Offset})
 	}
 	if err != nil {
-		return nil, fmt.Errorf("list buyer signals: %w", err)
+		return nil, fmt.Errorf("list CRM signals: %w", err)
 	}
 	type signalSummary struct {
 		ID                  string   `json:"id"`
@@ -167,7 +167,7 @@ func (s *InternalCommandService) executeListBuyerSignals(ctx context.Context, me
 		})
 	}
 	response := commandPaginationOutput(total, req.Offset, limit, len(summaries))
-	response["buyer_signals"] = summaries
+	response["signals"] = summaries
 	return mustJSON(response), nil
 }
 

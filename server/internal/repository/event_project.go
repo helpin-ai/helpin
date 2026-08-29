@@ -65,3 +65,15 @@ func (r *EventProjectRepository) ListActiveEventWorkspaceIDs(ctx context.Context
 	}
 	return workspaceIDs, nil
 }
+
+// ListAllActiveEventWorkspaceIDs returns every event-enabled workspace for
+// background materialization and baseline collection, including shadow mode.
+func (r *EventProjectRepository) ListAllActiveEventWorkspaceIDs(ctx context.Context) ([]string, error) {
+	var workspaceIDs []string
+	if err := r.db.WithContext(ctx).Model(&model.SupportWidgetInstallation{}).
+		Distinct("workspace_id").Where("active = ?", true).
+		Order("workspace_id ASC").Pluck("workspace_id", &workspaceIDs).Error; err != nil {
+		return nil, fmt.Errorf("list all active event workspaces: %w", err)
+	}
+	return workspaceIDs, nil
+}

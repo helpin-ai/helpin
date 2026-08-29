@@ -36,7 +36,7 @@ type CRMSuggestion struct {
 	Description     *string          `json:"description"`
 	Context         JSONB            `json:"context" gorm:"type:jsonb;default:'{}'"`
 	SignalIDs       StringArray      `json:"signal_ids" gorm:"type:text[];not null;default:'{}'"`
-	Signals         []CRMBuyerSignal `json:"signals,omitempty" gorm:"-"`
+	Signals         []CRMSignal `json:"signals,omitempty" gorm:"-"`
 	Status          string           `json:"status" gorm:"not null;default:'pending'"` // pending, accepted, dismissed
 	DismissalReason *string          `json:"dismissal_reason,omitempty" gorm:"index"`
 	Confidence      float64          `json:"confidence" gorm:"not null;default:0"`

@@ -90,7 +90,7 @@ func (h *CRMSummaryHandler) RefreshCompanySummary(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, summary)
 }
 
-// RefreshContactIntelligence detects buyer signals before regenerating the summary.
+// RefreshContactIntelligence detects CRM signals before regenerating the summary.
 func (h *CRMSummaryHandler) RefreshContactIntelligence(w http.ResponseWriter, r *http.Request) {
 	result, err := h.summaryService.RefreshContactIntelligenceNow(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
 	if err != nil {
@@ -100,7 +100,7 @@ func (h *CRMSummaryHandler) RefreshContactIntelligence(w http.ResponseWriter, r 
 	writeJSON(w, http.StatusOK, result)
 }
 
-// RefreshDealIntelligence detects buyer signals before regenerating the summary.
+// RefreshDealIntelligence detects CRM signals before regenerating the summary.
 func (h *CRMSummaryHandler) RefreshDealIntelligence(w http.ResponseWriter, r *http.Request) {
 	result, err := h.summaryService.RefreshDealIntelligenceNow(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
 	if err != nil {
@@ -110,7 +110,7 @@ func (h *CRMSummaryHandler) RefreshDealIntelligence(w http.ResponseWriter, r *ht
 	writeJSON(w, http.StatusOK, result)
 }
 
-// RefreshCompanyIntelligence detects rolled-up buyer signals before regenerating the summary.
+// RefreshCompanyIntelligence detects rolled-up CRM signals before regenerating the summary.
 func (h *CRMSummaryHandler) RefreshCompanyIntelligence(w http.ResponseWriter, r *http.Request) {
 	result, err := h.summaryService.RefreshCompanyIntelligenceNow(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
 	if err != nil {

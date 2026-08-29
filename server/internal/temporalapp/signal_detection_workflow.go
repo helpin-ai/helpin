@@ -19,7 +19,7 @@ type SignalDetectionResult struct {
 	WorkspaceID     string // propagated from payloads for downstream event publishing
 }
 
-// SignalDetectionWorkflow analyzes source data for buyer signals.
+// SignalDetectionWorkflow analyzes source data for CRM signals.
 func SignalDetectionWorkflow(ctx workflow.Context, payloads []model.SignalSourcePayload) (*SignalDetectionResult, error) {
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
@@ -46,7 +46,7 @@ func SignalDetectionWorkflow(ctx workflow.Context, payloads []model.SignalSource
 
 // signalDetector is an interface to break the import cycle with the service package.
 type signalDetector interface {
-	DetectSignals(ctx context.Context, payloads []model.SignalSourcePayload) ([]model.CRMBuyerSignal, error)
+	DetectSignals(ctx context.Context, payloads []model.SignalSourcePayload) ([]model.CRMSignal, error)
 }
 
 // SignalDetectionActivities contains signal detection activities.
@@ -112,7 +112,7 @@ func (a *SignalDetectionActivities) NotifySignalsActivity(_ context.Context, res
 	for _, id := range result.SignalIDs {
 		a.wsPublisher.Publish(ws.Event{
 			Action:      "created",
-			Entity:      "crm_buyer_signal",
+			Entity:      "crm_signal",
 			EntityID:    id,
 			WorkspaceID: result.WorkspaceID,
 		})

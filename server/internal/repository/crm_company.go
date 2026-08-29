@@ -177,6 +177,15 @@ func (r *CRMCompanyRepository) GetByID(ctx context.Context, id string) (*model.C
 		}
 		return nil, fmt.Errorf("get company: %w", err)
 	}
+	if r.db.Migrator().HasTable(&model.CRMCompanyCommercialStateHealth{}) {
+		var health model.CRMCompanyCommercialStateHealth
+		err := r.db.WithContext(ctx).Where("company_id = ?", id).First(&health).Error
+		if err == nil {
+			company.CommercialStateHealth = &health
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("get company commercial state health: %w", err)
+		}
+	}
 	return &company, nil
 }
 
@@ -242,7 +251,11 @@ func (r *CRMCompanyRepository) GetByName(ctx context.Context, workspaceID, name 
 
 // Create inserts a company.
 func (r *CRMCompanyRepository) Create(ctx context.Context, company *model.CRMCompany) error {
-	if err := r.db.WithContext(ctx).Create(company).Error; err != nil {
+	query := r.db.WithContext(ctx)
+	if !r.db.Migrator().HasColumn(&model.CRMCompany{}, "customer_success_owner_member_id") {
+		query = query.Omit("customer_success_owner_member_id")
+	}
+	if err := query.Create(company).Error; err != nil {
 		return fmt.Errorf("create company: %w", err)
 	}
 	return nil
@@ -250,7 +263,11 @@ func (r *CRMCompanyRepository) Create(ctx context.Context, company *model.CRMCom
 
 // Update updates a company.
 func (r *CRMCompanyRepository) Update(ctx context.Context, company *model.CRMCompany) error {
-	if err := r.db.WithContext(ctx).Save(company).Error; err != nil {
+	query := r.db.WithContext(ctx)
+	if !r.db.Migrator().HasColumn(&model.CRMCompany{}, "customer_success_owner_member_id") {
+		query = query.Omit("customer_success_owner_member_id")
+	}
+	if err := query.Save(company).Error; err != nil {
 		return fmt.Errorf("update company: %w", err)
 	}
 	return nil

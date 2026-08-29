@@ -104,12 +104,25 @@ type CRMSignalPrecisionRow struct {
 	AverageActionMillis int64   `json:"average_action_millis"`
 }
 
+// CRMSignalOutcomeCalibrationRow joins risk detections to later subscription outcomes.
+type CRMSignalOutcomeCalibrationRow struct {
+	WorkspaceID      string  `json:"workspace_id"`
+	RuleKey          string  `json:"rule_key"`
+	RuleVersion      int     `json:"rule_version"`
+	CommercialMotion string  `json:"commercial_motion"`
+	IdentityMethod   string  `json:"identity_method"`
+	MaturedSignals   int64   `json:"matured_signals"`
+	OutcomeMatched   int64   `json:"outcome_matched"`
+	OutcomePrecision float64 `json:"outcome_precision"`
+	HorizonDays      int     `json:"horizon_days"`
+}
+
 type CRMSignalBrief struct {
 	GeneratedAt     time.Time        `json:"generated_at"`
 	WhatChanged     []string         `json:"what_changed"`
 	Priority        float64          `json:"business_priority"`
 	Severity        string           `json:"severity"`
 	ScoreVersion    int              `json:"score_version"`
-	Sources         []CRMBuyerSignal `json:"sources"`
+	Sources         []CRMSignal `json:"sources"`
 	ActivationReady bool             `json:"activation_ready"`
 }

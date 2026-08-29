@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
-  buyerSignalsSectionClassName,
+  signalsSectionClassName,
   contactDetailDefaultFieldKeys,
   contactDetailExpandedFieldKeys,
   contactDetailCollapsedGridClassName,
@@ -74,15 +74,15 @@ describe('contact detail navigation', () => {
 });
 
 describe('contact profile rail fields', () => {
-  it('leaves breathing room below the buyer signals area', () => {
-    expect(buyerSignalsSectionClassName).not.toContain('pb-14');
+  it('leaves breathing room below the CRM signals area', () => {
+    expect(signalsSectionClassName).not.toContain('pb-14');
   });
 
   it('lets the unified overview sections own their spacing', () => {
     expect(contactDetailOverviewContentClassName).toBe('mt-0');
   });
 
-  it('does not duplicate buyer signals in the sidebar', () => {
+  it('does not duplicate CRM signals in the sidebar', () => {
     expect(contactDetailSidebarSectionTitles).not.toContain('Signals');
   });
 

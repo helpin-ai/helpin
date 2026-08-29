@@ -28,7 +28,7 @@ type meetingArtifactStore interface {
 }
 
 type meetingSignalDetector interface {
-	DetectSignals(ctx context.Context, payloads []model.SignalSourcePayload) ([]model.CRMBuyerSignal, error)
+	DetectSignals(ctx context.Context, payloads []model.SignalSourcePayload) ([]model.CRMSignal, error)
 }
 
 type meetingActivityCreator interface {

@@ -50,7 +50,7 @@ Do not build analytics UI in this release. The only analytics work in v1 is maki
 Use a two-lane event strategy:
 
 - Operational support intelligence: backend support/docs/widget/AI events go to Postgres `support_events`, then derive Coverage state in Postgres.
-- Product and visitor analytics: generic SDK/widget/browser/server analytics continue through the existing events pipeline (`events.helpin.ai` -> Kafka/sessionization -> ClickHouse).
+- Product and visitor analytics: generic SDK/widget/browser/server analytics continue through the existing events pipeline (`events.helpin.ai` -> NATS JetStream/session writer -> ClickHouse).
 
 Do not send Coverage's primary operational events directly to ClickHouse in v1. Do not use Redis as the event source of truth. NATS/Temporal can remain execution primitives for support AI and CRM workflows, but v1 Coverage event persistence should be a bounded async recorder writing compact rows to Postgres.
 
@@ -65,7 +65,7 @@ If local implementation work already introduced `support_resolution_events`, ref
 - Public help center search is handled by `DocsHandler.PublicSearchArticles` in `server/internal/handler/docs.go`.
 - Public article feedback is handled by `DocsHandler.PublicSubmitFeedback` and `DocsHelpcenterService.SubmitFeedback*`.
 - Widget article views are served by `SupportInboxWidget.GetHelpArticle`.
-- Existing widget/product analytics already use the SDK/events-pipeline path (`events.helpin.ai`, Kafka/sessionization, ClickHouse). Coverage should not duplicate or replace that path.
+- Existing widget/product analytics already use the SDK/events-pipeline path (`events.helpin.ai`, NATS JetStream/session writer, ClickHouse). Coverage should not duplicate or replace that path.
 - Redis is currently used for WebSocket relay/presence, AI locks, and delayed email fallback. It should stay ephemeral.
 - NATS JetStream is currently used for support AI request processing. Coverage v1 does not need a new NATS stream before writing events.
 - CRM intelligence stores durable activities, email messages, buyer signals, and summaries in Postgres while using Temporal for async sync/detection/refresh workflows.

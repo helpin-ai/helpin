@@ -4,7 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BuyerSignals } from '../BuyerSignals';
+import { EntitySignals } from '../EntitySignals';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -26,8 +26,8 @@ vi.mock('@/hooks/queries', () => ({
   useCompanySignals: () => ({ data: state.companyData, isLoading: false }),
   useContactSignals: () => ({ data: { data: [] }, isLoading: false }),
   useDealSignals: () => ({ data: { data: [] }, isLoading: false }),
-  useDismissBuyerSignal: () => ({ mutate: state.dismiss, isPending: false }),
-  useBuyerSignalFeedback: () => ({ mutate: state.feedback, isPending: false }),
+  useDismissCRMSignal: () => ({ mutate: state.dismiss, isPending: false }),
+  useCRMSignalFeedback: () => ({ mutate: state.feedback, isPending: false }),
   useEmailAccounts: () => ({ data: [] }),
   useWorkspaceMembers: () => ({ data: [] }),
 }));
@@ -36,7 +36,7 @@ vi.mock('@/stores/workspaceStore', () => ({
   useWorkspaceStore: (selector: (state: { currentWorkspace: { slug: string } }) => unknown) => selector({ currentWorkspace: { slug: 'acme' } }),
 }));
 
-describe('BuyerSignals company roll-up', () => {
+describe('EntitySignals company roll-up', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -53,7 +53,7 @@ describe('BuyerSignals company roll-up', () => {
   });
 
   it('shows canonical evidence with contact and deal context', () => {
-    act(() => root.render(<BuyerSignals workspaceId="ws-1" companyId="company-1" presentation="overview" />));
+    act(() => root.render(<EntitySignals workspaceId="ws-1" companyId="company-1" presentation="overview" />));
 
     expect(container.textContent).toContain('Please send enterprise pricing.');
     expect(container.textContent).toContain('Ava Buyer');
@@ -63,7 +63,7 @@ describe('BuyerSignals company roll-up', () => {
 
   it('only renders a source action when the parent can open it', () => {
     const openSource = vi.fn();
-    act(() => root.render(<BuyerSignals workspaceId="ws-1" companyId="company-1" presentation="overview" onOpenSource={openSource} />));
+    act(() => root.render(<EntitySignals workspaceId="ws-1" companyId="company-1" presentation="overview" onOpenSource={openSource} />));
 
     const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === 'Open thread');
     expect(button).toBeTruthy();
