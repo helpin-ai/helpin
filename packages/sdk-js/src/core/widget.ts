@@ -637,6 +637,7 @@ export class WidgetManager {
       transcriptEmail: this.currentEmail || undefined,
       onRequestTranscript: (email?: string) => this.requestConversationTranscript(email),
       widgetKey: this.widgetKey || undefined,
+      anonymousId: this.anonymousId || undefined,
       host: this.host,
       openArticleRequest: this.openArticleRequest || undefined,
       onImageClick: (src: string, alt: string) => this.showImageLightbox(src, alt),

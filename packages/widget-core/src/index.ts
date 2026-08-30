@@ -87,6 +87,8 @@ export interface MountWidgetOptions {
   transcriptEmail?: string;
   onRequestTranscript?: (email?: string) => Promise<{ success: boolean; message: string }>;
   widgetKey?: string;
+  /** Visitor's durable browser id, forwarded for search attribution. */
+  anonymousId?: string;
   host?: string;
   openArticleRequest?: {
     key: number;
@@ -138,6 +140,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     transcriptEmail,
     onRequestTranscript,
     widgetKey,
+    anonymousId,
     host,
     openArticleRequest,
     onImageClick,
@@ -184,6 +187,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       transcriptEmail,
       onRequestTranscript,
       widgetKey,
+      anonymousId,
       host,
       openArticleRequest,
       onImageClick,

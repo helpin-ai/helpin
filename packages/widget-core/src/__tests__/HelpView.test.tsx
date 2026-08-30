@@ -202,6 +202,33 @@ describe('HelpView', () => {
     expect(onSelectArticle).toHaveBeenCalledWith('reset-password-abc12345');
   });
 
+  it('attributes the search to the visitor when an anonymous id is known', async () => {
+    const fetchMock = stubCollectionsAndSearch();
+
+    const { getByPlaceholderText, getByText } = render(
+      <HelpView
+        config={configWithOneHelpSpace}
+        host="https://client.helpin.ai"
+        widgetKey="wk_123"
+        anonymousId="anon-visitor-1"
+        onSelectSpace={() => {}}
+        onSelectCollection={() => {}}
+      />,
+    );
+
+    fireEvent.input(getByPlaceholderText('Search help articles...'), {
+      target: { value: 'reset' },
+    });
+
+    await waitFor(() => {
+      expect(getByText('Reset password')).toBeTruthy();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://client.helpin.ai/widget/support/help/search?q=reset&limit=8&anonymous_id=anon-visitor-1&widget_key=wk_123',
+    );
+  });
+
   it('uses one right-side search action slot for loading and clear', async () => {
     const pendingSearch = deferredResponse();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
