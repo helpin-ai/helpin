@@ -81,7 +81,7 @@ Use Helpin's existing authenticated route shell and responsive overflow behavior
 
 Page headers use a 20px title, an optional compact breadcrumb/navigation row, a compact secondary description when useful, and right-aligned actions. Identity headers use a 40–44px avatar or company mark, a 24px name, a metadata line separated by 1×11px bars, and a lifecycle/status dot plus word. Editable entity-name fields remain 26px. Actions are ghost text actions plus at most one dark primary.
 
-Detail pages that combine breadcrumbs, editable identity, state, and specialized actions use the centralized two-level detail header. The first row contains ancestor breadcrumbs only; the current entity or document title appears once in the 26px identity row below. Metadata stays with the title, while plain-text state and actions align to the right and wrap beneath the identity on narrow screens. The shared header owns sidebar-toggle clearance and its closing strong hairline; domain pages own saving, validation, permissions, and routing.
+Detail pages that combine breadcrumbs, editable identity, state, and specialized actions use the centralized two-level detail header. The first row contains ancestor breadcrumbs only; the current entity or document title appears once in the 26px identity row below. Metadata stays with the title. On the right, actions form the first row and plain-text state sits directly underneath; both move beneath the identity and stay in the same order on narrow screens. The shared header owns sidebar-toggle clearance and its closing strong hairline; domain pages own saving, validation, permissions, and routing.
 
 ### Tabs and filters
 

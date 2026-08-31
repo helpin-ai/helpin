@@ -165,9 +165,9 @@ export function QuietDetailHeader({
           </div>
         </div>
         {state || actions ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 md:max-w-[48%] md:shrink-0 md:justify-end">
-            {state ? <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">{state}</div> : null}
-            {actions ? <div className="flex min-w-0 flex-wrap items-center gap-3">{actions}</div> : null}
+          <div className="flex min-w-0 flex-col items-start gap-1.5 md:max-w-[48%] md:shrink-0 md:items-end">
+            {actions ? <div className="flex min-w-0 flex-wrap items-center gap-3 md:justify-end">{actions}</div> : null}
+            {state ? <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 md:justify-end">{state}</div> : null}
           </div>
         ) : null}
       </div>

@@ -30,7 +30,7 @@ Import from `@/components/design-system/quiet`.
 
 These components own visual invariants. Pages own data, navigation, permissions, and domain actions.
 
-Use `QuietPageHeader` for normal authenticated index and settings routes. Use `QuietDetailHeader` when a detail page needs ancestor breadcrumbs, a single editable identity/document title, metadata, state, and page-specific actions. The header owns layout and sidebar clearance; pages retain navigation, permissions, validation, and persistence. Keep purpose-built editor or workflow toolbars only when their controls cannot fit this composition, and apply `workspaceSidebarSafeInsetClassName` to every top/loading toolbar state instead of recreating the collapsed-sidebar spacing class.
+Use `QuietPageHeader` for normal authenticated index and settings routes. Use `QuietDetailHeader` when a detail page needs ancestor breadcrumbs, a single editable identity/document title, metadata, state, and page-specific actions. Its right side always renders actions first with state directly underneath. The header owns layout and sidebar clearance; pages retain navigation, permissions, validation, and persistence. Keep purpose-built editor or workflow toolbars only when their controls cannot fit this composition, and apply `workspaceSidebarSafeInsetClassName` to every top/loading toolbar state instead of recreating the collapsed-sidebar spacing class.
 
 ## Existing behavior primitives
 
