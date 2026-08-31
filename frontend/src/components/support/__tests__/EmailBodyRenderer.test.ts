@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EMAIL_BODY_IFRAME_STYLES } from '../EmailBodyRenderer';
 import { measureVisibleEmailContentHeight, prepareCollapsedEmailLayout } from '../EmailBodyRendererLayout';
 
 function mockStyleForCollapsedEmail() {
@@ -123,5 +124,39 @@ describe('EmailBodyRenderer collapsed quote layout', () => {
 
     expect(document.getElementById('word-quote-header')?.getAttribute('data-helpin-quote')).toBe('true');
     expect(document.getElementById('word-old-thread')?.getAttribute('data-helpin-quote')).toBe('true');
+  });
+});
+
+describe('EmailBodyRenderer email-client compatibility', () => {
+  afterEach(() => {
+    document.head.innerHTML = '';
+    document.body.innerHTML = '';
+  });
+
+  it('preserves Gmail Drive chip dimensions without changing other email elements', () => {
+    const style = document.createElement('style');
+    style.textContent = EMAIL_BODY_IFRAME_STYLES;
+    document.head.appendChild(style);
+    document.body.innerHTML = `
+      <div
+        id="drive-chip"
+        class="gmail_chip gmail_drive_chip"
+        style="width: 386px; height: 20px; padding: 10px; border: 1px solid rgb(221, 221, 221)"
+      >
+        <a href="https://drive.google.com/file/d/example/view">
+          <img src="https://ssl.gstatic.com/docs/doclist/images/icon_10_generic_list.png" />
+          <span>A very long Google Drive recording filename that must stay inside the chip.mp4</span>
+        </a>
+      </div>
+      <div id="regular-email-element">Regular email content</div>
+    `;
+
+    const chip = document.getElementById('drive-chip')!;
+    const icon = chip.querySelector('img')!;
+    const regularElement = document.getElementById('regular-email-element')!;
+
+    expect(window.getComputedStyle(chip).boxSizing).toBe('content-box');
+    expect(window.getComputedStyle(icon).display).toBe('inline-block');
+    expect(window.getComputedStyle(regularElement).boxSizing).not.toBe('content-box');
   });
 });

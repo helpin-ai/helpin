@@ -28,9 +28,21 @@ interface EmailBodyFrameProps {
 // Email HTML is authored for light backgrounds. Force a white canvas inside
 // the iframe so author colors remain readable when the host app is in dark
 // mode (matches Gmail/Outlook behavior).
-const IFRAME_STYLES = `
+export const EMAIL_BODY_IFRAME_STYLES = `
   *, *::before, *::after {
     box-sizing: border-box;
+  }
+  /* Gmail authors Drive links as fixed-height chips using the content-box
+     sizing model. Keep this narrow exception: applying our border-box reset
+     makes the chip's padding consume its declared height and clips the file
+     icon/name (including Drive-hosted videos, which are links rather than
+     MIME attachments). The substring selector also covers Gmail variants
+     that combine or suffix the class name. */
+  [class*="gmail_drive_chip"] {
+    box-sizing: content-box !important;
+  }
+  [class*="gmail_drive_chip"] a img {
+    display: inline-block;
   }
   html, body {
     margin: 0;
@@ -79,7 +91,7 @@ function buildSrcDoc(safeHtml: string): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <base target="_blank" />
-<style>${IFRAME_STYLES}</style>
+<style>${EMAIL_BODY_IFRAME_STYLES}</style>
 </head>
 <body>${safeHtml}</body>
 </html>`;
