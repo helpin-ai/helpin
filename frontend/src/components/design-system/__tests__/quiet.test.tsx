@@ -94,6 +94,17 @@ describe('Quiet Hairline primitives', () => {
     expect(primaryMarkup).toContain('bg-quiet-action');
   });
 
+  it('can keep a detail action icon-only at every breakpoint', () => {
+    const markup = renderToStaticMarkup(
+      <TooltipProvider><QuietDetailAction icon={<span>M</span>} label="Show details" iconOnly /></TooltipProvider>,
+    );
+
+    expect(markup).toContain('rounded-full');
+    expect(markup).toContain('class="sr-only"');
+    expect(markup).not.toContain('sm:rounded-none');
+    expect(markup).toContain('aria-label="Show details"');
+  });
+
   it('keeps page headers at 20px and identity headers at 24px', () => {
     const pageMarkup = renderToStaticMarkup(<QuietPageHeader title="Meetings" />);
     const identityMarkup = renderToStaticMarkup(<QuietIdentityHeader title="Customer call" />);

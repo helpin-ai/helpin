@@ -1434,7 +1434,7 @@ export function DocsDocumentDetail({
         {proposalStatusMessage}
       </div>
       <QuietDetailHeader
-        className="relative z-30 bg-background"
+        className="relative z-30"
         allowTitleWrap
         breadcrumbs={(
           <QuietBreadcrumbs
@@ -1600,6 +1600,7 @@ export function DocsDocumentDetail({
             <QuietDetailAction
               icon={<MoreHorizontalIcon className="h-4 w-4" />}
               label={railOpen ? 'Hide details' : 'Show details'}
+              iconOnly
               onClick={toggleRail}
             />
           </>

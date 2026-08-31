@@ -41,6 +41,9 @@ describe('workspace route header contract', () => {
     expect(docsSource).toContain('presentation="header"');
     expect(docsSource).toContain('allowTitleWrap');
     expect(docsSource).toContain('pageScrollOnMobile');
+    expect(docsSource).toContain('iconOnly');
+    expect(docsSource).toContain('className="relative z-30"');
+    expect(docsSource).not.toContain('className="relative z-30 bg-background"');
     expect(docsSource).toContain('showTitle={false}');
   });
 

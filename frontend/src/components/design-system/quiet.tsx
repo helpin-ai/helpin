@@ -284,6 +284,7 @@ export function QuietDetailAction({
   icon,
   label,
   tone = 'secondary',
+  iconOnly = false,
   href,
   target,
   rel,
@@ -293,22 +294,26 @@ export function QuietDetailAction({
   icon: ReactNode;
   label: string;
   tone?: QuietDetailActionTone;
+  iconOnly?: boolean;
   href?: string;
   target?: string;
   rel?: string;
 }) {
   const actionClassName = cn(
-    'size-8 rounded-full border-0 p-0 focus-visible:border-quiet-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-quiet-text-primary/20 sm:w-auto',
+    'size-8 rounded-full border-0 p-0 focus-visible:border-quiet-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-quiet-text-primary/20',
     tone === 'primary'
-      ? 'bg-quiet-action text-quiet-action-ink hover:bg-quiet-action-hover sm:rounded-4xl sm:px-3'
-      : 'bg-transparent text-quiet-text-secondary hover:bg-quiet-hover hover:text-quiet-text-primary sm:h-auto sm:rounded-none sm:p-0 sm:hover:bg-transparent',
+      ? cn('bg-quiet-action text-quiet-action-ink hover:bg-quiet-action-hover', !iconOnly && 'sm:w-auto sm:rounded-4xl sm:px-3')
+      : cn(
+          'bg-transparent text-quiet-text-secondary hover:bg-quiet-hover hover:text-quiet-text-primary',
+          !iconOnly && 'sm:h-auto sm:w-auto sm:rounded-none sm:p-0 sm:hover:bg-transparent',
+        ),
     tone === 'danger' && 'text-quiet-text-tertiary hover:text-quiet-accent sm:hover:text-quiet-accent',
     className,
   );
   const content = (
     <>
       {icon}
-      <span className="max-sm:sr-only">{label}</span>
+      <span className={iconOnly ? 'sr-only' : 'max-sm:sr-only'}>{label}</span>
     </>
   );
   const action = href ? (
