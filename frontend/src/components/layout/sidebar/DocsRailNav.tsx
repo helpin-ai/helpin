@@ -11,7 +11,6 @@ import {
   MoreVerticalIcon,
   PencilEdit01Icon,
   PlusSignIcon,
-  Search01Icon,
   StarIcon,
   Tick01Icon,
   UserIcon,
@@ -46,7 +45,6 @@ import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog'
 import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog'
 import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog'
-import { useSearchCommandStore } from '@/stores/searchCommandStore'
 import type { SidebarNavigateTarget } from './navigation'
 import { SidebarCreateBar } from './SidebarCreateBar'
 import {
@@ -356,7 +354,6 @@ export function DocsRailNav({
   const [deletingSpace, setDeletingSpace] = useState<DocsSpace | null>(null)
   const [editingCollection, setEditingCollection] = useState<DocsCollection | null>(null)
   const [deletingCollection, setDeletingCollection] = useState<DocsCollection | null>(null)
-  const openSearch = useSearchCommandStore((state) => state.openSearch)
   const deleteSpace = useDeleteDocsSpace(wsId)
   const deleteCollection = useDeleteDocsCollection(wsId)
 
@@ -798,16 +795,6 @@ export function DocsRailNav({
           </div>
         )}
       </div>
-
-      <button
-        type="button"
-        onClick={openSearch}
-        className="flex min-h-11 items-center gap-2 border-t border-sidebar-border/80 px-3 text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-      >
-        <Search01Icon className="h-3.5 w-3.5" />
-        <span className="min-w-0 flex-1 truncate">Search all spaces</span>
-        <span className="text-[11px] text-muted-foreground/70">⌘K</span>
-      </button>
 
       <SpaceDialog
         wsId={wsId}

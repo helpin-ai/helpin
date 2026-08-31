@@ -24,6 +24,8 @@ import {
   Layers01Icon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { QuietTitleInput } from '@/components/design-system/quiet';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -878,36 +880,30 @@ export function EpicDetailPage() {
       <div className="relative grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
         {/* ── Left column ────────────────────────────────────────── */}
         <div className="flex min-h-0 min-w-0 flex-col lg:overflow-hidden">
-          <div role="tablist" aria-label="Epic detail views" className="flex items-center gap-6 border-b border-border/60 px-6 lg:px-10">
+          <Tabs value={activeView} onValueChange={(value) => selectView(value as 'overview' | 'delivery')} className="gap-0">
+            <TabsList variant="quiet" aria-label="Epic detail views" className="w-full justify-start px-6 lg:px-10">
             {(['overview', 'delivery'] as const).map((view) => (
-              <button
+              <TabsTrigger
                 key={view}
-                type="button"
-                role="tab"
-                aria-selected={activeView === view}
-                className={cn(
-                  '-mb-px flex items-center gap-2 border-b-2 px-0.5 py-3 text-sm font-medium capitalize transition-colors',
-                  activeView === view
-                    ? 'border-foreground text-foreground'
-                    : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-                onClick={() => selectView(view)}
+                value={view}
+                className="capitalize"
               >
                 {view}
-              </button>
+              </TabsTrigger>
             ))}
-          </div>
+            </TabsList>
+          </Tabs>
 
           <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden px-6 pt-5 lg:overflow-y-auto lg:px-10">
           {activeView === 'overview' ? (
           <>
           {/* Title */}
-          <input
+          <QuietTitleInput
             type="text"
             aria-label="Epic title"
             value={form.name}
             onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-            className="w-full border-b border-border/60 bg-transparent pb-2 text-2xl font-bold text-foreground transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/70 focus:outline-none"
+            className="placeholder:text-quiet-muted"
             placeholder="Untitled"
           />
 

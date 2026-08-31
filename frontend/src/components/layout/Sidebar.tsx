@@ -22,6 +22,7 @@ import {
   SidebarHeader,
 } from '@/components/ui/sidebar';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
+import { SidebarHeaderToggle } from '@/components/layout/WorkspaceSidebarToggle';
 import { TrialBanner } from '@/components/layout/TrialBanner';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
@@ -47,6 +48,7 @@ import { SettingsRailNav } from './sidebar/SettingsRailNav';
 import { StandardRailNav } from './sidebar/StandardRailNav';
 import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
+import { SidebarSearchFooter } from './sidebar/SidebarSearchFooter';
 import { isSetupSuccessEnabled } from '@/lib/featureFlags';
 import type { SupportInboxView } from '@/lib/pmTypes';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -322,6 +324,7 @@ export function Sidebar() {
             <WorkspaceSwitcher />
           </div>
           <NotificationCenter />
+          <SidebarHeaderToggle />
         </div>
       </SidebarHeader>
 
@@ -354,24 +357,25 @@ export function Sidebar() {
             )}
           />
 
-          <div
-            className={cn(
-              'flex min-w-0 flex-1 flex-col',
-              activeRail === 'docs' ? 'overflow-hidden p-1 pb-0' : 'overflow-y-auto p-2',
-            )}
-          >
-            {activeRail === 'projects' && (
-              <SidebarCreateBar
-                primaryLabel={primaryCreate.label}
-                onPrimaryClick={() => openCreate(primaryCreate.key, activeTeamParam ? { teamId: activeTeamParam } : undefined)}
-                options={secondaryOptions.map((option) => ({
-                  key: option.key,
-                  label: option.label,
-                  icon: option.icon,
-                  onSelect: () => openCreate(option.key, activeTeamParam ? { teamId: activeTeamParam } : undefined),
-                }))}
-              />
-            )}
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div
+              className={cn(
+                'min-h-0 flex-1 flex-col',
+                activeRail === 'docs' ? 'flex overflow-hidden p-1 pb-0' : 'overflow-y-auto p-2',
+              )}
+            >
+              {activeRail === 'projects' && (
+                <SidebarCreateBar
+                  primaryLabel={primaryCreate.label}
+                  onPrimaryClick={() => openCreate(primaryCreate.key, activeTeamParam ? { teamId: activeTeamParam } : undefined)}
+                  options={secondaryOptions.map((option) => ({
+                    key: option.key,
+                    label: option.label,
+                    icon: option.icon,
+                    onSelect: () => openCreate(option.key, activeTeamParam ? { teamId: activeTeamParam } : undefined),
+                  }))}
+                />
+              )}
 
             {activeRail === 'settings' ? (
               <SettingsRailNav
@@ -497,6 +501,8 @@ export function Sidebar() {
                 }}
               />
             )}
+            </div>
+            <SidebarSearchFooter workspaceName={currentWorkspace?.name} />
           </div>
         </div>
         <TrialBanner />

@@ -40,6 +40,8 @@ import {
 } from '@/lib/pmConstants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuietTitleInput } from '@/components/design-system/quiet';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -1342,37 +1344,33 @@ function TaskDetailPanelBody({
       <div className="relative grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-x-hidden overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
         {/* ── Left column (main content) ────────────────────────── */}
         <div className="flex min-w-0 flex-col lg:min-h-0">
-          <div role="tablist" aria-label="Task detail views" className="flex items-center gap-6 border-b border-border/60 px-4 sm:px-6 lg:px-10">
+          <Tabs value={activeView} onValueChange={(value) => selectView(value as TaskDetailView)} className="gap-0">
+            <TabsList variant="quiet" aria-label="Task detail views" className="w-full justify-start px-4 sm:px-6 lg:px-10">
             {(['overview', 'delivery'] as TaskDetailView[]).map((view) => (
-              <button
+              <TabsTrigger
                 key={view}
-                type="button"
-                role="tab"
-                aria-selected={activeView === view}
-                className={cn(
-                  '-mb-px flex items-center gap-2 border-b-2 px-0.5 py-3 text-sm font-medium capitalize transition-colors',
-                  activeView === view ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-                onClick={() => selectView(view)}
+                value={view}
+                className="capitalize"
               >
                 {view}
                 {view === 'delivery' && taskDetail.task.latest_run_status === 'failed' && (
                   <span className="h-1.5 w-1.5 rounded-full bg-destructive" aria-label="Latest agent run failed" />
                 )}
-              </button>
+              </TabsTrigger>
             ))}
-          </div>
+            </TabsList>
+          </Tabs>
 
           <div className="min-w-0 flex-1 overflow-x-hidden px-4 pt-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:px-10">
           {activeView === 'overview' && (
           <>
           {/* Title */}
-          <input
+          <QuietTitleInput
             type="text"
             aria-label="Task title"
             value={form.name}
             onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-            className="w-full border-b border-border/60 bg-transparent pb-2 text-2xl font-bold text-foreground transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/70 focus:outline-none"
+            className="placeholder:text-quiet-muted"
             placeholder="Untitled"
           />
 

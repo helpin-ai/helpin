@@ -605,6 +605,27 @@
   --color-brand-400: var(--brand-400);
   --color-brand-500: var(--brand-500);
   --color-brand-600: var(--brand-600);
+  --color-quiet-text-primary: var(--quiet-text-primary);
+  --color-quiet-text-secondary: var(--quiet-text-secondary);
+  --color-quiet-text-tertiary: var(--quiet-text-tertiary);
+  --color-quiet-muted: var(--quiet-muted);
+  --color-quiet-surface: var(--quiet-surface);
+  --color-quiet-backdrop: var(--quiet-backdrop);
+  --color-quiet-hover: var(--quiet-hover);
+  --color-quiet-row-hover: var(--quiet-row-hover);
+  --color-quiet-icon-well: var(--quiet-icon-well);
+  --color-quiet-divider-strong: var(--quiet-divider-strong);
+  --color-quiet-divider-light: var(--quiet-divider-light);
+  --color-quiet-field: var(--quiet-field);
+  --color-quiet-meta-separator: var(--quiet-meta-separator);
+  --color-quiet-empty-glyph: var(--quiet-empty-glyph);
+  --color-quiet-accent: var(--quiet-accent);
+  --color-quiet-accent-hover: var(--quiet-accent-hover);
+  --color-quiet-positive: var(--quiet-positive);
+  --color-quiet-lifecycle: var(--quiet-lifecycle);
+  --color-quiet-action: var(--quiet-action);
+  --color-quiet-action-hover: var(--quiet-action-hover);
+  --color-quiet-action-ink: var(--quiet-action-ink);
 }
 
 :root {
@@ -647,6 +668,27 @@
   --shadow-menu: 0 4px 12px rgba(16, 17, 29, 0.08), 0 1px 3px rgba(16, 17, 29, 0.06);
   --shadow-menu-item: 0 1px 2px rgba(16, 17, 29, 0.05);
   --shadow-menu-item-hover: 0 2px 6px rgba(16, 17, 29, 0.08);
+  --quiet-text-primary: #1c1a17;
+  --quiet-text-secondary: #57534e;
+  --quiet-text-tertiary: #78716c;
+  --quiet-muted: #a8a5a0;
+  --quiet-surface: #ffffff;
+  --quiet-backdrop: #e9e8e5;
+  --quiet-hover: #f5f4f2;
+  --quiet-row-hover: #faf9f7;
+  --quiet-icon-well: #f0efec;
+  --quiet-divider-strong: #ecebe8;
+  --quiet-divider-light: #f2f1ee;
+  --quiet-field: #ddd9d4;
+  --quiet-meta-separator: #e0ded9;
+  --quiet-empty-glyph: #d6d3ce;
+  --quiet-accent: #c2410c;
+  --quiet-accent-hover: #9a3412;
+  --quiet-positive: #0f766e;
+  --quiet-lifecycle: #7c5cff;
+  --quiet-action: #1c1a17;
+  --quiet-action-hover: #3b3733;
+  --quiet-action-ink: #ffffff;
 }
 
 /* Hide scrollbar but keep scroll functionality */
@@ -1423,6 +1465,27 @@
   --brand-600: #294adc;
   --shadow-menu: 0 4px 14px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.25);
   --shadow-menu-item: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --quiet-text-primary: var(--foreground);
+  --quiet-text-secondary: color-mix(in oklab, var(--foreground) 82%, transparent);
+  --quiet-text-tertiary: color-mix(in oklab, var(--foreground) 68%, transparent);
+  --quiet-muted: var(--muted-foreground);
+  --quiet-surface: var(--background);
+  --quiet-backdrop: oklch(0.11 0 0);
+  --quiet-hover: var(--muted);
+  --quiet-row-hover: color-mix(in oklab, var(--muted) 72%, transparent);
+  --quiet-icon-well: var(--muted);
+  --quiet-divider-strong: var(--border);
+  --quiet-divider-light: color-mix(in oklab, var(--border) 66%, transparent);
+  --quiet-field: color-mix(in oklab, var(--foreground) 24%, transparent);
+  --quiet-meta-separator: color-mix(in oklab, var(--foreground) 20%, transparent);
+  --quiet-empty-glyph: color-mix(in oklab, var(--foreground) 30%, transparent);
+  --quiet-accent: #fb923c;
+  --quiet-accent-hover: #fdba74;
+  --quiet-positive: #5eead4;
+  --quiet-lifecycle: #a78bfa;
+  --quiet-action: var(--foreground);
+  --quiet-action-hover: color-mix(in oklab, var(--foreground) 82%, var(--background));
+  --quiet-action-ink: var(--background);
   --shadow-menu-item-hover: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 

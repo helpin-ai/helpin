@@ -11,6 +11,7 @@ import {
 } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
+import { QuietEmptyState, QuietPageHeader, QuietPrimaryAction, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
   Dialog,
@@ -699,58 +700,44 @@ export function SkillCatalogContent({
 
   if (loading) {
     return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-        Loading skill catalog...
-      </div>
+      <p className="border-y border-quiet-divider-strong py-8 text-sm text-quiet-text-tertiary">Loading skill catalog…</p>
     );
   }
 
   if (!catalog || catalog.skills.length === 0) {
     return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-        No skills available.
-      </div>
+      <QuietEmptyState title="No skills available" description="Skills will appear here when they are built in, imported, or created for this workspace." />
     );
   }
 
   return (
     <div className="space-y-5">
       {!embedded && (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <h1 className="text-xl font-semibold">Skill Catalog</h1>
-            <p className="text-[13px] text-muted-foreground">
-              Reusable prompt fragments agents compose at runtime.
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-xs"
-              onClick={() => setImportOpen(true)}
-            >
+        <QuietPageHeader
+          title="Skill Catalog"
+          description="Reusable prompt fragments agents compose at runtime."
+          actions={(
+            <>
+            <QuietTextAction className="gap-1.5" onClick={() => setImportOpen(true)}>
               <Upload01Icon className="h-3.5 w-3.5" />
               Import
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 gap-1.5 text-xs"
-              onClick={() => setCreateOpen(true)}
-            >
+            </QuietTextAction>
+            <QuietPrimaryAction className="gap-1.5" onClick={() => setCreateOpen(true)}>
               <PlusSignIcon className="h-3.5 w-3.5" />
               New skill
-            </Button>
-          </div>
-        </div>
+            </QuietPrimaryAction>
+            </>
+          )}
+        />
       )}
 
       {/* Search */}
       <div className="relative">
-        <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
-        <Input
+        <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 text-quiet-muted" />
+        <QuietUnderlineInput
+          aria-label="Search skills"
           placeholder="Search skills..."
-          className="h-10 border-border/70 bg-muted/30 pl-9 text-[13px] placeholder:text-muted-foreground/70 focus-visible:bg-background"
+          className="w-full pl-6"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -758,9 +745,7 @@ export function SkillCatalogContent({
 
       {/* Skill list */}
       {grouped.length === 0 ? (
-        <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-border/60 text-sm text-muted-foreground">
-          No skills match your search.
-        </div>
+        <QuietEmptyState title="No skills match your search" description="Try a shorter name or clear the search to browse every available skill." />
       ) : (
         <div className="space-y-7">
           {grouped.map(({ sourceKind, skills }) => (

@@ -1,0 +1,57 @@
+# Helpin component map
+
+Use this map for product UI under `frontend/`. Inspect the live source before extending a component.
+
+## Centralized Quiet primitives
+
+Import from `@/components/design-system/quiet`.
+
+| Need | Component |
+| --- | --- |
+| Scrollable route canvas | `QuietPageViewport` |
+| Route title, optional parenthetical scope, description, actions | `QuietPageHeader` |
+| Person/company identity | `QuietIdentityHeader` |
+| Main + rail detail shell | `QuietDetailLayout`, `QuietDetailRail` |
+| Primary line tabs | `Tabs`, `TabsList variant="quiet"`, `TabsTrigger` from `@/components/ui/tabs` |
+| Divider-led section | `QuietSection`, `QuietSectionHeader` |
+| Default secondary action | `QuietTextAction` |
+| Compact icon action | `QuietIconAction` |
+| One dark primary action | `QuietPrimaryAction` |
+| Entity title input (fixed 26px) | `QuietTitleInput` |
+| Underline input/control | `QuietUnderlineInput`, `quietUnderlineControlClassName` |
+| Detail property | `QuietPropertyRow` |
+| Stacked scan row | `QuietListRow` |
+| Inline facts/provenance | `QuietMetaLine` |
+| Dot plus status word | `QuietStatusText` |
+| Working empty state | `QuietEmptyState` |
+
+These components own visual invariants. Pages own data, navigation, permissions, and domain actions.
+
+## Existing behavior primitives
+
+Keep using the established components below. Prefer the listed quiet presentation rather than rebuilding behavior.
+
+- Overlays: `Sheet`, `Dialog`, `Popover`, `DropdownMenu`, `Tooltip`, and `QuickTooltip` from `@/components/ui`.
+- Form behavior: `Input` with `variant="plain"`, existing Select/Command components, `DatePicker`, `TiptapEditor` with `variant="divider"`, and react-hook-form/zod where already used.
+- Identity: `UserAvatar`; provide `fallbackColorSeed` when a stable email is available.
+- PM: `SidebarPopoverSelect`, `MemberPickerPopover`, `SaveIndicator`, `Attachments`, `DetailDescriptionEditorActions`, `DetailDescriptionEditButton`, `TaskUpdatesView`, `EpicUpdatesView`, and routing helpers.
+- CRM: `EntitySummaryCard` with `presentation="overview"`, `EntitySignals`, `ActivityTimeline` and `EmailTimeline` borderless presentations, `CompanyDetailCollections`, `LinkedTasksPanel`, and enrichment/association components.
+- Automation: retain flow composers, agent editors, run drawers, tool selectors, query hooks, permission checks, and billing/error handling. Centralize only their page chrome and recurring visual patterns.
+
+## Canonical reference surfaces
+
+- Task sheet: `TaskDetailPanel`, opened through `GlobalTaskPanel`.
+- Epic detail: `EpicDetailPage`.
+- CRM identity/detail: `ContactDetailPage` and `CompanyDetailPage`.
+- Automation routes: Flows, Activity, Agents, Trigger Catalog, Skill Catalog, and Tool Catalog.
+
+Reference surfaces demonstrate composition and domain behavior; the Quiet primitives and design reference are authoritative when an older local class or visual treatment conflicts.
+
+## Component decisions
+
+- Do not use `Card` to structure a new page section. Use `QuietSection` or a hairline list.
+- Do not use `Badge` for ordinary status, counts, lifecycle, filters, or metadata. Use `QuietStatusText` or inline text.
+- Do not use default `Button` colors or boxed `Input`/`Tabs` styling for Quiet page chrome. Use the Quiet wrappers.
+- `QuietPrimaryAction` must preserve the centralized Helpin `Button size="sm"` geometry and curvature; only its color and hierarchy differ.
+- Do not duplicate section-heading, tab, row, action, property-row, or empty-state class strings in a page.
+- Domain components may retain a compact chip only when the shape itself is established user data or a removal affordance, such as an editable label/token collection.

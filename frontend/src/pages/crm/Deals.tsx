@@ -15,6 +15,7 @@ import {
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -263,7 +264,18 @@ export function DealsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header bar */}
+      <QuietPageHeader
+        variant="shell"
+        title="Deals"
+        actions={(
+          <QuietPrimaryAction className="gap-1.5" onClick={() => setShowCreate(true)}>
+            <PlusSignIcon className="h-4 w-4" />
+            Add deal
+          </QuietPrimaryAction>
+        )}
+      />
+
+      {/* View controls */}
       <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
         {/* Pipeline selector */}
         {pipelines && pipelines.length > 1 && (
@@ -316,10 +328,6 @@ export function DealsPage() {
               <LayoutTable01Icon className="h-4 w-4" />
             </Button>
           </QuickTooltip>
-          <Button size="sm" className="ml-2 h-7 text-xs" onClick={() => setShowCreate(true)}>
-            <PlusSignIcon className="mr-1 h-3.5 w-3.5" />
-            Deal
-          </Button>
         </div>
       </header>
 

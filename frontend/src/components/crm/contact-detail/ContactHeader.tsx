@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
+import { QuietIdentityHeader, QuietMetaLine, QuietStatusText } from '@/components/design-system/quiet';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { cn } from '@/lib/utils';
 import type { LifecycleStage } from '@/lib/crmTypes';
 
 interface ContactHeaderProps {
@@ -12,24 +12,15 @@ interface ContactHeaderProps {
   lifecycleStage: LifecycleStage;
   lifecycleLabel: string;
   displayId?: string;
+  avatarColorSeed?: string;
   actions?: ReactNode;
   onNameChange: (first: string, last: string) => void;
 }
 
-const STAGE_DOT: Record<LifecycleStage, string> = {
-  subscriber: 'bg-sky-500',
-  lead: 'bg-indigo-500',
-  marketing_qualified: 'bg-violet-500',
-  sales_qualified: 'bg-amber-500',
-  opportunity: 'bg-orange-500',
-  customer: 'bg-emerald-500',
-  evangelist: 'bg-pink-500',
-};
-
 export const contactHeaderAvatarClassName = 'h-10 w-10 shrink-0';
-export const contactHeaderNameClassName = '-ml-1 block min-w-0 truncate rounded-md px-1 text-left text-2xl font-bold tracking-tight text-foreground transition-colors hover:bg-muted/50';
-export const contactHeaderNameInputClassName = '-ml-1 block w-full min-w-0 rounded-md bg-transparent px-1 text-2xl font-bold tracking-tight text-foreground outline-none ring-1 ring-inset ring-transparent focus:ring-border';
-export const contactHeaderLifecycleBadgeClassName = 'inline-flex h-5 items-center gap-1.5 rounded-full border border-border/60 px-2 text-[11px] font-medium text-muted-foreground';
+export const contactHeaderNameClassName = 'block min-w-0 truncate border-b border-transparent text-left text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-quiet-text-primary transition-colors hover:border-quiet-field focus-visible:border-quiet-text-primary focus-visible:outline-none md:text-[26px]';
+export const contactHeaderNameInputClassName = 'block w-full min-w-0 border-0 border-b-2 border-quiet-text-primary bg-transparent pb-0.5 text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-quiet-text-primary outline-none placeholder:text-quiet-muted md:text-[26px]';
+export const contactHeaderLifecycleBadgeClassName = 'inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.03em] text-quiet-text-tertiary';
 
 function splitFullName(value: string): [string, string] {
   const trimmed = value.trim().replace(/\s+/g, ' ');
@@ -49,9 +40,9 @@ export function ContactHeader({
   jobTitle,
   companyName,
   companyHref,
-  lifecycleStage,
   lifecycleLabel,
   displayId,
+  avatarColorSeed,
   actions,
   onNameChange,
 }: ContactHeaderProps) {
@@ -69,19 +60,21 @@ export function ContactHeader({
   };
 
   const display = initialName || 'Untitled contact';
-  const stageDot = STAGE_DOT[lifecycleStage] ?? 'bg-muted-foreground';
   const subtitleParts = getContactHeaderSubtitleParts(jobTitle, companyName);
 
   return (
-    <section className="border-b border-border/60 px-4 pb-3 pt-5 sm:px-6 lg:px-10">
-      <div className="flex items-start gap-3">
+    <QuietIdentityHeader
+      className="lg:px-10"
+      avatar={(
         <UserAvatar
           name={initialName || 'Untitled'}
+          fallbackColorSeed={avatarColorSeed}
           className={contactHeaderAvatarClassName}
           fallbackClassName="text-sm font-semibold"
         />
-
-        <div className="min-w-0 flex-1">
+      )}
+      title={(
+        <div className="max-w-[30rem]">
           {editing ? (
             <input
               ref={inputRef}
@@ -101,7 +94,6 @@ export function ContactHeader({
               }}
               placeholder="Full name"
               className={contactHeaderNameInputClassName}
-              style={{ maxWidth: '30rem' }}
             />
           ) : (
             <button
@@ -115,38 +107,30 @@ export function ContactHeader({
               {display}
             </button>
           )}
-
-          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
-            {subtitleParts.length > 0 ? (
-              <span className="min-w-0 truncate">
-                {subtitleParts.map((part, index) => {
-                  const isCompany = part === companyName?.trim();
-                  return (
-                  <span key={`${part}-${index}`}>
-                    {index > 0 && <span className="mx-1.5 text-muted-foreground/60">at</span>}
-                    {isCompany && companyHref ? (
-                      <a href={companyHref} className="text-foreground/75 transition-colors hover:text-foreground hover:underline">
-                        {part}
-                      </a>
-                    ) : (
-                      <span className={isCompany ? 'text-foreground/75' : undefined}>{part}</span>
-                    )}
-                  </span>
-                  );
-                })}
-              </span>
-            ) : (
-              <span className="text-muted-foreground/70">No title or company</span>
-            )}
-            <span className={contactHeaderLifecycleBadgeClassName}>
-              <span className={cn('size-1.5 rounded-full', stageDot)} />
-              {lifecycleLabel}
-            </span>
-            {displayId && <span className="font-mono text-xs text-muted-foreground/80">{displayId}</span>}
-          </div>
         </div>
-        {actions && <div className="shrink-0">{actions}</div>}
-      </div>
-    </section>
+      )}
+      meta={(
+        <QuietMetaLine items={[
+          subtitleParts.length > 0 ? (
+            <span className="min-w-0 truncate">
+              {subtitleParts.map((part, index) => {
+                const isCompany = part === companyName?.trim();
+                return (
+                  <span key={`${part}-${index}`}>
+                    {index > 0 ? <span className="mx-1.5 text-quiet-muted">at</span> : null}
+                    {isCompany && companyHref ? (
+                      <a href={companyHref} className="text-quiet-text-secondary transition-colors hover:text-quiet-text-primary hover:underline">{part}</a>
+                    ) : <span>{part}</span>}
+                  </span>
+                );
+              })}
+            </span>
+          ) : 'No title or company',
+          displayId ? <span className="font-mono">{displayId}</span> : null,
+        ]} />
+      )}
+      status={<QuietStatusText tone="lifecycle" className={contactHeaderLifecycleBadgeClassName}>{lifecycleLabel}</QuietStatusText>}
+      actions={actions}
+    />
   );
 }

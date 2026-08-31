@@ -14,15 +14,14 @@ import {
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AutomationShell } from '@/components/automation/AutomationShell';
+import { QuietEmptyState, QuietTextAction } from '@/components/design-system/quiet';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { openEpicRoute } from '@/components/pm/epic-detail/epicRouteNavigation';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
-import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Command,
   CommandEmpty,
@@ -670,39 +669,28 @@ function SummaryCard({
 
   const interactive = Boolean(onClick);
   return (
-    <Card
+    <div
       className={cn(
-        'border-border/70 bg-card/80 py-0 transition',
-        interactive && 'cursor-pointer hover:border-border hover:bg-card focus-within:ring-2 focus-within:ring-ring/60',
+        'flex items-end justify-between gap-4 p-4 transition-colors',
+        interactive && 'cursor-pointer hover:bg-quiet-row-hover focus-visible:bg-quiet-row-hover focus-visible:outline-none',
       )}
-    >
-      <CardContent
-        className={cn(
-          'flex items-end justify-between gap-4 p-4',
-          interactive && 'outline-none',
-        )}
-        role={interactive ? 'button' : undefined}
-        tabIndex={interactive ? 0 : undefined}
-        onClick={onClick}
-        onKeyDown={
-          interactive
-            ? (event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  onClick?.();
-                }
-              }
-            : undefined
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={interactive ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick?.();
         }
-      >
+      } : undefined}
+    >
         <div className="space-y-1">
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-          <p className={cn('text-2xl font-semibold tracking-tight', valueClass)}>{value}</p>
-          <p className="text-xs text-muted-foreground">{sublabel}</p>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-quiet-muted">{label}</p>
+          <p className={cn('text-[20px] font-semibold tracking-[-0.018em]', valueClass)}>{value}</p>
+          <p className="text-[12px] text-quiet-text-tertiary">{sublabel}</p>
         </div>
         {spark && <SparkBars values={spark} tone={tone} />}
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -1537,11 +1525,10 @@ export function AutomationActivityPage({
         title="Automation Activity"
         description="See what fired, what needs a human, and which flows are delivering value."
       >
-        <Card className={LINEAR_CARD_CLASS}>
-          <CardContent className="px-5 py-6 text-sm text-muted-foreground">
-            You do not have permission to view workspace-wide automation activity.
-          </CardContent>
-        </Card>
+        <QuietEmptyState
+          title="Automation activity unavailable"
+          description="You do not have permission to view workspace-wide automation activity. Ask a workspace administrator for access."
+        />
       </AutomationShell>
     );
   }
@@ -1551,9 +1538,8 @@ export function AutomationActivityPage({
       title="Activity"
       description="Answer the operator question first: what needs a human, what is healthy, and where the failures are clustering."
       actions={(
-        <Button
-          variant="outline"
-          size="sm"
+        <QuietTextAction
+          className="gap-1.5"
           disabled={isRefreshing}
           onClick={() => void Promise.all([runsQuery.refetch(), executionsQuery.refetch(), overviewQuery.refetch()])}
         >
@@ -1561,11 +1547,11 @@ export function AutomationActivityPage({
             ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             : <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />}
           Refresh
-        </Button>
+        </QuietTextAction>
       )}
     >
       <div className="space-y-5">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid border-y border-quiet-divider-strong divide-y divide-quiet-divider-light md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
           <SummaryCard
             label="Needs You"
             value={String(pausedRuns.length)}
@@ -1631,16 +1617,14 @@ export function AutomationActivityPage({
 
         <Tabs value={selectedActivityTab} onValueChange={(value) => setActiveTab(value as 'timeline' | 'needs_you')} className="space-y-3">
           <div className="flex items-center justify-between gap-4">
-            <TabsList variant="line">
+            <TabsList variant="quiet">
               <TabsTrigger value="timeline">
                 All runs
               </TabsTrigger>
               <TabsTrigger value="needs_you">
                 Needs you
                 {pausedRuns.length > 0 ? (
-                  <Badge className="ml-1 h-5 rounded-full border-amber-500/30 bg-amber-500/15 px-1.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                    {pausedRuns.length}
-                  </Badge>
+                  <span className="ml-1 text-[11.5px] font-normal tabular-nums text-quiet-muted">{pausedRuns.length}</span>
                 ) : null}
               </TabsTrigger>
             </TabsList>

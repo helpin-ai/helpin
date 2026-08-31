@@ -1,9 +1,10 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Loading01Icon, Search01Icon, UserGroupIcon, Cancel01Icon } from '@/lib/icons';
+import { Loading01Icon, Search01Icon, UserGroupIcon, Cancel01Icon, PlusSignIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
@@ -119,7 +120,20 @@ export function ContactsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header bar */}
+      <QuietPageHeader
+        variant="shell"
+        title="Contacts"
+        actions={(
+          <QuietPrimaryAction
+            className="gap-1.5"
+            onClick={() => openGlobalCreate('crm_contact')}
+          >
+            <PlusSignIcon className="h-4 w-4" />
+            Add contact
+          </QuietPrimaryAction>
+        )}
+      />
+
       <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
         <ContactsFilterBar assignableMembers={assignableMembers} />
         <div className="ml-auto flex items-center gap-1">

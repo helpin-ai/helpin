@@ -13,6 +13,6 @@ describe('AutomationRouteViewport', () => {
     expect(markup).toContain('p-4');
     expect(markup).toContain('md:p-6');
     expect(markup).toContain('[scrollbar-gutter:stable]');
-    expect(markup).toContain('mx-auto max-w-7xl');
+    expect(markup).toContain('mx-auto w-full max-w-7xl');
   });
 });

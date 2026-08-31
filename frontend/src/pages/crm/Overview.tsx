@@ -23,7 +23,7 @@ import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useTasks } from '@/hooks/queries/useTasks';
 import { useTitle } from '@/hooks/useTitle';
 import { buildDealAttentionItems, buildTodayTaskItems } from '@/lib/crmToday';
-import { detectMeetingPlatform } from '@/lib/meetingPresentation';
+import { detectMeetingPlatform, formatMeetingDate } from '@/lib/meetingPresentation';
 import { cn, timeAgo } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMSuggestionType } from '@/lib/crmTypes';
@@ -290,7 +290,7 @@ export function CRMOverviewPage() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">{event.title}</p>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {group.recurring ? 'Recurring - ' : ''}{format(new Date(event.start_time), 'EEE, MMM d - p')}
+                            {group.recurring ? 'Recurring - ' : ''}{formatMeetingDate(event.start_time, 'EEE, MMM d - p')}
                             {attendeeCount ? ` - ${attendeeCount} attendee${attendeeCount === 1 ? '' : 's'}` : ''}
                           </p>
                         </div>

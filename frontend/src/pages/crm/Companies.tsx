@@ -1,8 +1,8 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { PlusSignIcon, Search01Icon } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useInfiniteCompanies } from '@/hooks/useInfiniteCompanies';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -52,7 +52,17 @@ export function CompaniesPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header bar */}
+      <QuietPageHeader
+        variant="shell"
+        title="Companies"
+        actions={(
+          <QuietPrimaryAction className="gap-1.5" onClick={() => setShowCreate(true)}>
+            <PlusSignIcon className="h-4 w-4" />
+            Add company
+          </QuietPrimaryAction>
+        )}
+      />
+
       <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
         <div className="relative">
           <Search01Icon className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -62,13 +72,6 @@ export function CompaniesPage() {
             onChange={(e) => setSearch(e.target.value)}
             className="h-7 w-48 pl-7 text-xs"
           />
-        </div>
-
-        <div className="ml-auto flex items-center gap-1">
-          <Button size="sm" className="h-7 text-xs" onClick={() => setShowCreate(true)}>
-            <PlusSignIcon className="mr-1 h-3.5 w-3.5" />
-            Company
-          </Button>
         </div>
       </header>
 

@@ -18,6 +18,7 @@ import {
 	UserIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { QuietIconAction, QuietIdentityHeader, QuietMetaLine, QuietPrimaryAction, QuietTitleInput } from '@/components/design-system/quiet';
 import { Favicon } from '@/components/ui/favicon';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -386,45 +387,45 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
           : 'lg:grid-cols-[minmax(0,1fr)_300px]',
       )}>
         <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-          <section className="border-b border-border/60 px-4 pb-3 pt-5 sm:px-6 lg:px-10">
-            <div className="flex flex-wrap items-start gap-3">
-              <Favicon src={company.logo_url} url={form.domain} name={form.name} size={64} className="mt-0.5 h-10 w-10 rounded-xl" fallbackClassName="text-sm" />
-              <div className="min-w-[12rem] flex-1">
-                <input
-                  aria-label="Company name"
-                  className="w-full border-b border-transparent bg-transparent pb-1 text-2xl font-bold tracking-tight text-foreground transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/70 focus:outline-none"
-                  value={form.name}
-                  onChange={(e) =>
-                    updateField('name', e.target.value, {
-                      name: e.target.value,
-                    })
-                  }
-                  placeholder="Company name"
-                />
-                <p className="mt-1.5 text-xs text-muted-foreground">{company.display_id}</p>
-              </div>
-              <Button size="sm" className="h-8 shrink-0 gap-1.5" onClick={() => setCreateDealOpen(true)}>
+          <QuietIdentityHeader
+            className="lg:px-10"
+            avatar={<Favicon src={company.logo_url} url={form.domain} name={form.name} size={64} className="h-10 w-10 rounded-[10px]" fallbackClassName="text-sm" />}
+            title={(
+              <QuietTitleInput
+                aria-label="Company name"
+                className="max-w-[32rem] border-b-transparent pb-0.5 hover:border-quiet-field focus-visible:border-quiet-text-primary"
+                value={form.name}
+                onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
+                placeholder="Company name"
+              />
+            )}
+            meta={<QuietMetaLine items={[<span className="font-mono" key="id">{company.display_id}</span>, form.domain || null]} />}
+            actions={(
+              <QuietPrimaryAction className="gap-1.5" onClick={() => setCreateDealOpen(true)}>
                 <PlusSignIcon className="h-3.5 w-3.5" />
                 New deal
-              </Button>
-            </div>
-          </section>
+              </QuietPrimaryAction>
+            )}
+          />
 
-          <div className="flex items-end border-b border-border/60 px-3 sm:px-5 lg:px-8">
-            <Tabs value={activeTab} onValueChange={(value) => onTabChange?.(value as CompanyDetailTab)} className="min-w-0 flex-1 gap-0 overflow-hidden">
-              <div className="overflow-x-auto px-1 pt-1">
-                <TabsList variant="line" className="h-10 gap-0.5">
-                  {companyDetailTabLabels.map((tab) => (
-                    <TabsTrigger key={tab.value} value={tab.value} className="px-2.5 text-[13px]">
-                      {tab.label}
-                    </TabsTrigger>
-                  ))}
+          <div className="flex items-end border-b border-quiet-divider-strong px-3 sm:px-5 lg:px-8">
+            <div className="min-w-0 flex-1 overflow-x-auto px-1 pt-1">
+              <Tabs value={activeTab} onValueChange={(value) => onTabChange?.(value as CompanyDetailTab)} className="min-w-max gap-0">
+                <TabsList variant="quiet" aria-label="Company detail views" className="border-b-0">
+                {companyDetailTabLabels.map((tab) => (
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                  >
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
                 </TabsList>
-              </div>
-            </Tabs>
-            <Button variant="ghost" size="icon" className="mb-1 ml-2 h-8 w-8 shrink-0 lg:hidden" onClick={() => setMobileDetailsOpen(true)} aria-label="Open company details">
+              </Tabs>
+            </div>
+            <QuietIconAction className="mb-1 ml-2 shrink-0 lg:hidden" onClick={() => setMobileDetailsOpen(true)} aria-label="Open company details">
               <LayoutTwoColumnIcon className="h-4 w-4" />
-            </Button>
+            </QuietIconAction>
           </div>
 
           {activeTab === 'overview' && (

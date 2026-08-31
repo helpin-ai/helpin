@@ -27,6 +27,7 @@ import {
   ZapIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { QuietIconAction, QuietPrimaryAction } from '@/components/design-system/quiet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -1033,11 +1034,12 @@ export function ContactDetailPage({
               lifecycleOptions.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
             }
             displayId={contact.display_id}
+            avatarColorSeed={form.email}
             actions={(
-              <Button size="sm" className="h-8 gap-1.5" onClick={() => setCreateDealOpen(true)}>
+              <QuietPrimaryAction className="gap-1.5" onClick={() => setCreateDealOpen(true)}>
                 <PlusSignIcon className="h-3.5 w-3.5" />
                 New deal
-              </Button>
+              </QuietPrimaryAction>
             )}
             onNameChange={(first, last) => {
               setForm((current) =>
@@ -1047,31 +1049,28 @@ export function ContactDetailPage({
             }}
           />
 
-          <div className="flex items-end border-b border-border/60 px-3 sm:px-5 lg:px-8">
-            <Tabs
-              value={activeTab}
-              onValueChange={(value) => onTabChange?.(value as ContactDetailTab)}
-              className="min-w-0 flex-1 gap-0 overflow-hidden"
-            >
-              <div className="overflow-x-auto px-1 pt-1">
-                <TabsList variant="line" className="h-10 gap-0.5">
-                  {contactDetailTabLabels.map((tab) => (
-                    <TabsTrigger key={tab.value} value={tab.value} className="px-2.5 text-[13px]">
-                      {tab.label}
-                    </TabsTrigger>
-                  ))}
+          <div className="flex items-end border-b border-quiet-divider-strong px-3 sm:px-5 lg:px-8">
+            <div className="min-w-0 flex-1 overflow-x-auto px-1 pt-1">
+              <Tabs value={activeTab} onValueChange={(value) => onTabChange?.(value as ContactDetailTab)} className="min-w-max gap-0">
+                <TabsList variant="quiet" aria-label="Contact detail views" className="border-b-0">
+                {contactDetailTabLabels.map((tab) => (
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                  >
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
                 </TabsList>
-              </div>
-            </Tabs>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="mb-1 ml-2 h-8 w-8 shrink-0 lg:hidden"
+              </Tabs>
+            </div>
+            <QuietIconAction
+              className="mb-1 ml-2 shrink-0 lg:hidden"
               onClick={() => setMobileDetailsOpen(true)}
               aria-label="Open contact details"
             >
               <LayoutTwoColumnIcon className="h-4 w-4" />
-            </Button>
+            </QuietIconAction>
           </div>
 
           {activeTab === 'overview' && (

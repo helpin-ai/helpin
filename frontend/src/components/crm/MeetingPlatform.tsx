@@ -6,10 +6,12 @@ export function MeetingPlatformIcon({
   platform,
   className,
   size = 'md',
+  presentation = 'default',
 }: {
   platform: CRMMeetingPlatform;
   className?: string;
   size?: 'sm' | 'md';
+  presentation?: 'default' | 'quiet';
 }) {
   const iconClassName = size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4';
 
@@ -17,7 +19,9 @@ export function MeetingPlatformIcon({
     <span
       aria-label={getMeetingPlatformLabel(platform)}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-md border bg-background shadow-sm',
+        'inline-flex shrink-0 items-center justify-center',
+        presentation === 'default' && 'rounded-md border bg-background shadow-sm',
+        presentation === 'quiet' && 'bg-transparent',
         size === 'sm' ? 'h-6 w-6' : 'h-8 w-8',
         className,
       )}
@@ -58,13 +62,15 @@ export function MeetingPlatformIcon({
 export function MeetingPlatformLabel({
   platform,
   compact = false,
+  presentation = 'default',
 }: {
   platform: CRMMeetingPlatform;
   compact?: boolean;
+  presentation?: 'default' | 'quiet';
 }) {
   return (
     <span className="inline-flex min-w-0 items-center gap-2">
-      <MeetingPlatformIcon platform={platform} size={compact ? 'sm' : 'md'} />
+      <MeetingPlatformIcon platform={platform} size={compact ? 'sm' : 'md'} presentation={presentation} />
       <span className="truncate">{getMeetingPlatformLabel(platform)}</span>
     </span>
   );

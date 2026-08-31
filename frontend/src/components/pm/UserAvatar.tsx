@@ -3,19 +3,18 @@ import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import { cn, getInitials } from '@/lib/utils';
 
 const AVATAR_COLORS = [
-  { bg: 'bg-rose-100 dark:bg-rose-900/40', text: 'text-rose-700 dark:text-rose-300' },
-  { bg: 'bg-pink-100 dark:bg-pink-900/40', text: 'text-pink-700 dark:text-pink-300' },
-  { bg: 'bg-fuchsia-100 dark:bg-fuchsia-900/40', text: 'text-fuchsia-700 dark:text-fuchsia-300' },
-  { bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-700 dark:text-purple-300' },
-  { bg: 'bg-indigo-100 dark:bg-indigo-900/40', text: 'text-indigo-700 dark:text-indigo-300' },
-  { bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-300' },
-  { bg: 'bg-teal-100 dark:bg-teal-900/40', text: 'text-teal-700 dark:text-teal-300' },
-  { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-300' },
-  { bg: 'bg-lime-100 dark:bg-lime-900/40', text: 'text-lime-700 dark:text-lime-300' },
-  { bg: 'bg-amber-100 dark:bg-amber-900/40', text: 'text-amber-700 dark:text-amber-300' },
-  { bg: 'bg-orange-100 dark:bg-orange-900/40', text: 'text-orange-700 dark:text-orange-300' },
-  { bg: 'bg-red-100 dark:bg-red-900/40', text: 'text-red-700 dark:text-red-300' },
+  { bg: 'bg-[#e8ecf7] dark:bg-indigo-950/55', text: 'text-[#4c5a86] dark:text-indigo-200' },
+  { bg: 'bg-[#eef0f6] dark:bg-slate-800', text: 'text-[#4c5a86] dark:text-slate-200' },
+  { bg: 'bg-[#e6f0ec] dark:bg-emerald-950/50', text: 'text-[#3f6b58] dark:text-emerald-200' },
+  { bg: 'bg-[#eeeaf7] dark:bg-violet-950/50', text: 'text-[#5b4c86] dark:text-violet-200' },
+  { bg: 'bg-[#f7ece6] dark:bg-orange-950/50', text: 'text-[#8a5433] dark:text-orange-200' },
+  { bg: 'bg-[#eef2e6] dark:bg-lime-950/45', text: 'text-[#5c6b3f] dark:text-lime-200' },
 ];
+
+const UNRESOLVED_AVATAR_COLOR = {
+  bg: 'bg-[#f0efec] dark:bg-neutral-800',
+  text: 'text-[#78716c] dark:text-neutral-300',
+};
 
 function hashName(name: string): number {
   let hash = 0;
@@ -26,7 +25,7 @@ function hashName(name: string): number {
 }
 
 export function getAvatarColor(name?: string | null) {
-  if (!name) return AVATAR_COLORS[0];
+  if (!name) return UNRESOLVED_AVATAR_COLOR;
   return AVATAR_COLORS[hashName(name) % AVATAR_COLORS.length];
 }
 
@@ -68,6 +67,7 @@ interface UserAvatarProps {
   presenceStatus?: 'online' | 'away' | 'offline' | null;
   className?: string;
   fallbackClassName?: string;
+  fallbackColorSeed?: string | null;
 }
 
 export function UserAvatar({
@@ -80,8 +80,9 @@ export function UserAvatar({
   presenceStatus,
   className,
   fallbackClassName,
+  fallbackColorSeed,
 }: UserAvatarProps) {
-  const color = getAvatarColor(name);
+  const color = getAvatarColor(fallbackColorSeed || name);
   const avatarClassName = bumpAvatarDimensions(className);
   const presenceIndicatorClass = getPresenceIndicatorClass(presenceStatus);
   const resolvedAvatarUrl = resolveTeamMemberAvatarSrc({

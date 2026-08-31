@@ -479,6 +479,10 @@ logger.Info("emitting notification", "event_type", event.EventType)
 
 ## Frontend Patterns
 
+### Helpin Design System
+
+For product UI work under `frontend/`, use the repo-scoped `$helpin-design-system` skill in `.agents/skills/helpin-design-system/`. Quiet Hairline is the visual authority; centralized Helpin components remain the behavior and accessibility authority.
+
 ### TanStack Router (File-Based)
 Routes are defined in `src/routes/` and auto-generated into `routeTree.gen.ts`:
 ```

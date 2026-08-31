@@ -13,6 +13,14 @@ import {
 } from '@/lib/icons';
 import { toast } from 'sonner';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import {
+  QuietEmptyState,
+  QuietPageHeader,
+  QuietPrimaryAction,
+  QuietTextAction,
+  QuietUnderlineInput,
+  quietUnderlineControlClassName,
+} from '@/components/design-system/quiet';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { BASE_BRANCH_TOKEN, TASK_BRANCH_TOKEN, describeMergeInto, describeRunBranchOverrides } from '@/lib/branchLabels';
@@ -4822,18 +4830,17 @@ export function AutomationFlowsPage({
         onDelete={openDeleteFlow}
       />
 
-      <div className="mb-5 flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold">Flows</h1>
-          <p className="text-sm text-muted-foreground">When something happens, do something. Flows keep agents working without anyone prompting them.</p>
-        </div>
-        {permissions.canAdminAutomations && (
-          <Button size="sm" className="shrink-0" onClick={openCreateComposer}>
+      <QuietPageHeader
+        className="mb-6"
+        title="Flows"
+        description="When something happens, do something. Flows keep agents working without anyone prompting them."
+        actions={permissions.canAdminAutomations ? (
+          <QuietPrimaryAction className="shrink-0 gap-1.5" onClick={openCreateComposer}>
             <PlusSignIcon className="h-4 w-4" />
             New flow
-          </Button>
-        )}
-      </div>
+          </QuietPrimaryAction>
+        ) : undefined}
+      />
 
       {loading ? (
         <div className="space-y-2">
@@ -4841,18 +4848,22 @@ export function AutomationFlowsPage({
           {Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-[68px] w-full rounded-[9px]" />)}
         </div>
       ) : rulesQuery.isError ? (
-        <div className="border-y border-border py-16 text-center">
-          <p className="text-sm text-muted-foreground">Flows could not be loaded.</p>
-          <Button variant="outline" size="sm" className="mt-4" onClick={() => void rulesQuery.refetch()}>Try again</Button>
-        </div>
+        <QuietEmptyState
+          title="Flows could not be loaded"
+          description="The flow list is temporarily unavailable. Your existing flows have not been changed."
+          action={<QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={() => void rulesQuery.refetch()}>Try again</QuietTextAction>}
+        />
       ) : authoredFlows.length === 0 ? (
-        <div className="border-y border-border px-4 py-16 text-center">
-          <h3 className="text-base font-semibold">Put routine work on autopilot</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Start with a proven template or connect a trigger to an agent and build your own flow.</p>
-          {permissions.canAdminAutomations && (
-            <div className="mt-5 flex justify-center gap-2"><Button size="sm" onClick={openCreateComposer}>Choose a template</Button><Button variant="outline" size="sm" onClick={() => handleTemplatePick(null)}>Build custom flow</Button></div>
-          )}
-        </div>
+        <QuietEmptyState
+          title="Put routine work on autopilot"
+          description="Start with a proven template or connect a trigger to an agent and build your own flow."
+          action={permissions.canAdminAutomations ? (
+            <div className="flex flex-wrap items-center gap-4">
+              <QuietPrimaryAction onClick={openCreateComposer}>Choose a template</QuietPrimaryAction>
+              <QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={() => handleTemplatePick(null)}>Build custom flow</QuietTextAction>
+            </div>
+          ) : undefined}
+        />
       ) : (
         <>
           {hasFlowFilter && (
@@ -4864,8 +4875,8 @@ export function AutomationFlowsPage({
           )}
 
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
-              <TabsList variant="line" aria-label="Flow status" className="max-w-full flex-wrap justify-start">
+            <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)} className="gap-0">
+              <TabsList variant="quiet" aria-label="Flow status" className="max-w-full flex-wrap justify-start border-b-0">
               {([
                 ['all', 'All'],
                 ['active', 'Active'],
@@ -4876,19 +4887,19 @@ export function AutomationFlowsPage({
                   key={value}
                   value={value}
                 >
-                  <span>{label}</span>
-                  <span className="text-xs font-normal tabular-nums text-muted-foreground">{statusCounts[value]}</span>
+                  {label}
+                  <span className="text-[12px] font-normal tabular-nums text-quiet-muted">{statusCounts[value]}</span>
                 </TabsTrigger>
               ))}
               </TabsList>
             </Tabs>
             <div className="flex min-w-0 flex-col gap-2 xs:flex-row sm:justify-end">
               <div className="relative min-w-0 sm:w-52">
-                <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input aria-label="Search flows" value={flowQuery} onChange={(event) => setFlowQuery(event.target.value)} placeholder="Search flows" className="h-8 pl-8 text-sm" />
+                <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-quiet-muted" />
+                <QuietUnderlineInput aria-label="Search flows" value={flowQuery} onChange={(event) => setFlowQuery(event.target.value)} placeholder="Search flows" className="w-full pl-6" />
               </div>
               <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as typeof scopeFilter)}>
-                <SelectTrigger aria-label="Flow scope" className="h-8 w-full text-sm xs:w-36"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Flow scope" className={cn(quietUnderlineControlClassName, 'w-full justify-between xs:w-36')}><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="workspace">Workspace-wide</SelectItem><SelectItem value="team">My team</SelectItem><SelectItem value="mine">Created by me</SelectItem></SelectContent>
               </Select>
             </div>
@@ -4922,14 +4933,14 @@ export function AutomationFlowsPage({
                 ))}
               </div>
             ) : (
-              <div className="py-16 text-center text-sm text-muted-foreground">No flows match this view.</div>
+              <QuietEmptyState title="No flows match this view" description="Clear a filter or try a broader search to see more flows." />
             )}
           </div>
 
           {permissions.canAdminAutomations ? (
             <div className="mt-10 flex flex-col items-start justify-between gap-3 border-t border-border pt-5 sm:flex-row sm:items-center">
               <span className="text-sm text-muted-foreground">Start from a template instead of building from scratch.</span>
-              <Button variant="outline" size="sm" onClick={() => setGalleryOpen(true)}>Browse templates</Button>
+              <QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={() => setGalleryOpen(true)}>Browse templates</QuietTextAction>
             </div>
           ) : null}
         </>

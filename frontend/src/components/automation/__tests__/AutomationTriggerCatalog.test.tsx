@@ -105,7 +105,7 @@ describe('TriggerCatalogList', () => {
   it('defaults to flow triggers and uses divider rows without an outer card', () => {
     renderCatalog();
 
-    expect(container?.querySelector('[role="tab"][data-state="active"]')?.textContent).toContain('Flow');
+    expect(container?.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Flow');
     expect(container?.textContent).toContain('Pull request merged');
     expect(container?.textContent).not.toContain('Document action');
     expect(container?.textContent).toContain('Trigger');

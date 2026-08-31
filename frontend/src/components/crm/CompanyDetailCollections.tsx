@@ -22,12 +22,13 @@ import { CreateContactDialog } from '@/components/crm/CreateContactDialog';
 import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { CreateMeetingDialog } from '@/components/crm/CreateMeetingDialog';
 import { MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
-import { MeetingStatusBadge } from '@/components/crm/MeetingStatusBadge';
+import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
 import { useCompanyContacts, useCompanyDeals, useCompanySupportConversations, useContactSupportConversations, useDeals } from '@/hooks/queries';
 import { useCRMMeetings } from '@/hooks/queries/useCRMMeetings';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { associationsService } from '@/lib/services/associationsService';
 import { crmSearchService } from '@/lib/services/crmService';
+import { formatMeetingDate } from '@/lib/meetingPresentation';
 import { supportService } from '@/lib/services/supportService';
 import type { CRMContact, CRMDeal, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { SupportConversation } from '@/lib/pmTypes';
@@ -513,9 +514,9 @@ export function CompanyMeetingsView({
                       : 'Participants pending'}
                   </span>
                 </span>
-                <MeetingPlatformLabel platform={meeting.platform} compact />
-                <span className="text-xs text-muted-foreground">{format(new Date(date), 'MMM d, yyyy · p')}</span>
-                <MeetingStatusBadge status={meeting.status} className="justify-self-end" />
+                <MeetingPlatformLabel platform={meeting.platform} compact presentation="quiet" />
+                <span className="text-xs text-muted-foreground">{formatMeetingDate(date, 'MMM d, yyyy · p')}</span>
+                <MeetingStatusText status={meeting.status} className="justify-self-end" />
               </button>
             );
           })
@@ -838,9 +839,9 @@ export function ContactMeetingsView({
                       : 'Participants pending'}
                   </span>
                 </span>
-                <MeetingPlatformLabel platform={meeting.platform} compact />
-                <span className="text-xs text-muted-foreground">{format(new Date(date), 'MMM d, yyyy · p')}</span>
-                <MeetingStatusBadge status={meeting.status} className="justify-self-end" />
+                <MeetingPlatformLabel platform={meeting.platform} compact presentation="quiet" />
+                <span className="text-xs text-muted-foreground">{formatMeetingDate(date, 'MMM d, yyyy · p')}</span>
+                <MeetingStatusText status={meeting.status} className="justify-self-end" />
               </button>
             );
           })
