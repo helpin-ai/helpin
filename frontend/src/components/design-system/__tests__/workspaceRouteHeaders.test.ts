@@ -41,6 +41,14 @@ describe('workspace route header contract', () => {
     expect(docsSource).toContain('showTitle={false}');
   });
 
+  it('preserves the established Docs publication-state typography and colors', () => {
+    const docsSource = source('../../../pages/docs/DocsDocumentDetail.tsx');
+    expect(docsSource).toContain("return 'text-amber-600 dark:text-amber-400'");
+    expect(docsSource).toContain('text-emerald-600 dark:text-emerald-400');
+    expect(docsSource).toContain('shrink-0 text-xs font-medium');
+    expect(docsSource).not.toContain('<QuietStatusText');
+  });
+
   it('keeps public shared documents outside the authenticated workspace header contract', () => {
     expect(source('../../../pages/docs/SharedDocumentView.tsx')).not.toContain('workspaceSidebarSafeInsetClassName');
   });

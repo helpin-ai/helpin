@@ -86,7 +86,6 @@ import {
   QuietIconAction,
   QuietMetaLine,
   QuietPrimaryAction,
-  QuietStatusText,
   QuietTextAction,
   QuietTitleTextarea,
 } from '@/components/design-system/quiet'
@@ -150,6 +149,17 @@ import { collectMermaidSources } from '@/components/editor/mermaidContent'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
 import { useRegisterPageContext, type PageContextScopeOption } from '@/components/command-bar/pageContext'
+
+function docStatusColor(status: string): string {
+  switch (status) {
+    case 'published':
+      return 'text-emerald-600 dark:text-emerald-400'
+    case 'archived':
+      return 'text-muted-foreground/60'
+    default:
+      return 'text-amber-600 dark:text-amber-400'
+  }
+}
 
 function DocCollectionIcon({ name }: { name?: string | null }) {
   return (
@@ -1504,13 +1514,16 @@ export function DocsDocumentDetail({
           <>
             {(editorSaveStatus !== 'idle' || editorLastSavedAt) ? <SaveIndicator status={editorSaveStatus} lastSavedAt={editorLastSavedAt} /> : null}
             {doc.status === 'archived' ? (
-              <QuietStatusText tone="blocker">Archived</QuietStatusText>
+              <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>Archived</span>
             ) : !isPublished ? (
-              <QuietStatusText>Draft{showLocalePills ? ` · ${activeLocaleShortLabel}` : ''}</QuietStatusText>
+              <span className={`shrink-0 text-xs font-medium ${docStatusColor('draft')}`}>
+                Draft{showLocalePills ? ` · ${activeLocaleShortLabel}` : ''}
+              </span>
             ) : (
-              <QuietStatusText tone={hasUnpublishedChanges ? 'blocker' : 'positive'}>
-                Published{showLocalePills ? ` · ${activeLocaleShortLabel}` : isExternalHelpCenter ? ' · Help center' : ' · Internal'}{hasUnpublishedChanges ? ' · Unpublished changes' : ''}
-              </QuietStatusText>
+              <span className="shrink-0 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                Published{showLocalePills ? ` · ${activeLocaleShortLabel}` : isExternalHelpCenter ? ' · help center' : ' · internal'}
+                {hasUnpublishedChanges ? <span className="ml-1 text-amber-600 dark:text-amber-400"> · Unpublished changes</span> : null}
+              </span>
             )}
             {headerPresencePeople.length > 0 ? (
               <div className="flex min-w-0 items-center gap-2">
