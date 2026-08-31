@@ -318,7 +318,7 @@ describe('MessageThread', () => {
 
     const returnButton = container.querySelector<HTMLButtonElement>('[aria-label="Return to Inbox"]')
     const detailsButton = container.querySelector<HTMLButtonElement>('[aria-label="Open conversation details"]')
-    expect(returnButton?.textContent).toContain('Inbox')
+    expect(returnButton?.textContent?.trim()).toBe('')
     expect(detailsButton?.textContent).toContain('#42')
     expect(detailsButton?.textContent).toContain('A long billing question')
     expect(container.querySelector('[aria-label="Create task"]')).toBeTruthy()

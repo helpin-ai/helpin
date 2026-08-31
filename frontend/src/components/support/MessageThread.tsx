@@ -235,12 +235,12 @@ const ThreadHeaderSkeleton = memo(function ThreadHeaderSkeleton({
         <Button
           type="button"
           variant="ghost"
-          className="h-11 shrink-0 gap-1 px-1.5 text-sm font-medium"
+          size="icon"
+          className="h-11 w-11 shrink-0"
           onClick={onBackToInbox}
           aria-label="Return to Inbox"
         >
           <ArrowLeft02Icon className="h-4 w-4" />
-          Inbox
         </Button>
         <div className="h-4 min-w-0 flex-1 animate-pulse rounded bg-muted" />
         <div className="h-8 w-8 shrink-0 animate-pulse rounded-md bg-muted" />
@@ -853,12 +853,12 @@ export function MessageThread({
             <Button
               type="button"
               variant="ghost"
-              className="h-11 shrink-0 gap-1 px-1.5 text-sm font-medium"
+              size="icon"
+              className="h-11 w-11 shrink-0"
               onClick={onBackToInbox}
               aria-label="Return to Inbox"
             >
               <ArrowLeft02Icon className="h-4 w-4" />
-              Inbox
             </Button>
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">
               Conversation unavailable
@@ -896,12 +896,12 @@ export function MessageThread({
           <Button
             type="button"
             variant="ghost"
-            className="h-11 shrink-0 gap-1 px-1.5 text-sm font-medium"
+            size="icon"
+            className="h-11 w-11 shrink-0"
             onClick={onBackToInbox}
             aria-label="Return to Inbox"
           >
             <ArrowLeft02Icon className="h-4 w-4" />
-            Inbox
           </Button>
 
           <button
