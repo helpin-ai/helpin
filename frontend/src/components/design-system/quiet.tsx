@@ -236,6 +236,66 @@ export function QuietSection({
   );
 }
 
+export type QuietMetricTone = 'neutral' | 'positive' | 'warning' | 'danger';
+
+const quietMetricToneClassName: Record<QuietMetricTone, string> = {
+  neutral: 'text-quiet-text-primary',
+  positive: 'text-quiet-positive',
+  warning: 'text-quiet-accent',
+  danger: 'text-quiet-accent',
+};
+
+export function QuietMetricGrid({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        'grid border-y border-quiet-divider-strong divide-y divide-quiet-divider-light md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4',
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function QuietMetricBlock({
+  label,
+  value,
+  description,
+  tone = 'neutral',
+  trailing,
+  onClick,
+  className,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  description: ReactNode;
+  tone?: QuietMetricTone;
+  trailing?: ReactNode;
+  onClick?: () => void;
+  className?: string;
+}) {
+  const Comp = onClick ? 'button' : 'div';
+  return (
+    <Comp
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={cn(
+        'flex min-w-0 items-end justify-between gap-4 p-4 text-left transition-colors',
+        onClick && 'hover:bg-quiet-row-hover focus-visible:bg-quiet-row-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-quiet-text-primary',
+        className,
+      )}
+    >
+      <span className="min-w-0 space-y-1">
+        <span className="block text-[12px] font-semibold uppercase tracking-[0.06em] text-quiet-muted">{label}</span>
+        <span className={cn('block text-[20px] font-semibold tracking-[-0.018em]', quietMetricToneClassName[tone])}>{value}</span>
+        <span className="block text-[12px] text-quiet-text-tertiary">{description}</span>
+      </span>
+      {trailing ? <span className="shrink-0">{trailing}</span> : null}
+    </Comp>
+  );
+}
+
 const quietFocus = 'focus-visible:outline-none focus-visible:ring-0';
 
 export function QuietTextAction({ className, ...props }: React.ComponentProps<typeof Button>) {

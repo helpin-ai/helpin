@@ -14,7 +14,7 @@ import {
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AutomationShell } from '@/components/automation/AutomationShell';
-import { QuietEmptyState, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietEmptyState, QuietMetricBlock, QuietMetricGrid, QuietTextAction } from '@/components/design-system/quiet';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { openEpicRoute } from '@/components/pm/epic-detail/epicRouteNavigation';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
@@ -640,56 +640,6 @@ function SparkBars({ values, tone = 'neutral' }: { values: number[]; tone?: 'neu
           style={{ height: `${Math.max((value / max) * 100, 18)}%` }}
         />
       ))}
-    </div>
-  );
-}
-
-function SummaryCard({
-  label,
-  value,
-  sublabel,
-  tone = 'neutral',
-  spark,
-  onClick,
-}: {
-  label: string;
-  value: string;
-  sublabel: string;
-  tone?: 'neutral' | 'good' | 'warn' | 'bad';
-  spark?: number[];
-  onClick?: () => void;
-}) {
-  const valueClass = tone === 'good'
-    ? 'text-emerald-600 dark:text-emerald-400'
-    : tone === 'warn'
-      ? 'text-amber-600 dark:text-amber-400'
-      : tone === 'bad'
-        ? 'text-rose-600 dark:text-rose-400'
-        : 'text-foreground';
-
-  const interactive = Boolean(onClick);
-  return (
-    <div
-      className={cn(
-        'flex items-end justify-between gap-4 p-4 transition-colors',
-        interactive && 'cursor-pointer hover:bg-quiet-row-hover focus-visible:bg-quiet-row-hover focus-visible:outline-none',
-      )}
-      role={interactive ? 'button' : undefined}
-      tabIndex={interactive ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={interactive ? (event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onClick?.();
-        }
-      } : undefined}
-    >
-        <div className="space-y-1">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-quiet-muted">{label}</p>
-          <p className={cn('text-[20px] font-semibold tracking-[-0.018em]', valueClass)}>{value}</p>
-          <p className="text-[12px] text-quiet-text-tertiary">{sublabel}</p>
-        </div>
-        {spark && <SparkBars values={spark} tone={tone} />}
     </div>
   );
 }
@@ -1551,32 +1501,32 @@ export function AutomationActivityPage({
       )}
     >
       <div className="space-y-5">
-        <div className="grid border-y border-quiet-divider-strong divide-y divide-quiet-divider-light md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
-          <SummaryCard
+        <QuietMetricGrid>
+          <QuietMetricBlock
             label="Needs You"
             value={String(pausedRuns.length)}
-            sublabel={pausedRuns.length > 0 ? `Oldest blocked ${oldestBlocked ?? '\u2014'}` : 'No paused runs waiting on a human'}
-            tone={pausedRuns.length > 0 ? 'warn' : 'neutral'}
-            spark={needsYouBars}
+            description={pausedRuns.length > 0 ? `Oldest blocked ${oldestBlocked ?? '\u2014'}` : 'No paused runs waiting on a human'}
+            tone={pausedRuns.length > 0 ? 'warning' : 'neutral'}
+            trailing={<SparkBars values={needsYouBars} tone={pausedRuns.length > 0 ? 'warn' : 'neutral'} />}
             onClick={openNeedsYouShortcut}
           />
-          <SummaryCard
+          <QuietMetricBlock
             label="Runs · 24h"
             value={String(recent24hRuns.length)}
-            sublabel={recent24hRuns.length > 0 ? `${recent24hRuns.filter((run) => run.status === 'completed').length} completed in the latest day` : 'No recent runs'}
+            description={recent24hRuns.length > 0 ? `${recent24hRuns.filter((run) => run.status === 'completed').length} completed in the latest day` : 'No recent runs'}
             tone="neutral"
-            spark={recentStatusBars}
+            trailing={<SparkBars values={recentStatusBars} tone="neutral" />}
             onClick={() => applyAllRunsShortcut({ fired_after: getTimeFilterDate('24h') }, ['date'])}
           />
-          <SummaryCard
+          <QuietMetricBlock
             label="Failed · 24h"
             value={String(recent24hRuns.filter((run) => run.status === 'failed').length)}
-            sublabel={recent24hRuns.filter((run) => run.status === 'failed').length > 0 ? 'Investigate repeated failures and flaky flows' : 'No recent failures'}
-            tone={recent24hRuns.some((run) => run.status === 'failed') ? 'bad' : 'neutral'}
-            spark={recentFailureBars}
+            description={recent24hRuns.filter((run) => run.status === 'failed').length > 0 ? 'Investigate repeated failures and flaky flows' : 'No recent failures'}
+            tone={recent24hRuns.some((run) => run.status === 'failed') ? 'danger' : 'neutral'}
+            trailing={<SparkBars values={recentFailureBars} tone={recent24hRuns.some((run) => run.status === 'failed') ? 'bad' : 'neutral'} />}
             onClick={() => applyAllRunsShortcut({ status: 'failed', fired_after: getTimeFilterDate('24h') }, ['status', 'date'])}
           />
-          <SummaryCard
+          <QuietMetricBlock
             label="Fleet Health"
             value={String(
               healthSummary.errorCount > 0
@@ -1587,7 +1537,7 @@ export function AutomationActivityPage({
                     ? healthSummary.healthyCount
                     : healthSummary.idleCount,
             )}
-            sublabel={
+            description={
               healthSummary.errorCount > 0
                 ? `${healthSummary.errorCount === 1 ? 'error' : 'errors'} reported`
                 : healthSummary.warningCount > 0
@@ -1600,11 +1550,11 @@ export function AutomationActivityPage({
             }
             tone={
               healthSummary.errorCount > 0
-                ? 'bad'
+                ? 'danger'
                 : healthSummary.warningCount > 0
-                  ? 'warn'
+                  ? 'warning'
                   : healthSummary.healthyCount > 0
-                    ? 'good'
+                    ? 'positive'
                     : 'neutral'
             }
             onClick={
@@ -1613,7 +1563,7 @@ export function AutomationActivityPage({
                 : undefined
             }
           />
-        </div>
+        </QuietMetricGrid>
 
         <Tabs value={selectedActivityTab} onValueChange={(value) => setActiveTab(value as 'timeline' | 'needs_you')} className="space-y-3">
           <div className="flex items-center justify-between gap-4">

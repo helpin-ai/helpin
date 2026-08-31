@@ -2,20 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { differenceInDays, parseISO, format } from 'date-fns';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
-  AlertCircleIcon,
   CancelCircleIcon,
-  ChartColumnIcon,
   Calendar03Icon,
   CheckmarkCircle02Icon,
   Clock01Icon,
   Key01Icon,
   Loading01Icon,
   MessagePreview01Icon,
-  PencilEdit02Icon,
-  Timer01Icon,
-  UserGroupIcon,
-  ClipboardIcon,
-  RecordIcon,
   SecurityCheckIcon,
 } from '@/lib/icons';
 import { useTitle } from '@/hooks/useTitle';
@@ -23,34 +16,25 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { pmTaskService } from '@/lib/services/pmTaskService';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, StateTypeIcon, PriorityIcon } from '@/lib/pmConstants';
+import { PRIORITY_CONFIG, StateTypeIcon, PriorityIcon } from '@/lib/pmConstants';
 import type { Task, StateType } from '@/lib/pmTypes';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunEventDetail, type AgentRunEventDetail } from '@/lib/agentRunRealtime';
+import {
+  QuietEmptyState,
+  QuietListRow,
+  QuietMetaLine,
+  QuietMetricBlock,
+  QuietMetricGrid,
+  QuietPageHeader,
+  QuietPageViewport,
+  QuietSection,
+  QuietStatusText,
+  QuietTextAction,
+} from '@/components/design-system/quiet';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type Mode = 'assigned' | 'requested';
-type DeadlineStatus = 'overdue' | 'approaching' | 'normal';
-const DEADLINE_PILL_STYLE: Record<DeadlineStatus, string> = {
-  overdue: 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400',
-  approaching: 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400',
-  normal: 'border-border bg-muted/50 text-muted-foreground',
-};
-
-const DEADLINE_TOOLTIP: Record<DeadlineStatus, string> = {
-  overdue: 'Overdue',
-  approaching: 'Due soon',
-  normal: 'Due date',
-};
-
-const AGENT_RUN_PILL_STYLE: Record<string, string> = {
-  queued: 'border-border bg-muted/50 text-muted-foreground',
-  running: 'border-foreground/20 bg-foreground/5 text-foreground',
-  paused: 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300',
-  completed: 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300',
-  failed: 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400',
-  cancelled: 'border-border bg-muted/50 text-muted-foreground',
-};
 
 const AGENT_RUN_LABEL: Record<string, string> = {
   queued: 'Agent queued',
@@ -84,20 +68,21 @@ export function MyWorkPage() {
   const workspaceId = workspace?.id ?? '';
   const wsSlug = workspace?.slug ?? '';
 
-  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { data: access, isLoading: accessLoading } = useWorkspaceAccess(workspaceId);
   const memberId = access?.membership?.id;
 
-  const { teams, hasTeams, isAdmin, findTeamName } = useAccessibleTeams(workspaceId);
+  const { teams, hasTeams, isAdmin, findTeamName, isLoading: teamsLoading } = useAccessibleTeams(workspaceId);
   const showTeam = teams.length > 1;
 
   const [mode, setMode] = useState<Mode>('assigned');
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loadedMode, setLoadedMode] = useState<Mode | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!workspaceId || !memberId) return;
-    setLoading(true);
+    let ignore = false;
     const filters =
       mode === 'assigned'
         ? { owner_member_ids: memberId, archived: false as const }
@@ -106,11 +91,24 @@ export function MyWorkPage() {
     pmTaskService
       .list(workspaceId, { ...filters, per_page: 200 })
       .then((res) => {
-        if (res.data) {
-          setTasks(res.data.data);
+        if (ignore) return;
+        if (res.error) {
+          setError(res.error);
+          setLoadedMode(mode);
+          return;
         }
+        setError(null);
+        setTasks(res.data?.data ?? []);
+        setLoadedMode(mode);
       })
-      .finally(() => setLoading(false));
+      .catch((requestError: unknown) => {
+        if (ignore) return;
+        setError(requestError instanceof Error ? requestError.message : 'Unable to load your work.');
+        setLoadedMode(mode);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [workspaceId, memberId, mode, refreshKey]);
 
   useEffect(() => {
@@ -173,7 +171,7 @@ export function MyWorkPage() {
       window.removeEventListener('task-panel-archived', refresh);
       window.removeEventListener('task-created', handleTaskCreated);
     };
-  }, [memberId]);
+  }, [navigate, wsSlug]);
 
   // ── Derived data ──────────────────────────────────────────────────
 
@@ -252,65 +250,95 @@ export function MyWorkPage() {
     openTaskRoute(navigate as never, location as never, wsSlug, task.id);
   };
 
+  const showingLoading = accessLoading || teamsLoading || loadedMode !== mode;
+
   return (
-    <div className="max-w-4xl mx-auto">
-      <header className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-lg font-semibold">My Work</h2>
-          <p className="text-sm text-muted-foreground">
-            {mode === 'assigned'
-              ? `Tasks assigned to you across ${isAdmin ? 'all' : 'your'} teams.`
-              : `Tasks you requested across ${isAdmin ? 'all' : 'your'} teams.`}
-          </p>
-        </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <QuietPageHeader
+        variant="shell"
+        title="My Work"
+        description={`Tasks assigned to you and requested by you across ${isAdmin ? 'all' : 'your'} teams.`}
+      />
 
-        {/* Mode toggle */}
-        <div className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5">
-          {(['assigned', 'requested'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                mode === m
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {m === 'assigned' ? 'Assigned to me' : 'Requested by me'}
-            </button>
-          ))}
-        </div>
-      </header>
+      <Tabs
+        value={mode}
+        onValueChange={(value) => {
+          setError(null);
+          setMode(value as Mode);
+        }}
+        className="min-h-0 flex-1 gap-0"
+      >
+        <TabsList variant="quiet" aria-label="My Work views" className="w-full shrink-0 justify-start px-4 sm:px-6 lg:px-8">
+          <TabsTrigger value="assigned">Assigned to me</TabsTrigger>
+          <TabsTrigger value="requested">Requested by me</TabsTrigger>
+        </TabsList>
 
-      {/* Summary cards */}
-      {tasks.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-          <SummaryCard icon={RecordIcon} iconColor="text-amber-500" label="In progress" value={counts.inProgress} />
-          <SummaryCard icon={Clock01Icon} iconColor="text-blue-500" label="Due soon" value={counts.dueSoon} />
-          <SummaryCard icon={Timer01Icon} iconColor="text-red-500" label="Overdue" value={counts.overdue} />
-          <SummaryCard icon={AlertCircleIcon} iconColor="text-orange-500" label="Blocked" value={counts.blocked} />
-        </div>
-      )}
+        <QuietPageViewport className="min-h-0 flex-1" contentClassName="max-w-4xl">
+          {showingLoading ? (
+            <MyWorkLoadingState />
+          ) : !hasTeams && !isAdmin ? (
+            <NoTeamEmptyState />
+          ) : error ? (
+            <QuietEmptyState
+              title="Unable to load your work"
+              description={error}
+              action={(
+                <QuietTextAction
+                  onClick={() => {
+                    setError(null);
+                    setLoadedMode(null);
+                    setRefreshKey((key) => key + 1);
+                  }}
+                >
+                  Try again
+                </QuietTextAction>
+              )}
+            />
+          ) : tasks.length === 0 ? (
+            <MyWorkEmptyState mode={mode} />
+          ) : (
+            <div className="space-y-5">
+              <QuietMetricGrid>
+                <QuietMetricBlock label="In progress" value={counts.inProgress} description="Tasks currently underway" />
+                <QuietMetricBlock
+                  label="Due soon"
+                  value={counts.dueSoon}
+                  description="Due within the next three days"
+                  tone={counts.dueSoon > 0 ? 'warning' : 'neutral'}
+                />
+                <QuietMetricBlock
+                  label="Overdue"
+                  value={counts.overdue}
+                  description="Past their due date"
+                  tone={counts.overdue > 0 ? 'danger' : 'neutral'}
+                />
+                <QuietMetricBlock
+                  label="Blocked"
+                  value={counts.blocked}
+                  description="Waiting on another dependency"
+                  tone={counts.blocked > 0 ? 'danger' : 'neutral'}
+                />
+              </QuietMetricGrid>
 
-      {/* Content */}
-      {loading ? null : !hasTeams && !isAdmin ? (
-        <NoTeamEmptyState />
-      ) : tasks.length === 0 ? (
-        <MyWorkEmptyState mode={mode} />
-      ) : (
-        <div className="space-y-10">
-          {focus.length > 0 && (
-            <TaskSection title="Focus now" count={focus.length} tasks={focus} onClickTask={openTask} findTeamName={findTeamName} showTeam={showTeam} />
+              <p className="px-1 text-[11.5px] leading-5 text-quiet-muted">
+                Focus order is based on due dates, blockers, priority, active state, and recent updates.
+              </p>
+
+              <div className="border-t border-quiet-divider-strong">
+                {focus.length > 0 ? (
+                  <TaskSection title="Focus now" count={focus.length} tasks={focus} onClickTask={openTask} findTeamName={findTeamName} showTeam={showTeam} />
+                ) : null}
+                {blockedTasks.length > 0 ? (
+                  <TaskSection title="Blocked" count={blockedTasks.length} tasks={blockedTasks} onClickTask={openTask} findTeamName={findTeamName} showTeam={showTeam} />
+                ) : null}
+                {rest.length > 0 ? (
+                  <TaskSection title="Everything else" count={rest.length} tasks={rest} onClickTask={openTask} findTeamName={findTeamName} showTeam={showTeam} />
+                ) : null}
+              </div>
+            </div>
           )}
-          {blockedTasks.length > 0 && (
-            <TaskSection title="Blocked" count={blockedTasks.length} tasks={blockedTasks} onClickTask={openTask} findTeamName={findTeamName} showTeam={showTeam} />
-          )}
-          {rest.length > 0 && (
-            <TaskSection title="Everything else" count={rest.length} tasks={rest} onClickTask={openTask} findTeamName={findTeamName} showTeam={showTeam} />
-          )}
-        </div>
-      )}
+        </QuietPageViewport>
+      </Tabs>
     </div>
   );
 }
@@ -319,72 +347,62 @@ export function MyWorkPage() {
 
 function NoTeamEmptyState() {
   return (
-    <div className="flex flex-col items-center py-16 px-4">
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted/50 mb-5">
-        <UserGroupIcon className="h-7 w-7 text-muted-foreground" />
-      </div>
-      <h3 className="text-base font-medium mb-1">No team assigned</h3>
-      <p className="text-sm text-muted-foreground text-center max-w-md">
-        You need to be added to a team to see work items. Ask a workspace admin to add you to a team.
-      </p>
-    </div>
+    <QuietEmptyState
+      title="No team assigned"
+      description="You need to be added to a team to see work items. Ask a workspace administrator to add you to a team."
+    >
+      <QuietStatusText tone="blocker">Team access required</QuietStatusText>
+    </QuietEmptyState>
   );
 }
 
 // ── Empty state ───────────────────────────────────────────────────
 
 const WORKFLOW_STEPS = [
-  { icon: PencilEdit02Icon, title: 'Create tasks', description: 'Describe work to be done — bugs, features, or tasks' },
-  { icon: UserGroupIcon, title: 'Assign to team', description: 'Set an owner, priority, and deadline for each task' },
-  { icon: ChartColumnIcon, title: 'Track progress', description: 'Tasks move through workflow states as work gets done' },
+  { title: 'Create tasks', description: 'Describe work to be done — bugs, features, or tasks.' },
+  { title: 'Assign the work', description: 'Set an owner, priority, and deadline for each task.' },
+  { title: 'Track progress', description: 'Tasks move through workflow states as work gets done.' },
 ];
 
 function MyWorkEmptyState({ mode }: { mode: Mode }) {
   return (
-    <div className="flex flex-col items-center py-16 px-4">
-      {/* Hero */}
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-500/10 mb-5">
-        <ClipboardIcon className="h-7 w-7 text-blue-500" />
+    <QuietEmptyState
+      title={mode === 'assigned' ? 'No tasks assigned to you yet' : 'No tasks requested by you yet'}
+      description={
+        mode === 'assigned'
+          ? 'When teammates assign tasks to you, they appear here in focus order.'
+          : 'Tasks you create or request will appear here so you can track their progress.'
+      }
+    >
+      <div className="border-t border-quiet-divider-light">
+        {WORKFLOW_STEPS.map((step) => (
+          <QuietListRow key={step.title} title={step.title} detail={step.description} className="px-0" />
+        ))}
       </div>
-      <h3 className="text-base font-medium mb-1">
-        {mode === 'assigned' ? 'No tasks assigned to you yet' : 'No tasks requested by you yet'}
-      </h3>
-      <p className="text-sm text-muted-foreground text-center max-w-md">
-        {mode === 'assigned'
-          ? 'When teammates assign tasks to you, they appear here — prioritized so you always know what to focus on first.'
-          : 'Tasks you create or request will appear here so you can track their progress.'}
-      </p>
-
-      <div className="w-full max-w-4xl mt-10">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {WORKFLOW_STEPS.map(({ icon: Icon, title, description }) => (
-            <div key={title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
-              <Icon className="h-5 w-5 text-muted-foreground mb-3" />
-              <p className="text-sm font-medium mb-1">{title}</p>
-              <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-    </div>
+    </QuietEmptyState>
   );
 }
 
-// ── Summary card ──────────────────────────────────────────────────
-
-function SummaryCard({ icon: Icon, iconColor, label, value }: {
-  icon: React.ElementType;
-  iconColor: string;
-  label: string;
-  value: number;
-}) {
+function MyWorkLoadingState() {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border/30 bg-muted/20 px-4 py-3">
-      <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
-      <div className="min-w-0">
-        <p className="text-lg font-semibold leading-none tabular-nums">{value}</p>
-        <p className="text-[11px] text-muted-foreground/70 mt-0.5">{label}</p>
+    <div className="space-y-5" aria-live="polite" aria-label="Loading your work">
+      <QuietMetricGrid>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="space-y-2 p-4 motion-safe:animate-pulse">
+            <div className="h-2 w-20 bg-quiet-icon-well" />
+            <div className="h-5 w-10 bg-quiet-icon-well" />
+            <div className="h-2 w-32 max-w-full bg-quiet-icon-well" />
+          </div>
+        ))}
+      </QuietMetricGrid>
+      <div className="border-t border-quiet-divider-strong">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="space-y-2 border-b border-quiet-divider-light px-5 py-3 motion-safe:animate-pulse">
+            <div className="h-2 w-24 bg-quiet-icon-well" />
+            <div className="h-3 w-3/5 bg-quiet-icon-well" />
+            <div className="h-2 w-2/5 bg-quiet-icon-well" />
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -408,14 +426,18 @@ function TaskSection({ title, count, tasks, onClickTask, findTeamName, showTeam 
   const hiddenCount = tasks.length - COLLAPSE_THRESHOLD;
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-1 px-1">
-        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {title}
-        </h3>
-        <span className="text-xs text-muted-foreground/50 tabular-nums">{count}</span>
-      </div>
-      <div className="divide-y divide-border/40">
+    <QuietSection
+      title={title}
+      count={count}
+      className="py-4"
+      bodyClassName="-mx-4 -mb-4 sm:-mx-6 lg:-mx-8"
+      action={collapsible ? (
+        <QuietTextAction onClick={() => setExpanded((value) => !value)}>
+          {expanded ? 'Show less' : `Show ${hiddenCount} more`}
+        </QuietTextAction>
+      ) : undefined}
+    >
+      <div>
         {visible.map((task) => (
           <TaskRow
             key={task.id}
@@ -425,16 +447,7 @@ function TaskSection({ title, count, tasks, onClickTask, findTeamName, showTeam 
           />
         ))}
       </div>
-      {collapsible && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-1 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {expanded ? 'Show less' : `Show ${hiddenCount} more`}
-        </button>
-      )}
-    </div>
+    </QuietSection>
   );
 }
 
@@ -464,80 +477,58 @@ function TaskRow({ task, onClick, teamName }: {
               : agentRunStatus === 'paused' ? MessagePreview01Icon
                 : Clock01Icon;
 
+  const rowState = task.completed
+    ? 'positive'
+    : task.blocked || deadlineInfo?.status === 'overdue'
+      ? 'blocker'
+      : task.state_type === 'started'
+        ? 'current'
+        : 'none';
+  const agentTone = agentRunStatus === 'completed'
+    ? 'positive'
+    : agentRunStatus === 'failed' || agentRunStatus === 'paused'
+      ? 'blocker'
+      : agentRunStatus === 'running'
+        ? 'current'
+        : 'neutral';
+
+  const facts = [
+    task.state_name && task.state_type ? (
+      <span className="inline-flex items-center gap-1.5">
+        <StateTypeIcon stateType={task.state_type as StateType} className="h-3.5 w-3.5" />
+        {task.state_name}
+      </span>
+    ) : null,
+    task.priority !== 'none' ? (
+      <span className="inline-flex items-center gap-1.5">
+        <PriorityIcon priority={task.priority} className="h-3.5 w-3.5" />
+        {PRIORITY_CONFIG[task.priority].label} priority
+      </span>
+    ) : null,
+    task.blocked ? <span className="font-medium text-quiet-accent">Blocked</span> : null,
+    deadlineInfo ? (
+      <span className={`inline-flex items-center gap-1.5 ${deadlineInfo.status !== 'normal' ? 'font-medium text-quiet-accent' : ''}`}>
+        <Calendar03Icon className="h-3.5 w-3.5" />
+        {deadlineInfo.status === 'overdue' ? 'Overdue' : deadlineInfo.status === 'approaching' ? 'Due soon' : 'Due'} {deadlineInfo.label}
+      </span>
+    ) : null,
+    agentRunLabel ? (
+      <QuietStatusText tone={agentTone} pulse={agentRunStatus === 'running'}>
+        <AgentRunIcon className={`h-3 w-3 ${agentRunStatus === 'running' ? 'motion-safe:animate-spin' : ''}`} />
+        {agentRunLabel}
+      </QuietStatusText>
+    ) : null,
+  ];
+
   return (
-    <button
-      type="button"
+    <QuietListRow
       onClick={onClick}
-      className="flex items-center gap-2.5 px-2 py-2.5 w-full text-left rounded-md hover:bg-muted/40 transition-colors group"
-    >
-      <span className="relative h-4 shrink-0 w-14">
-        <span className="absolute right-0 top-1/2 -translate-y-1/2 whitespace-nowrap text-right text-xs font-mono tabular-nums text-muted-foreground/50">
-          {task.task_key}
-        </span>
-      </span>
-
-      <span className={`text-sm truncate flex-1 min-w-0 ${task.completed ? 'line-through text-muted-foreground/60' : 'text-foreground'}`}>
-        {task.name}
-      </span>
-
-      {/* Metadata pills — matches TaskCard style */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {task.priority !== 'none' && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={`flex h-5 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 ${PRIORITY_BORDER_COLOR[task.priority]}`}>
-                <PriorityIcon priority={task.priority} className="h-3.5 w-3.5" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">Priority: {PRIORITY_CONFIG[task.priority].label}</TooltipContent>
-          </Tooltip>
-        )}
-
-        {task.state_name && task.state_type && (
-          <span className="flex h-5 items-center gap-1 rounded-sm border-[0.5px] border-border bg-muted/50 px-2 text-[11px] font-medium text-muted-foreground shrink-0 hidden md:flex">
-            <StateTypeIcon stateType={task.state_type as StateType} className="h-3 w-3" />
-            {task.state_name}
-          </span>
-        )}
-
-        {task.blocked && (
-          <span className="flex h-5 items-center gap-1 rounded-sm border-[0.5px] border-red-300 bg-red-50 px-2 text-[11px] font-medium text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 shrink-0">
-            Blocked
-          </span>
-        )}
-
-        {agentRunLabel && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={`flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium shrink-0 ${AGENT_RUN_PILL_STYLE[agentRunStatus] ?? AGENT_RUN_PILL_STYLE.queued}`}>
-                <AgentRunIcon className={`h-3 w-3 ${agentRunStatus === 'running' ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">{agentRunLabel}</span>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">{agentRunLabel}</TooltipContent>
-          </Tooltip>
-        )}
-
-        {deadlineInfo && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={`flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium shrink-0 ${DEADLINE_PILL_STYLE[deadlineInfo.status]}`}>
-                <Calendar03Icon className="h-3 w-3" />
-                <span className="hidden sm:inline">{deadlineInfo.label}</span>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              {DEADLINE_TOOLTIP[deadlineInfo.status]}: {deadlineInfo.label}
-            </TooltipContent>
-          </Tooltip>
-        )}
-
-        {teamName && (
-          <span className="flex h-5 items-center rounded-sm border-[0.5px] border-border bg-muted/50 px-2 text-[11px] font-medium text-muted-foreground shrink-0 hidden lg:flex truncate max-w-[100px]">
-            {teamName}
-          </span>
-        )}
-      </div>
-    </button>
+      actor={<span className="whitespace-nowrap font-mono text-[11.5px] tabular-nums text-quiet-muted">{task.task_key}</span>}
+      meta={teamName}
+      title={<span className={task.completed ? 'line-through text-quiet-text-tertiary' : undefined}>{task.name}</span>}
+      detail={<QuietMetaLine items={facts} />}
+      state={rowState}
+      className="px-4 last:border-b-0 sm:px-6 lg:px-8"
+    />
   );
 }

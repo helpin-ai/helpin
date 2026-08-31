@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietPageHeader, QuietPrimaryAction, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietMetricBlock, QuietMetricGrid, QuietPageHeader, QuietPrimaryAction, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -176,6 +176,24 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('border-y');
     expect(markup).toContain('text-left');
     expect(markup).not.toContain('text-center');
+  });
+
+  it('renders reusable metric blocks as one hairline grid rather than separate cards', () => {
+    const markup = renderToStaticMarkup(
+      <QuietMetricGrid>
+        <QuietMetricBlock label="In progress" value="4" description="Tasks currently underway" />
+        <QuietMetricBlock label="Blocked" value="2" description="Waiting on a dependency" tone="danger" onClick={() => undefined} />
+      </QuietMetricGrid>,
+    );
+
+    expect(markup).toContain('border-y border-quiet-divider-strong');
+    expect(markup).toContain('md:grid-cols-2');
+    expect(markup).toContain('xl:grid-cols-4');
+    expect(markup).toContain('text-[20px]');
+    expect(markup).toContain('text-quiet-accent');
+    expect(markup).toContain('<button');
+    expect(markup).not.toContain('rounded-lg');
+    expect(markup).not.toContain('shadow');
   });
 
   it('supports a pulsing current status without a chip container', () => {

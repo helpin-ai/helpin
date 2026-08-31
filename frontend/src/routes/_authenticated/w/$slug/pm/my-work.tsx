@@ -13,7 +13,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/pm/my-work')({
 
 function MyWorkRoute() {
   return (
-    <div className="h-full overflow-auto p-4 md:p-6">
+    <div className="h-full overflow-hidden">
       <MyWorkPage />
     </div>
   );

@@ -16,6 +16,7 @@ Import from `@/components/design-system/quiet`.
 | Main + rail detail shell | `QuietDetailLayout`, `QuietDetailRail` |
 | Primary line tabs | `Tabs`, `TabsList variant="quiet"`, `TabsTrigger` from `@/components/ui/tabs` |
 | Divider-led section | `QuietSection`, `QuietSectionHeader` |
+| Hairline metric overview | `QuietMetricGrid`, `QuietMetricBlock` |
 | Default secondary action | `QuietTextAction` |
 | Compact icon action | `QuietIconAction` |
 | One dark primary action | `QuietPrimaryAction` |
@@ -55,6 +56,7 @@ Reference surfaces demonstrate composition and domain behavior; the Quiet primit
 ## Component decisions
 
 - Do not use `Card` to structure a new page section. Use `QuietSection` or a hairline list.
+- Use `QuietMetricGrid` and `QuietMetricBlock` when a small set of earned operational numbers needs the shared Automation Activity hairline treatment; do not recreate separate metric cards.
 - Do not use `Badge` for ordinary status, counts, lifecycle, filters, or metadata. Use `QuietStatusText` or inline text.
 - Do not use default `Button` colors or boxed `Input`/`Tabs` styling for Quiet page chrome. Use the Quiet wrappers.
 - `QuietPrimaryAction` must preserve the centralized Helpin `Button size="sm"` geometry and curvature; only its color and hierarchy differ.
