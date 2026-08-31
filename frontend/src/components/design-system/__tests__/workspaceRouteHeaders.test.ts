@@ -44,6 +44,11 @@ describe('workspace route header contract', () => {
     expect(docsSource).toContain('iconOnly');
     expect(docsSource).toContain('className="relative z-30"');
     expect(docsSource).not.toContain('className="relative z-30 bg-background"');
+    expect(docsSource.indexOf('headerPresencePeople.length > 0')).toBeGreaterThan(docsSource.indexOf('actions={('));
+    expect(docsSource.indexOf('headerPresencePeople.length > 0')).toBeLessThan(docsSource.indexOf('label="Preview"'));
+    expect(docsSource).toContain('flex flex-col items-end gap-0.5 sm:flex-row sm:items-center sm:gap-3');
+    expect(docsSource).toContain('hidden text-[11.5px] font-medium sm:inline');
+    expect(docsSource).toContain('order-first flex items-center gap-1.5 sm:order-none sm:gap-3');
     expect(docsSource).toContain('showTitle={false}');
   });
 

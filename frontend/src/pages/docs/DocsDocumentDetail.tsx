@@ -1520,9 +1520,13 @@ export function DocsDocumentDetail({
                 {hasUnpublishedChanges ? <span className="ml-1 text-amber-600 dark:text-amber-400"> · Unpublished changes</span> : null}
               </span>
             )}
+          </>
+        )}
+        actions={(
+          <div className="flex flex-col items-end gap-0.5 sm:flex-row sm:items-center sm:gap-3">
             {headerPresencePeople.length > 0 ? (
               <div className="flex min-w-0 items-center gap-2">
-                <span className={cn('text-[11.5px] font-medium', activeDocEditors.length > 0 ? 'text-quiet-accent' : 'text-quiet-muted')}>
+                <span className={cn('hidden text-[11.5px] font-medium sm:inline', activeDocEditors.length > 0 ? 'text-quiet-accent' : 'text-quiet-muted')}>
                   {activeDocEditors.length > 0 ? 'Editing now' : 'Viewing now'}
                 </span>
                 <div className="flex items-end gap-1.5">
@@ -1543,67 +1547,65 @@ export function DocsDocumentDetail({
                 </div>
               </div>
             ) : null}
-          </>
-        )}
-        actions={(
-          <>
-            {isExternalHelpCenter ? (
-              <QuietDetailAction
-                icon={<ViewIcon className="h-3.5 w-3.5" />}
-                label="Preview"
-                onClick={async () => {
-                  try {
-                    const res = await docsService.getPreviewToken(wsId, docId)
-                    if (res.error || !res.data) {
-                      toast.error(res.error || 'Failed to generate preview')
+            <div className="order-first flex items-center gap-1.5 sm:order-none sm:gap-3">
+              {isExternalHelpCenter ? (
+                <QuietDetailAction
+                  icon={<ViewIcon className="h-3.5 w-3.5" />}
+                  label="Preview"
+                  onClick={async () => {
+                    try {
+                      const res = await docsService.getPreviewToken(wsId, docId)
+                      if (res.error || !res.data) {
+                        toast.error(res.error || 'Failed to generate preview')
+                        return
+                      }
+                      const { token, subdomain, custom_domain } = res.data
+                      window.open(buildHelpcenterPreviewUrlFromEnv({ subdomain, customDomain: custom_domain }, docId, token), '_blank', 'noopener')
+                    } catch {
+                      toast.error('Failed to generate preview')
+                    }
+                  }}
+                />
+              ) : null}
+              {showContextualPublish && !(isPublished && !hasUnpublishedChanges) ? (
+                <QuietDetailAction
+                  tone="primary"
+                  icon={<SentIcon className="h-3.5 w-3.5" />}
+                  label={activePublishLabel}
+                  onClick={async () => {
+                    if (isSourceLocaleActive) {
+                      void handlePublish()
                       return
                     }
-                    const { token, subdomain, custom_domain } = res.data
-                    window.open(buildHelpcenterPreviewUrlFromEnv({ subdomain, customDomain: custom_domain }, docId, token), '_blank', 'noopener')
-                  } catch {
-                    toast.error('Failed to generate preview')
-                  }
-                }}
-              />
-            ) : null}
-            {showContextualPublish && !(isPublished && !hasUnpublishedChanges) ? (
+                    if (activeTranslation && !activeTranslation.slug) {
+                      setPendingSlug(suggestDocsSlug(activeTranslationDraft.title || activeTranslation.title || 'translation', 'translation'))
+                      setPendingPublishLocale(activeLocale)
+                      setSlugDialogOpen(true)
+                      return
+                    }
+                    if (parentTranslationsMissing) {
+                      setParentPublishConfirmOpen(true)
+                      return
+                    }
+                    try {
+                      const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
+                      await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
+                      toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : 'Failed to publish translation')
+                    }
+                  }}
+                  disabled={publishDisabled}
+                />
+              ) : null}
               <QuietDetailAction
-                tone="primary"
-                icon={<SentIcon className="h-3.5 w-3.5" />}
-                label={activePublishLabel}
-                onClick={async () => {
-                  if (isSourceLocaleActive) {
-                    void handlePublish()
-                    return
-                  }
-                  if (activeTranslation && !activeTranslation.slug) {
-                    setPendingSlug(suggestDocsSlug(activeTranslationDraft.title || activeTranslation.title || 'translation', 'translation'))
-                    setPendingPublishLocale(activeLocale)
-                    setSlugDialogOpen(true)
-                    return
-                  }
-                  if (parentTranslationsMissing) {
-                    setParentPublishConfirmOpen(true)
-                    return
-                  }
-                  try {
-                    const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
-                    await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
-                    toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : 'Failed to publish translation')
-                  }
-                }}
-                disabled={publishDisabled}
+                icon={<MoreHorizontalIcon className="h-4 w-4" />}
+                label={railOpen ? 'Hide details' : 'Show details'}
+                iconOnly
+                onClick={toggleRail}
               />
-            ) : null}
-            <QuietDetailAction
-              icon={<MoreHorizontalIcon className="h-4 w-4" />}
-              label={railOpen ? 'Hide details' : 'Show details'}
-              iconOnly
-              onClick={toggleRail}
-            />
-          </>
+            </div>
+          </div>
         )}
       />
 

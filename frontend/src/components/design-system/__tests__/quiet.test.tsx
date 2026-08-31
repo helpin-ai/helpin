@@ -72,7 +72,7 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('mt-0.5');
     expect(markup.indexOf('New deal')).toBeLessThan(markup.indexOf('Customer'));
     expect(markup).toContain('flex-col items-end gap-0.5');
-    expect(markup).toContain('max-w-28');
+    expect(markup).toContain('max-w-28 flex-nowrap');
     expect(markup).toContain('sm:max-w-none');
     expect(markup).not.toContain('rounded-full border');
   });
