@@ -154,14 +154,14 @@ export function QuietDetailHeader({
   className?: string;
 }) {
   return (
-    <header className={cn('shrink-0 border-b border-quiet-divider-strong px-4 pb-4 pt-3 sm:px-6 lg:px-8', workspaceSidebarSafeInsetClassName, className)}>
-      {breadcrumbs ? <div className="mb-3 min-w-0">{breadcrumbs}</div> : null}
-      <div className="flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
+    <header className={cn('shrink-0 border-b border-quiet-divider-strong px-4 pb-3 pt-2 sm:px-6 lg:px-8', workspaceSidebarSafeInsetClassName, className)}>
+      {breadcrumbs ? <div className="mb-1.5 min-w-0">{breadcrumbs}</div> : null}
+      <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-5">
         <div className="flex min-w-0 flex-1 items-start gap-3.5">
           {avatar ? <div className="shrink-0">{avatar}</div> : null}
           <div className="min-w-0 flex-1">
             <div className="min-w-0 text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-quiet-text-primary">{title}</div>
-            {meta ? <div className="mt-1.5 min-w-0">{meta}</div> : null}
+            {meta ? <div className="mt-0.5 min-w-0">{meta}</div> : null}
           </div>
         </div>
         {state || actions ? (
