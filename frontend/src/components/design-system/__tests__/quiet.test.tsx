@@ -48,7 +48,7 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('md:flex-row');
     expect(markup).toContain('pb-3');
     expect(markup).toContain('pt-2');
-    expect(markup).toContain('mb-1.5');
+    expect(markup).toContain('mb-0.5');
     expect(markup).toContain('mt-0.5');
     expect(markup.indexOf('New deal')).toBeLessThan(markup.indexOf('Customer'));
     expect(markup).toContain('flex-col items-start gap-1.5');
