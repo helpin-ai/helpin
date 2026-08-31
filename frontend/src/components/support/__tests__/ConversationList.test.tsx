@@ -123,6 +123,21 @@ describe('ConversationList presence resync', () => {
     document.body.innerHTML = ''
   })
 
+  it('reserves inline header space for the collapsed workspace sidebar opener', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const header = container.querySelector('[data-slot="support-inbox-panel-header"]')
+    expect(header?.className).toContain('group-data-[sidebar-toggle-visible=true]/workspace-main:pl-14')
+
+    act(() => root.unmount())
+  })
+
   it('requests presence snapshots for visible conversations when websocket is connected', () => {
     const wsSend = vi.fn()
     useSupportPresenceStore.setState({ wsSend, wsConnected: true })

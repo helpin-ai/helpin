@@ -25,6 +25,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation, SupportMessage } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { getInitial, getAvatarColor } from './helpers';
+import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 
 type LastActiveSource = 'anonymous_id' | 'crm_contact' | string | null | undefined;
 
@@ -414,12 +415,12 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
   return (
     <div className={conversationDetailSidebarRootClassName}>
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-3 py-2">
+      <SupportInboxPanelHeader className="justify-between bg-muted/30 px-3">
         <h3 className="text-sm font-semibold">Details</h3>
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={toggleDetailSidebar}>
           <ArrowRight01Icon className="h-4 w-4" />
         </Button>
-      </div>
+      </SupportInboxPanelHeader>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {shouldShowConversationDetailLoading(conversationId, conversation, conversationLoading) ? (

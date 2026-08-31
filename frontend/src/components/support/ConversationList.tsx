@@ -38,6 +38,8 @@ import {
 import type { SupportInboxScope, SupportTag } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { SupportTagBadge } from './SupportTagPicker';
+import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
+import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 
 const SkeletonRow = memo(function SkeletonRow() {
   return (
@@ -567,8 +569,11 @@ export function ConversationList({
   return (
     <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">
       {/* Filter toolbar */}
-      <div
-        className="relative z-10 flex items-center gap-1.5 border-b border-border/60 bg-background/85 px-2 py-1.5 supports-[backdrop-filter]:bg-background/75 dark:border-sidebar-border dark:bg-sidebar/90 dark:supports-[backdrop-filter]:bg-sidebar/80"
+      <SupportInboxPanelHeader
+        className={cn(
+          workspaceSidebarSafeInsetClassName,
+          'gap-1.5 bg-background/85 px-2 supports-[backdrop-filter]:bg-background/75 dark:bg-sidebar/90 dark:supports-[backdrop-filter]:bg-sidebar/80',
+        )}
         style={{ backdropFilter: 'blur(8px) saturate(160%)' }}
       >
         <TooltipProvider>
@@ -785,7 +790,7 @@ export function ConversationList({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-      </div>
+      </SupportInboxPanelHeader>
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
         <DialogContent aria-describedby={undefined}>
           <DialogHeader>

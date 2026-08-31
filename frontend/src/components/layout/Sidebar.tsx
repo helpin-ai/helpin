@@ -359,9 +359,10 @@ export function Sidebar() {
 
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <div
+              data-slot="sidebar-module-navigation"
               className={cn(
-                'min-h-0 flex-1 flex-col',
-                activeRail === 'docs' ? 'flex overflow-hidden p-1 pb-0' : 'overflow-y-auto p-2',
+                'flex min-h-0 flex-1 flex-col',
+                activeRail === 'docs' ? 'overflow-hidden p-1 pb-0' : 'overflow-y-auto p-2',
               )}
             >
               {activeRail === 'projects' && (

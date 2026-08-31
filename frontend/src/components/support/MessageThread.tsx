@@ -39,6 +39,7 @@ import { AgentRunsCard } from './AgentRunsCard';
 import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
+import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
 import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
 import type { UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
@@ -220,9 +221,9 @@ const MessageSkeleton = memo(function MessageSkeleton() {
 
 const ThreadHeaderSkeleton = memo(function ThreadHeaderSkeleton() {
   return (
-    <div
+    <SupportInboxPanelHeader
       data-testid="support-thread-header-skeleton"
-      className="relative z-10 flex items-center justify-between border-b bg-background px-4 py-2.5"
+      className="justify-between px-4"
     >
       <div className="min-w-0 flex-1">
         <div className="h-4 w-64 max-w-[70%] animate-pulse rounded bg-muted" />
@@ -233,7 +234,7 @@ const ThreadHeaderSkeleton = memo(function ThreadHeaderSkeleton() {
         <div className="h-7 w-7 animate-pulse rounded-md bg-muted" />
       </div>
       <div className="pointer-events-none absolute left-0 right-0 top-full h-1.5 bg-gradient-to-b from-black/[0.025] to-transparent" />
-    </div>
+    </SupportInboxPanelHeader>
   );
 });
 
@@ -825,11 +826,11 @@ export function MessageThread({
     <div
       data-support-message-thread
       data-transitioning={isThreadTransitioning ? 'true' : undefined}
-      className={`flex flex-1 flex-col min-w-0 min-h-0 transition-opacity duration-150 ease-out ${isThreadTransitioning ? 'opacity-85' : 'opacity-100'}`}
+      className={`flex min-h-0 min-w-0 flex-1 flex-col bg-background transition-opacity duration-150 ease-out dark:bg-sidebar ${isThreadTransitioning ? 'opacity-85' : 'opacity-100'}`}
     >
       {/* Topbar with subtle bottom shadow (Crisp-style) */}
       {conversation && (
-        <div className="relative z-10 flex items-center justify-between border-b px-4 py-2.5 bg-background">
+        <SupportInboxPanelHeader className="justify-between px-4">
           {/* Gradient shadow below topbar */}
           <div className="absolute top-full left-0 right-0 h-1.5 bg-gradient-to-b from-black/[0.025] to-transparent pointer-events-none" />
 
@@ -895,7 +896,7 @@ export function MessageThread({
               )}
             />
           </div>
-        </div>
+        </SupportInboxPanelHeader>
       )}
       {!conversation && isThreadLoading && <ThreadHeaderSkeleton />}
 
@@ -984,7 +985,7 @@ export function MessageThread({
       {/* Messages area with light background (Crisp-style) */}
       <ScrollArea
         ref={scrollAreaRef}
-        className="min-h-0 min-w-0 flex-1 bg-muted/20 [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!max-w-full"
+        className="min-h-0 min-w-0 flex-1 bg-muted/20 dark:bg-sidebar [&>[data-slot=scroll-area-viewport]>div]:!block [&>[data-slot=scroll-area-viewport]>div]:!w-full [&>[data-slot=scroll-area-viewport]>div]:!min-w-0 [&>[data-slot=scroll-area-viewport]>div]:!max-w-full"
       >
         <div data-support-message-list className="w-full min-w-0 max-w-full overflow-x-hidden px-4 pb-10 pt-2">
           {isThreadLoading && <MessageSkeleton />}

@@ -223,8 +223,11 @@ describe('MessageThread', () => {
     })
 
     expect(supportHooks.markConversationRead).toHaveBeenCalledWith('conv-1')
+    const thread = container.querySelector('[data-support-message-thread]')
+    expect(thread?.className).toContain('dark:bg-sidebar')
     const scrollArea = container.querySelector('[data-slot="scroll-area"]')
     expect(scrollArea?.className).toContain('min-w-0')
+    expect(scrollArea?.className).toContain('dark:bg-sidebar')
     expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!block')
     expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!w-full')
     expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!min-w-0')

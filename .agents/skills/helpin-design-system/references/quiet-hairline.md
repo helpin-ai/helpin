@@ -72,6 +72,8 @@ Use Helpin's existing authenticated route shell and responsive overflow behavior
 - Route pages use the centralized Quiet viewport and page header.
 - Detail sheets/pages use the centralized detail layout, tabs, and rail.
 - Specialized editors and dense workflow toolbars may keep their own header composition, but must use the centralized workspace-sidebar safe inset so the collapsed navigation opener never covers controls.
+- Module-specific sidebar utilities, such as CRM and Support settings shortcuts, stay bottom-pinned directly above the shared Cmd+K search footer. They do not follow the last navigation item up the rail.
+- Multi-column Support inbox headers share one fixed height and divider treatment so the list title, conversation title/actions, and Details header close on one continuous horizontal hairline. In dark mode, the Inbox list and conversation thread use the same sidebar surface token. The first Inbox header also uses the centralized sidebar-safe inset so the collapsed navigation opener stays inline without covering its title.
 - Center fixed-width route content with `margin-inline: auto`; never use flex centering that makes overflow unscrollable.
 - Keep the established application widths: detail rail 300–352px, task rail 300–308px, thread list about 456px, prose measure 680–760px, detail measure 600–700px.
 
