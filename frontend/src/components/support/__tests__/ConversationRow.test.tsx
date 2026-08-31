@@ -217,20 +217,35 @@ describe('ConversationRow', () => {
     cleanup()
   })
 
-  it('shows a reply icon only when the latest message came from an agent', () => {
+  it('uses the second-line sender slot for agent replies and customer replies', () => {
     const agentRow = renderRow(conversation({
       last_message_sender_type: 'user',
       last_message_sender_display_name: 'Rosa Marin',
     }))
     expect(agentRow.container.querySelector('[aria-label="Rosa Marin replied"]')).not.toBeNull()
+    expect(agentRow.container.querySelector('[aria-label="Customer replied"]')).toBeNull()
     agentRow.cleanup()
 
     const customerRow = renderRow(conversation({
       last_message_sender_type: 'customer',
       last_message_sender_display_name: 'Alex Customer',
     }))
-    expect(customerRow.container.querySelector('[aria-label$=" replied"]')).toBeNull()
+    expect(customerRow.container.querySelector('[aria-label="Customer replied"]')).not.toBeNull()
+    expect(customerRow.container.querySelector('[aria-label="Agent replied"]')).toBeNull()
     customerRow.cleanup()
+  })
+
+  it('does not tint an action-needed conversation row blue', () => {
+    const { container, cleanup } = renderRow(conversation({
+      awaiting_reply: true,
+      last_message_sender_type: 'customer',
+    }))
+
+    const row = container.querySelector('[role="button"][tabindex="0"]')
+    expect(row?.className).not.toContain('bg-blue-50/70')
+    expect(row?.className).not.toContain('dark:bg-blue-950/20')
+
+    cleanup()
   })
 
   it('keeps the subject dialog mounted after opening it from row actions', () => {
@@ -263,7 +278,6 @@ describe('ConversationRow', () => {
     }))).toEqual({
       isUnread: true,
       needsTeamAction: true,
-      usesActionBackground: true,
       usesUnreadTypography: true,
       usesSelectionBar: false,
     })
@@ -274,7 +288,6 @@ describe('ConversationRow', () => {
     }))).toEqual({
       isUnread: false,
       needsTeamAction: true,
-      usesActionBackground: true,
       usesUnreadTypography: false,
       usesSelectionBar: false,
     })
@@ -285,7 +298,6 @@ describe('ConversationRow', () => {
     }), true)).toEqual({
       isUnread: false,
       needsTeamAction: false,
-      usesActionBackground: false,
       usesUnreadTypography: false,
       usesSelectionBar: true,
     })

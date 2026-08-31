@@ -79,10 +79,10 @@ export interface ConversationCellProps {
  * on content (hence `overflow-hidden` + line clamps).
  *
  * Signals mirror the web conversation row (see ConversationRow.tsx): unread
- * count badge, "needs team action" row tint, internal-note label, agent-reply
- * indicator, AI handoff / resolved badges, waiting-for-human pill, coloured
- * tags, plus live presence (customer/agent typing, viewing agents, visitor
- * online) read from the shared support presence store.
+ * count badge, customer/agent reply indicators, internal-note label, AI
+ * handoff / resolved badges, waiting-for-human pill, coloured tags, plus live
+ * presence (customer/agent typing, viewing agents, visitor online) read from
+ * the shared support presence store.
  */
 export function ConversationCell({
   conversation,
@@ -126,6 +126,7 @@ export function ConversationCell({
   const waitSince = conversation.customer_requested_human_at || conversation.ai_escalated_at || conversation.updated_at
   const hasAgentReplyPreview =
     conversation.last_message_sender_type === 'user' || conversation.last_message_sender_type === 'agent'
+  const hasCustomerReplyPreview = conversation.last_message_sender_type === 'customer'
   const agentFirstName = firstAgentTyping?.name?.split(' ')[0] || 'Agent'
   const isNote = isNotePreview(conversation.last_message)
 
@@ -157,8 +158,7 @@ export function ConversationCell({
       style={{ height: CONVERSATION_CELL_HEIGHT }}
       className={cn(
         'box-border flex w-full cursor-pointer items-center gap-2.5 overflow-hidden border-b border-border/60 px-4 text-left active:bg-muted/50',
-        // "Needs team action" (open + unread/awaiting reply) gets a subtle tint, mirroring web.
-        visual.needsTeamAction ? 'bg-primary/[0.06]' : 'bg-background',
+        'bg-background',
       )}
     >
       <div className="relative shrink-0">
@@ -211,6 +211,14 @@ export function ConversationCell({
           <div className="flex min-w-0 flex-1 items-start gap-1">
             {hasAgentReplyPreview && !isCustomerTyping && !isAgentTyping && !isNote && (
               <CornerUpLeft aria-label="Team replied" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+            )}
+            {hasCustomerReplyPreview && !isCustomerTyping && !isAgentTyping && !isNote && (
+              <span
+                aria-label="Customer replied"
+                className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+              </span>
             )}
             <p
               data-testid="conversation-preview"

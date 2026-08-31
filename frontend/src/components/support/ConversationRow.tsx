@@ -216,6 +216,24 @@ const AgentReplyIndicator = memo(function AgentReplyIndicator({ label }: { label
   );
 });
 
+const CustomerReplyIndicator = memo(function CustomerReplyIndicator() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label="Customer replied"
+          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center"
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <span className="text-xs">Customer replied</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+});
+
 const AIResolvedIndicator = memo(function AIResolvedIndicator() {
   return (
     <Tooltip>
@@ -319,6 +337,7 @@ export const ConversationRow = memo(function ConversationRow({
   const humanQueueWaitSince = conversation.customer_requested_human_at || conversation.ai_escalated_at || conversation.updated_at;
   const userTags = conversation.tags ?? [];
   const hasAgentReplyPreview = conversation.last_message_sender_type === 'user' || conversation.last_message_sender_type === 'agent';
+  const hasCustomerReplyPreview = conversation.last_message_sender_type === 'customer';
   const agentReplyLabel = `${conversation.last_message_sender_display_name?.trim() || 'Agent'} replied`;
   const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
@@ -380,9 +399,7 @@ export const ConversationRow = memo(function ConversationRow({
           ? 'pointer-events-none bg-emerald-50/70 opacity-60 dark:bg-emerald-950/20'
           : isSelected
           ? 'bg-muted/80 dark:bg-muted/45'
-          : visualState.usesActionBackground
-            ? 'bg-blue-50/70 dark:bg-blue-950/20'
-            : ''
+          : ''
       }`}
     >
       {/* Active indicator bar (Crisp-style ::before) */}
@@ -486,7 +503,11 @@ export const ConversationRow = memo(function ConversationRow({
                 </>
               ) : (
                 <>
-                  {hasAgentReplyPreview && <AgentReplyIndicator label={agentReplyLabel} />}
+                  {hasAgentReplyPreview ? (
+                    <AgentReplyIndicator label={agentReplyLabel} />
+                  ) : hasCustomerReplyPreview ? (
+                    <CustomerReplyIndicator />
+                  ) : null}
                   <span className="min-w-0 truncate">{conversation.last_message || conversation.subject}</span>
                 </>
               )}

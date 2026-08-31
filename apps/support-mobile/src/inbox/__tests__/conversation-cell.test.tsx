@@ -62,19 +62,19 @@ test('unread conversations render the preview with unread typography', () => {
   expect(screen.getByTestId('conversation-preview').className).toContain('font-medium')
 })
 
-test('open + unread conversations get the needs-action row tint', () => {
+test('open + unread conversations keep the neutral row background', () => {
   render(<ConversationCell conversation={conversation({ status: 'open', unread_count: 1 })} onPress={vi.fn()} />)
-  expect(screen.getByTestId('conversation-cell').className).toContain('bg-primary')
+  expect(screen.getByTestId('conversation-cell').className).not.toContain('bg-primary')
 })
 
-test('open + awaiting-reply conversations get the needs-action row tint even when read', () => {
+test('open + awaiting-reply conversations keep the neutral row background when read', () => {
   render(
     <ConversationCell
       conversation={conversation({ status: 'open', unread_count: 0, awaiting_reply: true })}
       onPress={vi.fn()}
     />,
   )
-  expect(screen.getByTestId('conversation-cell').className).toContain('bg-primary')
+  expect(screen.getByTestId('conversation-cell').className).not.toContain('bg-primary')
 })
 
 test('falls back to "No messages yet" when there is no last message', () => {
@@ -134,6 +134,20 @@ test('renders a waiting-for-human pill for queued conversations', () => {
 test('shows the team-replied indicator when the last message is from an agent', () => {
   render(<ConversationCell conversation={conversation({ last_message_sender_type: 'agent' })} onPress={vi.fn()} />)
   expect(screen.getByLabelText('Team replied')).toBeDefined()
+  expect(screen.queryByLabelText('Customer replied')).toBeNull()
+})
+
+test('replaces the action-needed row tint with a customer-replied dot', () => {
+  render(
+    <ConversationCell
+      conversation={conversation({ awaiting_reply: true, last_message_sender_type: 'customer' })}
+      onPress={vi.fn()}
+    />,
+  )
+
+  expect(screen.getByLabelText('Customer replied')).toBeDefined()
+  expect(screen.queryByLabelText('Team replied')).toBeNull()
+  expect(screen.getByTestId('conversation-cell').className).not.toContain('bg-primary/[0.06]')
 })
 
 test('shows the teammates currently reviewing a read conversation', () => {

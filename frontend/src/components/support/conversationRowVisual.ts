@@ -26,7 +26,6 @@ export function stripNotePrefix(text: string): string {
 export type ConversationRowVisualState = {
   isUnread: boolean;
   needsTeamAction: boolean;
-  usesActionBackground: boolean;
   usesUnreadTypography: boolean;
   usesSelectionBar: boolean;
 };
@@ -45,7 +44,6 @@ export function getConversationRowVisualState(
   return {
     isUnread,
     needsTeamAction,
-    usesActionBackground: !isSelected && needsTeamAction,
     usesUnreadTypography: isUnread,
     usesSelectionBar: isSelected,
   };
