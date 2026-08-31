@@ -3268,8 +3268,8 @@ func (s *SupportInboxService) UpdateConversationCRMCompany(ctx context.Context, 
 }
 
 // ListContactConversations returns support conversations linked to a CRM contact.
-func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
-	conversations, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
+func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID, status, search string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+	conversations, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, status, search, pagination)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -3285,6 +3285,29 @@ func (s *SupportInboxService) ListContactConversations(ctx context.Context, work
 	if s.triageService != nil {
 		if err := s.triageService.HydrateConversations(ctx, filtered); err != nil {
 			slog.ErrorContext(ctx, "hydrate support contact conversation triage", "error", err, "workspace_id", workspaceID)
+		}
+	}
+	return filtered, total, nil
+}
+
+// ListCompanyConversations returns mailbox-visible support conversations for a CRM company roll-up.
+func (s *SupportInboxService) ListCompanyConversations(ctx context.Context, workspaceID, companyID, status, search string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+	conversations, total, err := s.conversationRepo.ListByCompany(ctx, workspaceID, companyID, status, search, pagination)
+	if err != nil {
+		return nil, 0, err
+	}
+	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
+	ids := make([]string, 0, len(conversations))
+	for _, conversation := range conversations {
+		ids = append(ids, conversation.ID)
+	}
+	filtered, err := s.conversationRepo.ListByIDs(ctx, workspaceID, ids, workspaceMemberID, role)
+	if err != nil {
+		return nil, 0, err
+	}
+	if s.triageService != nil {
+		if err := s.triageService.HydrateConversations(ctx, filtered); err != nil {
+			slog.ErrorContext(ctx, "hydrate support company conversation triage", "error", err, "workspace_id", workspaceID)
 		}
 	}
 	return filtered, total, nil
@@ -3347,6 +3370,8 @@ func (s *SupportInboxService) matchOrCreateCRMContactIdentityTx(ctx context.Cont
 		FirstName:      firstName,
 		LastName:       lastName,
 		Email:          &resolved.email,
+		Phone:          stringPtrOrNil(resolved.phone),
+		JobTitle:       stringPtrOrNil(resolved.jobTitle),
 		LifecycleStage: model.CRMLifecycleLead,
 		LeadStatus:     model.CRMLeadStatusNew,
 		Source:         &contactSource,
@@ -3668,6 +3693,14 @@ func (s *SupportInboxService) syncCRMContactIdentity(contact *model.CRMContact, 
 			updated = true
 		}
 	}
+	if identity.phone != "" && strings.TrimSpace(derefString(contact.Phone)) != identity.phone {
+		contact.Phone = &identity.phone
+		updated = true
+	}
+	if identity.jobTitle != "" && strings.TrimSpace(derefString(contact.JobTitle)) != identity.jobTitle {
+		contact.JobTitle = &identity.jobTitle
+		updated = true
+	}
 
 	firstName, lastName := identity.contactNames()
 	if identity.hasExplicitName {
@@ -3697,6 +3730,8 @@ type resolvedWidgetIdentity struct {
 	displayName     string
 	firstName       string
 	lastName        *string
+	phone           string
+	jobTitle        string
 	hasExplicitName bool
 }
 
@@ -3706,8 +3741,10 @@ func (i resolvedWidgetIdentity) contactNames() (string, *string) {
 
 func resolveWidgetIdentityPayload(identity model.WidgetIdentityPayload) resolvedWidgetIdentity {
 	resolved := resolvedWidgetIdentity{
-		email:  strings.TrimSpace(identity.Email),
-		source: strings.TrimSpace(identity.Source),
+		email:    strings.TrimSpace(identity.Email),
+		source:   strings.TrimSpace(identity.Source),
+		phone:    strings.TrimSpace(identity.Phone),
+		jobTitle: normalizeWidgetName(identity.JobTitle),
 	}
 
 	firstName := normalizeWidgetName(identity.FirstName)

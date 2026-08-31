@@ -200,6 +200,7 @@ interface TaskFilterProviderProps {
   sprints: SprintWithStats[];
   onChange: (filters: BoardFilters) => void;
   externalFilters?: BoardFilters;
+  excludedKeys?: string[];
   children: React.ReactNode;
 }
 
@@ -213,6 +214,7 @@ export function TaskFilterProvider({
   sprints,
   onChange,
   externalFilters,
+  excludedKeys,
   children,
 }: TaskFilterProviderProps) {
   const [filterState, setFilterState] = useState<FilterState>({});
@@ -316,6 +318,7 @@ export function TaskFilterProvider({
       { value: 'false', label: 'Not archived' },
     ];
 
+    const excluded = new Set(excludedKeys ?? []);
     return [
       { key: 'priority' as FilterKey, label: 'Priority', options: priorityOptions },
       { key: 'severity' as FilterKey, label: 'Severity', options: severityOptions },
@@ -332,8 +335,8 @@ export function TaskFilterProvider({
       { key: 'blocked' as FilterKey, label: 'Blocked', options: blockedOptions },
       { key: 'blocking' as FilterKey, label: 'Blocking', options: blockingOptions },
       { key: 'archived' as FilterKey, label: 'Archived', options: archivedOptions, singleSelect: true },
-    ];
-  }, [assignableMembers, labels, epics, sprints, contactsRes, companiesRes, dealsRes, conversationsRes]);
+    ].filter((definition) => !excluded.has(definition.key));
+  }, [assignableMembers, labels, epics, sprints, contactsRes, companiesRes, dealsRes, conversationsRes, excludedKeys]);
 
   const activeKeys = useMemo(() => {
     const keys = new Set<FilterKey>();
@@ -394,7 +397,8 @@ export function TaskFilterProvider({
 
   const handleRemove = useCallback(
     (key: FilterKey) => {
-      const { [key]: _, ...rest } = filterState;
+      const rest = { ...filterState };
+      delete rest[key];
       setFilterState(rest);
       emitChange(rest);
     },

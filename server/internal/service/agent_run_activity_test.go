@@ -238,6 +238,7 @@ func createAgentRunActivityTables(t *testing.T, db *gorm.DB) {
 			currency TEXT NOT NULL DEFAULT 'USD',
 			close_date DATETIME,
 			owner_member_id TEXT,
+			commercial_motion TEXT,
 			probability INTEGER,
 			custom_properties BLOB NOT NULL DEFAULT '{}',
 			created_at DATETIME,

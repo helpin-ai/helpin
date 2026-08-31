@@ -13,7 +13,6 @@ import {
   FavouriteIcon,
   Link01Icon,
   Loading01Icon,
-  PencilEdit01Icon,
   PlusSignIcon,
   SourceCodeIcon,
   Target01Icon,
@@ -83,6 +82,7 @@ import { LinkTasksToEpicDialog } from '@/components/pm/LinkTasksToEpicDialog';
 import { getLinkTasksDisabledReason } from '@/components/pm/epicTaskLinking';
 import { EpicUpdatesView } from '@/components/pm/epic-detail/EpicUpdatesView';
 import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
+import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
 import { TaskOwnerDistribution } from '@/components/pm/TaskOwnerDistribution';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { cn } from '@/lib/utils';
@@ -951,27 +951,18 @@ export function EpicDetailPage() {
                 />
               </div>
             ) : (
-                <div className="relative">
-                  {form.description ? (
-                    <RichTextMentionContent
-                      html={form.description}
-                      members={assignableMembers}
-                      teams={mentionTeams}
-                      variant="pm"
-                    />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
-                  )}
-                {canEdit && (
-                  <button
-                    type="button"
-                    className="mt-3 inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                    onClick={beginDescriptionEditing}
-                  >
-                    <PencilEdit01Icon className="h-3 w-3" />
-                    Edit description
-                  </button>
+              <div className={cn('relative min-h-9', canEdit && 'pr-12')}>
+                {form.description ? (
+                  <RichTextMentionContent
+                    html={form.description}
+                    members={assignableMembers}
+                    teams={mentionTeams}
+                    variant="pm"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
                 )}
+                {canEdit && <DetailDescriptionEditButton onClick={beginDescriptionEditing} />}
               </div>
             )}
           </div>

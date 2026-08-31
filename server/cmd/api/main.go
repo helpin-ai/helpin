@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	firebase "firebase.google.com/go/v4"
+	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
 	"go.temporal.io/api/serviceerror"
@@ -35,6 +37,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/coordination"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
+	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -113,6 +116,34 @@ func main() {
 		fatalWithSentry("failed to ping database", err)
 	}
 	slog.Info("connected to database")
+
+	var clickHouseDB *sql.DB
+	if cfg.ClickHouseDSN != "" {
+		clickHouseOptions, parseErr := eventClickHouseOptions(cfg.ClickHouseDSN)
+		if parseErr != nil {
+			fatalWithSentry("failed to parse ClickHouse DSN", parseErr)
+		}
+		clickHouseCtx, cancelClickHouse := context.WithTimeout(context.Background(), 5*time.Second)
+		clickHouseDB = clickhouse.OpenDB(clickHouseOptions)
+		if err := clickHouseDB.PingContext(clickHouseCtx); err != nil {
+			slog.Warn("ClickHouse unavailable; CRM behavioral signals disabled", "error", err)
+			closeClickHouse(clickHouseDB)
+			clickHouseDB = nil
+		}
+		if clickHouseDB != nil {
+			retention, err := repository.InspectEventRetentionPolicy(clickHouseCtx, clickHouseDB)
+			if err != nil {
+				slog.Warn("ClickHouse event schema unavailable; CRM behavioral signals disabled", "error", err)
+				closeClickHouse(clickHouseDB)
+				clickHouseDB = nil
+			} else {
+				defer closeClickHouse(clickHouseDB)
+				slog.Info("connected to ClickHouse for CRM behavioral signals",
+					"ttl_configured", retention.TTLConfigured, "ttl_clause", retention.TTLClause)
+			}
+		}
+		cancelClickHouse()
+	}
 
 	// Ensure pgcrypto extension is available for gen_random_uuid().
 	slog.Info("startup: enabling pgcrypto extension")
@@ -256,6 +287,12 @@ func main() {
 			&model.SupportTeammateStatusOverride{},
 			&model.SupportCannedResponse{},
 			&model.SupportWidgetInstallation{},
+			// WorkspaceEventProjectAlias is owned by versioned migration
+			// 202608240001, including its overlapping single-column and
+			// composite uniqueness constraints. GORM cannot safely reconcile
+			// those PostgreSQL constraints as indexes during AutoMigrate.
+			&model.CRMIdentityLink{},
+			&model.SupportCredentialRotationAudit{},
 			&model.SupportWidgetSession{},
 			&model.SupportAttachment{},
 			&model.SupportEvent{},
@@ -347,7 +384,26 @@ func main() {
 			&model.CRMCalendarSeriesPreference{},
 			// CRM Phase 4: Intelligence
 			&model.CRMEnrichmentResult{},
-			&model.CRMBuyerSignal{},
+			&model.CRMSignal{},
+			&model.CRMSignalObservation{},
+			&model.CRMSignalInterpretationConfig{},
+			&model.CRMSignalMotionState{},
+			&model.CRMSignalRuleConfig{},
+			&model.CRMSignalEvaluationRun{},
+			&model.CRMSignalEvaluatorWatermark{},
+			&model.CRMSignalScoringConfig{},
+			&model.CRMSignalFeedback{},
+			&model.CRMSignalRoutingPolicy{},
+			&model.CRMSignalRoutingSettings{},
+			&model.CRMSignalRolloutSettings{},
+			&model.CRMCompanyCommercialState{},
+			&model.CRMCompanyCommercialStateHistory{},
+			&model.CRMCompanyCommercialStateHealth{},
+			&model.CRMSignalConditionState{},
+			&model.CRMUsageWeekdayBaseline{},
+			&model.CRMSignalBatchSuppression{},
+			&model.CRMSignalDelivery{},
+			&model.CRMSignalExternalEvidence{},
 			&model.CRMEntitySummary{},
 			&model.CRMDealHealthScore{},
 			&model.CRMSuggestion{},
@@ -431,10 +487,6 @@ func main() {
 	slog.Info("startup: running MigrateCRMEmailAssociations")
 	if err := repository.MigrateCRMEmailAssociations(db); err != nil {
 		fatalWithSentry("failed to migrate crm email associations", err)
-	}
-	slog.Info("startup: running MigrateCRMSignalSchema")
-	if err := repository.MigrateCRMSignalSchema(db); err != nil {
-		fatalWithSentry("failed to migrate crm signal schema", err)
 	}
 	slog.Info("startup: running MigrateCRMSummarySchema")
 	if err := repository.MigrateCRMSummarySchema(db); err != nil {
@@ -773,6 +825,7 @@ func main() {
 	pushDeviceRepo := repository.NewPushDeviceRepository(db)
 	crmContactRepo := repository.NewCRMContactRepository(db)
 	crmCompanyRepo := repository.NewCRMCompanyRepository(db)
+	crmCompanyTimelineRepo := repository.NewCRMCompanyTimelineRepository(db)
 	crmDealRepo := repository.NewCRMDealRepository(db)
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
@@ -781,6 +834,7 @@ func main() {
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
+	eventProjectRepo := repository.NewEventProjectRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	crmMeetingRepo := repository.NewCRMMeetingRepository(db)
 	pmTaskInsightsRepo := repository.NewPMTaskInsightsRepository(db)
@@ -930,7 +984,20 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
-	completionRoutes := service.DefaultAICompletionRouteRegistry()
+	completionRoutes := service.NewAICompletionRouteRegistry(service.CRMCompletionRouteConfig{
+		Primary: service.AICompletionRoute{
+			Provider: cfg.CRMLLMProvider, Model: cfg.CRMLLMModel,
+			OpenRouterProvider: cfg.CRMLLMOpenRouterProvider,
+		},
+		Fallback: service.AICompletionRoute{
+			Provider: cfg.CRMLLMFallbackProvider, Model: cfg.CRMLLMFallbackModel,
+			OpenRouterProvider: cfg.CRMLLMFallbackOpenRouterProvider,
+		},
+		MeetingFallback: service.AICompletionRoute{
+			Provider: cfg.CRMMeetingFallbackProvider, Model: cfg.CRMMeetingFallbackModel,
+			OpenRouterProvider: cfg.CRMMeetingFallbackOpenRouterProvider,
+		},
+	})
 	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
 		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
 	}
@@ -1287,11 +1354,15 @@ func main() {
 	)
 
 	crmContactService := service.NewCRMContactService(crmContactRepo).
-		SetIdentitySync(crmActivityRepo, wsPublisher)
-	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
+		SetIdentitySync(crmActivityRepo, wsPublisher).
+		SetTimelineRepository(crmCompanyTimelineRepo)
+	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo).
+		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmContactService.SetProductAnalyticsService(productAnalytics)
 	crmCompanyService.SetProductAnalyticsService(productAnalytics)
-	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
+		SetActivityService(pmActivityService).
+		SetTimelineRepository(crmCompanyTimelineRepo)
 	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
@@ -1315,14 +1386,29 @@ func main() {
 		slog.Info("Gmail OAuth not configured — email sync disabled")
 	}
 
-	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
+	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient).
+		SetCompanyEvidenceRepositories(crmCompanyTimelineRepo, pmTaskRepo, supportConversationRepo)
+	crmContactService.SetCompanySummaryRefresh(crmSummaryService)
+	crmCompanyService.SetCompanySummaryRefresh(crmSummaryService)
+	crmDealService.SetCompanySummaryRefresh(crmSummaryService)
+	crmAssociationService.SetCompanySummaryRefresh(crmSummaryService)
+	crmActivityService.SetCompanySummaryRefresh(crmSummaryService)
+	pmActivityService.SetCompanySummaryRefresh(crmSummaryService)
 	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
-	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo)
+	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo).
+		SetCompanySummaryRefresh(crmSummaryService).
+		SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo).
 		SetActivityRepository(crmActivityRepo).
-		SetWebsocketPublisher(wsPublisher)
-	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService)
+		SetWebsocketPublisher(wsPublisher).
+		SetCompanySummaryRefresh(crmSummaryService)
+	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService).
+		SetHealthScoreDependencies(crmDealRepo).
+		SetActivationDependencies(notificationService)
+	crmContactService.SetMotionSignalRefresher(crmSignalService)
+	crmCompanyService.SetMotionSignalRefresher(crmSignalService)
+	crmDealService.SetMotionSignalReconciler(crmSignalService)
 	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
@@ -1486,7 +1572,10 @@ func main() {
 		}()
 	}
 
-	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
+	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService).
+		SetHealthScoreRefresh(crmSignalService)
+	crmSummaryService.SetIntelligenceDependencies(signalDetectionService, crmActivityRepo, supportMessageRepo)
+	crmActivityService.SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
 	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
 	_ = signalDetectionService // Used by Temporal workers
 
@@ -1532,7 +1621,9 @@ func main() {
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
-	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService)
+	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
+		SetCompanySummaryRefresh(crmSummaryService).
+		SetSignalDetection(supportMessageRepo, supportConversationRepo, crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation))
 	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
 	supportAIService.SetSupportAIRetrievalTraceRecorder(supportCoverageTraceService)
@@ -1915,6 +2006,92 @@ func main() {
 		}
 	}
 
+	// Evaluate cross-module rules daily and behavioral rules every ten minutes.
+	signalRuleCtx, signalRuleCancel := context.WithCancel(context.Background())
+	signalRuleDone := make(chan struct{})
+	signalRuleEvaluator := service.NewCRMSignalRuleEvaluator(crmSignalRepo, eventProjectRepo, clickHouseDB, podID)
+	go func() {
+		defer close(signalRuleDone)
+		signalRuleEvaluator.Run(signalRuleCtx)
+	}()
+
+	// Materialize server-authenticated company state only after a workspace has
+	// passed the Phase 1 shadow gate and explicitly cut over.
+	commercialStateCtx, commercialStateCancel := context.WithCancel(context.Background())
+	commercialStateDone := make(chan struct{})
+	commercialStateSync := service.NewCRMCommercialStateSynchronizer(crmSignalService, crmSignalRepo, eventProjectRepo, clickHouseDB)
+	go func() {
+		defer close(commercialStateDone)
+		commercialStateSync.Run(commercialStateCtx)
+	}()
+
+	// Rebuild workspace-local weekday baselines daily under a replica lease.
+	usageBaselineCtx, usageBaselineCancel := context.WithCancel(context.Background())
+	usageBaselineDone := make(chan struct{})
+	usageBaselineSync := service.NewCRMUsageBaselineSynchronizer(crmSignalRepo, eventProjectRepo, clickHouseDB)
+	go func() {
+		defer close(usageBaselineDone)
+		usageBaselineSync.Run(usageBaselineCtx)
+	}()
+
+	// Route only policy-eligible, versioned signals. Delivery rows make every
+	// channel idempotent across replicas and restarts.
+	signalRouteDone := make(chan struct{})
+	go func() {
+		runSignalRouteSweep := func() {
+			workspaceIDs, err := workspaceRepo.ListIDs(context.Background())
+			if err != nil {
+				slog.Error("list workspaces for signal routing", "error", err)
+				return
+			}
+			for _, workspaceID := range workspaceIDs {
+				if _, err := crmSignalService.RouteWorkspaceSignals(context.Background(), workspaceID); err != nil {
+					slog.Warn("CRM signal routing failed", "error", err, "workspace_id", workspaceID)
+				}
+			}
+		}
+		runSignalRouteSweep()
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runSignalRouteSweep()
+			case <-signalRouteDone:
+				return
+			}
+		}
+	}()
+
+	// Produce explainable deal-health snapshots on startup and every six hours.
+	healthScoreDone := make(chan struct{})
+	go func() {
+		runHealthScoreSweep := func() {
+			workspaceIDs, err := workspaceRepo.ListIDs(context.Background())
+			if err != nil {
+				slog.Error("list workspaces for deal health sweep", "error", err)
+				return
+			}
+			for _, workspaceID := range workspaceIDs {
+				if err := crmSignalService.RefreshWorkspaceHealthScores(context.Background(), workspaceID); err != nil {
+					slog.Warn("deal health sweep failed", "error", err, "workspace_id", workspaceID)
+				}
+			}
+		}
+
+		runHealthScoreSweep()
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				runHealthScoreSweep()
+			case <-healthScoreDone:
+				return
+			}
+		}
+	}()
+
 	// Start background ticker for digest email delivery.
 	digestDone := make(chan struct{})
 	go func() {
@@ -2087,6 +2264,9 @@ func main() {
 	agentRuntimeProjectionCancel()
 	customerIOOutboxCancel()
 	productAnalyticsCancel()
+	signalRuleCancel()
+	commercialStateCancel()
+	usageBaselineCancel()
 	settlementCancel()
 	periodCancel()
 	reservationCancel()
@@ -2115,10 +2295,27 @@ func main() {
 	case <-time.After(6 * time.Second):
 		slog.Warn("AI usage reservation sweeper did not stop before shutdown timeout")
 	}
+	select {
+	case <-signalRuleDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("CRM signal rule evaluator did not stop before shutdown timeout")
+	}
+	select {
+	case <-commercialStateDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("CRM commercial-state synchronizer did not stop before shutdown timeout")
+	}
+	select {
+	case <-usageBaselineDone:
+	case <-time.After(6 * time.Second):
+		slog.Warn("CRM usage-baseline synchronizer did not stop before shutdown timeout")
+	}
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()
 	}
 	close(digestDone)
+	close(healthScoreDone)
+	close(signalRouteDone)
 	close(supportReplyEmailDone)
 	close(billingTrialExpiryDone)
 	close(cleanupDone)
@@ -2131,6 +2328,25 @@ func main() {
 	}
 
 	slog.Info("server stopped")
+}
+
+func eventClickHouseOptions(dsn string) (*clickhouse.Options, error) {
+	options, err := clickhouse.ParseDSN(dsn)
+	if err != nil {
+		return nil, err
+	}
+	options.Settings["do_not_merge_across_partitions_select_final"] = 1
+	options.Settings["use_skip_indexes_if_final_exact_mode"] = 1
+	return options, nil
+}
+
+func closeClickHouse(db *sql.DB) {
+	if db == nil {
+		return
+	}
+	if err := db.Close(); err != nil {
+		slog.Warn("failed to close ClickHouse connection", "error", err)
+	}
 }
 
 func parseLogLevel(value string) slog.Level {

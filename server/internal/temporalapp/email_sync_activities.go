@@ -39,7 +39,11 @@ type EmailSyncActivities struct {
 	syncSettingsRepo        *repository.CRMEmailSyncSettingsRepository
 	resolver                *crmemail.Resolver
 	signalIngestion         *crmsignal.IngestionService
-	summaryRefresh          interface {
+	calendarSignalStarter   interface {
+		StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+	}
+	calendarSignalRepo *repository.CRMSignalRepository
+	summaryRefresh     interface {
 		RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
 		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
 	}
@@ -58,15 +62,24 @@ func NewEmailSyncActivities(
 		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
 	},
 ) *EmailSyncActivities {
+	starter := crmsignal.NewTemporalStarter(temporalClient, QueueAutomation)
 	return &EmailSyncActivities{
-		gmailClient:      gmailClient,
-		emailRepo:        emailRepo,
-		calendarRepo:     calendarRepo,
-		syncSettingsRepo: syncSettingsRepo,
-		resolver:         crmemail.NewResolver(contactRepo),
-		signalIngestion:  crmsignal.NewIngestionService(emailRepo, crmsignal.NewTemporalStarter(temporalClient, QueueAutomation)),
-		summaryRefresh:   summaryRefresh,
+		gmailClient:           gmailClient,
+		emailRepo:             emailRepo,
+		calendarRepo:          calendarRepo,
+		syncSettingsRepo:      syncSettingsRepo,
+		resolver:              crmemail.NewResolver(contactRepo),
+		signalIngestion:       crmsignal.NewIngestionService(emailRepo, starter),
+		calendarSignalStarter: starter,
+		summaryRefresh:        summaryRefresh,
 	}
+}
+
+// SetCalendarSignalRepository enables stale signal cleanup when synced events
+// are removed by provider filters.
+func (a *EmailSyncActivities) SetCalendarSignalRepository(repo *repository.CRMSignalRepository) *EmailSyncActivities {
+	a.calendarSignalRepo = repo
+	return a
 }
 
 // BackfillEmailsActivity fetches last 90 days of emails.
@@ -383,6 +396,14 @@ func syncStateString(state model.JSONB, key string) string {
 	return strings.TrimSpace(value)
 }
 
+func optionalSyncString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 func historicalSyncStart(settings *model.CRMEmailSyncSettings) time.Time {
 	syncDays := 90
 	if settings != nil && settings.HistoricalSyncDays > 0 {
@@ -520,6 +541,9 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 		EmailAccountID:    account.ID,
 		ThreadID:          threadID,
 		MessageExternalID: msg.ID,
+		RFCMessageID:      optionalSyncString(msg.RFCMessageID),
+		InReplyTo:         optionalSyncString(msg.InReplyTo),
+		ReferencesHeader:  optionalSyncString(msg.ReferencesHeader),
 		FromAddress:       resolution.From.Email,
 		FromName:          fromNamePtr,
 		ToAddresses:       json.RawMessage(toJSON),
@@ -558,7 +582,7 @@ func (a *EmailSyncActivities) storeMessage(ctx context.Context, account *model.C
 	}
 	if a.signalIngestion != nil {
 		if _, err := a.signalIngestion.EnqueueEmailMessage(ctx, message.ID); err != nil {
-			slog.ErrorContext(ctx, "failed to enqueue crm buyer signal detection from email sync", "error", err, "workspace_id", account.WorkspaceID, "account_id", account.ID, "message_id", message.ID)
+			slog.ErrorContext(ctx, "failed to enqueue crm CRM signal detection from email sync", "error", err, "workspace_id", account.WorkspaceID, "account_id", account.ID, "message_id", message.ID)
 		}
 	}
 	a.requestSummaryRefreshForMessage(ctx, message, "gmail_sync")

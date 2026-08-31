@@ -6,16 +6,17 @@ import { describe, expect, it } from 'vitest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 describe('TaskDetailPanel description actions', () => {
-  it('keeps edit on the left and uses the shared pinned save actions', () => {
+  it('uses section-pinned edit and save actions', () => {
     const source = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
     const actionsSource = readFileSync(resolve(__dirname, '../../DetailDescriptionEditorActions.tsx'), 'utf8');
-    const editIndex = source.indexOf('Edit description');
-    const editBlock = source.slice(source.lastIndexOf('<div', editIndex), editIndex);
+    const editButtonSource = readFileSync(resolve(__dirname, '../../DetailDescriptionEditButton.tsx'), 'utf8');
 
-    expect(editIndex).toBeGreaterThan(-1);
-    expect(editBlock).toContain('flex justify-start');
-    expect(editBlock).toContain('mt-3');
-    expect(editBlock).not.toContain('justify-end');
+    expect(source).toContain('<DetailDescriptionEditButton');
+    expect(editButtonSource).toContain('absolute inset-y-0 right-0');
+    expect(editButtonSource).toContain('sticky top-3');
+    expect(editButtonSource).toContain('h-9 w-9');
+    expect(editButtonSource).toContain('md:group-hover/desc:opacity-100');
+    expect(editButtonSource).toContain("label = 'Edit description'");
     expect(source).toContain('<DetailDescriptionEditorActions');
     expect(source).toContain('onCancel={cancelDescriptionEditing}');
     expect(actionsSource).toContain('sticky bottom-0');

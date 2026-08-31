@@ -40,12 +40,15 @@ import type {
   CreateCRMCalendarEventRequest,
   UpdateCRMCalendarEventRequest,
   CreateCRMEnrichmentRequest,
-  CreateCRMBuyerSignalRequest,
+  CreateCRMSignalRequest,
   CreateCRMDealHealthScoreRequest,
   CreateCRMSuggestionRequest,
   UpdateCRMSuggestionRequest,
   CreateCRMWritingProfileRequest,
   UpdateCRMWritingProfileRequest,
+  CRMTimelineFilter,
+  CRMCompanyTimelineFilter,
+  CRMSignalFeedFilters,
 } from '@/lib/crmTypes'
 
 // ── Contacts ──
@@ -84,6 +87,16 @@ export function useContactActivities(wsId: string, contactId: string) {
   })
 }
 
+export function useContactTimeline(wsId: string, contactId: string, filter: CRMTimelineFilter, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.crm.contactTimeline(wsId, contactId, filter),
+    queryFn: async ({ pageParam }) => unwrap(await crmContactService.listTimeline(wsId, contactId, filter, pageParam)),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage?.next_cursor,
+    enabled: enabled && !!wsId && !!contactId,
+  })
+}
+
 export function useContactAssociations(wsId: string, contactId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.crm.contactAssociations(wsId, contactId),
@@ -92,11 +105,18 @@ export function useContactAssociations(wsId: string, contactId: string, enabled 
   })
 }
 
-export function useContactSupportConversations(wsId: string, contactId: string, enabled = true) {
+export function useContactSupportConversations(
+  wsId: string,
+  contactId: string,
+  filtersOrEnabled?: { status?: string; search?: string; page?: number; per_page?: number } | boolean,
+  enabled = true,
+) {
+  const filters = typeof filtersOrEnabled === 'boolean' ? undefined : filtersOrEnabled
+  const queryEnabled = typeof filtersOrEnabled === 'boolean' ? filtersOrEnabled : enabled
   return useQuery({
-    queryKey: queryKeys.crm.contactSupportConversations(wsId, contactId),
-    queryFn: async () => unwrap(await crmContactService.listSupportConversations(wsId, contactId)),
-    enabled: enabled && !!wsId && !!contactId,
+    queryKey: queryKeys.crm.contactSupportConversations(wsId, contactId, filters),
+    queryFn: async () => unwrap(await crmContactService.listSupportConversations(wsId, contactId, filters)),
+    enabled: queryEnabled && !!wsId && !!contactId,
   })
 }
 
@@ -118,7 +138,9 @@ export function useUpdateContact(wsId: string) {
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.contacts(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.crm.contact(wsId, id) })
-      qc.invalidateQueries({ queryKey: queryKeys.crm.contactActivities(wsId, id) })
+      qc.invalidateQueries({
+        queryKey: queryKeys.crm.contactActivities(wsId, id),
+      })
       qc.invalidateQueries({ queryKey: ['support', wsId] })
     },
   })
@@ -168,10 +190,61 @@ export function useCompanyActivities(wsId: string, companyId: string) {
   })
 }
 
+export function useCompanyTimeline(wsId: string, companyId: string, filter: CRMCompanyTimelineFilter, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.crm.companyTimeline(wsId, companyId, filter),
+    queryFn: async ({ pageParam }) => unwrap(await crmCompanyService.listTimeline(wsId, companyId, filter, pageParam)),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage?.next_cursor,
+    enabled: enabled && !!wsId && !!companyId,
+  })
+}
+
 export function useCompanyAssociations(wsId: string, companyId: string) {
   return useQuery({
     queryKey: queryKeys.crm.companyAssociations(wsId, companyId),
     queryFn: async () => unwrap(await crmCompanyService.listAssociations(wsId, companyId)),
+    enabled: !!wsId && !!companyId,
+  })
+}
+
+export function useCompanyContacts(
+  wsId: string,
+  companyId: string,
+  filters?: { search?: string; page?: number; per_page?: number },
+) {
+  return useQuery({
+    queryKey: queryKeys.crm.companyContacts(wsId, companyId, filters),
+    queryFn: async () => unwrap(await crmCompanyService.listContacts(wsId, companyId, filters)),
+    enabled: !!wsId && !!companyId,
+  })
+}
+
+export function useCompanyDeals(
+  wsId: string,
+  companyId: string,
+  filters?: { search?: string; page?: number; per_page?: number },
+) {
+  return useQuery({
+    queryKey: queryKeys.crm.companyDeals(wsId, companyId, filters),
+    queryFn: async () => unwrap(await crmCompanyService.listDeals(wsId, companyId, filters)),
+    enabled: !!wsId && !!companyId,
+  })
+}
+
+export function useCompanySupportConversations(
+  wsId: string,
+  companyId: string,
+  filters?: {
+    status?: string
+    search?: string
+    page?: number
+    per_page?: number
+  },
+) {
+  return useQuery({
+    queryKey: queryKeys.crm.companySupportConversations(wsId, companyId, filters),
+    queryFn: async () => unwrap(await crmCompanyService.listSupportConversations(wsId, companyId, filters)),
     enabled: !!wsId && !!companyId,
   })
 }
@@ -214,6 +287,7 @@ interface DealFilters {
   pipeline_id?: string
   stage_id?: string
   owner_member_id?: string
+  contact_id?: string
   search?: string
   page?: number
   per_page?: number
@@ -239,6 +313,16 @@ export function useDealActivities(wsId: string, dealId: string) {
   return useQuery({
     queryKey: queryKeys.crm.dealActivities(wsId, dealId),
     queryFn: async () => unwrap(await crmDealService.listActivities(wsId, dealId)),
+    enabled: !!wsId && !!dealId,
+  })
+}
+
+export function useDealTimeline(wsId: string, dealId: string, filter: CRMTimelineFilter) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.crm.dealTimeline(wsId, dealId, filter),
+    queryFn: async ({ pageParam }) => unwrap(await crmDealService.listTimeline(wsId, dealId, filter, pageParam)),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage?.next_cursor,
     enabled: !!wsId && !!dealId,
   })
 }
@@ -357,8 +441,12 @@ export function useCreateAssociation(wsId: string) {
     mutationFn: async (data: CreateCRMAssociationRequest) => unwrap(await crmAssociationService.create(data)),
     onSuccess: (_, data) => {
       qc.invalidateQueries({ queryKey: ['crm', wsId] })
-      if (data.from_object_type === 'epic' || data.to_object_type === 'epic' ||
-          data.from_object_type === 'task' || data.to_object_type === 'task') {
+      if (
+        data.from_object_type === 'epic' ||
+        data.to_object_type === 'epic' ||
+        data.from_object_type === 'task' ||
+        data.to_object_type === 'task'
+      ) {
         qc.invalidateQueries({ queryKey: ['pm', wsId] })
       }
     },
@@ -510,11 +598,73 @@ export function useEmailAccounts(wsId: string, filters?: { member_id?: string })
   })
 }
 
+export function useInfiniteEmailThreads(
+  wsId: string,
+  filters: {
+    contact_id?: string
+    company_id?: string
+    deal_id?: string
+    search?: string
+    scope?: 'all' | 'direct' | 'needs_reply'
+    sort?: 'newest' | 'oldest'
+  },
+) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.crm.emailThreads(wsId), filters, 'infinite'],
+    queryFn: async ({ pageParam }) => unwrap(await crmEmailService.listThreads(wsId, { ...filters, page: pageParam, per_page: 40 })),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.page * 40 < lastPage.total ? lastPage.page + 1 : undefined),
+    enabled: !!wsId && !!(filters.contact_id || filters.company_id || filters.deal_id),
+  })
+}
+
+export function useEmailThread(wsId: string, threadId?: string) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.emailThreads(wsId), threadId],
+    queryFn: async () => unwrap(await crmEmailService.getThread(wsId, threadId!)),
+    enabled: !!wsId && !!threadId,
+  })
+}
+
+export function useReplyToEmailThread(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ threadId, mode, body_html }: { threadId: string; mode: 'reply' | 'reply_all'; body_html: string }) =>
+      unwrap(await crmEmailService.replyToThread(wsId, threadId, { mode, body_html })),
+    onSuccess: (_, variables) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.emailThreads(wsId) })
+      qc.invalidateQueries({ queryKey: [...queryKeys.crm.emailThreads(wsId), variables.threadId] })
+      qc.invalidateQueries({ queryKey: ['crm', wsId, 'contacts'] })
+      qc.invalidateQueries({ queryKey: ['crm', wsId, 'companies'] })
+    },
+  })
+}
+
+export function useSetEmailThreadDismissed(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ threadId, dismissed }: { threadId: string; dismissed: boolean }) =>
+      unwrap(await crmEmailService.setNeedsReplyDismissed(wsId, threadId, dismissed)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.emailThreads(wsId) }),
+  })
+}
+
+export function useLinkEmailThreadDeal(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ threadId, dealId }: { threadId: string; dealId?: string }) =>
+      unwrap(await crmEmailService.linkThreadDeal(wsId, threadId, dealId)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.emailThreads(wsId) }),
+  })
+}
+
 export function useCreateEmailAccount(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMEmailAccountRequest) => unwrap(await crmEmailService.createAccount(data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.emailAccounts(wsId) }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.emailAccounts(wsId) })
+    },
   })
 }
 
@@ -522,7 +672,9 @@ export function useDisconnectEmailAccount(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => unwrap(await crmEmailService.disconnectAccount(wsId, id)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crm', wsId] })
+    },
   })
 }
 
@@ -530,7 +682,9 @@ export function usePurgeEmailAccount(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => unwrap(await crmEmailService.purgeAccountData(wsId, id)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crm', wsId] })
+    },
   })
 }
 
@@ -551,7 +705,9 @@ export function useSyncEmailAccount(wsId: string) {
   return useMutation({
     mutationFn: async ({ id, mode }: { id: string; mode: 'incremental' | 'historical' }) =>
       unwrap(await crmEmailService.syncAccount(wsId, id, mode)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.emailAccounts(wsId) }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.emailAccounts(wsId) })
+    },
   })
 }
 
@@ -576,8 +732,25 @@ export function useInfiniteContactEmails(wsId: string, contactId: string) {
     queryKey: [...queryKeys.crm.contactEmails(wsId, contactId), 'infinite'],
     queryFn: async ({ pageParam }) => unwrap(await crmEmailService.listByContact(wsId, contactId, pageParam)),
     initialPageParam: 1,
-    getNextPageParam: (lastPage) => lastPage.page * 50 < lastPage.total ? lastPage.page + 1 : undefined,
+    getNextPageParam: (lastPage) => (lastPage.page * 50 < lastPage.total ? lastPage.page + 1 : undefined),
     enabled: !!wsId && !!contactId,
+  })
+}
+
+export function useInfiniteCompanyEmails(wsId: string, companyId: string) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.crm.companyEmails(wsId, companyId), 'infinite'],
+    queryFn: async ({ pageParam }) => {
+      const page = unwrap(await crmEmailService.listByCompany(wsId, companyId, pageParam))
+      if (!page) throw new Error('Failed to load company emails')
+      return page
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage) return undefined
+      return lastPage.page * 50 < lastPage.total ? lastPage.page + 1 : undefined
+    },
+    enabled: !!wsId && !!companyId,
   })
 }
 
@@ -586,7 +759,7 @@ export function useInfiniteDealEmails(wsId: string, dealId: string) {
     queryKey: [...queryKeys.crm.dealEmails(wsId, dealId), 'infinite'],
     queryFn: async ({ pageParam }) => unwrap(await crmEmailService.listByDeal(wsId, dealId, pageParam)),
     initialPageParam: 1,
-    getNextPageParam: (lastPage) => lastPage.page * 50 < lastPage.total ? lastPage.page + 1 : undefined,
+    getNextPageParam: (lastPage) => (lastPage.page * 50 < lastPage.total ? lastPage.page + 1 : undefined),
     enabled: !!wsId && !!dealId,
   })
 }
@@ -595,7 +768,9 @@ export function useCreateEmailMessage(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMEmailMessageRequest) => unwrap(await crmEmailService.createMessage(data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crm', wsId] })
+    },
   })
 }
 
@@ -619,7 +794,9 @@ export function useCreateCalendarEvent(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMCalendarEventRequest) => unwrap(await crmCalendarService.create(data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crm', wsId] })
+    },
   })
 }
 
@@ -628,7 +805,9 @@ export function useUpdateCalendarEvent(wsId: string) {
   return useMutation({
     mutationFn: async ({ id, ...data }: UpdateCRMCalendarEventRequest & { id: string }) =>
       unwrap(await crmCalendarService.update(wsId, id, data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['crm', wsId] }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crm', wsId] })
+    },
   })
 }
 
@@ -646,7 +825,9 @@ export function useCreateEnrichment(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMEnrichmentRequest) => unwrap(await crmEnrichmentService.create(data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.enrichments(wsId) }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.enrichments(wsId) })
+    },
   })
 }
 
@@ -659,17 +840,86 @@ export function useApplyEnrichmentSuggestion(wsId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.crm.enrichments(wsId) })
       qc.invalidateQueries({ queryKey: ['crm', wsId] })
       if (result.object_type === 'contact') {
-        qc.invalidateQueries({ queryKey: queryKeys.crm.contactActivities(wsId, result.object_id) })
+        qc.invalidateQueries({
+          queryKey: queryKeys.crm.contactActivities(wsId, result.object_id),
+        })
       }
     },
   })
 }
 
-export function useBuyerSignals(wsId: string, filters?: { contact_id?: string; deal_id?: string; signal_type?: string }) {
+export function useCRMSignals(
+  wsId: string,
+  filters?: { contact_id?: string; deal_id?: string; company_id?: string; signal_type?: string },
+) {
   return useQuery({
     queryKey: [...queryKeys.crm.signals(wsId), filters],
     queryFn: async () => unwrap(await crmSignalService.list(wsId, filters)),
     enabled: !!wsId,
+  })
+}
+
+export function useSignalWorkspaceFeed(wsId: string, filters?: CRMSignalFeedFilters) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.signals(wsId), 'feed', filters],
+    queryFn: async () => unwrap(await crmSignalService.feed(wsId, filters)),
+    enabled: !!wsId,
+  })
+}
+
+export function useSignalOperations(wsId: string) {
+  return useQuery({
+    queryKey: [...queryKeys.crm.signals(wsId), 'operations'],
+    queryFn: async () => {
+      const [precision, outcomes, rules, policy, routingSettings, rollout, shadowGate, shadowPreview] = await Promise.all([
+        unwrap(await crmSignalService.precision(wsId)),
+		unwrap(await crmSignalService.outcomes(wsId)),
+        unwrap(await crmSignalService.rules(wsId)),
+        unwrap(await crmSignalService.routingPolicy(wsId)),
+		unwrap(await crmSignalService.routingSettings(wsId)),
+		unwrap(await crmSignalService.rollout(wsId)),
+		unwrap(await crmSignalService.shadowGate(wsId)),
+		unwrap(await crmSignalService.shadowPreview(wsId)),
+      ])
+      return { precision: precision.data, outcomes: outcomes.data, rules: rules.data, policy, routingSettings, rollout, shadowGate, shadowPreview }
+    },
+    enabled: !!wsId,
+  })
+}
+
+export function useUpdateSignalRoutingSettings(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: { default_signal_owner_member_id?: string; clear_default_signal_owner?: boolean; minimum_lane_priority?: number }) => unwrap(await crmSignalService.updateRoutingSettings(wsId, payload)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
+  })
+}
+
+export function useActivateSignalRollout(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () => unwrap(await crmSignalService.activateRollout(wsId)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
+  })
+}
+
+export function useActivateSignalRule(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ ruleKey, version }: { ruleKey: string; version: number }) => unwrap(await crmSignalService.activateRule(wsId, ruleKey, version)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
+  })
+}
+
+export function useSaveSignalRoutingPolicy(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: { minimum_priority: number; required_trust: string; route_to_owner: boolean; channels: string[] }) => {
+      const policy = unwrap(await crmSignalService.createRoutingPolicy(wsId, payload))
+      unwrap(await crmSignalService.activateRoutingPolicy(wsId, policy.version))
+      return policy
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }),
   })
 }
 
@@ -689,11 +939,51 @@ export function useDealSignals(wsId: string, dealId: string) {
   })
 }
 
-export function useCreateBuyerSignal(wsId: string) {
+export function useCompanySignals(wsId: string, companyId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.companySignals(wsId, companyId),
+    queryFn: async () => unwrap(await crmSignalService.listByCompany(wsId, companyId)),
+    enabled: !!wsId && !!companyId,
+  })
+}
+
+export function useCreateCRMSignal(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: CreateCRMBuyerSignalRequest) => unwrap(await crmSignalService.create(data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) }) },
+    mutationFn: async (data: CreateCRMSignalRequest) => unwrap(await crmSignalService.create(data)),
+    onSuccess: (_result, data) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+      if (data.contact_id) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, data.contact_id) })
+      if (data.deal_id) qc.invalidateQueries({ queryKey: queryKeys.crm.dealSignals(wsId, data.deal_id) })
+      if (data.company_id) qc.invalidateQueries({ queryKey: queryKeys.crm.companySignals(wsId, data.company_id) })
+    },
+  })
+}
+
+export function useDismissCRMSignal(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ signalId, reason }: { signalId: string; reason: import('@/lib/crmTypes').CRMSignalDismissalReason }) => unwrap(await crmSignalService.dismiss(wsId, signalId, reason)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+      if (contactId) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, contactId) })
+      if (dealId) qc.invalidateQueries({ queryKey: queryKeys.crm.dealSignals(wsId, dealId) })
+      if (companyId) qc.invalidateQueries({ queryKey: queryKeys.crm.companySignals(wsId, companyId) })
+    },
+  })
+}
+
+export function useCRMSignalFeedback(wsId: string, contactId?: string, dealId?: string, companyId?: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ signalId, action }: { signalId: string; action: 'reviewed' | 'acted' }) =>
+      unwrap(await (action === 'acted' ? crmSignalService.acted(wsId, signalId) : crmSignalService.review(wsId, signalId))),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+      if (contactId) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, contactId) })
+      if (dealId) qc.invalidateQueries({ queryKey: queryKeys.crm.dealSignals(wsId, dealId) })
+      if (companyId) qc.invalidateQueries({ queryKey: queryKeys.crm.companySignals(wsId, companyId) })
+    },
   })
 }
 
@@ -709,6 +999,46 @@ export function useContactSummary(wsId: string, contactId: string) {
   })
 }
 
+export function useRefreshContactSummary(wsId: string, contactId: string) {
+  const qc = useQueryClient()
+  const queryKey = queryKeys.crm.contactSummary(wsId, contactId)
+  return useMutation({
+    mutationFn: async () => unwrap(await crmSummaryService.refreshContactIntelligence(wsId, contactId)),
+    onSuccess: (result) => {
+      qc.setQueryData(queryKey, result.summary)
+      qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, contactId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey }),
+  })
+}
+
+export function useCompanySummary(wsId: string, companyId: string) {
+  return useQuery({
+    queryKey: queryKeys.crm.companySummary(wsId, companyId),
+    queryFn: async () => unwrap(await crmSummaryService.getForCompany(wsId, companyId)),
+    enabled: !!wsId && !!companyId,
+    refetchInterval: (query) => {
+      const summary = query.state.data as { status?: string } | null | undefined
+      return summary?.status === 'pending_refresh' || summary?.status === 'stale' ? 15000 : false
+    },
+  })
+}
+
+export function useRefreshCompanySummary(wsId: string, companyId: string) {
+  const qc = useQueryClient()
+  const queryKey = queryKeys.crm.companySummary(wsId, companyId)
+  return useMutation({
+    mutationFn: async () => unwrap(await crmSummaryService.refreshCompanyIntelligence(wsId, companyId)),
+    onSuccess: (result) => {
+      qc.setQueryData(queryKey, result.summary)
+      qc.invalidateQueries({ queryKey: queryKeys.crm.companySignals(wsId, companyId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey }),
+  })
+}
+
 export function useDealSummary(wsId: string, dealId: string) {
   return useQuery({
     queryKey: queryKeys.crm.dealSummary(wsId, dealId),
@@ -718,6 +1048,20 @@ export function useDealSummary(wsId: string, dealId: string) {
       const summary = query.state.data as { status?: string } | null | undefined
       return summary?.status === 'pending_refresh' || summary?.status === 'stale' ? 15000 : false
     },
+  })
+}
+
+export function useRefreshDealSummary(wsId: string, dealId: string) {
+  const qc = useQueryClient()
+  const queryKey = queryKeys.crm.dealSummary(wsId, dealId)
+  return useMutation({
+    mutationFn: async () => unwrap(await crmSummaryService.refreshDealIntelligence(wsId, dealId)),
+    onSuccess: (result) => {
+      qc.setQueryData(queryKey, result.summary)
+      qc.invalidateQueries({ queryKey: queryKeys.crm.dealSignals(wsId, dealId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey }),
   })
 }
 
@@ -741,7 +1085,9 @@ export function useCreateHealthScore(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMDealHealthScoreRequest) => unwrap(await crmHealthScoreService.create(data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.healthScores(wsId) }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.healthScores(wsId) })
+    },
   })
 }
 
@@ -757,7 +1103,9 @@ export function useCreateSuggestion(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMSuggestionRequest) => unwrap(await crmSuggestionService.create(data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.suggestions(wsId) }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.suggestions(wsId) })
+    },
   })
 }
 
@@ -775,10 +1123,10 @@ export function useUpdateSuggestion(wsId: string) {
 
 // ── Phase D: Deal Automation ──
 
-export function usePendingSuggestions(wsId: string) {
+export function usePendingSuggestions(wsId: string, page = 1) {
   return useQuery({
-    queryKey: queryKeys.crm.suggestions(wsId, 'pending'),
-    queryFn: async () => unwrap(await crmSuggestionService.list(wsId, { status: 'pending' })),
+    queryKey: [...queryKeys.crm.suggestions(wsId, 'pending'), page],
+    queryFn: async () => unwrap(await crmSuggestionService.list(wsId, { status: 'pending', page, per_page: 20 })),
     enabled: !!wsId,
   })
 }
@@ -797,8 +1145,7 @@ export function useAcceptSuggestion(wsId: string) {
 export function useDismissSuggestion(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (id: string) =>
-      unwrap(await crmSuggestionService.dismiss(wsId, id)),
+    mutationFn: async ({ id, reason }: { id: string; reason: import('@/lib/crmTypes').CRMSignalDismissalReason }) => unwrap(await crmSuggestionService.dismiss(wsId, id, reason)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crm'] })
     },
@@ -857,7 +1204,9 @@ export function useCreateWritingProfile(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMWritingProfileRequest) => unwrap(await crmWritingProfileService.create(data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.writingProfiles(wsId) }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.writingProfiles(wsId) })
+    },
   })
 }
 
@@ -866,7 +1215,9 @@ export function useUpdateWritingProfile(wsId: string) {
   return useMutation({
     mutationFn: async ({ id, ...data }: UpdateCRMWritingProfileRequest & { id: string }) =>
       unwrap(await crmWritingProfileService.update(wsId, id, data)),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: queryKeys.crm.writingProfiles(wsId) }) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.writingProfiles(wsId) })
+    },
   })
 }
 

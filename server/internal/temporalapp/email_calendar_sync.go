@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
+	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
 )
@@ -69,6 +70,7 @@ func (a *EmailSyncActivities) storeCalendarEvent(
 		if err := a.calendarRepo.Update(ctx, existing); err != nil {
 			return err
 		}
+		a.enqueueCalendarSignalDetection(ctx, existing)
 		return a.reconcileScheduledCalendarMeeting(ctx, existing)
 	}
 	if calendarEventExcluded(settings, account, event) {
@@ -79,7 +81,11 @@ func (a *EmailSyncActivities) storeCalendarEvent(
 		if err := a.reconcileScheduledCalendarMeeting(ctx, existing); err != nil {
 			return err
 		}
-		return a.calendarRepo.Delete(ctx, account.WorkspaceID, existing.ID)
+		if err := a.calendarRepo.Delete(ctx, account.WorkspaceID, existing.ID); err != nil {
+			return err
+		}
+		a.reconcileDeletedCalendarSignals(ctx, existing)
+		return nil
 	}
 
 	resolution, err := a.resolveCalendarAttendees(ctx, account, settings, event)
@@ -139,7 +145,30 @@ func (a *EmailSyncActivities) storeCalendarEvent(
 			return fmt.Errorf("reconcile calendar meeting policy: %w", err)
 		}
 	}
+	a.enqueueCalendarSignalDetection(ctx, record)
 	return nil
+}
+
+func (a *EmailSyncActivities) enqueueCalendarSignalDetection(ctx context.Context, event *model.CRMCalendarEvent) {
+	if a == nil || a.calendarSignalStarter == nil {
+		return
+	}
+	payload, eligible := crmsignal.CalendarPayload(event)
+	if !eligible {
+		return
+	}
+	if err := a.calendarSignalStarter.StartSignalDetection(ctx, crmsignal.CalendarWorkflowKey(*payload), []model.SignalSourcePayload{*payload}); err != nil {
+		slog.WarnContext(ctx, "synced calendar CRM signal enqueue failed", "error", err, "calendar_event_id", event.ID)
+	}
+}
+
+func (a *EmailSyncActivities) reconcileDeletedCalendarSignals(ctx context.Context, event *model.CRMCalendarEvent) {
+	if a == nil || a.calendarSignalRepo == nil || event == nil {
+		return
+	}
+	if err := a.calendarSignalRepo.ReconcileAutomatedSignalsForSource(ctx, event.WorkspaceID, model.CRMSignalSourceMeeting, event.ID, nil); err != nil {
+		slog.WarnContext(ctx, "deleted synced calendar event retained CRM signals", "error", err, "calendar_event_id", event.ID)
+	}
 }
 
 func calendarEventExcluded(settings *model.CRMEmailSyncSettings, account *model.CRMEmailAccount, event *syncpkg.GoogleCalendarEvent) bool {

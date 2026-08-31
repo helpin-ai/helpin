@@ -1,0 +1,23 @@
+helpin-dev.tryunhide.com {
+    @event_pipeline path /api/v1/event /api/v1/events /api/v1/s2s/event /api/v1/s2s/event/ /api/v1/s2s/events /api.*
+    reverse_proxy @event_pipeline localhost:8095
+    @event_sdk path /sdk/*
+    reverse_proxy @event_sdk localhost:8095
+    reverse_proxy localhost:8080
+}
+
+helpin-dev-fe.tryunhide.com {
+    @event_lab_control path /event-test /event-test/
+    rewrite @event_lab_control /event-test/index.html
+    @event_lab_pricing path /event-test/pricing /event-test/pricing/
+    rewrite @event_lab_pricing /event-test/pricing/index.html
+    @event_lab_security path /event-test/security /event-test/security/
+    rewrite @event_lab_security /event-test/security/index.html
+    @event_lab_demo path /event-test/demo /event-test/demo/
+    rewrite @event_lab_demo /event-test/demo/index.html
+    reverse_proxy localhost:5173
+}
+
+helpin-dev-website.tryunhide.com {
+    reverse_proxy localhost:3002
+}

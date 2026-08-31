@@ -121,6 +121,7 @@ type PMTaskFilters struct {
 	SprintID              *string
 	ContactID             *string
 	CompanyID             *string
+	CompanyRollupID       *string
 	DealID                *string
 	SupportConversationID *string
 	IncludeContacts       bool
@@ -129,6 +130,7 @@ type PMTaskFilters struct {
 	IncludeSupport        bool
 	WorkflowID            *string
 	WorkflowStateID       *string
+	StateType             *string
 	TaskType              *string
 	OwnerMemberIDs        []string
 	RequesterID           *string

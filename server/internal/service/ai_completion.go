@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -117,9 +118,10 @@ func completeAI(ctx context.Context, provider llm.Provider, input AICompletionRe
 	}
 	var attemptErrors []error
 	for index, route := range routes {
-		chat := input.Chat
-		chat.Provider = route.Provider
-		chat.Model = route.Model
+		chat, routeErr := completionChatRequest(input.Chat, route)
+		if routeErr != nil {
+			return nil, routeErr
+		}
 		legacyCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
 			WorkspaceID: input.WorkspaceID, FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
 			IdempotencyKey: fmt.Sprintf("%s:route:%d", input.IdempotencyKey, index), Metadata: input.Metadata,
@@ -156,6 +158,10 @@ func (s *AICompletionService) completeAttempt(
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
+	chat, err := completionChatRequest(input.Chat, route)
+	if err != nil {
+		return nil, false, err
+	}
 	attemptKey := fmt.Sprintf("%s:route:%d:%s", input.IdempotencyKey, index, aiUsageStableHash(aiCompletionRouteKey(route)))
 	feature, known := AIUsageFeature(input.FeatureKey)
 	promotional := known && !feature.Chargeable
@@ -172,9 +178,6 @@ func (s *AICompletionService) completeAttempt(
 		return nil, retry, err
 	}
 
-	chat := input.Chat
-	chat.Provider = route.Provider
-	chat.Model = route.Model
 	response, providerErr := s.provider.ChatCompletion(ctx, chat)
 	if providerErr != nil || response == nil {
 		if preflight.ReservationID != "" {
@@ -216,6 +219,35 @@ func (s *AICompletionService) completeAttempt(
 		}
 	}
 	return response, false, nil
+}
+
+func completionChatRequest(input llm.ChatRequest, route AICompletionRoute) (llm.ChatRequest, error) {
+	input.Provider = route.Provider
+	input.Model = route.Model
+	openRouterProvider := strings.TrimSpace(route.OpenRouterProvider)
+	if openRouterProvider == "" {
+		return input, nil
+	}
+	if normalizeCompletionRouteProvider(route.Provider) != "openrouter" {
+		return llm.ChatRequest{}, fmt.Errorf("OpenRouter provider selection requires provider openrouter")
+	}
+	options := map[string]any{}
+	if len(input.ProviderOptions) > 0 && strings.TrimSpace(string(input.ProviderOptions)) != "" {
+		if err := json.Unmarshal(input.ProviderOptions, &options); err != nil {
+			return llm.ChatRequest{}, fmt.Errorf("decode completion provider options: %w", err)
+		}
+		if options == nil {
+			return llm.ChatRequest{}, fmt.Errorf("completion provider options must be a JSON object")
+		}
+	}
+	options["order"] = []string{openRouterProvider}
+	options["allow_fallbacks"] = false
+	raw, err := json.Marshal(options)
+	if err != nil {
+		return llm.ChatRequest{}, fmt.Errorf("encode completion provider options: %w", err)
+	}
+	input.ProviderOptions = raw
+	return input, nil
 }
 
 func completionCandidateRoutes(policy AICompletionRoutePolicy, preferred *AICompletionRoute) []AICompletionRoute {

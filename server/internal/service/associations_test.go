@@ -255,13 +255,15 @@ func newAssociationsTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
-			display_id TEXT NOT NULL
+			display_id TEXT NOT NULL,
+			customer_success_owner_member_id TEXT
 		)`,
 		`CREATE TABLE crm_deals (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,
-			display_id TEXT NOT NULL
+			display_id TEXT NOT NULL,
+			commercial_motion TEXT
 		)`,
 		`CREATE TABLE support_conversations (
 			id TEXT PRIMARY KEY,

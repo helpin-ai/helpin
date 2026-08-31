@@ -38,7 +38,7 @@ func (f *fakeSummaryRequester) RequestDealRefresh(ctx context.Context, workspace
 	return nil
 }
 
-func TestCRMEmailService_CreateMessageEnqueuesBuyerSignalDetection(t *testing.T) {
+func TestCRMEmailService_CreateMessageEnqueuesSignalDetection(t *testing.T) {
 	db := setupCRMEmailLifecycleTestDB(t)
 	emailRepo := repository.NewCRMEmailRepository(db)
 	contactRepo := repository.NewCRMContactRepository(db)
@@ -98,7 +98,7 @@ func TestCRMEmailService_CreateMessageEnqueuesBuyerSignalDetection(t *testing.T)
 	}
 }
 
-func TestCRMEmailService_SendEmailEnqueuesBuyerSignalDetection(t *testing.T) {
+func TestCRMEmailService_SendEmailEnqueuesSignalDetection(t *testing.T) {
 	db := setupCRMEmailLifecycleTestDB(t)
 	emailRepo := repository.NewCRMEmailRepository(db)
 	contactRepo := repository.NewCRMContactRepository(db)
@@ -134,6 +134,9 @@ func TestCRMEmailService_SendEmailEnqueuesBuyerSignalDetection(t *testing.T) {
 	if _, err := svc.SendEmail(ctx, "ws-1", "acct-1", "member-other", false, []string{"buyer@example.com"}, nil, "Follow-up", "<p>Checking in.</p>"); err == nil {
 		t.Fatal("expected non-owner send to be rejected")
 	}
+	if _, err := svc.SendEmail(ctx, "ws-1", "acct-1", "member-other", true, []string{"buyer@example.com"}, nil, "Follow-up", "<p>Checking in.</p>"); err == nil {
+		t.Fatal("expected non-owner send to be rejected even when the caller is an administrator")
+	}
 
 	message, err := svc.SendEmail(ctx, "ws-1", "acct-1", "member-1", false, []string{"buyer@example.com"}, nil, "Follow-up", "<p>Checking in about pricing.</p>")
 	if err != nil {
@@ -150,5 +153,33 @@ func TestCRMEmailService_SendEmailEnqueuesBuyerSignalDetection(t *testing.T) {
 	}
 	if len(summary.contactRefreshes) != 1 {
 		t.Fatalf("contact summary refreshes = %v, want 1", summary.contactRefreshes)
+	}
+}
+
+func TestCRMEmailService_ReplyToThreadRejectsWorkspaceMemberWhoDoesNotOwnMailbox(t *testing.T) {
+	db := setupCRMEmailLifecycleTestDB(t)
+	emailRepo := repository.NewCRMEmailRepository(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	account := &model.CRMEmailAccount{
+		ID: "acct-owner", WorkspaceID: "ws-1", MemberID: "member-owner",
+		Provider: model.CRMEmailProviderGmail, EmailAddress: "owner@example.com",
+		IsActive: true, Status: model.CRMEmailAccountStatusConnected,
+	}
+	if err := emailRepo.CreateAccount(ctx, account); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	thread := &model.CRMEmailThread{
+		ID: "thread-1", WorkspaceID: "ws-1", EmailAccountID: account.ID,
+		ThreadExternalID: "gmail-thread-1", Subject: "Renewal", LastMessageAt: now,
+	}
+	if err := emailRepo.CreateThread(ctx, thread); err != nil {
+		t.Fatalf("create thread: %v", err)
+	}
+
+	svc := &CRMEmailService{emailRepo: emailRepo}
+	if _, err := svc.ReplyToThread(ctx, "ws-1", thread.ID, "member-colleague", "reply", "<p>Reply</p>"); err == nil || err.Error() != "only the connected mailbox owner can reply to this thread" {
+		t.Fatalf("ReplyToThread error = %v, want mailbox-owner authorization error", err)
 	}
 }

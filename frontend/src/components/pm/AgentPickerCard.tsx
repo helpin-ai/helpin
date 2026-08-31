@@ -142,10 +142,10 @@ export function AgentPickerCard({
             showChevron
             triggerVariant={variant === 'inline' ? 'underline' : undefined}
             triggerClassName={cn(
-              'flex-1 justify-start text-xs',
+              'flex-1 justify-start font-normal',
               variant === 'inline'
-                ? 'h-8 px-0 hover:bg-transparent'
-                : 'h-9 border-input bg-background px-2 hover:bg-accent',
+                ? 'h-8 px-0 text-sm text-muted-foreground hover:bg-transparent hover:text-foreground'
+                : 'h-9 border-input bg-background px-2 text-xs hover:bg-accent',
             )}
             emptyContent={<div className="px-2 py-3 text-xs text-muted-foreground">No runnable agents found.</div>}
             renderTrigger={() => (

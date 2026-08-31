@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sync"
 
 	"gorm.io/gorm"
 
@@ -11,7 +13,9 @@ import (
 
 // PMActivityRepository handles DB operations for activity log entries.
 type PMActivityRepository struct {
-	db *gorm.DB
+	db                  *gorm.DB
+	eventTypeColumnOnce sync.Once
+	hasEventTypeColumn  bool
 }
 
 // NewPMActivityRepository creates a new PMActivityRepository.
@@ -95,7 +99,24 @@ func (r *PMActivityRepository) ListByWorkspace(ctx context.Context, workspaceID 
 
 // Create inserts an activity log entry.
 func (r *PMActivityRepository) Create(ctx context.Context, entry *model.PMActivityLog) error {
-	if err := r.db.WithContext(ctx).Create(entry).Error; err != nil {
+	db := r.db.WithContext(ctx)
+	r.eventTypeColumnOnce.Do(func() {
+		r.hasEventTypeColumn = r.db.Migrator().HasColumn(&model.PMActivityLog{}, "event_type")
+	})
+	if !r.hasEventTypeColumn {
+		if entry.EventType != nil {
+			metadata := map[string]interface{}{}
+			if len(entry.Metadata) > 0 {
+				_ = json.Unmarshal(entry.Metadata, &metadata)
+			}
+			metadata["event_type"] = *entry.EventType
+			if encoded, err := json.Marshal(metadata); err == nil {
+				entry.Metadata = encoded
+			}
+		}
+		db = db.Omit("event_type")
+	}
+	if err := db.Create(entry).Error; err != nil {
 		return fmt.Errorf("create activity entry: %w", err)
 	}
 	return nil

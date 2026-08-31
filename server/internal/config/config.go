@@ -136,11 +136,17 @@ type Config struct {
 	GmailClientSecret     string
 	GmailOAuthRedirectURL string
 
-	// CRM LLM provider selection (optional — defaults to "claude")
-	CRMLLMProvider string // "claude" (default) or "openai"
-	CRMLLMAPIKey   string
-	CRMLLMBaseURL  string
-	CRMLLMModel    string
+	// CRM direct-completion routes. Empty values preserve the reviewed
+	// defaults in service.DefaultAICompletionRouteRegistry.
+	CRMLLMProvider                       string
+	CRMLLMModel                          string
+	CRMLLMOpenRouterProvider             string
+	CRMLLMFallbackProvider               string
+	CRMLLMFallbackModel                  string
+	CRMLLMFallbackOpenRouterProvider     string
+	CRMMeetingFallbackProvider           string
+	CRMMeetingFallbackModel              string
+	CRMMeetingFallbackOpenRouterProvider string
 
 	// CRM meeting capture providers. Selection is deployment-owned and defaults to Recall.
 	CRMMeetingCaptureProvider string
@@ -192,6 +198,7 @@ type Config struct {
 	UsermavenAPIKey      string
 	UsermavenServerToken string
 	UsermavenEndpoint    string
+	ClickHouseDSN        string
 
 	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
 	// Firebase Cloud Messaging (optional — mobile push notifications disabled if unset)
@@ -264,6 +271,33 @@ func Load() (*Config, error) {
 		firstNonEmpty(os.Getenv("COMMAND_ROUTER_OPENROUTER_PROVIDER_OPTIONS"), defaultCommandRouterOpenRouterProviderOptionsRaw),
 	)
 	if err != nil {
+		return nil, err
+	}
+	crmLLMProvider := strings.TrimSpace(os.Getenv("CRM_LLM_PROVIDER"))
+	crmLLMModel := strings.TrimSpace(os.Getenv("CRM_LLM_MODEL"))
+	crmLLMOpenRouterProvider := strings.TrimSpace(os.Getenv("CRM_LLM_OPENROUTER_PROVIDER"))
+	crmLLMFallbackProvider := strings.TrimSpace(os.Getenv("CRM_LLM_FALLBACK_PROVIDER"))
+	crmLLMFallbackModel := strings.TrimSpace(os.Getenv("CRM_LLM_FALLBACK_MODEL"))
+	crmLLMFallbackOpenRouterProvider := strings.TrimSpace(os.Getenv("CRM_LLM_FALLBACK_OPENROUTER_PROVIDER"))
+	crmMeetingLLMFallbackProvider := strings.TrimSpace(os.Getenv("CRM_MEETING_LLM_FALLBACK_PROVIDER"))
+	crmMeetingLLMFallbackModel := strings.TrimSpace(os.Getenv("CRM_MEETING_LLM_FALLBACK_MODEL"))
+	crmMeetingLLMFallbackOpenRouterProvider := strings.TrimSpace(os.Getenv("CRM_MEETING_LLM_FALLBACK_OPENROUTER_PROVIDER"))
+	if err := validateOptionalLLMRouteEnv("CRM_LLM_PROVIDER", crmLLMProvider, "CRM_LLM_MODEL", crmLLMModel); err != nil {
+		return nil, err
+	}
+	if err := validateOptionalLLMRouteEnv("CRM_LLM_FALLBACK_PROVIDER", crmLLMFallbackProvider, "CRM_LLM_FALLBACK_MODEL", crmLLMFallbackModel); err != nil {
+		return nil, err
+	}
+	if err := validateOptionalLLMRouteEnv("CRM_MEETING_LLM_FALLBACK_PROVIDER", crmMeetingLLMFallbackProvider, "CRM_MEETING_LLM_FALLBACK_MODEL", crmMeetingLLMFallbackModel); err != nil {
+		return nil, err
+	}
+	if err := validateOpenRouterProviderEnv("CRM_LLM_OPENROUTER_PROVIDER", crmLLMOpenRouterProvider, crmLLMProvider, "openrouter"); err != nil {
+		return nil, err
+	}
+	if err := validateOpenRouterProviderEnv("CRM_LLM_FALLBACK_OPENROUTER_PROVIDER", crmLLMFallbackOpenRouterProvider, crmLLMFallbackProvider, "openrouter"); err != nil {
+		return nil, err
+	}
+	if err := validateOpenRouterProviderEnv("CRM_MEETING_LLM_FALLBACK_OPENROUTER_PROVIDER", crmMeetingLLMFallbackOpenRouterProvider, crmMeetingLLMFallbackProvider, "openrouter"); err != nil {
 		return nil, err
 	}
 	meetingCaptureProvider := strings.ToLower(strings.TrimSpace(firstNonEmpty(os.Getenv("CRM_MEETING_CAPTURE_PROVIDER"), "recall")))
@@ -367,10 +401,15 @@ func Load() (*Config, error) {
 		GmailClientID:                          os.Getenv("GMAIL_CLIENT_ID"),
 		GmailClientSecret:                      os.Getenv("GMAIL_CLIENT_SECRET"),
 		GmailOAuthRedirectURL:                  os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
-		CRMLLMProvider:                         os.Getenv("CRM_LLM_PROVIDER"),
-		CRMLLMAPIKey:                           os.Getenv("CRM_LLM_API_KEY"),
-		CRMLLMBaseURL:                          os.Getenv("CRM_LLM_BASE_URL"),
-		CRMLLMModel:                            os.Getenv("CRM_LLM_MODEL"),
+		CRMLLMProvider:                         crmLLMProvider,
+		CRMLLMModel:                            crmLLMModel,
+		CRMLLMOpenRouterProvider:               crmLLMOpenRouterProvider,
+		CRMLLMFallbackProvider:                 crmLLMFallbackProvider,
+		CRMLLMFallbackModel:                    crmLLMFallbackModel,
+		CRMLLMFallbackOpenRouterProvider:       crmLLMFallbackOpenRouterProvider,
+		CRMMeetingFallbackProvider:             crmMeetingLLMFallbackProvider,
+		CRMMeetingFallbackModel:                crmMeetingLLMFallbackModel,
+		CRMMeetingFallbackOpenRouterProvider:   crmMeetingLLMFallbackOpenRouterProvider,
 		CRMMeetingCaptureProvider:              meetingCaptureProvider,
 		RecallBaseURL:                          strings.TrimRight(strings.TrimSpace(os.Getenv("RECALL_BASE_URL")), "/"),
 		RecallAPIKey:                           strings.TrimSpace(os.Getenv("RECALL_API_KEY")),
@@ -406,11 +445,35 @@ func Load() (*Config, error) {
 		UsermavenAPIKey:                        strings.TrimSpace(os.Getenv("USERMAVEN_API_KEY")),
 		UsermavenServerToken:                   strings.TrimSpace(os.Getenv("USERMAVEN_SERVER_TOKEN")),
 		UsermavenEndpoint:                      strings.TrimSpace(os.Getenv("USERMAVEN_ENDPOINT")),
+		ClickHouseDSN:                          strings.TrimSpace(os.Getenv("CLICKHOUSE_DSN")),
 		FCMServiceAccountJSON:                  strings.TrimSpace(os.Getenv("FCM_SERVICE_ACCOUNT_JSON")),
 		AgentPreviewDebug:                      parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
 		DocsOrderingUseSortKey:                 parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 		TLSAskExtraAllowedDomains:              parseCSV(os.Getenv("TLS_ASK_EXTRA_ALLOWED_DOMAINS")),
 	}, nil
+}
+
+func validateOptionalLLMRouteEnv(providerName, provider, modelName, model string) error {
+	providerSet := strings.TrimSpace(provider) != ""
+	modelSet := strings.TrimSpace(model) != ""
+	if providerSet == modelSet {
+		return nil
+	}
+	return fmt.Errorf("%s and %s must be set together", providerName, modelName)
+}
+
+func validateOpenRouterProviderEnv(name, openRouterProvider, routeProvider, defaultRouteProvider string) error {
+	if strings.TrimSpace(openRouterProvider) == "" {
+		return nil
+	}
+	effectiveProvider := strings.ToLower(strings.TrimSpace(routeProvider))
+	if effectiveProvider == "" {
+		effectiveProvider = strings.ToLower(strings.TrimSpace(defaultRouteProvider))
+	}
+	if effectiveProvider != "openrouter" && effectiveProvider != "openrouter-responses" {
+		return fmt.Errorf("%s requires the corresponding LLM provider to be openrouter", name)
+	}
+	return nil
 }
 
 func firstNonEmpty(values ...string) string {

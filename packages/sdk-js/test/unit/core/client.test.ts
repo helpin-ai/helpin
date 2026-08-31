@@ -142,6 +142,8 @@ describe('HelpinClient', () => {
             email: 'test@example.com',
             first_name: 'Test',
             last_name: 'User',
+            phone: '+1 555 0100',
+            job_title: 'VP Revenue',
             company: {
               id: 'company123',
               name: 'Test Company',
@@ -167,6 +169,8 @@ describe('HelpinClient', () => {
             email: 'test@example.com',
             first_name: 'Test',
             last_name: 'User',
+            phone: '+1 555 0100',
+            job_title: 'VP Revenue',
             source: 'sdk_identify',
             company: {
               id: 'company123',
@@ -427,6 +431,24 @@ describe('HelpinClient', () => {
         }),
         true,
       );
+    });
+  });
+
+  describe('articleView method', () => {
+    it('includes article identity and browser-claimed provenance', async () => {
+      await client.id({ id: 'user123', email: 'buyer@example.com' }, true);
+      client.articleView('article-42', { collection_id: 'collection-1' });
+
+      expect(client.track).toHaveBeenCalledWith('article_view', {
+        article_id: 'article-42',
+        collection_id: 'collection-1',
+        identity_method: 'sdk_identify',
+        identity_trust: 'probabilistic',
+      });
+    });
+
+    it('rejects an empty article ID', () => {
+      expect(() => client.articleView('  ')).toThrow('articleId is required');
     });
   });
 

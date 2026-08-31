@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -11,7 +13,28 @@ import (
 
 // CRMActivityService contains CRM activity business logic.
 type CRMActivityService struct {
-	activityRepo *repository.CRMActivityRepository
+	activityRepo   *repository.CRMActivityRepository
+	summaryRefresh CompanySummaryRefreshRequester
+	signalStarter  interface {
+		StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+	}
+	signalRepo *repository.CRMSignalRepository
+}
+
+// SetCompanySummaryRefresh enables account-summary invalidation after activity changes.
+func (s *CRMActivityService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMActivityService {
+	s.summaryRefresh = refresh
+	return s
+}
+
+// SetSignalDetection enables asynchronous evidence-backed signal analysis for
+// user-authored notes, calls, and meeting notes.
+func (s *CRMActivityService) SetSignalDetection(starter interface {
+	StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+}, signalRepo *repository.CRMSignalRepository) *CRMActivityService {
+	s.signalStarter = starter
+	s.signalRepo = signalRepo
+	return s
 }
 
 // NewCRMActivityService creates a new CRMActivityService.
@@ -69,6 +92,8 @@ func (s *CRMActivityService) Create(ctx context.Context, req model.CreateCRMActi
 	if err := s.activityRepo.Create(ctx, activity); err != nil {
 		return nil, err
 	}
+	s.requestCompanySummaryRefresh(ctx, activity)
+	s.enqueueSignalDetection(ctx, activity)
 	return activity, nil
 }
 
@@ -81,6 +106,10 @@ func (s *CRMActivityService) Update(ctx context.Context, id string, req model.Up
 	if activity == nil {
 		return nil, fmt.Errorf("activity not found")
 	}
+	if activity.Metadata != nil && activity.Metadata["immutable"] == true {
+		return nil, fmt.Errorf("system activity is immutable")
+	}
+	previousSourceType := crmActivitySignalSourceType(activity.ActivityType)
 
 	if req.ActivityType != nil {
 		if !isValidActivityType(*req.ActivityType) {
@@ -113,6 +142,13 @@ func (s *CRMActivityService) Update(ctx context.Context, id string, req model.Up
 	if err := s.activityRepo.Update(ctx, activity); err != nil {
 		return nil, err
 	}
+	if currentSourceType := crmActivitySignalSourceType(activity.ActivityType); s.signalRepo != nil && previousSourceType != "" && previousSourceType != currentSourceType {
+		if err := s.signalRepo.ReconcileAutomatedSignalsForSource(ctx, activity.WorkspaceID, previousSourceType, activity.ID, nil); err != nil {
+			slog.WarnContext(ctx, "updated CRM activity retained CRM signals from its previous type", "error", err, "activity_id", activity.ID)
+		}
+	}
+	s.requestCompanySummaryRefresh(ctx, activity)
+	s.enqueueSignalDetection(ctx, activity)
 	return activity, nil
 }
 
@@ -125,7 +161,75 @@ func (s *CRMActivityService) Delete(ctx context.Context, id string) error {
 	if activity == nil {
 		return fmt.Errorf("activity not found")
 	}
-	return s.activityRepo.Delete(ctx, id)
+	if err := s.activityRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	if s.signalRepo != nil {
+		if sourceType := crmActivitySignalSourceType(activity.ActivityType); sourceType != "" {
+			if err := s.signalRepo.ReconcileAutomatedSignalsForSource(ctx, activity.WorkspaceID, sourceType, activity.ID, nil); err != nil {
+				slog.WarnContext(ctx, "deleted CRM activity retained stale CRM signals", "error", err, "activity_id", activity.ID)
+			}
+		}
+	}
+	s.requestCompanySummaryRefresh(ctx, activity)
+	return nil
+}
+
+func (s *CRMActivityService) enqueueSignalDetection(ctx context.Context, activity *model.CRMActivity) {
+	if s == nil || s.signalStarter == nil || activity == nil {
+		return
+	}
+	sourceType := crmActivitySignalSourceType(activity.ActivityType)
+	body := strings.TrimSpace(derefString(activity.Body))
+	if sourceType == "" {
+		return
+	}
+	if body == "" {
+		if s.signalRepo != nil {
+			if err := s.signalRepo.ReconcileAutomatedSignalsForSource(ctx, activity.WorkspaceID, sourceType, activity.ID, nil); err != nil {
+				slog.WarnContext(ctx, "empty CRM activity retained stale CRM signals", "error", err, "activity_id", activity.ID)
+			}
+		}
+		return
+	}
+	versionAt := activity.UpdatedAt
+	if versionAt.IsZero() {
+		versionAt = time.Now().UTC()
+	}
+	payload := model.SignalSourcePayload{
+		SourceType: sourceType, SourceID: activity.ID, WorkspaceID: activity.WorkspaceID,
+		ContactID: activity.ContactID, DealID: activity.DealID, CompanyID: activity.CompanyID,
+		Subject: strings.TrimSpace(derefString(activity.Subject)), Body: body,
+		Direction: "bilateral", OccurredAt: activity.OccurredAt,
+	}
+	key := fmt.Sprintf("activity-%s-%d", activity.ID, versionAt.UnixNano())
+	if err := s.signalStarter.StartSignalDetection(ctx, key, []model.SignalSourcePayload{payload}); err != nil {
+		slog.WarnContext(ctx, "CRM activity CRM signal enqueue failed", "error", err, "activity_id", activity.ID)
+	}
+}
+
+func (s *CRMActivityService) requestCompanySummaryRefresh(ctx context.Context, activity *model.CRMActivity) {
+	if s == nil || s.summaryRefresh == nil || activity == nil {
+		return
+	}
+	objects := []struct{ objectType, objectID string }{}
+	if activity.CompanyID != nil {
+		objects = append(objects, struct{ objectType, objectID string }{model.CRMObjectCompany, *activity.CompanyID})
+	}
+	if activity.ContactID != nil {
+		objects = append(objects, struct{ objectType, objectID string }{model.CRMObjectContact, *activity.ContactID})
+	}
+	if activity.DealID != nil {
+		objects = append(objects, struct{ objectType, objectID string }{model.CRMObjectDeal, *activity.DealID})
+	}
+	for _, object := range objects {
+		if object.objectID == "" {
+			continue
+		}
+		if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, activity.WorkspaceID, object.objectType, object.objectID); err != nil {
+			slog.ErrorContext(ctx, "failed to request company summary refresh from crm activity", "error", err, "activity_id", activity.ID, "object_type", object.objectType, "object_id", object.objectID)
+		}
+	}
 }
 
 func isValidActivityType(t string) bool {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -12,7 +13,27 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 )
+
+type automationRuleRunEngineStub struct {
+	stoppedRuleIDs []string
+	stopErr        error
+}
+
+func (s *automationRuleRunEngineStub) StartRuleSchedule(
+	context.Context,
+	string,
+	string,
+	string,
+) error {
+	return nil
+}
+
+func (s *automationRuleRunEngineStub) StopRuleSchedule(_ context.Context, ruleID string) error {
+	s.stoppedRuleIDs = append(s.stoppedRuleIDs, ruleID)
+	return s.stopErr
+}
 
 func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -257,6 +278,39 @@ func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 	}
 	if updated == nil || updated.Enabled {
 		t.Fatalf("expected missing-agent cron rule to be disabled, got %#v", updated)
+	}
+}
+
+func TestExecuteScheduledRuleStopsOrphanSchedule(t *testing.T) {
+	db := setupRuleEngineTestDB(t)
+	ruleRepo := repository.NewAutomationRuleRepository(db)
+	runEngine := &automationRuleRunEngineStub{}
+	engine := NewAutomationRuleEngine(ruleRepo, nil, nil, nil, nil, nil, nil, nil).
+		SetRunEngine(runEngine)
+
+	err := engine.ExecuteScheduledRule(context.Background(), "ws-1", "missing-rule")
+	if !errors.Is(err, temporalapp.ErrScheduledRuleNotFound) {
+		t.Fatalf("ExecuteScheduledRule error = %v, want missing-rule sentinel", err)
+	}
+	if len(runEngine.stoppedRuleIDs) != 1 || runEngine.stoppedRuleIDs[0] != "missing-rule" {
+		t.Fatalf("stopped rule IDs = %#v, want missing-rule", runEngine.stoppedRuleIDs)
+	}
+}
+
+func TestExecuteScheduledRuleRetriesWhenOrphanTerminationFails(t *testing.T) {
+	db := setupRuleEngineTestDB(t)
+	ruleRepo := repository.NewAutomationRuleRepository(db)
+	stopErr := errors.New("Temporal unavailable")
+	runEngine := &automationRuleRunEngineStub{stopErr: stopErr}
+	engine := NewAutomationRuleEngine(ruleRepo, nil, nil, nil, nil, nil, nil, nil).
+		SetRunEngine(runEngine)
+
+	err := engine.ExecuteScheduledRule(context.Background(), "ws-1", "missing-rule")
+	if !errors.Is(err, stopErr) {
+		t.Fatalf("ExecuteScheduledRule error = %v, want termination error", err)
+	}
+	if errors.Is(err, temporalapp.ErrScheduledRuleNotFound) {
+		t.Fatal("termination failure must remain transient so cleanup is retried")
 	}
 }
 

@@ -172,16 +172,17 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: paginatedQuerySchema(50, 20, "Maximum number of contacts to return. Defaults to 20, max 50."),
 	},
 	{
-		CommandName: "crm.list_buyer_signals",
-		Alias:       "list_buyer_signals",
+		CommandName: "crm.list_crm_signals",
+		Alias:       "list_crm_signals",
 		Category:    "CRM",
-		Description: "List detected buyer signals from emails, meetings, and support conversations.",
+		Description: "List detected CRM signals from emails, meetings, and support conversations.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"deal_id": map[string]any{"type": "string", "description": "Optional deal ID to filter signals for a specific deal."},
-				"limit":   map[string]any{"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum number of signals to return. Defaults to 20, max 50."},
-				"offset":  map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
+				"deal_id":         map[string]any{"type": "string", "description": "Optional deal ID to filter signals for a specific deal."},
+				"activation_only": map[string]any{"type": "boolean", "description": "Return only versioned signals that pass trust, score, dedupe, and open-task gates."},
+				"limit":           map[string]any{"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum number of signals to return. Defaults to 20, max 50."},
+				"offset":          map[string]any{"type": "integer", "minimum": 0, "description": "Zero-based result offset. Use next_offset from the previous response."},
 			},
 			"required":             []string{},
 			"additionalProperties": false,

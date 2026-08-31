@@ -12,6 +12,7 @@ type PMActivityLog struct {
 	EntityType  string          `json:"entity_type" gorm:"not null"`
 	EntityID    string          `json:"entity_id" gorm:"type:uuid;not null;index"`
 	ActorID     *string         `json:"actor_id" gorm:"type:uuid;index"`
+	EventType   *string         `json:"event_type,omitempty" gorm:"index"`
 	Action      string          `json:"action" gorm:"not null"`
 	FieldName   *string         `json:"field_name"`
 	OldValue    *string         `json:"old_value"`

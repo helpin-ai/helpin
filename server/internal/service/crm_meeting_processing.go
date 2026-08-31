@@ -28,7 +28,7 @@ type meetingArtifactStore interface {
 }
 
 type meetingSignalDetector interface {
-	DetectSignals(ctx context.Context, payloads []model.SignalSourcePayload) ([]model.CRMBuyerSignal, error)
+	DetectSignals(ctx context.Context, payloads []model.SignalSourcePayload) ([]model.CRMSignal, error)
 }
 
 type meetingActivityCreator interface {
@@ -496,7 +496,12 @@ func (s *CRMMeetingProcessingService) projectActivity(
 		Subject:       &subject,
 		Body:          &body,
 		OccurredAt:    occurredAt,
-		Metadata:      map[string]interface{}{"meeting_id": meeting.ID, "platform": meeting.Platform},
+		Metadata: map[string]interface{}{
+			"meeting_id": meeting.ID,
+			"platform":   meeting.Platform,
+			"event_type": "meeting.captured",
+			"immutable":  true,
+		},
 	})
 	if err != nil {
 		return err

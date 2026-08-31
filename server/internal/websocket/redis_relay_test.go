@@ -82,7 +82,7 @@ func TestRedisRelay_Publish_GlobalChannel(t *testing.T) {
 	// Event without WorkspaceID goes to global channel.
 	event := Event{
 		Action:   "created",
-		Entity:   "crm_buyer_signal",
+		Entity:   "crm_signal",
 		EntityID: "sig-1",
 	}
 

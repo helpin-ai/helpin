@@ -136,6 +136,71 @@ func TestListByObjectEnrichedSkipsInferredDuplicatesForCompanyContactAssociation
 	}
 }
 
+func TestListByObjectEnrichedIncludesDealCompaniesViaContacts(t *testing.T) {
+	db := newAssociationsTestDB(t)
+	svc := NewCRMAssociationService(repository.NewCRMAssociationRepository(db))
+
+	seedCRMCompany(t, db, "company-1", "ws-1", "Acme Corp", "CO-1")
+	seedCRMContact(t, db, "contact-1", "ws-1", "Jane Doe", "C-1")
+	seedCRMDeal(t, db, "deal-1", "ws-1", "Expansion", "D-1")
+	seedCRMAssociation(t, db, "assoc-deal-contact", "ws-1", model.CRMObjectDeal, "deal-1", model.CRMObjectContact, "contact-1")
+	seedCRMAssociation(t, db, "assoc-contact-company", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectCompany, "company-1")
+
+	assocs, err := svc.ListByObjectEnriched(context.Background(), "ws-1", model.CRMObjectDeal, "deal-1")
+	if err != nil {
+		t.Fatalf("ListByObjectEnriched returned error: %v", err)
+	}
+	if len(assocs) != 2 {
+		t.Fatalf("expected direct contact plus inferred company, got %d rows", len(assocs))
+	}
+
+	var inferredCompany *model.CRMAssociationEnriched
+	for i := range assocs {
+		assoc := &assocs[i]
+		otherType, otherID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectDeal, "deal-1")
+		if otherType == model.CRMObjectCompany && otherID == "company-1" {
+			inferredCompany = assoc
+		}
+	}
+	if inferredCompany == nil || !inferredCompany.Inferred || inferredCompany.ID != "" {
+		t.Fatalf("expected read-only inferred company association, got %+v", inferredCompany)
+	}
+	if inferredCompany.ContextLabel == nil || *inferredCompany.ContextLabel != "via Jane Doe" {
+		t.Fatalf("expected inferred context label 'via Jane Doe', got %+v", inferredCompany.ContextLabel)
+	}
+}
+
+func TestListByObjectEnrichedPrefersDirectDealCompanyAssociation(t *testing.T) {
+	db := newAssociationsTestDB(t)
+	svc := NewCRMAssociationService(repository.NewCRMAssociationRepository(db))
+
+	seedCRMCompany(t, db, "company-1", "ws-1", "Acme Corp", "CO-1")
+	seedCRMContact(t, db, "contact-1", "ws-1", "Jane Doe", "C-1")
+	seedCRMDeal(t, db, "deal-1", "ws-1", "Expansion", "D-1")
+	seedCRMAssociation(t, db, "assoc-deal-contact", "ws-1", model.CRMObjectDeal, "deal-1", model.CRMObjectContact, "contact-1")
+	seedCRMAssociation(t, db, "assoc-contact-company", "ws-1", model.CRMObjectContact, "contact-1", model.CRMObjectCompany, "company-1")
+	seedCRMAssociation(t, db, "assoc-deal-company", "ws-1", model.CRMObjectDeal, "deal-1", model.CRMObjectCompany, "company-1")
+
+	assocs, err := svc.ListByObjectEnriched(context.Background(), "ws-1", model.CRMObjectDeal, "deal-1")
+	if err != nil {
+		t.Fatalf("ListByObjectEnriched returned error: %v", err)
+	}
+	if len(assocs) != 2 {
+		t.Fatalf("expected direct contact and direct company only, got %d rows", len(assocs))
+	}
+	for i := range assocs {
+		assoc := &assocs[i]
+		otherType, otherID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectDeal, "deal-1")
+		if otherType == model.CRMObjectCompany && otherID == "company-1" {
+			if assoc.Inferred || assoc.ID != "assoc-deal-company" {
+				t.Fatalf("expected direct company association to win, got %+v", assoc)
+			}
+			return
+		}
+	}
+	t.Fatal("expected company association")
+}
+
 func seedCRMDeal(t *testing.T, db *gorm.DB, id, workspaceID, name, displayID string) {
 	t.Helper()
 	if err := db.Exec(

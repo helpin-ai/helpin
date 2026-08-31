@@ -170,7 +170,7 @@ func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID
 		totalCount int
 	)
 	if conversation.CRMContactID != nil && *conversation.CRMContactID != "" {
-		convs, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, *conversation.CRMContactID, model.PMPagination{Page: 1, PerPage: otherConvsLimit})
+		convs, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, *conversation.CRMContactID, "", "", model.PMPagination{Page: 1, PerPage: otherConvsLimit})
 		if err != nil {
 			slog.ErrorContext(ctx, "visitor context: list contact conversations failed", "error", err)
 		}

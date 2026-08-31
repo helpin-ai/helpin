@@ -7,7 +7,7 @@ import {
   buildTaskOwnerDistribution,
   type TaskOwnerDistributionEntry,
   type TaskOwnerInput,
-} from '@/components/pm/taskOwnerDistribution';
+} from '@/components/pm/task-owner-distribution';
 import type { AssignableMember } from '@/lib/types';
 
 interface TaskOwnerDistributionProps {

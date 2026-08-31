@@ -23,6 +23,7 @@ describe('TaskDetailSectionHeading', () => {
     const externalLinksSource = readFileSync(resolve(__dirname, '../../ExternalLinks.tsx'), 'utf8');
 
     expect(panelSource).toContain('<TaskUpdatesView');
+    expect(panelSource).toContain('<TaskDetailSectionHeading title="Updates" icon={Activity01Icon}');
     expect(updatesSource).toContain('<CommentThread');
     expect(updatesSource).toContain("from '@/components/ui/tabs'");
     expect(updatesSource).toContain('<Tabs value={filter}');

@@ -81,7 +81,7 @@ type DealCreationInference struct {
 }
 
 // EvaluateDealCreation checks if signals warrant creating a new deal.
-func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, workspaceID string, signals []model.CRMBuyerSignal) error {
+func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, workspaceID string, signals []model.CRMSignal) error {
 	if s.llmProvider == nil || len(signals) == 0 {
 		return nil
 	}
@@ -97,7 +97,7 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 	}
 
 	// Group signals by contact
-	contactSignals := map[string][]model.CRMBuyerSignal{}
+	contactSignals := map[string][]model.CRMSignal{}
 	for _, sig := range signals {
 		key := ""
 		if sig.ContactID != nil {
@@ -196,7 +196,8 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 		}
 
 		// Apply autonomy thresholds
-		if inference.Confidence >= autonomy.AutoExecuteThreshold {
+		activationApproved := s.allSignalsActivationEligible(ctx, workspaceID, sigs)
+		if inference.Confidence >= autonomy.AutoExecuteThreshold && activationApproved {
 			// Auto-create deal
 			deal, err := s.autoCreateDeal(ctx, workspaceID, contactID, defaultPipeline.ID, firstStage.ID, *inference)
 			if err != nil {
@@ -215,6 +216,7 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 				Title:           "Auto-created deal: " + inference.DealName,
 				Description:     &inference.Reasoning,
 				Context:         model.JSONB(dealContext),
+				SignalIDs:       crmSignalIDs(sigs),
 				Status:          model.CRMSuggestionStatusAccepted,
 				ExecutionStatus: model.CRMSuggestionExecutionSucceeded,
 				ExecutedAt:      &executedAt,
@@ -233,6 +235,7 @@ func (s *DealAutomationService) EvaluateDealCreation(ctx context.Context, worksp
 				Title:          "Suggested deal: " + inference.DealName,
 				Description:    &description,
 				Context:        model.JSONB(dealContext),
+				SignalIDs:      crmSignalIDs(sigs),
 				Status:         model.CRMSuggestionStatusPending,
 				Confidence:     inference.Confidence,
 			}
@@ -277,7 +280,7 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 		// Get recent signals for this deal (last 14 days)
 		since := time.Now().AddDate(0, 0, -14)
 		dealID := deal.ID
-		signals, _, err := s.signalRepo.ListSignals(ctx, workspaceID, model.CRMBuyerSignalListFilters{
+		signals, _, err := s.signalRepo.ListSignals(ctx, workspaceID, model.CRMSignalListFilters{
 			DealID: &dealID,
 		}, model.PMPagination{Page: 1, PerPage: 50})
 		if err != nil {
@@ -285,7 +288,7 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 		}
 
 		// Filter to recent signals
-		var recentSignals []model.CRMBuyerSignal
+		var recentSignals []model.CRMSignal
 		for _, sig := range signals {
 			if sig.DetectedAt.After(since) {
 				recentSignals = append(recentSignals, sig)
@@ -334,7 +337,8 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 		}
 
 		objectType := "deal"
-		if inference.Confidence >= autonomy.AutoExecuteThreshold && targetStage != nil {
+		activationApproved := s.allSignalsActivationEligible(ctx, workspaceID, recentSignals)
+		if inference.Confidence >= autonomy.AutoExecuteThreshold && targetStage != nil && activationApproved {
 			// Auto-advance
 			deal.StageID = targetStage.ID
 			deal.Pipeline = nil
@@ -353,6 +357,7 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 				Title:           fmt.Sprintf("Auto-advanced '%s' to %s", deal.Name, inference.RecommendedStage),
 				Description:     &inference.Reasoning,
 				Context:         model.JSONB(progressionContext),
+				SignalIDs:       crmSignalIDs(recentSignals),
 				Status:          model.CRMSuggestionStatusAccepted,
 				ExecutionStatus: model.CRMSuggestionExecutionSucceeded,
 				ExecutedAt:      &executedAt,
@@ -371,6 +376,7 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 				Title:          fmt.Sprintf("Advance '%s' to %s", deal.Name, inference.RecommendedStage),
 				Description:    &inference.Reasoning,
 				Context:        model.JSONB(progressionContext),
+				SignalIDs:      crmSignalIDs(recentSignals),
 				Status:         model.CRMSuggestionStatusPending,
 				Confidence:     inference.Confidence,
 			}
@@ -381,6 +387,40 @@ func (s *DealAutomationService) EvaluateDealProgression(ctx context.Context, wor
 	}
 
 	return nil
+}
+
+func crmSignalIDs(signals []model.CRMSignal) model.StringArray {
+	ids := make(model.StringArray, 0, len(signals))
+	for _, signal := range signals {
+		if signal.ID != "" {
+			ids = append(ids, signal.ID)
+		}
+	}
+	return ids
+}
+
+func (s *DealAutomationService) allSignalsActivationEligible(ctx context.Context, workspaceID string, signals []model.CRMSignal) bool {
+	if len(signals) == 0 {
+		return false
+	}
+	policy, err := s.signalRepo.GetActiveRoutingPolicy(ctx, workspaceID)
+	if err != nil || policy == nil {
+		return false
+	}
+	for _, signal := range signals {
+		if signal.ID == "" || signal.EvidenceIdentityTrust != model.IdentityTrustVerified || signal.RuleKey == nil || signal.RuleVersion == nil {
+			return false
+		}
+		config, err := s.signalRepo.GetSignalRuleConfigVersion(ctx, workspaceID, *signal.RuleKey, *signal.RuleVersion)
+		if err != nil || config == nil || !config.Enabled || config.ShadowMode || !config.ActivationEligible {
+			return false
+		}
+		delivered, err := s.signalRepo.HasSignalDelivery(ctx, signal.ID, policy.ID)
+		if err != nil || !delivered {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *DealAutomationService) getContactDeals(ctx context.Context, workspaceID, contactID string) []model.CRMDeal {
@@ -452,7 +492,7 @@ type DealProgressionInference struct {
 	Reasoning        string  `json:"reasoning"`
 }
 
-func (s *DealAutomationService) inferDealCreation(ctx context.Context, contact *model.CRMContact, signals []model.CRMBuyerSignal) (*DealCreationInference, error) {
+func (s *DealAutomationService) inferDealCreation(ctx context.Context, contact *model.CRMContact, signals []model.CRMSignal) (*DealCreationInference, error) {
 	signalSummaries := make([]map[string]interface{}, 0, len(signals))
 	for _, sig := range signals {
 		signalSummaries = append(signalSummaries, map[string]interface{}{
@@ -511,7 +551,7 @@ func (s *DealAutomationService) inferDealCreation(ctx context.Context, contact *
 	return &inference, nil
 }
 
-func (s *DealAutomationService) inferDealProgression(ctx context.Context, deal *model.CRMDeal, signals []model.CRMBuyerSignal) (*DealProgressionInference, error) {
+func (s *DealAutomationService) inferDealProgression(ctx context.Context, deal *model.CRMDeal, signals []model.CRMSignal) (*DealProgressionInference, error) {
 	signalSummaries := make([]map[string]interface{}, 0, len(signals))
 	for _, sig := range signals {
 		signalSummaries = append(signalSummaries, map[string]interface{}{
@@ -570,7 +610,7 @@ func (s *DealAutomationService) inferDealProgression(ctx context.Context, deal *
 	return &inference, nil
 }
 
-const dealCreationSystemPrompt = `You are a sales intelligence analyst. Based on detected buyer signals and contact information, determine if a new sales deal should be created.
+const dealCreationSystemPrompt = `You are a sales intelligence analyst. Based on detected CRM signals and contact information, determine if a new sales deal should be created.
 
 Analyze the signals and provide a JSON response:
 {
@@ -586,7 +626,7 @@ Create a deal when there are clear buying signals (pricing inquiries, demo reque
 Do NOT create deals for general inquiries, support questions, or low-intent interactions.
 Be conservative - it's better to miss a deal than create a false one.`
 
-const dealProgressionSystemPrompt = `You are a sales intelligence analyst. Based on a deal's current stage, pipeline stages, and recent buyer signals, determine if the deal should advance to the next stage.
+const dealProgressionSystemPrompt = `You are a sales intelligence analyst. Based on a deal's current stage, pipeline stages, and recent CRM signals, determine if the deal should advance to the next stage.
 
 Analyze and provide a JSON response:
 {

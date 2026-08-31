@@ -263,7 +263,7 @@ func (s *InternalCommandService) SetSupportOperationalServices(inboxService *Sup
 }
 
 // SetCRMReadServices wires read-only CRM listing services used by command-backed
-// CRM tools (contacts and buyer signals; deals use the existing deal service).
+// CRM tools (contacts and CRM signals; deals use the existing deal service).
 func (s *InternalCommandService) SetCRMReadServices(contactService *CRMContactService, signalService *CRMSignalService) {
 	if s == nil {
 		return

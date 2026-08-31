@@ -123,22 +123,25 @@ func (a *CRMSummaryActivities) RefreshSummaryActivity(ctx context.Context, input
 	return result, nil
 }
 
-// DailyReconciliationActivity enqueues refreshes for active deals and recently touched contacts.
+// DailyReconciliationActivity enqueues refreshes for active CRM entities.
 func (a *CRMSummaryActivities) DailyReconciliationActivity(ctx context.Context) (*model.CRMSummaryReconciliationResult, error) {
 	result, err := a.summaryService.RunDailyReconciliation(ctx)
 	if err != nil {
 		a.observeFailure(ctx, "", "crm.contact_summary_refresh", err, model.JSONB{"mode": "daily_reconciliation"})
 		a.observeFailure(ctx, "", "crm.deal_summary_refresh", err, model.JSONB{"mode": "daily_reconciliation"})
+		a.observeFailure(ctx, "", "crm.company_summary_refresh", err, model.JSONB{"mode": "daily_reconciliation"})
 		return result, err
 	}
 	if result != nil {
 		metrics := model.JSONB{
-			"mode":            "daily_reconciliation",
-			"contacts_queued": result.ContactsQueued,
-			"deals_queued":    result.DealsQueued,
+			"mode":             "daily_reconciliation",
+			"contacts_queued":  result.ContactsQueued,
+			"deals_queued":     result.DealsQueued,
+			"companies_queued": result.CompaniesQueued,
 		}
 		a.observeSuccess(ctx, "", "crm.contact_summary_refresh", metrics)
 		a.observeSuccess(ctx, "", "crm.deal_summary_refresh", metrics)
+		a.observeSuccess(ctx, "", "crm.company_summary_refresh", metrics)
 	}
 	return result, nil
 }
@@ -149,6 +152,8 @@ func summaryCatalogID(entityType string) string {
 		return "crm.contact_summary_refresh"
 	case "deal":
 		return "crm.deal_summary_refresh"
+	case "company":
+		return "crm.company_summary_refresh"
 	default:
 		return ""
 	}

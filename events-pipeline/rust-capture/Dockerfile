@@ -1,21 +1,26 @@
-FROM rust:1.88
-RUN set -ex; \
-  apt-get update; \
-  apt-get install -y --no-install-recommends \
-  pkg-config \
-  libsasl2-dev
-RUN DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get -y install tzdata
+FROM rust:1.88-bookworm AS builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+RUN cargo build --release --bins
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV TZ=UTC
-# Set the working directory
 WORKDIR /app
 
-ARG APP_RELEASE_VERSION
+COPY --from=builder /app/target/release/events-pipeline /usr/local/bin/events-pipeline
+COPY --from=builder /app/target/release/replay-worker /usr/local/bin/replay-worker
+COPY --from=builder /app/target/release/nats-bootstrap /usr/local/bin/nats-bootstrap
+COPY --from=builder /app/target/release/session-writer /usr/local/bin/session-writer
+COPY --from=builder /app/data ./data
 
-# Copy the application files into the image
-COPY . .
-
-# Build the application in release mode
-RUN cargo build --release
-
-# Set the command to run the binary
-# CMD ["./target/release/events-pipeline"]
+CMD ["events-pipeline"]

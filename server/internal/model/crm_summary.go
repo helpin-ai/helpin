@@ -76,6 +76,9 @@ type CRMEntitySummary struct {
 	LastTriggeredAt   *time.Time           `json:"last_triggered_at" gorm:"index"`
 	LastError         *string              `json:"last_error"`
 	Metadata          JSONB                `json:"metadata" gorm:"type:jsonb;default:'{}'"`
+	Readiness         *CRMSummaryReadiness `json:"readiness,omitempty" gorm:"-"`
+	Sources           []CRMSummarySource   `json:"sources,omitempty" gorm:"-"`
+	NextStep          string               `json:"next_step,omitempty" gorm:"-"`
 	CreatedAt         time.Time            `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time            `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -87,6 +90,35 @@ type CRMEntitySummaryRefreshInput struct {
 	WorkspaceID string `json:"workspace_id"`
 	EntityType  string `json:"entity_type"`
 	EntityID    string `json:"entity_id"`
+	Force       bool   `json:"force,omitempty"`
+}
+
+// CRMSummaryReadinessStep describes one slot in the automatic-generation threshold.
+type CRMSummaryReadinessStep struct {
+	Key      string `json:"key"`
+	Label    string `json:"label"`
+	Complete bool   `json:"complete"`
+}
+
+// CRMSummaryReadiness reports whether an entity has enough recent evidence.
+type CRMSummaryReadiness struct {
+	Count     int                       `json:"count"`
+	Threshold int                       `json:"threshold"`
+	Ready     bool                      `json:"ready"`
+	Steps     []CRMSummaryReadinessStep `json:"steps"`
+}
+
+// CRMSummarySource identifies an evidence artifact shown beneath a generated summary.
+type CRMSummarySource struct {
+	Key            string    `json:"key"`
+	Type           string    `json:"type"`
+	SourceID       string    `json:"source_id"`
+	ThreadID       string    `json:"thread_id,omitempty"`
+	EntityType     string    `json:"entity_type,omitempty"`
+	EntityID       string    `json:"entity_id,omitempty"`
+	Label          string    `json:"label"`
+	OccurredAt     time.Time `json:"occurred_at"`
+	EmailAccountID string    `json:"email_account_id,omitempty"`
 }
 
 // CRMEntitySummaryRefreshResult reports the outcome of one summary generation run.
@@ -102,6 +134,17 @@ type CRMEntitySummaryRefreshResult struct {
 
 // CRMSummaryReconciliationResult reports the daily reconciliation enqueue counts.
 type CRMSummaryReconciliationResult struct {
-	DealsQueued    int `json:"deals_queued"`
-	ContactsQueued int `json:"contacts_queued"`
+	DealsQueued     int `json:"deals_queued"`
+	ContactsQueued  int `json:"contacts_queued"`
+	CompaniesQueued int `json:"companies_queued"`
+}
+
+// CRMIntelligenceRefreshResult is returned by an explicit intelligence refresh.
+// Signal detection is best-effort so a usable summary can still be returned
+// when one evidence-analysis pass fails.
+type CRMIntelligenceRefreshResult struct {
+	Summary         *CRMEntitySummary `json:"summary"`
+	SourcesAnalyzed int               `json:"sources_analyzed"`
+	SignalsDetected int               `json:"signals_detected"`
+	Warnings        []string          `json:"warnings"`
 }

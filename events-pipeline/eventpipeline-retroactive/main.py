@@ -140,45 +140,60 @@ def run_clickhouse_query(start_timestamp, end_timestamp):
     start_timestamp_str = start_timestamp.format('YYYY-MM-DD HH:mm:ss')
     end_timestamp_str = end_timestamp.format('YYYY-MM-DD HH:mm:ss')
     query = f"""
-    INSERT into usermaven.events (* EXCEPT (_kafka_timestamp_ms ), _kafka_timestamp_ms)
+    INSERT INTO helpin.events
+    (
+        raw_event,
+        _nats_subject,
+        _nats_stream_sequence,
+        _nats_delivery_attempt,
+        _retro_generation,
+        _ingest_version,
+        _written_at
+    )
     WITH retro_window_users AS
     (
         SELECT
             user_anonymous_id,
             argMin(user_id, _timestamp) AS user_id,
             project_id
-        FROM events
+        FROM helpin.events FINAL
         WHERE ((_timestamp >= toDateTime('{start_timestamp_str}')) AND (_timestamp <= toDateTime('{end_timestamp_str}'))) AND (event_type = 'user_identify')
         GROUP BY
             user_anonymous_id,
             project_id
     )
     SELECT
-        * EXCEPT (user_id, right_user_id, right_project_id, right_user_anonymous_id, ver, _kafka_timestamp_ms),
-        right_user_id AS user_id,
-        ver + 1 AS ver,
-        now() AS _kafka_timestamp_ms 
+        jsonMergePatch(
+            left.raw_event,
+            concat('{"user_id":', toJSONString(right.right_user_id), '}')
+        ) AS raw_event,
+        left._nats_subject,
+        left._nats_stream_sequence,
+        left._nats_delivery_attempt,
+        toUInt8(left._retro_generation + 1) AS _retro_generation,
+        (left._nats_stream_sequence * 65536)
+            + ((left._retro_generation + 1) * 256)
+            + left._nats_delivery_attempt AS _ingest_version,
+        now64(3, 'UTC') AS _written_at
     FROM
     (
-        SELECT *
-        FROM events
+        SELECT
+            raw_event,
+            _nats_subject,
+            _nats_stream_sequence,
+            _nats_delivery_attempt,
+            _retro_generation,
+            project_id,
+            user_anonymous_id
+        FROM helpin.events FINAL
         WHERE ((_timestamp >= (now() - toIntervalMonth(6))) AND (_timestamp <= now())) AND ((project_id, user_anonymous_id) IN (
             SELECT
                 project_id,
                 user_anonymous_id
             FROM retro_window_users
-        )) AND (user_id = '') AND (event_id NOT IN (
-            SELECT event_id
-            FROM usermaven.events
-            WHERE ((_timestamp >= (now() - toIntervalMonth(6))) AND (_timestamp <= now())) AND (ver = 1) AND ((project_id, user_anonymous_id) IN (
-                SELECT
-                    project_id,
-                    user_anonymous_id
-                FROM retro_window_users
-            ))
-        ))
+        )) AND (user_id = '') AND (_retro_generation < 255)
     ) AS left
-    LEFT JOIN
+    INNER JOIN
     (
         SELECT
             project_id AS right_project_id,

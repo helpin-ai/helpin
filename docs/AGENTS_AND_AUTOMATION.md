@@ -191,7 +191,7 @@ Product-owned backend behavior implemented directly in services, repositories, o
 
 Examples:
 
-- CRM buyer signal ingestion
+- CRM signal ingestion
 - CRM contact/deal summary refresh
 - deterministic PM epic and sprint automations
 

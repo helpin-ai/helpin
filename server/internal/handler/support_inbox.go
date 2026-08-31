@@ -1135,7 +1135,9 @@ func (h *SupportInboxHandler) ListContactConversations(w http.ResponseWriter, r 
 	contactID := chi.URLParam(r, "id")
 	pagination := queryPagination(r)
 
-	conversations, total, err := h.supportService.ListContactConversations(r.Context(), workspaceID, contactID, pagination)
+	conversations, total, err := h.supportService.ListContactConversations(
+		r.Context(), workspaceID, contactID, r.URL.Query().Get("status"), r.URL.Query().Get("search"), pagination,
+	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1148,6 +1150,24 @@ func (h *SupportInboxHandler) ListContactConversations(w http.ResponseWriter, r 
 		"total": total,
 		"page":  pagination.Page,
 	})
+}
+
+// ListCompanyConversations handles GET /api/crm/companies/{id}/support-conversations.
+func (h *SupportInboxHandler) ListCompanyConversations(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	companyID := chi.URLParam(r, "id")
+	pagination := queryPagination(r)
+	conversations, total, err := h.supportService.ListCompanyConversations(
+		r.Context(), workspaceID, companyID, r.URL.Query().Get("status"), r.URL.Query().Get("search"), pagination,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if conversations == nil {
+		conversations = []model.SupportConversation{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": conversations, "total": total, "page": pagination.Page})
 }
 
 // RunAgent handles POST /api/support/tickets/{id}/run-agent.
@@ -1292,13 +1312,15 @@ func (h *SupportInboxHandler) GetInstallation(w http.ResponseWriter, r *http.Req
 	}
 
 	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
-		ID:          inst.ID,
-		WorkspaceID: inst.WorkspaceID,
-		WidgetKey:   inst.WidgetKey,
-		Settings:    *settings,
-		Active:      inst.Active,
-		CreatedAt:   inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:   inst.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:                       inst.ID,
+		WorkspaceID:              inst.WorkspaceID,
+		WidgetKey:                inst.WidgetKey,
+		AllowedOrigins:           []string(inst.AllowedOrigins),
+		IdentityVerificationMode: inst.IdentityVerificationMode,
+		Settings:                 *settings,
+		Active:                   inst.Active,
+		CreatedAt:                inst.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:                inst.UpdatedAt.Format(time.RFC3339),
 	})
 }
 
@@ -1323,13 +1345,15 @@ func (h *SupportInboxHandler) UpdateInstallationSettings(w http.ResponseWriter, 
 	}
 
 	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
-		ID:          inst.ID,
-		WorkspaceID: inst.WorkspaceID,
-		WidgetKey:   inst.WidgetKey,
-		Settings:    *settings,
-		Active:      inst.Active,
-		CreatedAt:   inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:   inst.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:                       inst.ID,
+		WorkspaceID:              inst.WorkspaceID,
+		WidgetKey:                inst.WidgetKey,
+		AllowedOrigins:           []string(inst.AllowedOrigins),
+		IdentityVerificationMode: inst.IdentityVerificationMode,
+		Settings:                 *settings,
+		Active:                   inst.Active,
+		CreatedAt:                inst.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:                inst.UpdatedAt.Format(time.RFC3339),
 	})
 }
 
@@ -1348,13 +1372,35 @@ func (h *SupportInboxHandler) RegenerateWidgetKey(w http.ResponseWriter, r *http
 	}
 
 	writeJSON(w, http.StatusOK, model.InstallationSettingsResponse{
-		ID:          inst.ID,
-		WorkspaceID: inst.WorkspaceID,
-		WidgetKey:   inst.WidgetKey,
-		Settings:    *settings,
-		Active:      inst.Active,
-		CreatedAt:   inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:   inst.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:                       inst.ID,
+		WorkspaceID:              inst.WorkspaceID,
+		WidgetKey:                inst.WidgetKey,
+		AllowedOrigins:           []string(inst.AllowedOrigins),
+		IdentityVerificationMode: inst.IdentityVerificationMode,
+		Settings:                 *settings,
+		Active:                   inst.Active,
+		CreatedAt:                inst.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:                inst.UpdatedAt.Format(time.RFC3339),
+	})
+}
+
+// RotateWidgetSecret handles POST /api/support/inbox/installations/rotate-secret.
+func (h *SupportInboxHandler) RotateWidgetSecret(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	secretKey, err := h.supportService.RotateWidgetSecret(
+		r.Context(), workspaceID, middleware.GetUserID(r.Context()),
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.RotateWidgetSecretResponse{
+		SecretKey: secretKey,
+		RotatedAt: time.Now().UTC().Format(time.RFC3339),
 	})
 }
 

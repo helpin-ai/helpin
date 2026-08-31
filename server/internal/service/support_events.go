@@ -10,6 +10,10 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
+type supportSignalStarter interface {
+	StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+}
+
 // SupportEventInput is the service-level input for recording a support event.
 type SupportEventInput struct {
 	WorkspaceID     string
@@ -36,9 +40,13 @@ type SupportEventInput struct {
 
 // SupportEventService records shared operational support events.
 type SupportEventService struct {
-	eventRepo   *repository.SupportEventRepository
-	coverageSvc *SupportCoverageService
-	logger      *slog.Logger
+	eventRepo        *repository.SupportEventRepository
+	coverageSvc      *SupportCoverageService
+	summaryRefresh   CompanySummaryRefreshRequester
+	messageRepo      *repository.SupportMessageRepository
+	conversationRepo *repository.SupportConversationRepository
+	signalStarter    supportSignalStarter
+	logger           *slog.Logger
 }
 
 // NewSupportEventService creates a new SupportEventService.
@@ -51,6 +59,22 @@ func NewSupportEventService(
 		coverageSvc: coverageSvc,
 		logger:      slog.Default().With("service", "support_events"),
 	}
+}
+
+// SetSignalDetection enables CRM-signal detection for customer messages.
+func (s *SupportEventService) SetSignalDetection(
+	messageRepo *repository.SupportMessageRepository,
+	conversationRepo *repository.SupportConversationRepository,
+	starter supportSignalStarter,
+) *SupportEventService {
+	s.messageRepo, s.conversationRepo, s.signalStarter = messageRepo, conversationRepo, starter
+	return s
+}
+
+// SetCompanySummaryRefresh enables linked-account invalidation for support activity.
+func (s *SupportEventService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *SupportEventService {
+	s.summaryRefresh = refresh
+	return s
 }
 
 // RecordEvent writes a support event and passes it to coverage for
@@ -70,8 +94,44 @@ func (s *SupportEventService) RecordEvent(ctx context.Context, input SupportEven
 			// Non-fatal: event is already persisted.
 		}
 	}
+	if s.summaryRefresh != nil && event.ConversationID != nil && *event.ConversationID != "" {
+		if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, event.WorkspaceID, model.CRMObjectSupportConversation, *event.ConversationID); err != nil {
+			s.logger.WarnContext(ctx, "company summary refresh request failed", "error", err, "conversation_id", *event.ConversationID)
+		}
+	}
+	if event.EventType == model.SupportEventCustomerMessageCreated {
+		if err := s.enqueueSupportSignalDetection(ctx, event); err != nil {
+			s.logger.WarnContext(ctx, "support CRM signal enqueue failed", "error", err, "message_id", stringPointerValue(event.MessageID))
+		}
+	}
 
 	return nil
+}
+
+func (s *SupportEventService) enqueueSupportSignalDetection(ctx context.Context, event *model.SupportEvent) error {
+	if s.signalStarter == nil || s.messageRepo == nil || s.conversationRepo == nil || event.MessageID == nil || event.ConversationID == nil {
+		return nil
+	}
+	message, err := s.messageRepo.GetByID(ctx, *event.MessageID)
+	if err != nil || message == nil {
+		return err
+	}
+	if message.SenderType != "customer" || message.IsInternal || message.MessageType != "reply" {
+		return nil
+	}
+	conversation, err := s.conversationRepo.GetByID(ctx, event.WorkspaceID, *event.ConversationID, "", model.RoleOwner)
+	if err != nil || conversation == nil {
+		return err
+	}
+	payload := model.PayloadFromSupportMessage(message, conversation)
+	return s.signalStarter.StartSignalDetection(ctx, "support-"+message.ID, []model.SignalSourcePayload{payload})
+}
+
+func stringPointerValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (s *SupportEventService) inputToEvent(input SupportEventInput) *model.SupportEvent {

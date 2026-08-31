@@ -145,6 +145,14 @@ func (r *CRMDealRepository) List(ctx context.Context, workspaceID string, filter
 	if filters.OwnerMemberID != nil && *filters.OwnerMemberID != "" {
 		query = query.Where("owner_member_id = ?", *filters.OwnerMemberID)
 	}
+	if filters.ContactID != nil && *filters.ContactID != "" {
+		query = query.Where(`EXISTS (
+			SELECT 1 FROM crm_associations ca
+			WHERE ca.workspace_id = crm_deals.workspace_id
+			  AND ((ca.from_object_type = 'deal' AND ca.from_object_id = crm_deals.id AND ca.to_object_type = 'contact' AND ca.to_object_id = ?)
+			    OR (ca.to_object_type = 'deal' AND ca.to_object_id = crm_deals.id AND ca.from_object_type = 'contact' AND ca.from_object_id = ?))
+		)`, *filters.ContactID, *filters.ContactID)
+	}
 	if filters.Search != nil && *filters.Search != "" {
 		search := "%" + strings.ToLower(strings.TrimSpace(*filters.Search)) + "%"
 		query = query.Where("LOWER(name) LIKE ?", search)
@@ -237,9 +245,10 @@ func (r *CRMDealRepository) SeedDefaultPipeline(ctx context.Context, workspaceID
 	}
 
 	pipeline := &model.CRMPipeline{
-		WorkspaceID: workspaceID,
-		Name:        "Sales Pipeline",
-		IsDefault:   true,
+		WorkspaceID:             workspaceID,
+		Name:                    "Sales Pipeline",
+		IsDefault:               true,
+		DefaultCommercialMotion: model.CRMDealMotionNewBusiness,
 		Stages: []model.CRMPipelineStage{
 			{Name: "Appointment Scheduled", StageType: "open", Position: 0, Probability: 20},
 			{Name: "Qualified to Buy", StageType: "open", Position: 1, Probability: 40},

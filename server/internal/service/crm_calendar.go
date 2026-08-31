@@ -3,16 +3,38 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // CRMCalendarService contains CRM calendar business logic.
 type CRMCalendarService struct {
-	calendarRepo *repository.CRMCalendarRepository
+	calendarRepo   *repository.CRMCalendarRepository
+	summaryRefresh CompanySummaryRefreshRequester
+	signalStarter  interface {
+		StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+	}
+	signalRepo *repository.CRMSignalRepository
+}
+
+// SetCompanySummaryRefresh enables linked-account invalidation after calendar changes.
+func (s *CRMCalendarService) SetCompanySummaryRefresh(refresh CompanySummaryRefreshRequester) *CRMCalendarService {
+	s.summaryRefresh = refresh
+	return s
+}
+
+// SetSignalDetection enables versioned CRM-signal analysis for calendar
+// events and stale-signal cleanup when an event is removed.
+func (s *CRMCalendarService) SetSignalDetection(starter interface {
+	StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+}, signalRepo *repository.CRMSignalRepository) *CRMCalendarService {
+	s.signalStarter, s.signalRepo = starter, signalRepo
+	return s
 }
 
 // NewCRMCalendarService creates a new CRMCalendarService.
@@ -68,6 +90,8 @@ func (s *CRMCalendarService) Create(ctx context.Context, req model.CreateCRMCale
 	if err := s.calendarRepo.Create(ctx, event); err != nil {
 		return nil, err
 	}
+	s.requestCompanySummaryRefresh(ctx, event)
+	s.enqueueSignalDetection(ctx, event)
 	return event, nil
 }
 
@@ -80,6 +104,7 @@ func (s *CRMCalendarService) Update(ctx context.Context, workspaceID, id string,
 	if event == nil {
 		return nil, fmt.Errorf("calendar event not found")
 	}
+	s.requestCompanySummaryRefresh(ctx, event)
 
 	if req.Title != nil {
 		title := strings.TrimSpace(*req.Title)
@@ -119,6 +144,8 @@ func (s *CRMCalendarService) Update(ctx context.Context, workspaceID, id string,
 	if err := s.calendarRepo.Update(ctx, event); err != nil {
 		return nil, err
 	}
+	s.requestCompanySummaryRefresh(ctx, event)
+	s.enqueueSignalDetection(ctx, event)
 	return event, nil
 }
 
@@ -131,7 +158,50 @@ func (s *CRMCalendarService) Delete(ctx context.Context, workspaceID, id string)
 	if event == nil {
 		return fmt.Errorf("calendar event not found")
 	}
-	return s.calendarRepo.Delete(ctx, workspaceID, id)
+	if err := s.calendarRepo.Delete(ctx, workspaceID, id); err != nil {
+		return err
+	}
+	s.requestCompanySummaryRefresh(ctx, event)
+	s.reconcileDeletedSignals(ctx, event)
+	return nil
+}
+
+func (s *CRMCalendarService) enqueueSignalDetection(ctx context.Context, event *model.CRMCalendarEvent) {
+	if s == nil || s.signalStarter == nil {
+		return
+	}
+	payload, eligible := crmsignal.CalendarPayload(event)
+	if !eligible {
+		return
+	}
+	if err := s.signalStarter.StartSignalDetection(ctx, crmsignal.CalendarWorkflowKey(*payload), []model.SignalSourcePayload{*payload}); err != nil {
+		slog.WarnContext(ctx, "calendar CRM signal enqueue failed", "error", err, "calendar_event_id", event.ID)
+	}
+}
+
+func (s *CRMCalendarService) reconcileDeletedSignals(ctx context.Context, event *model.CRMCalendarEvent) {
+	if s == nil || s.signalRepo == nil || event == nil {
+		return
+	}
+	if err := s.signalRepo.ReconcileAutomatedSignalsForSource(ctx, event.WorkspaceID, model.CRMSignalSourceMeeting, event.ID, nil); err != nil {
+		slog.WarnContext(ctx, "deleted calendar event retained stale CRM signals", "error", err, "calendar_event_id", event.ID)
+	}
+}
+
+func (s *CRMCalendarService) requestCompanySummaryRefresh(ctx context.Context, event *model.CRMCalendarEvent) {
+	if s == nil || s.summaryRefresh == nil || event == nil {
+		return
+	}
+	if event.DealID != nil && *event.DealID != "" {
+		if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, event.WorkspaceID, model.CRMObjectDeal, *event.DealID); err != nil {
+			slog.WarnContext(ctx, "failed to request company summary refresh from calendar deal", "error", err, "calendar_event_id", event.ID, "deal_id", *event.DealID)
+		}
+	}
+	for _, contactID := range event.ContactIDs {
+		if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, event.WorkspaceID, model.CRMObjectContact, contactID); err != nil {
+			slog.WarnContext(ctx, "failed to request company summary refresh from calendar contact", "error", err, "calendar_event_id", event.ID, "contact_id", contactID)
+		}
+	}
 }
 
 func validateCalendarEventWindow(start, end time.Time) error {

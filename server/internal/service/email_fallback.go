@@ -1198,6 +1198,13 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	}
 
 	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, content, senderName)
+	if s.supportInboxService != nil {
+		s.supportInboxService.recordSupportEvent(SupportEventInput{
+			WorkspaceID: conv.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
+			ConversationID: &conv.ID, MessageID: &createdMsg.ID,
+			ActorType: model.SupportEventActorCustomer, Channel: "email",
+		})
+	}
 
 	s.logger.InfoContext(ctx, "postmark inbound created support message",
 		"message_id", strings.TrimSpace(payload.MessageID),
@@ -3527,6 +3534,13 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conversation, content, customerName)
+	if s.supportInboxService != nil {
+		s.supportInboxService.recordSupportEvent(SupportEventInput{
+			WorkspaceID: conversation.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
+			ConversationID: &conversation.ID, MessageID: &message.ID,
+			ActorType: model.SupportEventActorCustomer, Channel: "email",
+		})
+	}
 
 	if s.wsPublisher != nil {
 		s.wsPublisher.Publish(websocket.Event{

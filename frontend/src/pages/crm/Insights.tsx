@@ -2,29 +2,23 @@ import { useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { CRMSearchResults } from '@/components/crm/CRMSearchResults';
+import { SignalWorkspaceFeed } from '@/components/crm/SignalWorkspaceFeed';
+import { SuggestionCard } from '@/components/crm/SuggestionCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Activity01Icon,
-  Alert01Icon,
-  BulbIcon,
-  Calendar01Icon,
   ChartIncreaseIcon,
   CheckmarkCircle02Icon,
-  Clock03Icon,
-  DollarCircleIcon,
   FavouriteIcon,
   Mail01Icon,
-  Message01Icon,
   Search01Icon,
   SparklesIcon,
-  Tick01Icon,
-  UserCheck01Icon,
 } from '@/lib/icons';
 import {
   useAcceptSuggestion,
-  useBuyerSignals,
+  useCRMSignals,
   useDismissSuggestion,
   useHealthScores,
   usePendingSuggestions,
@@ -32,35 +26,9 @@ import {
 import { useTitle } from '@/hooks/useTitle';
 import { cn, timeAgo } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import type { CRMBuyerSignal, CRMDealHealthScore, CRMSignalSourceType, CRMSignalType, CRMSuggestion } from '@/lib/crmTypes';
+import type { CRMDealHealthScore, CRMSignalDismissalReason, CRMSuggestion } from '@/lib/crmTypes';
 
 type Tone = 'neutral' | 'good' | 'warn' | 'danger' | 'accent';
-
-const signalTypeConfig: Record<CRMSignalType, { label: string; tone: Tone; icon: typeof Activity01Icon }> = {
-  buying_intent: { label: 'Buying intent', tone: 'good', icon: DollarCircleIcon },
-  budget_signal: { label: 'Budget', tone: 'good', icon: ChartIncreaseIcon },
-  timeline_signal: { label: 'Timeline', tone: 'accent', icon: Calendar01Icon },
-  champion_signal: { label: 'Champion', tone: 'good', icon: UserCheck01Icon },
-  competitor_mention: { label: 'Competitor', tone: 'warn', icon: Alert01Icon },
-  objection: { label: 'Objection', tone: 'warn', icon: Message01Icon },
-  risk_signal: { label: 'Risk', tone: 'danger', icon: Alert01Icon },
-};
-
-const sourceConfig: Record<CRMSignalSourceType, { label: string; icon: typeof Activity01Icon }> = {
-  email: { label: 'Email', icon: Mail01Icon },
-  meeting: { label: 'Meeting', icon: Calendar01Icon },
-  support: { label: 'Support', icon: Message01Icon },
-  note: { label: 'Note', icon: Message01Icon },
-  manual: { label: 'Manual', icon: Activity01Icon },
-};
-
-const suggestionTypeConfig: Record<CRMSuggestion['suggestion_type'], { label: string; icon: typeof BulbIcon; tone: Tone }> = {
-  deal_create: { label: 'New deal', icon: DollarCircleIcon, tone: 'good' },
-  deal_advance: { label: 'Stage advance', icon: ChartIncreaseIcon, tone: 'accent' },
-  follow_up: { label: 'Follow up', icon: Mail01Icon, tone: 'neutral' },
-  enrichment: { label: 'Enrichment', icon: BulbIcon, tone: 'neutral' },
-  risk_alert: { label: 'Risk alert', icon: Alert01Icon, tone: 'danger' },
-};
 
 function toneClasses(tone: Tone) {
   switch (tone) {
@@ -149,7 +117,7 @@ function IntelligenceReadinessState({
           </div>
           <h2 className="mt-4 text-lg font-semibold">No CRM intelligence yet</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Insights appear after Helpin has CRM activity to analyze. Connect email or add CRM records, then buyer signals,
+            Insights appear after Helpin has CRM activity to analyze. Connect email or add CRM records, then CRM signals,
             review suggestions, and deal health scores will show here when there is enough evidence.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
@@ -170,7 +138,7 @@ function IntelligenceReadinessState({
 
         <div className="space-y-3">
           <div className="rounded-lg border bg-muted/20 p-4">
-            <p className="text-sm font-medium">What creates buyer signals</p>
+            <p className="text-sm font-medium">What creates CRM signals</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               Email threads, meetings, support conversations, notes, and CRM activity can produce signals such as intent,
               budget, objections, risk, and timeline pressure.
@@ -226,67 +194,6 @@ function StatTile({
   );
 }
 
-function BuyerSignalRow({ signal }: { signal: CRMBuyerSignal }) {
-  const config = signalTypeConfig[signal.signal_type] ?? {
-    label: signal.signal_type.replace(/_/g, ' '),
-    tone: 'neutral' as const,
-    icon: Activity01Icon,
-  };
-  const source = sourceConfig[signal.source_type] ?? sourceConfig.manual;
-  const SignalIcon = config.icon;
-  const SourceIcon = source.icon;
-  const confidence = Math.round(signal.confidence * 100);
-
-  return (
-    <div className="rounded-lg border bg-card p-3 transition-colors hover:bg-muted/20">
-      <div className="flex items-start gap-3">
-        <div className={cn('mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border', toneClasses(config.tone))}>
-          <SignalIcon className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className={cn('capitalize', toneClasses(config.tone))}>
-              {config.label}
-            </Badge>
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <SourceIcon className="h-3.5 w-3.5" />
-              {source.label}
-            </span>
-            {signal.metadata?.message_direction ? (
-              <span className="text-xs capitalize text-muted-foreground">{signal.metadata.message_direction}</span>
-            ) : null}
-          </div>
-
-          <p className="mt-2 text-sm leading-5">{signal.summary || 'Signal detected'}</p>
-
-          {signal.evidence_excerpt ? (
-            <p className="mt-2 line-clamp-2 rounded-md border-l-2 border-border bg-muted/30 px-3 py-2 text-xs leading-5 text-muted-foreground">
-              {signal.evidence_excerpt}
-            </p>
-          ) : null}
-
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1">
-              <Clock03Icon className="h-3.5 w-3.5" />
-              {timeAgo(signal.detected_at)}
-            </span>
-            {typeof signal.metadata?.participant_count === 'number' ? (
-              <span>{signal.metadata.participant_count} participants</span>
-            ) : null}
-            {signal.source_thread_id ? <span>Thread linked</span> : null}
-          </div>
-        </div>
-        <div className="w-16 shrink-0 text-right">
-          <p className="text-xs font-medium tabular-nums">{confidence}%</p>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-            <div className={cn('h-full rounded-full', progressClasses(config.tone))} style={{ width: `${confidence}%` }} />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ReviewQueue({
   suggestions,
   isLoading,
@@ -300,7 +207,7 @@ function ReviewQueue({
   isLoading: boolean;
   hasSignals: boolean;
   onAccept: (id: string) => void;
-  onDismiss: (id: string) => void;
+  onDismiss: (id: string, reason: CRMSignalDismissalReason) => void;
   isMutating: boolean;
   onViewAll: () => void;
 }) {
@@ -327,50 +234,11 @@ function ReviewQueue({
             description={
               hasSignals
                 ? 'The signal feed has activity, but nothing currently crosses the review threshold for manual approval.'
-                : 'Suggested actions will appear after buyer signals point to a deal, follow-up, enrichment, or risk worth reviewing.'
+                : 'Suggested actions will appear after CRM signals point to a deal, follow-up, enrichment, or risk worth reviewing.'
             }
           />
         ) : (
-          suggestions.slice(0, 4).map((suggestion) => {
-            const config = suggestionTypeConfig[suggestion.suggestion_type] ?? {
-              label: suggestion.suggestion_type.replace(/_/g, ' '),
-              icon: BulbIcon,
-              tone: 'neutral' as const,
-            };
-            const Icon = config.icon;
-            const confidence = Math.round(suggestion.confidence * 100);
-
-            return (
-              <div key={suggestion.id} className="rounded-lg border p-3">
-                <div className="flex items-start gap-3">
-                  <div className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border', toneClasses(config.tone))}>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className={cn('text-[11px]', toneClasses(config.tone))}>
-                        {config.label}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">{confidence}% confidence</span>
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-sm font-medium leading-5">{suggestion.title}</p>
-                    {suggestion.description ? (
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{suggestion.description}</p>
-                    ) : null}
-                    <div className="mt-3 flex gap-2">
-                      <Button size="xs" onClick={() => onAccept(suggestion.id)} disabled={isMutating}>
-                        <Tick01Icon className="h-3 w-3" />
-                        Approve
-                      </Button>
-                      <Button size="xs" variant="ghost" onClick={() => onDismiss(suggestion.id)} disabled={isMutating}>
-                        Dismiss
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+          suggestions.slice(0, 4).map((suggestion) => <SuggestionCard key={suggestion.id} suggestion={suggestion} onAccept={onAccept} onDismiss={onDismiss} isAccepting={isMutating} isDismissing={isMutating} compact />)
         )}
       </CardContent>
     </Card>
@@ -412,30 +280,29 @@ function HealthRow({ healthScore }: { healthScore: CRMDealHealthScore }) {
 }
 
 export function InsightsPage() {
-  useTitle('CRM Insights');
+  useTitle('CRM Signals');
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const wsSlug = currentWorkspace?.slug ?? '';
-  const { data: signalsData, isLoading: signalsLoading } = useBuyerSignals(wsId, {});
+  const { data: signalsData, isLoading: signalsLoading } = useCRMSignals(wsId, {});
   const { data: healthData, isLoading: healthLoading } = useHealthScores(wsId);
   const { data: suggestionsData, isLoading: suggestionsLoading } = usePendingSuggestions(wsId);
   const acceptSuggestion = useAcceptSuggestion(wsId);
   const dismissSuggestion = useDismissSuggestion(wsId);
 
-  const signals = signalsData?.data ?? [];
-  const healthScores = healthData?.data ?? [];
+  const signals = useMemo(() => signalsData?.data ?? [], [signalsData?.data]);
+  const healthScores = useMemo(() => healthData?.data ?? [], [healthData?.data]);
   const suggestions = useMemo(
     () => [...(suggestionsData?.data ?? [])].sort((a, b) => b.confidence - a.confidence),
     [suggestionsData],
   );
   const signalStats = useMemo(() => {
-    const recentHighConfidence = signals.filter((signal) => signal.confidence >= 0.8).length;
-    const avgConfidence = signals.length
-      ? Math.round((signals.reduce((sum, signal) => sum + signal.confidence, 0) / signals.length) * 100)
-      : 0;
-    const linkedThreads = signals.filter((signal) => !!signal.source_thread_id).length;
-    return { recentHighConfidence, avgConfidence, linkedThreads };
+    const highPriority = signals.filter((signal) => signal.severity === 'high').length;
+    const verified = signals.filter((signal) => signal.evidence_identity_trust === 'verified').length;
+    const verifiedShare = signals.length ? Math.round((verified / signals.length) * 100) : 0;
+    const linkedSources = signals.filter((signal) => !!signal.source_thread_id || !!signal.source_id).length;
+    return { highPriority, verifiedShare, linkedSources };
   }, [signals]);
   const healthStats = useMemo(() => {
     const atRisk = healthScores.filter((score) => score.score < 40).length;
@@ -455,8 +322,8 @@ export function InsightsPage() {
     );
   };
 
-  const handleDismiss = (id: string) => {
-    dismissSuggestion.mutate(id, {
+  const handleDismiss = (id: string, reason: CRMSignalDismissalReason) => {
+    dismissSuggestion.mutate({ id, reason }, {
       onSuccess: () => toast.success('Suggestion dismissed'),
       onError: (error) => toast.error(`Failed to dismiss: ${error.message}`),
     });
@@ -492,8 +359,8 @@ export function InsightsPage() {
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Insights</h1>
-            <p className="text-sm text-muted-foreground">Buyer signals, suggested actions, and deal health in one place.</p>
+            <h1 className="text-xl font-semibold tracking-tight">Signal inbox</h1>
+            <p className="text-sm text-muted-foreground">See what changed, why it matters, and what to do next.</p>
           </div>
           {suggestions.length > 0 ? (
             <Button variant="outline" size="sm" onClick={goToReview} disabled={!wsSlug}>
@@ -519,123 +386,94 @@ export function InsightsPage() {
           <>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <StatTile
-                label="Buyer signals"
-                value={signalsLoading ? '-' : signals.length}
-                detail={`${signalStats.recentHighConfidence} high confidence`}
+                label="CRM signals"
+                value={signalsLoading ? '-' : signalsData?.total ?? 0}
+                detail={`${signalStats.highPriority} high priority in recent results`}
                 icon={Activity01Icon}
                 tone="accent"
               />
               <StatTile
                 label="Pending review"
-                value={suggestionsLoading ? '-' : suggestions.length}
-                detail={suggestions.length === 1 ? '1 suggested action' : `${suggestions.length} suggested actions`}
+                value={suggestionsLoading ? '-' : suggestionsData?.total ?? 0}
+                detail={(suggestionsData?.total ?? 0) === 1 ? '1 recommended action' : `${suggestionsData?.total ?? 0} recommended actions`}
                 icon={SparklesIcon}
                 tone={suggestions.length > 0 ? 'warn' : 'neutral'}
               />
               <StatTile
                 label="Deal health"
-                value={healthLoading ? '-' : healthScores.length}
+                value={healthLoading ? '-' : healthData?.total ?? 0}
                 detail={`${healthStats.healthy} healthy, ${healthStats.atRisk} at risk`}
                 icon={FavouriteIcon}
                 tone={healthStats.atRisk > 0 ? 'danger' : healthScores.length > 0 ? 'good' : 'neutral'}
               />
               <StatTile
-                label="Signal quality"
-                value={signalsLoading || signals.length === 0 ? '-' : `${signalStats.avgConfidence}%`}
-                detail={signals.length === 0 ? 'Waiting for signals' : `${signalStats.linkedThreads} linked threads`}
+                label="Verified evidence"
+                value={signalsLoading || signals.length === 0 ? '-' : `${signalStats.verifiedShare}%`}
+                detail={signals.length === 0 ? 'Waiting for signals' : `${signalStats.linkedSources} exact sources in recent results`}
                 icon={CheckmarkCircle02Icon}
                 tone={signals.length > 0 ? 'good' : 'neutral'}
               />
             </div>
 
             <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,0.85fr)]">
-          <Card className="rounded-lg">
-            <CardHeader className="pb-0">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Activity01Icon className="h-4 w-4 text-muted-foreground" />
-                  Recent Buyer Signals
-                </CardTitle>
-                {signals.length > 0 ? (
-                  <Badge variant="secondary" className="font-normal">
-                    Latest {Math.min(signals.length, 12)}
-                  </Badge>
-                ) : null}
+              <div className="min-w-0 rounded-lg border bg-card px-4 py-4 sm:px-5">
+                <SignalWorkspaceFeed workspaceId={wsId} />
               </div>
-            </CardHeader>
-            <CardContent>
-              {signalsLoading ? (
-                <div className="py-10 text-center text-sm text-muted-foreground">Loading buyer signals...</div>
-              ) : signals.length === 0 ? (
-                <EmptyState
-                  icon={Activity01Icon}
-                  title="No buyer signals detected yet"
-                  description="Email, meeting, support, and CRM activity will produce signal cards as the workspace gathers sales context."
+
+              <div className="space-y-4">
+                <ReviewQueue
+                  suggestions={suggestions}
+                  isLoading={suggestionsLoading}
+                  hasSignals={signals.length > 0}
+                  onAccept={handleAccept}
+                  onDismiss={handleDismiss}
+                  isMutating={acceptSuggestion.isPending || dismissSuggestion.isPending}
+                  onViewAll={goToReview}
                 />
-              ) : (
-                <div className="space-y-2">
-                  {signals.slice(0, 12).map((signal) => (
-                    <BuyerSignalRow key={signal.id} signal={signal} />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
-          <div className="space-y-4">
-            <ReviewQueue
-              suggestions={suggestions}
-              isLoading={suggestionsLoading}
-              hasSignals={signals.length > 0}
-              onAccept={handleAccept}
-              onDismiss={handleDismiss}
-              isMutating={acceptSuggestion.isPending || dismissSuggestion.isPending}
-              onViewAll={goToReview}
-            />
+                <Card className="rounded-lg">
+                  <CardHeader className="pb-0">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <FavouriteIcon className="h-4 w-4 text-muted-foreground" />
+                      Deal Health
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {healthLoading ? (
+                      <div className="py-6 text-sm text-muted-foreground">Loading health scores...</div>
+                    ) : healthScores.length === 0 ? (
+                      <EmptyState
+                        icon={FavouriteIcon}
+                        title={signals.length > 0 ? 'Health scores need deal activity' : 'No deal health scores yet'}
+                        description={
+                          signals.length > 0
+                            ? 'CRM signals are flowing, but deal health needs linked deals, activity history, and progression signals.'
+                            : 'Scores will appear after deals have enough activity, signals, and progression history.'
+                        }
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        {healthScores.slice(0, 8).map((healthScore) => (
+                          <HealthRow key={healthScore.id} healthScore={healthScore} />
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
-            <Card className="rounded-lg">
-              <CardHeader className="pb-0">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <FavouriteIcon className="h-4 w-4 text-muted-foreground" />
-                  Deal Health
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {healthLoading ? (
-                  <div className="py-6 text-sm text-muted-foreground">Loading health scores...</div>
-                ) : healthScores.length === 0 ? (
-                  <EmptyState
-                    icon={FavouriteIcon}
-                    title={signals.length > 0 ? 'Health scores need deal activity' : 'No deal health scores yet'}
-                    description={
-                      signals.length > 0
-                        ? 'Buyer signals are flowing, but deal health needs linked deals, activity history, and progression signals.'
-                        : 'Scores will appear after deals have enough activity, signals, and progression history.'
-                    }
-                  />
-                ) : (
-                  <div className="space-y-2">
-                    {healthScores.slice(0, 8).map((healthScore) => (
-                      <HealthRow key={healthScore.id} healthScore={healthScore} />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-lg">
-              <CardHeader className="pb-0">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Search01Icon className="h-4 w-4 text-muted-foreground" />
-                  Find CRM Records
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CRMSearchResults workspaceId={wsId} />
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+                <Card className="rounded-lg">
+                  <CardHeader className="pb-0">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Search01Icon className="h-4 w-4 text-muted-foreground" />
+                      Find CRM Records
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <CRMSearchResults workspaceId={wsId} />
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </>
         )}
       </div>

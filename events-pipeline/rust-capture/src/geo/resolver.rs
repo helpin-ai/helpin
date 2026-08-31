@@ -1,5 +1,6 @@
 use std::{net::IpAddr, sync::Arc};
 
+use anyhow::Result;
 use maxminddb::geoip2;
 
 #[derive(Clone)]
@@ -8,7 +9,7 @@ pub struct GeoResolver {
 }
 
 impl GeoResolver {
-    pub fn new(db_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(db_path: &str) -> Result<Self> {
         let reader = maxminddb::Reader::open_readfile(db_path)?;
         tracing::info!("✅ Maxmind db loaded");
         Ok(Self {
@@ -16,13 +17,20 @@ impl GeoResolver {
         })
     }
 
-    pub fn lookup_country(&self, ip: &str) -> Result<geoip2::Country, maxminddb::MaxMindDBError> {
+    pub fn lookup_country(
+        &self,
+        ip: &str,
+    ) -> Result<geoip2::Country<'_>, maxminddb::MaxMindDBError> {
         let ip: IpAddr = ip.parse().unwrap();
         self.reader.lookup(ip)
     }
-    pub fn lookup_city(&self, ip: &str) -> Result<geoip2::City, maxminddb::MaxMindDBError> {
+    pub fn lookup_city(&self, ip: &str) -> Result<geoip2::City<'_>, maxminddb::MaxMindDBError> {
         let ip: IpAddr = ip.parse().unwrap();
         self.reader.lookup(ip)
+    }
+
+    pub fn database_build_epoch(&self) -> u64 {
+        self.reader.metadata.build_epoch
     }
 }
 
@@ -33,6 +41,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "requires a licensed MaxMind database fixture"]
     fn test_geo_resolver() {
         // Create a GeoResolver with the test database file
 
@@ -66,6 +75,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a licensed MaxMind database fixture"]
     fn test_ipv6_geo_resolver() {
         // Create a GeoResolver with the test database file
 

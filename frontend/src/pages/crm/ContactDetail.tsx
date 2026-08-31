@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft02Icon,
   ArrowRight01Icon,
+  Cancel01Icon,
   Calendar01Icon,
   Clock01Icon,
   Copy01Icon,
@@ -14,67 +15,57 @@ import {
   GlobeIcon,
   InformationCircleIcon,
   LinkSquare01Icon,
+  LayoutTwoColumnIcon,
   Loading01Icon,
   Mail01Icon,
   MapPinIcon,
-  Message01Icon,
-  MoreVerticalIcon,
   PlusSignIcon,
   Search01Icon,
-  StickyNote01Icon,
   Tag01Icon,
   TelephoneIcon,
   UserIcon,
+  ZapIcon,
 } from '@/lib/icons';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { usePageHeaderStore } from '@/stores/pageHeaderStore';
 import {
   useContact,
   useUpdateContact,
   useDeleteContact,
   useContactActivities,
+  useContactTimeline,
   useContactAssociations,
   useContactSupportConversations,
   useContactEmails,
   useContactCalendar,
-  useCreateCRMActivity,
-  useDeleteCRMActivity,
-  useEmailAccounts,
   useTasks,
   useCreateAssociation,
   useDeleteAssociation,
-  useWorkspaceMembers,
 } from '@/hooks/queries';
-import { EmailTimeline } from '@/components/crm/EmailTimeline';
-import { CalendarEvents } from '@/components/crm/CalendarEvents';
-import { BuyerSignals } from '@/components/crm/BuyerSignals';
+import { EntitySignals } from '@/components/crm/EntitySignals';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { EnrichmentRailCard } from '@/components/crm/contact-detail/EnrichmentRailCard';
+import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
+import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
+import { EmailTimeline } from '@/components/crm/EmailTimeline';
+import { ContactDealsView, ContactMeetingsView, ContactSupportView } from '@/components/crm/CompanyDetailCollections';
 import { ContactHeader } from '@/components/crm/contact-detail/ContactHeader';
-import { ContactComposer } from '@/components/crm/contact-detail/ContactComposer';
 import { RailSection } from '@/components/crm/contact-detail/RailSection';
 import { CompanyRailCard } from '@/components/crm/contact-detail/CompanyRailCard';
 import { SupportTagBadge } from '@/components/support/SupportTagPicker';
@@ -90,14 +81,15 @@ import type {
   HelpcenterSocialPlatform,
 } from '@/lib/docsTypes';
 import type {
-  CRMEmailProvider,
   CRMSearchResult,
   LifecycleStage,
   LeadStatus,
   CRMContact,
-  UnifiedActivityItem,
+  CRMTimelineFilter,
+  CRMTimelineItem,
   UpdateCRMContactRequest,
 } from '@/lib/crmTypes';
+import type { ContactDetailTab } from '@/lib/contactDetailTabs';
 
 // ── Types ──
 
@@ -122,12 +114,12 @@ interface FormState {
   source: string;
 }
 
-type ContactTab = 'overview' | 'emails' | 'meetings' | 'tasks' | 'deals' | 'support';
 type ContactSidebarSection = 'primary-company' | 'other-companies' | 'deals' | 'support' | 'tasks';
 export const contactDetailOverviewGridClassName = 'grid-cols-1 lg:grid-cols-[1fr_360px]';
-export const contactDetailOverviewContentClassName = 'mt-0 h-full overflow-y-auto px-8 pb-28 pt-6';
-export const buyerSignalsSectionClassName = '';
-export const contactDetailOverviewSectionOrder = ['summary', 'composer', 'notes_calls', 'buyer_signals', 'recent_activity'] as const;
+export const contactDetailCollapsedGridClassName = 'grid-cols-1 lg:grid-cols-[minmax(0,1fr)_40px]';
+export const contactDetailOverviewContentClassName = 'mt-0';
+export const signalsSectionClassName = '';
+export const contactDetailOverviewSectionOrder = ['summary_signals', 'activity'] as const;
 export const contactDetailSidebarSectionTitles = ['Details', 'Enrichment', 'Company', 'Deals', 'Open tasks', 'Support'] as const;
 export const contactDetailDefaultFieldKeys = [
   'email',
@@ -187,17 +179,16 @@ const leadStatusOptions: { value: LeadStatus; label: string }[] = [
 
 
 const SIDEBAR_PREVIEW_LIMIT = 3;
-
-// ── Source label for recent activity ──
-
-function sourceLabel(source: string): string {
-  switch (source) {
-    case 'gmail': return 'Gmail';
-    case 'microsoft': return 'Outlook';
-    case 'manual': return 'manual';
-    default: return source;
-  }
-}
+const contactDetailTabLabels: Array<{ value: ContactDetailTab; label: string }> = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'tasks', label: 'Tasks' },
+  { value: 'emails', label: 'Emails' },
+  { value: 'meetings', label: 'Meetings' },
+  { value: 'calls', label: 'Calls' },
+  { value: 'deals', label: 'Deals' },
+  { value: 'support', label: 'Support' },
+  { value: 'notes', label: 'Notes' },
+];
 
 // ── Small helpers ──
 
@@ -469,19 +460,6 @@ function buildEnrichedDetailRows(contact: CRMContact): EnrichedDetailRow[] {
   return rows;
 }
 
-function TabBadge({ children, active }: { children: React.ReactNode; active: boolean }) {
-  return (
-    <span
-      className={cn(
-        'ml-0.5 text-xs tabular-nums',
-        active ? 'text-muted-foreground' : 'text-muted-foreground/70',
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
 function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
   return (
     <>
@@ -571,64 +549,27 @@ function supportStatusDotClass(status: string) {
   return 'bg-muted-foreground/40';
 }
 
-function supportStatusBadgeClass(status: string) {
-  switch (status) {
-    case 'open': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400';
-    case 'waiting_on_customer': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
-    case 'resolved': return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400';
-    default: return 'bg-muted text-muted-foreground';
-  }
-}
-
 function humanizeStatusLabel(value: string) {
   return value
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-// ── Empty-state previews ──
-
-function RecentActivityEmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-10 text-center">
-      <div className="rounded-full bg-muted p-2.5">
-        <Message01Icon className="h-5 w-5 text-muted-foreground" />
-      </div>
-      <p className="mt-3 text-sm font-medium">No activity yet</p>
-      <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-        Emails, meetings, and notes for this contact will appear here.
-      </p>
-    </div>
-  );
-}
-
-function NotesAndCallsEmptyState({ onAddNote, onLogCall }: { onAddNote: () => void; onLogCall: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-10 text-center">
-      <div className="rounded-full bg-muted p-2.5">
-        <StickyNote01Icon className="h-5 w-5 text-muted-foreground" />
-      </div>
-      <p className="mt-3 text-sm font-medium">No notes or calls yet</p>
-      <p className="mt-1 max-w-xs text-xs text-muted-foreground">
-        Log a call or drop a quick note to keep a shared history.
-      </p>
-      <div className="mt-4 flex items-center gap-2">
-        <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={onLogCall}>
-          <TelephoneIcon className="h-3 w-3" />
-          Log call
-        </Button>
-        <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={onAddNote}>
-          <StickyNote01Icon className="h-3 w-3" />
-          Add note
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 // ── Main component ──
 
-export function ContactDetailPage({ contactId }: { contactId: string }) {
+export function ContactDetailPage({
+  contactId,
+  activeTab = 'overview',
+  onTabChange,
+  emailThreadId,
+  onEmailThreadChange,
+}: {
+  contactId: string;
+  activeTab?: ContactDetailTab;
+  onTabChange?: (tab: ContactDetailTab) => void;
+  emailThreadId?: string;
+  onEmailThreadChange?: (threadId?: string) => void;
+}) {
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const wsSlug = currentWorkspace?.slug ?? '';
@@ -646,33 +587,29 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   const { data: emailsData } = useContactEmails(wsId, contactId);
   const { data: meetingsData } = useContactCalendar(wsId, contactId);
   const { data: activitiesData, refetch: refetchActivities } = useContactActivities(wsId, contactId);
+  const [activityFilter, setActivityFilter] = useState<CRMTimelineFilter>('all');
+  const timeline = useContactTimeline(wsId, contactId, activityFilter);
+  const notesTimeline = useContactTimeline(wsId, contactId, 'note', activeTab === 'notes');
+  const callsTimeline = useContactTimeline(wsId, contactId, 'call', activeTab === 'calls');
   const { data: associations, refetch: refetchAssociations } = useContactAssociations(wsId, contactId);
   const { data: supportConversationsData, refetch: refetchSupportConversations } = useContactSupportConversations(wsId, contactId);
-  const { data: emailAccounts } = useEmailAccounts(wsId);
-  const { data: tasksData } = useTasks(wsId, { contact_id: contactId });
-  const { data: workspaceMembers = [] } = useWorkspaceMembers(wsId);
+  const { data: tasksData } = useTasks(wsId, { contact_id: contactId, per_page: 100 });
 
   const updateContact = useUpdateContact(wsId);
   const deleteContact = useDeleteContact(wsId);
-  const createActivity = useCreateCRMActivity(wsId);
-  const deleteActivityMutation = useDeleteCRMActivity(wsId);
   const createAssociation = useCreateAssociation(wsId);
   const deleteAssociation = useDeleteAssociation(wsId);
 
   // ── Form state ──
   const [form, setForm] = useState<FormState | null>(null);
-  const [activeTab, setActiveTab] = useState<ContactTab>('overview');
   const [pendingPatch, setPendingPatch] = useState<UpdateCRMContactRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-
-  // ── Inline composer state ──
-  const [composerMode, setComposerMode] = useState<'note' | 'call' | 'meeting'>('note');
-  const [composerFocusSeq, setComposerFocusSeq] = useState(0);
-
-  // ── Activity delete state ──
-  const [deleteActivityId, setDeleteActivityId] = useState<string | null>(null);
+  const [createDealOpen, setCreateDealOpen] = useState(false);
+  const [timelinePreview, setTimelinePreview] = useState<CRMTimelineItem | null>(null);
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const [desktopDetailsCollapsed, setDesktopDetailsCollapsed] = useState(activeTab !== 'overview');
 
   // ── Deal picker state ──
   const [dealPickerOpen, setDealPickerOpen] = useState(false);
@@ -694,55 +631,9 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   });
   const [detailsExpanded, setDetailsExpanded] = useState(false);
 
-  // ── Provider map for source badges ──
-  const accountProviderMap = useMemo(() => {
-    const map = new Map<string, CRMEmailProvider>();
-    for (const account of emailAccounts ?? []) {
-      map.set(account.id, account.provider);
-    }
-    return map;
-  }, [emailAccounts]);
-
-  // ── Unified activity merge (for Overview recent activity) ──
-  const unifiedItems = useMemo<UnifiedActivityItem[]>(() => {
-    const items: UnifiedActivityItem[] = [];
-
-    for (const a of activitiesData?.data ?? []) {
-      items.push({ kind: 'activity', data: a, timestamp: a.occurred_at, source: 'manual' });
-    }
-
-    for (const e of emailsData?.data ?? []) {
-      const provider = accountProviderMap.get(e.email_account_id) ?? 'unknown';
-      items.push({ kind: 'email', data: e, timestamp: e.sent_at, source: provider });
-    }
-
-    for (const c of meetingsData?.data ?? []) {
-      const provider = accountProviderMap.get(c.email_account_id) ?? 'unknown';
-      items.push({ kind: 'calendar', data: c, timestamp: c.start_time, source: provider });
-    }
-
-    return items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  }, [activitiesData, emailsData, meetingsData, accountProviderMap]);
-
   // ── Derived counts ──
   const tasks = tasksData?.data ?? [];
   const taskCount = tasks.length;
-  const emailCount = emailsData?.total ?? emailsData?.data?.length ?? 0;
-  const syncedMeetingCount = meetingsData?.total ?? meetingsData?.data?.length ?? 0;
-  const manualMeetings = (activitiesData?.data ?? []).filter(
-    (a) => a.activity_type === 'meeting',
-  );
-  const capturedMeetingCount = (associations ?? []).filter((association) =>
-    association.from_object_type === 'meeting' || association.to_object_type === 'meeting',
-  ).length;
-  const meetingCount = syncedMeetingCount + manualMeetings.length + capturedMeetingCount;
-  const notesAndCalls = (activitiesData?.data ?? []).filter(
-    (a) => a.activity_type === 'note' || a.activity_type === 'call',
-  );
-  const activityActorNames = useMemo(
-    () => new Map(workspaceMembers.map((member) => [member.id, member.full_name || member.email])),
-    [workspaceMembers],
-  );
 
   const linkedAssociations = useMemo(() => {
     return (associations ?? []).map((a) => {
@@ -764,10 +655,6 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   );
   const dealAssociations = useMemo(
     () => linkedAssociations.filter((a) => a.linkedType === 'deal'),
-    [linkedAssociations],
-  );
-  const capturedMeetingAssociations = useMemo(
-    () => linkedAssociations.filter((a) => a.linkedType === 'meeting'),
     [linkedAssociations],
   );
   const taskAssociations = useMemo(
@@ -807,15 +694,6 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
   const supportConvos = supportConversationsData?.data ?? [];
   const supportCount = supportConvos.length;
-  const openSupportConvos = supportConvos.filter((c) => c.status === 'open');
-  const openSupportCount = openSupportConvos.length;
-  const mostRecentSupportDate = openSupportConvos.length > 0
-    ? openSupportConvos.reduce((latest, c) => {
-        const d = new Date(c.updated_at);
-        return d > latest ? d : latest;
-      }, new Date(0))
-    : null;
-
   const fullName = `${form?.first_name ?? ''} ${form?.last_name ?? ''}`.trim() || 'Untitled contact';
   const visibleOtherCompanyAssociations = expandedSections['other-companies']
     ? otherCompanyAssociations
@@ -826,35 +704,10 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
 
   useTitle(fullName);
 
-  // Push contact name + inline actions into the global Header breadcrumb.
-  const setHeaderTitle = usePageHeaderStore((s) => s.setTitleOverride);
-  const setHeaderActions = usePageHeaderStore((s) => s.setActions);
-  const resetHeader = usePageHeaderStore((s) => s.reset);
   useEffect(() => {
-    setHeaderTitle(fullName);
-    setHeaderActions(
-      <>
-        <SaveIndicator saving={saving} error={saveError} />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
-              <MoreVerticalIcon className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => setDeleteConfirmOpen(true)}
-            >
-              <Delete01Icon className="mr-2 h-3.5 w-3.5" />
-              Delete contact
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </>,
-    );
-    return () => resetHeader();
-  }, [fullName, saving, saveError, setHeaderTitle, setHeaderActions, resetHeader]);
+    const timer = window.setTimeout(() => setDesktopDetailsCollapsed(activeTab !== 'overview'), 0);
+    return () => window.clearTimeout(timer);
+  }, [activeTab]);
 
   // ── Effects ──
   useEffect(() => {
@@ -967,18 +820,6 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
     }
   };
 
-  const handleDeleteActivity = async () => {
-    if (!deleteActivityId) return;
-    try {
-      await deleteActivityMutation.mutateAsync(deleteActivityId);
-      toast.success('Activity deleted');
-      setDeleteActivityId(null);
-      refetchActivities();
-    } catch {
-      toast.error('Failed to delete activity');
-    }
-  };
-
   const handleAddDeal = async (dealId: string) => {
     try {
       await createAssociation.mutateAsync({
@@ -991,6 +832,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
       toast.success('Deal linked');
       setDealPickerOpen(false);
       refetchAssociations();
+      void timeline.refetch();
     } catch {
       toast.error('Failed to link deal');
     }
@@ -1061,6 +903,47 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   };
 
   const goBack = () => navigate({ to: '/w/$slug/crm/contacts', params: { slug: wsSlug } });
+  const refreshContactActivity = () => {
+    void timeline.refetch();
+    if (activeTab === 'notes') void notesTimeline.refetch();
+    if (activeTab === 'calls') void callsTimeline.refetch();
+    void refetchActivities();
+  };
+  const openTasksTab = () => {
+    onTabChange?.('tasks');
+  };
+  const openTimelineSource = (item: CRMTimelineItem) => {
+    const entity = item.entity;
+    if (!entity) {
+      setTimelinePreview(item);
+      return;
+    }
+    if (entity.type === 'task') {
+      openTaskRoute(navigate as never, location as never, wsSlug, entity.id);
+      return;
+    }
+    if (entity.type === 'deal') {
+      openDealRoute(navigate as never, location, wsSlug, entity.id);
+      return;
+    }
+    if (entity.type === 'meeting') {
+      navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: entity.id } } as never);
+      return;
+    }
+    if (entity.type === 'support_conversation') {
+      navigate({ to: '/w/$slug/support/$conversationId', params: { slug: wsSlug, conversationId: entity.id } } as never);
+      return;
+    }
+    if (entity.type === 'email_thread') {
+      setTimelinePreview(item);
+      return;
+    }
+    if (entity.type === 'calendar_event') {
+      setTimelinePreview(item);
+      return;
+    }
+    setTimelinePreview(item);
+  };
   const goToBilling = () => navigate({
     to: '/w/$slug/settings/billing',
     params: { slug: wsSlug },
@@ -1112,432 +995,285 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
   }
 
   return (
-    <div
-      className={cn(
-        'grid h-full min-h-0',
-        activeTab === 'overview' ? contactDetailOverviewGridClassName : 'grid-cols-1',
-      )}
-    >
-      <div className="flex min-h-0 flex-col overflow-hidden">
-      {/* ── Contact identity header ── */}
-      <ContactHeader
-        firstName={form.first_name}
-        lastName={form.last_name}
-        jobTitle={form.job_title}
-        companyName={primaryCompanyAssociation?.linked_object_name ?? undefined}
-        companyHref={
-          primaryCompanyAssociation
-            ? `/w/${wsSlug}/crm/companies/${primaryCompanyAssociation.linkedId}`
-            : undefined
-        }
-        lifecycleStage={form.lifecycle_stage}
-        lifecycleLabel={
-          lifecycleOptions.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
-        }
-        onNameChange={(first, last) => {
-          setForm((current) =>
-            current ? { ...current, first_name: first, last_name: last } : current,
-          );
-          queuePatch({ first_name: first, last_name: last });
-        }}
-      />
-
-      {/* ── Tabs + content ── */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ContactTab)} className="min-h-0 flex-1 flex flex-col gap-0">
-        <div className="flex items-center gap-0.5 border-b border-border/60 px-6">
-          {[
-            { id: 'overview' as const, label: 'Overview', count: 0 },
-            { id: 'emails' as const, label: 'Emails', count: emailCount },
-            { id: 'meetings' as const, label: 'Meetings', count: meetingCount },
-            { id: 'tasks' as const, label: 'Tasks', count: taskCount },
-            { id: 'deals' as const, label: 'Deals', count: dealCount },
-            { id: 'support' as const, label: 'Support', count: supportCount },
-          ].map((t) => {
-            const active = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setActiveTab(t.id)}
-                className={cn(
-                  'inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 py-1.5 -mb-px text-[13px] font-medium transition-colors',
-                  active
-                    ? 'border-primary text-foreground'
-                    : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {t.label}
-                {t.count > 0 && <TabBadge active={active}>{t.count}</TabBadge>}
-              </button>
-            );
-          })}
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-3">
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goBack} aria-label="Back to contacts">
+          <ArrowLeft02Icon className="h-4 w-4" />
+        </Button>
+        <button type="button" onClick={goBack} className="text-xs text-muted-foreground transition-colors hover:text-foreground">
+          Contacts
+        </button>
+        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground/60" />
+        <span className="min-w-0 truncate text-xs font-medium">{`${form.first_name} ${form.last_name}`.trim() || 'Untitled contact'}</span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <SaveIndicator saving={saving} error={saveError} />
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setDeleteConfirmOpen(true)} aria-label="Delete contact">
+            <Delete01Icon className="h-3.5 w-3.5" />
+          </Button>
         </div>
+      </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-            {/* ──────── OVERVIEW TAB ──────── */}
-            <TabsContent value="overview" className={contactDetailOverviewContentClassName}>
-              {/* AI Summary (renders its own SUMMARY heading) */}
-              <EntitySummaryCard workspaceId={wsId} contactId={contactId} />
+      <div className={cn(
+        'grid min-h-0 flex-1',
+        desktopDetailsCollapsed ? contactDetailCollapsedGridClassName : contactDetailOverviewGridClassName,
+      )}>
+        <div className="flex min-h-0 flex-col overflow-hidden">
+          <ContactHeader
+            firstName={form.first_name}
+            lastName={form.last_name}
+            jobTitle={form.job_title}
+            companyName={primaryCompanyAssociation?.linked_object_name ?? undefined}
+            companyHref={
+              primaryCompanyAssociation
+                ? `/w/${wsSlug}/crm/companies/${primaryCompanyAssociation.linkedId}`
+                : undefined
+            }
+            lifecycleStage={form.lifecycle_stage}
+            lifecycleLabel={
+              lifecycleOptions.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
+            }
+            displayId={contact.display_id}
+            actions={(
+              <Button size="sm" className="h-8 gap-1.5" onClick={() => setCreateDealOpen(true)}>
+                <PlusSignIcon className="h-3.5 w-3.5" />
+                New deal
+              </Button>
+            )}
+            onNameChange={(first, last) => {
+              setForm((current) =>
+                current ? { ...current, first_name: first, last_name: last } : current,
+              );
+              queuePatch({ first_name: first, last_name: last });
+            }}
+          />
 
-              {/* Inline composer (replaces modal) */}
-              <div className="mt-6">
-                <ContactComposer
-                  key={composerFocusSeq}
-                  initialMode={composerMode}
-                  isPending={createActivity.isPending}
-                  onSubmit={async ({ activityType, subject, body }) => {
-                    if (!wsId) return;
-                    try {
-                      await createActivity.mutateAsync({
-                        workspace_id: wsId,
-                        activity_type: activityType,
-                        contact_id: contactId,
-                        subject,
-                        body,
-                      });
-                      toast.success('Activity logged');
-                      refetchActivities();
-                    } catch {
-                      toast.error('Failed to log activity');
-                      throw new Error('failed');
-                    }
+          <div className="flex items-end border-b border-border/60 px-3 sm:px-5 lg:px-8">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => onTabChange?.(value as ContactDetailTab)}
+              className="min-w-0 flex-1 gap-0 overflow-hidden"
+            >
+              <div className="overflow-x-auto px-1 pt-1">
+                <TabsList variant="line" className="h-10 gap-0.5">
+                  {contactDetailTabLabels.map((tab) => (
+                    <TabsTrigger key={tab.value} value={tab.value} className="px-2.5 text-[13px]">
+                      {tab.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+            </Tabs>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mb-1 ml-2 h-8 w-8 shrink-0 lg:hidden"
+              onClick={() => setMobileDetailsOpen(true)}
+              aria-label="Open contact details"
+            >
+              <LayoutTwoColumnIcon className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {activeTab === 'overview' && (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className={contactDetailOverviewContentClassName}>
+              <EntitySummaryCard
+                workspaceId={wsId}
+                contactId={contactId}
+                presentation="overview"
+                onOpenTab={(tab, threadId) => {
+                  if (tab === 'emails' && threadId) onEmailThreadChange?.(threadId);
+                  else onTabChange?.(tab);
+                }}
+                onTaskCreated={refreshContactActivity}
+              />
+              <section aria-label="CRM signals" className="border-b border-border/60">
+                <div className="flex items-center gap-2 px-4 pb-2 pt-5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 sm:px-6 lg:px-10">
+                  <ZapIcon className="h-[15px] w-[15px] text-muted-foreground" />
+                  CRM signals
+                </div>
+                <EntitySignals
+                  workspaceId={wsId}
+                  contactId={contactId}
+                  presentation="overview"
+                  onOpenSource={(signal) => {
+                    if (signal.source_type === 'email' && signal.source_thread_id) onEmailThreadChange?.(signal.source_thread_id);
+                    else if (signal.source_type === 'meeting' && signal.source_id) navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: signal.source_id } } as never);
+                    else if (signal.source_type === 'support' && signal.source_thread_id) navigate({ to: '/w/$slug/support/$conversationId', params: { slug: wsSlug, conversationId: signal.source_thread_id } } as never);
+                    else if (signal.source_type === 'meeting') onTabChange?.('meetings');
+                    else if (signal.source_type === 'support') onTabChange?.('support');
+                    else if (signal.source_type === 'note') onTabChange?.('notes');
+                    else if (signal.source_type === 'call') onTabChange?.('calls');
                   }}
                 />
+              </section>
+              <ActivityTimeline
+                timelineItems={timeline.data?.pages.flatMap((page) => page?.data ?? []) ?? []}
+                timelineFilter={activityFilter}
+                onTimelineFilterChange={setActivityFilter}
+                onTimelineItemOpen={openTimelineSource}
+                isTimelineLoading={timeline.isLoading}
+                hasNextPage={timeline.hasNextPage}
+                isFetchingNextPage={timeline.isFetchingNextPage}
+                onLoadMore={() => void timeline.fetchNextPage()}
+                workspaceId={wsId}
+                contactId={contactId}
+                emailRecipient={contact.email}
+                onActivityCreated={refreshContactActivity}
+                onActivityDeleted={refreshContactActivity}
+                presentation="borderless"
+                filterControl="dropdown"
+              />
+              <div className="h-20" />
               </div>
-
-              {/* Support callout banner */}
-              {openSupportCount > 0 && mostRecentSupportDate && (
-                <div className="mt-5 flex items-center gap-3 rounded-lg border border-amber-200/60 bg-amber-50/50 px-4 py-3 dark:border-amber-800/40 dark:bg-amber-950/20">
-                  <Message01Icon className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <span className="text-sm">
-                    {openSupportCount} open support conversation{openSupportCount > 1 ? 's' : ''}
-                    {' · '}last activity {format(mostRecentSupportDate, 'dd/MM/yyyy')}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('support')}
-                    className="ml-auto text-sm font-medium text-amber-700 transition-colors hover:underline dark:text-amber-400"
-                  >
-                    Open ↗
-                  </button>
-                </div>
-              )}
-
-              <Separator className="my-6 bg-border/40" />
-
-              {/* Notes & Calls */}
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notes & calls</h3>
-                <div className="mt-3">
-                  {notesAndCalls.length === 0 ? (
-                    <NotesAndCallsEmptyState
-                      onAddNote={() => {
-                        setComposerMode('note');
-                        setComposerFocusSeq((n) => n + 1);
-                      }}
-                      onLogCall={() => {
-                        setComposerMode('call');
-                        setComposerFocusSeq((n) => n + 1);
-                      }}
-                    />
-                  ) : (
-                    <div className="space-y-1">
-                      {notesAndCalls.map((activity) => {
-                        const Icon = activity.activity_type === 'call' ? TelephoneIcon : Message01Icon;
-                        const actorName = activity.owner_member_id ? activityActorNames.get(activity.owner_member_id) : undefined;
-                        const immutable = activity.metadata?.immutable === true;
-                        return (
-                          <div key={activity.id} className="group flex gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/30">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
-                              <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium capitalize">{activity.activity_type}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  {formatDistanceToNow(new Date(activity.occurred_at), { addSuffix: true })}
-                                </span>
-                                {actorName && <span className="text-xs text-muted-foreground">by {actorName}</span>}
-                                {!immutable && <div className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-6 w-6"
-                                    onClick={() => setDeleteActivityId(activity.id)}
-                                  >
-                                    <Delete01Icon className="h-3 w-3" />
-                                  </Button>
-                                </div>}
-                              </div>
-                              {activity.subject && <p className="mt-0.5 text-sm">{activity.subject}</p>}
-                              {activity.body && (
-                                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{activity.body}</p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <Separator className="my-6 bg-border/40" />
-
-              {/* Buyer signals */}
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Buyer signals</h3>
-                <div className="mt-3">
-                  <BuyerSignals workspaceId={wsId} contactId={contactId} />
-                </div>
-              </div>
-
-              <Separator className="my-6 bg-border/40" />
-
-              {/* Recent activity (3 items across all types) */}
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent activity</h3>
-                <div className="mt-3">
-                  {unifiedItems.length === 0 ? (
-                    <RecentActivityEmptyState />
-                  ) : (
-                    <div className="space-y-1">
-                      {unifiedItems.slice(0, 3).map((item) => {
-                        const key = item.kind === 'activity' ? `a-${item.data.id}` : item.kind === 'email' ? `e-${item.data.id}` : `c-${item.data.id}`;
-                        let icon = Message01Icon;
-                        let typeLabel = '';
-                        let title = '';
-
-                        if (item.kind === 'activity') {
-                          icon = item.data.activity_type === 'call' ? TelephoneIcon : item.data.activity_type === 'meeting' ? Calendar01Icon : Message01Icon;
-                          typeLabel = item.data.activity_type;
-                          title = item.data.subject ?? '';
-                        } else if (item.kind === 'email') {
-                          icon = Mail01Icon;
-                          typeLabel = 'Email';
-                          title = item.data.subject || '(no subject)';
-                        } else if (item.kind === 'calendar') {
-                          icon = Calendar01Icon;
-                          typeLabel = 'Meeting';
-                          title = item.data.title;
-                        }
-
-                        const Icon = icon;
-                        return (
-                          <div key={key} className="flex items-center gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted/30">
-                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted">
-                              <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-medium capitalize">{typeLabel}</span>
-                                <span className="text-[10px] text-muted-foreground">· {sourceLabel(item.source)}</span>
-                              </div>
-                              <p className="truncate text-sm">{title}</p>
-                            </div>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {formatDistanceToNow(new Date(item.timestamp), { addSuffix: true })}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </TabsContent>
-
-            {/* ──────── EMAILS TAB ──────── */}
-            <TabsContent value="emails" className="mt-0 h-full overflow-y-auto">
-              <EmailTimeline workspaceId={wsId} contactId={contactId} defaultRecipient={contact.email} />
-            </TabsContent>
-
-            {/* ──────── MEETINGS TAB ──────── */}
-            <TabsContent value="meetings" className="mt-0 h-full overflow-y-auto px-8 py-6">
-              {capturedMeetingAssociations.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Helpin meeting notes</h3>
-                  <div className="space-y-2">
-                    {capturedMeetingAssociations.map((meeting) => (
-                      <button
-                        key={meeting.id}
-                        type="button"
-                        className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 text-left transition-colors hover:bg-muted/30"
-                        onClick={() => navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: meeting.linkedId } })}
-                      >
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                          <Calendar01Icon className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{meeting.linked_object_name || 'Meeting notes'}</p>
-                          <p className="mt-0.5 text-xs capitalize text-muted-foreground">
-                            {(meeting.linked_object_status || 'scheduled').replace(/_/g, ' ')}
-                          </p>
-                        </div>
-                        <ArrowRight01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {/* Manual meetings */}
-              {manualMeetings.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Logged meetings</h3>
-                  <div className="space-y-2">
-                    {manualMeetings.map((activity) => (
-                      <div key={activity.id} className="group flex gap-3 rounded-lg border border-border/60 bg-card px-4 py-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                          <Calendar01Icon className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium">{activity.subject || 'Untitled meeting'}</p>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">
-                                {format(new Date(activity.occurred_at), 'MMM d, yyyy')}
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
-                                onClick={() => setDeleteActivityId(activity.id)}
-                              >
-                                <Delete01Icon className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                          {activity.body && (
-                            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{activity.body}</p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Synced calendar events */}
-              <CalendarEvents workspaceId={wsId} contactId={contactId} />
-            </TabsContent>
-
-            {/* ──────── TASKS TAB ──────── */}
-            <TabsContent value="tasks" className="mt-0 h-full overflow-y-auto px-8 py-6">
+            </div>
+          )}
+          {activeTab === 'tasks' && (
+            <div className="min-h-0 flex-1">
               <LinkedTasksPanel
                 workspaceId={wsId}
                 workspaceSlug={wsSlug}
                 contactId={contactId}
+                presentation="borderless"
+                fullHeight
+                onTaskActivityChange={refreshContactActivity}
               />
-            </TabsContent>
+            </div>
+          )}
+          {activeTab === 'emails' && (
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <EmailTimeline workspaceId={wsId} contactId={contactId} defaultRecipient={contact.email} selectedThreadId={emailThreadId} onSelectedThreadChange={onEmailThreadChange} />
+            </div>
+          )}
+          {activeTab === 'meetings' && (
+            <ContactMeetingsView workspaceId={wsId} workspaceSlug={wsSlug} contactId={contactId} />
+          )}
+          {activeTab === 'calls' && (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ActivityTimeline
+                timelineItems={callsTimeline.data?.pages.flatMap((page) => page?.data ?? []) ?? []}
+                timelineFilter="call"
+                onTimelineItemOpen={openTimelineSource}
+                isTimelineLoading={callsTimeline.isLoading}
+                hasNextPage={callsTimeline.hasNextPage}
+                isFetchingNextPage={callsTimeline.isFetchingNextPage}
+                onLoadMore={() => void callsTimeline.fetchNextPage()}
+                workspaceId={wsId}
+                contactId={contactId}
+                emailRecipient={contact.email}
+                onActivityCreated={refreshContactActivity}
+                onActivityDeleted={refreshContactActivity}
+                presentation="borderless"
+                filterControl="hidden"
+                actionTypes={['call']}
+                heading="Calls"
+              />
+            </div>
+          )}
+          {activeTab === 'deals' && (
+            <ContactDealsView
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              contactId={contactId}
+              contactName={fullName}
+              onChanged={() => {
+                void refetchAssociations();
+                void timeline.refetch();
+              }}
+            />
+          )}
+          {activeTab === 'support' && (
+            <ContactSupportView
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              contactId={contactId}
+              onChanged={() => {
+                void refetchSupportConversations();
+                void refetchAssociations();
+                void timeline.refetch();
+              }}
+            />
+          )}
+          {activeTab === 'notes' && (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <ActivityTimeline
+                timelineItems={notesTimeline.data?.pages.flatMap((page) => page?.data ?? []) ?? []}
+                timelineFilter="note"
+                onTimelineItemOpen={openTimelineSource}
+                isTimelineLoading={notesTimeline.isLoading}
+                hasNextPage={notesTimeline.hasNextPage}
+                isFetchingNextPage={notesTimeline.isFetchingNextPage}
+                onLoadMore={() => void notesTimeline.fetchNextPage()}
+                workspaceId={wsId}
+                contactId={contactId}
+                emailRecipient={contact.email}
+                onActivityCreated={refreshContactActivity}
+                onActivityDeleted={refreshContactActivity}
+                presentation="borderless"
+                filterControl="hidden"
+                actionTypes={['note']}
+                heading="Notes"
+              />
+            </div>
+          )}
+        </div>
 
-            {/* ──────── DEALS TAB ──────── */}
-            <TabsContent value="deals" className="mt-0 h-full overflow-y-auto px-8 py-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium">Deals</h3>
-                <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => setDealPickerOpen(true)}>
-                  <PlusSignIcon className="h-3 w-3" />
-                  Link deal
+        {mobileDetailsOpen && (
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-foreground/15 backdrop-blur-[1px] lg:hidden"
+            onClick={() => setMobileDetailsOpen(false)}
+            aria-label="Close contact details"
+          />
+        )}
+
+      {/* ── Right sidebar ── */}
+        <aside
+          role={mobileDetailsOpen ? 'dialog' : undefined}
+          aria-modal={mobileDetailsOpen ? true : undefined}
+          aria-label={mobileDetailsOpen ? 'Contact details' : undefined}
+          className={cn(
+            'min-h-0 overflow-hidden border-l border-border/60 bg-muted/30',
+            mobileDetailsOpen
+              ? 'fixed inset-y-0 right-0 z-50 flex w-[min(360px,calc(100vw-2rem))] bg-background shadow-xl lg:static lg:w-auto lg:bg-muted/30 lg:shadow-none'
+              : 'hidden lg:flex',
+          )}
+        >
+              {desktopDetailsCollapsed ? (
+                <button
+                  type="button"
+                  className="group hidden h-full w-full flex-col items-center bg-background py-3 text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground lg:flex"
+                  onClick={() => setDesktopDetailsCollapsed(false)}
+                  aria-expanded={false}
+                  aria-label="Open contact details"
+                  title="Open contact details"
+                >
+                  <ArrowLeft02Icon className="h-4 w-4" />
+                  <span className="mt-4 text-[10px] font-semibold uppercase tracking-[0.12em] [writing-mode:vertical-rl]">
+                    Contact details
+                  </span>
+                </button>
+              ) : null}
+              <div className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto pb-10', desktopDetailsCollapsed && 'lg:hidden')}>
+              <div className="sticky top-0 z-10 hidden h-9 items-center justify-between border-b border-border/50 bg-background px-3 lg:flex">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Contact details</span>
+                <button
+                  type="button"
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={() => setDesktopDetailsCollapsed(true)}
+                  aria-expanded={true}
+                  aria-label="Minimize contact details"
+                  title="Minimize contact details"
+                >
+                  <ArrowRight01Icon className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="sticky top-0 z-10 flex h-11 items-center justify-between border-b border-border/60 bg-background px-4 lg:hidden">
+                <span className="text-sm font-medium">Contact details</span>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setMobileDetailsOpen(false)} aria-label="Close contact details">
+                  <Cancel01Icon className="h-4 w-4" />
                 </Button>
               </div>
-
-              {dealAssociations.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-12 text-center mt-4">
-                  <div className="rounded-full bg-muted p-3">
-                    <DollarCircleIcon className="h-7 w-7 text-muted-foreground" />
-                  </div>
-                  <p className="mt-4 text-base font-medium">No deals linked yet</p>
-                  <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-                    Link deals to track revenue opportunities for this contact.
-                  </p>
-                  <Button variant="outline" className="mt-5" onClick={() => setDealPickerOpen(true)}>
-                    Link deal
-                  </Button>
-                </div>
-              ) : (
-                <div className="mt-4 divide-y divide-border/60 rounded-md border border-border/60">
-                  {dealAssociations.map((assoc) => (
-                    <div
-                      key={assoc.id}
-                      className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/30"
-                    >
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 text-left"
-                        onClick={() => navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug: wsSlug, dealId: assoc.linkedId } } as never)}
-                      >
-                        <span className="text-sm font-medium">{assoc.linked_object_name || 'Untitled deal'}</span>
-                        {assoc.linked_object_display_id && (
-                          <span className="ml-2 text-xs text-muted-foreground">{assoc.linked_object_display_id}</span>
-                        )}
-                      </button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
-                        onClick={() => setRemoveAssocId(assoc.id)}
-                      >
-                        <Delete01Icon className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-
-            {/* ──────── SUPPORT TAB ──────── */}
-            <TabsContent value="support" className="mt-0 h-full overflow-y-auto px-8 py-6">
-              <h3 className="text-sm font-medium">Support conversations</h3>
-
-              {supportConvos.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/60 px-6 py-12 text-center mt-4">
-                  <div className="rounded-full bg-muted p-3">
-                    <Message01Icon className="h-7 w-7 text-muted-foreground" />
-                  </div>
-                  <p className="mt-4 text-base font-medium">No support conversations</p>
-                  <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-                    Support conversations linked to this contact will appear here.
-                  </p>
-                </div>
-              ) : (
-                <div className="mt-4 space-y-2">
-                  {supportConvos.map((conversation) => (
-                    <Link
-                      key={conversation.id}
-                      to="/w/$slug/support/$conversationId"
-                      params={{ slug: wsSlug, conversationId: conversation.id }}
-                      className="flex items-center gap-3 rounded-md border border-border/60 px-4 py-3 text-sm transition-colors hover:bg-muted/40"
-                    >
-                      <Message01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs text-muted-foreground">#{conversation.display_id}</span>
-                          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', supportStatusBadgeClass(conversation.status))}>
-                            {conversation.status.replace(/_/g, ' ')}
-                          </span>
-                          <Badge variant="secondary" className="px-2 py-0 text-[10px]">
-                            {conversation.priority}
-                          </Badge>
-                          {conversation.source && (
-                            <span className="text-[10px] text-muted-foreground">{conversation.source}</span>
-                          )}
-                        </div>
-                        <p className="mt-1 truncate font-medium text-foreground">{conversation.subject}</p>
-                      </div>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {format(new Date(conversation.created_at), 'dd/MM/yyyy')}
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-          </div>
-        </Tabs>
-      </div>
-
-      {/* ── Right sidebar (Overview tab only) ── */}
-      {activeTab === 'overview' && (
-        <aside className="hidden min-h-0 overflow-y-auto border-l border-border/60 bg-muted/30 pb-10 lg:block">
               {/* DETAILS (always visible, non-collapsible) */}
               <div className="border-b border-border/50 px-4 py-3">
                 <div className="grid grid-cols-[16px_84px_1fr] gap-x-2 gap-y-2.5">
@@ -1822,12 +1558,13 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
               </div>
 
               {/* ENRICHMENT (always visible, non-collapsible) */}
-              <div className="border-b border-border/50 px-4 py-3">
-                <h3 className="mb-2 text-[11px] font-medium uppercase tracking-tight text-foreground">
-                  Enrichment
-                </h3>
-                <EnrichmentRailCard workspaceId={wsId} objectType="contact" objectId={contactId} />
-              </div>
+              <EnrichmentRailCard
+                workspaceId={wsId}
+                objectType="contact"
+                objectId={contactId}
+                presentation="borderless"
+                fullWidth
+              />
 
               {/* COMPANY */}
               <RailSection
@@ -1953,12 +1690,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                         <button
                           type="button"
                           className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                          onClick={() =>
-                            navigate({
-                              to: '/w/$slug/crm/deals/$dealId',
-                              params: { slug: wsSlug, dealId: assoc.linkedId },
-                            } as never)
-                          }
+                          onClick={() => openDealRoute(navigate as never, location, wsSlug, assoc.linkedId)}
                         >
                           <DollarCircleIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
                           <span className="truncate font-medium">{assoc.linked_object_name || 'Untitled'}</span>
@@ -2000,7 +1732,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 action={
                   <button
                     type="button"
-                    onClick={() => setActiveTab('tasks')}
+                    onClick={openTasksTab}
                     className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     aria-label="Manage tasks"
                   >
@@ -2011,7 +1743,7 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                 {taskCount === 0 ? (
                   <button
                     type="button"
-                    onClick={() => setActiveTab('tasks')}
+                    onClick={openTasksTab}
                     className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
                   >
                     <PlusSignIcon className="h-3.5 w-3.5" />
@@ -2128,8 +1860,40 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
                   </div>
                 )}
               </RailSection>
+              </div>
         </aside>
-      )}
+      </div>
+
+      <CreateDealDialog
+        open={createDealOpen}
+        onOpenChange={setCreateDealOpen}
+        contactContext={{
+          id: contactId,
+          name: `${form.first_name} ${form.last_name}`.trim() || contact.email || 'Contact',
+        }}
+        onDealCreated={() => {
+          void refetchAssociations();
+          void timeline.refetch();
+        }}
+      />
+
+      <Dialog open={Boolean(timelinePreview)} onOpenChange={(open) => !open && setTimelinePreview(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{timelinePreview?.title || 'Activity'}</DialogTitle>
+            {timelinePreview?.occurred_at && (
+              <DialogDescription>
+                {format(new Date(timelinePreview.occurred_at), 'MMM d, yyyy · h:mm a')}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          {timelinePreview?.description && (
+            <div className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+              {timelinePreview.description}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* ── Company picker dialog ── */}
       <Dialog open={companyPickerOpen} onOpenChange={setCompanyPickerOpen}>
@@ -2249,16 +2013,6 @@ export function ContactDetailPage({ contactId }: { contactId: string }) {
         onConfirm={handleRemoveAssociation}
       />
 
-      {/* ── Delete activity confirm ── */}
-      <ConfirmDialog
-        open={!!deleteActivityId}
-        onOpenChange={(open) => !open && setDeleteActivityId(null)}
-        title="Delete activity"
-        description="Are you sure you want to delete this activity?"
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={handleDeleteActivity}
-      />
     </div>
   );
 }

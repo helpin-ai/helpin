@@ -14,6 +14,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/automationcron"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -872,13 +873,13 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 		return err
 	}
 	if rule == nil {
-		return fmt.Errorf("automation rule not found")
+		return e.stopInvalidRuleSchedule(ctx, ruleID, temporalapp.ErrScheduledRuleNotFound)
 	}
 	if !rule.Enabled {
-		return fmt.Errorf("automation rule is disabled")
+		return e.stopInvalidRuleSchedule(ctx, ruleID, temporalapp.ErrScheduledRuleDisabled)
 	}
 	if rule.TriggerType != model.TriggerCron {
-		return fmt.Errorf("automation rule is not scheduled")
+		return e.stopInvalidRuleSchedule(ctx, ruleID, temporalapp.ErrScheduledRuleNotScheduled)
 	}
 	if e.entitlementSvc != nil {
 		if err := e.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAgentScheduling); err != nil {
@@ -938,6 +939,11 @@ func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspa
 				"workspace_id", workspaceID,
 				"agent_id", strings.TrimSpace(actionCfg.AgentID),
 			)
+			if e.runEngine != nil {
+				if stopErr := e.runEngine.StopRuleSchedule(ctx, rule.ID); stopErr != nil {
+					return fmt.Errorf("stop disabled automation rule schedule: %w", stopErr)
+				}
+			}
 			return nil
 		}
 		return err
@@ -1203,7 +1209,9 @@ func (e *AutomationRuleEngine) DeleteRule(ctx context.Context, workspaceID, rule
 		return fmt.Errorf("automation rule not found")
 	}
 	if rule.TriggerType == model.TriggerCron && e.runEngine != nil {
-		_ = e.runEngine.StopRuleSchedule(ctx, rule.ID)
+		if err := e.runEngine.StopRuleSchedule(ctx, rule.ID); err != nil {
+			return err
+		}
 	}
 	if err := e.ruleRepo.Delete(ctx, workspaceID, ruleID); err != nil {
 		return err
@@ -1471,7 +1479,9 @@ func (e *AutomationRuleEngine) syncRuleSchedule(ctx context.Context, rule *model
 		return nil
 	}
 	if stopFirst {
-		_ = e.runEngine.StopRuleSchedule(ctx, rule.ID)
+		if err := e.runEngine.StopRuleSchedule(ctx, rule.ID); err != nil {
+			return err
+		}
 	}
 	if rule.TriggerType != model.TriggerCron || !rule.Enabled {
 		return nil
@@ -1486,6 +1496,16 @@ func (e *AutomationRuleEngine) syncRuleSchedule(ctx context.Context, rule *model
 		return err
 	}
 	return e.runEngine.StartRuleSchedule(ctx, rule.ID, rule.WorkspaceID, schedule)
+}
+
+func (e *AutomationRuleEngine) stopInvalidRuleSchedule(ctx context.Context, ruleID string, cause error) error {
+	if e.runEngine == nil {
+		return cause
+	}
+	if err := e.runEngine.StopRuleSchedule(ctx, ruleID); err != nil {
+		return fmt.Errorf("stop invalid automation rule schedule: %w", err)
+	}
+	return cause
 }
 
 func (e *AutomationRuleEngine) StartRuleScheduleForRule(ctx context.Context, rule *model.AutomationRule) error {

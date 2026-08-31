@@ -32,8 +32,11 @@ func (s *CRMSuggestionService) List(ctx context.Context, workspaceID string, fil
 }
 
 // GetByID returns a suggestion by ID.
-func (s *CRMSuggestionService) GetByID(ctx context.Context, id string) (*model.CRMSuggestion, error) {
-	suggestion, err := s.suggestionRepo.GetByID(ctx, id)
+func (s *CRMSuggestionService) GetByID(ctx context.Context, workspaceID, id string) (*model.CRMSuggestion, error) {
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(id) == "" {
+		return nil, fmt.Errorf("workspace_id and suggestion_id are required")
+	}
+	suggestion, err := s.suggestionRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -48,10 +51,37 @@ func (s *CRMSuggestionService) Create(ctx context.Context, req model.CreateCRMSu
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Title) == "" || req.SuggestionType == "" {
 		return nil, fmt.Errorf("workspace_id, title, and suggestion_type are required")
 	}
+	if !validCRMSuggestionType(req.SuggestionType) {
+		return nil, fmt.Errorf("invalid suggestion_type")
+	}
+	if (req.ObjectType == nil) != (req.ObjectID == nil) {
+		return nil, fmt.Errorf("object_type and object_id must be provided together")
+	}
+	if req.ObjectType != nil && req.ObjectID != nil {
+		exists, err := s.suggestionRepo.CRMObjectExists(ctx, req.WorkspaceID, strings.TrimSpace(*req.ObjectType), strings.TrimSpace(*req.ObjectID))
+		if err != nil || !exists {
+			return nil, fmt.Errorf("suggestion object not found in workspace")
+		}
+	}
 
 	confidence := 0.0
 	if req.Confidence != nil {
 		confidence = *req.Confidence
+	}
+	if confidence < 0 || confidence > 1 {
+		return nil, fmt.Errorf("confidence must be between 0 and 1")
+	}
+	signalIDs := make([]string, 0, len(req.SignalIDs))
+	seenSignalIDs := map[string]bool{}
+	for _, id := range req.SignalIDs {
+		id = strings.TrimSpace(id)
+		if id != "" && !seenSignalIDs[id] {
+			seenSignalIDs[id] = true
+			signalIDs = append(signalIDs, id)
+		}
+	}
+	if err := s.suggestionRepo.ValidateSignalIDs(ctx, req.WorkspaceID, signalIDs); err != nil {
+		return nil, err
 	}
 
 	suggestion := &model.CRMSuggestion{
@@ -63,6 +93,7 @@ func (s *CRMSuggestionService) Create(ctx context.Context, req model.CreateCRMSu
 		Title:          strings.TrimSpace(req.Title),
 		Description:    req.Description,
 		Context:        model.JSONB(req.Context),
+		SignalIDs:      model.StringArray(signalIDs),
 		Status:         model.CRMSuggestionStatusPending,
 		Confidence:     confidence,
 	}
@@ -73,9 +104,19 @@ func (s *CRMSuggestionService) Create(ctx context.Context, req model.CreateCRMSu
 	return suggestion, nil
 }
 
+func validCRMSuggestionType(suggestionType string) bool {
+	switch suggestionType {
+	case model.CRMSuggestionFollowUp, model.CRMSuggestionDealCreate, model.CRMSuggestionDealAdvance,
+		model.CRMSuggestionEnrichment, model.CRMSuggestionRiskAlert:
+		return true
+	default:
+		return false
+	}
+}
+
 // Update updates a suggestion (typically to accept/dismiss).
-func (s *CRMSuggestionService) Update(ctx context.Context, id string, req model.UpdateCRMSuggestionRequest) (*model.CRMSuggestion, error) {
-	suggestion, err := s.suggestionRepo.GetByID(ctx, id)
+func (s *CRMSuggestionService) Update(ctx context.Context, workspaceID, id string, req model.UpdateCRMSuggestionRequest) (*model.CRMSuggestion, error) {
+	suggestion, err := s.suggestionRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -91,27 +132,27 @@ func (s *CRMSuggestionService) Update(ctx context.Context, id string, req model.
 		suggestion.Status = status
 	}
 
-	if err := s.suggestionRepo.Update(ctx, suggestion); err != nil {
+	if err := s.suggestionRepo.Update(ctx, workspaceID, suggestion); err != nil {
 		return nil, err
 	}
 	return suggestion, nil
 }
 
 // Delete removes a suggestion.
-func (s *CRMSuggestionService) Delete(ctx context.Context, id string) error {
-	suggestion, err := s.suggestionRepo.GetByID(ctx, id)
+func (s *CRMSuggestionService) Delete(ctx context.Context, workspaceID, id string) error {
+	suggestion, err := s.suggestionRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return err
 	}
 	if suggestion == nil {
 		return fmt.Errorf("suggestion not found")
 	}
-	return s.suggestionRepo.Delete(ctx, id)
+	return s.suggestionRepo.Delete(ctx, workspaceID, id)
 }
 
 // AcceptSuggestion accepts a suggestion and optionally applies user edits, then executes the action.
-func (s *CRMSuggestionService) AcceptSuggestion(ctx context.Context, id string, edits map[string]interface{}) (*model.CRMSuggestion, error) {
-	suggestion, err := s.suggestionRepo.GetByID(ctx, id)
+func (s *CRMSuggestionService) AcceptSuggestion(ctx context.Context, workspaceID, id string, edits map[string]interface{}) (*model.CRMSuggestion, error) {
+	suggestion, err := s.suggestionRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -132,8 +173,12 @@ func (s *CRMSuggestionService) AcceptSuggestion(ctx context.Context, id string, 
 	}
 
 	suggestion.Status = model.CRMSuggestionStatusAccepted
-	if err := s.suggestionRepo.Update(ctx, suggestion); err != nil {
+	claimed, err := s.suggestionRepo.ClaimPending(ctx, workspaceID, suggestion)
+	if err != nil {
 		return nil, err
+	}
+	if !claimed {
+		return nil, fmt.Errorf("suggestion is no longer pending")
 	}
 
 	// Execute the action based on suggestion type
@@ -153,7 +198,7 @@ func (s *CRMSuggestionService) AcceptSuggestion(ctx context.Context, id string, 
 			suggestion.ObjectID = objectID
 		}
 	}
-	if err := s.suggestionRepo.Update(ctx, suggestion); err != nil {
+	if err := s.suggestionRepo.Update(ctx, workspaceID, suggestion); err != nil {
 		return nil, err
 	}
 	if executionErr != nil {
@@ -165,8 +210,12 @@ func (s *CRMSuggestionService) AcceptSuggestion(ctx context.Context, id string, 
 }
 
 // DismissSuggestion marks a suggestion as dismissed.
-func (s *CRMSuggestionService) DismissSuggestion(ctx context.Context, id string) (*model.CRMSuggestion, error) {
-	suggestion, err := s.suggestionRepo.GetByID(ctx, id)
+func (s *CRMSuggestionService) DismissSuggestion(ctx context.Context, workspaceID, id, reason string) (*model.CRMSuggestion, error) {
+	reason = strings.TrimSpace(reason)
+	if !validSignalDismissalReason(reason) {
+		return nil, fmt.Errorf("a valid dismissal reason is required")
+	}
+	suggestion, err := s.suggestionRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +224,8 @@ func (s *CRMSuggestionService) DismissSuggestion(ctx context.Context, id string)
 	}
 
 	suggestion.Status = model.CRMSuggestionStatusDismissed
-	if err := s.suggestionRepo.Update(ctx, suggestion); err != nil {
+	suggestion.DismissalReason = &reason
+	if err := s.suggestionRepo.Update(ctx, workspaceID, suggestion); err != nil {
 		return nil, err
 	}
 	return suggestion, nil
@@ -188,7 +238,7 @@ func (s *CRMSuggestionService) executeSuggestionAction(ctx context.Context, sugg
 	case model.CRMSuggestionDealCreate:
 		return s.executeDealCreate(ctx, suggestion.WorkspaceID, suggestionContext)
 	case model.CRMSuggestionDealAdvance:
-		if err := s.executeDealAdvance(ctx, suggestionContext); err != nil {
+		if err := s.executeDealAdvance(ctx, suggestion.WorkspaceID, suggestionContext); err != nil {
 			return nil, err
 		}
 		dealID, _ := suggestionContext["deal_id"].(string)
@@ -206,6 +256,20 @@ func (s *CRMSuggestionService) executeDealCreate(ctx context.Context, workspaceI
 
 	if dealName == "" || pipelineID == "" || stageID == "" {
 		return nil, fmt.Errorf("missing required deal context fields")
+	}
+	pipeline, err := s.dealRepo.GetPipeline(ctx, pipelineID)
+	if err != nil || pipeline == nil || pipeline.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("pipeline not found in workspace")
+	}
+	stage, err := s.dealRepo.GetStage(ctx, stageID)
+	if err != nil || stage == nil || stage.PipelineID != pipelineID {
+		return nil, fmt.Errorf("stage not found in pipeline")
+	}
+	if contactID != "" {
+		exists, contactErr := s.suggestionRepo.CRMObjectExists(ctx, workspaceID, model.CRMObjectContact, contactID)
+		if contactErr != nil || !exists {
+			return nil, fmt.Errorf("contact not found in workspace")
+		}
 	}
 
 	displayID, err := s.dealRepo.GetNextDisplayID(ctx, workspaceID)
@@ -248,7 +312,7 @@ func (s *CRMSuggestionService) executeDealCreate(ctx context.Context, workspaceI
 	return &deal.ID, nil
 }
 
-func (s *CRMSuggestionService) executeDealAdvance(ctx context.Context, suggestionContext map[string]interface{}) error {
+func (s *CRMSuggestionService) executeDealAdvance(ctx context.Context, workspaceID string, suggestionContext map[string]interface{}) error {
 	dealID, _ := suggestionContext["deal_id"].(string)
 	targetStageID, _ := suggestionContext["target_stage_id"].(string)
 
@@ -257,8 +321,12 @@ func (s *CRMSuggestionService) executeDealAdvance(ctx context.Context, suggestio
 	}
 
 	deal, err := s.dealRepo.GetByID(ctx, dealID)
-	if err != nil || deal == nil {
+	if err != nil || deal == nil || deal.WorkspaceID != workspaceID {
 		return fmt.Errorf("deal not found: %s", dealID)
+	}
+	targetStage, err := s.dealRepo.GetStage(ctx, targetStageID)
+	if err != nil || targetStage == nil || targetStage.PipelineID != deal.PipelineID {
+		return fmt.Errorf("target stage not found in deal pipeline")
 	}
 
 	deal.StageID = targetStageID

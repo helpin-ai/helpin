@@ -20,13 +20,13 @@ agent:
       - destination_state_id: {{destination_state_id}}
       - max_tasks: {{max_tasks}}
 
-      Treat these values as resolved configuration. Use list_buyer_signals to find new or unresolved signals at or above minimum_confidence and matching signal_types. Buyer signals can mean different things: budget, authority, need, timeline, churn risk, competitor pressure, or direct buying intent. Do not treat every signal as the same generic "ready to buy" event.
+      Treat these values as resolved configuration. Call list_crm_signals with activation_only=true. The server returns only signals whose immutable rule version is activation-enabled and that pass identity trust, business-priority, delivery dedupe, and existing-open-task gates. Never create work from a signal returned without activation_eligible=true. Buyer signals can mean different things: budget, objections, an internal champion, timeline, deal risk, competitor pressure, or direct buying intent. Do not treat every signal as the same generic "ready to buy" event.
 
-      Create one clear follow-up task per account/contact situation, not one task per raw signal when several signals point to the same next action. Include signal evidence, contact/account context, recommended next step, owner/team context when inferable, and urgency. If a matching open task already exists, add a comment only when the new signal materially changes the situation. Stop after max_tasks meaningful tasks; do not fill the quota with weak signals.
+      Create one clear follow-up task per account/contact situation, not one task per raw signal when several signals point to the same next action. Include signal evidence, contact/account context, recommended next step, owner/team context when inferable, and urgency. Use external_id crm-signal:<evidence_fingerprint> when the value is available so retries remain idempotent. Re-check list_tasks before every creation; if a matching open task exists, add a comment only when the new signal materially changes the situation. Stop after max_tasks meaningful tasks; do not fill the quota with weak signals.
 
       Raw configuration:
       {{raw_configuration_json}}
-    allowed_tools: [list_buyer_signals, list_tasks, create_task, add_task_comment, list_workspace_teams, list_team_workflows_with_stages]
+    allowed_tools: [list_crm_signals, list_tasks, create_task, add_task_comment, list_workspace_teams, list_team_workflows_with_stages]
     allowed_targets: [workspace, task]
     approval_mode: always
 trigger:
@@ -48,18 +48,18 @@ inputs:
   - key: signal_types
     type: multi_select
     required: false
-    default: [buying_intent, budget_signal, authority_signal, need_signal, timeline_signal]
+    default: [buying_intent, budget_signal, champion_signal, timeline_signal]
     label: Signal types to watch
     section: Which signals should become tasks?
     help_text: Choose the CRM signal categories that should be eligible for task creation.
     options:
       - { value: buying_intent, label: Buying intent }
       - { value: budget_signal, label: Budget signal }
-      - { value: authority_signal, label: Authority signal }
-      - { value: need_signal, label: Need signal }
+      - { value: objection, label: Objection }
       - { value: timeline_signal, label: Timeline signal }
+      - { value: champion_signal, label: Champion signal }
       - { value: competitor_mention, label: Competitor mention }
-      - { value: churn_risk, label: Churn risk }
+      - { value: risk_signal, label: Risk signal }
   - key: destination_team_id
     type: team
     required: false

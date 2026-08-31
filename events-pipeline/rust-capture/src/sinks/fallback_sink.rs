@@ -36,7 +36,7 @@ impl EventSink for FallbackSink {
         match self.primary.send(event).await {
             Ok(()) => Ok(()),
             Err(CaptureError::RetryableSinkError) => {
-                tracing::warn!("Primary sink failed with retryable error, falling back to disk");
+                tracing::debug!("Primary sink failed with retryable error, falling back to disk");
                 metrics::counter!("capture_fallback_failovers_total", 1);
                 self.fallback.send(fallback_event).await
             }
@@ -49,7 +49,7 @@ impl EventSink for FallbackSink {
         match self.primary.send_batch(events).await {
             Ok(()) => Ok(()),
             Err(CaptureError::RetryableSinkError) => {
-                tracing::warn!(
+                tracing::debug!(
                     "Primary sink batch failed with retryable error, falling back to disk"
                 );
                 metrics::counter!("capture_fallback_failovers_total", 1);
@@ -76,6 +76,7 @@ mod tests {
                 ..Default::default()
             },
             event_id: Uuid::new_v4(),
+            ..Default::default()
         })
     }
 

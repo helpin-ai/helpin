@@ -1,21 +1,28 @@
 // CRM Module TypeScript interfaces
 
 export type LifecycleStage =
-  | 'subscriber'
-  | 'lead'
-  | 'marketing_qualified'
-  | 'sales_qualified'
-  | 'opportunity'
-  | 'customer'
-  | 'evangelist';
+  | "subscriber"
+  | "lead"
+  | "marketing_qualified"
+  | "sales_qualified"
+  | "opportunity"
+  | "customer"
+  | "evangelist";
 
-export type LeadStatus = 'new' | 'open' | 'in_progress' | 'unqualified';
+export type LeadStatus = "new" | "open" | "in_progress" | "unqualified";
 
-export type CRMActivityType = 'note' | 'call' | 'meeting' | 'email';
+export type CRMActivityType = "note" | "call" | "meeting" | "email";
 
-export type PipelineStageType = 'open' | 'won' | 'lost';
+export type PipelineStageType = "open" | "won" | "lost";
 
-export type CRMObjectType = 'contact' | 'company' | 'deal' | 'meeting' | 'epic' | 'task' | 'support_conversation';
+export type CRMObjectType =
+  | "contact"
+  | "company"
+  | "deal"
+  | "meeting"
+  | "epic"
+  | "task"
+  | "support_conversation";
 
 export interface CRMContact {
   id: string;
@@ -119,6 +126,13 @@ export interface CRMCompany {
   linkedin_url?: string;
   headquarters?: string;
   owner_member_id?: string;
+  customer_success_owner_member_id?: string;
+  commercial_state_health?: {
+    last_accepted_at?: string;
+    last_rejected_at?: string;
+    last_rejection_reason?: string;
+    rejected_update_count: number;
+  };
   custom_properties: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -137,6 +151,7 @@ export interface CreateCRMCompanyRequest {
   linkedin_url?: string;
   headquarters?: string;
   owner_member_id?: string;
+  customer_success_owner_member_id?: string;
   custom_properties?: Record<string, unknown>;
 }
 
@@ -152,6 +167,8 @@ export interface UpdateCRMCompanyRequest {
   linkedin_url?: string;
   headquarters?: string;
   owner_member_id?: string;
+  customer_success_owner_member_id?: string;
+  clear_customer_success_owner?: boolean;
   custom_properties?: Record<string, unknown>;
 }
 
@@ -171,6 +188,7 @@ export interface CRMPipeline {
   workspace_id: string;
   name: string;
   is_default: boolean;
+  default_commercial_motion: CRMDealCommercialMotion;
   position: number;
   deal_count: number;
   stages?: CRMPipelineStage[];
@@ -182,6 +200,7 @@ export interface CreateCRMPipelineRequest {
   workspace_id: string;
   name: string;
   is_default?: boolean;
+  default_commercial_motion?: CRMDealCommercialMotion;
   stages?: {
     name: string;
     stage_type: PipelineStageType;
@@ -193,6 +212,7 @@ export interface CreateCRMPipelineRequest {
 export interface UpdateCRMPipelineRequest {
   name?: string;
   is_default?: boolean;
+  default_commercial_motion?: CRMDealCommercialMotion;
   stages?: {
     id?: string;
     name: string;
@@ -213,6 +233,7 @@ export interface CRMDeal {
   currency: string;
   close_date?: string;
   owner_member_id?: string;
+  commercial_motion?: CRMDealCommercialMotion;
   probability?: number;
   custom_properties: Record<string, unknown>;
   pipeline?: CRMPipeline;
@@ -231,6 +252,7 @@ export interface CreateCRMDealRequest {
   currency?: string;
   close_date?: string;
   owner_member_id?: string;
+  commercial_motion?: CRMDealCommercialMotion;
   probability?: number;
   custom_properties?: Record<string, unknown>;
 }
@@ -243,9 +265,13 @@ export interface UpdateCRMDealRequest {
   currency?: string;
   close_date?: string;
   owner_member_id?: string;
+  commercial_motion?: CRMDealCommercialMotion;
+  clear_commercial_motion?: boolean;
   probability?: number;
   custom_properties?: Record<string, unknown>;
 }
+
+export type CRMDealCommercialMotion = "new_business" | "expansion" | "renewal";
 
 export interface CRMAssociation {
   id: string;
@@ -292,6 +318,49 @@ export interface CRMActivity {
   updated_at: string;
 }
 
+export type CRMTimelineFilter =
+  | "all"
+  | "note"
+  | "email"
+  | "call"
+  | "meeting"
+  | "task"
+  | "deal"
+  | "support";
+
+export interface CRMTimelineReference {
+  type: string;
+  id: string;
+  name: string;
+  display_id?: string;
+}
+
+export interface CRMTimelineItem {
+  id: string;
+  kind: CRMActivityType | "task" | "deal" | "support" | "enrichment";
+  event_type: string;
+  source_type: string;
+  source_id: string;
+  title: string;
+  description?: string;
+  occurred_at: string;
+  actor?: CRMTimelineReference;
+  contact?: CRMTimelineReference;
+  entity?: CRMTimelineReference;
+  can_edit: boolean;
+  can_delete: boolean;
+}
+
+export interface CRMTimelinePage {
+  data: CRMTimelineItem[];
+  next_cursor?: string;
+}
+
+export type CRMCompanyTimelineFilter = CRMTimelineFilter;
+export type CRMCompanyTimelineReference = CRMTimelineReference;
+export type CRMCompanyTimelineItem = CRMTimelineItem;
+export type CRMCompanyTimelinePage = CRMTimelinePage;
+
 export interface CreateCRMActivityRequest {
   workspace_id: string;
   activity_type: CRMActivityType;
@@ -324,8 +393,8 @@ export interface CRMPaginatedResponse<T> {
 
 // ── Phase 2: Import ──
 
-export type CRMImportSource = 'csv' | 'hubspot';
-export type CRMImportStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type CRMImportSource = "csv" | "hubspot";
+export type CRMImportStatus = "pending" | "processing" | "completed" | "failed";
 
 export interface CRMImportJob {
   id: string;
@@ -368,9 +437,13 @@ export interface ProcessCRMImportRequest {
 
 // ── Phase 3: Email & Calendar ──
 
-export type CRMEmailProvider = 'gmail' | 'microsoft';
-export type CRMEmailDirection = 'inbound' | 'outbound';
-export type CRMEmailAccountStatus = 'pending_oauth' | 'connected' | 'disconnected' | 'error';
+export type CRMEmailProvider = "gmail" | "microsoft";
+export type CRMEmailDirection = "inbound" | "outbound";
+export type CRMEmailAccountStatus =
+  | "pending_oauth"
+  | "connected"
+  | "disconnected"
+  | "error";
 
 export interface CRMEmailAccount {
   id: string;
@@ -386,6 +459,7 @@ export interface CRMEmailAccount {
   status: CRMEmailAccountStatus;
   disconnected_at?: string;
   has_synced_data: boolean;
+  can_send?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -464,6 +538,14 @@ export interface CRMEmailThread {
   deal_id?: string;
   created_at: string;
   updated_at: string;
+  latest_message?: CRMEmailMessage;
+  mailbox_email?: string;
+  mailbox_provider?: CRMEmailProvider;
+  mailbox_status?: CRMEmailAccountStatus;
+  mailbox_last_synced_at?: string;
+  can_reply?: boolean;
+  needs_reply?: boolean;
+  needs_reply_dismissed?: boolean;
 }
 
 export interface CRMEmailMessage {
@@ -472,6 +554,9 @@ export interface CRMEmailMessage {
   email_account_id: string;
   thread_id?: string;
   message_external_id: string;
+  rfc_message_id?: string;
+  in_reply_to?: string;
+  references_header?: string;
   from_address: string;
   from_name?: string;
   to_addresses: string[];
@@ -485,6 +570,22 @@ export interface CRMEmailMessage {
   contact_ids: string[];
   deal_id?: string;
   created_at: string;
+}
+
+export interface CRMEmailParticipant {
+  email: string;
+  name?: string;
+  role: "from" | "to" | "cc" | "manual";
+  contact_id?: string;
+  contact_name?: string;
+  company_id?: string;
+  company_name?: string;
+}
+
+export interface CRMEmailThreadDetail {
+  thread: CRMEmailThread;
+  messages: CRMEmailMessage[];
+  participants: CRMEmailParticipant[];
 }
 
 export interface CreateCRMEmailMessageRequest {
@@ -565,13 +666,23 @@ export interface UpdateCRMCalendarEventRequest {
 // ── Unified Activity Feed ──
 
 export type UnifiedActivityItem =
-  | { kind: 'activity'; data: CRMActivity; timestamp: string; source: 'manual' }
-  | { kind: 'email'; data: CRMEmailMessage; timestamp: string; source: CRMEmailProvider | 'unknown' }
-  | { kind: 'calendar'; data: CRMCalendarEvent; timestamp: string; source: CRMEmailProvider | 'unknown' };
+  | { kind: "activity"; data: CRMActivity; timestamp: string; source: "manual" }
+  | {
+      kind: "email";
+      data: CRMEmailMessage;
+      timestamp: string;
+      source: CRMEmailProvider | "unknown";
+    }
+  | {
+      kind: "calendar";
+      data: CRMCalendarEvent;
+      timestamp: string;
+      source: CRMEmailProvider | "unknown";
+    };
 
 // ── Phase 4: AI Intelligence ──
 
-export type CRMEnrichmentSource = 'apollo' | 'ai' | 'manual';
+export type CRMEnrichmentSource = "apollo" | "ai" | "manual";
 
 export interface CRMEnrichmentResult {
   id: string;
@@ -594,29 +705,77 @@ export interface CreateCRMEnrichmentRequest {
 }
 
 export type CRMSignalType =
-  | 'buying_intent'
-  | 'objection'
-  | 'competitor_mention'
-  | 'budget_signal'
-  | 'timeline_signal'
-  | 'champion_signal'
-  | 'risk_signal';
+  | "buying_intent"
+  | "objection"
+  | "competitor_mention"
+  | "budget_signal"
+  | "timeline_signal"
+  | "champion_signal"
+  | "risk_signal";
 
-export type CRMSignalSourceType = 'email' | 'meeting' | 'note' | 'manual' | 'support';
+export type CRMSignalSourceType =
+  | "email"
+  | "meeting"
+  | "note"
+  | "call"
+  | "manual"
+  | "support"
+  | "crm"
+  | "pm"
+  | "web_behavior"
+  | "product_usage"
+  | "external";
+
+export type CRMSignalDomain =
+  | "conversation"
+  | "web_behavior"
+  | "product_usage"
+  | "support"
+  | "delivery"
+  | "relationship"
+  | "market";
+export type CRMSignalPolarity = "positive" | "negative" | "neutral";
+export type CRMSignalDismissalReason =
+  | "incorrect_evidence"
+  | "wrong_entity"
+  | "duplicate"
+  | "irrelevant"
+  | "handled"
+  | "bad_timing";
+export type CRMSignalSeverity = "low" | "medium" | "high";
+export type CRMCommercialMotion =
+  | "prospecting"
+  | "conversion"
+  | "onboarding"
+  | "adoption"
+  | "expansion"
+  | "renewal"
+  | "retention";
 
 export interface CRMSignalMetadata {
   message_direction?: string;
   participant_count?: number;
   thread_external_id?: string;
   ingestion_version?: string;
+  detector_version?: string;
+  source_content_hash?: string;
+  evidence_verified?: boolean;
   skip_reason?: string;
+  mailbox_email?: string;
 }
 
-export interface CRMBuyerSignal {
+export interface CRMSignal {
   id: string;
   workspace_id: string;
   contact_id?: string;
   deal_id?: string;
+  company_id?: string;
+  contact_name?: string;
+  deal_name?: string;
+  deal_display_id?: string;
+  account_name?: string;
+  account_domain?: string;
+  owner_member_id?: string;
   signal_type: CRMSignalType;
   source_type: CRMSignalSourceType;
   source_id?: string;
@@ -626,25 +785,240 @@ export interface CRMBuyerSignal {
   metadata?: CRMSignalMetadata;
   confidence: number;
   detected_at: string;
+  detector_kind?: "llm_extracted" | "rule_derived" | "manual";
+  signal_domain?: CRMSignalDomain;
+  polarity?: CRMSignalPolarity;
+  rule_key?: string;
+  rule_version?: number;
+  evidence_identity_method?: string;
+  evidence_identity_trust?: string;
+  business_priority?: number;
+  signed_impact?: number;
+  severity?: CRMSignalSeverity;
+  score_version?: number;
+  score_factors?: Record<string, unknown>;
+  evidence_fingerprint?: string;
+  observation_id?: string;
+  commercial_motion: CRMCommercialMotion;
+  interpretation_version: number;
+  interpretation_snapshot?: Record<string, unknown>;
+  meaning_fingerprint?: string;
+  recommended_action_key?: string;
+  recommended_action_label?: string;
+  replay_calibration_excluded?: boolean;
+  superseded_at?: string;
+  superseded_reason?: string;
+  direction_changed_by_supersession?: boolean;
+  dismissed_at?: string;
+  dismissed_by_member_id?: string;
+  dismissal_reason?: CRMSignalDismissalReason;
+  reviewed_at?: string;
+  acted_at?: string;
+  activation_eligible?: boolean;
+  activation_blockers?: string[];
+  existing_open_task_id?: string;
   created_at: string;
 }
 
-export interface CreateCRMBuyerSignalRequest {
+export type CRMExternalEvidenceType =
+  | "funding"
+  | "hiring"
+  | "job_change"
+  | "technology"
+  | "leadership"
+  | "third_party_intent";
+
+export interface CRMSignalExternalEvidence {
+  id: string;
+  workspace_id: string;
+  provider: string;
+  provider_evidence_id: string;
+  evidence_type: CRMExternalEvidenceType;
+  rule_key: string;
+  rule_version: number;
+  signal_type: CRMSignalType;
+  signal_domain: CRMSignalDomain;
+  polarity: CRMSignalPolarity;
+  summary: string;
+  evidence_excerpt?: string;
+  source_url?: string;
+  contact_id?: string;
+  deal_id?: string;
+  company_id?: string;
+  identity_method: string;
+  identity_trust: string;
+  provenance: Record<string, unknown>;
+  observed_at: string;
+  signal_id?: string;
+  created_at: string;
+}
+
+export type IngestCRMSignalExternalEvidenceRequest = Omit<
+  CRMSignalExternalEvidence,
+  "id" | "signal_id" | "created_at"
+>;
+
+export interface CRMSignalAccountStory {
+  id: string;
+  entity_type: "company" | "deal" | "contact" | "unresolved";
+  entity_id: string;
+  account_name: string;
+  account_domain?: string;
+  owner_member_id?: string;
+  commercial_motion: CRMCommercialMotion;
+  other_active_motions?: CRMCommercialMotion[];
+  priority: number;
+  signed_impact: number;
+  positive_strength: number;
+  negative_strength: number;
+  needs_judgment: boolean;
+  recommended_action_key?: string;
+  recommended_action_label?: string;
+  direction_changed_by_supersession: boolean;
+  severity: CRMSignalSeverity;
+  polarity: CRMSignalPolarity;
+  domains: CRMSignalDomain[];
+  latest_detected_at: string;
+  changed_since: number;
+  evidence_source_count: number;
+  changed_evidence_source_count: number;
+  change_summary: string;
+  score_version: number;
+  score_factors: Record<string, unknown>;
+  signals: CRMSignal[];
+}
+
+export interface CRMSignalWorkspaceFeed {
+  data: CRMSignalAccountStory[];
+  lanes: CRMSignalLane[];
+  total: number;
+  page: number;
+  score_version: number;
+  heuristic: boolean;
+  minimum_lane_priority: number;
+  rollout_mode: "shadow" | "live";
+}
+
+export interface CRMSignalLane {
+  commercial_motion: CRMCommercialMotion;
+  data: CRMSignalAccountStory[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface CRMSignalRuleConfig {
+  id: string;
+  workspace_id?: string;
+  rule_key: string;
+  version: number;
+  cadence: "daily" | "micro_batch" | "event_driven";
+  enabled: boolean;
+  shadow_mode: boolean;
+  activation_eligible: boolean;
+  business_weight: number;
+}
+
+export interface CRMSignalPrecisionRow {
+  workspace_id: string;
+  rule_key: string;
+  rule_version: number;
+  signal_domain: CRMSignalDomain;
+  identity_method: string;
+  reviewed_count: number;
+  valid_count: number;
+  incorrect_count: number;
+  acted_count: number;
+  precision: number;
+  average_review_millis: number;
+  average_action_millis: number;
+}
+
+export interface CRMSignalOutcomeCalibrationRow {
+  workspace_id: string;
+  rule_key: string;
+  rule_version: number;
+  commercial_motion: CRMCommercialMotion;
+  identity_method: string;
+  matured_signals: number;
+  outcome_matched: number;
+  outcome_precision: number;
+  horizon_days: number;
+}
+
+export interface CRMSignalRoutingSettings {
+  workspace_id: string;
+  default_signal_owner_member_id?: string;
+  minimum_lane_priority: number;
+}
+
+export interface CRMSignalRolloutSettings {
+  workspace_id: string;
+  mode: "shadow" | "live";
+  activated_at?: string;
+  activated_by_member_id?: string;
+}
+
+export interface CRMSignalShadowGate {
+  eligible: boolean;
+  observation_count: number;
+  unmapped_observation_rate: number;
+  duplicate_fingerprint_rate: number;
+  immutable_meaning_violations: number;
+}
+
+export interface CRMSignalRoutingPolicy {
+  id: string;
+  workspace_id: string;
+  version: number;
+  enabled: boolean;
+  minimum_priority: number;
+  required_trust: string;
+  route_to_owner: boolean;
+  destination_team_id?: string;
+  channels: string[];
+  created_at: string;
+}
+
+export interface CRMSignalFeedFilters {
+  owner_member_id?: string;
+  account_id?: string;
+  domain?: CRMSignalDomain;
+  polarity?: CRMSignalPolarity;
+  motion?: CRMCommercialMotion;
+  severity?: CRMSignalSeverity;
+  trust?: string;
+  status?: "active" | "dismissed" | "superseded" | "all";
+  max_age_days?: number;
+  page?: number;
+  per_page?: number;
+  filters?: string;
+  lane_pages?: Partial<Record<CRMCommercialMotion, number>>;
+}
+
+export interface CreateCRMSignalRequest {
   workspace_id: string;
   contact_id?: string;
   deal_id?: string;
+  company_id?: string;
   signal_type: CRMSignalType;
-  source_type?: CRMSignalSourceType;
-  source_id?: string;
-  source_thread_id?: string;
   summary: string;
   evidence_excerpt?: string;
   metadata?: Record<string, unknown>;
   confidence?: number;
 }
 
-export type CRMEntitySummaryStatus = 'pending_refresh' | 'ready' | 'stale' | 'error';
-export type CRMSummaryHighlightKind = 'momentum' | 'risk' | 'next_step' | 'stakeholder' | 'signal';
+export type CRMEntitySummaryStatus =
+  | "pending_refresh"
+  | "ready"
+  | "stale"
+  | "error";
+export type CRMSummaryHighlightKind =
+  | "momentum"
+  | "risk"
+  | "next_step"
+  | "stakeholder"
+  | "signal";
 
 export interface SummaryHighlight {
   kind: CRMSummaryHighlightKind;
@@ -655,12 +1029,44 @@ export interface CRMEntitySummaryMetadata {
   source_email_count?: number;
   source_signal_count?: number;
   generation_version?: string;
+  source_contact_count?: number;
+  source_deal_count?: number;
+  source_task_count?: number;
+  source_support_count?: number;
+  source_activity_count?: number;
+  source_activity_counts?: Record<string, number>;
+  source_window_days?: number;
+}
+
+export interface CRMSummaryReadinessStep {
+  key: string;
+  label: string;
+  complete: boolean;
+}
+
+export interface CRMSummaryReadiness {
+  count: number;
+  threshold: number;
+  ready: boolean;
+  steps: CRMSummaryReadinessStep[];
+}
+
+export interface CRMSummarySource {
+  key: string;
+  type: string;
+  source_id: string;
+  thread_id?: string;
+  entity_type?: string;
+  entity_id?: string;
+  label: string;
+  occurred_at: string;
+  email_account_id?: string;
 }
 
 export interface CRMEntitySummary {
   id: string;
   workspace_id: string;
-  entity_type: 'contact' | 'deal';
+  entity_type: "contact" | "company" | "deal";
   entity_id: string;
   summary_markdown: string;
   highlights: SummaryHighlight[];
@@ -671,8 +1077,18 @@ export interface CRMEntitySummary {
   last_triggered_at?: string;
   last_error?: string;
   metadata?: CRMEntitySummaryMetadata;
+  readiness?: CRMSummaryReadiness;
+  sources?: CRMSummarySource[];
+  next_step?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CRMIntelligenceRefreshResult {
+  summary: CRMEntitySummary;
+  sources_analyzed: number;
+  signals_detected: number;
+  warnings: string[];
 }
 
 export interface CRMDealHealthScore {
@@ -693,13 +1109,13 @@ export interface CreateCRMDealHealthScoreRequest {
 }
 
 export type CRMSuggestionType =
-  | 'follow_up'
-  | 'deal_create'
-  | 'deal_advance'
-  | 'enrichment'
-  | 'risk_alert';
+  | "follow_up"
+  | "deal_create"
+  | "deal_advance"
+  | "enrichment"
+  | "risk_alert";
 
-export type CRMSuggestionStatus = 'pending' | 'accepted' | 'dismissed';
+export type CRMSuggestionStatus = "pending" | "accepted" | "dismissed";
 
 export interface CRMSuggestion {
   id: string;
@@ -711,8 +1127,14 @@ export interface CRMSuggestion {
   title: string;
   description?: string;
   context: Record<string, unknown>;
+  signal_ids?: string[];
+  signals?: CRMSignal[];
   status: CRMSuggestionStatus;
+  dismissal_reason?: CRMSignalDismissalReason;
   confidence: number;
+  execution_status?: "pending" | "succeeded" | "failed";
+  executed_at?: string;
+  execution_error?: string;
   created_at: string;
   updated_at: string;
 }
@@ -759,9 +1181,9 @@ export interface UpdateCRMWritingProfileRequest {
 
 // ── Email Sync Settings ──
 
-export type CRMFilterMode = 'blocklist' | 'allowlist';
-export type CRMRecordCreationMode = 'disabled' | 'selective' | 'always';
-export type CRMInternalExclusion = 'none' | 'exclude';
+export type CRMFilterMode = "blocklist" | "allowlist";
+export type CRMRecordCreationMode = "disabled" | "selective" | "always";
+export type CRMInternalExclusion = "none" | "exclude";
 
 export interface CRMEmailSyncSettings {
   id: string;

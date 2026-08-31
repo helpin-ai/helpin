@@ -2,9 +2,11 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
@@ -107,6 +109,7 @@ func (h *CRMDealHandler) List(w http.ResponseWriter, r *http.Request) {
 		PipelineID:    queryStringPtr(r, "pipeline_id"),
 		StageID:       queryStringPtr(r, "stage_id"),
 		OwnerMemberID: queryStringPtr(r, "owner_member_id"),
+		ContactID:     queryStringPtr(r, "contact_id"),
 		Search:        queryStringPtr(r, "search"),
 	}
 	pagination := queryPagination(r)
@@ -136,7 +139,7 @@ func (h *CRMDealHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.WorkspaceID == "" {
 		req.WorkspaceID = getWorkspaceID(r)
 	}
-	deal, err := h.dealService.Create(r.Context(), req)
+	deal, err := h.dealService.CreateWithActor(r.Context(), req, middleware.GetUserID(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -155,6 +158,31 @@ func (h *CRMDealHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, deal)
 }
 
+// ListTimeline handles GET /api/crm/deals/{id}/timeline.
+func (h *CRMDealHandler) ListTimeline(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	dealID := chi.URLParam(r, "id")
+	page, err := h.dealService.ListTimeline(
+		r.Context(),
+		workspaceID,
+		dealID,
+		r.URL.Query().Get("filter"),
+		r.URL.Query().Get("cursor"),
+		queryInt(r, "limit", 25),
+	)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "invalid timeline") || strings.Contains(err.Error(), "required") {
+			status = http.StatusBadRequest
+		} else if strings.Contains(err.Error(), "deal not found") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
 // Update handles PUT /api/crm/deals/{id}.
 func (h *CRMDealHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -163,7 +191,7 @@ func (h *CRMDealHandler) Update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	deal, err := h.dealService.Update(r.Context(), id, req)
+	deal, err := h.dealService.UpdateWithActor(r.Context(), id, req, middleware.GetUserID(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -616,7 +616,7 @@ ws:events:global             — events without a workspace_id (fallback)
 
 Two-tier channel design:
 - **Per-workspace channels**: Most events have a `workspace_id`. Pods subscribe to channels for workspaces that have active clients. When the last client for a workspace disconnects, the pod unsubscribes from that channel.
-- **Global channel**: Some events lack `workspace_id` (e.g. `crm_buyer_signal` from signal detection workflows). These go to the global channel. All pods subscribe to it.
+- **Global channel**: Some events lack `workspace_id` (e.g. `crm_signal` from signal detection workflows). These go to the global channel. All pods subscribe to it.
 
 **Publisher routing logic**:
 ```go
@@ -637,7 +637,7 @@ Before Phase 2 ships, **every event producer must set WorkspaceID**. Specific fi
 
 | File | Event | Fix |
 |------|-------|-----|
-| `signal_detection_workflow.go:108` | `crm_buyer_signal:created` | Add WorkspaceID from the signal's workspace context |
+| `signal_detection_workflow.go:108` | `crm_signal:created` | Add WorkspaceID from the signal's workspace context |
 | Any other producer found by: `grep -r 'wsPublisher.Publish' --include="*.go" \| grep -v WorkspaceID` | — | Add WorkspaceID |
 
 Events without WorkspaceID should be logged as errors at the Publisher level:

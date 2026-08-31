@@ -28,6 +28,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
+	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/meetingcapture"
@@ -244,7 +245,20 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
-	completionRoutes := service.DefaultAICompletionRouteRegistry()
+	completionRoutes := service.NewAICompletionRouteRegistry(service.CRMCompletionRouteConfig{
+		Primary: service.AICompletionRoute{
+			Provider: cfg.CRMLLMProvider, Model: cfg.CRMLLMModel,
+			OpenRouterProvider: cfg.CRMLLMOpenRouterProvider,
+		},
+		Fallback: service.AICompletionRoute{
+			Provider: cfg.CRMLLMFallbackProvider, Model: cfg.CRMLLMFallbackModel,
+			OpenRouterProvider: cfg.CRMLLMFallbackOpenRouterProvider,
+		},
+		MeetingFallback: service.AICompletionRoute{
+			Provider: cfg.CRMMeetingFallbackProvider, Model: cfg.CRMMeetingFallbackModel,
+			OpenRouterProvider: cfg.CRMMeetingFallbackOpenRouterProvider,
+		},
+	})
 	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
 		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
 	}
@@ -280,7 +294,8 @@ func main() {
 	go service.NewGitGraceCleanup(gitIntRepo, gitRepo).Start(gitGraceCleanupCtx)
 	_ = gitGraceCleanupCancel // used at shutdown
 
-	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient)
+	crmSummaryService := service.NewCRMSummaryService(crmSummaryRepo, crmContactRepo, crmCompanyRepo, crmDealRepo, crmAssociationRepo, crmSignalRepo, crmEmailRepo, llmProvider, temporalClient).
+		SetCompanyEvidenceRepositories(repository.NewCRMCompanyTimelineRepository(db), storyRepo, conversationRepo)
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
@@ -300,8 +315,13 @@ func main() {
 	emailSyncActivities := temporalapp.NewEmailSyncActivities(gmailSyncClient, crmEmailRepo, crmContactRepo, crmCalendarRepo, crmEmailSyncSettingsRepo, temporalClient, crmSummaryService).
 		SetMeetingRepository(crmMeetingRepo).
 		SetMeetingCaptureScheduler(meetingCaptureScheduler).
-		SetMeetingPolicyReconciler(calendarMeetingPolicyService)
-	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
+		SetMeetingPolicyReconciler(calendarMeetingPolicyService).
+		SetCalendarSignalRepository(crmSignalRepo)
+	crmSignalService := service.NewCRMSignalService(crmSignalRepo, crmSummaryService).
+		SetHealthScoreDependencies(crmDealRepo)
+	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService).
+		SetHealthScoreRefresh(crmSignalService)
+	crmSummaryService.SetIntelligenceDependencies(signalDetectionService, crmActivityRepo, supportMessageRepo)
 	runRepo.SetNotifier(ws.NewRunNotifier(wsPublisher))
 	runRepo.SetTriggerExecutionRepository(triggerExecutionRepo)
 	var agentRuntimeClient *service.AgentRuntimeClient
@@ -496,13 +516,21 @@ func main() {
 		s3Client,
 		nil,
 	)
-	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
+	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo).
+		SetActivityService(pmActivityService)
 	crmCompanyService := service.NewCRMCompanyService(crmCompanyRepo)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	crmActivityService.SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
+	crmDealService.SetCompanySummaryRefresh(crmSummaryService)
+	crmCompanyService.SetCompanySummaryRefresh(crmSummaryService)
+	crmAssociationService.SetCompanySummaryRefresh(crmSummaryService)
+	crmActivityService.SetCompanySummaryRefresh(crmSummaryService)
+	pmActivityService.SetCompanySummaryRefresh(crmSummaryService)
 	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo).
 		SetActivityRepository(crmActivityRepo).
-		SetWebsocketPublisher(wsPublisher)
+		SetWebsocketPublisher(wsPublisher).
+		SetCompanySummaryRefresh(crmSummaryService)
 	pmLabelService := service.NewPMLabelService(labelRepo, wsPublisher)
 	pmCommentService := service.NewPMCommentService(commentRepo, storyRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo, s3Client)
 	commandService := service.NewInternalCommandService(
@@ -527,7 +555,7 @@ func main() {
 	commandService.SetSupportAttachmentRepository(repository.NewSupportAttachmentRepository(db))
 	commandService.SetCRMReadServices(
 		service.NewCRMContactService(crmContactRepo),
-		service.NewCRMSignalService(crmSignalRepo, crmSummaryService),
+		crmSignalService,
 	)
 	commandService.SetCRMOperationalServices(crmCompanyService, crmAssociationService)
 	commandService.SetWorkspaceSearchServices(
@@ -563,6 +591,7 @@ func main() {
 	ruleEngine.SetTaskService(pmStoryService)
 	ruleEngine.SetHealthObserver(automationHealthService)
 	ruleEngine.SetTriggerExecutionRepository(triggerExecutionRepo)
+	ruleEngine.SetRunEngine(temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace))
 
 	signalActivities := temporalapp.NewSignalDetectionActivities(signalDetectionService, wsPublisher).SetHealthObserver(automationHealthService)
 	summaryActivities := temporalapp.NewCRMSummaryActivities(crmSummaryService).SetHealthObserver(automationHealthService)

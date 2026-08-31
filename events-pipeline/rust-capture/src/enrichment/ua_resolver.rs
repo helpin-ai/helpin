@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex;
 use uaparser::{Parser, UserAgentParser};
 
 #[derive(Debug, Default, Clone)]
@@ -125,6 +126,7 @@ impl OsString {
 pub struct UaResolver {
     parser: Arc<UserAgentParser>,
     cache: Cache<String, ResolvedUa>,
+    cold_miss: Arc<Mutex<()>>,
 }
 
 impl UaResolver {
@@ -141,21 +143,27 @@ impl UaResolver {
         UaResolver {
             parser: Arc::new(parser),
             cache,
+            cold_miss: Arc::new(Mutex::new(())),
         }
     }
 
-    pub fn seed_to_lru_cache(&self) -> io::Result<()> {
+    pub fn seed_to_lru_cache(&self) -> io::Result<usize> {
         tracing::info!("🔄 Seeding user agents from file to LRU cache started");
         let path = Path::new("data/user_agents_seed.txt");
         let file = File::open(&path)?;
         let reader = io::BufReader::new(file);
+        let mut seeded = 0;
 
         for line in reader.lines() {
             let ua = line?;
             self.resolve(&ua);
+            seeded += 1;
         }
-        tracing::info!("✅ Seeding user agents from file to LRU cache completed");
-        Ok(())
+        tracing::info!(
+            seeded,
+            "✅ Seeding user agents from file to LRU cache completed"
+        );
+        Ok(seeded)
     }
 
     pub fn resolve(&self, ua: &str) -> Option<ResolvedUa> {
@@ -166,6 +174,19 @@ impl UaResolver {
         if let Some(resolved_ua) = self.cache.get(ua) {
             // If it is, return the cached result immediately,
             // without needing to parse the UA string again.
+            return Some(resolved_ua);
+        }
+
+        // Regex keeps sizeable scratch buffers for concurrent searches. A
+        // burst of requests carrying the same unseen user agent used to let
+        // every Tokio worker parse it before the first cache insert, retaining
+        // one large regex workspace per worker. Serialize cold misses and
+        // double-check the cache so steady-state hits remain lock-free.
+        let _cold_miss = self
+            .cold_miss
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(resolved_ua) = self.cache.get(ua) {
             return Some(resolved_ua);
         }
 

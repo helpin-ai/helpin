@@ -31,6 +31,7 @@ import { supportService } from '@/lib/services/supportService';
 import type { CRMAssociationEnriched, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { ConversationStatus, SupportConversation } from '@/lib/pmTypes';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 import { cn, truncateText } from '@/lib/utils';
 
 interface AssociationsListProps {
@@ -41,6 +42,7 @@ interface AssociationsListProps {
   currentObjectId: string;
   onAssociationRemoved?: () => void;
   editable?: boolean;
+  excludeTypes?: CRMObjectType[];
 }
 
 type SectionType = CRMObjectType;
@@ -150,6 +152,7 @@ export function AssociationsList({
   currentObjectId,
   onAssociationRemoved,
   editable = true,
+  excludeTypes = [],
 }: AssociationsListProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -195,13 +198,16 @@ export function AssociationsList({
     const routes: Partial<Record<CRMObjectType, { to: string; params: Record<string, string> }>> = {
       contact: { to: '/w/$slug/crm/contacts/$contactId', params: { slug, contactId: id } },
       company: { to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: id } },
-      deal: { to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: id } },
       meeting: { to: '/w/$slug/crm/meetings/$meetingId', params: { slug, meetingId: id } },
       epic: { to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: id } },
       support_conversation: { to: '/w/$slug/support/$conversationId', params: { slug, conversationId: id } },
     };
     if (type === 'task') {
       openTaskRoute(navigate as never, location as never, slug, id);
+      return;
+    }
+    if (type === 'deal') {
+      openDealRoute(navigate as never, location, slug, id);
       return;
     }
     const route = routes[type];
@@ -282,7 +288,10 @@ export function AssociationsList({
   };
 
   const sectionOrder: SectionType[] = ['contact', 'company', 'deal', 'meeting', 'epic', 'task', 'support_conversation'];
-  const visibleSections = sectionOrder.filter((type) => type !== currentObjectType);
+  const excludedTypeSet = new Set(excludeTypes);
+  const visibleSections = sectionOrder.filter(
+    (type) => type !== currentObjectType && !excludedTypeSet.has(type),
+  );
   const pickerConfig = pickerSection ? sectionConfig[pickerSection] : null;
   const pickerPlaceholder =
     pickerSection === 'support_conversation'

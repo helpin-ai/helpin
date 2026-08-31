@@ -8,6 +8,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/gorm"
 )
 
 type stubSupportLinkPreviewer struct{}
@@ -27,8 +28,22 @@ func (stubSupportLinkPreviewer) EnrichMessage(_ context.Context, msg *model.Supp
 	msg.Metadata = metadata
 }
 
+func serializeSupportLinkPreviewTestDB(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	// The preview write runs in a goroutine. A shared-cache in-memory SQLite
+	// database returns SQLITE_LOCKED instead of waiting when the assertion read
+	// overlaps that write, so keep this integration test on one connection.
+	sqlDB.SetMaxOpenConns(1)
+}
+
 func TestCreateConversationMessageStoresLinkPreviewMetadata(t *testing.T) {
 	db := newTestDB(t)
+	serializeSupportLinkPreviewTestDB(t, db)
 	ctx := context.Background()
 
 	workspaceID := "ws-support-preview"
@@ -97,6 +112,7 @@ func TestCreateConversationMessageStoresLinkPreviewMetadata(t *testing.T) {
 
 func TestWidgetCreateMessageStoresLinkPreviewMetadata(t *testing.T) {
 	db := newTestDB(t)
+	serializeSupportLinkPreviewTestDB(t, db)
 	ctx := context.Background()
 
 	workspaceID := "ws-widget-preview"

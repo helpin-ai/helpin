@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildPanelNavGroups, buildRailItems, deriveActiveRail } from '../config';
+import { CheckListIcon } from '@/lib/icons';
+import { buildPanelNavGroups, buildRailItems, deriveActiveRail, projectCreateOptions, teamSubItems } from '../config';
 
 describe('workspace rail navigation', () => {
+  it('uses the shared task icon for team task navigation', () => {
+    expect(teamSubItems.find((item) => item.key === 'tasks')?.icon).toBe(CheckListIcon);
+    expect(projectCreateOptions.find((item) => item.key === 'task')?.icon).toBe(CheckListIcon);
+  });
+
   it('orders modules from projects through settings', () => {
     const items = buildRailItems('acme', 0);
 
@@ -32,7 +38,7 @@ describe('workspace rail navigation', () => {
       'Deals',
       'Meetings',
       'Review',
-      'Insights',
+      'Signals',
     ]);
   });
 });

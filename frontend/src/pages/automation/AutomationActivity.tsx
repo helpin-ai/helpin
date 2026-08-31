@@ -18,6 +18,7 @@ import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSession
 import { openEpicRoute } from '@/components/pm/epic-detail/epicRouteNavigation';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -1157,10 +1158,7 @@ export function AutomationActivityPage({
         });
         return;
       case 'crm_deal':
-        void navigate({
-          to: '/w/$slug/crm/deals/$dealId' as string,
-          params: { slug, dealId: targetID },
-        });
+        openDealRoute(navigate as never, { pathname: location.pathname }, slug, targetID);
         return;
       default:
         return;

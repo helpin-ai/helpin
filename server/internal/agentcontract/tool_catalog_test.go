@@ -578,7 +578,7 @@ func TestWorkspaceDiscoveryCatalogUsesCanonicalSearchAndPagination(t *testing.T)
 	for _, alias := range []string{
 		"search_workspace", "list_workspace_teams", "list_workspace_members", "list_tasks", "list_epics", "list_sprints",
 		"list_sprint_tasks", "list_objectives", "list_documents", "search_documents",
-		"list_deals", "list_contacts", "list_buyer_signals", "list_conversation_messages",
+		"list_deals", "list_contacts", "list_crm_signals", "list_conversation_messages",
 	} {
 		schema := requireCatalogSchema(t, tools, alias)
 		properties := schemaProperties(t, alias, schema)
@@ -684,8 +684,9 @@ func TestWebSearchToolCatalogDocumentsProviderPrecedence(t *testing.T) {
 		if tool.Name != "web_search" {
 			continue
 		}
-		if !strings.Contains(tool.Description, "Exa is preferred") ||
-			!strings.Contains(tool.Description, "fallback for compatible fast searches") {
+		if !strings.Contains(tool.Description, "TinyFish is preferred") ||
+			!strings.Contains(tool.Description, "Exa handles advanced searches") ||
+			!strings.Contains(tool.Description, "Brave remains the final compatible fallback") {
 			t.Fatalf("web_search description omits provider selection contract: %q", tool.Description)
 		}
 		return

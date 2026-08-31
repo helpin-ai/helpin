@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -133,6 +134,20 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 	if err != nil {
 		return err
 	}
+	inst := &model.SupportWidgetInstallation{IdentityVerificationMode: model.IdentityVerificationModeReportOnly}
+	if s.installationRepo != nil {
+		inst, err = s.installationRepo.GetByWorkspace(ctx, session.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if inst == nil {
+			return fmt.Errorf("widget installation not found")
+		}
+	}
+	provenance, err := verifyWidgetIdentity(inst, identity, time.Now().UTC())
+	if err != nil {
+		return err
+	}
 
 	resolved := resolveWidgetIdentityPayload(identity)
 
@@ -154,6 +169,12 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 			session.CustomerName = &resolved.displayName
 		}
 		session.IsAnonymous = false
+		if session.IdentityTrust != model.IdentityTrustVerified || provenance.trust == model.IdentityTrustVerified {
+			session.IdentityMethod = provenance.method
+			session.IdentityTrust = provenance.trust
+			session.IdentityVerifiedAt = provenance.verifiedAt
+			session.IdentityVerifierVersion = provenance.verifierVersion
+		}
 		if err := sessionRepoTx.Update(ctx, session); err != nil {
 			return err
 		}
@@ -192,6 +213,26 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 		if err := sessionRepoTx.UpdateSessionsByAnonymousID(ctx, session.WorkspaceID, session.AnonymousID, resolved.email, resolved.displayName); err != nil {
 			return err
 		}
+		if err := sessionRepoTx.UpgradeIdentityProvenanceByAnonymousID(
+			ctx, session.WorkspaceID, session.AnonymousID, provenance.method, provenance.trust,
+			provenance.verifiedAt, provenance.verifierVersion,
+		); err != nil {
+			return err
+		}
+		link := model.CRMIdentityLink{
+			WorkspaceID:     session.WorkspaceID,
+			AnonymousID:     session.AnonymousID,
+			ExternalUserID:  optionalStringPtr(identity.ExternalUserID),
+			ContactID:       contactID,
+			CompanyID:       companyID,
+			IdentityMethod:  provenance.method,
+			IdentityTrust:   provenance.trust,
+			VerifiedAt:      provenance.verifiedAt,
+			VerifierVersion: provenance.verifierVersion,
+		}
+		if err := tx.Create(&link).Error; err != nil {
+			return fmt.Errorf("record CRM identity link: %w", err)
+		}
 
 		return nil
 	})
@@ -212,8 +253,8 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 
 	slog.InfoContext(ctx, "widget session upgraded",
 		"session_id", session.ID,
-		"email", resolved.email,
 		"source", resolved.source,
+		"identity_method", provenance.method,
 		"conversations_backfilled", len(updatedConvIDs),
 	)
 	return nil
@@ -229,6 +270,10 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 	}
 	if inst == nil {
 		return fmt.Errorf("invalid widget key")
+	}
+	provenance, err := verifyWidgetIdentity(inst, identity, time.Now().UTC())
+	if err != nil {
+		return err
 	}
 
 	workspaceID := inst.WorkspaceID
@@ -282,6 +327,26 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 		if err := sessionRepoTx.UpdateSessionsByAnonymousID(ctx, workspaceID, anonymousID, resolved.email, resolved.displayName); err != nil {
 			return err
 		}
+		if err := sessionRepoTx.UpgradeIdentityProvenanceByAnonymousID(
+			ctx, workspaceID, anonymousID, provenance.method, provenance.trust,
+			provenance.verifiedAt, provenance.verifierVersion,
+		); err != nil {
+			return err
+		}
+		link := model.CRMIdentityLink{
+			WorkspaceID:     workspaceID,
+			AnonymousID:     anonymousID,
+			ExternalUserID:  optionalStringPtr(identity.ExternalUserID),
+			ContactID:       contactID,
+			CompanyID:       companyID,
+			IdentityMethod:  provenance.method,
+			IdentityTrust:   provenance.trust,
+			VerifiedAt:      provenance.verifiedAt,
+			VerifierVersion: provenance.verifierVersion,
+		}
+		if err := tx.Create(&link).Error; err != nil {
+			return fmt.Errorf("record CRM identity link: %w", err)
+		}
 
 		return nil
 	})
@@ -302,8 +367,8 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 
 	slog.InfoContext(ctx, "widget identify via HTTP",
 		"anonymous_id", anonymousID,
-		"email", resolved.email,
 		"source", resolved.source,
+		"identity_method", provenance.method,
 		"conversations_backfilled", len(updatedConvIDs),
 	)
 	return nil
@@ -628,6 +693,11 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
 	s.enrichSupportMessageLinksAsync(msg, "widget:"+session.ID)
+	s.recordSupportEvent(SupportEventInput{
+		WorkspaceID: session.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
+		ConversationID: session.ConversationID, MessageID: &msg.ID,
+		ActorType: model.SupportEventActorCustomer, Channel: "widget",
+	})
 
 	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner); err == nil {
 		if conv != nil && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
@@ -1427,11 +1497,17 @@ func (s *SupportInboxService) ListWidgetTokens(ctx context.Context) ([]model.Wid
 
 	tokens := make([]model.WidgetToken, 0, len(installations))
 	for _, inst := range installations {
+		workspaceID, err := uuid.Parse(strings.TrimSpace(inst.WorkspaceID))
+		if err != nil {
+			return nil, fmt.Errorf("widget installation %q has invalid workspace ID", inst.ID)
+		}
 		tokens = append(tokens, model.WidgetToken{
-			ID:           inst.ID,
-			ClientSecret: inst.WidgetKey,
-			ServerSecret: inst.SecretKey,
-			Origins:      []string{"*"},
+			ID:                       inst.ID,
+			WorkspaceID:              strings.ToLower(workspaceID.String()),
+			ClientSecret:             inst.WidgetKey,
+			ServerSecret:             inst.SecretKey,
+			Origins:                  []string(inst.AllowedOrigins),
+			IdentityVerificationMode: inst.IdentityVerificationMode,
 		})
 	}
 	return tokens, nil

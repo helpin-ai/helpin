@@ -10,7 +10,7 @@ import (
 )
 
 func TestPMTaskListFiltersIncludesSearchAndTeam(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/pm/tasks?search=HLP-42&team_id=team-a", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/pm/tasks?search=HLP-42&team_id=team-a&state_type=started", nil)
 
 	filters, err := taskListFilters(req)
 	if err != nil {
@@ -21,6 +21,17 @@ func TestPMTaskListFiltersIncludesSearchAndTeam(t *testing.T) {
 	}
 	if filters.TeamID == nil || *filters.TeamID != "team-a" {
 		t.Fatalf("team_id = %v, want team-a", filters.TeamID)
+	}
+	if filters.StateType == nil || *filters.StateType != model.PMStateTypeStarted {
+		t.Fatalf("state_type = %v, want started", filters.StateType)
+	}
+}
+
+func TestPMTaskListFiltersRejectsInvalidStateType(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/pm/tasks?state_type=waiting", nil)
+
+	if _, err := taskListFilters(req); err == nil {
+		t.Fatal("taskListFilters should reject an invalid state_type")
 	}
 }
 

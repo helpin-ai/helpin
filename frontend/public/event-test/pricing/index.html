@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Synthetic pricing page for local buyer-signal testing." />
+    <title>Pricing · Signal Lab</title>
+    <link rel="stylesheet" href="/event-test/styles.css" />
+  </head>
+  <body data-page="pricing">
+    <a class="skip-link" href="#main-content">Skip to pricing</a>
+    <header class="site-header">
+      <a class="wordmark" href="/event-test/"><span class="wordmark-mark" aria-hidden="true">H</span><span class="wordmark-copy">Signal Lab / local</span></a>
+      <nav class="primary-nav" aria-label="Event test pages">
+        <a href="/event-test/">Control</a><a href="/event-test/pricing/" aria-current="page">Pricing</a><a href="/event-test/security/">Security</a><a href="/event-test/demo/">Demo</a>
+      </nav>
+    </header>
+
+    <main class="page-shell" id="main-content">
+      <div class="content">
+        <section data-reveal style="--i: 0">
+          <p class="eyebrow">Pricing signal / route 02</p>
+          <h1>Pay for resolved work, not occupied seats.</h1>
+          <p class="lede">This page produces a pricing pageview. The Scale action also exercises the explicit versioned interaction rule.</p>
+        </section>
+
+        <section class="pricing-table" aria-label="Synthetic plans" data-reveal style="--i: 1">
+          <article class="price-row">
+            <div><h2>Workshop</h2><p>For one team proving the workflow before rollout.</p></div>
+            <div><p class="price">$240 <small>/ month</small></p><a class="button secondary" href="/event-test/demo/">Explore Workshop</a></div>
+          </article>
+          <article class="price-row">
+            <div><h2>Scale</h2><p>For connected support, product, and revenue operations.</p></div>
+            <div><p class="price">$890 <small>/ month</small></p><button type="button" data-helpin-intent="pricing">Choose Scale</button></div>
+          </article>
+        </section>
+
+        <p class="notice">Expected signals: <strong>pageview</strong>, <strong>$interaction</strong> with rule <strong>versioned_interaction v1</strong>, and <strong>pricing_cta_clicked</strong>.</p>
+      </div>
+
+      <aside class="console" aria-label="Browser event activity">
+        <div class="console-header"><h2>Event console</h2><button class="secondary" type="button" data-clear-log>Clear</button></div>
+        <ol data-event-log aria-live="polite"></ol>
+      </aside>
+    </main>
+    <footer class="footer"><span>Run <span data-run-id></span></span><span><span class="state waiting" data-sdk-state>Loading local SDK</span></span></footer>
+    <script>window.helpinQ = window.helpinQ || []; window.helpin = window.helpin || function () { window.helpinQ.push(Array.from(arguments)); };</script>
+    <script defer src="/event-test/app.js"></script>
+  </body>
+</html>

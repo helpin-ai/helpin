@@ -103,7 +103,7 @@ var setupJourneyCatalog = map[string]setupJourneyDefinition{
 			{"crm.company_ready", "Add or import a company so contacts and opportunities can be grouped by account.", "", "Core", "crm_companies", "Add companies", func(e SetupEvidence) bool { return e.CRMCompanyCount > 0 }},
 			{"crm.deal_ready", "Create a deal with an owner, value, and close date so the opportunity is actionable.", "", "Core", "crm_deals", "Create deal", func(e SetupEvidence) bool { return e.CRMActionableDealCount > 0 }},
 			{"crm.email_connected", "Connect your sales inbox so Helpin can capture customer conversations and buying signals.", "", "Core", "crm_email", "Connect inbox", func(e SetupEvidence) bool { return e.CRMConnectedEmailCount > 0 }},
-			{"crm.required_flow_enabled", "Enable buyer-signal follow-up so strong customer intent becomes owned work.", "", "Core", "crm_required_flow", "Enable signal flow", func(e SetupEvidence) bool { return e.CRMRequiredFlowCount > 0 }},
+			{"crm.required_flow_enabled", "Enable CRM-signal follow-up so strong customer intent becomes owned work.", "", "Core", "crm_required_flow", "Enable signal flow", func(e SetupEvidence) bool { return e.CRMRequiredFlowCount > 0 }},
 			{"crm.autonomy_enabled", "Enable CRM automation so Helpin can create or progress deals from strong customer signals.", "", "Power", "crm_autonomy", "Enable automation", func(e SetupEvidence) bool { return e.CRMAutonomyEnabledCount > 0 }},
 			{"crm.signal_value_proven", "Create or progress a deal from a detected customer signal so the pipeline updates itself.", "", "Power", "crm_review", "Review CRM activity", func(e SetupEvidence) bool { return e.CRMSignalValueCount > 0 }},
 		},

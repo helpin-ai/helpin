@@ -31,12 +31,13 @@ func (h *CRMMeetingHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filters := model.CRMMeetingListFilters{
-		Status:        queryStringPtr(r, "status"),
-		OwnerMemberID: queryStringPtr(r, "owner_member_id"),
-		CompanyID:     queryStringPtr(r, "company_id"),
-		ContactID:     queryStringPtr(r, "contact_id"),
-		DealID:        queryStringPtr(r, "deal_id"),
-		Search:        queryStringPtr(r, "search"),
+		Status:          queryStringPtr(r, "status"),
+		OwnerMemberID:   queryStringPtr(r, "owner_member_id"),
+		CompanyID:       queryStringPtr(r, "company_id"),
+		CompanyRollupID: queryStringPtr(r, "company_rollup_id"),
+		ContactID:       queryStringPtr(r, "contact_id"),
+		DealID:          queryStringPtr(r, "deal_id"),
+		Search:          queryStringPtr(r, "search"),
 	}
 	var err error
 	if filters.StartAfter, err = queryMeetingTime(r, "start_after"); err != nil {

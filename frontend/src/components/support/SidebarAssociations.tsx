@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
+import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Building03Icon,
@@ -87,7 +88,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
     } else if (objectType === 'company') {
       navigate({ to: '/w/$slug/crm/companies/$companyId', params: { slug, companyId: objectId } } as any);
     } else if (objectType === 'deal') {
-      navigate({ to: '/w/$slug/crm/deals/$dealId', params: { slug, dealId: objectId } } as any);
+      openDealRoute(navigate as never, location, slug, objectId);
     }
   };
 

@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct HealthRegistry {
     ready: Arc<AtomicBool>,
-    kafka_healthy: Arc<AtomicBool>,
+    nats_healthy: Arc<AtomicBool>,
 }
 
 #[derive(Serialize)]
@@ -20,7 +20,7 @@ pub struct HealthStatus {
 
 #[derive(Serialize)]
 pub struct ComponentHealth {
-    pub kafka: ComponentStatus,
+    pub nats: ComponentStatus,
 }
 
 #[derive(Serialize)]
@@ -33,7 +33,7 @@ impl HealthRegistry {
     pub fn new() -> Self {
         Self {
             ready: Arc::new(AtomicBool::new(true)),
-            kafka_healthy: Arc::new(AtomicBool::new(true)),
+            nats_healthy: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -41,17 +41,17 @@ impl HealthRegistry {
         self.ready.store(ready, Ordering::SeqCst);
     }
 
-    pub fn set_kafka_healthy(&self, healthy: bool) {
-        self.kafka_healthy.store(healthy, Ordering::SeqCst);
-        metrics::gauge!("capture_kafka_health", if healthy { 1.0 } else { 0.0 });
+    pub fn set_nats_healthy(&self, healthy: bool) {
+        self.nats_healthy.store(healthy, Ordering::SeqCst);
+        metrics::gauge!("capture_nats_health", if healthy { 1.0 } else { 0.0 });
     }
 
     pub fn is_ready(&self) -> bool {
         self.ready.load(Ordering::SeqCst)
     }
 
-    pub fn is_kafka_healthy(&self) -> bool {
-        self.kafka_healthy.load(Ordering::SeqCst)
+    pub fn is_nats_healthy(&self) -> bool {
+        self.nats_healthy.load(Ordering::SeqCst)
     }
 }
 
@@ -63,7 +63,7 @@ pub async fn liveness() -> impl IntoResponse {
 
 /// Readiness probe: returns 200 when the pod can accept traffic, 503 during shutdown.
 /// K8s uses this to decide whether to route traffic to the pod.
-/// Note: We stay ready even when Kafka is down because FallbackSink buffers to disk.
+/// Note: We stay ready when NATS is down because FallbackSink fsyncs to disk.
 pub async fn readiness(health: axum::extract::State<HealthRegistry>) -> impl IntoResponse {
     if health.is_ready() {
         (StatusCode::OK, "ready")
@@ -74,7 +74,7 @@ pub async fn readiness(health: axum::extract::State<HealthRegistry>) -> impl Int
 
 /// Detailed health status for debugging and dashboards.
 pub async fn status(health: axum::extract::State<HealthRegistry>) -> impl IntoResponse {
-    let kafka_healthy = health.is_kafka_healthy();
+    let nats_healthy = health.is_nats_healthy();
     let ready = health.is_ready();
 
     let overall = if ready { "healthy" } else { "shutting_down" };
@@ -83,9 +83,9 @@ pub async fn status(health: axum::extract::State<HealthRegistry>) -> impl IntoRe
         status: overall,
         ready,
         components: ComponentHealth {
-            kafka: ComponentStatus {
-                healthy: kafka_healthy,
-                detail: if kafka_healthy {
+            nats: ComponentStatus {
+                healthy: nats_healthy,
+                detail: if nats_healthy {
                     "connected"
                 } else {
                     "unreachable"
@@ -105,7 +105,7 @@ mod tests {
     fn test_health_registry_defaults() {
         let registry = HealthRegistry::new();
         assert!(registry.is_ready());
-        assert!(registry.is_kafka_healthy());
+        assert!(registry.is_nats_healthy());
     }
 
     #[test]
@@ -118,12 +118,12 @@ mod tests {
     }
 
     #[test]
-    fn test_set_kafka_healthy() {
+    fn test_set_nats_healthy() {
         let registry = HealthRegistry::new();
-        registry.set_kafka_healthy(false);
-        assert!(!registry.is_kafka_healthy());
-        registry.set_kafka_healthy(true);
-        assert!(registry.is_kafka_healthy());
+        registry.set_nats_healthy(false);
+        assert!(!registry.is_nats_healthy());
+        registry.set_nats_healthy(true);
+        assert!(registry.is_nats_healthy());
     }
 
     #[test]

@@ -58,6 +58,7 @@ type CRMEmailAccount struct {
 	OAuthState             *string    `json:"-" gorm:"column:oauth_state"`
 	TokenExpiresAt         *time.Time `json:"-" gorm:"column:token_expires_at"`
 	HasSyncedData          bool       `json:"has_synced_data" gorm:"-"`
+	CanSend                bool       `json:"can_send" gorm:"-"`
 	CreatedAt              time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt              time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -66,17 +67,25 @@ func (CRMEmailAccount) TableName() string { return "crm_email_accounts" }
 
 // CRMEmailThread represents an email thread linked to CRM objects.
 type CRMEmailThread struct {
-	ID               string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	EmailAccountID   string          `json:"email_account_id" gorm:"type:uuid;not null;index"`
-	ThreadExternalID string          `json:"thread_external_id" gorm:"not null"`
-	Subject          string          `json:"subject" gorm:"not null"`
-	LastMessageAt    time.Time       `json:"last_message_at" gorm:"not null"`
-	MessageCount     int             `json:"message_count" gorm:"not null;default:0"`
-	ContactIDs       json.RawMessage `json:"contact_ids" gorm:"type:jsonb;default:'[]'"`
-	DealID           *string         `json:"deal_id" gorm:"type:uuid;index"`
-	CreatedAt        time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                  string           `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID         string           `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	EmailAccountID      string           `json:"email_account_id" gorm:"type:uuid;not null;index"`
+	ThreadExternalID    string           `json:"thread_external_id" gorm:"not null"`
+	Subject             string           `json:"subject" gorm:"not null"`
+	LastMessageAt       time.Time        `json:"last_message_at" gorm:"not null"`
+	MessageCount        int              `json:"message_count" gorm:"not null;default:0"`
+	ContactIDs          json.RawMessage  `json:"contact_ids" gorm:"type:jsonb;default:'[]'"`
+	DealID              *string          `json:"deal_id" gorm:"type:uuid;index"`
+	CreatedAt           time.Time        `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt           time.Time        `json:"updated_at" gorm:"autoUpdateTime"`
+	LatestMessage       *CRMEmailMessage `json:"latest_message,omitempty" gorm:"-"`
+	MailboxEmail        string           `json:"mailbox_email,omitempty" gorm:"-"`
+	MailboxProvider     string           `json:"mailbox_provider,omitempty" gorm:"-"`
+	MailboxStatus       string           `json:"mailbox_status,omitempty" gorm:"-"`
+	MailboxLastSync     *time.Time       `json:"mailbox_last_synced_at,omitempty" gorm:"-"`
+	CanReply            bool             `json:"can_reply" gorm:"-"`
+	NeedsReply          bool             `json:"needs_reply" gorm:"-"`
+	NeedsReplyDismissed bool             `json:"needs_reply_dismissed" gorm:"-"`
 }
 
 func (CRMEmailThread) TableName() string { return "crm_email_threads" }
@@ -88,6 +97,9 @@ type CRMEmailMessage struct {
 	EmailAccountID    string          `json:"email_account_id" gorm:"type:uuid;not null;index"`
 	ThreadID          *string         `json:"thread_id" gorm:"type:uuid;index"`
 	MessageExternalID string          `json:"message_external_id"`
+	RFCMessageID      *string         `json:"rfc_message_id,omitempty"`
+	InReplyTo         *string         `json:"in_reply_to,omitempty"`
+	ReferencesHeader  *string         `json:"references_header,omitempty"`
 	FromAddress       string          `json:"from_address" gorm:"not null"`
 	FromName          *string         `json:"from_name"`
 	ToAddresses       json.RawMessage `json:"to_addresses" gorm:"type:jsonb;default:'[]'"`
@@ -116,6 +128,33 @@ type CRMEmailMessageContact struct {
 }
 
 func (CRMEmailMessageContact) TableName() string { return "crm_email_message_contacts" }
+
+// CRMEmailThreadDismissal records a user's dismissal of an actionable inbound
+// thread. A later inbound message naturally supersedes the dismissal.
+type CRMEmailThreadDismissal struct {
+	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;primaryKey"`
+	ThreadID    string    `json:"thread_id" gorm:"type:uuid;not null;primaryKey"`
+	UserID      string    `json:"user_id" gorm:"type:uuid;not null;primaryKey"`
+	DismissedAt time.Time `json:"dismissed_at" gorm:"not null"`
+}
+
+func (CRMEmailThreadDismissal) TableName() string { return "crm_email_thread_dismissals" }
+
+type CRMEmailParticipant struct {
+	Email       string  `json:"email"`
+	Name        string  `json:"name,omitempty"`
+	Role        string  `json:"role"`
+	ContactID   *string `json:"contact_id,omitempty"`
+	ContactName string  `json:"contact_name,omitempty"`
+	CompanyID   *string `json:"company_id,omitempty"`
+	CompanyName string  `json:"company_name,omitempty"`
+}
+
+type CRMEmailThreadDetail struct {
+	Thread       CRMEmailThread        `json:"thread"`
+	Messages     []CRMEmailMessage     `json:"messages"`
+	Participants []CRMEmailParticipant `json:"participants"`
+}
 
 // CreateCRMEmailAccountRequest is the payload for connecting an email account.
 type CreateCRMEmailAccountRequest struct {
@@ -154,8 +193,12 @@ type CRMEmailAccountListFilters struct {
 type CRMEmailThreadListFilters struct {
 	EmailAccountID *string
 	ContactID      *string
+	CompanyID      *string
 	DealID         *string
 	Search         *string
+	Scope          *string
+	Sort           *string
+	UserID         *string
 }
 
 // CRMEmailMessageListFilters applies filters when listing email messages.
@@ -163,6 +206,7 @@ type CRMEmailMessageListFilters struct {
 	ThreadID       *string
 	EmailAccountID *string
 	ContactID      *string
+	CompanyID      *string
 	DealID         *string
 	Direction      *string
 }
