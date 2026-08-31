@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
+import { ArrowLeft02Icon, ClipboardIcon, Message01Icon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -46,6 +46,9 @@ import type { UpgradeRequiredReason } from '@/lib/upgradeRequired';
 interface MessageThreadProps {
   workspaceId: string;
   conversationId: string | null;
+  presentation?: 'panel' | 'mobile-sheet';
+  onBackToInbox?: () => void;
+  onOpenDetails?: () => void;
   showInboxOnboarding?: boolean;
   onWidgetSettingsClick?: () => void;
   onCreateConversationClick?: () => void;
@@ -219,7 +222,34 @@ const MessageSkeleton = memo(function MessageSkeleton() {
   );
 });
 
-const ThreadHeaderSkeleton = memo(function ThreadHeaderSkeleton() {
+const ThreadHeaderSkeleton = memo(function ThreadHeaderSkeleton({
+  presentation = 'panel',
+  onBackToInbox,
+}: Pick<MessageThreadProps, 'presentation' | 'onBackToInbox'>) {
+  if (presentation === 'mobile-sheet') {
+    return (
+      <SupportInboxPanelHeader
+        data-testid="support-thread-header-skeleton"
+        className="gap-1 px-1.5"
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-11 shrink-0 gap-1 px-1.5 text-sm font-medium"
+          onClick={onBackToInbox}
+          aria-label="Return to Inbox"
+        >
+          <ArrowLeft02Icon className="h-4 w-4" />
+          Inbox
+        </Button>
+        <div className="h-4 min-w-0 flex-1 animate-pulse rounded bg-muted" />
+        <div className="h-8 w-8 shrink-0 animate-pulse rounded-md bg-muted" />
+        <div className="h-8 w-8 shrink-0 animate-pulse rounded-md bg-muted" />
+        <div className="h-8 w-8 shrink-0 animate-pulse rounded-md bg-muted" />
+      </SupportInboxPanelHeader>
+    );
+  }
+
   return (
     <SupportInboxPanelHeader
       data-testid="support-thread-header-skeleton"
@@ -241,10 +271,14 @@ const ThreadHeaderSkeleton = memo(function ThreadHeaderSkeleton() {
 export function MessageThread({
   workspaceId,
   conversationId,
+  presentation = 'panel',
+  onBackToInbox,
+  onOpenDetails,
   showInboxOnboarding,
   onWidgetSettingsClick,
   onCreateConversationClick,
 }: MessageThreadProps) {
+  const isMobileSheet = presentation === 'mobile-sheet';
   const navigate = useNavigate();
   const location = useLocation();
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
@@ -812,6 +846,34 @@ export function MessageThread({
       );
     }
 
+    if (isMobileSheet) {
+      return (
+        <div data-support-message-thread className="flex min-h-0 min-w-0 flex-1 flex-col bg-background dark:bg-sidebar">
+          <SupportInboxPanelHeader className="gap-1 px-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-11 shrink-0 gap-1 px-1.5 text-sm font-medium"
+              onClick={onBackToInbox}
+              aria-label="Return to Inbox"
+            >
+              <ArrowLeft02Icon className="h-4 w-4" />
+              Inbox
+            </Button>
+            <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">
+              Conversation unavailable
+            </span>
+          </SupportInboxPanelHeader>
+          <EmptyState
+            icon={Message01Icon}
+            title="Conversation unavailable"
+            subtitle="It may have been moved or deleted. Return to the Inbox to continue."
+            background="muted"
+          />
+        </div>
+      );
+    }
+
     return (
       <EmptyState
         icon={Message01Icon}
@@ -829,7 +891,74 @@ export function MessageThread({
       className={`flex min-h-0 min-w-0 flex-1 flex-col bg-background transition-opacity duration-150 ease-out dark:bg-sidebar ${isThreadTransitioning ? 'opacity-85' : 'opacity-100'}`}
     >
       {/* Topbar with subtle bottom shadow (Crisp-style) */}
-      {conversation && (
+      {conversation && (isMobileSheet ? (
+        <SupportInboxPanelHeader className="gap-0.5 px-1.5">
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-11 shrink-0 gap-1 px-1.5 text-sm font-medium"
+            onClick={onBackToInbox}
+            aria-label="Return to Inbox"
+          >
+            <ArrowLeft02Icon className="h-4 w-4" />
+            Inbox
+          </Button>
+
+          <button
+            type="button"
+            className="h-11 min-w-0 flex-1 truncate rounded-md px-1.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+            onClick={onOpenDetails}
+            aria-label="Open conversation details"
+          >
+            <span className="font-semibold text-muted-foreground">#{conversation.display_id}</span>
+            <span className="mx-1 text-muted-foreground">–</span>
+            <span>{conversation.subject}</span>
+          </button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 shrink-0"
+            disabled={createTaskFromConversation.isPending}
+            onClick={handleCreateTask}
+            aria-label="Create task"
+            title="Create task"
+          >
+            {createTaskFromConversation.isPending ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 shrink-0"
+            onClick={() => updateStatus.mutate({
+              conversationId: conversation.id,
+              status: (conversation.status === 'resolved' ? 'open' : 'resolved') as ConversationStatus,
+            })}
+            aria-label={conversation.status === 'resolved' ? 'Reopen conversation' : 'Resolve conversation'}
+            title={conversation.status === 'resolved' ? 'Reopen conversation' : 'Resolve conversation'}
+          >
+            {conversation.status === 'resolved' ? <CancelCircleIcon className="h-4 w-4" /> : <CheckmarkCircle02Icon className="h-4 w-4" />}
+          </Button>
+
+          <ConversationActionsMenu
+            workspaceId={workspaceId}
+            conversation={conversation}
+            moveOptions={moveOptions.map((option) => ({ id: option!.id, name: option!.name }))}
+            align="end"
+            onConversationDeleted={() => {
+              onBackToInbox?.();
+            }}
+            trigger={(
+              <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0" aria-label="Open conversation actions">
+                <MoreHorizontalIcon className="h-4 w-4" />
+              </Button>
+            )}
+          />
+        </SupportInboxPanelHeader>
+      ) : (
         <SupportInboxPanelHeader className="justify-between px-4">
           {/* Gradient shadow below topbar */}
           <div className="absolute top-full left-0 right-0 h-1.5 bg-gradient-to-b from-black/[0.025] to-transparent pointer-events-none" />
@@ -897,8 +1026,10 @@ export function MessageThread({
             />
           </div>
         </SupportInboxPanelHeader>
+      ))}
+      {!conversation && isThreadLoading && (
+        <ThreadHeaderSkeleton presentation={presentation} onBackToInbox={onBackToInbox} />
       )}
-      {!conversation && isThreadLoading && <ThreadHeaderSkeleton />}
 
       {conversation && triageBanner && (
         <div className={`border-b px-4 py-3 ${

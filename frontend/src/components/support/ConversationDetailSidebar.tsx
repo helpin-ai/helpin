@@ -41,6 +41,8 @@ export const customerEmailCopyButtonClassName =
 interface ConversationDetailSidebarProps {
   workspaceId: string;
   conversationId: string | null;
+  presentation?: 'rail' | 'mobile-sheet';
+  onClose?: () => void;
 }
 
 export const conversationDetailSidebarRootClassName = 'flex h-full min-h-0 w-[300px] flex-col bg-muted/30';
@@ -290,8 +292,15 @@ function EmailRecipientRow({
   );
 }
 
-export function ConversationDetailSidebar({ workspaceId, conversationId }: ConversationDetailSidebarProps) {
+export function ConversationDetailSidebar({
+  workspaceId,
+  conversationId,
+  presentation = 'rail',
+  onClose,
+}: ConversationDetailSidebarProps) {
   const { detailSidebarCollapsed, toggleDetailSidebar } = useSupportInboxStore();
+  const isMobileSheet = presentation === 'mobile-sheet';
+  const handleClose = onClose ?? toggleDetailSidebar;
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [nameEditing, setNameEditing] = useState(false);
   const [customerNameDraft, setCustomerNameDraft] = useState('');
@@ -316,7 +325,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
     setCcError('');
   }, [conversationId]);
 
-  if (detailSidebarCollapsed) {
+  if (detailSidebarCollapsed && !isMobileSheet) {
     return (
       <div className="flex h-full min-h-0 w-10 flex-col items-center bg-muted/30 pt-2">
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={toggleDetailSidebar}>
@@ -413,12 +422,18 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
   };
 
   return (
-    <div className={conversationDetailSidebarRootClassName}>
+    <div className={cn(conversationDetailSidebarRootClassName, isMobileSheet && 'w-full bg-background dark:bg-sidebar')}>
       {/* Header */}
-      <SupportInboxPanelHeader className="justify-between bg-muted/30 px-3">
+      <SupportInboxPanelHeader className={cn('justify-between bg-muted/30 px-3', isMobileSheet && 'bg-background dark:bg-sidebar')}>
         <h3 className="text-sm font-semibold">Details</h3>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={toggleDetailSidebar}>
-          <ArrowRight01Icon className="h-4 w-4" />
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn('p-0', isMobileSheet ? 'h-11 w-11' : 'h-7 w-7')}
+          onClick={handleClose}
+          aria-label={isMobileSheet ? 'Close conversation details' : 'Collapse conversation details'}
+        >
+          {isMobileSheet ? <Cancel01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
         </Button>
       </SupportInboxPanelHeader>
 

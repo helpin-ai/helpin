@@ -1,7 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft02Icon } from '@/lib/icons';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
@@ -87,8 +87,6 @@ export function SupportInboxLayout() {
     builtinViewFilters,
     selectedMailboxId,
     selectedConversationId,
-    activePanel,
-    setActivePanel,
     syncRouteState,
     selectConversation,
     createDialogOpen,
@@ -115,7 +113,11 @@ export function SupportInboxLayout() {
   const location = useLocation();
   const params = useParams({ strict: false }) as { conversationId?: string };
   const routeConversationId = params.conversationId ?? null;
+  const isMultiPanel = useMinWidth(768);
   const showDetailSidebar = useMinWidth(1280) && !!selectedConversationId;
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
+  const mobileOpenedFromInboxRef = useRef(false);
+  const previousRouteConversationIdRef = useRef(routeConversationId);
   const routeSearch = useMemo(
     () => normalizeSupportInboxRouteSearch(location.search as Record<string, unknown>),
     [location.search],
@@ -174,6 +176,36 @@ export function SupportInboxLayout() {
     },
     [activeCustomViewId, builtinViewFilters, conversationListFilters, customViewDirty, navFilter, searchQuery, selectedMailboxId, statusFilter],
   );
+
+  const handleOpenMobileConversation = useCallback((conversationId: string) => {
+    if (!slug) return;
+    mobileOpenedFromInboxRef.current = true;
+    setMobileDetailsOpen(false);
+    void navigate({
+      to: '/w/$slug/support/$conversationId',
+      params: { slug, conversationId },
+      search: supportRouteSearch,
+    });
+  }, [navigate, slug, supportRouteSearch]);
+
+  const handleCloseMobileConversation = useCallback(() => {
+    if (!slug) return;
+    setMobileDetailsOpen(false);
+    selectConversation(null);
+
+    if (mobileOpenedFromInboxRef.current && typeof window !== 'undefined') {
+      mobileOpenedFromInboxRef.current = false;
+      window.history.back();
+      return;
+    }
+
+    void navigate({
+      to: '/w/$slug/support',
+      params: { slug },
+      search: supportRouteSearch,
+      replace: true,
+    });
+  }, [navigate, selectConversation, slug, supportRouteSearch]);
 
   // Sync URL params → store on mount / URL change.
   useEffect(() => {
@@ -296,9 +328,24 @@ export function SupportInboxLayout() {
     routeConversationId,
   ]);
 
+  useEffect(() => {
+    const previousConversationId = previousRouteConversationIdRef.current;
+    previousRouteConversationIdRef.current = routeConversationId;
+    if (isMultiPanel || !previousConversationId || routeConversationId) return;
+
+    setMobileDetailsOpen(false);
+    mobileOpenedFromInboxRef.current = false;
+    const frame = window.requestAnimationFrame(() => {
+      Array.from(document.querySelectorAll<HTMLElement>('[data-conversation-id]'))
+        .find((element) => element.dataset.conversationId === previousConversationId)
+        ?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isMultiPanel, routeConversationId]);
+
   // Sync store → URL when conversation selection changes
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || !isMultiPanel) return;
     if (selectedConversationId && selectedConversationId !== routeConversationId) {
       let timeout = 0;
       const frame = window.requestAnimationFrame(() => {
@@ -321,7 +368,7 @@ export function SupportInboxLayout() {
         if (timeout) window.clearTimeout(timeout);
       };
     }
-  }, [routeConversationId, selectedConversationId, slug, supportRouteSearch, navigate]);
+  }, [isMultiPanel, routeConversationId, selectedConversationId, slug, supportRouteSearch, navigate]);
 
   // A team inbox can become empty after its final conversation is moved or
   // resolved. Do not leave a thread from a different mailbox selected beside
@@ -345,25 +392,6 @@ export function SupportInboxLayout() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Mobile back button */}
-      {selectedConversationId && (activePanel === 'thread' || activePanel === 'detail') && (
-        <div className="flex items-center border-b px-3 py-1.5 md:hidden">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5 px-2 text-sm"
-            onClick={() => {
-              selectConversation(null);
-              setActivePanel('list');
-              navigate({ to: '/w/$slug/support', params: { slug }, search: supportRouteSearch, replace: true });
-            }}
-          >
-            <ArrowLeft02Icon className="h-4 w-4" />
-            Back
-          </Button>
-        </div>
-      )}
-
       {routingUsage?.triage_enabled && routingUsage.exhausted ? (
         <div className="flex flex-col gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
           <span>AI routing limit reached for today. Manual rules still run; AI routing resumes after the daily reset.</span>
@@ -382,12 +410,12 @@ export function SupportInboxLayout() {
       {/* Three-panel layout */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Panel 1: Conversation list */}
-        <div className={`${
-          selectedConversationId ? 'hidden md:flex' : 'flex'
-        } w-full md:w-auto min-h-0`}>
+        <div className="flex min-h-0 w-full md:w-auto">
           <ConversationList
             workspaceId={workspaceId}
             userId={user?.id}
+            autoSelectFirst={isMultiPanel}
+            onConversationOpen={isMultiPanel ? undefined : handleOpenMobileConversation}
             onOnboardingEmptyChange={setShowInboxOnboarding}
             onWidgetSettingsClick={handleWidgetSettingsClick}
             onCreateConversationClick={() => setCreateDialogOpen(true)}
@@ -397,9 +425,7 @@ export function SupportInboxLayout() {
         </div>
 
         {/* Panel 2: Message thread */}
-        <div className={`${
-          !selectedConversationId ? 'hidden md:flex' : 'flex'
-        } min-w-0 min-h-0 flex-1`}>
+        <div className="hidden min-h-0 min-w-0 flex-1 md:flex">
           <MessageThread
             workspaceId={workspaceId}
             conversationId={selectedConversationId}
@@ -447,6 +473,55 @@ export function SupportInboxLayout() {
           ) : null}
         </div> : null}
       </div>
+
+      <Sheet
+        open={!isMultiPanel && !!routeConversationId}
+        onOpenChange={(open) => {
+          if (!open && routeConversationId) {
+            handleCloseMobileConversation();
+          }
+        }}
+      >
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          className="gap-0 border-0 p-0 shadow-none data-[side=right]:!w-full data-[side=right]:!max-w-none"
+        >
+          <SheetTitle className="sr-only">Conversation</SheetTitle>
+          <SheetDescription className="sr-only">
+            Read and reply to the selected support conversation.
+          </SheetDescription>
+          <MessageThread
+            workspaceId={workspaceId}
+            conversationId={routeConversationId}
+            presentation="mobile-sheet"
+            onBackToInbox={handleCloseMobileConversation}
+            onOpenDetails={() => setMobileDetailsOpen(true)}
+            onCreateConversationClick={() => setCreateDialogOpen(true)}
+          />
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={!isMultiPanel && !!routeConversationId && mobileDetailsOpen} onOpenChange={setMobileDetailsOpen}>
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          className="gap-0 border-0 p-0 shadow-none data-[side=right]:!w-full data-[side=right]:!max-w-none"
+        >
+          <SheetTitle className="sr-only">Conversation details</SheetTitle>
+          <SheetDescription className="sr-only">
+            Customer identity, assignment, tags, and conversation context.
+          </SheetDescription>
+          <Suspense fallback={null}>
+            <LazyConversationDetailSidebar
+              workspaceId={workspaceId}
+              conversationId={routeConversationId}
+              presentation="mobile-sheet"
+              onClose={() => setMobileDetailsOpen(false)}
+            />
+          </Suspense>
+        </SheetContent>
+      </Sheet>
 
       <NewConversationDialog
         workspaceId={workspaceId}

@@ -5,7 +5,9 @@ export function isAtLeastWidth(viewportWidth: number, minWidth: number) {
 }
 
 export function useMinWidth(minWidth: number) {
-  const [matches, setMatches] = useState(false)
+  const [matches, setMatches] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia(`(min-width: ${minWidth}px)`).matches
+  ))
 
   useEffect(() => {
     const query = window.matchMedia(`(min-width: ${minWidth}px)`)

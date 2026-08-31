@@ -172,6 +172,36 @@ describe('ConversationList presence resync', () => {
     act(() => root.unmount())
   })
 
+  it('keeps the mobile Inbox on the list until a conversation is opened', () => {
+    const onConversationOpen = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <ConversationList
+          workspaceId="ws-1"
+          userId="user-1"
+          autoSelectFirst={false}
+          onConversationOpen={onConversationOpen}
+        />,
+      )
+    })
+
+    expect(useSupportInboxStore.getState().selectedConversationId).toBeNull()
+    expect(container.firstElementChild?.className).toContain('w-full')
+
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-conversation-id="conv-2"]')?.click()
+    })
+
+    expect(onConversationOpen).toHaveBeenCalledWith('conv-2')
+    expect(useSupportInboxStore.getState().selectedConversationId).toBeNull()
+
+    act(() => root.unmount())
+  })
+
   it('marks an unread conversation as read when selected', async () => {
     const markRead = vi.fn()
     mockUseMarkConversationRead.mockReturnValue({ mutate: markRead })

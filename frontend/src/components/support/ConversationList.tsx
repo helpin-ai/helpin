@@ -225,6 +225,8 @@ function TagFilterSelector({
 interface ConversationListProps {
   workspaceId: string;
   userId?: string;
+  autoSelectFirst?: boolean;
+  onConversationOpen?: (conversationId: string) => void;
   onOnboardingEmptyChange?: (isEmpty: boolean) => void;
   onWidgetSettingsClick?: () => void;
   onCreateConversationClick?: () => void;
@@ -235,6 +237,8 @@ interface ConversationListProps {
 export function ConversationList({
   workspaceId,
   userId,
+  autoSelectFirst = true,
+  onConversationOpen,
   onOnboardingEmptyChange,
   onWidgetSettingsClick,
   onCreateConversationClick,
@@ -271,13 +275,17 @@ export function ConversationList({
   const { data: supportTags = [] } = useSupportTags(workspaceId);
 
   const handleSelect = useCallback((id: string, unreadCount?: number) => {
-    selectConversation(id);
+    if (onConversationOpen) {
+      onConversationOpen(id);
+    } else {
+      selectConversation(id);
+    }
     if ((unreadCount ?? 0) > 0) {
       window.requestAnimationFrame(() => {
         window.setTimeout(() => markConversationRead.mutate(id), 0);
       });
     }
-  }, [markConversationRead, selectConversation]);
+  }, [markConversationRead, onConversationOpen, selectConversation]);
 
   const filters = useMemo(() => buildConversationListRequestFilters({
     navFilter,
@@ -389,10 +397,10 @@ export function ConversationList({
   }, [onOnboardingEmptyChange, shouldShowOnboardingEmptyState]);
 
   useEffect(() => {
-    if (selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
+    if (!autoSelectFirst || selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
     const firstConversation = filteredConversations[0];
-    handleSelect(firstConversation.id);
-  }, [error, filteredConversations, handleSelect, selectedConversationId, shouldShowListSkeleton]);
+    selectConversation(firstConversation.id);
+  }, [autoSelectFirst, error, filteredConversations, selectConversation, selectedConversationId, shouldShowListSkeleton]);
 
   useEffect(() => {
     if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
@@ -567,7 +575,7 @@ export function ConversationList({
   ]);
 
   return (
-    <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">
+    <div className="flex h-full w-full flex-col bg-background md:w-[300px] md:border-r dark:border-sidebar-border dark:bg-sidebar">
       {/* Filter toolbar */}
       <SupportInboxPanelHeader
         className={cn(
