@@ -38,6 +38,7 @@ import { DocsArrangeTree } from '@/components/docs/DocsArrangeTree'
 import { DocsLibraryList, DocsLibraryRow } from '@/components/docs/DocsLibraryList'
 import { buildCollectionPathLabels } from '@/components/docs/docsCollectionTree'
 import type { DocsSpace, DocsCollection, DocsDocument, SpaceType } from '@/lib/docsTypes'
+import { QuietPageHeader, QuietTextAction } from '@/components/design-system/quiet'
 
 // ── Space templates for quick setup ─────────────────────────────────────────
 
@@ -567,31 +568,27 @@ export function DocsHome() {
   }
 
   if (!workspace) {
-    return <p className="text-sm text-muted-foreground">Workspace not found.</p>
+    return (
+      <div className="space-y-4">
+        <QuietPageHeader title="All Docs" />
+        <p className="text-sm text-muted-foreground">Workspace not found.</p>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-4">
-      <header className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">All Docs</h2>
-            <p className="text-sm text-muted-foreground">
-              All spaces, collections, and articles in one place.
-            </p>
-          </div>
-          {canEditDocs && spaces && spaces.length > 0 && (
-            <Button
-              variant={arrangeMode ? 'default' : 'outline'}
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setArrangeMode(!arrangeMode)}
-            >
+      <div className="space-y-3">
+        <QuietPageHeader
+          title="All Docs"
+          description="All spaces, collections, and articles in one place."
+          actions={canEditDocs && spaces && spaces.length > 0 ? (
+            <QuietTextAction className="gap-1.5" onClick={() => setArrangeMode(!arrangeMode)}>
               <ArrowUpDownIcon className="h-3.5 w-3.5" />
               {arrangeMode ? 'Done arranging' : 'Arrange'}
-            </Button>
-          )}
-        </div>
+            </QuietTextAction>
+          ) : null}
+        />
         {!arrangeMode && (
           <div className="relative">
             <Search01Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -605,7 +602,7 @@ export function DocsHome() {
             />
           </div>
         )}
-      </header>
+      </div>
 
       {arrangeMode && (
         <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-md px-3 py-2 text-center">

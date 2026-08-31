@@ -18,8 +18,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Button } from '@/components/ui/button'
 import type { NodeView } from './nodeSelection'
+import {
+  QuietIconAction,
+  QuietPageHeader,
+  QuietPrimaryAction,
+  QuietTextAction,
+} from '@/components/design-system/quiet'
 
 interface AncestorLink {
   id: string
@@ -139,92 +144,72 @@ export function SpaceNodeHeader({
       (view.kind === 'collection' && (onEditCollection || onDeleteCollection)))
 
   return (
-    <header className="flex flex-col gap-2">
-      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="min-w-0">
-            <nav
-              aria-label="Breadcrumb"
-              className="group flex min-w-0 items-center gap-2"
-            >
-              {ancestors.length > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={ancestors[ancestors.length - 1].onClick}
-                  className="shrink-0 text-muted-foreground"
-                  aria-label="Go back"
-                >
-                  <ArrowLeft02Icon className="h-4 w-4" />
-                </Button>
-              )}
-              {ancestors.map((ancestor) => (
-                <span key={ancestor.id} className="flex shrink-0 items-center gap-1.5">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={ancestor.onClick}
-                        className="max-w-[200px] truncate rounded text-lg font-normal text-muted-foreground transition-colors hover:text-foreground"
-                      >
-                        {ancestor.label}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>{ancestor.label}</TooltipContent>
-                  </Tooltip>
-                  <ArrowRight01Icon
-                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                </span>
-              ))}
-              {titleIcon}
-              <h1 className="truncate text-lg font-medium">{titleLabel}</h1>
-            </nav>
-            {description && (
-              <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{description}</p>
-            )}
-          </div>
-        </div>
-
-        {canEdit && view.kind !== 'loading' && (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:flex-nowrap">
-            {onCreateChildCollection && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onCreateChildCollection}
-                className="text-xs text-muted-foreground"
-              >
-                <PlusSignIcon className="h-3.5 w-3.5" />
-                {view.kind === 'collection' ? 'Sub-collection' : 'Collection'}
-              </Button>
-            )}
-            <Button
+    <QuietPageHeader
+      title={(
+        <span className="flex min-w-0 items-center gap-2">
+          {titleIcon}
+          <span className="truncate">{titleLabel}</span>
+        </span>
+      )}
+      description={description}
+      navigation={ancestors.length > 0 ? (
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-quiet-text-tertiary">
+          <QuietIconAction
+            type="button"
+            onClick={ancestors[ancestors.length - 1].onClick}
+            className="shrink-0"
+            aria-label="Go back"
+          >
+            <ArrowLeft02Icon className="h-[15px] w-[15px]" />
+          </QuietIconAction>
+          {ancestors.map((ancestor) => (
+            <span key={ancestor.id} className="flex min-w-0 items-center gap-1.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={ancestor.onClick}
+                    className="max-w-[180px] truncate font-medium transition-colors hover:text-quiet-text-primary focus-visible:outline-none focus-visible:text-quiet-text-primary"
+                  >
+                    {ancestor.label}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{ancestor.label}</TooltipContent>
+              </Tooltip>
+              <ArrowRight01Icon className="h-3 w-3 shrink-0 text-quiet-muted" aria-hidden="true" />
+            </span>
+          ))}
+        </nav>
+      ) : null}
+      actions={canEdit && view.kind !== 'loading' ? (
+        <>
+          {onCreateChildCollection && (
+            <QuietTextAction
               type="button"
-              size="sm"
-              onClick={onCreateDocument}
-              className="text-xs"
+              onClick={onCreateChildCollection}
+              className="gap-1.5"
             >
               <PlusSignIcon className="h-3.5 w-3.5" />
-              Document
-            </Button>
+              {view.kind === 'collection' ? 'Sub-collection' : 'Collection'}
+            </QuietTextAction>
+          )}
+          <QuietPrimaryAction
+            type="button"
+            onClick={onCreateDocument}
+            className="gap-1.5"
+          >
+            <PlusSignIcon className="h-3.5 w-3.5" />
+            Document
+          </QuietPrimaryAction>
 
-            {hasOverflowMenu && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="More options"
-                  >
-                    <MoreHorizontalIcon className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+          {hasOverflowMenu && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <QuietIconAction type="button" aria-label="More options">
+                  <MoreHorizontalIcon className="h-[15px] w-[15px]" />
+                </QuietIconAction>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
                   {view.kind === 'space_root' && (
                     <>
                       <DropdownMenuItem onClick={onEditSpace}>
@@ -263,12 +248,11 @@ export function SpaceNodeHeader({
                       )}
                     </>
                   )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-        )}
-      </div>
-    </header>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </>
+      ) : null}
+    />
   )
 }

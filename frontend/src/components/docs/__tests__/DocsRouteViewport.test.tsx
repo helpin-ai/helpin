@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { DocsRouteViewport } from '../DocsRouteViewport'
 
 describe('DocsRouteViewport', () => {
-  it('uses the shared workspace gutters and Automation bottom spacing', () => {
+  it('uses the centralized Quiet workspace viewport', () => {
     const markup = renderToStaticMarkup(
       <DocsRouteViewport>
         <div>Docs page</div>
@@ -15,6 +15,6 @@ describe('DocsRouteViewport', () => {
     expect(markup).toContain('md:p-6')
     expect(markup).toContain('md:pb-24')
     expect(markup).toContain('[scrollbar-gutter:stable]')
-    expect(markup).toContain('mx-auto max-w-7xl')
+    expect(markup).toContain('mx-auto w-full max-w-7xl')
   })
 })

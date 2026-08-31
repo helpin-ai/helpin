@@ -3,7 +3,7 @@ import { SettingsPageFrame } from './SettingsPageFrame';
 
 export function KnowledgeSettingsPage() {
   return (
-    <SettingsPageFrame section="knowledge" hideHeader>
+    <SettingsPageFrame section="knowledge">
       {({ workspaceId }) => <KnowledgeTab workspaceId={workspaceId} />}
     </SettingsPageFrame>
   );

@@ -79,7 +79,8 @@ import {
   useApplyDocsChangeProposal,
   useDiscardDocsChangeProposal,
 } from '@/hooks/queries'
-import { timeAgo } from '@/lib/utils'
+import { cn, timeAgo } from '@/lib/utils'
+import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet'
 import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
@@ -1372,7 +1373,7 @@ export function DocsDocumentDetail({
   if (docLoading || contentLoading || !mermaidPreloadReady) {
     return (
       <div className="flex h-full flex-col">
-        <div className="flex items-center gap-3 border-b border-border/60 px-4 py-2">
+        <div className={cn('flex items-center gap-3 border-b border-border/60 px-4 py-2', workspaceSidebarSafeInsetClassName)}>
           <div className="h-8 w-8 animate-pulse rounded bg-muted/60" />
           <div className="h-5 w-64 animate-pulse rounded bg-muted/60" />
         </div>
@@ -1404,7 +1405,7 @@ export function DocsDocumentDetail({
         {proposalStatusMessage}
       </div>
       {/* Top bar */}
-      <div className="relative z-30 flex items-center gap-2 border-b border-border/60 bg-background px-3 py-1.5">
+      <div className={cn('relative z-30 flex items-center gap-2 border-b border-border/60 bg-background px-3 py-1.5', workspaceSidebarSafeInsetClassName)}>
         <Button
           variant="ghost"
           size="icon"

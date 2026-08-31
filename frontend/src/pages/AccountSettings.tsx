@@ -27,6 +27,7 @@ import {
   organizationRoleLabel,
 } from '@/components/settings/roleScopePresentation';
 import { queryKeys } from '@/lib/queryKeys';
+import { QuietPageHeader } from '@/components/design-system/quiet';
 
 const ROLE_COLORS: Record<string, string> = {
   owner: 'bg-amber-100 text-amber-800',
@@ -177,17 +178,18 @@ export default function AccountSettings() {
 
   if (!currentOrganization) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <p className="text-muted-foreground">No organization selected</p>
+      <div className="space-y-4">
+        <QuietPageHeader title="Organization" />
+        <div className="flex items-center justify-center py-16">
+          <p className="text-muted-foreground">No organization selected</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold">Organization</h2>
-      </div>
+      <QuietPageHeader title="Organization" />
 
       {/* Organization & Default Workspace */}
       <Card>

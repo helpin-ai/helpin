@@ -40,6 +40,7 @@ import {
   scopedDocuments,
   type StatusFilter,
 } from '@/pages/docs/spaceDetail/nodeSelection'
+import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet'
 
 export function DocsSpaceDetail() {
   const navigate = useNavigate()
@@ -192,12 +193,12 @@ export function DocsSpaceDetail() {
   }
 
   if (!workspace) {
-    return <p className="text-sm text-muted-foreground">Workspace not found.</p>
+    return <p className={`${workspaceSidebarSafeInsetClassName} text-sm text-muted-foreground`}>Workspace not found.</p>
   }
 
   if (spaceLoading) {
     return (
-      <div className="space-y-3 py-4">
+      <div className={`${workspaceSidebarSafeInsetClassName} space-y-3 py-4`}>
         <div className="h-8 w-48 animate-pulse rounded bg-muted/60" />
         <div className="h-10 animate-pulse rounded-lg bg-muted/60" />
         <div className="h-10 animate-pulse rounded-lg bg-muted/60" />
@@ -206,7 +207,7 @@ export function DocsSpaceDetail() {
   }
 
   if (!space) {
-    return <p className="text-sm text-muted-foreground">Space not found.</p>
+    return <p className={`${workspaceSidebarSafeInsetClassName} text-sm text-muted-foreground`}>Space not found.</p>
   }
 
   return (

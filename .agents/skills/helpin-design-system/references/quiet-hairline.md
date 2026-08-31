@@ -71,6 +71,7 @@ Use Helpin's existing authenticated route shell and responsive overflow behavior
 
 - Route pages use the centralized Quiet viewport and page header.
 - Detail sheets/pages use the centralized detail layout, tabs, and rail.
+- Specialized editors and dense workflow toolbars may keep their own header composition, but must use the centralized workspace-sidebar safe inset so the collapsed navigation opener never covers controls.
 - Center fixed-width route content with `margin-inline: auto`; never use flex centering that makes overflow unscrollable.
 - Keep the established application widths: detail rail 300–352px, task rail 300–308px, thread list about 456px, prose measure 680–760px, detail measure 600–700px.
 
@@ -78,7 +79,7 @@ Use Helpin's existing authenticated route shell and responsive overflow behavior
 
 ### Page and identity headers
 
-Page headers use a 20px title, a compact secondary description when useful, and right-aligned actions. Identity headers use a 40–44px avatar or company mark, a 24px name, a metadata line separated by 1×11px bars, and a lifecycle/status dot plus word. Editable entity-name fields remain 26px. Actions are ghost text actions plus at most one dark primary.
+Page headers use a 20px title, an optional compact breadcrumb/navigation row, a compact secondary description when useful, and right-aligned actions. Identity headers use a 40–44px avatar or company mark, a 24px name, a metadata line separated by 1×11px bars, and a lifecycle/status dot plus word. Editable entity-name fields remain 26px. Actions are ghost text actions plus at most one dark primary.
 
 ### Tabs and filters
 

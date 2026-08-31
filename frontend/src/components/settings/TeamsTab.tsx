@@ -43,6 +43,7 @@ import type { PMAutomation } from '@/lib/pmTypes';
 import { FIELD_VISIBILITY_FIELDS, FieldVisibilityForm } from './teams/FieldVisibilityForm';
 import { TeamRepoDefaultForm } from './teams/TeamRepoDefaultForm';
 import { StoredIcon } from '@/components/ui/icon-picker';
+import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 
 /* ── Teams Tab ── */
 
@@ -602,7 +603,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
     return (
       <>
-        <div className="space-y-8">
+        <div className={cn('space-y-8', workspaceSidebarSafeInsetClassName)}>
           <button
             type="button"
             onClick={() => {

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { QuietPageHeader } from '@/components/design-system/quiet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
@@ -42,10 +43,17 @@ export function SettingsPageFrame({ section, hideHeader, headerAction, children 
   const permissions = usePermissions(access);
   const sectionMeta = SETTINGS_ROUTE_SECTIONS.find((candidate) => candidate.id === section);
 
+  const pageHeader = sectionMeta && !hideHeader ? (
+    <QuietPageHeader
+      title={sectionMeta.label}
+      description={sectionMeta.description || undefined}
+    />
+  ) : null;
+
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-10 w-48" />
+        {pageHeader ?? <Skeleton className="h-6 w-48" />}
         <Skeleton className="h-96" />
       </div>
     );
@@ -53,8 +61,11 @@ export function SettingsPageFrame({ section, hideHeader, headerAction, children 
 
   if (!settings) {
     return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">Could not load workspace settings.</p>
+      <div className="space-y-4">
+        {pageHeader}
+        <div className="py-12 text-center">
+          <p className="text-muted-foreground">Could not load workspace settings.</p>
+        </div>
       </div>
     );
   }
@@ -62,8 +73,11 @@ export function SettingsPageFrame({ section, hideHeader, headerAction, children 
   const resolvedWorkspaceId = workspaceId || settings.settings.workspace_id;
   if (!resolvedWorkspaceId) {
     return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">Could not determine workspace for settings.</p>
+      <div className="space-y-4">
+        {pageHeader}
+        <div className="py-12 text-center">
+          <p className="text-muted-foreground">Could not determine workspace for settings.</p>
+        </div>
       </div>
     );
   }
@@ -81,17 +95,13 @@ export function SettingsPageFrame({ section, hideHeader, headerAction, children 
 
   return (
     <div className="space-y-4">
-      {sectionMeta && !hideHeader && (
-        <div className="mb-2 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-          <div>
-            <h2 className="text-xl font-semibold">{sectionMeta.label}</h2>
-            {sectionMeta.description && (
-              <p className="mt-1 text-sm text-muted-foreground">{sectionMeta.description}</p>
-            )}
-          </div>
-          {headerAction ? <div className="shrink-0">{headerAction(context)}</div> : null}
-        </div>
-      )}
+      {sectionMeta && !hideHeader ? (
+        <QuietPageHeader
+          title={sectionMeta.label}
+          description={sectionMeta.description || undefined}
+          actions={headerAction?.(context)}
+        />
+      ) : null}
       {children(context)}
     </div>
   );

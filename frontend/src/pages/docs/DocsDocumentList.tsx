@@ -49,6 +49,7 @@ import {
   type DocsLibrarySortField,
 } from '@/components/docs/DocsLibraryList'
 import { buildCollectionPathLabels } from '@/components/docs/docsCollectionTree'
+import { QuietPageHeader } from '@/components/design-system/quiet'
 
 interface DocsDocumentListProps {
   title: string
@@ -165,15 +166,17 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
   const EmptyIcon = emptyIcon
 
   if (!workspace) {
-    return <p className="text-sm text-muted-foreground">Workspace not found.</p>
+    return (
+      <div className="space-y-4">
+        <QuietPageHeader title={title} description={description} />
+        <p className="text-sm text-muted-foreground">Workspace not found.</p>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-4">
-      <header>
-        <h2 className="text-xl font-semibold">{title}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </header>
+      <QuietPageHeader title={title} description={description} />
 
       {isLoading || (filterMode === 'my' && isAccessLoading) ? (
         <div className="space-y-2 py-4">

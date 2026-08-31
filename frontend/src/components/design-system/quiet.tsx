@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
+export const workspaceSidebarSafeInsetClassName =
+  'group-data-[sidebar-toggle-visible=true]/workspace-main:pl-14';
+
 export function QuietPageViewport({ children, className, contentClassName }: { children: ReactNode; className?: string; contentClassName?: string }) {
   return (
     <div className={cn('h-full overflow-auto p-4 pb-20 [scrollbar-gutter:stable] md:p-6 md:pb-24', className)}>
@@ -15,6 +18,7 @@ export function QuietPageViewport({ children, className, contentClassName }: { c
 export function QuietPageHeader({
   title,
   context,
+  navigation,
   description,
   actions,
   variant = 'content',
@@ -22,21 +26,25 @@ export function QuietPageHeader({
 }: {
   title: ReactNode;
   context?: ReactNode;
+  navigation?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   variant?: 'content' | 'shell';
   className?: string;
 }) {
   return (
-    <header className={cn('flex justify-between gap-6 group-data-[sidebar-toggle-visible=true]/workspace-main:pl-14', variant === 'shell' ? 'items-center border-b border-quiet-divider-strong px-4 py-4 sm:px-6 lg:px-8' : 'items-start', className)}>
-      <div className="min-w-0">
-        <h1 className="text-[20px] font-semibold leading-[1.18] tracking-[-0.018em] text-quiet-text-primary">
-          {title}
-          {context ? <span className="font-normal text-quiet-text-tertiary"> ({context})</span> : null}
-        </h1>
-        {description ? <p className="mt-1.5 max-w-[760px] text-sm leading-[1.6] text-quiet-text-tertiary [text-wrap:pretty]">{description}</p> : null}
+    <header className={cn(workspaceSidebarSafeInsetClassName, variant === 'shell' ? 'border-b border-quiet-divider-strong px-4 py-4 sm:px-6 lg:px-8' : '', className)}>
+      {navigation ? <div className="mb-2 min-w-0">{navigation}</div> : null}
+      <div className={cn('flex justify-between gap-3 sm:gap-6', variant === 'shell' ? 'items-center' : 'items-start')}>
+        <div className="min-w-0">
+          <h1 className="text-[20px] font-semibold leading-[1.18] tracking-[-0.018em] text-quiet-text-primary">
+            {title}
+            {context ? <span className="font-normal text-quiet-text-tertiary"> ({context})</span> : null}
+          </h1>
+          {description ? <p className="mt-1.5 max-w-[760px] text-sm leading-[1.6] text-quiet-text-tertiary [text-wrap:pretty]">{description}</p> : null}
+        </div>
+        {actions ? <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">{actions}</div> : null}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-3">{actions}</div> : null}
     </header>
   );
 }
@@ -59,7 +67,7 @@ export function QuietIdentityHeader({
   className?: string;
 }) {
   return (
-    <section className={cn('border-b border-quiet-divider-strong px-4 pb-4 pt-6 group-data-[sidebar-toggle-visible=true]/workspace-main:pl-14 sm:px-6 lg:px-8', className)}>
+    <section className={cn('border-b border-quiet-divider-strong px-4 pb-4 pt-6 sm:px-6 lg:px-8', workspaceSidebarSafeInsetClassName, className)}>
       <div className="flex items-start gap-3.5">
         {leadingAction ? <div className="mt-1.5 shrink-0">{leadingAction}</div> : null}
         {avatar ? <div className="shrink-0">{avatar}</div> : null}

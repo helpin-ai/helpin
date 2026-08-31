@@ -49,6 +49,20 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('group-data-[sidebar-toggle-visible=true]/workspace-main:pl-14');
   });
 
+  it('keeps route navigation inside the same sidebar-safe header contract', () => {
+    const markup = renderToStaticMarkup(
+      <QuietPageHeader
+        title="Install the widget"
+        navigation={<nav aria-label="Breadcrumb">Support</nav>}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Breadcrumb"');
+    expect(markup).toContain('Support');
+    expect(markup).toContain('mb-2');
+    expect(markup).toContain('group-data-[sidebar-toggle-visible=true]/workspace-main:pl-14');
+  });
+
   it('uses hairline tabs with inline counts instead of pills', () => {
     const markup = renderToStaticMarkup(
       <Tabs defaultValue="overview">

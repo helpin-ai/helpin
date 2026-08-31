@@ -9,7 +9,8 @@ Import from `@/components/design-system/quiet`.
 | Need | Component |
 | --- | --- |
 | Scrollable route canvas | `QuietPageViewport` |
-| Route title, optional parenthetical scope, description, actions | `QuietPageHeader` |
+| Route title, optional parenthetical scope, breadcrumb/navigation, description, actions | `QuietPageHeader` |
+| Sidebar-safe inset for specialized editor/workflow toolbars | `workspaceSidebarSafeInsetClassName` |
 | Person/company identity | `QuietIdentityHeader` |
 | Main + rail detail shell | `QuietDetailLayout`, `QuietDetailRail` |
 | Primary line tabs | `Tabs`, `TabsList variant="quiet"`, `TabsTrigger` from `@/components/ui/tabs` |
@@ -26,6 +27,8 @@ Import from `@/components/design-system/quiet`.
 | Working empty state | `QuietEmptyState` |
 
 These components own visual invariants. Pages own data, navigation, permissions, and domain actions.
+
+Use `QuietPageHeader` for normal authenticated index and settings routes. Keep purpose-built editor or workflow toolbars when their controls are integral to the editing flow, and apply `workspaceSidebarSafeInsetClassName` to every top/loading toolbar state instead of recreating the collapsed-sidebar spacing class.
 
 ## Existing behavior primitives
 
