@@ -799,6 +799,7 @@ function ImportExportMenu({
 
 interface DocsEditorProps {
   title?: string
+  showTitle?: boolean
   onTitleChange?: (title: string) => void
   slug?: string
   onSlugChange?: (slug: string) => Promise<void>
@@ -830,6 +831,7 @@ interface DocsEditorProps {
 
 export function DocsEditor({
   title,
+  showTitle = true,
   onTitleChange,
   slug,
   initialContent,
@@ -1962,7 +1964,7 @@ img { max-width: 100%; }
           /* Source view — full width, fills remaining height */
           <div className="flex flex-1 flex-col px-6 py-4 min-h-0">
             {/* Title (read-only in source view) */}
-            {title !== undefined && (
+            {showTitle && title !== undefined && (
               <div className="pb-3 shrink-0">
                 <h1 className="text-3xl font-bold text-left break-words">{title || 'Untitled'}</h1>
               </div>
@@ -2013,7 +2015,7 @@ img { max-width: 100%; }
               />
             )}
             {/* Title */}
-            {title !== undefined && (
+            {showTitle && title !== undefined && (
               <div className="group/title px-6 pt-10 pb-2" data-docs-title-row>
                 {slug && <SlugDisplay slug={slug} onSlugChange={onSlugChange} readOnly={readOnly} helperText={slugHelperText} />}
                 {onTitleChange && !readOnly ? (

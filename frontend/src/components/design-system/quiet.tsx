@@ -2,6 +2,7 @@ import type { ElementType, ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ArrowLeft02Icon, ArrowRight01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
 export const workspaceSidebarSafeInsetClassName =
@@ -83,6 +84,94 @@ export function QuietIdentityHeader({
         {actions ? <div className="flex shrink-0 items-center gap-3">{actions}</div> : null}
       </div>
     </section>
+  );
+}
+
+export interface QuietBreadcrumbItem {
+  id: string;
+  label: ReactNode;
+  icon?: ReactNode;
+  onClick?: () => void;
+}
+
+export function QuietBreadcrumbs({
+  items,
+  onBack,
+  backLabel = 'Go back',
+  className,
+}: {
+  items: QuietBreadcrumbItem[];
+  onBack?: () => void;
+  backLabel?: string;
+  className?: string;
+}) {
+  return (
+    <nav aria-label="Breadcrumb" className={cn('flex min-w-0 items-center gap-1 overflow-hidden text-[12.5px] text-quiet-text-tertiary', className)}>
+      {onBack ? (
+        <QuietIconAction className="mr-1 shrink-0" onClick={onBack} aria-label={backLabel} title={backLabel}>
+          <ArrowLeft02Icon className="h-[15px] w-[15px]" />
+        </QuietIconAction>
+      ) : null}
+      {items.map((item, index) => (
+        <span key={item.id} className="flex min-w-0 items-center gap-1">
+          {index > 0 ? <ArrowRight01Icon aria-hidden="true" className="h-3 w-3 shrink-0 text-quiet-muted" /> : null}
+          {item.onClick ? (
+            <button
+              type="button"
+              onClick={item.onClick}
+              className="inline-flex min-w-0 items-center gap-1 border-b border-transparent font-medium transition-colors hover:border-quiet-field hover:text-quiet-text-primary focus-visible:border-b-2 focus-visible:border-quiet-text-primary focus-visible:outline-none"
+            >
+              {item.icon ? <span className="shrink-0">{item.icon}</span> : null}
+              <span className="truncate">{item.label}</span>
+            </button>
+          ) : (
+            <span className="inline-flex min-w-0 items-center gap-1 font-medium text-quiet-text-secondary">
+              {item.icon ? <span className="shrink-0">{item.icon}</span> : null}
+              <span className="truncate">{item.label}</span>
+            </span>
+          )}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+export function QuietDetailHeader({
+  breadcrumbs,
+  avatar,
+  title,
+  meta,
+  state,
+  actions,
+  className,
+}: {
+  breadcrumbs?: ReactNode;
+  avatar?: ReactNode;
+  title: ReactNode;
+  meta?: ReactNode;
+  state?: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <header className={cn('shrink-0 border-b border-quiet-divider-strong px-4 pb-4 pt-3 sm:px-6 lg:px-8', workspaceSidebarSafeInsetClassName, className)}>
+      {breadcrumbs ? <div className="mb-3 min-w-0">{breadcrumbs}</div> : null}
+      <div className="flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
+        <div className="flex min-w-0 flex-1 items-start gap-3.5">
+          {avatar ? <div className="shrink-0">{avatar}</div> : null}
+          <div className="min-w-0 flex-1">
+            <div className="min-w-0 text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-quiet-text-primary">{title}</div>
+            {meta ? <div className="mt-1.5 min-w-0">{meta}</div> : null}
+          </div>
+        </div>
+        {state || actions ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 md:max-w-[48%] md:shrink-0 md:justify-end">
+            {state ? <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">{state}</div> : null}
+            {actions ? <div className="flex min-w-0 flex-wrap items-center gap-3">{actions}</div> : null}
+          </div>
+        ) : null}
+      </div>
+    </header>
   );
 }
 
@@ -186,6 +275,19 @@ export function QuietUnderlineInput({ className, ...props }: React.ComponentProp
 
 export function QuietTitleInput({ className, ...props }: React.ComponentProps<typeof Input>) {
   return <Input variant="plain" className={cn(quietUnderlineControlClassName, 'w-full pb-2 text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] md:text-[26px]', className)} {...props} />;
+}
+
+export function QuietTitleTextarea({ className, rows = 1, ...props }: React.ComponentProps<'textarea'>) {
+  return (
+    <textarea
+      rows={rows}
+      className={cn(
+        'min-h-[30px] w-full resize-none overflow-hidden border-0 border-b border-transparent bg-transparent p-0 pb-1 text-left text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-quiet-text-primary outline-none [field-sizing:content] placeholder:text-quiet-muted hover:border-quiet-field focus-visible:border-b-2 focus-visible:border-quiet-text-primary',
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 export function QuietMetaLine({ items, className }: { items: ReactNode[]; className?: string }) {

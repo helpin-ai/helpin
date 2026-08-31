@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react';
-import { QuietIdentityHeader, QuietMetaLine, QuietStatusText } from '@/components/design-system/quiet';
+import { QuietBreadcrumbs, QuietDetailHeader, QuietMetaLine, QuietStatusText } from '@/components/design-system/quiet';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import type { LifecycleStage } from '@/lib/crmTypes';
 
@@ -13,7 +13,9 @@ interface ContactHeaderProps {
   lifecycleLabel: string;
   displayId?: string;
   avatarColorSeed?: string;
+  state?: ReactNode;
   actions?: ReactNode;
+  onBack: () => void;
   onNameChange: (first: string, last: string) => void;
 }
 
@@ -43,7 +45,9 @@ export function ContactHeader({
   lifecycleLabel,
   displayId,
   avatarColorSeed,
+  state,
   actions,
+  onBack,
   onNameChange,
 }: ContactHeaderProps) {
   const initialName = `${firstName ?? ''} ${lastName ?? ''}`.trim();
@@ -63,8 +67,9 @@ export function ContactHeader({
   const subtitleParts = getContactHeaderSubtitleParts(jobTitle, companyName);
 
   return (
-    <QuietIdentityHeader
+    <QuietDetailHeader
       className="lg:px-10"
+      breadcrumbs={<QuietBreadcrumbs items={[{ id: 'contacts', label: 'Contacts', onClick: onBack }]} onBack={onBack} backLabel="Back to contacts" />}
       avatar={(
         <UserAvatar
           name={initialName || 'Untitled'}
@@ -129,7 +134,12 @@ export function ContactHeader({
           displayId ? <span className="font-mono">{displayId}</span> : null,
         ]} />
       )}
-      status={<QuietStatusText tone="lifecycle" className={contactHeaderLifecycleBadgeClassName}>{lifecycleLabel}</QuietStatusText>}
+      state={(
+        <>
+          <QuietStatusText tone="lifecycle" className={contactHeaderLifecycleBadgeClassName}>{lifecycleLabel}</QuietStatusText>
+          {state}
+        </>
+      )}
       actions={actions}
     />
   );

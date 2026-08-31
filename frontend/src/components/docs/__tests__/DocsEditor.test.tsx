@@ -305,6 +305,21 @@ describe('DocsEditor', () => {
     vi.useRealTimers()
   })
 
+  it('can suppress the editor title when page chrome owns it', async () => {
+    await act(async () => {
+      root.render(
+        <DocsEditor
+          title="Header-owned title"
+          showTitle={false}
+          onSave={vi.fn().mockResolvedValue(undefined)}
+        />,
+      )
+    })
+
+    expect(container.textContent).not.toContain('Header-owned title')
+    expect(container.querySelector('[data-docs-title-row]')).toBeNull()
+  })
+
   it('skips redundant autosave and manual save when content matches the last saved snapshot', async () => {
     const initialContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'alpha' }] }] }
     const changedContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'beta' }] }] }

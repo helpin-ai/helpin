@@ -9,7 +9,6 @@ import {
   ArchiveIcon,
   Calendar03Icon,
   Tick01Icon,
-  ArrowRight01Icon,
   Clock01Icon,
   Copy01Icon,
   ViewIcon,
@@ -80,7 +79,17 @@ import {
   useDiscardDocsChangeProposal,
 } from '@/hooks/queries'
 import { cn, timeAgo } from '@/lib/utils'
-import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet'
+import {
+  QuietBreadcrumbs,
+  QuietDetailHeader,
+  QuietEmptyState,
+  QuietIconAction,
+  QuietMetaLine,
+  QuietPrimaryAction,
+  QuietStatusText,
+  QuietTextAction,
+  QuietTitleTextarea,
+} from '@/components/design-system/quiet'
 import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
@@ -98,6 +107,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { DocsEditor, SaveIndicator, type DocsCommentAnchor, type DocsCommentAnchorDecoration, type DocsEditingPresenceSignal, type SaveStatus } from '@/components/docs/DocsEditor'
+import { SlugDisplay } from '@/components/docs/SlugDisplay'
 import {
   buildCollectionTree,
   collectionAncestorChain,
@@ -140,17 +150,6 @@ import { collectMermaidSources } from '@/components/editor/mermaidContent'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
 import { useRegisterPageContext, type PageContextScopeOption } from '@/components/command-bar/pageContext'
-
-function docStatusColor(status: string): string {
-  switch (status) {
-    case 'published':
-      return 'text-emerald-600 dark:text-emerald-400'
-    case 'archived':
-      return 'text-muted-foreground/60'
-    default:
-      return 'text-amber-600 dark:text-amber-400'
-  }
-}
 
 function DocCollectionIcon({ name }: { name?: string | null }) {
   return (
@@ -1327,6 +1326,26 @@ export function DocsDocumentDetail({
   const publishDisabled = isSourceLocaleActive
     ? publishDoc.isPending || doc?.is_locked || (isPublished && !hasUnpublishedChanges)
     : !activeTranslation || publishArticleTranslation.isPending || doc?.is_locked || (isPublished && !hasUnpublishedChanges)
+  const activeSlug = isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug
+  const handleActiveSlugChange = effectiveReadOnly || !activeSlug
+    ? undefined
+    : async (newSlug: string) => {
+        if (isSourceLocaleActive) {
+          const res = await docsService.updateArticleSlug(wsId, docId, newSlug)
+          if (res.error) throw new Error(res.error)
+          toast.success(sourceLivePublished ? 'Slug saved. It will take effect when you publish an update.' : 'Slug saved')
+          queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
+          return
+        }
+        const res = await docsService.updateArticleTranslationSlug(wsId, docId, activeLocale, newSlug)
+        if (res.error) throw new Error(res.error)
+        toast.success(
+          translationLivePublished
+            ? `${getHelpcenterLocaleLabel(activeLocale)} slug saved. It will take effect when you publish an update.`
+            : `${getHelpcenterLocaleLabel(activeLocale)} slug saved`,
+        )
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
+      }
   const activeDialogTranslation = editingTranslationLocale === activeLocale && !isSourceLocaleActive
     ? {
         ...(activeTranslation ?? {
@@ -1372,11 +1391,13 @@ export function DocsDocumentDetail({
 
   if (docLoading || contentLoading || !mermaidPreloadReady) {
     return (
-      <div className="flex h-full flex-col">
-        <div className={cn('flex items-center gap-3 border-b border-border/60 px-4 py-2', workspaceSidebarSafeInsetClassName)}>
-          <div className="h-8 w-8 animate-pulse rounded bg-muted/60" />
-          <div className="h-5 w-64 animate-pulse rounded bg-muted/60" />
-        </div>
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'docs', label: 'Docs' }]} onBack={() => router.history.back()} backLabel="Back" />}
+          avatar={<div className="h-10 w-10 animate-pulse rounded-[10px] bg-quiet-icon-well" />}
+          title={<div className="h-8 w-64 max-w-full animate-pulse bg-quiet-icon-well" />}
+          meta={<div className="h-3 w-40 animate-pulse bg-quiet-icon-well" />}
+        />
         <div className="flex-1 animate-pulse bg-muted/20" />
       </div>
     )
@@ -1384,17 +1405,18 @@ export function DocsDocumentDetail({
 
   if (!doc) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-4">
-        <File01Icon className="h-12 w-12 text-muted-foreground/30 mb-3" />
-        <p className="text-sm text-muted-foreground">Document not found.</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-3"
-          onClick={() => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })}
-        >
-          Back to Docs
-        </Button>
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'docs', label: 'Docs', onClick: () => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } }) }]} onBack={() => router.history.back()} backLabel="Back" />}
+          title="Document"
+        />
+        <div className="flex-1 overflow-auto p-4 sm:p-6">
+          <QuietEmptyState
+            title="Document not found"
+            description="This document may have been moved, deleted, or is no longer available to you."
+            action={<QuietTextAction onClick={() => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to Docs</QuietTextAction>}
+          />
+        </div>
       </div>
     )
   }
@@ -1404,216 +1426,178 @@ export function DocsDocumentDetail({
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {proposalStatusMessage}
       </div>
-      {/* Top bar */}
-      <div className={cn('relative z-30 flex items-center gap-2 border-b border-border/60 bg-background px-3 py-1.5', workspaceSidebarSafeInsetClassName)}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          onClick={() => router.history.back()}
-        >
-          <ArrowLeft02Icon className="h-4 w-4" />
-        </Button>
-
-        {/* Breadcrumb — starts at the space, not "Docs". The sidebar
-            already tells users they're in the Docs module; repeating
-            it here wastes the first breadcrumb slot on something
-            they already know. */}
-        <nav className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground">
-          {space && (
-            <button
-              type="button"
-              onClick={() =>
-                navigate({
+      <QuietDetailHeader
+        className="relative z-30 bg-background"
+        breadcrumbs={(
+          <QuietBreadcrumbs
+            onBack={() => router.history.back()}
+            backLabel="Back"
+            items={[
+              ...(space ? [{
+                id: `space-${space.id}`,
+                label: space.name,
+                icon: <StoredIcon name={space.icon} className="h-3.5 w-3.5" textClassName="" />,
+                onClick: () => navigate({
                   to: '/w/$slug/docs/spaces/$spaceId',
                   params: { slug: wsSlug, spaceId: space.id },
-                })
-              }
-              className="truncate transition-colors hover:text-foreground"
-            >
-              <span className="inline-flex items-center gap-1">
-                <StoredIcon name={space.icon} className="h-3.5 w-3.5 shrink-0" textClassName="" />
-                <span>{space.name}</span>
-              </span>
-            </button>
-          )}
-          {collectionBreadcrumbNodes.map((node) => (
-            <div key={node.collection.id} className="flex min-w-0 items-center gap-1">
-              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-              <button
-                type="button"
-                onClick={() =>
-                  navigate({
-                    to: '/w/$slug/docs/spaces/$spaceId',
-                    params: { slug: wsSlug, spaceId: node.collection.space_id },
-                    search: { collection: node.collection.id },
-                  })
-                }
-                className="inline-flex min-w-0 items-center gap-1 truncate transition-colors hover:text-foreground"
-              >
-                <DocCollectionIcon name={node.collection.icon} />
-                <span className="truncate">{node.collection.name}</span>
-              </button>
-            </div>
-          ))}
-          {doc && (
-            <div className="flex min-w-0 items-center gap-1">
-              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-              <span
-                aria-current="page"
-                className="inline-flex min-w-0 items-center gap-1 font-medium"
-              >
-                <StoredIcon
-                  name={doc.icon}
-                  className="h-3 w-3 shrink-0"
-                  fallback={<File01Icon className="h-3 w-3 shrink-0" />}
-                />
-                <span className="truncate">{titleDraft.trim() || 'Untitled'}</span>
-              </span>
-            </div>
-          )}
-        </nav>
-
-        {(editorSaveStatus !== 'idle' || editorLastSavedAt) && (
-          <span className="shrink-0">
-            <SaveIndicator status={editorSaveStatus} lastSavedAt={editorLastSavedAt} />
-          </span>
+                }),
+              }] : []),
+              ...collectionBreadcrumbNodes.map((node) => ({
+                id: `collection-${node.collection.id}`,
+                label: node.collection.name,
+                icon: <DocCollectionIcon name={node.collection.icon} />,
+                onClick: () => navigate({
+                  to: '/w/$slug/docs/spaces/$spaceId',
+                  params: { slug: wsSlug, spaceId: node.collection.space_id },
+                  search: { collection: node.collection.id },
+                }),
+              })),
+            ]}
+          />
         )}
-
-        {!showLocalePills && (() => {
-          if (doc.status === 'archived') {
-            return <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>Archived</span>
-          }
-          if (!isPublished) {
-            return <span className={`shrink-0 text-xs font-medium ${docStatusColor('draft')}`}>Draft</span>
-          }
-          const audience = isExternalHelpCenter ? 'help center' : 'internal'
-          return (
-            <span className="shrink-0 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              Published · {audience}
-              {hasUnpublishedChanges && (
-                <span className="ml-1 text-amber-600 dark:text-amber-400"> · Unpublished changes</span>
-              )}
-            </span>
-          )
-        })()}
-
-        {headerPresencePeople.length > 0 && (
-          <div className={`hidden shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 md:flex ${
-            activeDocEditors.length > 0
-              ? 'border-amber-500/30 bg-amber-500/10'
-              : 'border-border/60 bg-muted/40'
-          }`}>
-            <span className={`text-[11px] font-medium ${
-              activeDocEditors.length > 0
-                ? 'text-amber-700 dark:text-amber-300'
-                : 'text-muted-foreground'
-            }`}>
-              {activeDocEditors.length > 0 ? 'Editing now' : 'Viewing now'}
-            </span>
-            <div className="flex items-end gap-2">
-              {headerPresencePeople.slice(0, 4).map((person) => (
-                <QuickTooltip key={person.userId} label={person.tooltip}>
-                  <div className="relative pb-1">
-                    <UserAvatar
-                      name={person.name}
-                      avatarUrl={person.avatarUrl}
-                      className={person.isEditing ? 'h-6 w-6 ring-1 ring-amber-200 dark:ring-amber-500/40' : 'h-6 w-6 opacity-75'}
-                      fallbackClassName="text-[8px]"
-                    />
-                    {person.isEditing && <EditingIndicator />}
-                  </div>
-                </QuickTooltip>
-              ))}
-              {headerPresencePeople.length > 4 && (
-                <AvatarGroupCount className="size-6 text-[10px]">
-                  +{headerPresencePeople.length - 4}
-                </AvatarGroupCount>
-              )}
-            </div>
+        avatar={(
+          <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-quiet-icon-well text-quiet-text-secondary">
+            <StoredIcon name={doc.icon} className="h-5 w-5" fallback={<File01Icon className="h-5 w-5" />} />
           </div>
         )}
-
-        {isExternalHelpCenter && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 shrink-0 gap-1.5 text-xs"
-            onClick={async () => {
-              try {
-                const res = await docsService.getPreviewToken(wsId, docId)
-                if (res.error || !res.data) {
-                  toast.error(res.error || 'Failed to generate preview')
-                  return
+        title={!effectiveReadOnly ? (
+          <QuietTitleTextarea
+            aria-label="Document title"
+            value={displayedTitle}
+            placeholder="Untitled"
+            onFocus={() => handleEditingPresenceChange({ area: 'title', section: 'Title' })}
+            onChange={(event) => {
+              if (isSourceLocaleActive) handleTitleChange(event.target.value)
+              else handleTranslationTitleChange(event.target.value)
+              handleEditingPresenceChange({ area: 'title', section: 'Title' })
+            }}
+            onBlur={() => handleEditingPresenceChange(null)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                editorInstance?.commands.focus('start')
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                if (isSourceLocaleActive) {
+                  if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
+                  setTitleDraftState({ docId, value: doc.title ?? '' })
+                } else {
+                  if (translationSaveTimerRef.current) clearTimeout(translationSaveTimerRef.current)
+                  setTranslationDrafts((current) => ({
+                    ...current,
+                    [translationDraftKey(docId, activeLocale)]: translationDraftFromTranslation(activeLocale, activeTranslation),
+                  }))
                 }
-                const { token, subdomain, custom_domain } = res.data
-                window.open(
-                  buildHelpcenterPreviewUrlFromEnv(
-                    { subdomain, customDomain: custom_domain },
-                    docId,
-                    token,
-                  ),
-                  '_blank',
-                  'noopener',
-                )
-              } catch {
-                toast.error('Failed to generate preview')
+                handleEditingPresenceChange(null)
+                event.currentTarget.blur()
               }
             }}
-          >
-            <ViewIcon className="h-3.5 w-3.5" />
-            Preview
-          </Button>
+          />
+        ) : <div className="break-words">{displayedTitle || 'Untitled'}</div>}
+        meta={(
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+            {activeSlug ? <SlugDisplay slug={activeSlug} onSlugChange={handleActiveSlugChange} readOnly={effectiveReadOnly} presentation="header" /> : null}
+            {showLocalePills ? <QuietMetaLine items={[getHelpcenterLocaleLabel(activeLocale)]} /> : null}
+          </div>
         )}
-
-        {showContextualPublish && !(isPublished && !hasUnpublishedChanges) && (
+        state={(
           <>
-            <Button
-              size="sm"
-              variant="default"
-              className="h-7 gap-1.5 text-xs"
-              onClick={async () => {
-                if (isSourceLocaleActive) {
-                  void handlePublish()
-                  return
-                }
-                if (activeTranslation && !activeTranslation.slug) {
-                  setPendingSlug(suggestDocsSlug(activeTranslationDraft.title || activeTranslation.title || 'translation', 'translation'))
-                  setPendingPublishLocale(activeLocale)
-                  setSlugDialogOpen(true)
-                  return
-                }
-                if (parentTranslationsMissing) {
-                  setParentPublishConfirmOpen(true)
-                  return
-                }
-                try {
-                  const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
-                  await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
-                  toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Failed to publish translation')
-                }
-              }}
-              disabled={publishDisabled}
-            >
-              <SentIcon className="h-3 w-3" />
-              {activePublishLabel}
-            </Button>
+            {(editorSaveStatus !== 'idle' || editorLastSavedAt) ? <SaveIndicator status={editorSaveStatus} lastSavedAt={editorLastSavedAt} /> : null}
+            {doc.status === 'archived' ? (
+              <QuietStatusText tone="blocker">Archived</QuietStatusText>
+            ) : !isPublished ? (
+              <QuietStatusText>Draft{showLocalePills ? ` · ${activeLocaleShortLabel}` : ''}</QuietStatusText>
+            ) : (
+              <QuietStatusText tone={hasUnpublishedChanges ? 'blocker' : 'positive'}>
+                Published{showLocalePills ? ` · ${activeLocaleShortLabel}` : isExternalHelpCenter ? ' · Help center' : ' · Internal'}{hasUnpublishedChanges ? ' · Unpublished changes' : ''}
+              </QuietStatusText>
+            )}
+            {headerPresencePeople.length > 0 ? (
+              <div className="flex min-w-0 items-center gap-2">
+                <span className={cn('text-[11.5px] font-medium', activeDocEditors.length > 0 ? 'text-quiet-accent' : 'text-quiet-muted')}>
+                  {activeDocEditors.length > 0 ? 'Editing now' : 'Viewing now'}
+                </span>
+                <div className="flex items-end gap-1.5">
+                  {headerPresencePeople.slice(0, 4).map((person) => (
+                    <QuickTooltip key={person.userId} label={person.tooltip}>
+                      <div className="relative pb-1">
+                        <UserAvatar
+                          name={person.name}
+                          avatarUrl={person.avatarUrl}
+                          className={person.isEditing ? 'h-6 w-6 ring-1 ring-quiet-accent/30' : 'h-6 w-6 opacity-75'}
+                          fallbackClassName="text-[8px]"
+                        />
+                        {person.isEditing && <EditingIndicator />}
+                      </div>
+                    </QuickTooltip>
+                  ))}
+                  {headerPresencePeople.length > 4 ? <AvatarGroupCount className="size-6 text-[10px]">+{headerPresencePeople.length - 4}</AvatarGroupCount> : null}
+                </div>
+              </div>
+            ) : null}
           </>
         )}
-
-        <QuickTooltip label={railOpen ? 'Hide details' : 'Show details'}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
-            onClick={toggleRail}
-          >
-            <MoreHorizontalIcon className="h-4 w-4" />
-          </Button>
-        </QuickTooltip>
-      </div>
+        actions={(
+          <>
+            {isExternalHelpCenter ? (
+              <QuietTextAction
+                className="gap-1.5"
+                onClick={async () => {
+                  try {
+                    const res = await docsService.getPreviewToken(wsId, docId)
+                    if (res.error || !res.data) {
+                      toast.error(res.error || 'Failed to generate preview')
+                      return
+                    }
+                    const { token, subdomain, custom_domain } = res.data
+                    window.open(buildHelpcenterPreviewUrlFromEnv({ subdomain, customDomain: custom_domain }, docId, token), '_blank', 'noopener')
+                  } catch {
+                    toast.error('Failed to generate preview')
+                  }
+                }}
+              >
+                <ViewIcon className="h-3.5 w-3.5" />Preview
+              </QuietTextAction>
+            ) : null}
+            {showContextualPublish && !(isPublished && !hasUnpublishedChanges) ? (
+              <QuietPrimaryAction
+                className="gap-1.5"
+                onClick={async () => {
+                  if (isSourceLocaleActive) {
+                    void handlePublish()
+                    return
+                  }
+                  if (activeTranslation && !activeTranslation.slug) {
+                    setPendingSlug(suggestDocsSlug(activeTranslationDraft.title || activeTranslation.title || 'translation', 'translation'))
+                    setPendingPublishLocale(activeLocale)
+                    setSlugDialogOpen(true)
+                    return
+                  }
+                  if (parentTranslationsMissing) {
+                    setParentPublishConfirmOpen(true)
+                    return
+                  }
+                  try {
+                    const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
+                    await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
+                    toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : 'Failed to publish translation')
+                  }
+                }}
+                disabled={publishDisabled}
+              >
+                <SentIcon className="h-3.5 w-3.5" />{activePublishLabel}
+              </QuietPrimaryAction>
+            ) : null}
+            <QuickTooltip label={railOpen ? 'Hide details' : 'Show details'}>
+              <QuietIconAction onClick={toggleRail} aria-label={railOpen ? 'Hide details' : 'Show details'}>
+                <MoreHorizontalIcon className="h-4 w-4" />
+              </QuietIconAction>
+            </QuickTooltip>
+          </>
+        )}
+      />
 
       {showLocalePills && (
         <div className="border-b border-border/60 bg-muted/10 px-3 py-2.5">
@@ -1838,6 +1822,7 @@ export function DocsDocumentDetail({
             <DocsEditor
               key={`preview-${previewVersion.id}`}
               title={titleDraft}
+              showTitle={false}
               initialContent={previewVersion.content as JSONContent | null}
               onSave={handleSave}
               readOnly
@@ -1857,31 +1842,7 @@ export function DocsDocumentDetail({
             <DocsEditor
               key={isSourceLocaleActive ? 'source-editor' : `translation-${activeLocale}`}
               title={isSourceLocaleActive ? titleDraft : activeTranslationDraft.title}
-              onTitleChange={!effectiveReadOnly ? (isSourceLocaleActive ? handleTitleChange : handleTranslationTitleChange) : undefined}
-              slug={isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug}
-              onSlugChange={
-                isSourceLocaleActive
-                  ? doc?.hc_slug && !effectiveReadOnly
-                    ? async (newSlug) => {
-                        const res = await docsService.updateArticleSlug(wsId, docId, newSlug)
-                        if (res.error) throw new Error(res.error)
-                        toast.success(sourceLivePublished ? 'Slug saved. It will take effect when you publish an update.' : 'Slug saved')
-                        queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
-                      }
-                    : undefined
-                  : activeTranslationDraft.slug && !effectiveReadOnly
-                    ? async (newSlug) => {
-                        const res = await docsService.updateArticleTranslationSlug(wsId, docId, activeLocale, newSlug)
-                        if (res.error) throw new Error(res.error)
-                        toast.success(
-                          translationLivePublished
-                            ? `${getHelpcenterLocaleLabel(activeLocale)} slug saved. It will take effect when you publish an update.`
-                            : `${getHelpcenterLocaleLabel(activeLocale)} slug saved`,
-                        )
-                        queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
-                      }
-                    : undefined
-              }
+              showTitle={false}
               initialContent={
                 isSourceLocaleActive
                   ? coverageInitialContent ?? (content?.content as JSONContent | null)

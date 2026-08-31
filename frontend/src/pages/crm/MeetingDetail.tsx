@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
@@ -23,17 +23,19 @@ import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialo
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
   QuietDetailLayout,
+  QuietDetailHeader,
+  QuietBreadcrumbs,
   QuietEmptyState,
-  QuietIconAction,
-  QuietIdentityHeader,
   QuietMetaLine,
   QuietPrimaryAction,
   QuietPropertyRow,
   QuietSection,
   QuietStatusText,
   QuietTextAction,
+  QuietTitleInput,
   quietUnderlineControlClassName,
 } from '@/components/design-system/quiet';
+import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -44,6 +46,7 @@ import {
   useRetryMeetingProcessing,
   useStartMeetingCapture,
   useStopMeetingCapture,
+  useUpdateCRMMeeting,
 } from '@/hooks/queries/useCRMMeetings';
 import { useTeamWorkflow } from '@/hooks/queries/useWorkflows';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
@@ -273,18 +276,24 @@ function MeetingDetailState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="h-full overflow-auto p-4 md:p-6">
-      <div className="mx-auto max-w-4xl">
-        <QuietEmptyState
-          title={title}
-          description={description}
-          action={(
-            <div className="flex flex-wrap gap-4">
-              {onRetry ? <QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={onRetry}>Try again</QuietTextAction> : null}
-              <QuietTextAction onClick={onBack}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to meetings</QuietTextAction>
-            </div>
-          )}
-        />
+    <div className="flex h-full flex-col overflow-hidden">
+      <QuietDetailHeader
+        breadcrumbs={<QuietBreadcrumbs items={[{ id: 'meetings', label: 'Meetings', onClick: onBack }]} onBack={onBack} backLabel="Back to meetings" />}
+        title="Meeting"
+      />
+      <div className="flex-1 overflow-auto p-4 md:p-6">
+        <div className="mx-auto max-w-4xl">
+          <QuietEmptyState
+            title={title}
+            description={description}
+            action={(
+              <div className="flex flex-wrap gap-4">
+                {onRetry ? <QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={onRetry}>Try again</QuietTextAction> : null}
+                <QuietTextAction onClick={onBack}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to meetings</QuietTextAction>
+              </div>
+            )}
+          />
+        </div>
       </div>
     </div>
   );
@@ -304,6 +313,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   const startCapture = useStartMeetingCapture(workspaceId, meetingId);
   const stopCapture = useStopMeetingCapture(workspaceId, meetingId);
   const retryProcessing = useRetryMeetingProcessing(workspaceId, meetingId);
+  const updateMeeting = useUpdateCRMMeeting(workspaceId, meetingId);
   const acceptAction = useAcceptMeetingAction(workspaceId, meetingId);
   const dismissAction = useDismissMeetingAction(workspaceId, meetingId);
   const { teams } = useAccessibleTeams(workspaceId);
@@ -314,7 +324,12 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
   const [activeTab, setActiveTab] = useState<MeetingDetailTab>('overview');
   const recordingPlayerRef = useRef<MeetingRecordingPlayerHandle | null>(null);
   const [playbackSeconds, setPlaybackSeconds] = useState(0);
-  useTitle(data?.meeting.title ?? 'Meeting');
+  const [titleDraftState, setTitleDraftState] = useState<{ meetingId: string; value: string } | null>(null);
+  const [titleSaveError, setTitleSaveError] = useState<string | null>(null);
+  const [editedMeetingId, setEditedMeetingId] = useState<string | null>(null);
+  const titleSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const titleDraft = titleDraftState?.meetingId === meetingId ? titleDraftState.value : data?.meeting.title ?? '';
+  useTitle(titleDraft.trim() || 'Meeting');
 
   const backToMeetings = () => navigate({ to: '/w/$slug/crm/meetings', params: { slug } });
   const defaultTeamId = teams[0]?.id ?? '';
@@ -326,6 +341,41 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
     const minutes = Math.floor(seconds / 60);
     return `${minutes}m ${seconds % 60}s`;
   }, [data?.meeting.duration_seconds]);
+
+  const persistMeetingTitle = useCallback(async (value: string) => {
+    const nextTitle = value.trim();
+    if (!nextTitle || nextTitle === data?.meeting.title) return;
+    try {
+      await updateMeeting.mutateAsync({ title: nextTitle });
+      setTitleDraftState({ meetingId, value: nextTitle });
+      setTitleSaveError(null);
+    } catch (error) {
+      setTitleSaveError(error instanceof Error ? error.message : 'Failed to save title');
+    }
+  }, [data?.meeting.title, meetingId, updateMeeting]);
+
+  const scheduleMeetingTitleSave = (value: string) => {
+    setTitleDraftState({ meetingId, value });
+    setEditedMeetingId(meetingId);
+    setTitleSaveError(null);
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    titleSaveTimerRef.current = setTimeout(() => void persistMeetingTitle(value), 800);
+  };
+
+  const flushMeetingTitleSave = () => {
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    const nextTitle = titleDraft.trim();
+    if (!nextTitle) {
+      setTitleDraftState({ meetingId, value: data?.meeting.title ?? '' });
+      setTitleSaveError('Meeting title cannot be empty');
+      return;
+    }
+    void persistMeetingTitle(nextTitle);
+  };
+
+  useEffect(() => () => {
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+  }, [meetingId]);
 
   const runCommand = async (command: () => Promise<unknown>, success: string) => {
     try {
@@ -377,13 +427,19 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
 
   if (meetingQuery.isLoading) {
     return (
-      <div className="h-full overflow-auto p-4 md:p-6">
-        <div className="mx-auto max-w-6xl">
-          <Skeleton className="h-7 w-44 rounded-none" />
-          <Skeleton className="mt-6 h-10 w-2/3 rounded-none" />
-          <div className="mt-6 border-t border-quiet-divider-strong py-6">
-            <Skeleton className="h-4 w-32 rounded-none" />
-            <Skeleton className="mt-3 h-48 w-full rounded-none" />
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'meetings', label: 'Meetings', onClick: backToMeetings }]} onBack={backToMeetings} backLabel="Back to meetings" />}
+          avatar={<Skeleton className="h-10 w-10 rounded-[10px]" />}
+          title={<Skeleton className="h-8 w-64 max-w-full rounded-none" />}
+          meta={<Skeleton className="h-3 w-48 rounded-none" />}
+        />
+        <div className="flex-1 overflow-auto p-4 md:p-6">
+          <div className="mx-auto max-w-6xl">
+            <div className="mt-6 border-t border-quiet-divider-strong py-6">
+              <Skeleton className="h-4 w-32 rounded-none" />
+              <Skeleton className="mt-3 h-48 w-full rounded-none" />
+            </div>
           </div>
         </div>
       </div>
@@ -435,14 +491,30 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <QuietIdentityHeader
-        leadingAction={(
-          <QuietIconAction aria-label="Back to meetings" title="Back to meetings" onClick={backToMeetings}>
-            <ArrowLeft02Icon className="h-4 w-4" />
-          </QuietIconAction>
-        )}
+      <QuietDetailHeader
+        breadcrumbs={<QuietBreadcrumbs items={[{ id: 'meetings', label: 'Meetings', onClick: backToMeetings }]} onBack={backToMeetings} backLabel="Back to meetings" />}
         avatar={<MeetingPlatformIcon platform={meeting.platform} presentation="quiet" className="h-10 w-10" />}
-        title={meeting.title}
+        title={canEditCRM ? (
+          <QuietTitleInput
+            aria-label="Meeting name"
+            className="max-w-[42rem] border-b-transparent pb-0.5 hover:border-quiet-field focus-visible:border-quiet-text-primary"
+            value={titleDraft}
+            onChange={(event) => scheduleMeetingTitleSave(event.target.value)}
+            onBlur={flushMeetingTitleSave}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.currentTarget.blur();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+                setTitleDraftState({ meetingId, value: meeting.title });
+                setTitleSaveError(null);
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        ) : meeting.title}
         meta={(
           <QuietMetaLine items={[
             getMeetingPlatformLabel(meeting.platform),
@@ -451,7 +523,12 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
             `${meeting.participants?.length ?? 0} participant${meeting.participants?.length === 1 ? '' : 's'}`,
           ]} />
         )}
-        status={<MeetingStatusText status={meeting.status} />}
+        state={(
+          <>
+            <MeetingStatusText status={meeting.status} />
+            {editedMeetingId === meetingId ? <SaveIndicator saving={updateMeeting.isPending} error={titleSaveError} presentation="quiet" /> : null}
+          </>
+        )}
         actions={(
           <div className="flex max-w-md flex-wrap justify-end gap-3">
             <QuietTextAction asChild>

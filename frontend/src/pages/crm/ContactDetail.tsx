@@ -27,7 +27,8 @@ import {
   ZapIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { QuietIconAction, QuietPrimaryAction } from '@/components/design-system/quiet';
+import { QuietBreadcrumbs, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietPrimaryAction, QuietTextAction } from '@/components/design-system/quiet';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -957,27 +958,39 @@ export function ContactDetailPage({
   // ── Loading / Not found ──
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          className="lg:px-10"
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'contacts', label: 'Contacts', onClick: goBack }]} onBack={goBack} backLabel="Back to contacts" />}
+          avatar={<Skeleton className="h-10 w-10 rounded-full" />}
+          title={<Skeleton className="h-8 w-64 max-w-full rounded-none" />}
+          meta={<Skeleton className="h-3 w-48 rounded-none" />}
+        />
+        <div className="flex flex-1 items-center justify-center">
+          <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       </div>
     );
   }
 
   if (isContactLimitError(contactError)) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-        <div>
-          <h2 className="text-sm font-medium">Upgrade to view CRM contacts</h2>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            The Starter plan includes up to 5,000 contacts. Support can keep capturing new contacts, but CRM contact viewing requires the Growth plan once you exceed that limit.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={goBack}>
-            <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
-            Back to contacts
-          </Button>
-          <Button size="sm" onClick={goToBilling}>Upgrade</Button>
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'contacts', label: 'Contacts', onClick: goBack }]} onBack={goBack} backLabel="Back to contacts" />}
+          title="Contact"
+        />
+        <div className="flex-1 overflow-auto p-4 sm:p-6">
+          <QuietEmptyState
+            title="Upgrade to view CRM contacts"
+            description="The Starter plan includes up to 5,000 contacts. Support can keep capturing new contacts, but viewing CRM contacts above that limit requires the Growth plan."
+            action={(
+              <div className="flex flex-wrap items-center gap-4">
+                <QuietTextAction onClick={goBack}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to contacts</QuietTextAction>
+                <QuietPrimaryAction onClick={goToBilling}>Upgrade</QuietPrimaryAction>
+              </div>
+            )}
+          />
         </div>
       </div>
     );
@@ -985,70 +998,66 @@ export function ContactDetailPage({
 
   if (!contact || !form) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-muted-foreground">Contact not found</p>
-        <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
-          Back to contacts
-        </Button>
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'contacts', label: 'Contacts', onClick: goBack }]} onBack={goBack} backLabel="Back to contacts" />}
+          title="Contact"
+        />
+        <div className="flex-1 overflow-auto p-4 sm:p-6">
+          <QuietEmptyState
+            title="Contact not found"
+            description="This contact may have been deleted or you may no longer have access to it."
+            action={<QuietTextAction onClick={goBack}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to contacts</QuietTextAction>}
+          />
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-3">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goBack} aria-label="Back to contacts">
-          <ArrowLeft02Icon className="h-4 w-4" />
-        </Button>
-        <button type="button" onClick={goBack} className="text-xs text-muted-foreground transition-colors hover:text-foreground">
-          Contacts
-        </button>
-        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground/60" />
-        <span className="min-w-0 truncate text-xs font-medium">{`${form.first_name} ${form.last_name}`.trim() || 'Untitled contact'}</span>
-        <div className="ml-auto flex items-center gap-1.5">
-          <SaveIndicator saving={saving} error={saveError} />
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setDeleteConfirmOpen(true)} aria-label="Delete contact">
-            <Delete01Icon className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
+      <ContactHeader
+        firstName={form.first_name}
+        lastName={form.last_name}
+        jobTitle={form.job_title}
+        companyName={primaryCompanyAssociation?.linked_object_name ?? undefined}
+        companyHref={
+          primaryCompanyAssociation
+            ? `/w/${wsSlug}/crm/companies/${primaryCompanyAssociation.linkedId}`
+            : undefined
+        }
+        lifecycleStage={form.lifecycle_stage}
+        lifecycleLabel={
+          lifecycleOptions.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
+        }
+        displayId={contact.display_id}
+        avatarColorSeed={form.email}
+        state={<SaveIndicator saving={saving} error={saveError} presentation="quiet" />}
+        actions={(
+          <>
+            <QuietIconAction className="text-quiet-text-tertiary hover:text-quiet-accent" onClick={() => setDeleteConfirmOpen(true)} aria-label="Delete contact" title="Delete contact">
+              <Delete01Icon className="h-3.5 w-3.5" />
+            </QuietIconAction>
+            <QuietPrimaryAction className="gap-1.5" onClick={() => setCreateDealOpen(true)}>
+              <PlusSignIcon className="h-3.5 w-3.5" />
+              New deal
+            </QuietPrimaryAction>
+          </>
+        )}
+        onBack={goBack}
+        onNameChange={(first, last) => {
+          setForm((current) =>
+            current ? { ...current, first_name: first, last_name: last } : current,
+          );
+          queuePatch({ first_name: first, last_name: last });
+        }}
+      />
 
       <div className={cn(
         'grid min-h-0 flex-1',
         desktopDetailsCollapsed ? contactDetailCollapsedGridClassName : contactDetailOverviewGridClassName,
       )}>
         <div className="flex min-h-0 flex-col overflow-hidden">
-          <ContactHeader
-            firstName={form.first_name}
-            lastName={form.last_name}
-            jobTitle={form.job_title}
-            companyName={primaryCompanyAssociation?.linked_object_name ?? undefined}
-            companyHref={
-              primaryCompanyAssociation
-                ? `/w/${wsSlug}/crm/companies/${primaryCompanyAssociation.linkedId}`
-                : undefined
-            }
-            lifecycleStage={form.lifecycle_stage}
-            lifecycleLabel={
-              lifecycleOptions.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
-            }
-            displayId={contact.display_id}
-            avatarColorSeed={form.email}
-            actions={(
-              <QuietPrimaryAction className="gap-1.5" onClick={() => setCreateDealOpen(true)}>
-                <PlusSignIcon className="h-3.5 w-3.5" />
-                New deal
-              </QuietPrimaryAction>
-            )}
-            onNameChange={(first, last) => {
-              setForm((current) =>
-                current ? { ...current, first_name: first, last_name: last } : current,
-              );
-              queuePatch({ first_name: first, last_name: last });
-            }}
-          />
-
           <div className="flex items-end border-b border-quiet-divider-strong px-3 sm:px-5 lg:px-8">
             <div className="min-w-0 flex-1 overflow-x-auto px-1 pt-1">
               <Tabs value={activeTab} onValueChange={(value) => onTabChange?.(value as ContactDetailTab)} className="min-w-max gap-0">

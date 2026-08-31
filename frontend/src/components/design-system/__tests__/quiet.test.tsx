@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { QuietEmptyState, QuietIdentityHeader, QuietPageHeader, QuietPrimaryAction, QuietStatusText, QuietTitleInput } from '../quiet';
+import { QuietBreadcrumbs, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietPageHeader, QuietPrimaryAction, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
+import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 describe('Quiet Hairline primitives', () => {
@@ -18,10 +19,34 @@ describe('Quiet Hairline primitives', () => {
 
   it('keeps entity title inputs at 26px on desktop', () => {
     const markup = renderToStaticMarkup(<QuietTitleInput aria-label="Entity name" value="Acme" readOnly />);
+    const textareaMarkup = renderToStaticMarkup(<QuietTitleTextarea aria-label="Document name" value="Guide" readOnly />);
 
     expect(markup).toContain('text-[26px]');
     expect(markup).toContain('md:text-[26px]');
     expect(markup).not.toContain('md:text-sm');
+    expect(textareaMarkup).toContain('text-[26px]');
+    expect(textareaMarkup).toContain('[field-sizing:content]');
+  });
+
+  it('composes a two-level sidebar-safe detail header', () => {
+    const markup = renderToStaticMarkup(
+      <QuietDetailHeader
+        breadcrumbs={<QuietBreadcrumbs items={[{ id: 'contacts', label: 'Contacts' }]} onBack={() => undefined} backLabel="Back to contacts" />}
+        avatar={<span>AC</span>}
+        title="Ada Cole"
+        meta="VP Sales"
+        state={<QuietStatusText tone="lifecycle">Customer</QuietStatusText>}
+        actions={<QuietPrimaryAction>New deal</QuietPrimaryAction>}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Breadcrumb"');
+    expect(markup).toContain('aria-label="Back to contacts"');
+    expect(markup).toContain('text-[26px]');
+    expect(markup).toContain('border-quiet-divider-strong');
+    expect(markup).toContain('group-data-[sidebar-toggle-visible=true]/workspace-main:pl-14');
+    expect(markup).toContain('md:flex-row');
+    expect(markup).not.toContain('rounded-full border');
   });
 
   it('keeps page headers at 20px and identity headers at 24px', () => {
@@ -107,5 +132,14 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('bg-quiet-text-primary');
     expect(markup).toContain('motion-safe:animate-pulse');
     expect(markup).not.toContain('rounded-full border');
+  });
+
+  it('renders quiet save failures without a contradictory saved state', () => {
+    const markup = renderToStaticMarkup(<SaveIndicator saving={false} error="Failed to save" presentation="quiet" />);
+
+    expect(markup).toContain('Failed to save');
+    expect(markup).toContain('text-quiet-accent');
+    expect(markup).not.toContain('All changes saved');
+    expect(markup).not.toContain('rounded-full');
   });
 });

@@ -20,10 +20,25 @@ describe('workspace route header contract', () => {
   });
 
   it.each([
-    ['Docs editor', '../../../pages/docs/DocsDocumentDetail.tsx'],
     ['Teams detail', '../../settings/TeamsTab.tsx'],
   ])('keeps the specialized %s toolbar clear of the collapsed sidebar opener', (_label, path) => {
     expect(source(path)).toContain('workspaceSidebarSafeInsetClassName');
+  });
+
+  it.each([
+    ['Docs editor', '../../../pages/docs/DocsDocumentDetail.tsx'],
+    ['Meeting detail', '../../../pages/crm/MeetingDetail.tsx'],
+    ['Contact detail', '../../crm/contact-detail/ContactHeader.tsx'],
+    ['Company detail', '../../../pages/crm/CompanyDetail.tsx'],
+  ])('uses the shared detail header contract for %s', (_label, path) => {
+    expect(source(path)).toContain('<QuietDetailHeader');
+    expect(source(path)).toContain('<QuietBreadcrumbs');
+  });
+
+  it('renders the private Docs title in the header instead of repeating it in the editor', () => {
+    const docsSource = source('../../../pages/docs/DocsDocumentDetail.tsx');
+    expect(docsSource).toContain('<QuietTitleTextarea');
+    expect(docsSource).toContain('showTitle={false}');
   });
 
   it('keeps public shared documents outside the authenticated workspace header contract', () => {
