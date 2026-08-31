@@ -142,6 +142,8 @@ describe('MyWorkPage', () => {
 
     expect(container.querySelector('h1')?.textContent).toBe('My Work')
     expect(container.querySelector('[role="tablist"]')).toBeTruthy()
+    expect(container.querySelector('.max-w-7xl')).toBeTruthy()
+    expect(container.querySelector('.max-w-4xl')).toBeFalsy()
     expect(container.textContent).toContain('Assigned to me')
     expect(container.textContent).toContain('Requested by me')
     expect(container.textContent).toContain('Tasks currently underway')

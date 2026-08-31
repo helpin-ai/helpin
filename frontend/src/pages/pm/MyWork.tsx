@@ -273,7 +273,7 @@ export function MyWorkPage() {
           <TabsTrigger value="requested">Requested by me</TabsTrigger>
         </TabsList>
 
-        <QuietPageViewport className="min-h-0 flex-1" contentClassName="max-w-4xl">
+        <QuietPageViewport className="min-h-0 flex-1">
           {showingLoading ? (
             <MyWorkLoadingState />
           ) : !hasTeams && !isAdmin ? (
