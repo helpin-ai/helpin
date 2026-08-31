@@ -263,15 +263,16 @@ describe('MyWorkPage', () => {
     })
   })
 
-  it('renders the empty workflow as a useful hairline list', async () => {
+  it('renders the original illustrated empty workflow below the quiet page header', async () => {
     vi.mocked(pmTaskService.list).mockResolvedValue(taskListResponse([]))
     const { container, root } = await renderPage()
 
     expect(container.textContent).toContain('No tasks assigned to you yet')
     expect(container.textContent).toContain('Create tasks')
-    expect(container.textContent).toContain('Assign the work')
+    expect(container.textContent).toContain('Assign to team')
     expect(container.textContent).toContain('Track progress')
-    expect(container.querySelector('.rounded-lg')).toBeFalsy()
+    expect(container.querySelector('.rounded-lg')).toBeTruthy()
+    expect(container.querySelector('h1')?.textContent).toBe('My Work')
 
     act(() => {
       root.unmount()

@@ -2,9 +2,13 @@
 
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EntitySummaryCard } from '../EntitySummaryCard';
+
+const entitySummarySource = readFileSync(resolve(__dirname, '../EntitySummaryCard.tsx'), 'utf8');
 
 const summaryState = vi.hoisted(() => ({
   contactSummary: null as null | { summary_markdown: string; highlights: unknown[]; status: string },
@@ -52,6 +56,11 @@ afterEach(() => {
 });
 
 describe('EntitySummaryCard', () => {
+  it('uses the Deal-style dashed card for every overview summary state', () => {
+    expect(entitySummarySource).toContain('rounded-md border border-dashed border-border/70 bg-muted/25');
+    expect(entitySummarySource.match(/className=\{overviewSummaryCardClassName\}/g)).toHaveLength(3);
+  });
+
   it('generates a contact summary instead of refetching the empty read model', () => {
     act(() => root.render(<EntitySummaryCard workspaceId="workspace-1" contactId="contact-1" />));
 

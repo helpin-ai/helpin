@@ -4,12 +4,16 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   CancelCircleIcon,
   Calendar03Icon,
+  ChartColumnIcon,
   CheckmarkCircle02Icon,
+  ClipboardIcon,
   Clock01Icon,
   Key01Icon,
   Loading01Icon,
   MessagePreview01Icon,
+  PencilEdit02Icon,
   SecurityCheckIcon,
+  UserGroupIcon,
 } from '@/lib/icons';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -359,27 +363,38 @@ function NoTeamEmptyState() {
 // ── Empty state ───────────────────────────────────────────────────
 
 const WORKFLOW_STEPS = [
-  { title: 'Create tasks', description: 'Describe work to be done — bugs, features, or tasks.' },
-  { title: 'Assign the work', description: 'Set an owner, priority, and deadline for each task.' },
-  { title: 'Track progress', description: 'Tasks move through workflow states as work gets done.' },
+  { icon: PencilEdit02Icon, title: 'Create tasks', description: 'Describe work to be done — bugs, features, or tasks' },
+  { icon: UserGroupIcon, title: 'Assign to team', description: 'Set an owner, priority, and deadline for each task' },
+  { icon: ChartColumnIcon, title: 'Track progress', description: 'Tasks move through workflow states as work gets done' },
 ];
 
 function MyWorkEmptyState({ mode }: { mode: Mode }) {
   return (
-    <QuietEmptyState
-      title={mode === 'assigned' ? 'No tasks assigned to you yet' : 'No tasks requested by you yet'}
-      description={
-        mode === 'assigned'
-          ? 'When teammates assign tasks to you, they appear here in focus order.'
-          : 'Tasks you create or request will appear here so you can track their progress.'
-      }
-    >
-      <div className="border-t border-quiet-divider-light">
-        {WORKFLOW_STEPS.map((step) => (
-          <QuietListRow key={step.title} title={step.title} detail={step.description} className="px-0" />
-        ))}
+    <div className="flex flex-col items-center px-4 py-16">
+      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500/10">
+        <ClipboardIcon className="h-7 w-7 text-blue-500" />
       </div>
-    </QuietEmptyState>
+      <h3 className="mb-1 text-base font-medium">
+        {mode === 'assigned' ? 'No tasks assigned to you yet' : 'No tasks requested by you yet'}
+      </h3>
+      <p className="max-w-md text-center text-sm text-muted-foreground">
+        {mode === 'assigned'
+          ? 'When teammates assign tasks to you, they appear here — prioritized so you always know what to focus on first.'
+          : 'Tasks you create or request will appear here so you can track their progress.'}
+      </p>
+
+      <div className="mt-10 w-full max-w-4xl">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {WORKFLOW_STEPS.map(({ icon: Icon, title, description }) => (
+            <div key={title} className="flex flex-col items-center rounded-lg border border-border/50 bg-muted/30 p-6 text-center">
+              <Icon className="mb-3 h-5 w-5 text-muted-foreground" />
+              <p className="mb-1 text-sm font-medium">{title}</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

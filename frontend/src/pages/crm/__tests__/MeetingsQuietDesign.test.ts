@@ -42,10 +42,10 @@ describe('CRM meetings Quiet Hairline composition', () => {
     expect(meetingDetailSource).toContain("!recordingPlayer && 'md:grid-cols-2'");
   });
 
-  it('renders transcript turns as readable stacked prose', () => {
-    expect(meetingDetailSource).toContain('<article className={cn(');
-    expect(meetingDetailSource).toContain('max-w-[760px]');
-    expect(meetingDetailSource).not.toContain("sm:grid-cols-[120px_minmax(0,1fr)]");
+  it('retains the compact speaker-and-transcript row design', () => {
+    expect(meetingDetailSource).toContain("sm:grid-cols-[120px_minmax(0,1fr)]");
+    expect(meetingDetailSource).toContain("active && 'bg-primary/5 ring-1 ring-primary/15'");
+    expect(meetingDetailSource).toContain('text-sm leading-6 text-muted-foreground');
   });
 
   it('keeps forms, recording, and processing free of card and gradient chrome', () => {

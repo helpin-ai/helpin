@@ -242,26 +242,25 @@ function TranscriptRow({
 }) {
   const timestamp = `${Math.floor(segment.start_seconds / 60)}:${String(Math.floor(segment.start_seconds % 60)).padStart(2, '0')}`;
   return (
-    <article className={cn(
-      'relative border-b border-quiet-divider-light px-3 py-4 transition-colors hover:bg-quiet-row-hover sm:px-4',
-      active && 'bg-quiet-row-hover',
+    <div className={cn(
+      'grid gap-1 rounded-lg px-2 py-2 transition-colors sm:grid-cols-[120px_minmax(0,1fr)]',
+      active && 'bg-primary/5 ring-1 ring-primary/15',
     )}>
-      <span aria-hidden="true" className={cn('absolute inset-y-0 left-0 w-[3px]', active ? 'bg-quiet-text-primary' : 'bg-transparent')} />
-      <header className="flex items-baseline gap-2 pl-1">
-        <h3 className="text-[13.5px] font-semibold leading-5 tracking-[-0.008em] text-quiet-text-primary">{segment.speaker_name || 'Speaker'}</h3>
+      <div className="text-xs font-medium">
+        {segment.speaker_name || 'Speaker'}
         {playable ? (
           <button
             type="button"
-            className="border-b border-transparent text-[11.5px] font-normal tabular-nums text-quiet-muted hover:border-quiet-field hover:text-quiet-text-primary focus-visible:border-b-2 focus-visible:border-quiet-text-primary focus-visible:outline-none"
+            className="ml-2 rounded px-1 text-[10px] font-normal text-primary hover:bg-primary/10 hover:underline"
             title="Play from this moment"
             onClick={onSeek}
           >
             {timestamp}
           </button>
-        ) : <span className="text-[11.5px] font-normal tabular-nums text-quiet-muted">{timestamp}</span>}
-      </header>
-      <p className="mt-1.5 max-w-[760px] pl-1 text-sm leading-[1.7] text-quiet-text-secondary [text-wrap:pretty]">{segment.text}</p>
-    </article>
+        ) : <span className="ml-2 text-[10px] font-normal text-muted-foreground">{timestamp}</span>}
+      </div>
+      <p className="text-sm leading-6 text-muted-foreground">{segment.text}</p>
+    </div>
   );
 }
 
@@ -693,7 +692,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                       {data.transcript?.language ? `Speaker-attributed transcript · ${data.transcript.language}` : 'Speaker-attributed meeting transcript'}
                     </p>
                     {data.transcript?.segments?.length ? (
-                      <div className="border-t border-quiet-divider-light">
+                      <div className="space-y-2">
                         {data.transcript.segments.map((segment) => {
                           const segmentEnd = Math.max(segment.end_seconds, segment.start_seconds + 0.5);
                           const active = Boolean(meeting.recording_object_key) && playbackSeconds >= segment.start_seconds && playbackSeconds < segmentEnd;
