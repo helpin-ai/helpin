@@ -827,6 +827,8 @@ interface DocsEditorProps {
   onEditorReady?: (editor: ReturnType<typeof useEditor> | null) => void
   /** When true, the centered doc column slides left (left margin shrinks) so the right-side gutter can host comment cards. Doc width is unchanged. */
   hasSideComments?: boolean
+  /** Lets the authenticated Docs page own mobile scrolling so its page header can scroll away. Desktop keeps the editor's contained scroller. */
+  pageScrollOnMobile?: boolean
 }
 
 export function DocsEditor({
@@ -858,6 +860,7 @@ export function DocsEditor({
   onSaveStatusChange,
   onEditorReady,
   hasSideComments = false,
+  pageScrollOnMobile = false,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
@@ -1885,7 +1888,7 @@ img { max-width: 100%; }
   if (!editor) return null
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className={`flex min-h-0 flex-col ${pageScrollOnMobile ? 'flex-none overflow-visible lg:flex-1 lg:overflow-hidden' : 'flex-1 overflow-hidden'}`}>
       {/* Floating toolbar — appears on text selection */}
       {!readOnly && !sourceView && (
         <FloatingToolbar
@@ -1897,7 +1900,15 @@ img { max-width: 100%; }
       )}
 
       {/* Editor content with title */}
-      <div className={`relative min-h-0 flex-1 docs-editor-wrapper [overflow-anchor:none] [scrollbar-gutter:stable] ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'} ${hasSideComments ? 'has-side-comments' : ''}`}>
+      <div className={`relative docs-editor-wrapper [overflow-anchor:none] [scrollbar-gutter:stable] ${
+        sourceView
+          ? pageScrollOnMobile
+            ? 'flex min-h-[70dvh] flex-none flex-col lg:min-h-0 lg:flex-1'
+            : 'flex min-h-0 flex-1 flex-col'
+          : pageScrollOnMobile
+            ? 'min-h-0 flex-none overflow-visible lg:flex-1 lg:overflow-y-auto'
+            : 'min-h-0 flex-1 overflow-y-auto'
+      } ${hasSideComments ? 'has-side-comments' : ''}`}>
         {generatingOverlay && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground mb-3" />

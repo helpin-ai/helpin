@@ -38,6 +38,9 @@ describe('workspace route header contract', () => {
   it('renders the private Docs title in the header instead of repeating it in the editor', () => {
     const docsSource = source('../../../pages/docs/DocsDocumentDetail.tsx');
     expect(docsSource).toContain('<QuietTitleTextarea');
+    expect(docsSource).toContain('presentation="header"');
+    expect(docsSource).toContain('allowTitleWrap');
+    expect(docsSource).toContain('pageScrollOnMobile');
     expect(docsSource).toContain('showTitle={false}');
   });
 

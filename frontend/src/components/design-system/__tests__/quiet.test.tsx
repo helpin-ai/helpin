@@ -1,9 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { QuietBreadcrumbs, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietPageHeader, QuietPrimaryAction, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietPageHeader, QuietPrimaryAction, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 describe('Quiet Hairline primitives', () => {
   it('preserves Helpin small-button geometry for primary actions', () => {
@@ -19,13 +20,32 @@ describe('Quiet Hairline primitives', () => {
 
   it('keeps entity title inputs at 26px on desktop', () => {
     const markup = renderToStaticMarkup(<QuietTitleInput aria-label="Entity name" value="Acme" readOnly />);
+    const headerMarkup = renderToStaticMarkup(<QuietTitleInput aria-label="Header name" presentation="header" value="Acme" readOnly />);
     const textareaMarkup = renderToStaticMarkup(<QuietTitleTextarea aria-label="Document name" value="Guide" readOnly />);
+    const headerTextareaMarkup = renderToStaticMarkup(<QuietTitleTextarea aria-label="Document header name" presentation="header" value="Guide" readOnly />);
 
     expect(markup).toContain('text-[26px]');
     expect(markup).toContain('md:text-[26px]');
     expect(markup).not.toContain('md:text-sm');
+    expect(headerMarkup).toContain('text-[20px]');
+    expect(headerMarkup).toContain('md:text-[20px]');
+    expect(headerMarkup).not.toContain('md:text-sm');
+    expect(headerMarkup).not.toContain('text-[26px]');
     expect(textareaMarkup).toContain('text-[26px]');
     expect(textareaMarkup).toContain('[field-sizing:content]');
+    expect(headerTextareaMarkup).toContain('text-[20px]');
+    expect(headerTextareaMarkup).toContain('md:text-[20px]');
+    expect(headerTextareaMarkup).not.toContain('md:text-sm');
+  });
+
+  it('allows long document titles to wrap without changing the default entity-title contract', () => {
+    const wrappedMarkup = renderToStaticMarkup(<QuietDetailHeader title="A long document title" allowTitleWrap />);
+    const compactMarkup = renderToStaticMarkup(<QuietDetailHeader title="A long company name" />);
+
+    expect(wrappedMarkup).toContain('break-words');
+    expect(wrappedMarkup).not.toContain('truncate');
+    expect(compactMarkup).toContain('truncate');
+    expect(compactMarkup).toContain('text-[20px]');
   });
 
   it('composes a two-level sidebar-safe detail header', () => {
@@ -42,17 +62,36 @@ describe('Quiet Hairline primitives', () => {
 
     expect(markup).toContain('aria-label="Breadcrumb"');
     expect(markup).toContain('aria-label="Back to contacts"');
-    expect(markup).toContain('text-[26px]');
+    expect(markup).toContain('text-[20px]');
     expect(markup).toContain('border-quiet-divider-strong');
     expect(markup).toContain('group-data-[sidebar-toggle-visible=true]/workspace-main:pl-14');
-    expect(markup).toContain('md:flex-row');
-    expect(markup).toContain('pb-1.5');
+    expect(markup).toContain('grid-cols-[minmax(0,1fr)_auto]');
+    expect(markup).toContain('pb-2');
     expect(markup).toContain('pt-2');
     expect(markup).toContain('mb-0.5');
     expect(markup).toContain('mt-0.5');
     expect(markup.indexOf('New deal')).toBeLessThan(markup.indexOf('Customer'));
-    expect(markup).toContain('flex-col items-start gap-1.5');
+    expect(markup).toContain('flex-col items-end gap-0.5');
+    expect(markup).toContain('max-w-28');
+    expect(markup).toContain('sm:max-w-none');
     expect(markup).not.toContain('rounded-full border');
+  });
+
+  it('uses labelled desktop actions and round icon-only mobile actions in detail headers', () => {
+    const secondaryMarkup = renderToStaticMarkup(
+      <TooltipProvider><QuietDetailAction icon={<span>V</span>} label="Preview" /></TooltipProvider>,
+    );
+    const primaryMarkup = renderToStaticMarkup(
+      <TooltipProvider><QuietDetailAction tone="primary" icon={<span>P</span>} label="Publish update" /></TooltipProvider>,
+    );
+
+    expect(secondaryMarkup).toContain('size-8');
+    expect(secondaryMarkup).toContain('rounded-full');
+    expect(secondaryMarkup).toContain('max-sm:sr-only');
+    expect(secondaryMarkup).toContain('aria-label="Preview"');
+    expect(secondaryMarkup).toContain('sm:rounded-none');
+    expect(primaryMarkup).toContain('sm:rounded-4xl');
+    expect(primaryMarkup).toContain('bg-quiet-action');
   });
 
   it('keeps page headers at 20px and identity headers at 24px', () => {

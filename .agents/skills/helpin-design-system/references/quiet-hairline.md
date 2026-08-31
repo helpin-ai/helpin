@@ -49,7 +49,7 @@ Avatar fallback pairs, selected by the centralized avatar seed, are:
 
 Use Helpin's centralized `font-sans` stack. Do not introduce another font. Use only weights 400, 500, and 600.
 
-- Static route page title: `20px / 600`, letter spacing `-.018em`. Identity titles remain `24px / 600`; keep editable entity-name fields at `26px / 600`.
+- Static route page title: `20px / 600`, letter spacing `-.018em`. Identity titles remain `24px / 600`; keep editable entity-name fields at `26px / 600` outside the compact detail-header context.
 - Section or thread title: `20–21px / 600`, `-.018em`.
 - Row title or subject: `13.5px / 600`, `-.008em`; this is the strongest row element.
 - Body prose: `14px / 1.7`, maximum measure `680–760px`, `text-wrap: pretty`.
@@ -81,7 +81,7 @@ Use Helpin's existing authenticated route shell and responsive overflow behavior
 
 Page headers use a 20px title, an optional compact breadcrumb/navigation row, a compact secondary description when useful, and right-aligned actions. Identity headers use a 40–44px avatar or company mark, a 24px name, a metadata line separated by 1×11px bars, and a lifecycle/status dot plus word. Editable entity-name fields remain 26px. Actions are ghost text actions plus at most one dark primary.
 
-Detail pages that combine breadcrumbs, editable identity, state, and specialized actions use the centralized two-level detail header. The first row contains ancestor breadcrumbs only; the current entity or document title appears once in the 26px identity row below. Metadata stays with the title. On the right, actions form the first row and plain-text state sits directly underneath; both move beneath the identity and stay in the same order on narrow screens. The shared header owns sidebar-toggle clearance and its closing strong hairline; domain pages own saving, validation, permissions, and routing.
+Detail pages that combine breadcrumbs, editable identity, state, and specialized actions use the centralized compact detail header. The first row contains ancestor breadcrumbs only. The current entity or document title appears once below at an explicit `20px` at every breakpoint. CRM identity names stay on one line and truncate rather than increasing header height; document titles may wrap when showing the full title is necessary. Metadata stays under the title. Actions remain to the right with plain-text state directly underneath. On phones, header actions become round icon-only controls; their labels return from the small breakpoint upward. The shared header owns sidebar-toggle clearance, responsive geometry, accessible action labels, and its closing strong hairline; domain pages own saving, validation, permissions, and routing. The authenticated Docs detail page lets this header scroll with the page below `lg`, while its desktop editor retains contained scrolling.
 
 ### Tabs and filters
 
@@ -92,6 +92,7 @@ Primary tab labels use an explicit `14px` in every state. This is a deliberate e
 - Icon action: 15px centralized icon, 6px radius, 6px padding, tertiary ink, warm hover/focus background.
 - Text action: icon plus 12.5–13px label, no border or filled background.
 - Dark action: use Helpin's centralized `Button` at `size="sm"` and inherit its standard compact geometry (`h-8`, `px-3`, `text-sm`, `rounded-4xl`). Quiet styling controls the warm dark color and the one-to-two-primary-actions limit; it does not override button size, spacing, or curvature.
+- Detail-header action: use the centralized responsive action. Below `sm`, it is a 32px round icon control with an accessible label; from `sm` upward it returns to the appropriate text or dark-action presentation.
 - Underline control: borderless with a 1px field underline that darkens on hover and becomes 2px on focus.
 
 ### Property rows

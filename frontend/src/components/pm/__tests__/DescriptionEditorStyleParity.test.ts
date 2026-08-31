@@ -35,7 +35,8 @@ describe('description editor style parity', () => {
       expect(detailSource).not.toContain('className="border-transparent shadow-none [&_.ProseMirror]:text-sm"');
     }
 
-    expect(quietDesignSystem).toContain("'w-full pb-2 text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] md:text-[26px]'");
+    expect(quietDesignSystem).toContain("'pb-2 text-[26px] leading-[1.15] tracking-[-0.02em] md:text-[26px]'");
+    expect(quietDesignSystem).toContain("presentation?: 'entity' | 'header'");
 
     expect(taskDetail).toContain(taskDetailBottomSpacer);
     expect(epicDetail).toContain(epicDetailBottomSpacer);

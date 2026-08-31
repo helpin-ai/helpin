@@ -16,7 +16,7 @@ import {
 	ZapIcon,
 	UserIcon,
 } from '@/lib/icons';
-import { QuietBreadcrumbs, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietMetaLine, QuietPrimaryAction, QuietTextAction, QuietTitleInput } from '@/components/design-system/quiet';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietMetaLine, QuietTextAction, QuietTitleInput } from '@/components/design-system/quiet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Favicon } from '@/components/ui/favicon';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
@@ -378,6 +378,7 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
         title={(
           <QuietTitleInput
             aria-label="Company name"
+            presentation="header"
             className="max-w-[32rem] border-b-transparent pb-0.5 hover:border-quiet-field focus-visible:border-quiet-text-primary"
             value={form.name}
             onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
@@ -388,13 +389,18 @@ export function CompanyDetailPage({ companyId, activeTab = 'overview', onTabChan
         state={<SaveIndicator saving={saving} error={saveError} presentation="quiet" />}
         actions={(
           <>
-            <QuietIconAction className="text-quiet-text-tertiary hover:text-quiet-accent" onClick={() => setDeleteConfirmOpen(true)} aria-label="Delete company" title="Delete company">
-              <Delete01Icon className="h-4 w-4" />
-            </QuietIconAction>
-            <QuietPrimaryAction className="gap-1.5" onClick={() => setCreateDealOpen(true)}>
-              <PlusSignIcon className="h-3.5 w-3.5" />
-              New deal
-            </QuietPrimaryAction>
+            <QuietDetailAction
+              tone="danger"
+              icon={<Delete01Icon className="h-4 w-4" />}
+              label="Delete company"
+              onClick={() => setDeleteConfirmOpen(true)}
+            />
+            <QuietDetailAction
+              tone="primary"
+              icon={<PlusSignIcon className="h-3.5 w-3.5" />}
+              label="New deal"
+              onClick={() => setCreateDealOpen(true)}
+            />
           </>
         )}
       />

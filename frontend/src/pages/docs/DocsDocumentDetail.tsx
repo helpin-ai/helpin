@@ -13,7 +13,6 @@ import {
   Copy01Icon,
   ViewIcon,
   LinkSquare01Icon,
-  File01Icon,
   FolderOpenIcon,
   GlobeIcon,
   Link01Icon,
@@ -81,11 +80,10 @@ import {
 import { cn, timeAgo } from '@/lib/utils'
 import {
   QuietBreadcrumbs,
+  QuietDetailAction,
   QuietDetailHeader,
   QuietEmptyState,
-  QuietIconAction,
   QuietMetaLine,
-  QuietPrimaryAction,
   QuietTextAction,
   QuietTitleTextarea,
 } from '@/components/design-system/quiet'
@@ -1404,7 +1402,6 @@ export function DocsDocumentDetail({
       <div className="flex h-full flex-col overflow-hidden">
         <QuietDetailHeader
           breadcrumbs={<QuietBreadcrumbs items={[{ id: 'docs', label: 'Docs' }]} onBack={() => router.history.back()} backLabel="Back" />}
-          avatar={<div className="h-10 w-10 animate-pulse rounded-[10px] bg-quiet-icon-well" />}
           title={<div className="h-8 w-64 max-w-full animate-pulse bg-quiet-icon-well" />}
           meta={<div className="h-3 w-40 animate-pulse bg-quiet-icon-well" />}
         />
@@ -1432,12 +1429,13 @@ export function DocsDocumentDetail({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col overflow-y-auto lg:overflow-hidden">
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {proposalStatusMessage}
       </div>
       <QuietDetailHeader
         className="relative z-30 bg-background"
+        allowTitleWrap
         breadcrumbs={(
           <QuietBreadcrumbs
             onBack={() => router.history.back()}
@@ -1465,14 +1463,11 @@ export function DocsDocumentDetail({
             ]}
           />
         )}
-        avatar={(
-          <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-quiet-icon-well text-quiet-text-secondary">
-            <StoredIcon name={doc.icon} className="h-5 w-5" fallback={<File01Icon className="h-5 w-5" />} />
-          </div>
-        )}
         title={!effectiveReadOnly ? (
           <QuietTitleTextarea
             aria-label="Document title"
+            presentation="header"
+            className="border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary"
             value={displayedTitle}
             placeholder="Untitled"
             onFocus={() => handleEditingPresenceChange({ area: 'title', section: 'Title' })}
@@ -1553,8 +1548,9 @@ export function DocsDocumentDetail({
         actions={(
           <>
             {isExternalHelpCenter ? (
-              <QuietTextAction
-                className="gap-1.5"
+              <QuietDetailAction
+                icon={<ViewIcon className="h-3.5 w-3.5" />}
+                label="Preview"
                 onClick={async () => {
                   try {
                     const res = await docsService.getPreviewToken(wsId, docId)
@@ -1568,13 +1564,13 @@ export function DocsDocumentDetail({
                     toast.error('Failed to generate preview')
                   }
                 }}
-              >
-                <ViewIcon className="h-3.5 w-3.5" />Preview
-              </QuietTextAction>
+              />
             ) : null}
             {showContextualPublish && !(isPublished && !hasUnpublishedChanges) ? (
-              <QuietPrimaryAction
-                className="gap-1.5"
+              <QuietDetailAction
+                tone="primary"
+                icon={<SentIcon className="h-3.5 w-3.5" />}
+                label={activePublishLabel}
                 onClick={async () => {
                   if (isSourceLocaleActive) {
                     void handlePublish()
@@ -1599,15 +1595,13 @@ export function DocsDocumentDetail({
                   }
                 }}
                 disabled={publishDisabled}
-              >
-                <SentIcon className="h-3.5 w-3.5" />{activePublishLabel}
-              </QuietPrimaryAction>
+              />
             ) : null}
-            <QuickTooltip label={railOpen ? 'Hide details' : 'Show details'}>
-              <QuietIconAction onClick={toggleRail} aria-label={railOpen ? 'Hide details' : 'Show details'}>
-                <MoreHorizontalIcon className="h-4 w-4" />
-              </QuietIconAction>
-            </QuickTooltip>
+            <QuietDetailAction
+              icon={<MoreHorizontalIcon className="h-4 w-4" />}
+              label={railOpen ? 'Hide details' : 'Show details'}
+              onClick={toggleRail}
+            />
           </>
         )}
       />
@@ -1789,9 +1783,9 @@ export function DocsDocumentDetail({
           />
         )
       ) : (
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-none lg:flex-1">
         {/* Editor */}
-        <div ref={setEditorShellRef} className="relative flex min-w-0 flex-1 flex-col">
+        <div ref={setEditorShellRef} className="relative flex w-full min-w-0 flex-none flex-col lg:w-auto lg:flex-1">
           {/* Right-side scrollspy outline minimap */}
           <DocsOutlineMinimap
             items={outlineItems}
@@ -1848,6 +1842,7 @@ export function DocsDocumentDetail({
               onSaveStatusChange={handleEditorSaveStatusChange}
               onEditorReady={setEditorInstance}
               hasSideComments={hasVisibleInlineComments}
+              pageScrollOnMobile
               commentAnchors={commentAnchors}
               onOpenComment={handleOpenComment}
             />
@@ -1894,6 +1889,7 @@ export function DocsDocumentDetail({
               onSaveStatusChange={handleEditorSaveStatusChange}
               onEditorReady={setEditorInstance}
               hasSideComments={hasVisibleInlineComments}
+              pageScrollOnMobile
             />
           )}
         </div>

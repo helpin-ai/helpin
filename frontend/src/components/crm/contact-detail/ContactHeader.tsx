@@ -19,9 +19,9 @@ interface ContactHeaderProps {
   onNameChange: (first: string, last: string) => void;
 }
 
-export const contactHeaderAvatarClassName = 'h-10 w-10 shrink-0';
-export const contactHeaderNameClassName = 'block min-w-0 truncate border-b border-transparent text-left text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-quiet-text-primary transition-colors hover:border-quiet-field focus-visible:border-quiet-text-primary focus-visible:outline-none md:text-[26px]';
-export const contactHeaderNameInputClassName = 'block w-full min-w-0 border-0 border-b-2 border-quiet-text-primary bg-transparent pb-0.5 text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-quiet-text-primary outline-none placeholder:text-quiet-muted md:text-[26px]';
+export const contactHeaderAvatarClassName = 'h-full w-full shrink-0';
+export const contactHeaderNameClassName = 'block min-w-0 truncate border-b border-transparent text-left text-[20px] font-semibold leading-[1.18] tracking-[-0.018em] text-quiet-text-primary transition-colors hover:border-quiet-field focus-visible:border-quiet-text-primary focus-visible:outline-none';
+export const contactHeaderNameInputClassName = 'block w-full min-w-0 truncate border-0 border-b-2 border-quiet-text-primary bg-transparent pb-0.5 text-[20px] font-semibold leading-[1.18] tracking-[-0.018em] text-quiet-text-primary outline-none placeholder:text-quiet-muted';
 export const contactHeaderLifecycleBadgeClassName = 'inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.03em] text-quiet-text-tertiary';
 
 function splitFullName(value: string): [string, string] {

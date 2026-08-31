@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import {
   ArrowLeft02Icon,
+  ArrowReloadHorizontalIcon,
   Copy01Icon,
   LinkSquare01Icon,
   PlayCircleIcon,
@@ -23,11 +24,11 @@ import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialo
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
   QuietDetailLayout,
+  QuietDetailAction,
   QuietDetailHeader,
   QuietBreadcrumbs,
   QuietEmptyState,
   QuietMetaLine,
-  QuietPrimaryAction,
   QuietPropertyRow,
   QuietSection,
   QuietStatusText,
@@ -468,17 +469,29 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
     : [...new Set([...(data.intelligence?.objections ?? []), ...(data.intelligence?.risks ?? [])])];
 
   const captureAction = canEditCRM && canStart ? (
-    <QuietPrimaryAction className="gap-1.5" onClick={() => runCommand(() => startCapture.mutateAsync(), 'Helpin is joining the meeting')} disabled={startCapture.isPending}>
-      <PlayCircleIcon className="h-4 w-4" />Start capture
-    </QuietPrimaryAction>
+    <QuietDetailAction
+      tone="primary"
+      icon={<PlayCircleIcon className="h-4 w-4" />}
+      label="Start capture"
+      onClick={() => runCommand(() => startCapture.mutateAsync(), 'Helpin is joining the meeting')}
+      disabled={startCapture.isPending}
+    />
   ) : canEditCRM && canStop ? (
-    <QuietPrimaryAction className="gap-1.5" onClick={() => runCommand(() => stopCapture.mutateAsync(), 'Capture is finalizing')} disabled={stopCapture.isPending}>
-      <StopIcon className="h-4 w-4" />Stop capture
-    </QuietPrimaryAction>
+    <QuietDetailAction
+      tone="primary"
+      icon={<StopIcon className="h-4 w-4" />}
+      label="Stop capture"
+      onClick={() => runCommand(() => stopCapture.mutateAsync(), 'Capture is finalizing')}
+      disabled={stopCapture.isPending}
+    />
   ) : canEditCRM && canRetry ? (
-    <QuietPrimaryAction onClick={() => runCommand(() => retryProcessing.mutateAsync(), 'Meeting processing restarted')} disabled={retryProcessing.isPending}>
-      Retry processing
-    </QuietPrimaryAction>
+    <QuietDetailAction
+      tone="primary"
+      icon={<ArrowReloadHorizontalIcon className="h-4 w-4" />}
+      label="Retry processing"
+      onClick={() => runCommand(() => retryProcessing.mutateAsync(), 'Meeting processing restarted')}
+      disabled={retryProcessing.isPending}
+    />
   ) : null;
   const recordingPlayer = meeting.recording_object_key ? (
     <MeetingRecordingPlayer
@@ -497,6 +510,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
         title={canEditCRM ? (
           <QuietTitleInput
             aria-label="Meeting name"
+            presentation="header"
             className="max-w-[42rem] border-b-transparent pb-0.5 hover:border-quiet-field focus-visible:border-quiet-text-primary"
             value={titleDraft}
             onChange={(event) => scheduleMeetingTitleSave(event.target.value)}
@@ -530,19 +544,23 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
           </>
         )}
         actions={(
-          <div className="flex max-w-md flex-wrap justify-end gap-3">
-            <QuietTextAction asChild>
-              <a href={meeting.meeting_url} target="_blank" rel="noreferrer">
-                Open {getMeetingPlatformLabel(meeting.platform)} <LinkSquare01Icon className="h-3.5 w-3.5" />
-              </a>
-            </QuietTextAction>
+          <>
+            <QuietDetailAction
+              href={meeting.meeting_url}
+              target="_blank"
+              rel="noreferrer"
+              icon={<LinkSquare01Icon className="h-3.5 w-3.5" />}
+              label={`Open ${getMeetingPlatformLabel(meeting.platform)}`}
+            />
             {meeting.recording_object_key ? (
-              <QuietTextAction onClick={() => recordingPlayerRef.current?.focus()}>
-                <PlayCircleIcon className="h-3.5 w-3.5" />Recording
-              </QuietTextAction>
+              <QuietDetailAction
+                icon={<PlayCircleIcon className="h-3.5 w-3.5" />}
+                label="Recording"
+                onClick={() => recordingPlayerRef.current?.focus()}
+              />
             ) : null}
             {captureAction}
-          </div>
+          </>
         )}
       />
 

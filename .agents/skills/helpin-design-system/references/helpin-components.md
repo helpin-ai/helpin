@@ -12,15 +12,15 @@ Import from `@/components/design-system/quiet`.
 | Route title, optional parenthetical scope, breadcrumb/navigation, description, actions | `QuietPageHeader` |
 | Sidebar-safe inset for specialized editor/workflow toolbars | `workspaceSidebarSafeInsetClassName` |
 | Person/company identity | `QuietIdentityHeader` |
-| Breadcrumb-led editable entity/document header | `QuietDetailHeader`, `QuietBreadcrumbs` |
+| Breadcrumb-led editable entity/document header | `QuietDetailHeader`, `QuietBreadcrumbs`, `QuietDetailAction` |
 | Main + rail detail shell | `QuietDetailLayout`, `QuietDetailRail` |
 | Primary line tabs | `Tabs`, `TabsList variant="quiet"`, `TabsTrigger` from `@/components/ui/tabs` |
 | Divider-led section | `QuietSection`, `QuietSectionHeader` |
 | Default secondary action | `QuietTextAction` |
 | Compact icon action | `QuietIconAction` |
 | One dark primary action | `QuietPrimaryAction` |
-| Entity title input (fixed 26px) | `QuietTitleInput` |
-| Long document title control (autosizing 26px) | `QuietTitleTextarea` |
+| Entity title input | `QuietTitleInput` (`entity` is 26px; `header` is explicitly 20px at every breakpoint) |
+| Long document title control | `QuietTitleTextarea` (`header` is autosizing 20px) |
 | Underline input/control | `QuietUnderlineInput`, `quietUnderlineControlClassName` |
 | Detail property | `QuietPropertyRow` |
 | Stacked scan row | `QuietListRow` |
@@ -30,7 +30,7 @@ Import from `@/components/design-system/quiet`.
 
 These components own visual invariants. Pages own data, navigation, permissions, and domain actions.
 
-Use `QuietPageHeader` for normal authenticated index and settings routes. Use `QuietDetailHeader` when a detail page needs ancestor breadcrumbs, a single editable identity/document title, metadata, state, and page-specific actions. Its right side always renders actions first with state directly underneath. The header owns layout and sidebar clearance; pages retain navigation, permissions, validation, and persistence. Keep purpose-built editor or workflow toolbars only when their controls cannot fit this composition, and apply `workspaceSidebarSafeInsetClassName` to every top/loading toolbar state instead of recreating the collapsed-sidebar spacing class.
+Use `QuietPageHeader` for normal authenticated index and settings routes. Use `QuietDetailHeader` when a detail page needs ancestor breadcrumbs, a single editable identity/document title, metadata, state, and page-specific actions. Its right side always renders actions first with state directly underneath. Use `QuietDetailAction` for those actions so phones receive round icon controls and larger screens receive labels without page-owned responsive class strings. The header owns layout and sidebar clearance; pages retain navigation, permissions, validation, and persistence. Keep purpose-built editor or workflow toolbars only when their controls cannot fit this composition, and apply `workspaceSidebarSafeInsetClassName` to every top/loading toolbar state instead of recreating the collapsed-sidebar spacing class.
 
 ## Existing behavior primitives
 

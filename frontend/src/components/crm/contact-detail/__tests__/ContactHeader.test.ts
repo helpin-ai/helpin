@@ -9,10 +9,11 @@ import {
 
 describe('ContactHeader', () => {
   it('uses the compact CRM detail header hierarchy', () => {
-    expect(contactHeaderAvatarClassName).toContain('h-10');
-    expect(contactHeaderAvatarClassName).toContain('w-10');
-    expect(contactHeaderNameClassName).toContain('text-[26px]');
-    expect(contactHeaderNameClassName).toContain('md:text-[26px]');
+    expect(contactHeaderAvatarClassName).toContain('h-full');
+    expect(contactHeaderAvatarClassName).toContain('w-full');
+    expect(contactHeaderNameClassName).toContain('text-[20px]');
+    expect(contactHeaderNameClassName).toContain('truncate');
+    expect(contactHeaderNameClassName).not.toContain('text-[26px]');
     expect(contactHeaderLifecycleBadgeClassName).not.toContain('rounded');
     expect(contactHeaderLifecycleBadgeClassName).not.toContain('border');
     expect(contactHeaderLifecycleBadgeClassName).toContain('text-quiet-text-tertiary');

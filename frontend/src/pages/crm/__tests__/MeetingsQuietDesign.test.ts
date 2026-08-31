@@ -22,7 +22,9 @@ describe('CRM meetings Quiet Hairline composition', () => {
   it('uses an editable Quiet detail header, detail rail, and shared tabs for meeting detail', () => {
     expect(meetingDetailSource).toContain('<QuietDetailHeader');
     expect(meetingDetailSource).toContain('<QuietBreadcrumbs');
+    expect(meetingDetailSource).toContain('<QuietDetailAction');
     expect(meetingDetailSource).toContain('<QuietTitleInput');
+    expect(meetingDetailSource).toContain('presentation="header"');
     expect(meetingDetailSource).toContain('useUpdateCRMMeeting');
     expect(meetingDetailSource).toContain('<QuietDetailLayout');
     expect(meetingDetailSource).toContain('<TabsList variant="quiet"');

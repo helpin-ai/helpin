@@ -27,7 +27,7 @@ import {
   ZapIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { QuietBreadcrumbs, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietPrimaryAction, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietPrimaryAction, QuietTextAction } from '@/components/design-system/quiet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -1035,13 +1035,18 @@ export function ContactDetailPage({
         state={<SaveIndicator saving={saving} error={saveError} presentation="quiet" />}
         actions={(
           <>
-            <QuietIconAction className="text-quiet-text-tertiary hover:text-quiet-accent" onClick={() => setDeleteConfirmOpen(true)} aria-label="Delete contact" title="Delete contact">
-              <Delete01Icon className="h-3.5 w-3.5" />
-            </QuietIconAction>
-            <QuietPrimaryAction className="gap-1.5" onClick={() => setCreateDealOpen(true)}>
-              <PlusSignIcon className="h-3.5 w-3.5" />
-              New deal
-            </QuietPrimaryAction>
+            <QuietDetailAction
+              tone="danger"
+              icon={<Delete01Icon className="h-3.5 w-3.5" />}
+              label="Delete contact"
+              onClick={() => setDeleteConfirmOpen(true)}
+            />
+            <QuietDetailAction
+              tone="primary"
+              icon={<PlusSignIcon className="h-3.5 w-3.5" />}
+              label="New deal"
+              onClick={() => setCreateDealOpen(true)}
+            />
           </>
         )}
         onBack={goBack}

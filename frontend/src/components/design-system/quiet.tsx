@@ -2,6 +2,7 @@ import type { ElementType, ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ArrowLeft02Icon, ArrowRight01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
@@ -143,6 +144,7 @@ export function QuietDetailHeader({
   meta,
   state,
   actions,
+  allowTitleWrap = false,
   className,
 }: {
   breadcrumbs?: ReactNode;
@@ -151,23 +153,33 @@ export function QuietDetailHeader({
   meta?: ReactNode;
   state?: ReactNode;
   actions?: ReactNode;
+  allowTitleWrap?: boolean;
   className?: string;
 }) {
   return (
-    <header className={cn('shrink-0 border-b border-quiet-divider-strong px-4 pb-1.5 pt-2 sm:px-6 lg:px-8', workspaceSidebarSafeInsetClassName, className)}>
+    <header className={cn('shrink-0 border-b border-quiet-divider-strong px-4 pb-2 pt-2 sm:px-6 lg:px-8', workspaceSidebarSafeInsetClassName, className)}>
       {breadcrumbs ? <div className="mb-0.5 min-w-0">{breadcrumbs}</div> : null}
-      <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-5">
-        <div className="flex min-w-0 flex-1 items-start gap-3.5">
-          {avatar ? <div className="shrink-0">{avatar}</div> : null}
-          <div className="min-w-0 flex-1">
-            <div className="min-w-0 text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-quiet-text-primary">{title}</div>
-            {meta ? <div className="mt-0.5 min-w-0">{meta}</div> : null}
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 sm:gap-x-5">
+        <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
+          {avatar ? (
+            <div className="h-8 w-8 shrink-0 sm:h-9 sm:w-9 [&>*]:h-full [&>*]:w-full">
+              {avatar}
+            </div>
+          ) : null}
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <div className={cn(
+              'min-w-0 text-[20px] font-semibold leading-[1.18] tracking-[-0.018em] text-quiet-text-primary [&>*]:max-w-full',
+              allowTitleWrap ? 'break-words' : 'truncate',
+            )}>
+              {title}
+            </div>
+            {meta ? <div className="mt-0.5 min-w-0 overflow-hidden whitespace-nowrap [&>*]:flex-nowrap">{meta}</div> : null}
           </div>
         </div>
         {state || actions ? (
-          <div className="flex min-w-0 flex-col items-start gap-1.5 md:max-w-[48%] md:shrink-0 md:items-end">
-            {actions ? <div className="flex min-w-0 flex-wrap items-center gap-3 md:justify-end">{actions}</div> : null}
-            {state ? <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 md:justify-end">{state}</div> : null}
+          <div className="flex min-w-0 max-w-28 shrink-0 flex-col items-end gap-0.5 overflow-hidden sm:max-w-none">
+            {actions ? <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1.5 sm:gap-3">{actions}</div> : null}
+            {state ? <div className="flex min-w-0 flex-nowrap items-center justify-end gap-x-3 overflow-hidden whitespace-nowrap">{state}</div> : null}
           </div>
         ) : null}
       </div>
@@ -266,6 +278,66 @@ export function QuietPrimaryAction({ className, ...props }: React.ComponentProps
   );
 }
 
+type QuietDetailActionTone = 'primary' | 'secondary' | 'danger';
+
+export function QuietDetailAction({
+  icon,
+  label,
+  tone = 'secondary',
+  href,
+  target,
+  rel,
+  className,
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, 'asChild' | 'children' | 'size' | 'variant'> & {
+  icon: ReactNode;
+  label: string;
+  tone?: QuietDetailActionTone;
+  href?: string;
+  target?: string;
+  rel?: string;
+}) {
+  const actionClassName = cn(
+    'size-8 rounded-full border-0 p-0 focus-visible:border-quiet-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-quiet-text-primary/20 sm:w-auto',
+    tone === 'primary'
+      ? 'bg-quiet-action text-quiet-action-ink hover:bg-quiet-action-hover sm:rounded-4xl sm:px-3'
+      : 'bg-transparent text-quiet-text-secondary hover:bg-quiet-hover hover:text-quiet-text-primary sm:h-auto sm:rounded-none sm:p-0 sm:hover:bg-transparent',
+    tone === 'danger' && 'text-quiet-text-tertiary hover:text-quiet-accent sm:hover:text-quiet-accent',
+    className,
+  );
+  const content = (
+    <>
+      {icon}
+      <span className="max-sm:sr-only">{label}</span>
+    </>
+  );
+  const action = href ? (
+    <Button
+      asChild
+      size="sm"
+      variant={tone === 'primary' ? 'default' : 'ghost'}
+      className={actionClassName}
+      aria-label={label}
+      {...props}
+    >
+      <a href={href} target={target} rel={rel}>{content}</a>
+    </Button>
+  ) : (
+    <Button
+      type="button"
+      size="sm"
+      variant={tone === 'primary' ? 'default' : 'ghost'}
+      className={actionClassName}
+      aria-label={label}
+      {...props}
+    >
+      {content}
+    </Button>
+  );
+
+  return <QuickTooltip label={label}>{action}</QuickTooltip>;
+}
+
 export const quietUnderlineControlClassName =
   'h-auto rounded-none border-0 border-b border-quiet-field bg-transparent px-0.5 py-1.5 text-sm text-quiet-text-primary shadow-none outline-none transition-colors hover:border-quiet-text-primary focus-visible:border-b-2 focus-visible:border-quiet-text-primary focus-visible:ring-0';
 
@@ -273,16 +345,41 @@ export function QuietUnderlineInput({ className, ...props }: React.ComponentProp
   return <Input variant="plain" className={cn(quietUnderlineControlClassName, className)} {...props} />;
 }
 
-export function QuietTitleInput({ className, ...props }: React.ComponentProps<typeof Input>) {
-  return <Input variant="plain" className={cn(quietUnderlineControlClassName, 'w-full pb-2 text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] md:text-[26px]', className)} {...props} />;
+export function QuietTitleInput({
+  className,
+  presentation = 'entity',
+  ...props
+}: React.ComponentProps<typeof Input> & { presentation?: 'entity' | 'header' }) {
+  return (
+    <Input
+      variant="plain"
+      className={cn(
+        quietUnderlineControlClassName,
+        'w-full truncate font-semibold',
+        presentation === 'header'
+          ? 'pb-0.5 text-[20px] leading-[1.18] tracking-[-0.018em] md:text-[20px]'
+          : 'pb-2 text-[26px] leading-[1.15] tracking-[-0.02em] md:text-[26px]',
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
-export function QuietTitleTextarea({ className, rows = 1, ...props }: React.ComponentProps<'textarea'>) {
+export function QuietTitleTextarea({
+  className,
+  rows = 1,
+  presentation = 'entity',
+  ...props
+}: React.ComponentProps<'textarea'> & { presentation?: 'entity' | 'header' }) {
   return (
     <textarea
       rows={rows}
       className={cn(
-        'min-h-[30px] w-full resize-none overflow-hidden border-0 border-b border-transparent bg-transparent p-0 pb-1 text-left text-[26px] font-semibold leading-[1.15] tracking-[-0.02em] text-quiet-text-primary outline-none [field-sizing:content] placeholder:text-quiet-muted hover:border-quiet-field focus-visible:border-b-2 focus-visible:border-quiet-text-primary',
+        'w-full resize-none overflow-hidden whitespace-pre-wrap border-0 border-b border-transparent bg-transparent p-0 text-left font-semibold text-quiet-text-primary outline-none [field-sizing:content] placeholder:text-quiet-muted hover:border-quiet-field focus-visible:border-b-2 focus-visible:border-quiet-text-primary',
+        presentation === 'header'
+          ? 'min-h-6 pb-0.5 text-[20px] leading-[1.18] tracking-[-0.018em] md:text-[20px]'
+          : 'min-h-[30px] pb-1 text-[26px] leading-[1.15] tracking-[-0.02em]',
         className,
       )}
       {...props}
