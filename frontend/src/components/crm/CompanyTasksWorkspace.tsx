@@ -476,7 +476,12 @@ export function CRMTasksWorkspace({ workspaceId, objectType, objectId, onOpenTas
       externalFilters={userFilters}
       excludedKeys={[objectType === 'company' ? 'company_id' : 'contact_id']}
     >
-      <div className={cn('flex min-h-0 flex-col overflow-hidden bg-background', fullHeight ? 'flex-1' : 'max-h-[470px]')}>
+      <div
+        className={cn(
+          'flex min-h-0 flex-col overflow-hidden',
+          fullHeight ? 'flex-1 bg-transparent' : 'max-h-[470px] bg-background',
+        )}
+      >
         <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2">
           <div className="relative min-w-[150px] flex-1 sm:max-w-[220px]">
             <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />

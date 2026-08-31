@@ -116,4 +116,17 @@ describe('Company detail divider redesign', () => {
     expect(companyTasksWorkspaceSource).toContain("stateType: 'done'")
     expect(companyTasksWorkspaceSource).not.toContain('rounded-md border border-border/60 bg-muted/20')
   })
+
+  it('inherits the detail-page surface across task, email, and meeting tabs', () => {
+    expect(companyTasksWorkspaceSource).toContain(
+      "fullHeight ? 'flex-1 bg-transparent' : 'max-h-[470px] bg-background'",
+    )
+    expect(emailTimelineSource).toContain(
+      '@container/email flex h-full min-h-0 overflow-hidden bg-transparent',
+    )
+    expect(emailTimelineSource).toContain(
+      'border-t border-border/60 bg-transparent px-5',
+    )
+    expect(companyCollectionsSource.match(/flex min-h-0 flex-1 flex-col bg-transparent/g)).toHaveLength(2)
+  })
 })

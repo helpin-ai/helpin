@@ -216,7 +216,7 @@ export function EmailTimeline({
   }, [threads]);
 
   return (
-    <div className="@container/email flex h-full min-h-0 overflow-hidden bg-background">
+    <div className="@container/email flex h-full min-h-0 overflow-hidden bg-transparent">
       <section className={cn(
         'flex min-h-0 w-full shrink-0 flex-col border-r border-border/60 @[820px]/email:w-[clamp(320px,38%,456px)]',
         mobileReading && 'hidden @[820px]/email:flex',
@@ -258,7 +258,7 @@ export function EmailTimeline({
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   {detail.messages.map((message) => <MessageBlock key={message.id} message={message} />)}
                 </div>
-                <div id="crm-thread-reply" className="z-10 max-h-[48%] shrink-0 overflow-y-auto border-t border-border/60 bg-background px-5 py-2.5 sm:px-7 @[820px]/email:py-4">
+                <div id="crm-thread-reply" className="z-10 max-h-[48%] shrink-0 overflow-y-auto border-t border-border/60 bg-transparent px-5 py-2.5 sm:px-7 @[820px]/email:py-4">
                   {detail.thread.can_reply ? (
                     <div className="flex gap-3">
                       <UserAvatar name={detail.thread.mailbox_email} className="h-7 w-7 shrink-0" fallbackClassName="text-[9px]" />
