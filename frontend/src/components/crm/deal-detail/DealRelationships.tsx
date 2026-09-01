@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
+import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, QuietTextAction, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import { Building03Icon, UserIcon } from '@/lib/icons';
 import { useCreateAssociation, useDeleteAssociation, useSetDealCustomer } from '@/hooks/queries';
 import { crmSearchService } from '@/lib/services/crmService';
 import type { CRMAssociationEnriched, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
+import { cn } from '@/lib/utils';
 
 type LinkedAssociation = CRMAssociationEnriched & { linkedType: CRMObjectType; linkedId: string };
 
@@ -150,7 +151,7 @@ export function DealRelationships({
       ) : null}
 
       <Dialog open={!!picker} onOpenChange={(open) => { if (!open) closePicker(); }}>
-        <DialogContent className="sm:max-w-lg">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle>{picker === 'customer' ? 'Choose deal customer' : 'Add participant'}</DialogTitle>
             <DialogDescription>{picker === 'customer' ? 'Changing the customer preserves other people as participants.' : 'Participants can contribute without changing the deal customer.'}</DialogDescription>
@@ -168,17 +169,17 @@ export function DealRelationships({
             }}
             placeholder={picker === 'customer' ? 'Search contacts or companies' : 'Search contacts'}
           />
-          <div className="max-h-72 overflow-y-auto border-b border-quiet-divider-strong">
+          <QuietRelationshipResults className="max-h-72 overflow-y-auto border-b border-quiet-divider-strong">
             {searching ? <p className="py-4 text-sm text-quiet-muted">Searching…</p> : null}
             {!searching && query.trim().length >= 2 && results.length === 0 ? <p className="py-4 text-sm text-quiet-muted">No matching records</p> : null}
             {results.map((result) => (
-              <button key={`${result.type}:${result.id}`} type="button" className="flex w-full items-center gap-2 border-t border-quiet-divider-light py-2.5 text-left hover:bg-quiet-row-hover" onClick={() => void choose(result)}>
-                {result.type === 'company' ? <Building03Icon className="h-4 w-4 text-quiet-muted" /> : <UserIcon className="h-4 w-4 text-quiet-muted" />}
+              <button key={`${result.type}:${result.id}`} type="button" className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2 border-t border-quiet-divider-light py-2.5 text-left hover:bg-quiet-row-hover')} onClick={() => void choose(result)}>
+                {result.type === 'company' ? <Building03Icon className="h-4 w-4 shrink-0 text-quiet-muted" /> : <UserIcon className="h-4 w-4 shrink-0 text-quiet-muted" />}
                 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-quiet-text-primary">{result.name}</span><span className="block truncate text-[11.5px] text-quiet-muted">{result.detail}</span></span>
               </button>
             ))}
-          </div>
-        </DialogContent>
+          </QuietRelationshipResults>
+        </QuietRelationshipDialogContent>
       </Dialog>
     </>
   );

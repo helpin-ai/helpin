@@ -1,6 +1,7 @@
 import type { ElementType, ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ArrowLeft02Icon, ArrowRight01Icon, Search01Icon } from '@/lib/icons';
@@ -11,6 +12,21 @@ export const workspaceSidebarSafeInsetClassName =
 
 export const quietRelatedItemTitleClassName =
   'text-[12.5px] font-medium text-foreground/90';
+
+export const quietRelationshipResultRowClassName = 'min-w-0 overflow-hidden';
+
+export function QuietRelationshipDialogContent({ className, ...props }: React.ComponentProps<typeof DialogContent>) {
+  return (
+    <DialogContent
+      className={cn('min-w-0 overflow-hidden sm:max-w-xl lg:max-w-2xl xl:max-w-3xl [&>*]:min-w-0', className)}
+      {...props}
+    />
+  );
+}
+
+export function QuietRelationshipResults({ className, ...props }: React.ComponentProps<'div'>) {
+  return <div className={cn('min-w-0 overflow-x-hidden', className)} {...props} />;
+}
 
 export function QuietPageViewport({ children, className, contentClassName }: { children: ReactNode; className?: string; contentClassName?: string }) {
   return (

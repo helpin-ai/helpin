@@ -16,10 +16,9 @@ import { toast } from 'sonner';
 import { Favicon } from '@/components/ui/favicon';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { QuietSearchInput, quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelatedItemTitleClassName, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import {
   Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -391,7 +390,7 @@ export function AssociationsList({
       })}
 
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) closePicker(); }}>
-        <DialogContent className="sm:max-w-xl">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">Link {pickerConfig?.title?.replace(/s$/, '') ?? ''}</DialogTitle>
           </DialogHeader>
@@ -402,7 +401,7 @@ export function AssociationsList({
               placeholder={pickerPlaceholder}
               autoFocus
             />
-            <div className="-mx-1 max-h-80 overflow-y-auto px-1">
+            <QuietRelationshipResults className="-mx-1 max-h-80 overflow-y-auto px-1">
               {searching && (
                 <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -413,10 +412,10 @@ export function AssociationsList({
                 <button
                   key={c.id}
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent')}
                   onClick={() => handleAdd('support_conversation', c.id)}
                 >
-                  <span className="min-w-0 flex-1">{truncateText(c.subject, 60)}</span>
+                  <span className="min-w-0 flex-1 truncate">{truncateText(c.subject, 60)}</span>
                   <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
                     C-{c.display_id}
                   </span>
@@ -427,7 +426,7 @@ export function AssociationsList({
                 <button
                   key={`${r.type}-${r.id}`}
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent')}
                   onClick={() => handleAdd(r.type as CRMObjectType, r.id)}
                 >
                   {r.type === 'company' ? (
@@ -442,7 +441,7 @@ export function AssociationsList({
                   ) : (
                     <PickerIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   )}
-                  <span className="min-w-0 flex-1">{truncateText(r.name, 60)}</span>
+                  <span className="min-w-0 flex-1 truncate">{truncateText(r.name, 60)}</span>
                 </button>
               ))}
 
@@ -450,11 +449,11 @@ export function AssociationsList({
                 <button
                   key={r.id}
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent')}
                   onClick={() => handleAdd(pickerSection, r.id)}
                 >
                   <PickerIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1">{truncateText(r.name, 60)}</span>
+                  <span className="min-w-0 flex-1 truncate">{truncateText(r.name, 60)}</span>
                   {r.display_id && (
                     <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
                       {r.display_id}
@@ -474,9 +473,9 @@ export function AssociationsList({
               {!searching && pickerSection !== 'support_conversation' && query.trim().length < 2 && (
                 <p className="py-4 text-center text-sm text-muted-foreground">Type at least 2 characters to search</p>
               )}
-            </div>
+            </QuietRelationshipResults>
           </div>
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
 
       <ConfirmDialog

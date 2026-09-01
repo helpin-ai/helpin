@@ -12,9 +12,9 @@ import {
   PlusSignIcon,
   UserGroupIcon,
 } from '@/lib/icons';
-import { QuietSearchInput } from '@/components/design-system/quiet';
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { CreateContactDialog } from '@/components/crm/CreateContactDialog';
@@ -30,6 +30,7 @@ import { associationsService } from '@/lib/services/associationsService';
 import { crmDealService, crmSearchService } from '@/lib/services/crmService';
 import { formatMeetingDate } from '@/lib/meetingPresentation';
 import { supportService } from '@/lib/services/supportService';
+import { cn } from '@/lib/utils';
 import type { CRMContact, CRMDeal, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
@@ -184,7 +185,7 @@ function EntityLinkDialog({
 
   return (<>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <QuietRelationshipDialogContent>
         <DialogHeader>
 			<DialogTitle>{type === 'deal' && targetType === 'company' ? 'Choose an existing deal' : `Link existing ${type === 'support_conversation' ? 'conversation' : type}`}</DialogTitle>
         </DialogHeader>
@@ -194,7 +195,7 @@ function EntityLinkDialog({
           onChange={(event) => void runSearch(event.target.value)}
           placeholder="Search existing records"
         />
-        <div className="max-h-72 overflow-y-auto border-t border-border/60">
+        <QuietRelationshipResults className="max-h-72 overflow-y-auto border-t border-border/60">
           {loading ? (
             <CollectionState icon={Loading01Icon} title="" detail="" loading />
           ) : results.length ? (
@@ -203,9 +204,9 @@ function EntityLinkDialog({
                 key={item.id}
                 type="button"
 				onClick={() => requestLink(item.id)}
-                className="flex w-full items-center justify-between gap-3 border-b border-border/50 px-2 py-3 text-left hover:bg-muted/30"
+				className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center justify-between gap-3 border-b border-border/50 px-2 py-3 text-left hover:bg-muted/30')}
               >
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{item.name}</span>
                   <span className="block truncate text-xs text-muted-foreground">{item.detail}</span>
                 </span>
@@ -215,8 +216,8 @@ function EntityLinkDialog({
           ) : (
             <p className="px-2 py-8 text-center text-xs text-muted-foreground">Enter a search to find records.</p>
           )}
-        </div>
-      </DialogContent>
+        </QuietRelationshipResults>
+      </QuietRelationshipDialogContent>
     </Dialog>
 		<ConfirmDialog
 			open={!!pendingDealCustomerId}

@@ -8,8 +8,8 @@ import {
   Message01Icon,
   UserIcon,
 } from '@/lib/icons'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { QuietSearchInput } from '@/components/design-system/quiet'
+import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelationshipResultRowClassName } from '@/components/design-system/quiet'
 import type { EntityEmbedAttrs, DocsEntityEmbedType } from './EntityEmbedExtension'
 import {
   entityTypeLabel,
@@ -134,7 +134,7 @@ export function EntityEmbedDialog({ open, workspaceId, fixedEntityType, onOpenCh
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <QuietRelationshipDialogContent>
         <DialogHeader>
           <DialogTitle>{fixedEntityType ? `Embed ${entityDialogLabel(fixedEntityType)}` : 'Embed Entity'}</DialogTitle>
         </DialogHeader>
@@ -144,7 +144,7 @@ export function EntityEmbedDialog({ open, workspaceId, fixedEntityType, onOpenCh
           placeholder={entityDialogPlaceholder(fixedEntityType)}
           autoFocus
         />
-        <div className="max-h-80 overflow-y-auto rounded-lg border border-border/70 p-1">
+        <QuietRelationshipResults className="max-h-80 overflow-y-auto rounded-lg border border-border/70 p-1">
           {items.length === 0 ? (
             <div className="flex min-h-24 items-center justify-center px-4 text-sm text-muted-foreground">
               {loading ? <Loading01Icon className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -159,6 +159,7 @@ export function EntityEmbedDialog({ open, workspaceId, fixedEntityType, onOpenCh
                     key={`${item.entityType}:${item.entityId}`}
                     type="button"
                     className={cn(
+                      quietRelationshipResultRowClassName,
                       'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors',
                       'hover:bg-accent focus:bg-accent focus:outline-none',
                     )}
@@ -188,9 +189,9 @@ export function EntityEmbedDialog({ open, workspaceId, fixedEntityType, onOpenCh
               })}
             </div>
           )}
-        </div>
+        </QuietRelationshipResults>
         {error && <p className="text-xs text-destructive">{error}</p>}
-      </DialogContent>
+      </QuietRelationshipDialogContent>
     </Dialog>
   )
 }

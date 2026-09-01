@@ -104,6 +104,8 @@ Primary tab labels use an explicit `14px` in every state. This is a deliberate e
 
 Use icon → fixed label column → truncating value. Rows are 7px vertically padded and receive only a warm row hover. Empty values show the action prompt in muted text; the field itself is the affordance. Group property rows with light bottom hairlines.
 
+Relationship picker dialogs grow responsively from a viewport-bounded mobile width to 576px at `sm`, 672px at `lg`, and 768px at `xl`. Search results scroll vertically inside the dialog; rows and their text containers use `min-width: 0`, hide horizontal overflow, and truncate long names/details. Never let unbounded result text force the dialog or row past the overlay.
+
 ### List rows
 
 Rows stack actor/meta, title, detail, and provenance. They use 12–13px vertical padding and a light bottom divider. Never allow snippets to run into a wide horizontal metadata strip. A 3px left marker means selected/current, blocker/overdue, or positive; do not add margins to the marker.

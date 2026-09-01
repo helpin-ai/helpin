@@ -13,14 +13,13 @@ import {
   UserGroupIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { QuietSearchInput } from '@/components/design-system/quiet';
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import {
   Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -41,6 +40,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import type { CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { CreateTaskRequest, GroupedAssociations } from '@/lib/pmTypes';
+import { cn } from '@/lib/utils';
 
 interface SidebarAssociationsProps {
   workspaceId: string;
@@ -449,7 +449,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
 
       {/* Link existing modal */}
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">
               Link {pickerSection === 'tasks' ? 'Task' : pickerSection === 'crm' ? 'CRM Record' : 'Document'}
@@ -482,7 +482,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
               }
               autoFocus
             />
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <QuietRelationshipResults className="max-h-64 space-y-1 overflow-y-auto">
               {searching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -492,12 +492,12 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                 <button
                   key={`${result.type}-${result.id}`}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
                   onClick={() => handleAddCRM(result.type, result.id)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Building03Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{result.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{result.name}</span>
                     {'display_id' in result.object && result.object.display_id && (
                       <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
                         #{result.object.display_id}
@@ -510,12 +510,12 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                 <button
                   key={r.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
                   onClick={() => handleAdd(pickerSection!, r.id)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     {pickerSection === 'tasks' ? <GitBranchIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                    <span className="font-medium truncate">{r.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
                     {r.display_id && (
                       <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
                         #{r.display_id}
@@ -533,9 +533,9 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
               {!searching && query.trim().length < 2 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">Type at least 2 characters to search</p>
               )}
-            </div>
+            </QuietRelationshipResults>
           </div>
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
 
       <DocumentPreviewDialog

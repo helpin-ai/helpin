@@ -23,6 +23,7 @@ Import from `@/components/design-system/quiet`.
 | Entity title input | `QuietTitleInput` (`entity` is 26px; `header` is explicitly 20px at every breakpoint) |
 | Long document title control | `QuietTitleTextarea` (`header` is autosizing 20px) |
 | Search field | `QuietSearchInput` (the canonical Skill Catalog treatment) |
+| Relationship picker overlay/results | `QuietRelationshipDialogContent`, `QuietRelationshipResults`, `quietRelationshipResultRowClassName` |
 | Underline input/control | `QuietUnderlineInput`, `quietUnderlineControlClassName` |
 | Detail property | `QuietPropertyRow` |
 | Stacked scan row | `QuietListRow` |
@@ -63,6 +64,7 @@ Reference surfaces demonstrate composition and domain behavior; the Quiet primit
 - Do not use `Badge` for ordinary status, counts, lifecycle, filters, or metadata. Use `QuietStatusText` or inline text.
 - Do not use default `Button` colors or boxed `Input`/`Tabs` styling for Quiet page chrome. Use the Quiet wrappers.
 - Search is the exception to underline-only form controls: use `QuietSearchInput` throughout product surfaces. It centralizes the Skill Catalog's compact bordered treatment and leading icon. Do not recreate it or use `QuietUnderlineInput` for search; set only `containerClassName` when page layout requires a narrower width and use its `trailing` slot for clear/close actions. Keep behavior-owned `CommandInput`, editor search/replace, and content-preview controls on their specialized primitives.
+- Relationship pickers use the centralized responsive dialog (576px at `sm`, 672px at `lg`, and 768px at `xl`) and contained results primitives. Result rows must shrink with `min-w-0`, hide horizontal overflow, and truncate their primary/secondary text; do not let unbounded names determine the overlay width.
 - `QuietPrimaryAction` must preserve the centralized Helpin `Button size="sm"` geometry and curvature; only its color and hierarchy differ.
 - Do not duplicate section-heading, tab, row, action, property-row, or empty-state class strings in a page.
 - Domain components may retain a compact chip only when the shape itself is established user data or a removal affordance, such as an editable label/token collection.

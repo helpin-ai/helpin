@@ -26,7 +26,7 @@ import {
   ZapIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietPrimaryAction, QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietPrimaryAction, QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, QuietTextAction, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -1908,7 +1908,7 @@ export function ContactDetailPage({
 
       {/* ── Company picker dialog ── */}
       <Dialog open={companyPickerOpen} onOpenChange={setCompanyPickerOpen}>
-        <DialogContent className="sm:max-w-md">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">
               {companyPickerMode === 'primary' ? 'Set primary company' : 'Link company'}
@@ -1921,7 +1921,7 @@ export function ContactDetailPage({
               placeholder={companyPickerMode === 'primary' ? 'Search companies to set as primary' : 'Search companies by name'}
               autoFocus
             />
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <QuietRelationshipResults className="max-h-64 space-y-1 overflow-y-auto">
               {companySearching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -1931,12 +1931,12 @@ export function ContactDetailPage({
                 <button
                   key={r.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
                   onClick={() => handleAddCompany(r.id)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <GlobeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{r.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
                   </div>
                 </button>
               ))}
@@ -1946,14 +1946,14 @@ export function ContactDetailPage({
               {!companySearching && companyQuery.trim().length < 2 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">Type at least 2 characters to search</p>
               )}
-            </div>
+            </QuietRelationshipResults>
           </div>
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
 
       {/* ── Deal picker dialog ── */}
       <Dialog open={dealPickerOpen} onOpenChange={setDealPickerOpen}>
-        <DialogContent className="sm:max-w-md">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">Link deal</DialogTitle>
           </DialogHeader>
@@ -1964,7 +1964,7 @@ export function ContactDetailPage({
               placeholder="Search deals by name"
               autoFocus
             />
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <QuietRelationshipResults className="max-h-64 space-y-1 overflow-y-auto">
               {dealSearching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -1974,12 +1974,12 @@ export function ContactDetailPage({
                 <button
                   key={r.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
                   onClick={() => handleAddDeal(r.id)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <DollarCircleIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{r.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
                   </div>
                 </button>
               ))}
@@ -1989,9 +1989,9 @@ export function ContactDetailPage({
               {!dealSearching && dealQuery.trim().length < 2 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">Type at least 2 characters to search</p>
               )}
-            </div>
+            </QuietRelationshipResults>
           </div>
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
 
       {/* ── Delete contact confirm ── */}

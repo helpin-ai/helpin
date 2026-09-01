@@ -5,8 +5,8 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { CheckListIcon, Link01Icon, Loading01Icon, PlusSignIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { QuietSearchInput } from '@/components/design-system/quiet';
+import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { CRMTasksWorkspace } from '@/components/crm/CompanyTasksWorkspace';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
@@ -351,13 +351,13 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
       )}
 
       <Dialog open={linkDialogOpen} onOpenChange={handleLinkDialogOpenChange}>
-        <DialogContent className="sm:max-w-md">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">Link existing task</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <QuietSearchInput value={linkQuery} onChange={(event) => handleLinkQueryChange(event.target.value)} placeholder="Search tasks by name or key" autoFocus />
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <QuietRelationshipResults className="max-h-64 space-y-1 overflow-y-auto">
               {linkSearching && (
                 <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" />
@@ -370,7 +370,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
                     key={result.id}
                     type="button"
                     disabled={linkingTaskId !== null}
-                    className="flex w-full items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-60"
+                    className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2 rounded-md border border-border/60 px-3 py-2 text-left text-sm transition hover:bg-accent disabled:opacity-60')}
                     onClick={() => void handleLinkExistingTask(result.id)}
                   >
                     <CheckListIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -385,9 +385,9 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
                 ))}
               {!linkSearching && linkQuery.trim().length >= 2 && linkResults.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No tasks found</p>}
               {!linkSearching && linkQuery.trim().length < 2 && <p className="py-4 text-center text-sm text-muted-foreground">Type at least 2 characters to search</p>}
-            </div>
+            </QuietRelationshipResults>
           </div>
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
     </div>
   );

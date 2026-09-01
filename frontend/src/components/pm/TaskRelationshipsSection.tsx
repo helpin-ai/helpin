@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
-import { QuietSearchInput, quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelatedItemTitleClassName, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import {
   DropdownMenu,
@@ -30,7 +30,6 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
-  DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -394,7 +393,7 @@ export function TaskRelationshipsSection({
           placeholder={popoverTab === 'tasks' ? 'Search Task Title or ID' : 'Search documents'}
         />
 
-        <div className="max-h-56 space-y-1 overflow-y-auto">
+        <QuietRelationshipResults className="max-h-56 space-y-1 overflow-y-auto">
           {searching ? (
             <div className="flex items-center gap-2 rounded-lg border border-dashed border-border/70 px-3 py-3 text-sm text-muted-foreground">
               <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
@@ -409,7 +408,7 @@ export function TaskRelationshipsSection({
                 key={task.id}
                 type="button"
                 onClick={() => handleCreateRelationship(task.id)}
-                className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
+                className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50')}
               >
                 <span className="min-w-0 flex-1 truncate text-ui font-medium">{task.name}</span>
                 {(task.task_key || task.display_id) ? (
@@ -427,7 +426,7 @@ export function TaskRelationshipsSection({
                 key={doc.id}
                 type="button"
                 onClick={() => handleLinkDoc(doc.id)}
-                className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50"
+                className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-left transition-all hover:border-border/40 hover:bg-accent/50')}
               >
                 <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate text-ui font-medium">{doc.name}</span>
@@ -442,7 +441,7 @@ export function TaskRelationshipsSection({
               No results found.
             </div>
           ) : null}
-        </div>
+        </QuietRelationshipResults>
 
         {popoverTab === 'tasks' ? (
           <div className="flex items-center justify-between gap-3 border-t border-border/60 pt-3">
@@ -654,7 +653,7 @@ export function TaskRelationshipsSection({
       </div>
 
       <Dialog open={composerOpen} onOpenChange={onComposerOpenChange}>
-        <DialogContent className="gap-4 sm:max-w-xl">
+        <QuietRelationshipDialogContent className="gap-4">
           <DialogHeader>
             <DialogTitle>Add relationship</DialogTitle>
             <DialogDescription>
@@ -662,7 +661,7 @@ export function TaskRelationshipsSection({
             </DialogDescription>
           </DialogHeader>
           {composerBody}
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
 
       {createWorkflow ? (
