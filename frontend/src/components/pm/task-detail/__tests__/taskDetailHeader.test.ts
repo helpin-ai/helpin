@@ -13,8 +13,8 @@ describe('TaskDetailPanel shared detail header', () => {
     expect(source).toContain('presentation="header"');
     expect(source.match(/aria-label="Task title"/g)).toHaveLength(1);
     expect(source).toContain('<QuietMetaLine');
-    expect(source).toContain('<QuietStatusText');
-    expect(source).toContain('<QuietStatusText className="lg:hidden"');
+    expect(source).toContain('<QuietStatusBadge className="lg:hidden"');
+    expect(source).toContain('color={currentState?.color}');
     expect(source).toContain('presentation="quiet"');
     expect(source).not.toContain('ui-divider-bottom-fade');
   });

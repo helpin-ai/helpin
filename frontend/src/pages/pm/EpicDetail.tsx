@@ -894,7 +894,7 @@ export function EpicDetailPage() {
         )}
         meta={<QuietMetaLine items={[selectedTeam?.name ?? 'No team', `${tasks.length} task${tasks.length === 1 ? '' : 's'}`]} />}
         status={(
-          <QuietStatusBadge className="lg:hidden" tone={epic.epic.archived ? 'neutral' : getWorkflowStateTone(currentEpicState?.state_type as StateType | undefined)}>
+          <QuietStatusBadge className="lg:hidden" tone={epic.epic.archived ? 'neutral' : getWorkflowStateTone(currentEpicState?.state_type as StateType | undefined)} color={epic.epic.archived ? undefined : currentEpicState?.color}>
             {epic.epic.archived ? 'Archived' : currentStateName || 'No state'}
           </QuietStatusBadge>
         )}

@@ -78,6 +78,7 @@ describe('workspace route header contract', () => {
     expect(epicSource).toContain('presentation="header"');
     expect(epicSource).toContain('<QuietMetaLine');
     expect(epicSource).toContain('<QuietStatusBadge className="lg:hidden"');
+    expect(epicSource).toContain('color={epic.epic.archived ? undefined : currentEpicState?.color}');
     expect(epicSource).toContain('presentation="quiet"');
     expect(epicSource).toContain('presentation="detail-header"');
     expect(epicSource).toContain('<QuietDetailAction');
@@ -87,6 +88,17 @@ describe('workspace route header contract', () => {
     expect(followButtonSource).toContain("presentation?: 'default' | 'detail-header'");
     expect(followButtonSource).toContain("presentation === 'detail-header'");
     expect(followButtonSource).toContain('<QuietDetailAction');
+  });
+
+  it('uses status badges for semantic detail-header states', () => {
+    const taskSource = source('../../pm/TaskDetailPanel.tsx');
+    const meetingSource = source('../../../pages/crm/MeetingDetail.tsx');
+    const contactSource = source('../../crm/contact-detail/ContactHeader.tsx');
+
+    expect(taskSource).toContain('<QuietStatusBadge className="lg:hidden"');
+    expect(taskSource).toContain('color={currentState?.color}');
+    expect(meetingSource).toContain('<MeetingStatusText status={meeting.status} presentation="badge" />');
+    expect(contactSource).toContain('<QuietStatusBadge tone="lifecycle">');
   });
 
   it('places semantic status after metadata while keeping save state beneath actions', () => {

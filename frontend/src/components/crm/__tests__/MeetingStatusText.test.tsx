@@ -15,4 +15,12 @@ describe('MeetingStatusText', () => {
     expect(failed).toContain('bg-quiet-accent');
     expect(active).not.toContain('data-slot="badge"');
   });
+
+  it('uses the shared badge treatment in detail headers', () => {
+    const ready = renderToStaticMarkup(<MeetingStatusText status="ready" presentation="badge" />);
+
+    expect(ready).toContain('data-slot="badge"');
+    expect(ready).toContain('bg-quiet-positive/10');
+    expect(ready).not.toContain('size-1.5');
+  });
 });

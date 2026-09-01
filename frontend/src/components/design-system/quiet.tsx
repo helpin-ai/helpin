@@ -542,10 +542,15 @@ export function QuietStatusText({ children, tone = 'neutral', pulse = false, cla
   );
 }
 
-export function QuietStatusBadge({ children, tone = 'neutral', className }: { children: ReactNode; tone?: keyof typeof statusBadgeToneClassName; className?: string }) {
+export function QuietStatusBadge({ children, tone = 'neutral', color, className }: { children: ReactNode; tone?: keyof typeof statusBadgeToneClassName; color?: string; className?: string }) {
   return (
     <Badge
       variant="outline"
+      style={color ? {
+        color,
+        borderColor: `color-mix(in srgb, ${color} 25%, transparent)`,
+        backgroundColor: `color-mix(in srgb, ${color} 10%, transparent)`,
+      } : undefined}
       className={cn(
         'h-5 rounded-full px-2 py-0 text-[10.5px] font-semibold uppercase tracking-[0.03em]',
         statusBadgeToneClassName[tone],

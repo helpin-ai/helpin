@@ -241,6 +241,16 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).not.toContain('size-1.5');
   });
 
+  it('uses a workflow state color for badge text, border, and background', () => {
+    const markup = renderToStaticMarkup(
+      <QuietStatusBadge tone="current" color="#ef4444">In progress</QuietStatusBadge>,
+    );
+
+    expect(markup).toContain('color:#ef4444');
+    expect(markup).toContain('border-color:color-mix(in srgb, #ef4444 25%, transparent)');
+    expect(markup).toContain('background-color:color-mix(in srgb, #ef4444 10%, transparent)');
+  });
+
   it('renders quiet save failures without a contradictory saved state', () => {
     const markup = renderToStaticMarkup(<SaveIndicator saving={false} error="Failed to save" presentation="quiet" />);
 

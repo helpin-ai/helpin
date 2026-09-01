@@ -1,4 +1,4 @@
-import { QuietStatusText } from '@/components/design-system/quiet';
+import { QuietStatusBadge, QuietStatusText } from '@/components/design-system/quiet';
 import type { CRMMeetingStatus } from '@/lib/crmMeetingTypes';
 import { getMeetingStatusLabel } from '@/lib/meetingPresentation';
 import { cn } from '@/lib/utils';
@@ -18,10 +18,21 @@ function meetingStatusTone(status: CRMMeetingStatus) {
   return 'neutral' as const;
 }
 
-export function MeetingStatusText({ status, className }: { status: CRMMeetingStatus; className?: string }) {
+export function MeetingStatusText({ status, className, presentation = 'text' }: { status: CRMMeetingStatus; className?: string; presentation?: 'text' | 'badge' }) {
+  const tone = meetingStatusTone(status);
+  const label = getMeetingStatusLabel(status);
+
+  if (presentation === 'badge') {
+    return (
+      <QuietStatusBadge tone={tone} className={className}>
+        {label}
+      </QuietStatusBadge>
+    );
+  }
+
   return (
     <QuietStatusText
-      tone={meetingStatusTone(status)}
+      tone={tone}
       pulse={activeStatuses.has(status)}
       className={cn(
         status === 'failed' && 'text-quiet-accent',
@@ -30,7 +41,7 @@ export function MeetingStatusText({ status, className }: { status: CRMMeetingSta
         className,
       )}
     >
-      {getMeetingStatusLabel(status)}
+      {label}
     </QuietStatusText>
   );
 }

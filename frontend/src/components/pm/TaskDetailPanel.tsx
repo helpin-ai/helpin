@@ -46,7 +46,7 @@ import {
   QuietDetailHeader,
   QuietIconAction,
   QuietMetaLine,
-  QuietStatusText,
+  QuietStatusBadge,
   QuietTitleInput,
 } from '@/components/design-system/quiet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -1241,9 +1241,9 @@ function TaskDetailPanelBody({
           ]} />
         )}
         status={(
-          <QuietStatusText className="lg:hidden" tone={getWorkflowStateTone(currentState?.state_type)}>
+          <QuietStatusBadge className="lg:hidden" tone={getWorkflowStateTone(currentState?.state_type)} color={currentState?.color}>
             {currentState?.name ?? 'No state'}
-          </QuietStatusText>
+          </QuietStatusBadge>
         )}
         state={<SaveIndicator saving={isSaving} error={saveError} presentation="quiet" />}
         actions={(
