@@ -54,7 +54,7 @@ export function GlobalDealPanel({ workspaceId }: GlobalDealPanelProps) {
       <SheetContent
         side="right"
         className="h-dvh overflow-hidden p-0 data-[side=right]:w-screen data-[side=right]:!max-w-none md:data-[side=right]:w-[80vw] md:data-[side=right]:!max-w-[1200px]"
-        showCloseButton
+		showCloseButton={false}
       >
         <SheetTitle className="sr-only">Deal details</SheetTitle>
         {activeDealId ? (

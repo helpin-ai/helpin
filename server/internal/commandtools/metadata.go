@@ -629,7 +629,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "crm.create_deal",
 		Alias:       "create_crm_deal",
 		Category:    "CRM / Operations",
-		Description: "Create a CRM deal for an existing contact. Use list_crm_pipelines first. If more than one pipeline exists and the user did not choose one, ask which pipeline to use. Always ask which stage to use when the user did not specify it.",
+		Description: "Create a CRM deal for an existing company or contact. A contact with a primary company resolves to that company; an independent contact becomes the customer. Use list_crm_pipelines first. If more than one pipeline exists and the user did not choose one, ask which pipeline to use. Always ask which stage to use when the user did not specify it.",
 		InputSchema: createCRMDealSchema(),
 	},
 	{
@@ -1770,9 +1770,10 @@ func updateCRMDealSchema() map[string]any {
 }
 
 func createCRMDealSchema() map[string]any {
-	return closedObjectSchema(map[string]any{
+	schema := closedObjectSchema(map[string]any{
 		"name":            map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
-		"contact_id":      optionalIDSchema("Existing CRM contact to associate with the deal."),
+		"contact_id":      optionalIDSchema("Existing CRM contact. Its primary company becomes the customer when company_id is omitted."),
+		"company_id":      optionalIDSchema("Existing CRM company that should be the customer."),
 		"pipeline_id":     optionalIDSchema("Existing pipeline ID. May be omitted only when the workspace has exactly one pipeline."),
 		"stage_id":        optionalIDSchema("Stage ID explicitly selected by the user from the chosen pipeline."),
 		"amount":          map[string]any{"type": "number", "minimum": 0},
@@ -1780,7 +1781,12 @@ func createCRMDealSchema() map[string]any {
 		"close_date":      map[string]any{"type": "string", "format": "date"},
 		"owner_member_id": optionalIDSchema("Optional active workspace member who should own the deal."),
 		"probability":     map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
-	}, []string{"name", "contact_id", "stage_id"})
+	}, []string{"name", "stage_id"})
+	schema["anyOf"] = []map[string]any{
+		{"required": []string{"contact_id"}},
+		{"required": []string{"company_id"}},
+	}
+	return schema
 }
 
 func addCRMActivitySchema() map[string]any {

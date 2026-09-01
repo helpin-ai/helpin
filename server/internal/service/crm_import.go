@@ -15,7 +15,14 @@ type CRMImportService struct {
 	contactRepo    *repository.CRMContactRepository
 	companyRepo    *repository.CRMCompanyRepository
 	dealRepo       *repository.CRMDealRepository
+	dealService    *CRMDealService
 	entitlementSvc *EntitlementService
+}
+
+// SetDealService routes imported deals through the canonical customer workflow.
+func (s *CRMImportService) SetDealService(dealService *CRMDealService) *CRMImportService {
+	s.dealService = dealService
+	return s
 }
 
 // NewCRMImportService creates a new CRMImportService.
@@ -329,19 +336,39 @@ func (s *CRMImportService) importDeal(ctx context.Context, workspaceID string, f
 		return fmt.Errorf("pipeline_id and stage_id are required for deals")
 	}
 
-	displayID, err := s.dealRepo.GetNextDisplayID(ctx, workspaceID)
-	if err != nil {
-		return err
+	if s.dealService == nil {
+		return fmt.Errorf("deal import is not configured")
 	}
-
-	deal := &model.CRMDeal{
-		WorkspaceID: workspaceID,
-		DisplayID:   displayID,
-		Name:        name,
-		PipelineID:  pipelineID,
-		StageID:     stageID,
-		Currency:    "USD",
+	contactEmail := strings.TrimSpace(fields["contact_email"])
+	companyDomain := strings.TrimSpace(fields["company_domain"])
+	if contactEmail == "" && companyDomain == "" {
+		return fmt.Errorf("contact_email or company_domain is required for deals")
 	}
-
-	return s.dealRepo.Create(ctx, deal)
+	var contactID, companyID string
+	if contactEmail != "" {
+		contact, err := s.contactRepo.GetByEmail(ctx, workspaceID, contactEmail)
+		if err != nil {
+			return err
+		}
+		if contact == nil {
+			return fmt.Errorf("contact not found for email %s", contactEmail)
+		}
+		contactID = contact.ID
+	}
+	if companyDomain != "" {
+		company, err := s.companyRepo.GetByDomain(ctx, workspaceID, companyDomain)
+		if err != nil {
+			return err
+		}
+		if company == nil {
+			return fmt.Errorf("company not found for domain %s", companyDomain)
+		}
+		companyID = company.ID
+	}
+	currency := strings.TrimSpace(fields["currency"])
+	if currency == "" {
+		currency = "USD"
+	}
+	_, err := s.dealService.Create(ctx, model.CreateCRMDealRequest{WorkspaceID: workspaceID, Name: name, ContactID: contactID, CompanyID: companyID, PipelineID: pipelineID, StageID: stageID, Currency: &currency})
+	return err
 }

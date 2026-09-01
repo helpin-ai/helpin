@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
-  ArrowRight01Icon,
+	Cancel01Icon,
   Calendar01Icon,
   DashboardSpeed01Icon,
   Delete01Icon,
@@ -11,8 +11,17 @@ import {
   Tag01Icon,
   UserIcon,
 } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import {
+	QuietBreadcrumbs,
+	QuietDetailAction,
+	QuietDetailHeader,
+	QuietDetailLayout,
+	QuietEmptyState,
+	QuietMetaLine,
+	QuietSection,
+	QuietTextAction,
+	QuietTitleInput,
+} from '@/components/design-system/quiet';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
@@ -36,6 +45,7 @@ import { AssociationsList } from '@/components/crm/AssociationsList';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { DealEmailThreadPanel } from '@/components/crm/deal-detail/DealEmailThreadPanel';
 import { DealStagePath } from '@/components/crm/deal-detail/DealStagePath';
+import { DealRelationships } from '@/components/crm/deal-detail/DealRelationships';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { useTitle } from '@/hooks/useTitle';
@@ -60,14 +70,12 @@ interface DealDetailPageProps {
   registerBeforeClose?: (handler: (() => Promise<void>) | null) => void;
 }
 
-function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
-  return (
-    <>
-      <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
-      <span className="self-center text-ui text-muted-foreground">{label}</span>
-      <div className="min-w-0 self-center text-ui">{children}</div>
-    </>
-  );
+function DealMetadataRow({ icon: Icon, label, children }: { icon: React.ElementType; label: string; children: React.ReactNode }) {
+	return <>
+		<Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+		<span className="mt-0.5 text-[12px] text-muted-foreground">{label}</span>
+		<div className="min-w-0 text-[12px]">{children}</div>
+	</>;
 }
 
 export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: DealDetailPageProps) {
@@ -229,159 +237,99 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
     }
   };
 
+  const goToDeals = () => void closeThen(() => navigate({ to: '/w/$slug/crm/deals', params: { slug: wsSlug } } as never));
+
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+		<div className="flex h-full flex-col overflow-hidden">
+			<QuietDetailHeader
+				breadcrumbs={<QuietBreadcrumbs items={[{ id: 'deals', label: 'Deals', onClick: goToDeals }]} onBack={goToDeals} backLabel="Back to deals" />}
+				title={<div className="h-6 w-64 max-w-full animate-pulse bg-quiet-icon-well" />}
+				meta={<div className="h-3 w-40 animate-pulse bg-quiet-icon-well" />}
+			/>
+			<div className="flex flex-1 items-center justify-center"><Loading01Icon className="h-6 w-6 animate-spin text-quiet-muted" /></div>
+		</div>
     );
   }
 
   if (!deal || !form) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-muted-foreground">Deal not found</p>
-        <Button variant="outline" size="sm" onClick={() => void onRequestClose?.()}>Close</Button>
-      </div>
+		<div className="flex h-full flex-col overflow-hidden">
+			<QuietDetailHeader breadcrumbs={<QuietBreadcrumbs items={[{ id: 'deals', label: 'Deals', onClick: goToDeals }]} onBack={goToDeals} backLabel="Back to deals" />} title="Deal" />
+			<div className="flex-1 overflow-auto p-4 sm:p-6">
+				<QuietEmptyState title="Deal not found" description="This deal may have been deleted or is no longer available to you." action={<QuietTextAction onClick={goToDeals}>Back to deals</QuietTextAction>} />
+			</div>
+		</div>
     );
   }
 
   const selectedOwner = findAssignableMember(assignableMembers, form.owner_member_id);
   const amountValue = Number.parseFloat(form.amount);
+	const customerAssociation = associations?.find((association) => association.association_label === 'deal_customer');
+	const customerType = customerAssociation
+		? (customerAssociation.from_object_type === 'deal' ? customerAssociation.to_object_type : customerAssociation.from_object_type)
+		: null;
+	const customerId = customerAssociation
+		? (customerAssociation.from_object_type === 'deal' ? customerAssociation.to_object_id : customerAssociation.from_object_id)
+		: null;
+	const customerName = customerAssociation?.linked_object_name || 'Customer needed';
+	const openCustomer = () => {
+		if (!customerId || (customerType !== 'contact' && customerType !== 'company')) return;
+		void closeThen(() => navigate(customerType === 'company'
+			? { to: '/w/$slug/crm/companies/$companyId', params: { slug: wsSlug, companyId: customerId } }
+			: { to: '/w/$slug/crm/contacts/$contactId', params: { slug: wsSlug, contactId: customerId } } as never));
+	};
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-4 pr-12">
-        <DollarCircleIcon className="h-4 w-4 shrink-0 text-emerald-600" />
-        <span className="text-xs text-muted-foreground">Deals</span>
-        <ArrowRight01Icon className="h-3 w-3 text-muted-foreground/60" />
-        <span className="min-w-0 truncate text-xs font-medium text-foreground">{deal.display_id}</span>
-        <div className="ml-auto flex items-center gap-1">
-          <SaveIndicator saving={saving} error={saveError} />
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" aria-label="Delete deal" onClick={() => setDeleteConfirmOpen(true)}>
-            <Delete01Icon className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </header>
+		<div className="flex h-full min-h-0 flex-col bg-background">
+			<QuietDetailHeader
+				breadcrumbs={<QuietBreadcrumbs items={[
+					{ id: 'deals', label: 'Deals', onClick: goToDeals },
+					{ id: 'customer', label: customerName, onClick: customerId ? openCustomer : undefined },
+				]} onBack={goToDeals} backLabel="Back to deals" />}
+				title={<QuietTitleInput aria-label="Deal name" presentation="header" className="max-w-[42rem] border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary" value={form.name} onChange={(event) => updateField('name', event.target.value, { name: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} placeholder="Deal name" />}
+				meta={<QuietMetaLine items={[<span className="font-mono" key="id">{deal.display_id}</span>, currentPipeline?.name, form.amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: form.currency || 'USD', maximumFractionDigits: 0 }).format(amountValue || 0) : null, form.probability ? `${form.probability}% probability` : null]} />}
+				state={<SaveIndicator saving={saving} error={saveError} presentation="quiet" />}
+				actions={<>
+					<QuietDetailAction tone="danger" icon={<Delete01Icon className="h-4 w-4" />} label="Delete deal" onClick={() => setDeleteConfirmOpen(true)} />
+					{onRequestClose ? <QuietDetailAction iconOnly icon={<Cancel01Icon className="h-4 w-4" />} label="Close deal" onClick={() => void onRequestClose()} /> : null}
+				</>}
+			/>
 
-      <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
-        <main className="min-h-0 lg:overflow-y-auto">
-          <section className="border-b border-border/60 px-4 pb-5 pt-6 sm:px-6 lg:px-10 lg:pt-8">
-            <input className="w-full bg-transparent font-heading text-2xl font-semibold leading-tight text-foreground outline-none placeholder:text-muted-foreground/50 sm:text-[1.75rem]" value={form.name} onChange={(event) => updateField('name', event.target.value, { name: event.target.value })} placeholder="Deal name" />
-            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <span>{deal.display_id}</span>
-              {form.amount ? <><span>·</span><span>{new Intl.NumberFormat('en-US', { style: 'currency', currency: form.currency || 'USD', maximumFractionDigits: 0 }).format(amountValue || 0)}</span></> : null}
-              {form.probability ? <><span>·</span><span>{form.probability}% probability</span></> : null}
-            </div>
-          </section>
+			<DealStagePath stages={sortedStages} value={form.stage_id} disabled={saving} onChange={(stageId) => updateField('stage_id', stageId, { stage_id: stageId })} />
 
-          <DealStagePath stages={sortedStages} value={form.stage_id} disabled={saving} onChange={(stageId) => updateField('stage_id', stageId, { stage_id: stageId })} />
-
-          <section className="grid gap-6 border-b border-border/60 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(220px,0.65fr)] lg:px-10">
-            <EntitySummaryCard workspaceId={wsId} dealId={dealId} presentation="compact" />
-            <div className="min-w-0">
-              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Deal health <DealHealthScore workspaceId={wsId} dealId={dealId} compact /></div>
-              <EntitySignals
-                workspaceId={wsId}
-                dealId={dealId}
-                presentation="compact"
-                onOpenSource={(signal) => {
-                  if (signal.source_type === 'email' && signal.source_thread_id) setEmailThreadId(signal.source_thread_id);
-                  else if (signal.source_type === 'meeting' && signal.source_id) void closeThen(() => navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: signal.source_id } } as never));
-                  else if (signal.source_type === 'support' && signal.source_thread_id) void closeThen(() => navigate({ to: '/w/$slug/support/$conversationId', params: { slug: wsSlug, conversationId: signal.source_thread_id } } as never));
-                }}
-              />
-            </div>
-          </section>
-
-          <LinkedTasksPanel workspaceId={wsId} workspaceSlug={wsSlug} dealId={dealId} presentation="borderless" onTaskActivityChange={() => void timeline.refetch()} />
-
-          <ActivityTimeline
-            timelineItems={timelineItems}
-            timelineFilter={timelineFilter}
-            onTimelineFilterChange={setTimelineFilter}
-            onTimelineItemOpen={openTimelineSource}
-            hasNextPage={timeline.hasNextPage}
-            isFetchingNextPage={timeline.isFetchingNextPage}
-            isTimelineLoading={timeline.isLoading}
-            onLoadMore={() => void timeline.fetchNextPage()}
-            workspaceId={wsId}
-            dealId={dealId}
-            onActivityCreated={() => void timeline.refetch()}
-            onActivityDeleted={() => void timeline.refetch()}
-            presentation="borderless"
-            filterControl="dropdown"
-            heading="Activity"
-          />
-        </main>
-
-        <aside className="min-h-0 border-t border-border/60 bg-muted/[0.12] px-4 py-5 lg:overflow-y-auto lg:border-l lg:border-t-0">
-          <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Details</h2>
-          <div className="grid grid-cols-[16px_72px_minmax(0,1fr)] gap-x-2 gap-y-3">
-            <MetadataRow icon={Tag01Icon} label="Pipeline">
-              <SidebarPopoverSelect
-                value={form.pipeline_id}
-                options={(pipelines ?? []).map((pipeline) => ({ value: pipeline.id, label: pipeline.name }))}
-                onChange={(pipelineId) => {
-                  const pipeline = pipelines?.find((item) => item.id === pipelineId);
-                  const firstStageId = [...(pipeline?.stages ?? [])].sort((a, b) => a.position - b.position)[0]?.id ?? '';
-                  setForm((current) => current ? { ...current, pipeline_id: pipelineId, stage_id: firstStageId } : current);
-                  queuePatch({ pipeline_id: pipelineId, ...(firstStageId ? { stage_id: firstStageId } : {}) });
-                }}
-                renderTrigger={() => <span className="truncate">{currentPipeline?.name ?? 'Select pipeline'}</span>}
-                triggerClassName="-ml-1.5"
-              />
-            </MetadataRow>
-            <MetadataRow icon={DollarCircleIcon} label="Amount">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <input className="min-w-0 flex-1 bg-transparent outline-none" type="number" step="0.01" value={form.amount} onChange={(event) => updateField('amount', event.target.value, { amount: event.target.value ? Number.parseFloat(event.target.value) : undefined })} placeholder="—" />
-                <SidebarPopoverSelect value={form.currency} options={['USD', 'EUR', 'GBP', 'CAD', 'AUD'].map((currency) => ({ value: currency, label: currency }))} onChange={(currency) => updateField('currency', currency, { currency })} renderTrigger={() => <span className="text-muted-foreground">{form.currency}</span>} triggerClassName="px-1" width="w-28" />
-              </div>
-            </MetadataRow>
-			<MetadataRow icon={Tag01Icon} label="Motion">
-				<SidebarPopoverSelect
-					value={form.commercial_motion}
-					options={[
-						{ value: 'inherit', label: `Inherit ${currentPipeline?.default_commercial_motion?.replace('_', ' ') ?? 'pipeline default'}` },
-						{ value: 'new_business', label: 'New business' },
-						{ value: 'expansion', label: 'Expansion' },
-						{ value: 'renewal', label: 'Renewal' },
-					]}
-					onChange={(value) => updateField('commercial_motion', value as FormState['commercial_motion'],
-						value === 'inherit' ? { clear_commercial_motion: true } : { commercial_motion: value as CRMDealCommercialMotion })}
-					renderTrigger={() => <span className="capitalize">{form.commercial_motion === 'inherit' ? `Inherit ${currentPipeline?.default_commercial_motion?.replace('_', ' ') ?? ''}` : form.commercial_motion.replace('_', ' ')}</span>}
-					triggerClassName="-ml-1.5"
-				/>
-			</MetadataRow>
-            <MetadataRow icon={Calendar01Icon} label="Close date">
-              <input className="w-full bg-transparent outline-none" type="date" value={form.close_date} onChange={(event) => updateField('close_date', event.target.value, { close_date: event.target.value ? `${event.target.value}T00:00:00Z` : undefined })} />
-            </MetadataRow>
-            <MetadataRow icon={DashboardSpeed01Icon} label="Probability">
-              <div className="flex items-center gap-1">
-                <input className="w-12 bg-transparent outline-none" type="number" min="0" max="100" value={form.probability} onChange={(event) => updateField('probability', event.target.value, { probability: event.target.value ? Number.parseInt(event.target.value, 10) : undefined })} placeholder="—" />
-                <span className="text-muted-foreground">%</span>
-              </div>
-            </MetadataRow>
-            <MetadataRow icon={UserIcon} label="Owner">
-              <MemberPickerPopover
-                value={form.owner_member_id || '__none__'}
-                members={assignableMembers}
-                noneLabel="Unassigned"
-                onChange={(value) => updateField('owner_member_id', value === '__none__' ? '' : value, { owner_member_id: value === '__none__' ? '' : value })}
-                renderTrigger={() => selectedOwner ? (
-                  <>
-                    <UserAvatar name={selectedOwner.display_name || selectedOwner.email} avatarUrl={selectedOwner.avatar_url} avatarStyle={selectedOwner.avatar_style} avatarSeed={selectedOwner.avatar_seed} avatarBackgroundMode={selectedOwner.avatar_background_mode} avatarBackgroundColor={selectedOwner.avatar_background_color} className="h-4 w-4" fallbackClassName="text-[7px]" />
-                    <span className="truncate">{selectedOwner.display_name || selectedOwner.email}</span>
-                  </>
-                ) : <span className="text-muted-foreground">Unassigned</span>}
-              />
-            </MetadataRow>
-          </div>
-
-          <Separator className="my-5" />
-          <AssociationsList workspaceId={wsId} slug={wsSlug} associations={associations ?? []} currentObjectType="deal" currentObjectId={dealId} excludeTypes={['task']} onAssociationRemoved={() => void refetchAssociations()} />
-        </aside>
-      </div>
+			<QuietDetailLayout
+				className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden"
+				main={<main className="min-h-0 lg:overflow-y-auto">
+					<QuietSection title="Summary" className="lg:px-10"><EntitySummaryCard workspaceId={wsId} dealId={dealId} presentation="compact" /></QuietSection>
+					<QuietSection title="Signals" action={<DealHealthScore workspaceId={wsId} dealId={dealId} compact />} className="lg:px-10">
+						<EntitySignals workspaceId={wsId} dealId={dealId} presentation="compact" onOpenSource={(signal) => {
+							if (signal.source_type === 'email' && signal.source_thread_id) setEmailThreadId(signal.source_thread_id);
+							else if (signal.source_type === 'meeting' && signal.source_id) void closeThen(() => navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: wsSlug, meetingId: signal.source_id } } as never));
+							else if (signal.source_type === 'support' && signal.source_thread_id) void closeThen(() => navigate({ to: '/w/$slug/support/$conversationId', params: { slug: wsSlug, conversationId: signal.source_thread_id } } as never));
+						}} />
+					</QuietSection>
+					<LinkedTasksPanel workspaceId={wsId} workspaceSlug={wsSlug} dealId={dealId} presentation="borderless" onTaskActivityChange={() => void timeline.refetch()} />
+					<ActivityTimeline timelineItems={timelineItems} timelineFilter={timelineFilter} onTimelineFilterChange={setTimelineFilter} onTimelineItemOpen={openTimelineSource} hasNextPage={timeline.hasNextPage} isFetchingNextPage={timeline.isFetchingNextPage} isTimelineLoading={timeline.isLoading} onLoadMore={() => void timeline.fetchNextPage()} workspaceId={wsId} dealId={dealId} onActivityCreated={() => void timeline.refetch()} onActivityDeleted={() => void timeline.refetch()} presentation="borderless" filterControl="dropdown" heading="Activity" />
+				</main>}
+				railClassName="px-4 py-5 pb-16 sm:px-6 lg:px-5 lg:pb-40"
+				rail={<>
+					<DealRelationships workspaceId={wsId} dealId={dealId} associations={associations ?? []} onChanged={() => void refetchAssociations()} onNavigate={(type, id) => void closeThen(() => navigate(type === 'company' ? { to: '/w/$slug/crm/companies/$companyId', params: { slug: wsSlug, companyId: id } } : { to: '/w/$slug/crm/contacts/$contactId', params: { slug: wsSlug, contactId: id } } as never))} />
+					<section className="-mx-4 mt-4 border-t border-border/60 px-4 pt-4">
+						<h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Details</h2>
+						<div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
+							<DealMetadataRow icon={Tag01Icon} label="Pipeline"><SidebarPopoverSelect value={form.pipeline_id} options={(pipelines ?? []).map((pipeline) => ({ value: pipeline.id, label: pipeline.name }))} onChange={(pipelineId) => { const pipeline = pipelines?.find((item) => item.id === pipelineId); const firstStageId = [...(pipeline?.stages ?? [])].sort((a, b) => a.position - b.position)[0]?.id ?? ''; setForm((current) => current ? { ...current, pipeline_id: pipelineId, stage_id: firstStageId } : current); queuePatch({ pipeline_id: pipelineId, ...(firstStageId ? { stage_id: firstStageId } : {}) }); }} renderTrigger={() => <span className="truncate">{currentPipeline?.name ?? 'Select pipeline'}</span>} /></DealMetadataRow>
+							<DealMetadataRow icon={DollarCircleIcon} label="Amount"><div className="flex min-w-0 items-center gap-1.5"><input className="min-w-0 flex-1 bg-transparent px-1.5 py-0.5 text-xs outline-none placeholder:text-muted-foreground" type="number" step="0.01" value={form.amount} onChange={(event) => updateField('amount', event.target.value, { amount: event.target.value ? Number.parseFloat(event.target.value) : undefined })} placeholder="None" /><SidebarPopoverSelect value={form.currency} options={['USD', 'EUR', 'GBP', 'CAD', 'AUD'].map((value) => ({ value, label: value }))} onChange={(value) => updateField('currency', value, { currency: value })} renderTrigger={() => <span className="text-muted-foreground">{form.currency}</span>} triggerClassName="px-1" width="w-28" /></div></DealMetadataRow>
+							<DealMetadataRow icon={Tag01Icon} label="Motion"><SidebarPopoverSelect value={form.commercial_motion} options={[{ value: 'inherit', label: `Inherit ${currentPipeline?.default_commercial_motion?.replace('_', ' ') ?? 'pipeline default'}` }, { value: 'new_business', label: 'New business' }, { value: 'expansion', label: 'Expansion' }, { value: 'renewal', label: 'Renewal' }]} onChange={(value) => updateField('commercial_motion', value as FormState['commercial_motion'], value === 'inherit' ? { clear_commercial_motion: true } : { commercial_motion: value as CRMDealCommercialMotion })} renderTrigger={() => <span className="capitalize">{form.commercial_motion === 'inherit' ? `Inherit ${currentPipeline?.default_commercial_motion?.replace('_', ' ') ?? ''}` : form.commercial_motion.replace('_', ' ')}</span>} /></DealMetadataRow>
+							<div className="col-span-3 my-1 h-px bg-border/40" />
+							<DealMetadataRow icon={Calendar01Icon} label="Close date"><input className="w-full bg-transparent px-1.5 py-0.5 text-xs outline-none" type="date" value={form.close_date} onChange={(event) => updateField('close_date', event.target.value, { close_date: event.target.value ? `${event.target.value}T00:00:00Z` : undefined })} /></DealMetadataRow>
+							<DealMetadataRow icon={DashboardSpeed01Icon} label="Probability"><div className="flex items-center gap-1"><input className="w-12 bg-transparent px-1.5 py-0.5 text-xs outline-none placeholder:text-muted-foreground" type="number" min="0" max="100" value={form.probability} onChange={(event) => updateField('probability', event.target.value, { probability: event.target.value ? Number.parseInt(event.target.value, 10) : undefined })} placeholder="None" /><span className="text-muted-foreground">%</span></div></DealMetadataRow>
+							<DealMetadataRow icon={UserIcon} label="Owner"><MemberPickerPopover value={form.owner_member_id || '__none__'} members={assignableMembers} noneLabel="Unassigned" onChange={(value) => updateField('owner_member_id', value === '__none__' ? '' : value, { owner_member_id: value === '__none__' ? '' : value })} renderTrigger={() => selectedOwner ? <><UserAvatar name={selectedOwner.display_name || selectedOwner.email} avatarUrl={selectedOwner.avatar_url} avatarStyle={selectedOwner.avatar_style} avatarSeed={selectedOwner.avatar_seed} avatarBackgroundMode={selectedOwner.avatar_background_mode} avatarBackgroundColor={selectedOwner.avatar_background_color} className="h-4 w-4" fallbackClassName="text-[7px]" /><span className="truncate">{selectedOwner.display_name || selectedOwner.email}</span></> : <span className="text-muted-foreground">Unassigned</span>} /></DealMetadataRow>
+						</div>
+					</section>
+					<details className="-mx-4 mt-4 border-t border-border/60 px-4 pt-4" open><summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-foreground/70">Related</summary><AssociationsList workspaceId={wsId} slug={wsSlug} associations={associations ?? []} currentObjectType="deal" currentObjectId={dealId} excludeTypes={['task', 'contact', 'company']} onAssociationRemoved={() => void refetchAssociations()} /></details>
+				</>}
+			/>
 
       <DealEmailThreadPanel open={!!emailThreadId} onOpenChange={(open) => { if (!open) setEmailThreadId(undefined); }} workspaceId={wsId} dealId={dealId} threadId={emailThreadId} />
       <ConfirmDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen} title="Delete deal" description="Are you sure? This action cannot be undone." confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} />

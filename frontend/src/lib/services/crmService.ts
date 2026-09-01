@@ -19,6 +19,8 @@ import type {
   CreateCRMCompanyRequest,
   UpdateCRMCompanyRequest,
   CreateCRMDealRequest,
+	SetCRMDealCustomerRequest,
+	CRMDealCustomer,
   UpdateCRMDealRequest,
   CreateCRMPipelineRequest,
   UpdateCRMPipelineRequest,
@@ -160,6 +162,7 @@ export const crmDealService = {
   get: (workspaceId: string, id: string) => api.get<CRMDeal>(`/crm/deals/${id}${qs(workspaceId)}`),
   create: (payload: CreateCRMDealRequest) => api.post<CRMDeal>(`/crm/deals${qs(payload.workspace_id)}`, payload),
   update: (workspaceId: string, id: string, payload: UpdateCRMDealRequest) => api.put<CRMDeal>(`/crm/deals/${id}${qs(workspaceId)}`, payload),
+  setCustomer: (workspaceId: string, id: string, payload: SetCRMDealCustomerRequest) => api.put<CRMDealCustomer>(`/crm/deals/${id}/customer${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/deals/${id}${qs(workspaceId)}`),
   listActivities: (workspaceId: string, dealId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMActivity[]>>(`/crm/deals/${dealId}/activities${qs(workspaceId)}${page ? `&page=${page}` : ''}`),

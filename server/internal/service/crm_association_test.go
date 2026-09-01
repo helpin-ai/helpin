@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -23,6 +24,35 @@ func TestCRMAssociationServiceScopedDeleteRejectsOtherWorkspace(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("cross-workspace association was deleted")
+	}
+}
+
+func TestCRMAssociationServiceProtectsDealCustomerAndRejectsGenericCompanyLink(t *testing.T) {
+	db := newAssociationsTestDB(t)
+	svc := NewCRMAssociationService(repository.NewCRMAssociationRepository(db))
+	customerLabel := model.CRMAssociationLabelDealCustomer
+	seedCRMAssociation(t, db, "assoc-customer", "ws-1", model.CRMObjectDeal, "deal-1", model.CRMObjectCompany, "company-1")
+	if err := db.Model(&model.CRMAssociation{}).Where("id = ?", "assoc-customer").Update("association_label", customerLabel).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteScoped(context.Background(), "ws-1", "assoc-customer"); !errors.Is(err, ErrDealCustomerAssociationProtected) {
+		t.Fatalf("expected protected customer error, got %v", err)
+	}
+	_, err := svc.Create(context.Background(), model.CreateCRMAssociationRequest{WorkspaceID: "ws-1", FromObjectType: model.CRMObjectDeal, FromObjectID: "deal-1", ToObjectType: model.CRMObjectCompany, ToObjectID: "company-2"})
+	if !errors.Is(err, ErrDealCustomerEndpointRequired) {
+		t.Fatalf("expected dedicated customer endpoint error, got %v", err)
+	}
+}
+
+func TestCRMAssociationServiceCanonicalizesDealContactParticipant(t *testing.T) {
+	db := newAssociationsTestDB(t)
+	svc := NewCRMAssociationService(repository.NewCRMAssociationRepository(db))
+	association, err := svc.Create(context.Background(), model.CreateCRMAssociationRequest{WorkspaceID: "ws-1", FromObjectType: model.CRMObjectContact, FromObjectID: "contact-1", ToObjectType: model.CRMObjectDeal, ToObjectID: "deal-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if association.FromObjectType != model.CRMObjectDeal || association.FromObjectID != "deal-1" || association.ToObjectType != model.CRMObjectContact || association.ToObjectID != "contact-1" {
+		t.Fatalf("association was not canonicalized: %#v", association)
 	}
 }
 
@@ -52,7 +82,7 @@ func TestCRMAssociationServiceSetsPrimaryContactCompany(t *testing.T) {
 	}
 }
 
-func TestListByObjectEnrichedIncludesInferredCompanyContactAssociations(t *testing.T) {
+func TestListByObjectEnrichedDoesNotInferCompanyDealsThroughContacts(t *testing.T) {
 	db := newAssociationsTestDB(t)
 	svc := NewCRMAssociationService(repository.NewCRMAssociationRepository(db))
 
@@ -66,33 +96,21 @@ func TestListByObjectEnrichedIncludesInferredCompanyContactAssociations(t *testi
 	if err != nil {
 		t.Fatalf("ListByObjectEnriched returned error: %v", err)
 	}
-	if len(assocs) != 2 {
-		t.Fatalf("expected direct contact plus inferred deal, got %d rows", len(assocs))
+	if len(assocs) != 1 {
+		t.Fatalf("expected only the direct contact, got %d rows", len(assocs))
 	}
 
-	var directContact, inferredDeal *model.CRMAssociationEnriched
+	var directContact *model.CRMAssociationEnriched
 	for i := range assocs {
 		assoc := &assocs[i]
 		otherType, otherID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectCompany, "company-1")
-		switch {
-		case otherType == model.CRMObjectContact && otherID == "contact-1":
+		if otherType == model.CRMObjectContact && otherID == "contact-1" {
 			directContact = assoc
-		case otherType == model.CRMObjectDeal && otherID == "deal-1":
-			inferredDeal = assoc
 		}
 	}
 
 	if directContact == nil || directContact.Inferred {
 		t.Fatalf("expected direct contact association, got %+v", assocs)
-	}
-	if inferredDeal == nil || !inferredDeal.Inferred {
-		t.Fatalf("expected inferred deal association, got %+v", assocs)
-	}
-	if inferredDeal.ID != "" {
-		t.Fatalf("expected inferred association to have no id, got %q", inferredDeal.ID)
-	}
-	if inferredDeal.ContextLabel == nil || *inferredDeal.ContextLabel != "via Jane Doe" {
-		t.Fatalf("expected inferred context label 'via Jane Doe', got %+v", inferredDeal.ContextLabel)
 	}
 }
 
@@ -136,7 +154,7 @@ func TestListByObjectEnrichedSkipsInferredDuplicatesForCompanyContactAssociation
 	}
 }
 
-func TestListByObjectEnrichedIncludesDealCompaniesViaContacts(t *testing.T) {
+func TestListByObjectEnrichedDoesNotInferDealCompaniesViaContacts(t *testing.T) {
 	db := newAssociationsTestDB(t)
 	svc := NewCRMAssociationService(repository.NewCRMAssociationRepository(db))
 
@@ -150,23 +168,11 @@ func TestListByObjectEnrichedIncludesDealCompaniesViaContacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListByObjectEnriched returned error: %v", err)
 	}
-	if len(assocs) != 2 {
-		t.Fatalf("expected direct contact plus inferred company, got %d rows", len(assocs))
+	if len(assocs) != 1 {
+		t.Fatalf("expected only the direct contact, got %d rows", len(assocs))
 	}
-
-	var inferredCompany *model.CRMAssociationEnriched
-	for i := range assocs {
-		assoc := &assocs[i]
-		otherType, otherID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectDeal, "deal-1")
-		if otherType == model.CRMObjectCompany && otherID == "company-1" {
-			inferredCompany = assoc
-		}
-	}
-	if inferredCompany == nil || !inferredCompany.Inferred || inferredCompany.ID != "" {
-		t.Fatalf("expected read-only inferred company association, got %+v", inferredCompany)
-	}
-	if inferredCompany.ContextLabel == nil || *inferredCompany.ContextLabel != "via Jane Doe" {
-		t.Fatalf("expected inferred context label 'via Jane Doe', got %+v", inferredCompany.ContextLabel)
+	if assocs[0].Inferred {
+		t.Fatalf("expected direct contact association, got %+v", assocs[0])
 	}
 }
 

@@ -115,6 +115,84 @@ func TestCRMCreateDealUsesExplicitPipelineAndStage(t *testing.T) {
 	if associationCount != 1 {
 		t.Fatalf("deal/contact association count = %d, want 1", associationCount)
 	}
+	var association model.CRMAssociation
+	if err := db.Where("from_object_type = ? AND from_object_id = ?", model.CRMObjectDeal, dealID).First(&association).Error; err != nil {
+		t.Fatal(err)
+	}
+	if association.AssociationLabel == nil || *association.AssociationLabel != model.CRMAssociationLabelDealCustomer {
+		t.Fatalf("deal contact was not labeled as the customer: %#v", association)
+	}
+}
+
+func TestCRMCreateDealSupportsCompanyWithoutContact(t *testing.T) {
+	db := setupCRMOperationalCommandTestDB(t)
+	env := newCRMOperationalCommandTestEnv(t, db)
+	output, err := env.commands.Execute(context.Background(), env.meta("crm_company", "company-1"), "crm.create_deal", json.RawMessage(`{
+		"name":"Company opportunity","company_id":"company-1","pipeline_id":"pipeline-1","stage_id":"stage-open"
+	}`))
+	if err != nil {
+		t.Fatalf("create company deal: %v", err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["customer_type"] != model.CRMObjectCompany || result["customer_id"] != "company-1" {
+		t.Fatalf("unexpected customer output: %#v", result)
+	}
+	dealID, _ := result["deal_id"].(string)
+	var associations []model.CRMAssociation
+	if err := db.Where("from_object_type = ? AND from_object_id = ?", model.CRMObjectDeal, dealID).Find(&associations).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(associations) != 1 || associations[0].ToObjectType != model.CRMObjectCompany || associations[0].AssociationLabel == nil || *associations[0].AssociationLabel != model.CRMAssociationLabelDealCustomer {
+		t.Fatalf("unexpected company deal associations: %#v", associations)
+	}
+}
+
+func TestCRMCreateDealResolvesContactPrimaryCompany(t *testing.T) {
+	db := setupCRMOperationalCommandTestDB(t)
+	primary := "primary"
+	if err := db.Create(&model.CRMAssociation{ID: "contact-company-primary", WorkspaceID: "ws-crm-1", FromObjectType: model.CRMObjectContact, FromObjectID: "contact-1", ToObjectType: model.CRMObjectCompany, ToObjectID: "company-1", AssociationLabel: &primary}).Error; err != nil {
+		t.Fatal(err)
+	}
+	env := newCRMOperationalCommandTestEnv(t, db)
+	output, err := env.commands.Execute(context.Background(), env.meta("crm_contact", "contact-1"), "crm.create_deal", json.RawMessage(`{
+		"name":"Account opportunity","contact_id":"contact-1","pipeline_id":"pipeline-1","stage_id":"stage-open"
+	}`))
+	if err != nil {
+		t.Fatalf("create contact deal: %v", err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["customer_type"] != model.CRMObjectCompany || result["customer_id"] != "company-1" || result["primary_contact_id"] != "contact-1" {
+		t.Fatalf("contact primary company was not resolved: %#v", result)
+	}
+}
+
+func TestCRMSetDealCustomerPreservesPrimaryPersonWhenCompanyChanges(t *testing.T) {
+	db := setupCRMOperationalCommandTestDB(t)
+	env := newCRMOperationalCommandTestEnv(t, db)
+	customerLabel := model.CRMAssociationLabelDealCustomer
+	if err := db.Create(&model.CRMAssociation{ID: "deal-contact-customer", WorkspaceID: "ws-crm-1", FromObjectType: model.CRMObjectDeal, FromObjectID: "deal-1", ToObjectType: model.CRMObjectContact, ToObjectID: "contact-1", AssociationLabel: &customerLabel}).Error; err != nil {
+		t.Fatal(err)
+	}
+	customer, err := env.deal.SetCustomer(context.Background(), "deal-1", model.SetCRMDealCustomerRequest{WorkspaceID: "ws-crm-1", CompanyID: "company-1"}, "user-crm-owner")
+	if err != nil {
+		t.Fatalf("set deal customer: %v", err)
+	}
+	if customer.CustomerType != model.CRMObjectCompany || customer.CustomerID != "company-1" || customer.PrimaryContactID != "contact-1" {
+		t.Fatalf("unexpected resolved customer: %#v", customer)
+	}
+	var associations []model.CRMAssociation
+	if err := db.Where("from_object_type = ? AND from_object_id = ? AND association_label IS NOT NULL", model.CRMObjectDeal, "deal-1").Order("association_label").Find(&associations).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(associations) != 2 {
+		t.Fatalf("expected customer and primary contact labels, got %#v", associations)
+	}
 }
 
 func TestCRMCreateDealRequiresChoicesInsteadOfGuessing(t *testing.T) {

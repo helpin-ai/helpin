@@ -75,12 +75,12 @@ describe('Company detail divider redesign', () => {
     expect(emailTimelineSource).toContain('<PlusSignIcon className="h-3.5 w-3.5" /> Compose')
   })
 
-  it('links deals created from company context back to the company', () => {
-    expect(companyDetailSource).toContain('companyContext={{ id: companyId')
-    expect(createDealSource).toContain("from_object_type: 'deal'")
-    expect(createDealSource).toContain("to_object_type: 'company'")
-    expect(createDealSource).toContain('Deal created, but it could not be linked')
-  })
+	it('creates company-context deals with the company as the atomic customer', () => {
+		expect(companyDetailSource).toContain('companyContext={{ id: companyId')
+		expect(createDealSource).toContain("{ company_id: customer.id, contact_id: primaryContactId || undefined }")
+		expect(createDealSource).not.toContain("from_object_type: 'deal'")
+		expect(createDealSource).not.toContain('Deal created, but it could not be linked')
+	})
 
   it('keeps the new enrichment treatment opt-in', () => {
     expect(enrichmentSource).toContain("presentation?: 'default' | 'borderless'")

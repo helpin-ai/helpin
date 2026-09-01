@@ -1506,6 +1506,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/deals", h.CRMDeal.Create)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}", h.CRMDeal.Get)
 				r.With(requirePerm(authorization.PermCRMEdit)).Put("/deals/{id}", h.CRMDeal.Update)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/deals/{id}/customer", h.CRMDeal.SetCustomer)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/deals/{id}", h.CRMDeal.Delete)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/activities", h.CRMActivity.ListByDeal)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/timeline", h.CRMDeal.ListTimeline)

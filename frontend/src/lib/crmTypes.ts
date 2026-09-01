@@ -245,7 +245,8 @@ export interface CRMDeal {
 export interface CreateCRMDealRequest {
   workspace_id: string;
   name: string;
-  contact_id: string;
+  contact_id?: string;
+  company_id?: string;
   pipeline_id: string;
   stage_id: string;
   amount?: number;
@@ -255,6 +256,18 @@ export interface CreateCRMDealRequest {
   commercial_motion?: CRMDealCommercialMotion;
   probability?: number;
   custom_properties?: Record<string, unknown>;
+}
+
+export interface SetCRMDealCustomerRequest {
+  workspace_id: string;
+  contact_id?: string;
+  company_id?: string;
+}
+
+export interface CRMDealCustomer {
+  customer_type: 'contact' | 'company';
+  customer_id: string;
+  primary_contact_id?: string;
 }
 
 export interface UpdateCRMDealRequest {

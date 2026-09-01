@@ -21,13 +21,14 @@ import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionAc
 import { CreateContactDialog } from '@/components/crm/CreateContactDialog';
 import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { CreateMeetingDialog } from '@/components/crm/CreateMeetingDialog';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
 import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
 import { useCompanyContacts, useCompanyDeals, useCompanySupportConversations, useContactSupportConversations, useDeals } from '@/hooks/queries';
 import { useCRMMeetings } from '@/hooks/queries/useCRMMeetings';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { associationsService } from '@/lib/services/associationsService';
-import { crmSearchService } from '@/lib/services/crmService';
+import { crmDealService, crmSearchService } from '@/lib/services/crmService';
 import { formatMeetingDate } from '@/lib/meetingPresentation';
 import { supportService } from '@/lib/services/supportService';
 import type { CRMContact, CRMDeal, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
@@ -110,6 +111,7 @@ function EntityLinkDialog({
   const [loading, setLoading] = useState(false);
   const [crmResults, setCRMResults] = useState<CRMSearchResult[]>([]);
   const [supportResults, setSupportResults] = useState<SupportConversation[]>([]);
+	const [pendingDealCustomerId, setPendingDealCustomerId] = useState<string | null>(null);
 
   const runSearch = async (value: string) => {
     setQuery(value);
@@ -135,8 +137,11 @@ function EntityLinkDialog({
   };
 
   const link = async (id: string) => {
-    try {
-      if (type === 'support_conversation' && targetType === 'contact') {
+	try {
+		if (type === 'deal' && targetType === 'company') {
+			const response = await crmDealService.setCustomer(workspaceId, id, { workspace_id: workspaceId, company_id: targetId });
+			if (response.error) throw new Error(response.error);
+		} else if (type === 'support_conversation' && targetType === 'contact') {
         const response = await supportService.updateConversationCRMContact(workspaceId, id, {
           crm_contact_id: targetId,
         });
@@ -151,7 +156,7 @@ function EntityLinkDialog({
       });
       if (response.error) throw new Error(response.error);
       }
-      toast.success(`Linked to ${targetType}`);
+		toast.success(type === 'deal' && targetType === 'company' ? 'Deal customer updated' : `Linked to ${targetType}`);
       onOpenChange(false);
       setQuery('');
       onLinked();
@@ -173,11 +178,19 @@ function EntityLinkDialog({
           detail: item.detail,
         }));
 
-  return (
+	const requestLink = (id: string) => {
+		if (type === 'deal' && targetType === 'company') {
+			setPendingDealCustomerId(id);
+			return;
+		}
+		void link(id);
+	};
+
+  return (<>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Link existing {type === 'support_conversation' ? 'conversation' : type}</DialogTitle>
+			<DialogTitle>{type === 'deal' && targetType === 'company' ? 'Choose an existing deal' : `Link existing ${type === 'support_conversation' ? 'conversation' : type}`}</DialogTitle>
         </DialogHeader>
         <div className="relative">
           <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -197,7 +210,7 @@ function EntityLinkDialog({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => void link(item.id)}
+				onClick={() => requestLink(item.id)}
                 className="flex w-full items-center justify-between gap-3 border-b border-border/50 px-2 py-3 text-left hover:bg-muted/30"
               >
                 <span className="min-w-0">
@@ -213,7 +226,20 @@ function EntityLinkDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
+		<ConfirmDialog
+			open={!!pendingDealCustomerId}
+			onOpenChange={(nextOpen) => { if (!nextOpen) setPendingDealCustomerId(null); }}
+			title="Change deal customer"
+			description="This company will become the deal customer. The existing customer relationship will be replaced, while linked people remain participants."
+			confirmLabel="Change customer"
+			onConfirm={async () => {
+				if (!pendingDealCustomerId) return;
+				const dealId = pendingDealCustomerId;
+				setPendingDealCustomerId(null);
+				await link(dealId);
+			}}
+		/>
+	</>);
 }
 
 export function CompanyContactsView({
@@ -260,7 +286,7 @@ export function CompanyContactsView({
               onClick={() => setLinkOpen(true)}
             >
               <Link01Icon className="h-[15px] w-[15px]" />
-              Link existing
+			  Link existing
             </button>
             <button
               type="button"
@@ -369,8 +395,8 @@ export function CompanyDealsView({
               className={getOptionalSectionActionClass(linkOpen ? 'open' : 'available', 'borderless')}
               onClick={() => setLinkOpen(true)}
             >
-              <Link01Icon className="h-[15px] w-[15px]" />
-              Link existing
+			  <Link01Icon className="h-[15px] w-[15px]" />
+			  Assign existing
             </button>
             <button
               type="button"

@@ -307,7 +307,8 @@ export function AssociationsList({
       {visibleSections.map((type, index) => {
         const items = grouped[type];
         const config = sectionConfig[type];
-        const visibleItems = expandedSections[type] ? items : items.slice(0, SECTION_PREVIEW_LIMIT);
+		const visibleItems = expandedSections[type] ? items : items.slice(0, SECTION_PREVIEW_LIMIT);
+		const dealCompanyPair = (currentObjectType === 'company' && type === 'deal') || (currentObjectType === 'deal' && type === 'company');
 
         return (
           <div key={type}>
@@ -317,7 +318,7 @@ export function AssociationsList({
               count={items.length}
               expanded={expandedSections[type]}
               onToggle={() => setExpandedSections((current) => ({ ...current, [type]: !current[type] }))}
-              onAdd={!editable || type === 'meeting' ? undefined : () => setPickerSection(type)}
+			onAdd={!editable || type === 'meeting' || dealCompanyPair ? undefined : () => setPickerSection(type)}
             >
               {visibleItems.map((assoc) => {
                 const Icon = config.icon;
@@ -370,7 +371,7 @@ export function AssociationsList({
                         </span>
                       )}
                     </button>
-                    {editable && assoc.id ? (
+					{editable && assoc.id && assoc.association_label !== 'deal_customer' ? (
                       <button
                         type="button"
                         className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-background hover:text-destructive group-hover:opacity-100"

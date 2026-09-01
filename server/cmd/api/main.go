@@ -1367,7 +1367,7 @@ func main() {
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
-	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo)
+	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo).SetDealService(crmDealService)
 
 	// Gmail OAuth + encryption setup.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -1409,7 +1409,7 @@ func main() {
 	crmContactService.SetMotionSignalRefresher(crmSignalService)
 	crmCompanyService.SetMotionSignalRefresher(crmSignalService)
 	crmDealService.SetMotionSignalReconciler(crmSignalService)
-	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
+	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo).SetDealService(crmDealService)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
 	recallMeetingProvider := meetingcapture.NewRecallProvider(meetingcapture.RecallConfig{
@@ -1576,7 +1576,7 @@ func main() {
 		SetHealthScoreRefresh(crmSignalService)
 	crmSummaryService.SetIntelligenceDependencies(signalDetectionService, crmActivityRepo, supportMessageRepo)
 	crmActivityService.SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
-	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
+	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo).SetDealService(crmDealService)
 	_ = signalDetectionService // Used by Temporal workers
 
 	// AI Support Agent — wire SupportAIService with LLM provider and JetStream.

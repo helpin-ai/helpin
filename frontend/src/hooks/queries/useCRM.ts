@@ -28,6 +28,7 @@ import type {
   UpdateCRMCompanyRequest,
   CreateCRMDealRequest,
   UpdateCRMDealRequest,
+	SetCRMDealCustomerRequest,
   CreateCRMPipelineRequest,
   UpdateCRMPipelineRequest,
   CreateCRMAssociationRequest,
@@ -353,6 +354,19 @@ export function useUpdateDeal(wsId: string) {
     onSuccess: (_, { id }) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.deals(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.crm.deal(wsId, id) })
+    },
+  })
+}
+
+export function useSetDealCustomer(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: SetCRMDealCustomerRequest & { id: string }) =>
+      unwrap(await crmDealService.setCustomer(wsId, id, data)),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.dealAssociations(wsId, id) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.deals(wsId) })
+      qc.invalidateQueries({ queryKey: ['crm', wsId, 'companies'] })
     },
   })
 }
