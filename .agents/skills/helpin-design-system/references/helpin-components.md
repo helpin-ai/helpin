@@ -30,6 +30,8 @@ Import from `@/components/design-system/quiet`.
 | Inline facts/provenance | `QuietMetaLine` |
 | Dot plus status word | `QuietStatusText` |
 | Working empty state | `QuietEmptyState` |
+| Conversation authoring shell | `QuietConversationComposer`, `QuietComposerEditorSurface` |
+| Conversation formatting/actions | `QuietComposerToolbar`, `QuietComposerAITools`, `QuietComposerFormatButton` |
 
 These components own visual invariants. Pages own data, navigation, permissions, and domain actions.
 
@@ -68,3 +70,4 @@ Reference surfaces demonstrate composition and domain behavior; the Quiet primit
 - `QuietPrimaryAction` must preserve the centralized Helpin `Button size="sm"` geometry and curvature; only its color and hierarchy differ.
 - Do not duplicate section-heading, tab, row, action, property-row, or empty-state class strings in a page.
 - Domain components may retain a compact chip only when the shape itself is established user data or a removal affordance, such as an editable label/token collection.
+- Task and epic comments and CRM email bodies/replies use the centralized conversation-composer primitives. The primitives mirror the Support `ReplyComposer` reference and own the Support-derived shell, Docs-derived brand focus ring, complete rich-text action order, AI rewrite menu, keyboard hint, and send-action geometry. Keep the heavily used Support implementation behavior-stable; mirror intentional visual-contract changes between it and the primitives rather than moving Support-specific drafts, presence, shortcuts, recipient rules, or uploads into the design system. Domain components own editor extensions and content, identity/mode headers, mention panels, permissions, billing errors, and submission. Do not migrate Docs comment composers implicitly.

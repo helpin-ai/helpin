@@ -22,6 +22,8 @@ const (
 	BillingFeatureCoverageGapAnalysis     = "coverage_gap_analysis"
 	BillingFeatureCRMSignalDetection      = "crm_signal_detection"
 	BillingFeatureSupportReplyRewrite     = "support_reply_rewrite"
+	BillingFeaturePMCommentRewrite        = "pm_comment_rewrite"
+	BillingFeatureCRMEmailRewrite         = "crm_email_rewrite"
 	BillingFeatureDealAutomationInference = "deal_automation_inference"
 	BillingFeatureMeetingIntelligence     = "meeting_intelligence"
 	BillingFeatureCRMSummary              = "crm_summary"
@@ -140,6 +142,8 @@ var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
 	BillingFeatureCoverageGapAnalysis:     {FeatureKey: BillingFeatureCoverageGapAnalysis, Label: "Coverage gap analysis", Category: "Docs AI", FloorUnits: 2, Chargeable: true},
 	BillingFeatureCRMSignalDetection:      {FeatureKey: BillingFeatureCRMSignalDetection, Label: "CRM signal detection", Category: "CRM AI", FloorUnits: 3, Chargeable: true},
 	BillingFeatureSupportReplyRewrite:     {FeatureKey: BillingFeatureSupportReplyRewrite, Label: "Support reply rewrite", Category: "Support AI", FloorUnits: 4, Chargeable: true},
+	BillingFeaturePMCommentRewrite:        {FeatureKey: BillingFeaturePMCommentRewrite, Label: "Project comment rewrite", Category: "Project AI", FloorUnits: 4, Chargeable: true},
+	BillingFeatureCRMEmailRewrite:         {FeatureKey: BillingFeatureCRMEmailRewrite, Label: "CRM email rewrite", Category: "CRM AI", FloorUnits: 4, Chargeable: true},
 	BillingFeatureDealAutomationInference: {FeatureKey: BillingFeatureDealAutomationInference, Label: "Deal automation inference", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
 	BillingFeatureMeetingIntelligence:     {FeatureKey: BillingFeatureMeetingIntelligence, Label: "Meeting intelligence", Category: "CRM AI", FloorUnits: 8, Chargeable: true},
 	BillingFeatureCRMSummary:              {FeatureKey: BillingFeatureCRMSummary, Label: "CRM summary", Category: "CRM AI", FloorUnits: 6, Chargeable: true},

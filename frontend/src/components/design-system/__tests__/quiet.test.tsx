@@ -1,12 +1,27 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietMetricBlock, QuietMetricGrid, QuietPageHeader, QuietPrimaryAction, QuietSearchInput, QuietStatusBadge, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
+import { QuietBreadcrumbs, QuietConversationComposer, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietMetricBlock, QuietMetricGrid, QuietPageHeader, QuietPrimaryAction, QuietSearchInput, QuietStatusBadge, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 describe('Quiet Hairline primitives', () => {
+  it('centralizes the Support-derived conversation composer shell', () => {
+    const markup = renderToStaticMarkup(<QuietConversationComposer><span>Draft</span></QuietConversationComposer>);
+    const focusedMarkup = renderToStaticMarkup(<QuietConversationComposer focused><span>Draft</span></QuietConversationComposer>);
+    const noteMarkup = renderToStaticMarkup(<QuietConversationComposer focused tone="note"><span>Note</span></QuietConversationComposer>);
+
+    expect(markup).toContain('data-quiet-conversation-composer');
+    expect(markup).toContain('rounded-xl');
+    expect(markup).toContain('border-border/40');
+    expect(focusedMarkup).toContain('ring-1');
+    expect(focusedMarkup).toContain('ring-ring/40');
+    expect(focusedMarkup).toContain('border-ring');
+    expect(focusedMarkup).toContain('bg-background');
+    expect(noteMarkup).toContain('border-amber-400');
+  });
+
   it('preserves Helpin small-button geometry for primary actions', () => {
     const markup = renderToStaticMarkup(<QuietPrimaryAction>New flow</QuietPrimaryAction>);
 

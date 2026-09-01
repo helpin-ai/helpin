@@ -583,6 +583,20 @@ export interface CRMEmailMessage {
   contact_ids: string[];
   deal_id?: string;
   created_at: string;
+  attachments?: CRMEmailAttachment[];
+}
+
+export interface CRMEmailAttachment {
+  id: string;
+  workspace_id: string;
+  draft_id: string;
+  message_id?: string;
+  uploaded_by_id: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  is_uploaded: boolean;
+  created_at: string;
 }
 
 export interface CRMEmailParticipant {

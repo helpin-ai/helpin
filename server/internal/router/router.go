@@ -1005,6 +1005,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/pm", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)
+				if h.SupportAI != nil {
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/rewrite-draft", h.SupportAI.RewritePMCommentDraft)
+				}
 
 				// Workflows — read: pm.read, write: pm.admin.workflows
 				r.With(requirePerm(authorization.PermPMRead)).Get("/workflows", h.PMWorkflow.List)
@@ -1475,6 +1478,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)
 				r.Use(requireModule(model.ModuleCRM))
+				if h.SupportAI != nil {
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/rewrite-draft", h.SupportAI.RewriteCRMEmailDraft)
+				}
 
 				// Contacts — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts", h.CRMContact.List)
@@ -1577,6 +1583,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/messages", h.CRMEmail.ListMessages)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/messages", h.CRMEmail.CreateMessage)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/send", h.CRMEmail.SendEmail)
+				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/attachments", h.CRMEmail.CreateAttachment)
+				r.With(requirePerm(authorization.PermCRMEdit)).Patch("/email/attachments/{attachmentId}/confirm", h.CRMEmail.ConfirmAttachment)
+				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/email/attachments/{attachmentId}", h.CRMEmail.DeleteAttachment)
+				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/attachments/{attachmentId}/download", h.CRMEmail.DownloadAttachment)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/contacts/{id}/emails", h.CRMEmail.ListByContact)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/companies/{id}/emails", h.CRMEmail.ListByCompany)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/emails", h.CRMEmail.ListByDeal)

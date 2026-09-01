@@ -643,8 +643,8 @@ export function useEmailThread(wsId: string, threadId?: string) {
 export function useReplyToEmailThread(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ threadId, mode, body_html }: { threadId: string; mode: 'reply' | 'reply_all'; body_html: string }) =>
-      unwrap(await crmEmailService.replyToThread(wsId, threadId, { mode, body_html })),
+    mutationFn: async ({ threadId, mode, body_html, draft_id, attachment_ids }: { threadId: string; mode: 'reply' | 'reply_all'; body_html: string; draft_id?: string; attachment_ids?: string[] }) =>
+      unwrap(await crmEmailService.replyToThread(wsId, threadId, { mode, body_html, draft_id, attachment_ids })),
     onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.emailThreads(wsId) })
       qc.invalidateQueries({ queryKey: [...queryKeys.crm.emailThreads(wsId), variables.threadId] })

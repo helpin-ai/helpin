@@ -92,27 +92,28 @@ func (CRMEmailThread) TableName() string { return "crm_email_threads" }
 
 // CRMEmailMessage represents a single email message in CRM.
 type CRMEmailMessage struct {
-	ID                string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID       string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	EmailAccountID    string          `json:"email_account_id" gorm:"type:uuid;not null;index"`
-	ThreadID          *string         `json:"thread_id" gorm:"type:uuid;index"`
-	MessageExternalID string          `json:"message_external_id"`
-	RFCMessageID      *string         `json:"rfc_message_id,omitempty"`
-	InReplyTo         *string         `json:"in_reply_to,omitempty"`
-	ReferencesHeader  *string         `json:"references_header,omitempty"`
-	FromAddress       string          `json:"from_address" gorm:"not null"`
-	FromName          *string         `json:"from_name"`
-	ToAddresses       json.RawMessage `json:"to_addresses" gorm:"type:jsonb;default:'[]'"`
-	CCAddresses       json.RawMessage `json:"cc_addresses" gorm:"type:jsonb;default:'[]'"`
-	Subject           string          `json:"subject"`
-	BodyText          *string         `json:"body_text"`
-	BodyHTML          *string         `json:"body_html"`
-	Direction         string          `json:"direction" gorm:"not null;default:'inbound'"` // inbound, outbound
-	SentAt            time.Time       `json:"sent_at" gorm:"not null"`
-	ContactID         *string         `json:"contact_id" gorm:"type:uuid;index"`
-	ContactIDs        []string        `json:"contact_ids" gorm:"-"`
-	DealID            *string         `json:"deal_id" gorm:"type:uuid;index"`
-	CreatedAt         time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	ID                string               `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID       string               `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	EmailAccountID    string               `json:"email_account_id" gorm:"type:uuid;not null;index"`
+	ThreadID          *string              `json:"thread_id" gorm:"type:uuid;index"`
+	MessageExternalID string               `json:"message_external_id"`
+	RFCMessageID      *string              `json:"rfc_message_id,omitempty"`
+	InReplyTo         *string              `json:"in_reply_to,omitempty"`
+	ReferencesHeader  *string              `json:"references_header,omitempty"`
+	FromAddress       string               `json:"from_address" gorm:"not null"`
+	FromName          *string              `json:"from_name"`
+	ToAddresses       json.RawMessage      `json:"to_addresses" gorm:"type:jsonb;default:'[]'"`
+	CCAddresses       json.RawMessage      `json:"cc_addresses" gorm:"type:jsonb;default:'[]'"`
+	Subject           string               `json:"subject"`
+	BodyText          *string              `json:"body_text"`
+	BodyHTML          *string              `json:"body_html"`
+	Direction         string               `json:"direction" gorm:"not null;default:'inbound'"` // inbound, outbound
+	SentAt            time.Time            `json:"sent_at" gorm:"not null"`
+	ContactID         *string              `json:"contact_id" gorm:"type:uuid;index"`
+	ContactIDs        []string             `json:"contact_ids" gorm:"-"`
+	DealID            *string              `json:"deal_id" gorm:"type:uuid;index"`
+	CreatedAt         time.Time            `json:"created_at" gorm:"autoCreateTime"`
+	Attachments       []CRMEmailAttachment `json:"attachments,omitempty" gorm:"-"`
 }
 
 func (CRMEmailMessage) TableName() string { return "crm_email_messages" }

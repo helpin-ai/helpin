@@ -1630,11 +1630,11 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   return (
     <div
       className={cn(
-        'relative mx-3 mb-4 rounded-xl border border-border/40 bg-card transition-colors',
+        'relative mx-3 mb-4 rounded-xl border border-border/40 bg-card transition-[color,box-shadow,background-color,border-color]',
         editorFocused && (
           isNote
             ? 'border-amber-400 dark:border-amber-500'
-            : 'border-blue-500 dark:border-blue-400'
+            : 'border-ring bg-background ring-1 ring-ring/40'
         ),
         isNote && 'bg-amber-50/50 dark:bg-amber-950/10'
       )}

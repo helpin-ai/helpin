@@ -118,6 +118,8 @@ Sections are full-width and stacked. A section header contains an optional 15px 
 
 Form inputs are borderless and transparent. Use an adjacent underline or divider as the visible focus surface. Search fields are the deliberate exception: use `QuietSearchInput` so every product search inherits the Skill Catalog's recognizable compact bordered treatment. Keep TipTap, form, select, popover, and dialog behavior in existing Helpin components; select their plain, divider, line, or borderless presentation when available.
 
+Human-authored conversation composers are the deliberate editor exception. Support replies define the reference contract; task and epic comments and CRM email bodies/replies consume its centralized primitives: a 12px-radius hairline shell, borderless rich-text surface, full formatting toolbar, shortcut hint, AI rewrite menu when permitted, attachment affordance when supported, and one compact dark send action. The emphasized state uses the Docs comment composer's surface lift and `ring-ring/40` brand-blue chrome plus a `border-ring` inset edge, so all four sides remain visible inside clipped thread layouts; internal Support notes retain their semantic amber border. Product areas keep their own drafts, recipients, mentions, uploads, permissions, and send behavior. Docs comments remain on their document-anchored presentation unless a product decision explicitly migrates them.
+
 ### Timeline and activity
 
 Use a single 1px vertical line and 7px dots for step timelines. Every step starts with its outcome or finding; machinery is demoted behind disclosure in 11.5px monospace. For table-like activity, use hairline headers and stacked rows rather than cards.
@@ -132,7 +134,7 @@ Empty states are left-aligned working states: a 14px/500 title, one 13px/1.6 exp
 
 ### Chat
 
-Use bubbles only for genuine turn-taking. Inbound is warm hover neutral and outbound is row-hover neutral; both use 12px radius and left-aligned text. Composers use an avatar, borderless textarea, hairline toolbar, sending identity, shortcut hint, and a single dark send action.
+Use bubbles only for genuine turn-taking. Inbound is warm hover neutral and outbound is row-hover neutral; both use 12px radius and left-aligned text. Conversation composers use the centralized composer primitives, with an avatar when the surrounding thread identifies the sender, a borderless editor, hairline toolbar, sending identity where relevant, shortcut hint, and a single dark send action.
 
 ## Production build rules
 

@@ -295,6 +295,7 @@ func main() {
 			&model.SupportCredentialRotationAudit{},
 			&model.SupportWidgetSession{},
 			&model.SupportAttachment{},
+			&model.CRMEmailAttachment{},
 			&model.SupportEvent{},
 			&model.SupportCoverageTopic{},
 			&model.SupportCoverageGap{},
@@ -831,6 +832,7 @@ func main() {
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
 	crmImportRepo := repository.NewCRMImportRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
+	crmEmailAttachmentRepo := repository.NewCRMEmailAttachmentRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
@@ -1396,6 +1398,20 @@ func main() {
 	pmActivityService.SetCompanySummaryRefresh(crmSummaryService)
 	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
+	crmEmailService.SetAttachmentStorage(crmEmailAttachmentRepo, s3Client)
+	go func() {
+		cleanup := func() {
+			if err := crmEmailService.CleanupStaleAttachments(context.Background()); err != nil {
+				slog.Error("failed to clean stale CRM email attachments", "error", err)
+			}
+		}
+		cleanup()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			cleanup()
+		}
+	}()
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo).
 		SetCompanySummaryRefresh(crmSummaryService).
 		SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)

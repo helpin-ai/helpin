@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -6,16 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ArrowLeft02Icon,
-  LeftToRightListBulletIcon,
-  LeftToRightListNumberIcon,
-  Link01Icon,
-  Loading01Icon,
   Mail01Icon,
-  QuoteDownIcon,
-  SentIcon,
-  TextBoldIcon,
-  TextItalicIcon,
-  TextUnderlineIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,13 +18,22 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmojiPicker } from '@/components/support/EmojiPicker';
 import { LinkInsertModal } from '@/components/support/LinkInsertModal';
 import type { CRMEmailAccount } from '@/lib/crmTypes';
 import { crmEmailService } from '@/lib/services/crmService';
 import { unwrap } from '@/lib/queryUtils';
-import { cn } from '@/lib/utils';
+import {
+  QuietComposerAITools,
+  QuietComposerEditorSurface,
+  QuietComposerToolbar,
+  QuietConversationComposer,
+  type ConversationRewriteOperation,
+} from '@/components/design-system/quiet';
+import { useCRMEmailAttachments } from '@/hooks/useCRMEmailAttachments';
+import { CRMEmailAttachmentStrip } from './CRMEmailAttachmentStrip';
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 export interface EmailDraft {
   title?: string;
@@ -65,38 +65,6 @@ function plainTextToHTML(value: string) {
   return escaped.replace(/\n/g, '<br>');
 }
 
-function FormatButton({
-  active = false,
-  title,
-  onClick,
-  children,
-}: {
-  active?: boolean;
-  title: string;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          title={title}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={onClick}
-          className={cn(
-            'inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
-            active && 'bg-muted text-foreground',
-          )}
-        >
-          {children}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top">{title}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 export function CRMEmailComposerDialog({
   workspaceId,
   accounts,
@@ -119,6 +87,10 @@ export function CRMEmailComposerDialog({
   const [sending, setSending] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkInitial, setLinkInitial] = useState({ label: '', url: '' });
+  const [focused, setFocused] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
+  const emailAttachments = useCRMEmailAttachments(workspaceId);
+  const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null);
 
   const extensions = useMemo(() => [
     StarterKit.configure({
@@ -160,6 +132,8 @@ export function CRMEmailComposerDialog({
       setBodyHTML(currentEditor.getHTML());
       setBodyText(currentEditor.getText());
     },
+    onFocus: () => setFocused(true),
+    onBlur: () => setFocused(false),
   });
 
   useEffect(() => {
@@ -222,9 +196,12 @@ export function CRMEmailComposerDialog({
         cc: parseRecipients(cc),
         subject: trimmedSubject,
         body_html: bodyHTML,
+        draft_id: emailAttachments.draftId,
+        attachment_ids: emailAttachments.attachmentIds,
       }));
       await queryClient.invalidateQueries({ queryKey: ['crm', workspaceId] });
       toast.success('Email sent');
+      emailAttachments.reset();
       onOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Email could not be sent');
@@ -238,11 +215,37 @@ export function CRMEmailComposerDialog({
     && parseRecipients(to).length > 0
     && subject.trim()
     && bodyText.trim()
+    && !emailAttachments.uploading
     && !sending,
   );
+  const closeComposer = () => {
+    emailAttachments.reset();
+    onOpenChange(false);
+  };
+
+  const rewrite = async (operation: ConversationRewriteOperation) => {
+    if (!editor || !bodyText.trim() || rewriting) return;
+    setRewriting(true);
+    try {
+      const result = unwrap(await crmEmailService.rewriteDraft(workspaceId, bodyHTML, operation));
+      editor.commands.setContent(result.content);
+      editor.commands.focus('end');
+    } catch (error) {
+      const reason = getUpgradeRequiredReason(error);
+      if (reason) setUpgradeReason(reason);
+      else toast.error(error instanceof Error ? error.message : 'Email could not be rewritten');
+    } finally {
+      setRewriting(false);
+    }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !sending && onOpenChange(nextOpen)}>
+    <>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (sending) return;
+      if (!nextOpen) emailAttachments.reset();
+      onOpenChange(nextOpen);
+    }}>
       <DialogContent className="max-h-[92vh] w-[min(760px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none">
         <DialogHeader className="border-b border-border/60 px-5 py-4 text-left">
           <div className="flex items-start gap-3">
@@ -318,51 +321,31 @@ export function CRMEmailComposerDialog({
           </div>
         ) : null}
 
-        <div className="m-5 overflow-hidden rounded-xl border border-border/50 bg-card">
-          <EditorContent editor={editor} />
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/40 px-3 py-2">
-            <div className="flex items-center gap-0.5">
-              <EmojiPicker
+        {editor ? <QuietConversationComposer focused={focused} className="m-5">
+          <div className="flex items-center px-3 pt-2">
+            <QuietComposerAITools disabled={!bodyText.trim()} pending={rewriting} onSelect={rewrite} />
+          </div>
+          <QuietComposerEditorSurface><EditorContent editor={editor} /></QuietComposerEditorSurface>
+          <CRMEmailAttachmentStrip attachments={emailAttachments.attachments} onRemove={(id) => void emailAttachments.remove(id)} />
+          <QuietComposerToolbar
+            editor={editor}
+            emoji={<EmojiPicker
                 onEmojiSelect={(emoji) => editor?.chain().focus().insertContent(emoji).run()}
                 side="top"
-              />
-              <div className="mx-1 h-4 w-px bg-border/50" />
-              <FormatButton title="Bold" active={editor?.isActive('bold')} onClick={() => editor?.chain().focus().toggleBold().run()}>
-                <TextBoldIcon className="h-3.5 w-3.5" />
-              </FormatButton>
-              <FormatButton title="Italic" active={editor?.isActive('italic')} onClick={() => editor?.chain().focus().toggleItalic().run()}>
-                <TextItalicIcon className="h-3.5 w-3.5" />
-              </FormatButton>
-              <FormatButton title="Underline" active={editor?.isActive('underline')} onClick={() => editor?.chain().focus().toggleUnderline().run()}>
-                <TextUnderlineIcon className="h-3.5 w-3.5" />
-              </FormatButton>
-              <FormatButton title="Insert link" active={editor?.isActive('link')} onClick={openLinkModal}>
-                <Link01Icon className="h-3.5 w-3.5" />
-              </FormatButton>
-              <div className="mx-1 h-4 w-px bg-border/50" />
-              <FormatButton title="Bullet list" active={editor?.isActive('bulletList')} onClick={() => editor?.chain().focus().toggleBulletList().run()}>
-                <LeftToRightListBulletIcon className="h-3.5 w-3.5" />
-              </FormatButton>
-              <FormatButton title="Numbered list" active={editor?.isActive('orderedList')} onClick={() => editor?.chain().focus().toggleOrderedList().run()}>
-                <LeftToRightListNumberIcon className="h-3.5 w-3.5" />
-              </FormatButton>
-              <FormatButton title="Quote" active={editor?.isActive('blockquote')} onClick={() => editor?.chain().focus().toggleBlockquote().run()}>
-                <QuoteDownIcon className="h-3.5 w-3.5" />
-              </FormatButton>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={sending}>
+              />}
+            onLink={openLinkModal}
+            onAttach={emailAttachments.pickFiles}
+            trailing={<Button variant="ghost" size="sm" onClick={closeComposer} disabled={sending}>
                 <ArrowLeft02Icon className="h-3.5 w-3.5" />
                 Cancel
-              </Button>
-              <Button id="crm-email-send" size="sm" onClick={() => void send()} disabled={!canSend} className="rounded-full px-4">
-                {sending ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <SentIcon className="h-3.5 w-3.5" />}
-                Send
-              </Button>
-            </div>
-          </div>
-        </div>
+              </Button>}
+            onSubmit={() => void send()}
+            submitLabel="Send"
+            submitDisabled={!canSend}
+            submitting={sending}
+          />
+          <button id="crm-email-send" type="button" className="hidden" onClick={() => void send()} />
+        </QuietConversationComposer> : null}
 
         <LinkInsertModal
           open={linkOpen}
@@ -375,5 +358,7 @@ export function CRMEmailComposerDialog({
         />
       </DialogContent>
     </Dialog>
+    <UpgradeRequiredDialog open={upgradeReason !== null} onOpenChange={(dialogOpen) => { if (!dialogOpen) setUpgradeReason(null); }} reason={upgradeReason} />
+    </>
   );
 }

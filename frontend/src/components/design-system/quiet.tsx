@@ -638,3 +638,12 @@ export function QuietEmptyState({ title, description, action, children, classNam
     </div>
   );
 }
+
+export {
+  QuietComposerAITools,
+  QuietComposerEditorSurface,
+  QuietComposerFormatButton,
+  QuietComposerToolbar,
+  QuietConversationComposer,
+} from './conversation-composer';
+export type { ConversationRewriteOperation } from './conversation-composer';
