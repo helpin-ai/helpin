@@ -34,6 +34,24 @@ describe('workspace route header contract', () => {
   });
 
   it.each([
+    ['Automation Flows', '../../../pages/automation/AutomationFlows.tsx'],
+    ['Automation Activity', '../../../pages/automation/AutomationActivity.tsx'],
+    ['Automation Agents', '../../../pages/automation/Agents.tsx'],
+    ['Automation Trigger Catalog', '../../../pages/automation/AutomationLibrary.tsx'],
+    ['Automation Skill Catalog', '../../../pages/automation/SkillCatalog.tsx'],
+    ['Automation Tools', '../../../pages/automation/AutomationToolsLayout.tsx'],
+  ])('uses the shared compact Automation shell for %s', (_label, path) => {
+    expect(source(path)).toContain('<AutomationShell');
+  });
+
+  it('keeps the Automation shell header above its scrolling page viewport', () => {
+    const shellSource = source('../../automation/AutomationShell.tsx');
+    expect(shellSource).toContain('<QuietPageHeader variant="shell"');
+    expect(shellSource).toContain('<QuietPageViewport className="min-h-0 flex-1">');
+    expect(shellSource.indexOf('<QuietPageHeader')).toBeLessThan(shellSource.indexOf('<QuietPageViewport'));
+  });
+
+  it.each([
     ['Teams detail', '../../settings/TeamsTab.tsx'],
   ])('keeps the specialized %s toolbar clear of the collapsed sidebar opener', (_label, path) => {
     expect(source(path)).toContain('workspaceSidebarSafeInsetClassName');

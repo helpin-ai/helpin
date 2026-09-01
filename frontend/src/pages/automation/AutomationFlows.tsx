@@ -13,9 +13,9 @@ import {
 } from '@/lib/icons';
 import { toast } from 'sonner';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { AutomationShell } from '@/components/automation/AutomationShell';
 import {
   QuietEmptyState,
-  QuietPageHeader,
   QuietPrimaryAction,
   QuietTextAction,
   QuietUnderlineInput,
@@ -4709,7 +4709,7 @@ export function AutomationFlowsPage({
   }
 
   return (
-    <div className="text-foreground">
+    <div className="h-full text-foreground">
       <FlowTemplateGallery
         open={galleryOpen}
         onOpenChange={(open) => {
@@ -4830,8 +4830,7 @@ export function AutomationFlowsPage({
         onDelete={openDeleteFlow}
       />
 
-      <QuietPageHeader
-        className="mb-6"
+      <AutomationShell
         title="Flows"
         description="When something happens, do something. Flows keep agents working without anyone prompting them."
         actions={permissions.canAdminAutomations ? (
@@ -4840,7 +4839,7 @@ export function AutomationFlowsPage({
             New flow
           </QuietPrimaryAction>
         ) : undefined}
-      />
+      >
 
       {loading ? (
         <div className="space-y-2">
@@ -4945,6 +4944,7 @@ export function AutomationFlowsPage({
           ) : null}
         </>
       )}
+      </AutomationShell>
       <UpgradeRequiredDialog
         open={upgradeDialogReason !== null}
         onOpenChange={(open) => {

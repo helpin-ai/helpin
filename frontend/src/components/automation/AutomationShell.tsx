@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { QuietPageHeader } from '@/components/design-system/quiet';
+import { QuietPageHeader, QuietPageViewport } from '@/components/design-system/quiet';
 import { cn } from '@/lib/utils';
 
 export function AutomationShell({
@@ -16,9 +16,11 @@ export function AutomationShell({
   className?: string;
 }) {
   return (
-    <div className={cn('space-y-5', className)}>
-      <QuietPageHeader title={title} description={description} actions={actions} />
-      {children}
+    <div className="flex h-full min-h-0 flex-col">
+      <QuietPageHeader variant="shell" title={title} description={description} actions={actions} />
+      <QuietPageViewport className="min-h-0 flex-1">
+        <div className={cn('space-y-5', className)}>{children}</div>
+      </QuietPageViewport>
     </div>
   );
 }

@@ -27,8 +27,9 @@ import {
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { AutomationShell } from '@/components/automation/AutomationShell';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
-import { QuietEmptyState, QuietIconAction, QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
+import { QuietEmptyState, QuietIconAction, QuietPrimaryAction } from '@/components/design-system/quiet';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -6428,8 +6429,7 @@ export function AgentsPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <QuietPageHeader
+    <AutomationShell
         title="Agents"
         description="Built-in and custom agents for manual runs and automated flows."
         actions={sortedAgents.length > 0 ? (
@@ -6460,7 +6460,7 @@ export function AgentsPage() {
             )}
           </>
         ) : undefined}
-      />
+    >
 
       {loading && <p className="text-sm text-muted-foreground">Loading agents...</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -6910,6 +6910,6 @@ export function AgentsPage() {
         }}
         reason={upgradeDialogReason}
       />
-    </div>
+    </AutomationShell>
   );
 }

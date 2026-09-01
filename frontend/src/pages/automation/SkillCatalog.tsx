@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowRight01Icon,
   Search01Icon,
@@ -11,7 +11,8 @@ import {
 } from '@/lib/icons';
 
 import { Button } from '@/components/ui/button';
-import { QuietEmptyState, QuietPageHeader, QuietPrimaryAction, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { AutomationShell } from '@/components/automation/AutomationShell';
+import { QuietEmptyState, QuietPrimaryAction, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
   Dialog,
@@ -698,39 +699,41 @@ export function SkillCatalogContent({
     return result;
   }, [filtered]);
 
+  const wrapContent = (content: ReactNode) => embedded ? content : (
+    <AutomationShell
+      title="Skill Catalog"
+      description="Reusable prompt fragments agents compose at runtime."
+      actions={(
+        <>
+          <QuietTextAction className="gap-1.5" onClick={() => setImportOpen(true)}>
+            <Upload01Icon className="h-3.5 w-3.5" />
+            Import
+          </QuietTextAction>
+          <QuietPrimaryAction className="gap-1.5" onClick={() => setCreateOpen(true)}>
+            <PlusSignIcon className="h-3.5 w-3.5" />
+            New skill
+          </QuietPrimaryAction>
+        </>
+      )}
+    >
+      {content}
+    </AutomationShell>
+  );
+
   if (loading) {
-    return (
+    return wrapContent(
       <p className="border-y border-quiet-divider-strong py-8 text-sm text-quiet-text-tertiary">Loading skill catalog…</p>
     );
   }
 
   if (!catalog || catalog.skills.length === 0) {
-    return (
+    return wrapContent(
       <QuietEmptyState title="No skills available" description="Skills will appear here when they are built in, imported, or created for this workspace." />
     );
   }
 
-  return (
+  return wrapContent(
     <div className="space-y-5">
-      {!embedded && (
-        <QuietPageHeader
-          title="Skill Catalog"
-          description="Reusable prompt fragments agents compose at runtime."
-          actions={(
-            <>
-            <QuietTextAction className="gap-1.5" onClick={() => setImportOpen(true)}>
-              <Upload01Icon className="h-3.5 w-3.5" />
-              Import
-            </QuietTextAction>
-            <QuietPrimaryAction className="gap-1.5" onClick={() => setCreateOpen(true)}>
-              <PlusSignIcon className="h-3.5 w-3.5" />
-              New skill
-            </QuietPrimaryAction>
-            </>
-          )}
-        />
-      )}
-
       {/* Search */}
       <div className="relative">
         <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 text-quiet-muted" />
