@@ -35,6 +35,7 @@ import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation'
 import { Input } from '@/components/ui/input';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
+import { quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
 import {
   Dialog,
   DialogContent,
@@ -332,7 +333,7 @@ export function AssociationsPanel({
                   />
                 </QuickTooltip>
               )}
-              <span className="truncate font-medium text-foreground/75 dark:text-foreground">{item.title}</span>
+              <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
               {item.display_id && (
                 <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
                   {item.display_id}
@@ -379,7 +380,7 @@ export function AssociationsPanel({
                 onClick={() => handleNavigate(item)}
               >
                 <CRMIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate font-medium text-foreground/75 dark:text-foreground">{item.title}</span>
+                <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                 {(item.context_label || item.display_id) && (
                   <span className="ml-auto flex shrink-0 items-center gap-2">
                     {item.context_label && (
@@ -431,7 +432,7 @@ export function AssociationsPanel({
                   onClick={() => handleNavigate(item)}
                 >
                   <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium text-foreground/75 dark:text-foreground">{item.title}</span>
+                  <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                   {item.display_id && (
                     <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
                   )}

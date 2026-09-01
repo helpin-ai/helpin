@@ -11,7 +11,6 @@ import {
   File01Icon,
   GitBranchIcon,
   HashtagIcon,
-  HexagonIcon,
   Layers01Icon,
   LayoutGridIcon,
   ArrowRight01Icon,
@@ -19,6 +18,7 @@ import {
   Loading01Icon,
   MoreVerticalIcon,
   AttachmentIcon,
+  CheckListIcon,
   PlayIcon,
   Shield02Icon,
   Tag01Icon,
@@ -34,13 +34,21 @@ import {
   SEVERITY_CONFIG,
   SeverityIcon,
   SprintIcon,
-  StateTypeIcon,
   TASK_TYPE_CONFIG,
   TaskTypeIcon,
+  getWorkflowStateTone,
 } from '@/lib/pmConstants';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { QuietTitleInput } from '@/components/design-system/quiet';
+import {
+  QuietBreadcrumbs,
+  QuietDetailAction,
+  QuietDetailHeader,
+  QuietIconAction,
+  QuietMetaLine,
+  QuietStatusText,
+  QuietTitleInput,
+} from '@/components/design-system/quiet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -86,7 +94,6 @@ import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { TaskSidebarIdRow } from '@/components/pm/TaskSidebarIdRow';
-import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
@@ -1146,129 +1153,141 @@ function TaskDetailPanelBody({
     });
   }, [form?.team_id, onTaskUpdated, taskDetail.task.id, taskLabels, workspaceId]);
 
+  const taskBreadcrumbSprintName = currentSprintName !== 'None'
+    ? currentSprintName
+    : taskDetail.sprint_name;
+  const taskBreadcrumbItems = [
+    {
+      id: 'tasks',
+      label: 'Tasks',
+      icon: <CheckListIcon className="h-3.5 w-3.5 text-quiet-muted" />,
+      onClick: () => {
+        if (!workspace) return;
+        onOpenChange(false);
+        navigate({
+          to: '/w/$slug/pm/tasks',
+          params: { slug: workspace.slug },
+          search: form.team_id ? { team: form.team_id } : {},
+        });
+      },
+    },
+    ...(taskDetail.objective_name && taskDetail.objective_id && workspace ? [{
+      id: `objective-${taskDetail.objective_id}`,
+      label: taskDetail.objective_name,
+      icon: <Target01Icon className="h-3.5 w-3.5 text-quiet-muted" />,
+      onClick: () => {
+        onOpenChange(false);
+        navigate({
+          to: '/w/$slug/pm/objectives/$objectiveId',
+          params: { slug: workspace.slug, objectiveId: taskDetail.objective_id! },
+        });
+      },
+    }] : []),
+    ...(taskDetail.epic_name && taskDetail.task.epic_id && workspace ? [{
+      id: `epic-${taskDetail.task.epic_id}`,
+      label: taskDetail.epic_name,
+      icon: <Layers01Icon className="h-3.5 w-3.5 text-quiet-muted" />,
+      onClick: () => {
+        onOpenChange(false);
+        navigate({
+          to: '/w/$slug/pm/epics/$epicId',
+          params: { slug: workspace.slug, epicId: taskDetail.task.epic_id! },
+        });
+      },
+    }] : []),
+    ...(taskBreadcrumbSprintName && form.sprint_id && workspace && teamSprintsEnabled ? [{
+      id: `sprint-${form.sprint_id}`,
+      label: taskBreadcrumbSprintName,
+      icon: <SprintIcon className="h-3.5 w-3.5 text-quiet-muted" />,
+      onClick: () => {
+        onOpenChange(false);
+        navigate({
+          to: '/w/$slug/pm/sprints/$sprintId',
+          params: { slug: workspace.slug, sprintId: form.sprint_id! },
+        });
+      },
+    }] : []),
+  ];
+
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
-      {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
-        <div className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
-          {taskDetail.objective_name && taskDetail.objective_id && workspace && (
-            <>
-              <Target01Icon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-              <button
-                type="button"
-                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
-                title={taskDetail.objective_name}
-                onClick={() => {
-                  onOpenChange(false);
-                  navigate({ to: '/w/$slug/pm/objectives/$objectiveId', params: { slug: workspace.slug, objectiveId: taskDetail.objective_id! } });
-                }}
-              >
-                {taskDetail.objective_name}
-              </button>
-              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-            </>
-          )}
-          {taskDetail.epic_name && taskDetail.task.epic_id && workspace && (
-            <>
-              <HexagonIcon className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-              <button
-                type="button"
-                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
-                title={taskDetail.epic_name}
-                onClick={() => {
-                  onOpenChange(false);
-                  navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug: workspace.slug, epicId: taskDetail.task.epic_id! } });
-                }}
-              >
-                {taskDetail.epic_name}
-              </button>
-              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-            </>
-          )}
-          {currentSprintName !== 'No sprint' && form.sprint_id && workspace && teamSprintsEnabled && (
-            <>
-              <SprintIcon className="h-3.5 w-3.5 shrink-0 text-green-500" />
-              <button
-                type="button"
-                className="max-w-[220px] truncate hover:text-foreground transition-colors cursor-pointer xl:max-w-[320px]"
-                title={currentSprintName}
-                onClick={() => {
-                  onOpenChange(false);
-                  navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId: form.sprint_id! } });
-                }}
-              >
-                {currentSprintName}
-              </button>
-              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-            </>
-          )}
-          {currentState && <StateTypeIcon stateType={currentState.state_type} className="h-3.5 w-3.5 shrink-0" />}
-          <span className="shrink-0 text-xs font-medium text-foreground">{taskDetail.task.task_key}</span>
-          {taskDetail.task.recurring_template_id ? (
-            <RecurringTemplateBadge
-              compact
-              occurrenceNumber={taskDetail.task.recurring_occurrence_number}
+      <QuietDetailHeader
+        className="lg:px-10"
+        breadcrumbs={<QuietBreadcrumbs items={taskBreadcrumbItems} />}
+        title={(
+          <QuietTitleInput
+            type="text"
+            aria-label="Task title"
+            presentation="header"
+            className="max-w-[42rem] border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary"
+            value={form.name}
+            onChange={(event) => updateField('name', event.target.value, { name: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
+            }}
+            placeholder="Untitled"
+          />
+        )}
+        meta={(
+          <QuietMetaLine items={[
+            <span className="font-mono">{taskDetail.task.task_key}</span>,
+            form.team_id ? currentTeamName : 'No team',
+            taskDetail.task.recurring_template_id
+              ? `Recurring${taskDetail.task.recurring_occurrence_number ? ` #${taskDetail.task.recurring_occurrence_number}` : ''}`
+              : null,
+          ]} />
+        )}
+        status={(
+          <QuietStatusText tone={getWorkflowStateTone(currentState?.state_type)}>
+            {currentState?.name ?? 'No state'}
+          </QuietStatusText>
+        )}
+        state={<SaveIndicator saving={isSaving} error={saveError} presentation="quiet" />}
+        actions={(
+          <>
+            <QuietDetailAction
+              iconOnly
+              icon={linkCopied ? <Tick01Icon className="h-3.5 w-3.5 text-quiet-positive" /> : <Link01Icon className="h-3.5 w-3.5" />}
+              label={linkCopied ? 'Link copied' : 'Copy link'}
+              onClick={copyLink}
             />
-          ) : null}
-        </div>
-
-        <div className="ml-2 flex shrink-0 items-center gap-1">
-          <SaveIndicator saving={isSaving} error={saveError} />
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            className="gap-1.5"
-            onClick={() => openDelivery(taskDetail.task.latest_run_id)}
-          >
-            <PlayIcon className="h-3 w-3" />
-            {taskDetail.task.latest_run_id ? 'Open run' : 'Run agent'}
-          </Button>
-          {linkCopied ? (
-            <span className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-green-600">
-              <Tick01Icon className="h-3.5 w-3.5" />
-              Copied!
-            </span>
-          ) : (
-            <QuickTooltip label="Copy link">
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={copyLink}>
-                <Link01Icon className="h-3.5 w-3.5" />
-              </Button>
-            </QuickTooltip>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7">
-                <MoreVerticalIcon className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={requestDuplicateTask} disabled={duplicating}>
-                <Copy01Icon className="mr-2 h-4 w-4" />
-                Duplicate
-              </DropdownMenuItem>
-              {canSaveAsTemplate && (
-                <DropdownMenuItem onSelect={openSaveTemplateDialog}>
-                  <File01Icon className="mr-2 h-4 w-4" />
-                  Save as template
+            <DropdownMenu>
+              <QuickTooltip label="More actions">
+                <DropdownMenuTrigger asChild>
+                  <QuietIconAction className="size-8 rounded-full" aria-label="More actions">
+                    <MoreVerticalIcon className="h-4 w-4" />
+                  </QuietIconAction>
+                </DropdownMenuTrigger>
+              </QuickTooltip>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={requestDuplicateTask} disabled={duplicating}>
+                  <Copy01Icon className="mr-2 h-4 w-4" />
+                  Duplicate
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onSelect={() => { void openRecurringDialog(); }}>
-                <ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />
-                {recurringSummary ? 'Edit recurring' : 'Make recurring'}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
-                <ArchiveIcon className="mr-2 h-4 w-4 text-amber-500" />
-                Archive
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {workspace && (
-            <QuickTooltip label="Open in new tab">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 shrink-0"
+                {canSaveAsTemplate && (
+                  <DropdownMenuItem onSelect={openSaveTemplateDialog}>
+                    <File01Icon className="mr-2 h-4 w-4" />
+                    Save as template
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={() => { void openRecurringDialog(); }}>
+                  <ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />
+                  {recurringSummary ? 'Edit recurring' : 'Make recurring'}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setArchiveConfirmOpen(true)}>
+                  <ArchiveIcon className="mr-2 h-4 w-4 text-amber-500" />
+                  Archive
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {workspace && (
+              <QuietDetailAction
+                iconOnly
+                icon={<ArrowUpRight01Icon className="h-3.5 w-3.5" />}
+                label="Open in new tab"
                 onClick={() => {
                   window.open(
                     buildTaskPath(workspace.slug, taskDetail.task.id),
@@ -1276,16 +1295,17 @@ function TaskDetailPanelBody({
                     'noopener,noreferrer',
                   );
                 }}
-              >
-                <ArrowUpRight01Icon className="h-3.5 w-3.5" />
-              </Button>
-            </QuickTooltip>
-          )}
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => onOpenChange(false)}>
-            <Cancel01Icon className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+              />
+            )}
+            <QuietDetailAction
+              iconOnly
+              icon={<Cancel01Icon className="h-4 w-4" />}
+              label="Close task"
+              onClick={() => onOpenChange(false)}
+            />
+          </>
+        )}
+      />
 
       {duplicateNotice ? (
         <div className="border-b border-border/70 bg-primary/5 px-4 py-3">
@@ -1364,20 +1384,10 @@ function TaskDetailPanelBody({
           <div className="min-w-0 flex-1 overflow-x-hidden px-4 pt-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:px-10">
           {activeView === 'overview' && (
           <>
-          {/* Title */}
-          <QuietTitleInput
-            type="text"
-            aria-label="Task title"
-            value={form.name}
-            onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-            className="placeholder:text-quiet-muted"
-            placeholder="Untitled"
-          />
-
           {/* Description */}
           <div
             className={cn(
-              'group/desc relative mt-4 rounded-lg pb-3 transition-[box-shadow,background-color]',
+              'group/desc relative rounded-lg pb-3 transition-[box-shadow,background-color]',
               descriptionDragging && 'bg-primary/5 ring-1 ring-primary/50',
             )}
             onDragEnter={handleDescriptionDragEnter}
@@ -2044,8 +2054,24 @@ export function TaskDetailPanel({
             onTaskArchived={onTaskArchived}
           />
         ) : loading ? (
-          <div className="flex h-full items-center justify-center">
-            <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="flex h-full flex-col overflow-hidden">
+            <QuietDetailHeader
+              className="lg:px-10"
+              breadcrumbs={<QuietBreadcrumbs items={[{ id: 'tasks', label: 'Tasks', icon: <CheckListIcon className="h-3.5 w-3.5 text-quiet-muted" /> }]} />}
+              title={<div className="h-6 w-64 max-w-full animate-pulse bg-quiet-icon-well" />}
+              meta={<div className="h-3 w-40 max-w-full animate-pulse bg-quiet-icon-well" />}
+              actions={(
+                <QuietDetailAction
+                  iconOnly
+                  icon={<Cancel01Icon className="h-4 w-4" />}
+                  label="Close task"
+                  onClick={() => onOpenChange(false)}
+                />
+              )}
+            />
+            <div className="flex flex-1 items-center justify-center">
+              <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
           </div>
         ) : null}
       </SheetContent>

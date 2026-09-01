@@ -33,6 +33,8 @@ These components own visual invariants. Pages own data, navigation, permissions,
 
 Use `QuietPageHeader` for normal authenticated index and settings routes. Use `QuietDetailHeader` when a detail page needs ancestor breadcrumbs, a single editable identity/document title, metadata, status, save state, and page-specific actions. Its left side renders one compact line beneath the title with metadata first and semantic `status` last. Its right side renders actions with transient save/operation `state` directly underneath. Use `QuietDetailAction` for those actions so phones receive round icon controls and larger screens receive labels without page-owned responsive class strings; use its `iconOnly` option for controls such as the Docs details toggle that should remain icon-only at every breakpoint. The header owns layout and sidebar clearance; pages retain navigation, permissions, validation, and persistence. Keep purpose-built editor or workflow toolbars only when their controls cannot fit this composition, and apply `workspaceSidebarSafeInsetClassName` to every top/loading toolbar state instead of recreating the collapsed-sidebar spacing class.
 
+The Task detail sheet follows the same header contract. Its optional breadcrumb chain is Tasks → Objective → Epic → Sprint; its metadata line contains task key, team, recurrence, and workflow status; save feedback stays beneath the right-side utility actions. Agent runs are entered through the Delivery tab rather than duplicated as a header action.
+
 ## Existing behavior primitives
 
 Keep using the established components below. Prefer the listed quiet presentation rather than rebuilding behavior.

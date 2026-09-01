@@ -25,7 +25,7 @@ describe('CRM deal customer and Quiet detail composition', () => {
     expect(dealSource).toContain('text-[12px]');
     expect(relationshipsSource).toContain('text-xs font-semibold uppercase tracking-wide text-foreground/70');
     expect(relationshipsSource).toContain('truncate text-sm font-medium');
-    expect(associationsSource).toContain('truncate text-sm font-medium text-foreground/90');
+    expect(associationsSource).toContain("cn('truncate', quietRelatedItemTitleClassName)");
   });
 
   it('separates the canonical customer from removable participants', () => {

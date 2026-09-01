@@ -9,6 +9,9 @@ import { cn } from '@/lib/utils';
 export const workspaceSidebarSafeInsetClassName =
   'group-data-[sidebar-toggle-visible=true]/workspace-main:pl-14';
 
+export const quietRelatedItemTitleClassName =
+  'text-[12.5px] font-medium text-foreground/90';
+
 export function QuietPageViewport({ children, className, contentClassName }: { children: ReactNode; className?: string; contentClassName?: string }) {
   return (
     <div className={cn('h-full overflow-auto p-4 pb-20 [scrollbar-gutter:stable] md:p-6 md:pb-24', className)}>

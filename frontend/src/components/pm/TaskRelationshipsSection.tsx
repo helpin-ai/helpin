@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import {
   DropdownMenu,
@@ -547,7 +548,7 @@ export function TaskRelationshipsSection({
                       {relatedTask.task_key ?? relatedTask.display_id}
                     </span>
                   ) : null}
-                  <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">
+                  <span className={cn('min-w-0 flex-1 truncate', quietRelatedItemTitleClassName)}>
                     {relatedTask.title}
                   </span>
                 </button>
@@ -558,7 +559,7 @@ export function TaskRelationshipsSection({
                       {relatedTask.task_key ?? relatedTask.display_id}
                     </span>
                   ) : null}
-                  <span className="min-w-0 flex-1 truncate font-medium text-foreground/75 dark:text-foreground">
+                  <span className={cn('min-w-0 flex-1 truncate', quietRelatedItemTitleClassName)}>
                     {relatedTask.title}
                   </span>
                 </span>
@@ -626,7 +627,7 @@ export function TaskRelationshipsSection({
             >
               <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <span className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Doc</span>
-              <span className="min-w-0 flex-1 truncate text-ui font-medium text-foreground/75 dark:text-foreground">{doc.title}</span>
+              <span className={cn('min-w-0 flex-1 truncate', quietRelatedItemTitleClassName)}>{doc.title}</span>
             </button>
             {doc.association_id ? (
               <div className="ml-auto flex shrink-0 items-center">

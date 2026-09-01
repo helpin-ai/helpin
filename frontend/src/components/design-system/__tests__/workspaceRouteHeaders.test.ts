@@ -31,6 +31,7 @@ describe('workspace route header contract', () => {
     ['Contact detail', '../../crm/contact-detail/ContactHeader.tsx'],
     ['Company detail', '../../../pages/crm/CompanyDetail.tsx'],
     ['Epic detail', '../../../pages/pm/EpicDetail.tsx'],
+    ['Task detail sheet', '../../pm/TaskDetailPanel.tsx'],
   ])('uses the shared detail header contract for %s', (_label, path) => {
     expect(source(path)).toContain('<QuietDetailHeader');
     expect(source(path)).toContain('<QuietBreadcrumbs');

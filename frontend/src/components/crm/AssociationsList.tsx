@@ -18,6 +18,7 @@ import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
 import {
   Dialog,
   DialogContent,
@@ -354,7 +355,7 @@ export function AssociationsList({
                       ) : (
                         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       )}
-                      <span className="truncate text-sm font-medium text-foreground/90">
+                      <span className={cn('truncate', quietRelatedItemTitleClassName)}>
                         {assoc.linked_object_name || assoc.linkedType}
                       </span>
                       {(assoc.context_label || assoc.linked_object_display_id) && (

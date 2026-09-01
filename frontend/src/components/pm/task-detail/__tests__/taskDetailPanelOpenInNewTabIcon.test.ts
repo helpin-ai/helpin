@@ -8,11 +8,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 describe('TaskDetailPanel open-in-new-tab action', () => {
   it('uses the standard external-open icon instead of the maximize icon', () => {
     const source = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
-    const tooltipIndex = source.indexOf('<QuickTooltip label="Open in new tab">');
-    const buttonBlock = source.slice(tooltipIndex, source.indexOf('</QuickTooltip>', tooltipIndex));
+    const actionIndex = source.indexOf('label="Open in new tab"');
+    const actionBlock = source.slice(source.lastIndexOf('<QuietDetailAction', actionIndex), source.indexOf('/>', actionIndex));
 
-    expect(tooltipIndex).toBeGreaterThan(-1);
-    expect(buttonBlock).toContain('<ArrowUpRight01Icon className="h-3.5 w-3.5" />');
-    expect(buttonBlock).not.toContain('Maximize01Icon');
+    expect(actionIndex).toBeGreaterThan(-1);
+    expect(actionBlock).toContain('iconOnly');
+    expect(actionBlock).toContain('<ArrowUpRight01Icon className="h-3.5 w-3.5" />');
+    expect(actionBlock).not.toContain('Maximize01Icon');
   });
 });

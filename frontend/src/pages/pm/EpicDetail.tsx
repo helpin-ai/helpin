@@ -63,7 +63,7 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type { ActivityLogEntry, AttachmentResponse, CommentWithAuthor, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, LinkEpicTasksResponse, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
 import { getEpicTaskCount } from '@/lib/pmTypes';
-import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
+import { getWorkflowStateTone, STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
@@ -108,12 +108,6 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
 };
 const NO_HEALTH_DATES_TOOLTIP = 'No suggestion yet: set a start date and deadline.';
 const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and execution.';
-
-function epicStateTone(stateType?: StateType): 'neutral' | 'current' | 'positive' {
-  if (stateType === 'done') return 'positive';
-  if (stateType === 'started') return 'current';
-  return 'neutral';
-}
 
 function hasDraggedFiles(event: DragEvent) {
   return event.dataTransfer.types.includes('Files');
@@ -900,7 +894,7 @@ export function EpicDetailPage() {
         )}
         meta={<QuietMetaLine items={[selectedTeam?.name ?? 'No team', `${tasks.length} task${tasks.length === 1 ? '' : 's'}`]} />}
         status={(
-          <QuietStatusText tone={epic.epic.archived ? 'neutral' : epicStateTone(currentEpicState?.state_type as StateType | undefined)}>
+          <QuietStatusText tone={epic.epic.archived ? 'neutral' : getWorkflowStateTone(currentEpicState?.state_type as StateType | undefined)}>
             {epic.epic.archived ? 'Archived' : currentStateName || 'No state'}
           </QuietStatusText>
         )}
