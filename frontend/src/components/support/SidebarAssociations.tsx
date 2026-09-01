@@ -13,7 +13,13 @@ import {
   UserGroupIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
+import {
+  QuietRelationshipDialogContent,
+  QuietRelationshipResults,
+  QuietSearchInput,
+  quietRelatedItemTitleClassName,
+  quietRelationshipResultRowClassName,
+} from '@/components/design-system/quiet';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -303,7 +309,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                       aria-hidden="true"
                     />
                   )}
-                  <span className="truncate font-medium">{item.title}</span>
+                  <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                   {item.display_id && (
                     <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
                       {item.display_id}
@@ -365,7 +371,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                     onClick={() => handleNavigateCRM(item.object_type as CRMObjectType, item.object_id)}
                   >
                     <CRMIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate font-medium">{item.title}</span>
+                    <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                     {(item.context_label || item.display_id) && (
                       <span className="ml-auto flex shrink-0 items-center gap-2">
                         {item.context_label && (
@@ -426,7 +432,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                   onClick={() => handleNavigateDoc(item.object_id)}
                 >
                   <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium">{item.title}</span>
+                  <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                   {item.display_id && (
                     <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
                   )}
