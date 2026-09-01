@@ -14,12 +14,13 @@ describe('workspace route header contract', () => {
     ['Git Connections', '../../settings/OrgGitConnectionsTab.tsx'],
     ['All Docs', '../../../pages/docs/DocsHome.tsx'],
     ['document lists', '../../../pages/docs/DocsDocumentList.tsx'],
-    ['space and collection pages', '../../../pages/docs/spaceDetail/SpaceNodeHeader.tsx'],
   ])('uses QuietPageHeader for %s', (_label, path) => {
     expect(source(path)).toContain('<QuietPageHeader');
   });
 
   it.each([
+    ['All Docs', '../../../pages/docs/DocsHome.tsx'],
+    ['Docs document lists', '../../../pages/docs/DocsDocumentList.tsx'],
     ['CRM Overview', '../../../pages/crm/Overview.tsx'],
     ['CRM Signal inbox', '../../../pages/crm/Insights.tsx'],
     ['CRM Review', '../../../pages/crm/ReviewFeed.tsx'],
@@ -59,6 +60,7 @@ describe('workspace route header contract', () => {
 
   it.each([
     ['Docs editor', '../../../pages/docs/DocsDocumentDetail.tsx'],
+    ['Docs space and collection pages', '../../../pages/docs/spaceDetail/SpaceNodeHeader.tsx'],
     ['Meeting detail', '../../../pages/crm/MeetingDetail.tsx'],
     ['Contact detail', '../../crm/contact-detail/ContactHeader.tsx'],
     ['Company detail', '../../../pages/crm/CompanyDetail.tsx'],

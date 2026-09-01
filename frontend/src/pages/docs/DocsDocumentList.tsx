@@ -49,7 +49,7 @@ import {
   type DocsLibrarySortField,
 } from '@/components/docs/DocsLibraryList'
 import { buildCollectionPathLabels } from '@/components/docs/docsCollectionTree'
-import { QuietPageHeader } from '@/components/design-system/quiet'
+import { QuietPageHeader, QuietPageViewport } from '@/components/design-system/quiet'
 
 interface DocsDocumentListProps {
   title: string
@@ -167,18 +167,23 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
 
   if (!workspace) {
     return (
-      <div className="space-y-4">
-        <QuietPageHeader title={title} description={description} />
-        <p className="text-sm text-muted-foreground">Workspace not found.</p>
+      <div className="flex h-full min-h-0 flex-col">
+        <QuietPageHeader variant="shell" title={title} description={description} />
+        <QuietPageViewport className="min-h-0 flex-1">
+          <p className="text-sm text-muted-foreground">Workspace not found.</p>
+        </QuietPageViewport>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <QuietPageHeader title={title} description={description} />
+    <div className="flex h-full min-h-0 flex-col">
+      <QuietPageHeader variant="shell" title={title} description={description} />
 
-      {isLoading || (filterMode === 'my' && isAccessLoading) ? (
+      <QuietPageViewport className="min-h-0 flex-1">
+        <div className="space-y-4">
+
+          {isLoading || (filterMode === 'my' && isAccessLoading) ? (
         <div className="space-y-2 py-4">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-10 animate-pulse rounded-md bg-muted/60" />
@@ -347,7 +352,9 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
             ))}
           </DocsLibraryList>
         </>
-      )}
+          )}
+        </div>
+      </QuietPageViewport>
 
       {movingDoc && (
         <MoveDocumentDialog

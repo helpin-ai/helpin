@@ -164,4 +164,28 @@ describe('DocsHome', () => {
     })
     container.remove()
   })
+
+  it('uses the compact shell header and keeps Arrange at the right of the narrow search row', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<DocsHome />)
+    })
+
+    const header = container.querySelector('header')
+    const search = container.querySelector<HTMLInputElement>('input[aria-label="Search all documents"]')
+    const arrange = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Arrange'))
+
+    expect(header?.className).toContain('border-b')
+    expect(search?.parentElement?.className).toContain('sm:w-64')
+    expect(arrange?.className).toContain('ml-auto')
+    expect(search?.compareDocumentPosition(arrange as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
 })

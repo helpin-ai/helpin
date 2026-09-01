@@ -1,8 +1,6 @@
 import type { DocsSpace } from '@/lib/docsTypes'
 import { StoredIcon } from '@/components/ui/icon-picker'
 import {
-  ArrowLeft02Icon,
-  ArrowRight01Icon,
   Delete01Icon,
   FolderOpenIcon,
   InboxIcon,
@@ -17,13 +15,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { NodeView } from './nodeSelection'
 import {
+  QuietBreadcrumbs,
+  QuietDetailAction,
+  QuietDetailHeader,
   QuietIconAction,
-  QuietPageHeader,
-  QuietPrimaryAction,
-  QuietTextAction,
 } from '@/components/design-system/quiet'
 
 interface AncestorLink {
@@ -40,6 +37,7 @@ export interface SpaceNodeHeaderProps {
   // Navigation
   /** Passed the target collection id, or null to reset to space root. */
   onNavigateToCollection: (collectionId: string | null) => void
+  onNavigateToSpaces: () => void
 
   // Create actions
   onCreateDocument: () => void
@@ -72,6 +70,7 @@ export function SpaceNodeHeader({
   view,
   canEdit,
   onNavigateToCollection,
+  onNavigateToSpaces,
   onCreateDocument,
   onCreateChildCollection,
   onEditSpace,
@@ -143,64 +142,42 @@ export function SpaceNodeHeader({
     ((view.kind === 'space_root') ||
       (view.kind === 'collection' && (onEditCollection || onDeleteCollection)))
 
+  const breadcrumbItems = [
+    { id: 'all-docs', label: 'All Docs', onClick: onNavigateToSpaces },
+    ...ancestors,
+  ]
+
   return (
-    <QuietPageHeader
+    <QuietDetailHeader
+      breadcrumbs={(
+        <QuietBreadcrumbs
+          items={breadcrumbItems}
+          onBack={breadcrumbItems[breadcrumbItems.length - 1].onClick}
+          backLabel={breadcrumbItems.length === 1 ? 'Back to All Docs' : `Back to ${breadcrumbItems[breadcrumbItems.length - 1].label}`}
+        />
+      )}
       title={(
         <span className="flex min-w-0 items-center gap-2">
           {titleIcon}
           <span className="truncate">{titleLabel}</span>
         </span>
       )}
-      description={description}
-      navigation={ancestors.length > 0 ? (
-        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-quiet-text-tertiary">
-          <QuietIconAction
-            type="button"
-            onClick={ancestors[ancestors.length - 1].onClick}
-            className="shrink-0"
-            aria-label="Go back"
-          >
-            <ArrowLeft02Icon className="h-[15px] w-[15px]" />
-          </QuietIconAction>
-          {ancestors.map((ancestor) => (
-            <span key={ancestor.id} className="flex min-w-0 items-center gap-1.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={ancestor.onClick}
-                    className="max-w-[180px] truncate font-medium transition-colors hover:text-quiet-text-primary focus-visible:outline-none focus-visible:text-quiet-text-primary"
-                  >
-                    {ancestor.label}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{ancestor.label}</TooltipContent>
-              </Tooltip>
-              <ArrowRight01Icon className="h-3 w-3 shrink-0 text-quiet-muted" aria-hidden="true" />
-            </span>
-          ))}
-        </nav>
-      ) : null}
+      meta={description ? <span className="block truncate text-[12.5px] text-quiet-text-tertiary">{description}</span> : null}
       actions={canEdit && view.kind !== 'loading' ? (
         <>
           {onCreateChildCollection && (
-            <QuietTextAction
-              type="button"
+            <QuietDetailAction
               onClick={onCreateChildCollection}
-              className="gap-1.5"
-            >
-              <PlusSignIcon className="h-3.5 w-3.5" />
-              {view.kind === 'collection' ? 'Sub-collection' : 'Collection'}
-            </QuietTextAction>
+              icon={<PlusSignIcon className="h-3.5 w-3.5" />}
+              label={view.kind === 'collection' ? 'Sub-collection' : 'Collection'}
+            />
           )}
-          <QuietPrimaryAction
-            type="button"
+          <QuietDetailAction
+            tone="primary"
             onClick={onCreateDocument}
-            className="gap-1.5"
-          >
-            <PlusSignIcon className="h-3.5 w-3.5" />
-            Document
-          </QuietPrimaryAction>
+            icon={<PlusSignIcon className="h-3.5 w-3.5" />}
+            label="Document"
+          />
 
           {hasOverflowMenu && (
             <DropdownMenu>

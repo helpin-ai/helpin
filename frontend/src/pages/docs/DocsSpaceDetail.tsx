@@ -40,7 +40,7 @@ import {
   scopedDocuments,
   type StatusFilter,
 } from '@/pages/docs/spaceDetail/nodeSelection'
-import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet'
+import { QuietPageViewport } from '@/components/design-system/quiet'
 
 export function DocsSpaceDetail() {
   const navigate = useNavigate()
@@ -193,30 +193,33 @@ export function DocsSpaceDetail() {
   }
 
   if (!workspace) {
-    return <p className={`${workspaceSidebarSafeInsetClassName} text-sm text-muted-foreground`}>Workspace not found.</p>
+    return <QuietPageViewport><p className="text-sm text-muted-foreground">Workspace not found.</p></QuietPageViewport>
   }
 
   if (spaceLoading) {
     return (
-      <div className={`${workspaceSidebarSafeInsetClassName} space-y-3 py-4`}>
-        <div className="h-8 w-48 animate-pulse rounded bg-muted/60" />
-        <div className="h-10 animate-pulse rounded-lg bg-muted/60" />
-        <div className="h-10 animate-pulse rounded-lg bg-muted/60" />
-      </div>
+      <QuietPageViewport>
+        <div className="space-y-3 py-4">
+          <div className="h-8 w-48 animate-pulse rounded bg-muted/60" />
+          <div className="h-10 animate-pulse rounded-lg bg-muted/60" />
+          <div className="h-10 animate-pulse rounded-lg bg-muted/60" />
+        </div>
+      </QuietPageViewport>
     )
   }
 
   if (!space) {
-    return <p className={`${workspaceSidebarSafeInsetClassName} text-sm text-muted-foreground`}>Space not found.</p>
+    return <QuietPageViewport><p className="text-sm text-muted-foreground">Space not found.</p></QuietPageViewport>
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col">
       <SpaceNodeHeader
         space={space}
         view={view}
         canEdit={canEditDocs}
         onNavigateToCollection={navigateToCollection}
+        onNavigateToSpaces={() => navigate({ to: '/w/$slug/docs', params: { slug: wsSlug } })}
         onCreateDocument={() => openCreate('docs_document', {
           spaceId,
           collectionId:
@@ -250,7 +253,9 @@ export function DocsSpaceDetail() {
         }
       />
 
-      {view.kind === 'loading' ? (
+      <QuietPageViewport className="min-h-0 flex-1">
+        <div className="space-y-4">
+          {view.kind === 'loading' ? (
         <NodeSkeleton />
       ) : (
         <>
@@ -344,7 +349,9 @@ export function DocsSpaceDetail() {
             />
           )}
         </>
-      )}
+          )}
+        </div>
+      </QuietPageViewport>
 
       {/* Translation management (space/collection names, descriptions,
           slugs) lives in Settings > Help Center > Languages & Translation.

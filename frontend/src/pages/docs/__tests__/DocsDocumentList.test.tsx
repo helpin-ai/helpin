@@ -74,6 +74,7 @@ describe('DocsDocumentList', () => {
       { owner_id: 'member-1', include_archived: 'true' },
       { enabled: true },
     )
+    expect(container.querySelector('header')?.className).toContain('border-b')
 
     act(() => root.unmount())
   })
