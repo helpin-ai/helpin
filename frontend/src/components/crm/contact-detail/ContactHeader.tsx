@@ -134,12 +134,8 @@ export function ContactHeader({
           displayId ? <span className="font-mono">{displayId}</span> : null,
         ]} />
       )}
-      state={(
-        <>
-          <QuietStatusText tone="lifecycle" className={contactHeaderLifecycleBadgeClassName}>{lifecycleLabel}</QuietStatusText>
-          {state}
-        </>
-      )}
+      status={<QuietStatusText tone="lifecycle" className={contactHeaderLifecycleBadgeClassName}>{lifecycleLabel}</QuietStatusText>}
+      state={state}
       actions={actions}
     />
   );

@@ -30,9 +30,38 @@ describe('workspace route header contract', () => {
     ['Meeting detail', '../../../pages/crm/MeetingDetail.tsx'],
     ['Contact detail', '../../crm/contact-detail/ContactHeader.tsx'],
     ['Company detail', '../../../pages/crm/CompanyDetail.tsx'],
+    ['Epic detail', '../../../pages/pm/EpicDetail.tsx'],
   ])('uses the shared detail header contract for %s', (_label, path) => {
     expect(source(path)).toContain('<QuietDetailHeader');
     expect(source(path)).toContain('<QuietBreadcrumbs');
+  });
+
+  it('keeps the Epic identity and actions in the shared detail header', () => {
+    const epicSource = source('../../../pages/pm/EpicDetail.tsx');
+    const followButtonSource = source('../../notifications/FollowButton.tsx');
+
+    expect(epicSource).toContain('presentation="header"');
+    expect(epicSource).toContain('<QuietMetaLine');
+    expect(epicSource).toContain('<QuietStatusText');
+    expect(epicSource).toContain('presentation="quiet"');
+    expect(epicSource).toContain('presentation="detail-header"');
+    expect(epicSource).toContain('<QuietDetailAction');
+    expect(epicSource).not.toContain('ui-divider-bottom-fade');
+    expect(epicSource.match(/aria-label="Epic title"/g)).toHaveLength(1);
+
+    expect(followButtonSource).toContain("presentation?: 'default' | 'detail-header'");
+    expect(followButtonSource).toContain("presentation === 'detail-header'");
+    expect(followButtonSource).toContain('<QuietDetailAction');
+  });
+
+  it('places semantic status after metadata while keeping save state beneath actions', () => {
+    const quietSource = source('../quiet.tsx');
+
+    expect(quietSource).toContain("{meta || status ? (");
+    expect(quietSource.indexOf('{meta ? <div')).toBeLessThan(quietSource.indexOf('{status ? <div'));
+    expect(quietSource).toContain('flex shrink-0 flex-nowrap items-center gap-x-3');
+    expect(quietSource).toContain('flex-col items-end gap-0.5');
+    expect(quietSource).toContain('max-w-28 flex-nowrap');
   });
 
   it('renders the private Docs title in the header instead of repeating it in the editor', () => {

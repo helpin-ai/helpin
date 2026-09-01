@@ -2,6 +2,7 @@ import { NotificationOff02Icon, Notification02Icon } from '@/lib/icons'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useIsFollowing, useFollowEntity, useUnfollowEntity } from '@/hooks/queries'
 import { Button } from '@/components/ui/button'
+import { QuietDetailAction } from '@/components/design-system/quiet'
 import {
   Tooltip,
   TooltipContent,
@@ -12,9 +13,10 @@ interface FollowButtonProps {
   entityType: string
   entityId: string
   size?: 'sm' | 'icon'
+  presentation?: 'default' | 'detail-header'
 }
 
-export function FollowButton({ entityType, entityId, size = 'icon' }: FollowButtonProps) {
+export function FollowButton({ entityType, entityId, size = 'icon', presentation = 'default' }: FollowButtonProps) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id || ''
 
@@ -30,6 +32,19 @@ export function FollowButton({ entityType, entityId, size = 'icon' }: FollowButt
     } else {
       follow.mutate({ entityType, entityId })
     }
+  }
+
+  if (presentation === 'detail-header') {
+    return (
+      <QuietDetailAction
+        icon={isFollowing
+          ? <Notification02Icon className="h-3.5 w-3.5 text-quiet-positive" />
+          : <NotificationOff02Icon className="h-3.5 w-3.5" />}
+        label={isFollowing ? 'Following' : 'Follow'}
+        onClick={handleToggle}
+        disabled={follow.isPending || unfollow.isPending}
+      />
+    )
   }
 
   return (

@@ -55,7 +55,8 @@ describe('Quiet Hairline primitives', () => {
         avatar={<span>AC</span>}
         title="Ada Cole"
         meta="VP Sales"
-        state={<QuietStatusText tone="lifecycle">Customer</QuietStatusText>}
+        status={<QuietStatusText tone="lifecycle">Customer</QuietStatusText>}
+        state={<span>All changes saved</span>}
         actions={<QuietPrimaryAction>New deal</QuietPrimaryAction>}
       />,
     );
@@ -70,10 +71,13 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('pt-2');
     expect(markup).toContain('mb-0.5');
     expect(markup).toContain('mt-0.5');
-    expect(markup.indexOf('New deal')).toBeLessThan(markup.indexOf('Customer'));
+    expect(markup.indexOf('VP Sales')).toBeLessThan(markup.indexOf('Customer'));
+    expect(markup.indexOf('Customer')).toBeLessThan(markup.indexOf('New deal'));
+    expect(markup.indexOf('New deal')).toBeLessThan(markup.indexOf('All changes saved'));
+    expect(markup).toContain('mt-0.5 flex min-w-0 items-center gap-x-3');
+    expect(markup).toContain('flex shrink-0 flex-nowrap items-center gap-x-3');
     expect(markup).toContain('flex-col items-end gap-0.5');
     expect(markup).toContain('max-w-28 flex-nowrap');
-    expect(markup).toContain('sm:max-w-none');
     expect(markup).not.toContain('rounded-full border');
   });
 

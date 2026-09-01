@@ -42,7 +42,7 @@ describe('description editor style parity', () => {
     expect(epicDetail).toContain(epicDetailBottomSpacer);
 
     expect(taskDetail).toContain('px-4 pt-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:px-10">');
-    expect(epicDetail).toContain('px-6 pt-5 lg:overflow-y-auto lg:px-10">');
+    expect(epicDetail).toContain('px-4 pt-5 sm:px-6 lg:overflow-y-auto lg:px-10">');
 
     expect(detailActions).toContain('sticky bottom-0');
     expect(detailActions).toContain('group-focus-within/description-editor:border-foreground/70');

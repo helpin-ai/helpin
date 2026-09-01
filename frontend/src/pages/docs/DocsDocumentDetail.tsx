@@ -1505,23 +1505,19 @@ export function DocsDocumentDetail({
             {showLocalePills ? <QuietMetaLine items={[getHelpcenterLocaleLabel(activeLocale)]} /> : null}
           </div>
         )}
-        state={(
-          <>
-            {(editorSaveStatus !== 'idle' || editorLastSavedAt) ? <SaveIndicator status={editorSaveStatus} lastSavedAt={editorLastSavedAt} /> : null}
-            {doc.status === 'archived' ? (
-              <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>Archived</span>
-            ) : !isPublished ? (
-              <span className={`shrink-0 text-xs font-medium ${docStatusColor('draft')}`}>
-                Draft{showLocalePills ? ` · ${activeLocaleShortLabel}` : ''}
-              </span>
-            ) : (
-              <span className="shrink-0 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                Published{showLocalePills ? ` · ${activeLocaleShortLabel}` : isExternalHelpCenter ? ' · help center' : ' · internal'}
-                {hasUnpublishedChanges ? <span className="ml-1 text-amber-600 dark:text-amber-400"> · Unpublished changes</span> : null}
-              </span>
-            )}
-          </>
+        status={doc.status === 'archived' ? (
+          <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>Archived</span>
+        ) : !isPublished ? (
+          <span className={`shrink-0 text-xs font-medium ${docStatusColor('draft')}`}>
+            Draft{showLocalePills ? ` · ${activeLocaleShortLabel}` : ''}
+          </span>
+        ) : (
+          <span className="shrink-0 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            Published{showLocalePills ? ` · ${activeLocaleShortLabel}` : isExternalHelpCenter ? ' · help center' : ' · internal'}
+            {hasUnpublishedChanges ? <span className="ml-1 text-amber-600 dark:text-amber-400"> · Unpublished changes</span> : null}
+          </span>
         )}
+        state={(editorSaveStatus !== 'idle' || editorLastSavedAt) ? <SaveIndicator status={editorSaveStatus} lastSavedAt={editorLastSavedAt} /> : null}
         actions={(
           <div className="flex flex-col items-end gap-0.5 sm:flex-row sm:items-center sm:gap-3">
             {headerPresencePeople.length > 0 ? (

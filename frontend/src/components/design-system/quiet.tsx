@@ -142,6 +142,7 @@ export function QuietDetailHeader({
   avatar,
   title,
   meta,
+  status,
   state,
   actions,
   allowTitleWrap = false,
@@ -151,6 +152,7 @@ export function QuietDetailHeader({
   avatar?: ReactNode;
   title: ReactNode;
   meta?: ReactNode;
+  status?: ReactNode;
   state?: ReactNode;
   actions?: ReactNode;
   allowTitleWrap?: boolean;
@@ -173,7 +175,12 @@ export function QuietDetailHeader({
             )}>
               {title}
             </div>
-            {meta ? <div className="mt-0.5 min-w-0 overflow-hidden whitespace-nowrap [&>*]:flex-nowrap">{meta}</div> : null}
+            {meta || status ? (
+              <div className="mt-0.5 flex min-w-0 items-center gap-x-3 overflow-hidden whitespace-nowrap">
+                {meta ? <div className="min-w-0 overflow-hidden [&>*]:flex-nowrap">{meta}</div> : null}
+                {status ? <div className="flex shrink-0 flex-nowrap items-center gap-x-3 whitespace-nowrap">{status}</div> : null}
+              </div>
+            ) : null}
           </div>
         </div>
         {state || actions ? (

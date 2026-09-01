@@ -536,12 +536,8 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
             `${meeting.participants?.length ?? 0} participant${meeting.participants?.length === 1 ? '' : 's'}`,
           ]} />
         )}
-        state={(
-          <>
-            <MeetingStatusText status={meeting.status} />
-            {editedMeetingId === meetingId ? <SaveIndicator saving={updateMeeting.isPending} error={titleSaveError} presentation="quiet" /> : null}
-          </>
-        )}
+        status={<MeetingStatusText status={meeting.status} />}
+        state={editedMeetingId === meetingId ? <SaveIndicator saving={updateMeeting.isPending} error={titleSaveError} presentation="quiet" /> : null}
         actions={(
           <>
             <QuietDetailAction
