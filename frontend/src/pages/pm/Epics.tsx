@@ -42,8 +42,7 @@ import { StateTypeIcon } from '@/lib/pmIcons';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
-import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
-import { Calendar } from '@/components/ui/calendar';
+import { InlineEpicDateControl, InlineEpicObjectivesControl } from '@/components/pm/InlineEpicPlanningFields';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -273,16 +272,6 @@ function buildObjectiveRefs(objectives: Objective[], objectiveIds: string[]) {
   return objectives
     .filter((objective) => selected.has(objective.id))
     .map((objective) => ({ id: objective.id, name: objective.name }));
-}
-
-function buildSelectedObjectives(
-  allObjectives: Objective[],
-  linkedObjectives: EpicWithStats['objectives']): ObjectivePickerSelection[] {
-  return (linkedObjectives ?? []).map((objective) => ({
-    id: objective.id,
-    name: objective.name,
-    archived: !allObjectives.some((candidate) => candidate.id === objective.id),
-  }));
 }
 
 function matchesSelectedValue(actual: string | undefined, selected: string[] | undefined) {
@@ -987,44 +976,6 @@ function InlineEpicTeamCell({ entry, teams, teamMap, onUpdate }: { entry: EpicWi
   );
 }
 
-function InlineEpicDateCell({ epicId, value, emptyLabel, onUpdate, patchKey }: { epicId: string; value?: string; emptyLabel: string; onUpdate: (epicId: string, patch: UpdateEpicRequest) => Promise<void>; patchKey: 'deadline' | 'planned_start_date' }) {
-  const [open, setOpen] = useState(false);
-  const selected = value ? parseISO(value) : undefined;
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
-          onClick={(event) => {
-            event.stopPropagation();
-            setOpen(true);
-          }}
-        >
-          <Calendar03Icon className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">{selected ? format(selected, 'MMM d') : emptyLabel}</span>
-        </button>
-      </PopoverTrigger>
-      {open ? (
-        <PopoverContent className="w-auto p-0" align="start" side="bottom" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-          <Calendar
-            mode="single"
-            selected={selected}
-            defaultMonth={selected}
-            onSelect={(date) => {
-              void onUpdate(epicId, {
-                [patchKey]: date ? format(date, 'yyyy-MM-dd') : undefined,
-              });
-              setOpen(false);
-            }}
-          />
-        </PopoverContent>
-      ) : null}
-    </Popover>
-  );
-}
-
 function InlineEpicLabelsCell({ entry, workspaceId, allLabels, onLabelsChange, onUpdate }: { entry: EpicWithStats; workspaceId: string; allLabels: Label[]; onLabelsChange: (labels: Label[]) => void; onUpdate: (epicId: string, patch: UpdateEpicRequest) => Promise<void> }) {
   const labels = entry.labels ?? [];
   const selectedLabelIds = labels.map((label) => label.id);
@@ -1057,23 +1008,6 @@ function InlineEpicLabelsCell({ entry, workspaceId, allLabels, onLabelsChange, o
           }}
           triggerOnly
         />
-      </div>
-    </div>
-  );
-}
-
-function InlineEpicObjectivesCell({ entry, allObjectives, selectedObjectives, onChange }: { entry: EpicWithStats; allObjectives: Objective[]; selectedObjectives: ObjectivePickerSelection[]; onChange: (epicId: string, objectiveIds: string[]) => Promise<void> }) {
-  const objectives = entry.objectives ?? [];
-  return (
-    <div onClick={(event) => event.stopPropagation()} className="group/obj flex min-w-0 items-center gap-1">
-      {objectives.length > 0 ? (
-        <span className="truncate text-ui text-muted-foreground" title={objectives.map((o) => o.name).join(', ')}>
-          {objectives[0].name}
-          {objectives.length > 1 ? ` +${objectives.length - 1} more` : ''}
-        </span>
-      ) : null}
-      <div className={objectives.length > 0 ? 'opacity-0 group-hover/obj:opacity-100 transition-opacity shrink-0' : 'shrink-0'}>
-        <ObjectivePicker objectives={allObjectives} selectedObjectiveIds={objectives.map((objective) => objective.id)} selectedObjectives={selectedObjectives} onChange={(objectiveIds) => onChange(entry.epic.id, objectiveIds)} addLabel={objectives.length === 0 ? 'Add objective' : 'Edit'} triggerOnly />
       </div>
     </div>
   );
@@ -1375,7 +1309,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           const entry = info.row.original;
           const objectives = entry.objectives ?? [];
           if (canEdit) {
-            return <InlineEpicObjectivesCell entry={entry} allObjectives={allObjectives} selectedObjectives={buildSelectedObjectives(allObjectives, entry.objectives)} onChange={updateEpicObjectives} />;
+            return <InlineEpicObjectivesControl entry={entry} allObjectives={allObjectives} onChange={updateEpicObjectives} />;
           }
           return objectives.length > 0 ? (
             <span className="truncate text-ui text-muted-foreground block" title={objectives.map((o) => o.name).join(', ')}>
@@ -1393,7 +1327,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         size: 110,
         cell: (info) =>
           canEdit ? (
-            <InlineEpicDateCell epicId={info.row.original.epic.id} value={info.row.original.epic.deadline} emptyLabel="No date" patchKey="deadline" onUpdate={updateEpicField} />
+            <InlineEpicDateControl epicId={info.row.original.epic.id} value={info.row.original.epic.deadline} emptyLabel="No date" patchKey="deadline" onUpdate={updateEpicField} />
           ) : (
             <div className="flex items-center gap-1 text-ui text-muted-foreground">
               {info.row.original.epic.deadline ? (
@@ -1419,7 +1353,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         size: 110,
         cell: (info) =>
           canEdit ? (
-            <InlineEpicDateCell epicId={info.row.original.epic.id} value={info.row.original.epic.planned_start_date} emptyLabel="No date" patchKey="planned_start_date" onUpdate={updateEpicField} />
+            <InlineEpicDateControl epicId={info.row.original.epic.id} value={info.row.original.epic.planned_start_date} emptyLabel="No date" patchKey="planned_start_date" onUpdate={updateEpicField} />
           ) : (
             <div className="flex items-center gap-1 text-ui text-muted-foreground">
               {info.row.original.epic.planned_start_date ? (
