@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react';
-import { QuietBreadcrumbs, QuietDetailHeader, QuietMetaLine, QuietStatusText } from '@/components/design-system/quiet';
+import { QuietBreadcrumbs, QuietDetailHeader, QuietMetaLine, QuietStatusBadge } from '@/components/design-system/quiet';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import type { LifecycleStage } from '@/lib/crmTypes';
 
@@ -22,7 +22,6 @@ interface ContactHeaderProps {
 export const contactHeaderAvatarClassName = 'h-full w-full shrink-0';
 export const contactHeaderNameClassName = 'block min-w-0 truncate border-b border-transparent text-left text-[20px] font-semibold leading-[1.18] tracking-[-0.018em] text-quiet-text-primary transition-colors hover:border-quiet-field focus-visible:border-quiet-text-primary focus-visible:outline-none';
 export const contactHeaderNameInputClassName = 'block w-full min-w-0 truncate border-0 border-b-2 border-quiet-text-primary bg-transparent pb-0.5 text-[20px] font-semibold leading-[1.18] tracking-[-0.018em] text-quiet-text-primary outline-none placeholder:text-quiet-muted';
-export const contactHeaderLifecycleBadgeClassName = 'inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.03em] text-quiet-text-tertiary';
 
 function splitFullName(value: string): [string, string] {
   const trimmed = value.trim().replace(/\s+/g, ' ');
@@ -134,7 +133,7 @@ export function ContactHeader({
           displayId ? <span className="font-mono">{displayId}</span> : null,
         ]} />
       )}
-      status={<QuietStatusText tone="lifecycle" className={contactHeaderLifecycleBadgeClassName}>{lifecycleLabel}</QuietStatusText>}
+      status={<QuietStatusBadge tone="lifecycle">{lifecycleLabel}</QuietStatusBadge>}
       state={state}
       actions={actions}
     />

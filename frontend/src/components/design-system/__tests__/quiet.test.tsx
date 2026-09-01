@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietMetricBlock, QuietMetricGrid, QuietPageHeader, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietMetricBlock, QuietMetricGrid, QuietPageHeader, QuietPrimaryAction, QuietSearchInput, QuietStatusBadge, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -70,7 +70,7 @@ describe('Quiet Hairline primitives', () => {
         avatar={<span>AC</span>}
         title="Ada Cole"
         meta="VP Sales"
-        status={<QuietStatusText tone="lifecycle">Customer</QuietStatusText>}
+        status={<QuietStatusBadge tone="lifecycle">Customer</QuietStatusBadge>}
         state={<span>All changes saved</span>}
         actions={<QuietPrimaryAction>New deal</QuietPrimaryAction>}
       />,
@@ -225,6 +225,20 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('bg-quiet-text-primary');
     expect(markup).toContain('motion-safe:animate-pulse');
     expect(markup).not.toContain('rounded-full border');
+  });
+
+  it('renders semantic entity status as a tone-aware badge without a dot', () => {
+    const markup = renderToStaticMarkup(
+      <QuietStatusBadge tone="lifecycle">Customer</QuietStatusBadge>,
+    );
+
+    expect(markup).toContain('data-slot="badge"');
+    expect(markup).toContain('rounded-full');
+    expect(markup).toContain('text-[10.5px]');
+    expect(markup).toContain('border-quiet-lifecycle/25');
+    expect(markup).toContain('bg-quiet-lifecycle/10');
+    expect(markup).toContain('text-quiet-lifecycle');
+    expect(markup).not.toContain('size-1.5');
   });
 
   it('renders quiet save failures without a contradictory saved state', () => {

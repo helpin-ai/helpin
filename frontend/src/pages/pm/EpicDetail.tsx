@@ -29,7 +29,7 @@ import {
   QuietDetailHeader,
   QuietEmptyState,
   QuietMetaLine,
-  QuietStatusText,
+  QuietStatusBadge,
   QuietTextAction,
   QuietTitleInput,
 } from '@/components/design-system/quiet';
@@ -894,9 +894,9 @@ export function EpicDetailPage() {
         )}
         meta={<QuietMetaLine items={[selectedTeam?.name ?? 'No team', `${tasks.length} task${tasks.length === 1 ? '' : 's'}`]} />}
         status={(
-          <QuietStatusText className="lg:hidden" tone={epic.epic.archived ? 'neutral' : getWorkflowStateTone(currentEpicState?.state_type as StateType | undefined)}>
+          <QuietStatusBadge className="lg:hidden" tone={epic.epic.archived ? 'neutral' : getWorkflowStateTone(currentEpicState?.state_type as StateType | undefined)}>
             {epic.epic.archived ? 'Archived' : currentStateName || 'No state'}
-          </QuietStatusText>
+          </QuietStatusBadge>
         )}
         state={<SaveIndicator saving={saving || taskTableSaving} error={saveError || taskTableSaveError} presentation="quiet" />}
         actions={(

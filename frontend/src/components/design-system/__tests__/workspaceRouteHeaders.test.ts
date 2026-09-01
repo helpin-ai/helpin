@@ -77,8 +77,7 @@ describe('workspace route header contract', () => {
 
     expect(epicSource).toContain('presentation="header"');
     expect(epicSource).toContain('<QuietMetaLine');
-    expect(epicSource).toContain('<QuietStatusText');
-    expect(epicSource).toContain('<QuietStatusText className="lg:hidden"');
+    expect(epicSource).toContain('<QuietStatusBadge className="lg:hidden"');
     expect(epicSource).toContain('presentation="quiet"');
     expect(epicSource).toContain('presentation="detail-header"');
     expect(epicSource).toContain('<QuietDetailAction');

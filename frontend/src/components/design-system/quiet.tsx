@@ -1,6 +1,7 @@
 import type { ElementType, ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -524,12 +525,35 @@ const statusToneClassName = {
   blocker: 'bg-quiet-accent',
 } as const;
 
+const statusBadgeToneClassName = {
+  neutral: 'border-quiet-field bg-quiet-hover text-quiet-text-secondary',
+  current: 'border-quiet-text-primary/20 bg-quiet-text-primary/10 text-quiet-text-primary',
+  lifecycle: 'border-quiet-lifecycle/25 bg-quiet-lifecycle/10 text-quiet-lifecycle',
+  positive: 'border-quiet-positive/25 bg-quiet-positive/10 text-quiet-positive',
+  blocker: 'border-quiet-accent/25 bg-quiet-accent/10 text-quiet-accent',
+} as const;
+
 export function QuietStatusText({ children, tone = 'neutral', pulse = false, className }: { children: ReactNode; tone?: keyof typeof statusToneClassName; pulse?: boolean; className?: string }) {
   return (
     <span className={cn('inline-flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-[0.03em] text-quiet-text-tertiary', className)}>
       <span className={cn('size-1.5 shrink-0 rounded-full', statusToneClassName[tone], pulse && 'motion-safe:animate-pulse')} />
       {children}
     </span>
+  );
+}
+
+export function QuietStatusBadge({ children, tone = 'neutral', className }: { children: ReactNode; tone?: keyof typeof statusBadgeToneClassName; className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'h-5 rounded-full px-2 py-0 text-[10.5px] font-semibold uppercase tracking-[0.03em]',
+        statusBadgeToneClassName[tone],
+        className,
+      )}
+    >
+      {children}
+    </Badge>
   );
 }
 
