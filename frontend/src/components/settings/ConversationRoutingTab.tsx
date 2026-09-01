@@ -58,6 +58,11 @@ import type {
   SupportMailboxMember,
   SupportTriageRule,
 } from '@/lib/pmTypes';
+import {
+  AUTO_MOVE_ROUTING_DESCRIPTION,
+  AUTO_MOVE_ROUTING_TITLE,
+  applyAutomatedRoutingEnabled,
+} from './conversationRoutingBehavior';
 
 type RoutingSettingsDraft = Pick<
   SupportInboxSettings,
@@ -1129,7 +1134,7 @@ export function ConversationRoutingTab({
                   <Switch
                     checked={draft.triage_enabled}
                     disabled={updateSettings.isPending}
-                    onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_enabled: checked }))}
+                    onCheckedChange={(checked) => setDraft((current) => applyAutomatedRoutingEnabled(current, checked))}
                   />
                 </label>
               )}
@@ -1171,15 +1176,15 @@ export function ConversationRoutingTab({
                   </RoutingSettingRow>
 
                   <RoutingSettingRow
-                    title="Do not auto-move conversations"
-                    description="Show suggestions instead of moving matched conversations."
+                    title={AUTO_MOVE_ROUTING_TITLE}
+                    description={AUTO_MOVE_ROUTING_DESCRIPTION}
                     className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
                   >
                     <div className="flex justify-start md:justify-end">
                       <Switch
-                        checked={!draft.triage_auto_move_enabled}
+                        checked={draft.triage_auto_move_enabled}
                         disabled={routingControlsDisabled}
-                        onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_auto_move_enabled: !checked }))}
+                        onCheckedChange={(checked) => setDraft((current) => ({ ...current, triage_auto_move_enabled: checked }))}
                       />
                     </div>
                   </RoutingSettingRow>
