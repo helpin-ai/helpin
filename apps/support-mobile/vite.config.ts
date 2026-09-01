@@ -69,6 +69,10 @@ export default defineConfig(({ mode }) => {
           replacement: path.resolve(__dirname, '../../frontend/src/lib/teamMemberAvatar.ts'),
         },
         {
+          find: '@/lib/avatarColor',
+          replacement: path.resolve(__dirname, '../../frontend/src/lib/avatarColor.ts'),
+        },
+        {
           find: '@/lib/pmTypes',
           replacement: path.resolve(__dirname, '../../frontend/src/lib/pmTypes.ts'),
         },
