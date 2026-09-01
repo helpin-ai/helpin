@@ -14,6 +14,7 @@ describe('TaskDetailPanel shared detail header', () => {
     expect(source.match(/aria-label="Task title"/g)).toHaveLength(1);
     expect(source).toContain('<QuietMetaLine');
     expect(source).toContain('<QuietStatusText');
+    expect(source).toContain('<QuietStatusText className="lg:hidden"');
     expect(source).toContain('presentation="quiet"');
     expect(source).not.toContain('ui-divider-bottom-fade');
   });

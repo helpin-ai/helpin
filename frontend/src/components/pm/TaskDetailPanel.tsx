@@ -1241,7 +1241,7 @@ function TaskDetailPanelBody({
           ]} />
         )}
         status={(
-          <QuietStatusText tone={getWorkflowStateTone(currentState?.state_type)}>
+          <QuietStatusText className="lg:hidden" tone={getWorkflowStateTone(currentState?.state_type)}>
             {currentState?.name ?? 'No state'}
           </QuietStatusText>
         )}
