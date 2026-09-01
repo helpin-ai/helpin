@@ -15,10 +15,9 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('data-quiet-conversation-composer');
     expect(markup).toContain('rounded-xl');
     expect(markup).toContain('border-border/40');
-    expect(focusedMarkup).toContain('ring-1');
-    expect(focusedMarkup).toContain('ring-ring/40');
-    expect(focusedMarkup).toContain('border-ring');
-    expect(focusedMarkup).toContain('bg-background');
+    expect(focusedMarkup).toContain('border-blue-500');
+    expect(focusedMarkup).toContain('dark:border-blue-400');
+    expect(focusedMarkup).not.toContain('ring-');
     expect(noteMarkup).toContain('border-amber-400');
   });
 

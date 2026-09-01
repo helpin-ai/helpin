@@ -67,8 +67,8 @@ export function QuietConversationComposer({
       data-quiet-conversation-composer=""
       data-tone={tone}
       className={cn(
-        'relative rounded-xl border border-border/40 bg-card transition-[color,box-shadow,background-color,border-color]',
-        focused && (tone === 'note' ? 'border-amber-400 dark:border-amber-500' : 'border-ring bg-background ring-1 ring-ring/40'),
+        'relative rounded-xl border border-border/40 bg-card transition-colors',
+        focused && (tone === 'note' ? 'border-amber-400 dark:border-amber-500' : 'border-blue-500 dark:border-blue-400'),
         tone === 'note' && 'bg-amber-50/50 dark:bg-amber-950/10',
         className,
       )}
