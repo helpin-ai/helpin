@@ -799,6 +799,7 @@ function ImportExportMenu({
 
 interface DocsEditorProps {
   title?: string
+  showTitle?: boolean
   onTitleChange?: (title: string) => void
   slug?: string
   onSlugChange?: (slug: string) => Promise<void>
@@ -826,10 +827,15 @@ interface DocsEditorProps {
   onEditorReady?: (editor: ReturnType<typeof useEditor> | null) => void
   /** When true, the centered doc column slides left (left margin shrinks) so the right-side gutter can host comment cards. Doc width is unchanged. */
   hasSideComments?: boolean
+  /** Controls the document canvas width. Authenticated detail pages use the standard max-w-7xl canvas; embeds keep the narrower reading measure. */
+  contentWidth?: 'reading' | 'standard'
+  /** Lets the authenticated Docs page own mobile scrolling so its page header can scroll away. Desktop keeps the editor's contained scroller. */
+  pageScrollOnMobile?: boolean
 }
 
 export function DocsEditor({
   title,
+  showTitle = true,
   onTitleChange,
   slug,
   initialContent,
@@ -856,6 +862,8 @@ export function DocsEditor({
   onSaveStatusChange,
   onEditorReady,
   hasSideComments = false,
+  contentWidth = 'reading',
+  pageScrollOnMobile = false,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
@@ -1883,7 +1891,7 @@ img { max-width: 100%; }
   if (!editor) return null
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className={`flex min-h-0 flex-col ${pageScrollOnMobile ? 'flex-none overflow-visible lg:flex-1 lg:overflow-hidden' : 'flex-1 overflow-hidden'}`}>
       {/* Floating toolbar — appears on text selection */}
       {!readOnly && !sourceView && (
         <FloatingToolbar
@@ -1895,7 +1903,15 @@ img { max-width: 100%; }
       )}
 
       {/* Editor content with title */}
-      <div className={`relative min-h-0 flex-1 docs-editor-wrapper [overflow-anchor:none] [scrollbar-gutter:stable] ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'} ${hasSideComments ? 'has-side-comments' : ''}`}>
+      <div className={`relative docs-editor-wrapper [overflow-anchor:none] [scrollbar-gutter:stable] ${
+        sourceView
+          ? pageScrollOnMobile
+            ? 'flex min-h-[70dvh] flex-none flex-col lg:min-h-0 lg:flex-1'
+            : 'flex min-h-0 flex-1 flex-col'
+          : pageScrollOnMobile
+            ? 'min-h-0 flex-none overflow-visible lg:flex-1 lg:overflow-y-auto'
+            : 'min-h-0 flex-1 overflow-y-auto'
+      } ${hasSideComments ? 'has-side-comments' : ''} ${contentWidth === 'standard' ? 'docs-editor-standard-width' : ''}`}>
         {generatingOverlay && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground mb-3" />
@@ -1962,7 +1978,7 @@ img { max-width: 100%; }
           /* Source view — full width, fills remaining height */
           <div className="flex flex-1 flex-col px-6 py-4 min-h-0">
             {/* Title (read-only in source view) */}
-            {title !== undefined && (
+            {showTitle && title !== undefined && (
               <div className="pb-3 shrink-0">
                 <h1 className="text-3xl font-bold text-left break-words">{title || 'Untitled'}</h1>
               </div>
@@ -2013,7 +2029,7 @@ img { max-width: 100%; }
               />
             )}
             {/* Title */}
-            {title !== undefined && (
+            {showTitle && title !== undefined && (
               <div className="group/title px-4 pt-10 pb-2 md:px-6" data-docs-title-row>
                 {slug && <SlugDisplay slug={slug} onSlugChange={onSlugChange} readOnly={readOnly} helperText={slugHelperText} />}
                 {onTitleChange && !readOnly ? (

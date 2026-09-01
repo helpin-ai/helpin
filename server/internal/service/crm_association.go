@@ -2,12 +2,21 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+)
+
+var (
+	// ErrDealCustomerEndpointRequired prevents generic associations from creating
+	// a second company/customer relationship outside the deal customer workflow.
+	ErrDealCustomerEndpointRequired = errors.New("use the deal customer action to link a company")
+	// ErrDealCustomerAssociationProtected prevents removal of the invariant-bearing relationship.
+	ErrDealCustomerAssociationProtected = errors.New("choose another customer before removing this relationship")
 )
 
 // CRMAssociationService contains CRM association business logic.
@@ -38,6 +47,9 @@ func (s *CRMAssociationService) Create(ctx context.Context, req model.CreateCRMA
 	if req.FromObjectID == "" || req.ToObjectID == "" {
 		return nil, fmt.Errorf("from_object_id and to_object_id are required")
 	}
+	if err := normalizeDealAssociation(&req); err != nil {
+		return nil, err
+	}
 	normalizePrimaryCompanyLabel(&req)
 
 	assoc := &model.CRMAssociation{
@@ -57,6 +69,34 @@ func (s *CRMAssociationService) Create(ctx context.Context, req model.CreateCRMA
 	}
 	s.requestCompanySummaryRefresh(ctx, assoc)
 	return assoc, nil
+}
+
+func normalizeDealAssociation(req *model.CreateCRMAssociationRequest) error {
+	if req == nil {
+		return nil
+	}
+	dealInvolved := req.FromObjectType == model.CRMObjectDeal || req.ToObjectType == model.CRMObjectDeal
+	otherType := req.ToObjectType
+	if req.ToObjectType == model.CRMObjectDeal {
+		otherType = req.FromObjectType
+	}
+	if !dealInvolved || (otherType != model.CRMObjectContact && otherType != model.CRMObjectCompany) {
+		return nil
+	}
+	if req.AssociationLabel != nil {
+		label := strings.TrimSpace(*req.AssociationLabel)
+		if label == model.CRMAssociationLabelDealCustomer || label == model.CRMAssociationLabelDealPrimaryContact {
+			return ErrDealCustomerEndpointRequired
+		}
+	}
+	if otherType == model.CRMObjectCompany {
+		return ErrDealCustomerEndpointRequired
+	}
+	if req.ToObjectType == model.CRMObjectDeal {
+		req.FromObjectType, req.ToObjectType = req.ToObjectType, req.FromObjectType
+		req.FromObjectID, req.ToObjectID = req.ToObjectID, req.FromObjectID
+	}
+	return nil
 }
 
 func normalizeContactCompanyAssociation(req model.CreateCRMAssociationRequest) (contactID string, companyID string, ok bool) {
@@ -171,6 +211,9 @@ func (s *CRMAssociationService) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	if isProtectedDealCustomerAssociation(assoc) {
+		return ErrDealCustomerAssociationProtected
+	}
 	if err := s.assocRepo.Delete(ctx, id); err != nil {
 		return err
 	}
@@ -196,11 +239,18 @@ func (s *CRMAssociationService) DeleteScoped(ctx context.Context, workspaceID, i
 	if err != nil {
 		return err
 	}
+	if isProtectedDealCustomerAssociation(assoc) {
+		return ErrDealCustomerAssociationProtected
+	}
 	if err := s.assocRepo.Delete(ctx, assoc.ID); err != nil {
 		return err
 	}
 	s.requestCompanySummaryRefresh(ctx, assoc)
 	return nil
+}
+
+func isProtectedDealCustomerAssociation(assoc *model.CRMAssociation) bool {
+	return assoc != nil && assoc.AssociationLabel != nil && strings.TrimSpace(*assoc.AssociationLabel) == model.CRMAssociationLabelDealCustomer
 }
 
 func (s *CRMAssociationService) requestCompanySummaryRefresh(ctx context.Context, assoc *model.CRMAssociation) {
@@ -261,75 +311,9 @@ func (s *CRMAssociationService) ListByObjectEnriched(ctx context.Context, worksp
 	switch objectType {
 	case model.CRMObjectCompany:
 		return s.appendInferredCompanyContactAssociations(ctx, workspaceID, objectID, assocs)
-	case model.CRMObjectDeal:
-		return s.appendInferredDealContactCompanies(ctx, workspaceID, objectID, assocs)
 	default:
 		return assocs, nil
 	}
-}
-
-func (s *CRMAssociationService) appendInferredDealContactCompanies(
-	ctx context.Context,
-	workspaceID, dealID string,
-	assocs []model.CRMAssociationEnriched,
-) ([]model.CRMAssociationEnriched, error) {
-	if len(assocs) == 0 {
-		return assocs, nil
-	}
-
-	seen := make(map[string]struct{}, len(assocs))
-	enriched := append([]model.CRMAssociationEnriched(nil), assocs...)
-	for _, assoc := range assocs {
-		otherType, otherID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectDeal, dealID)
-		seen[otherType+":"+otherID] = struct{}{}
-	}
-
-	for _, assoc := range assocs {
-		otherType, contactID := otherAssociationSide(assoc.CRMAssociation, model.CRMObjectDeal, dealID)
-		if otherType != model.CRMObjectContact {
-			continue
-		}
-
-		contactAssocs, err := s.assocRepo.ListByObjectEnriched(ctx, workspaceID, model.CRMObjectContact, contactID)
-		if err != nil {
-			return nil, err
-		}
-		contextName := strings.TrimSpace(assoc.LinkedObjectName)
-		if contextName == "" {
-			contextName = "contact"
-		}
-		contextLabel := "via " + contextName
-
-		for _, contactAssoc := range contactAssocs {
-			inferredType, companyID := otherAssociationSide(contactAssoc.CRMAssociation, model.CRMObjectContact, contactID)
-			if inferredType != model.CRMObjectCompany {
-				continue
-			}
-			key := inferredType + ":" + companyID
-			if _, exists := seen[key]; exists {
-				continue
-			}
-
-			enriched = append(enriched, model.CRMAssociationEnriched{
-				CRMAssociation: model.CRMAssociation{
-					WorkspaceID:    workspaceID,
-					FromObjectType: model.CRMObjectDeal,
-					FromObjectID:   dealID,
-					ToObjectType:   model.CRMObjectCompany,
-					ToObjectID:     companyID,
-				},
-				LinkedObjectName:        contactAssoc.LinkedObjectName,
-				LinkedObjectDisplayID:   contactAssoc.LinkedObjectDisplayID,
-				LinkedObjectStatus:      contactAssoc.LinkedObjectStatus,
-				LinkedObjectStatusColor: contactAssoc.LinkedObjectStatusColor,
-				Inferred:                true,
-				ContextLabel:            &contextLabel,
-			})
-			seen[key] = struct{}{}
-		}
-	}
-
-	return enriched, nil
 }
 
 func (s *CRMAssociationService) appendInferredCompanyContactAssociations(
@@ -365,7 +349,7 @@ func (s *CRMAssociationService) appendInferredCompanyContactAssociations(
 
 		for _, contactAssoc := range contactAssocs {
 			inferredType, inferredID := otherAssociationSide(contactAssoc.CRMAssociation, model.CRMObjectContact, otherID)
-			if inferredType == model.CRMObjectContact || (inferredType == model.CRMObjectCompany && inferredID == companyID) {
+			if inferredType == model.CRMObjectContact || inferredType == model.CRMObjectDeal || (inferredType == model.CRMObjectCompany && inferredID == companyID) {
 				continue
 			}
 

@@ -23,11 +23,12 @@ import { useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useTasks } from '@/hooks/queries/useTasks';
 import { useTitle } from '@/hooks/useTitle';
 import { buildDealAttentionItems, buildTodayTaskItems } from '@/lib/crmToday';
-import { detectMeetingPlatform } from '@/lib/meetingPresentation';
+import { detectMeetingPlatform, formatMeetingDate } from '@/lib/meetingPresentation';
 import { cn, timeAgo } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMSuggestionType } from '@/lib/crmTypes';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
+import { QuietPageHeader } from '@/components/design-system/quiet';
 
 const suggestionLabels: Record<CRMSuggestionType, string> = {
   follow_up: 'Follow up',
@@ -149,18 +150,21 @@ export function CRMOverviewPage() {
   };
 
   return (
-    <div className="h-full overflow-auto p-4 md:p-6">
-      <div className="mx-auto w-full max-w-4xl">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold">CRM Overview</h2>
-            <p className="text-sm text-muted-foreground">Meetings, CRM follow-ups, and deals that need your attention.</p>
-          </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <QuietPageHeader
+        variant="shell"
+        title="CRM Overview"
+        description="Meetings, CRM follow-ups, and deals that need your attention."
+        actions={(
           <Button variant="outline" size="sm" onClick={() => navigate({ to: '/w/$slug/crm/meetings', params: { slug: workspaceSlug } })}>
             <Calendar01Icon className="h-4 w-4" />
             View meetings
           </Button>
-        </header>
+        )}
+      />
+
+      <div className="min-h-0 flex-1 overflow-auto p-4 md:p-6">
+        <div className="mx-auto w-full max-w-4xl">
 
         {hasLoadError && (
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
@@ -290,7 +294,7 @@ export function CRMOverviewPage() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">{event.title}</p>
                           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {group.recurring ? 'Recurring - ' : ''}{format(new Date(event.start_time), 'EEE, MMM d - p')}
+                            {group.recurring ? 'Recurring - ' : ''}{formatMeetingDate(event.start_time, 'EEE, MMM d - p')}
                             {attendeeCount ? ` - ${attendeeCount} attendee${attendeeCount === 1 ? '' : 's'}` : ''}
                           </p>
                         </div>
@@ -380,6 +384,7 @@ export function CRMOverviewPage() {
           </aside>
         </div>
         )}
+        </div>
       </div>
     </div>
   );

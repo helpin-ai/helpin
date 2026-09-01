@@ -6,7 +6,7 @@ import {
   TOKEN_ICON_ALIASES,
 } from '@/generated/iconAliases'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { QuietSearchInput } from '@/components/design-system/quiet'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 const ICON_CATALOG_VERSION = '4.1.1'
@@ -195,11 +195,10 @@ export function IconPicker({ value, onChange, placeholder = 'Icon' }: IconPicker
       </PopoverTrigger>
       <PopoverContent className="w-[280px] p-0" align="start">
         <div className="border-b p-2">
-          <Input
+          <QuietSearchInput
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search icons..."
-            className="h-8 text-sm"
             autoFocus
           />
         </div>

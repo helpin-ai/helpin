@@ -135,6 +135,12 @@ export function StateTypeIcon({
   return <PMStateTypeIcon stateType={stateType} className={className} />;
 }
 
+export function getWorkflowStateTone(stateType?: StateType): 'neutral' | 'current' | 'positive' {
+  if (stateType === 'done') return 'positive';
+  if (stateType === 'started') return 'current';
+  return 'neutral';
+}
+
 // ── Sprint icon ───────────────────────────────────────────────────
 
 export function SprintIcon({

@@ -121,13 +121,33 @@ func (s *SupportAIService) RewriteSupportDraftWithoutConversation(
 	workspaceID string,
 	req model.SupportAIRewriteDraftRequest,
 ) (*model.SupportAIRewriteDraftResponse, error) {
-	return s.rewriteSupportDraftWithHistory(ctx, workspaceID, nil, req)
+	return s.rewriteDraftWithHistory(ctx, workspaceID, nil, "support reply", BillingFeatureSupportReplyRewrite, req)
+}
+
+// RewriteDraftForSurface applies the shared conversation-composer rewrite contract
+// without requiring Support conversation context.
+func (s *SupportAIService) RewriteDraftForSurface(
+	ctx context.Context,
+	workspaceID, surface, featureKey string,
+	req model.SupportAIRewriteDraftRequest,
+) (*model.SupportAIRewriteDraftResponse, error) {
+	return s.rewriteDraftWithHistory(ctx, workspaceID, nil, surface, featureKey, req)
 }
 
 func (s *SupportAIService) rewriteSupportDraftWithHistory(
 	ctx context.Context,
 	workspaceID string,
 	history []model.SupportMessage,
+	req model.SupportAIRewriteDraftRequest,
+) (*model.SupportAIRewriteDraftResponse, error) {
+	return s.rewriteDraftWithHistory(ctx, workspaceID, history, "support reply", BillingFeatureSupportReplyRewrite, req)
+}
+
+func (s *SupportAIService) rewriteDraftWithHistory(
+	ctx context.Context,
+	workspaceID string,
+	history []model.SupportMessage,
+	surface, featureKey string,
 	req model.SupportAIRewriteDraftRequest,
 ) (*model.SupportAIRewriteDraftResponse, error) {
 	if s == nil {
@@ -152,13 +172,13 @@ func (s *SupportAIService) rewriteSupportDraftWithHistory(
 
 	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    workspaceID,
-		FeatureKey:     BillingFeatureSupportReplyRewrite,
-		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureSupportReplyRewrite, operation, aiUsageStableHash(content)),
+		FeatureKey:     featureKey,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, featureKey, operation, aiUsageStableHash(content)),
 		Metadata: map[string]interface{}{
 			"operation": operation,
 		},
 		Chat: llm.ChatRequest{
-			SystemPrompt: buildSupportRewriteSystemPrompt(operation),
+			SystemPrompt: buildDraftRewriteSystemPrompt(surface, operation),
 			Messages:     buildSupportRewriteMessages(history, content),
 			Temperature:  0.2,
 			MaxTokens:    900,
@@ -853,6 +873,10 @@ func normalizeSupportRewriteOperation(raw string) string {
 }
 
 func buildSupportRewriteSystemPrompt(operation string) string {
+	return buildDraftRewriteSystemPrompt("support reply", operation)
+}
+
+func buildDraftRewriteSystemPrompt(surface, operation string) string {
 	var instruction string
 	switch operation {
 	case supportRewriteExpand:
@@ -869,12 +893,12 @@ func buildSupportRewriteSystemPrompt(operation string) string {
 		instruction = "Improve the draft while preserving intent."
 	}
 
-	return strings.TrimSpace(`You rewrite support replies for human agents.
+	return strings.TrimSpace(`You rewrite ` + strings.TrimSpace(surface) + ` drafts for people.
 
 Return a JSON object with a single "content" field containing only the rewritten draft text.
 Do not mention AI, model choice, or that you edited the text.
 Do not invent policies, refunds, timelines, or product facts that are not already supported by the draft or the conversation context.
-Preserve markdown-style bullets and links when present.
+Preserve valid HTML, markdown-style bullets, and links when present. Return the content in the same markup format as the draft.
 Preserve the language of the original draft unless the draft itself mixes languages.
 ` + "\n\n" + instruction)
 }

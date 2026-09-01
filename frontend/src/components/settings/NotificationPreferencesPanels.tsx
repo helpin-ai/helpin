@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Notification02Icon, NotificationOff02Icon, ArrowRight01Icon, GlobeIcon, Mail01Icon, Search01Icon } from '@/lib/icons';
+import { Notification02Icon, NotificationOff02Icon, ArrowRight01Icon, GlobeIcon, Mail01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import {
@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -148,15 +149,11 @@ function TimezonePicker({
       </PopoverTrigger>
       <PopoverContent className="w-[320px] p-0" align="end">
         <div className="border-b p-2">
-          <div className="flex items-center gap-2 px-2">
-            <Search01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <input
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            <QuietSearchInput
               placeholder="Search timezones..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
-          </div>
         </div>
         <div className="max-h-[280px] overflow-y-auto p-1">
           {filteredTimezones.length === 0 ? (

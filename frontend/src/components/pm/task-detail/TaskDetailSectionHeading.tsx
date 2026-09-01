@@ -1,5 +1,6 @@
 import type { ElementType, ReactNode } from 'react';
 
+import { QuietSectionHeader } from '@/components/design-system/quiet';
 import { cn } from '@/lib/utils';
 
 interface TaskDetailSectionHeadingProps {
@@ -16,14 +17,11 @@ export function TaskDetailSectionHeading({
   className,
 }: TaskDetailSectionHeadingProps) {
   return (
-    <div className={cn('border-b border-border/50 pb-2 pt-1.5', className)}>
-      <div className="flex items-center gap-1.5">
-        {Icon ? <Icon className="h-3.5 w-3.5 text-primary/80" /> : null}
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/75">
-          {title}
-        </h3>
-        {meta}
-      </div>
-    </div>
+    <QuietSectionHeader
+      title={title}
+      icon={Icon}
+      action={meta}
+      className={cn('border-b border-quiet-divider-light pb-2 pt-1.5', className)}
+    />
   );
 }

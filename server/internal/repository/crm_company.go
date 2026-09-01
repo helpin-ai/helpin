@@ -116,28 +116,19 @@ func (r *CRMCompanyRepository) ListContacts(ctx context.Context, workspaceID, co
 	return contacts, total, nil
 }
 
-// ListDeals returns deals associated with the company directly or through one of its contacts.
+// ListDeals returns deals for which this company is the canonical customer.
 func (r *CRMCompanyRepository) ListDeals(ctx context.Context, workspaceID, companyID, search string, pagination model.PMPagination) ([]model.CRMDeal, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.CRMDeal{}).
 		Where("crm_deals.workspace_id = ?", workspaceID).
 		Where(`EXISTS (
 			SELECT 1 FROM crm_associations ca
 			WHERE ca.workspace_id = crm_deals.workspace_id
-			  AND ((ca.from_object_type = 'deal' AND ca.from_object_id = crm_deals.id AND ca.to_object_type = 'company' AND ca.to_object_id = ?)
-			    OR (ca.to_object_type = 'deal' AND ca.to_object_id = crm_deals.id AND ca.from_object_type = 'company' AND ca.from_object_id = ?)
-			    OR (ca.from_object_type = 'deal' AND ca.from_object_id = crm_deals.id AND ca.to_object_type = 'contact' AND ca.to_object_id IN (
-			      SELECT CASE WHEN cca.from_object_type = 'contact' THEN cca.from_object_id ELSE cca.to_object_id END
-			      FROM crm_associations cca WHERE cca.workspace_id = crm_deals.workspace_id
-			        AND ((cca.from_object_type = 'contact' AND cca.to_object_type = 'company' AND cca.to_object_id = ?)
-			          OR (cca.to_object_type = 'contact' AND cca.from_object_type = 'company' AND cca.from_object_id = ?))
-			    ))
-			    OR (ca.to_object_type = 'deal' AND ca.to_object_id = crm_deals.id AND ca.from_object_type = 'contact' AND ca.from_object_id IN (
-			      SELECT CASE WHEN cca.from_object_type = 'contact' THEN cca.from_object_id ELSE cca.to_object_id END
-			      FROM crm_associations cca WHERE cca.workspace_id = crm_deals.workspace_id
-			        AND ((cca.from_object_type = 'contact' AND cca.to_object_type = 'company' AND cca.to_object_id = ?)
-			          OR (cca.to_object_type = 'contact' AND cca.from_object_type = 'company' AND cca.from_object_id = ?))
-			    )))
-		)`, companyID, companyID, companyID, companyID, companyID, companyID)
+			  AND ca.from_object_type = 'deal'
+			  AND ca.from_object_id = crm_deals.id
+			  AND ca.to_object_type = 'company'
+			  AND ca.to_object_id = ?
+			  AND ca.association_label = 'deal_customer'
+		)`, companyID)
 	if trimmed := strings.TrimSpace(search); trimmed != "" {
 		query = query.Where("LOWER(crm_deals.name) LIKE ?", "%"+strings.ToLower(trimmed)+"%")
 	}

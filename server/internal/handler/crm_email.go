@@ -289,11 +289,13 @@ func (h *CRMEmailHandler) SyncAccount(w http.ResponseWriter, r *http.Request) {
 func (h *CRMEmailHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	var req struct {
-		AccountID string   `json:"account_id"`
-		To        []string `json:"to"`
-		CC        []string `json:"cc"`
-		Subject   string   `json:"subject"`
-		BodyHTML  string   `json:"body_html"`
+		AccountID     string   `json:"account_id"`
+		To            []string `json:"to"`
+		CC            []string `json:"cc"`
+		Subject       string   `json:"subject"`
+		BodyHTML      string   `json:"body_html"`
+		DraftID       string   `json:"draft_id"`
+		AttachmentIDs []string `json:"attachment_ids"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -304,7 +306,7 @@ func (h *CRMEmailHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	message, err := h.emailService.SendEmail(r.Context(), workspaceID, req.AccountID, middleware.GetUserID(r.Context()), false, req.To, req.CC, req.Subject, req.BodyHTML)
+	message, err := h.emailService.SendEmailWithAttachments(r.Context(), workspaceID, req.AccountID, middleware.GetUserID(r.Context()), req.To, req.CC, req.Subject, req.BodyHTML, req.DraftID, req.AttachmentIDs)
 	if err != nil {
 		if err.Error() == "not authorized to send from this email account" {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -363,14 +365,16 @@ func (h *CRMEmailHandler) GetThread(w http.ResponseWriter, r *http.Request) {
 // ReplyToThread handles POST /api/crm/email/threads/{id}/reply.
 func (h *CRMEmailHandler) ReplyToThread(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Mode     string `json:"mode"`
-		BodyHTML string `json:"body_html"`
+		Mode          string   `json:"mode"`
+		BodyHTML      string   `json:"body_html"`
+		DraftID       string   `json:"draft_id"`
+		AttachmentIDs []string `json:"attachment_ids"`
 	}
 	if err := decodeJSON(r, &req); err != nil || (req.Mode != "reply" && req.Mode != "reply_all") || req.BodyHTML == "" {
 		writeError(w, http.StatusBadRequest, "mode and body_html are required")
 		return
 	}
-	message, err := h.emailService.ReplyToThread(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req.Mode, req.BodyHTML)
+	message, err := h.emailService.ReplyToThreadWithAttachments(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req.Mode, req.BodyHTML, req.DraftID, req.AttachmentIDs)
 	if err != nil {
 		if err.Error() == "only the connected mailbox owner can reply to this thread" {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -380,6 +384,48 @@ func (h *CRMEmailHandler) ReplyToThread(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, message)
+}
+
+// CreateAttachment stages a private outgoing CRM email attachment.
+func (h *CRMEmailHandler) CreateAttachment(w http.ResponseWriter, r *http.Request) {
+	var req model.CreateCRMEmailAttachmentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	result, err := h.emailService.CreateAttachment(r.Context(), getWorkspaceID(r), middleware.GetUserID(r.Context()), req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
+func (h *CRMEmailHandler) ConfirmAttachment(w http.ResponseWriter, r *http.Request) {
+	err := h.emailService.ConfirmAttachment(r.Context(), getWorkspaceID(r), chi.URLParam(r, "attachmentId"), middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "attachment uploaded"})
+}
+
+func (h *CRMEmailHandler) DeleteAttachment(w http.ResponseWriter, r *http.Request) {
+	err := h.emailService.DeleteAttachment(r.Context(), getWorkspaceID(r), chi.URLParam(r, "attachmentId"), middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *CRMEmailHandler) DownloadAttachment(w http.ResponseWriter, r *http.Request) {
+	url, err := h.emailService.GetAttachmentDownloadURL(r.Context(), getWorkspaceID(r), chi.URLParam(r, "attachmentId"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"url": url})
 }
 
 // SetThreadDismissal handles PUT/DELETE /api/crm/email/threads/{id}/needs-reply-dismissal.

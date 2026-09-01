@@ -4,6 +4,7 @@ import type {
   CodingSessionStreamState,
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
+import { findLastMatchingIndex } from './findLastMatchingIndex';
 
 function timestamp(value: string | undefined): number | null {
   const parsed = Date.parse(value ?? '');
@@ -65,7 +66,7 @@ export function hasAuthoritativeDockRuntimeTimeline(stream: CodingSessionStreamS
   }
   if (runtimeAssistantIDs.size === 0 && runtimeToolIDs.size === 0) return false;
 
-  const lastBoundary = stream.transcript_messages.findLastIndex(isConversationBoundary);
+  const lastBoundary = findLastMatchingIndex(stream.transcript_messages, isConversationBoundary);
   const interval = stream.transcript_messages.slice(lastBoundary + 1);
   const durableAssistantIDs = new Set<string>();
   const durableToolIDs = new Set<string>();
@@ -127,7 +128,7 @@ export function mergePersistedChatMessages(
     return latest === null ? value : Math.max(latest, value);
   }, null);
   const maxSequence = persisted.reduce((maximum, message) => Math.max(maximum, message.sequence_no), 0);
-  const lastUserIndex = orderedMessages.findLastIndex((message) => message.role === 'user');
+  const lastUserIndex = findLastMatchingIndex(orderedMessages, (message) => message.role === 'user');
   const currentIntervalHasDurableAssistant = orderedMessages
     .slice(lastUserIndex + 1)
     .some((message) => message.role === 'assistant');

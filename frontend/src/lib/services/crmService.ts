@@ -19,6 +19,8 @@ import type {
   CreateCRMCompanyRequest,
   UpdateCRMCompanyRequest,
   CreateCRMDealRequest,
+	SetCRMDealCustomerRequest,
+	CRMDealCustomer,
   UpdateCRMDealRequest,
   CreateCRMPipelineRequest,
   UpdateCRMPipelineRequest,
@@ -160,6 +162,7 @@ export const crmDealService = {
   get: (workspaceId: string, id: string) => api.get<CRMDeal>(`/crm/deals/${id}${qs(workspaceId)}`),
   create: (payload: CreateCRMDealRequest) => api.post<CRMDeal>(`/crm/deals${qs(payload.workspace_id)}`, payload),
   update: (workspaceId: string, id: string, payload: UpdateCRMDealRequest) => api.put<CRMDeal>(`/crm/deals/${id}${qs(workspaceId)}`, payload),
+  setCustomer: (workspaceId: string, id: string, payload: SetCRMDealCustomerRequest) => api.put<CRMDealCustomer>(`/crm/deals/${id}/customer${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/deals/${id}${qs(workspaceId)}`),
   listActivities: (workspaceId: string, dealId: string, page?: number) =>
     api.get<CRMPaginatedResponse<CRMActivity[]>>(`/crm/deals/${dealId}/activities${qs(workspaceId)}${page ? `&page=${page}` : ''}`),
@@ -213,6 +216,11 @@ export const crmImportService = {
 // ── Phase 3: Email & Calendar ──
 
 export const crmEmailService = {
+  rewriteDraft: (workspaceId: string, content: string, operation: import('@/components/design-system/conversation-composer').ConversationRewriteOperation) =>
+    api.post<{ content: string; operation: string; provider: string; model: string }>(
+      `/crm/email/rewrite-draft${qs(workspaceId)}`,
+      { content, operation },
+    ),
   listAccounts: (workspaceId: string, filters?: { member_id?: string; provider?: string }) => api.get<CRMEmailAccount[]>(`/crm/email/accounts${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   getAccount: (workspaceId: string, id: string) => api.get<CRMEmailAccount>(`/crm/email/accounts/${id}${qs(workspaceId)}`),
   createAccount: (payload: CreateCRMEmailAccountRequest) => api.post<CRMEmailAccount>(`/crm/email/accounts${qs(payload.workspace_id)}`, payload),
@@ -229,6 +237,8 @@ export const crmEmailService = {
       cc?: string[];
       subject: string;
       body_html: string;
+      draft_id?: string;
+      attachment_ids?: string[];
     },
   ) => api.post<CRMEmailMessage>(`/crm/email/send${qs(workspaceId)}`, payload),
   listThreads: (
@@ -247,8 +257,13 @@ export const crmEmailService = {
   ) => api.get<CRMPaginatedResponse<CRMEmailThread[]>>(`/crm/email/threads${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   getThread: (workspaceId: string, threadId: string) =>
     api.get<CRMEmailThreadDetail>(`/crm/email/threads/${threadId}${qs(workspaceId)}`),
-  replyToThread: (workspaceId: string, threadId: string, payload: { mode: 'reply' | 'reply_all'; body_html: string }) =>
+  replyToThread: (workspaceId: string, threadId: string, payload: { mode: 'reply' | 'reply_all'; body_html: string; draft_id?: string; attachment_ids?: string[] }) =>
     api.post<CRMEmailMessage>(`/crm/email/threads/${threadId}/reply${qs(workspaceId)}`, payload),
+  createAttachment: (workspaceId: string, payload: { draft_id: string; file_name: string; file_size: number; content_type: string }) =>
+    api.post<{ attachment: import('../crmTypes').CRMEmailAttachment; upload_url: string }>(`/crm/email/attachments${qs(workspaceId)}`, payload),
+  confirmAttachment: (workspaceId: string, id: string) => api.patch(`/crm/email/attachments/${id}/confirm${qs(workspaceId)}`, {}),
+  deleteAttachment: (workspaceId: string, id: string) => api.del(`/crm/email/attachments/${id}${qs(workspaceId)}`),
+  getAttachmentDownload: (workspaceId: string, id: string) => api.get<{ url: string }>(`/crm/email/attachments/${id}/download${qs(workspaceId)}`),
   setNeedsReplyDismissed: (workspaceId: string, threadId: string, dismissed: boolean) =>
     dismissed
       ? api.put(`/crm/email/threads/${threadId}/needs-reply-dismissal${qs(workspaceId)}`, {})

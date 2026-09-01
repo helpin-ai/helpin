@@ -11,15 +11,15 @@ import {
   MoreVerticalIcon,
   PencilEdit01Icon,
   PlusSignIcon,
-  Search01Icon,
   StarIcon,
   Tick01Icon,
   UserIcon,
 } from '@/lib/icons'
 import { cn, getInitials } from '@/lib/utils'
+import { getAvatarColor } from '@/lib/avatarColor'
 import { StoredIcon } from '@/components/ui/icon-picker'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { QuietSearchInput } from '@/components/design-system/quiet'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -46,7 +46,6 @@ import { SpaceDialog } from '@/components/docs/SpaceDialog'
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog'
 import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog'
 import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog'
-import { useSearchCommandStore } from '@/stores/searchCommandStore'
 import type { SidebarNavigateTarget } from './navigation'
 import { SidebarCreateBar } from './SidebarCreateBar'
 import {
@@ -79,9 +78,11 @@ type DocsRailNavProps = {
 function SpaceMark({ space, size = 'md' }: { space: DocsSpace; size?: 'sm' | 'md' }) {
   return (
     <span
+      data-slot="docs-space-avatar"
       className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden bg-foreground font-semibold text-background',
-        size === 'md' ? 'h-7 w-7 rounded-lg text-xs' : 'h-6 w-6 rounded-md text-[11px]',
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold leading-none',
+        getAvatarColor(space.id),
+        size === 'md' ? 'h-7 w-7 text-xs' : 'h-6 w-6 text-[11px]',
       )}
     >
       <StoredIcon
@@ -356,7 +357,6 @@ export function DocsRailNav({
   const [deletingSpace, setDeletingSpace] = useState<DocsSpace | null>(null)
   const [editingCollection, setEditingCollection] = useState<DocsCollection | null>(null)
   const [deletingCollection, setDeletingCollection] = useState<DocsCollection | null>(null)
-  const openSearch = useSearchCommandStore((state) => state.openSearch)
   const deleteSpace = useDeleteDocsSpace(wsId)
   const deleteCollection = useDeleteDocsCollection(wsId)
 
@@ -531,7 +531,8 @@ export function DocsRailNav({
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" sideOffset={-52} className="w-72 gap-1 p-2 shadow-xl">
-            <Input
+            <QuietSearchInput
+              containerClassName="mb-1"
               autoFocus
               role="combobox"
               aria-controls="docs-space-options"
@@ -560,7 +561,6 @@ export function DocsRailNav({
                 }
               }}
               placeholder="Find a space…"
-              className="mb-1 h-8 border-0 bg-muted/70 text-sm shadow-none focus-visible:ring-1"
             />
             <div id="docs-space-options" role="listbox" aria-label="Documentation spaces" className="max-h-72 overflow-y-auto">
               {[
@@ -798,16 +798,6 @@ export function DocsRailNav({
           </div>
         )}
       </div>
-
-      <button
-        type="button"
-        onClick={openSearch}
-        className="flex min-h-11 items-center gap-2 border-t border-sidebar-border/80 px-3 text-left text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-      >
-        <Search01Icon className="h-3.5 w-3.5" />
-        <span className="min-w-0 flex-1 truncate">Search all spaces</span>
-        <span className="text-[11px] text-muted-foreground/70">⌘K</span>
-      </button>
 
       <SpaceDialog
         wsId={wsId}

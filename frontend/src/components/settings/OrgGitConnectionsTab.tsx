@@ -14,11 +14,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { QuietPageHeader } from '@/components/design-system/quiet';
 import type { GitLabTokenAuthType } from '@/lib/pmTypes';
 import {
   ArrowReloadHorizontalIcon,
   Delete01Icon,
-  GitBranchIcon,
   GlobeIcon,
   LinkSquare01Icon,
   Loading01Icon,
@@ -225,17 +225,10 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h2 className="flex items-center gap-2 text-xl font-semibold">
-            <GitBranchIcon className="h-4 w-4" />
-            Git Connections
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Organization provider access for repositories used across workspaces.
-          </p>
-        </div>
-        {canManage ? (
+      <QuietPageHeader
+        title="Git Connections"
+        description="Organization provider access for repositories used across workspaces."
+        actions={canManage ? (
           <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
             {hasGitHubIntegration ? (
               <Button
@@ -270,7 +263,7 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
             </Button>
           </div>
         ) : null}
-      </div>
+      />
 
       {!organizationId ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">

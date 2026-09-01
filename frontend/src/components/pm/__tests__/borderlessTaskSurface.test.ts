@@ -50,10 +50,11 @@ describe('borderless task surfaces', () => {
     expect(updatesSource).toContain('composerVariant="update"');
     expect(updatesSource).toContain('<TabsList variant="line"');
     expect(editorSource).toContain("variant === 'update'");
-    expect(editorSource).toContain('group/update-composer');
-    expect(editorSource).toContain('border-t border-border/40');
-    expect(editorSource).toContain('group-focus-within/update-composer:border-foreground/70');
-    expect(editorSource).toContain('rounded-full bg-primary');
+    expect(editorSource).toContain('<QuietConversationComposer focused={focused} className="group/update-composer">');
+    expect(editorSource).toContain('<QuietComposerEditorSurface>');
+    expect(editorSource).toContain('<QuietComposerAITools');
+    expect(editorSource).toContain('<QuietComposerToolbar');
+    expect(editorSource).toContain('submitLabel="Send"');
     expect(threadSource).toContain("variant: composerVariant === 'update' ? 'update' : 'reply'");
     expect(threadSource).toContain("variant={composerVariant === 'update' ? 'update' : undefined}");
   });

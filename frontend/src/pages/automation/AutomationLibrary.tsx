@@ -1,6 +1,6 @@
 import { AutomationShell } from '@/components/automation/AutomationShell';
 import { AutomationOverviewPanel } from '@/components/automation/AutomationOverviewPanel';
-import { Card, CardContent } from '@/components/ui/card';
+import { QuietEmptyState } from '@/components/design-system/quiet';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
@@ -24,11 +24,10 @@ export function AutomationLibraryPage() {
       description="Browse every event surface your workspace can react to. Go to Flows to connect a trigger to an agent and action."
     >
       {!permissions.canManageSettings ? (
-        <Card className="border-border/60 bg-card/80">
-          <CardContent className="px-5 py-6 text-sm text-muted-foreground">
-            You do not have permission to view the workspace automation library.
-          </CardContent>
-        </Card>
+        <QuietEmptyState
+          title="Trigger catalog unavailable"
+          description="You do not have permission to view the workspace automation library. Ask a workspace administrator for access."
+        />
       ) : (
         <div className="space-y-4">
           <AutomationOverviewPanel

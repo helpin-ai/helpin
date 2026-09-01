@@ -20,13 +20,14 @@ import {
   Mail01Icon,
   MapPinIcon,
   PlusSignIcon,
-  Search01Icon,
   Tag01Icon,
   TelephoneIcon,
   UserIcon,
   ZapIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietPrimaryAction, QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, QuietTextAction, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -35,7 +36,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -956,27 +956,39 @@ export function ContactDetailPage({
   // ── Loading / Not found ──
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          className="lg:px-10"
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'contacts', label: 'Contacts', onClick: goBack }]} onBack={goBack} backLabel="Back to contacts" />}
+          avatar={<Skeleton className="h-10 w-10 rounded-full" />}
+          title={<Skeleton className="h-8 w-64 max-w-full rounded-none" />}
+          meta={<Skeleton className="h-3 w-48 rounded-none" />}
+        />
+        <div className="flex flex-1 items-center justify-center">
+          <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       </div>
     );
   }
 
   if (isContactLimitError(contactError)) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-        <div>
-          <h2 className="text-sm font-medium">Upgrade to view CRM contacts</h2>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            The Starter plan includes up to 5,000 contacts. Support can keep capturing new contacts, but CRM contact viewing requires the Growth plan once you exceed that limit.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={goBack}>
-            <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
-            Back to contacts
-          </Button>
-          <Button size="sm" onClick={goToBilling}>Upgrade</Button>
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'contacts', label: 'Contacts', onClick: goBack }]} onBack={goBack} backLabel="Back to contacts" />}
+          title="Contact"
+        />
+        <div className="flex-1 overflow-auto p-4 sm:p-6">
+          <QuietEmptyState
+            title="Upgrade to view CRM contacts"
+            description="The Starter plan includes up to 5,000 contacts. Support can keep capturing new contacts, but viewing CRM contacts above that limit requires the Growth plan."
+            action={(
+              <div className="flex flex-wrap items-center gap-4">
+                <QuietTextAction onClick={goBack}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to contacts</QuietTextAction>
+                <QuietPrimaryAction onClick={goToBilling}>Upgrade</QuietPrimaryAction>
+              </div>
+            )}
+          />
         </div>
       </div>
     );
@@ -984,94 +996,93 @@ export function ContactDetailPage({
 
   if (!contact || !form) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-muted-foreground">Contact not found</p>
-        <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
-          Back to contacts
-        </Button>
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'contacts', label: 'Contacts', onClick: goBack }]} onBack={goBack} backLabel="Back to contacts" />}
+          title="Contact"
+        />
+        <div className="flex-1 overflow-auto p-4 sm:p-6">
+          <QuietEmptyState
+            title="Contact not found"
+            description="This contact may have been deleted or you may no longer have access to it."
+            action={<QuietTextAction onClick={goBack}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to contacts</QuietTextAction>}
+          />
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-3">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goBack} aria-label="Back to contacts">
-          <ArrowLeft02Icon className="h-4 w-4" />
-        </Button>
-        <button type="button" onClick={goBack} className="text-xs text-muted-foreground transition-colors hover:text-foreground">
-          Contacts
-        </button>
-        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground/60" />
-        <span className="min-w-0 truncate text-xs font-medium">{`${form.first_name} ${form.last_name}`.trim() || 'Untitled contact'}</span>
-        <div className="ml-auto flex items-center gap-1.5">
-          <SaveIndicator saving={saving} error={saveError} />
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => setDeleteConfirmOpen(true)} aria-label="Delete contact">
-            <Delete01Icon className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
+      <ContactHeader
+        firstName={form.first_name}
+        lastName={form.last_name}
+        jobTitle={form.job_title}
+        companyName={primaryCompanyAssociation?.linked_object_name ?? undefined}
+        companyHref={
+          primaryCompanyAssociation
+            ? `/w/${wsSlug}/crm/companies/${primaryCompanyAssociation.linkedId}`
+            : undefined
+        }
+        lifecycleStage={form.lifecycle_stage}
+        lifecycleLabel={
+          lifecycleOptions.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
+        }
+        displayId={contact.display_id}
+        avatarColorSeed={form.email}
+        state={<SaveIndicator saving={saving} error={saveError} presentation="quiet" />}
+        actions={(
+          <>
+            <QuietDetailAction
+              tone="danger"
+              icon={<Delete01Icon className="h-3.5 w-3.5" />}
+              label="Delete contact"
+              onClick={() => setDeleteConfirmOpen(true)}
+            />
+            <QuietDetailAction
+              tone="primary"
+              icon={<PlusSignIcon className="h-3.5 w-3.5" />}
+              label="New deal"
+              onClick={() => setCreateDealOpen(true)}
+            />
+          </>
+        )}
+        onBack={goBack}
+        onNameChange={(first, last) => {
+          setForm((current) =>
+            current ? { ...current, first_name: first, last_name: last } : current,
+          );
+          queuePatch({ first_name: first, last_name: last });
+        }}
+      />
 
       <div className={cn(
         'grid min-h-0 flex-1',
         desktopDetailsCollapsed ? contactDetailCollapsedGridClassName : contactDetailOverviewGridClassName,
       )}>
         <div className="flex min-h-0 flex-col overflow-hidden">
-          <ContactHeader
-            firstName={form.first_name}
-            lastName={form.last_name}
-            jobTitle={form.job_title}
-            companyName={primaryCompanyAssociation?.linked_object_name ?? undefined}
-            companyHref={
-              primaryCompanyAssociation
-                ? `/w/${wsSlug}/crm/companies/${primaryCompanyAssociation.linkedId}`
-                : undefined
-            }
-            lifecycleStage={form.lifecycle_stage}
-            lifecycleLabel={
-              lifecycleOptions.find((o) => o.value === form.lifecycle_stage)?.label ?? form.lifecycle_stage
-            }
-            displayId={contact.display_id}
-            actions={(
-              <Button size="sm" className="h-8 gap-1.5" onClick={() => setCreateDealOpen(true)}>
-                <PlusSignIcon className="h-3.5 w-3.5" />
-                New deal
-              </Button>
-            )}
-            onNameChange={(first, last) => {
-              setForm((current) =>
-                current ? { ...current, first_name: first, last_name: last } : current,
-              );
-              queuePatch({ first_name: first, last_name: last });
-            }}
-          />
-
-          <div className="flex items-end border-b border-border/60 px-3 sm:px-5 lg:px-8">
-            <Tabs
-              value={activeTab}
-              onValueChange={(value) => onTabChange?.(value as ContactDetailTab)}
-              className="min-w-0 flex-1 gap-0 overflow-hidden"
-            >
-              <div className="overflow-x-auto px-1 pt-1">
-                <TabsList variant="line" className="h-10 gap-0.5">
-                  {contactDetailTabLabels.map((tab) => (
-                    <TabsTrigger key={tab.value} value={tab.value} className="px-2.5 text-[13px]">
-                      {tab.label}
-                    </TabsTrigger>
-                  ))}
+          <div className="flex items-end border-b border-quiet-divider-strong px-3 sm:px-5 lg:px-8">
+            <div className="min-w-0 flex-1 overflow-x-auto px-1 pt-1">
+              <Tabs value={activeTab} onValueChange={(value) => onTabChange?.(value as ContactDetailTab)} className="min-w-max gap-0">
+                <TabsList variant="quiet" aria-label="Contact detail views" className="border-b-0">
+                {contactDetailTabLabels.map((tab) => (
+                  <TabsTrigger
+                    key={tab.value}
+                    value={tab.value}
+                  >
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
                 </TabsList>
-              </div>
-            </Tabs>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="mb-1 ml-2 h-8 w-8 shrink-0 lg:hidden"
+              </Tabs>
+            </div>
+            <QuietIconAction
+              className="mb-1 ml-2 shrink-0 lg:hidden"
               onClick={() => setMobileDetailsOpen(true)}
               aria-label="Open contact details"
             >
               <LayoutTwoColumnIcon className="h-4 w-4" />
-            </Button>
+            </QuietIconAction>
           </div>
 
           {activeTab === 'overview' && (
@@ -1897,24 +1908,20 @@ export function ContactDetailPage({
 
       {/* ── Company picker dialog ── */}
       <Dialog open={companyPickerOpen} onOpenChange={setCompanyPickerOpen}>
-        <DialogContent className="sm:max-w-md">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">
               {companyPickerMode === 'primary' ? 'Set primary company' : 'Link company'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={companyQuery}
-                onChange={(e) => setCompanyQuery(e.target.value)}
-                placeholder={companyPickerMode === 'primary' ? 'Search companies to set as primary' : 'Search companies by name'}
-                className="pl-9"
-                autoFocus
-              />
-            </div>
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <QuietSearchInput
+              value={companyQuery}
+              onChange={(e) => setCompanyQuery(e.target.value)}
+              placeholder={companyPickerMode === 'primary' ? 'Search companies to set as primary' : 'Search companies by name'}
+              autoFocus
+            />
+            <QuietRelationshipResults className="max-h-64 space-y-1 overflow-y-auto">
               {companySearching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -1924,12 +1931,12 @@ export function ContactDetailPage({
                 <button
                   key={r.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
                   onClick={() => handleAddCompany(r.id)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <GlobeIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{r.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
                   </div>
                 </button>
               ))}
@@ -1939,29 +1946,25 @@ export function ContactDetailPage({
               {!companySearching && companyQuery.trim().length < 2 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">Type at least 2 characters to search</p>
               )}
-            </div>
+            </QuietRelationshipResults>
           </div>
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
 
       {/* ── Deal picker dialog ── */}
       <Dialog open={dealPickerOpen} onOpenChange={setDealPickerOpen}>
-        <DialogContent className="sm:max-w-md">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">Link deal</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={dealQuery}
-                onChange={(e) => setDealQuery(e.target.value)}
-                placeholder="Search deals by name"
-                className="pl-9"
-                autoFocus
-              />
-            </div>
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <QuietSearchInput
+              value={dealQuery}
+              onChange={(e) => setDealQuery(e.target.value)}
+              placeholder="Search deals by name"
+              autoFocus
+            />
+            <QuietRelationshipResults className="max-h-64 space-y-1 overflow-y-auto">
               {dealSearching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -1971,12 +1974,12 @@ export function ContactDetailPage({
                 <button
                   key={r.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
                   onClick={() => handleAddDeal(r.id)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <DollarCircleIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{r.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
                   </div>
                 </button>
               ))}
@@ -1986,9 +1989,9 @@ export function ContactDetailPage({
               {!dealSearching && dealQuery.trim().length < 2 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">Type at least 2 characters to search</p>
               )}
-            </div>
+            </QuietRelationshipResults>
           </div>
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
 
       {/* ── Delete contact confirm ── */}

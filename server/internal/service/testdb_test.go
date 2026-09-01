@@ -1112,6 +1112,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			company_id TEXT,
 			identity_method TEXT NOT NULL,
 			identity_trust TEXT NOT NULL,
+			company_match_method TEXT,
 			verified_at DATETIME,
 			verifier_version TEXT,
 			created_at DATETIME

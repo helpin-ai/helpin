@@ -52,6 +52,10 @@ waqar-images/
 .claude/settings.local.json
 .claude/skills/
 .agents/skills/
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/helpin-design-system/
+!.agents/skills/helpin-design-system/**
 .worktrees/
 node_modules/
 .pnpm-store/

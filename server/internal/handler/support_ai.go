@@ -481,7 +481,7 @@ func (h *SupportAIHandler) RewriteSupportDraft(w http.ResponseWriter, r *http.Re
 			writeError(w, http.StatusNotFound, err.Error())
 		default:
 			slog.ErrorContext(r.Context(), "support draft rewrite failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "failed to rewrite support draft")
+			writeBillingAwareError(w, http.StatusInternalServerError, err)
 		}
 		return
 	}
@@ -492,6 +492,20 @@ func (h *SupportAIHandler) RewriteSupportDraft(w http.ResponseWriter, r *http.Re
 // RewriteNewSupportDraft rewrites a support draft before the conversation exists.
 // POST /api/support/inbox/rewrite-draft
 func (h *SupportAIHandler) RewriteNewSupportDraft(w http.ResponseWriter, r *http.Request) {
+	h.rewriteDraftForSurface(w, r, "support reply", service.BillingFeatureSupportReplyRewrite)
+}
+
+// RewritePMCommentDraft rewrites task and epic comment drafts.
+func (h *SupportAIHandler) RewritePMCommentDraft(w http.ResponseWriter, r *http.Request) {
+	h.rewriteDraftForSurface(w, r, "project comment", service.BillingFeaturePMCommentRewrite)
+}
+
+// RewriteCRMEmailDraft rewrites CRM email and reply drafts.
+func (h *SupportAIHandler) RewriteCRMEmailDraft(w http.ResponseWriter, r *http.Request) {
+	h.rewriteDraftForSurface(w, r, "CRM email", service.BillingFeatureCRMEmailRewrite)
+}
+
+func (h *SupportAIHandler) rewriteDraftForSurface(w http.ResponseWriter, r *http.Request, surface, featureKey string) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
@@ -508,14 +522,14 @@ func (h *SupportAIHandler) RewriteNewSupportDraft(w http.ResponseWriter, r *http
 		return
 	}
 
-	resp, err := h.aiService.RewriteSupportDraftWithoutConversation(r.Context(), workspaceID, req)
+	resp, err := h.aiService.RewriteDraftForSurface(r.Context(), workspaceID, surface, featureKey, req)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrSupportRewriteInvalidInput):
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:
-			slog.ErrorContext(r.Context(), "new support draft rewrite failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "failed to rewrite support draft")
+			slog.ErrorContext(r.Context(), "conversation draft rewrite failed", "error", err, "surface", surface)
+			writeBillingAwareError(w, http.StatusInternalServerError, err)
 		}
 		return
 	}

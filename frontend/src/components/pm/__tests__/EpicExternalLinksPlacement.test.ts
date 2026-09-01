@@ -8,7 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 describe('epic external links placement', () => {
   it('keeps external links in the right-rail Related section', () => {
     const source = readFileSync(resolve(__dirname, '../../../pages/pm/EpicDetail.tsx'), 'utf8');
-    const overviewStart = source.indexOf('{/* Title */}');
+    const overviewStart = source.indexOf("{activeView === 'overview' ? (");
     const rightRailStart = source.indexOf('Right column — metadata sidebar');
     const relatedStart = source.indexOf('<details id="epic-related-section"', rightRailStart);
     const docsStart = source.indexOf('section="docs"', relatedStart);

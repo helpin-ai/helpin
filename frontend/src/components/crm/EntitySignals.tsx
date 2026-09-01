@@ -87,12 +87,12 @@ function EntitySignalsEmptyState({ workspaceId }: { workspaceId: string }) {
   return (
     <div className="px-4 pb-6 pt-1 sm:px-6 lg:px-10">
       <h3 className="text-[14px] font-medium text-foreground">Nothing to act on yet</h3>
-      <p className="mt-1 max-w-[560px] text-[13px] leading-[1.6] text-muted-foreground">Signals appear automatically as email, meeting, support, and CRM activity syncs. Here is what we watch for.</p>
+      <p className="mt-1 max-w-[560px] text-sm leading-[1.6] text-muted-foreground">Signals appear automatically as email, meeting, support, and CRM activity syncs. Here is what we watch for.</p>
       <div className="mt-4 max-w-[680px] border-t border-border/40">
-        {watched.map(({ icon: Icon, title, detail }) => <div key={title} className="flex items-center gap-3 border-b border-border/40 py-2.5"><Icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/55" /><span className="w-[150px] shrink-0 text-[13px] font-medium text-foreground/80">{title}</span><span className="text-[12.5px] text-muted-foreground/65">{detail}</span></div>)}
+        {watched.map(({ icon: Icon, title, detail }) => <div key={title} className="flex items-center gap-3 border-b border-border/40 py-2.5"><Icon className="h-[15px] w-[15px] shrink-0 text-muted-foreground/55" /><span className="w-[150px] shrink-0 text-sm font-medium text-foreground/80">{title}</span><span className="text-[12.5px] text-muted-foreground/65">{detail}</span></div>)}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-[18px]">
-        <button type="button" className="inline-flex items-center gap-1.5 border-b border-border px-0.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:border-foreground hover:text-foreground" onClick={() => { window.location.href = `/w/${workspaceSlug}/settings/crm-email`; }}><Mail01Icon className="h-3.5 w-3.5" />Connect a mailbox</button>
+        <button type="button" className="inline-flex items-center gap-1.5 border-b border-border px-0.5 py-1.5 text-sm text-muted-foreground transition-colors hover:border-foreground hover:text-foreground" onClick={() => { window.location.href = `/w/${workspaceSlug}/settings/crm-email`; }}><Mail01Icon className="h-3.5 w-3.5" />Connect a mailbox</button>
         <span className="text-[12.5px] text-muted-foreground/65">{connectedMembers} of {members.data?.length ?? 0} employees connected</span>
       </div>
     </div>
@@ -134,7 +134,7 @@ export function EntitySignals({ workspaceId, contactId, dealId, companyId, prese
                   {signal.acted_at ? 'Acted on' : 'Reviewed'}
                 </div>
               ) : null}
-              <p className="mt-1 max-w-[700px] text-[13px] leading-[1.6] text-muted-foreground [text-wrap:pretty]">{signal.evidence_excerpt || signal.summary}</p>
+              <p className="mt-1 max-w-[700px] text-sm leading-[1.6] text-muted-foreground [text-wrap:pretty]">{signal.evidence_excerpt || signal.summary}</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground/60"><span>{sourceLabel(signal)}</span>{signal.contact_name ? <><span className="h-2.5 w-px bg-border" /><span>{signal.contact_name}</span></> : null}{signal.deal_name ? <><span className="h-2.5 w-px bg-border" /><span>{signal.deal_display_id ? `${signal.deal_display_id} · ` : ''}{signal.deal_name}</span></> : null}{canOpenSource(signal, onOpenSource) ? <><span className="h-2.5 w-px bg-border" /><button type="button" className="font-medium text-orange-700 hover:text-orange-800 dark:text-orange-400" onClick={() => onOpenSource?.(signal)}>{sourceAction(signal)}</button></> : null}</div>
             </div>
             <DropdownMenu>

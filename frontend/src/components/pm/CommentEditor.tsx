@@ -8,6 +8,19 @@ import { Loading01Icon, SentIcon, Image01Icon, AttachmentIcon, Cancel01Icon } fr
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { ImageLightbox } from '@/components/pm/ImageLightbox'
 import { EmojiPicker } from '@/components/support/EmojiPicker'
+import { LinkInsertModal } from '@/components/support/LinkInsertModal'
+import {
+  QuietComposerAITools,
+  QuietComposerEditorSurface,
+  QuietComposerToolbar,
+  QuietConversationComposer,
+  type ConversationRewriteOperation,
+} from '@/components/design-system/quiet'
+import { rewritePMCommentDraft } from '@/lib/services/pmCommentService'
+import { unwrap } from '@/lib/queryUtils'
+import { toast } from 'sonner'
+import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog'
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import {
@@ -17,6 +30,7 @@ import {
 } from '@/components/pm/mentionSuggestions'
 
 interface CommentEditorProps {
+  workspaceId?: string
   onSubmit: (text: string) => void | Promise<void>
   loading?: boolean
   placeholder?: string
@@ -74,6 +88,7 @@ function detectMentions(
 }
 
 export function CommentEditor({
+  workspaceId,
   onSubmit,
   loading = false,
   placeholder = 'Leave a comment...',
@@ -106,6 +121,11 @@ export function CommentEditor({
   onImageSelectRef.current = onImageSelect
   const [hasContent, setHasContent] = useState(false)
   const [lightboxFileId, setLightboxFileId] = useState<string | null>(null)
+  const [focused, setFocused] = useState(false)
+  const [rewriting, setRewriting] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [linkInitial, setLinkInitial] = useState({ label: '', url: '' })
+  const [upgradeReason, setUpgradeReason] = useState<UpgradeRequiredReason | null>(null)
   const currentHtmlRef = useRef('')
   const skipNextCleanupRef = useRef(false)
 
@@ -143,12 +163,12 @@ export function CommentEditor({
   const extensions = useMemo(() => [
     StarterKit.configure({
       heading: false,
-      blockquote: false,
+      blockquote: variant === 'update' ? undefined : false,
       codeBlock: false,
       horizontalRule: false,
-      bulletList: false,
-      orderedList: false,
-      listItem: false,
+      bulletList: variant === 'update' ? undefined : false,
+      orderedList: variant === 'update' ? undefined : false,
+      listItem: variant === 'update' ? undefined : false,
       link: {
         openOnClick: false,
         autolink: true,
@@ -169,7 +189,7 @@ export function CommentEditor({
         return handles
       },
     }),
-  ], [placeholder])
+  ], [placeholder, variant])
 
   const editor = useEditor({
     extensions,
@@ -178,7 +198,8 @@ export function CommentEditor({
     editorProps: {
       attributes: {
         class: cn(
-          'rich-text-soft prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto px-3 py-2 bg-transparent',
+          'rich-text-soft prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[160px] overflow-y-auto bg-transparent',
+          variant === 'update' ? 'px-0 py-0 text-sm leading-relaxed' : 'px-3 py-2',
           contentVariant === 'pm' ? 'pm-rich-text' : 'text-[13px]',
         ),
       },
@@ -274,10 +295,18 @@ export function CommentEditor({
       setMentionState(detectMentions(editorRef.current, teamsRef.current, membersRef.current))
     },
     onBlur: () => setMentionState(null),
+    onFocus: () => setFocused(true),
   })
 
   const editorRef = useRef(editor)
   editorRef.current = editor
+
+  useEffect(() => {
+    if (!editor) return
+    const handleBlur = () => setFocused(false)
+    editor.on('blur', handleBlur)
+    return () => { editor.off('blur', handleBlur) }
+  }, [editor])
 
   // Also register via editor.on() as backup — TipTap v3 may not call
   // the onUpdate option reliably in all cases.
@@ -314,10 +343,105 @@ export function CommentEditor({
     : -1
   const activePreviewFile = activePreviewIndex >= 0 ? previewFiles[activePreviewIndex] : null
 
+  const openLinkModal = () => {
+    const attrs = editor.getAttributes('link') as { href?: string }
+    const { from, to, empty } = editor.state.selection
+    let label = ''
+    if (editor.isActive('link')) {
+      editor.chain().focus().extendMarkRange('link').run()
+      label = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ')
+    } else if (!empty) {
+      label = editor.state.doc.textBetween(from, to, ' ')
+    }
+    setLinkInitial({ label, url: attrs.href ?? '' })
+    setLinkOpen(true)
+  }
+
+  const insertLink = (label: string, url: string) => {
+    if (editor.isActive('link')) editor.chain().focus().extendMarkRange('link').unsetLink().run()
+    const { from, to, empty } = editor.state.selection
+    const node = { type: 'text', text: label, marks: [{ type: 'link', attrs: { href: url } }] }
+    if (empty) editor.chain().focus().insertContent(node).run()
+    else editor.chain().focus().insertContentAt({ from, to }, node).run()
+  }
+
+  const rewrite = async (operation: ConversationRewriteOperation) => {
+    if (!workspaceId || editor.isEmpty || rewriting) return
+    setRewriting(true)
+    try {
+      const result = unwrap(await rewritePMCommentDraft(workspaceId, editor.getHTML(), operation))
+      editor.commands.setContent(result.content)
+      editor.commands.focus('end')
+    } catch (error) {
+      const reason = getUpgradeRequiredReason(error)
+      if (reason) setUpgradeReason(reason)
+      else toast.error(error instanceof Error ? error.message : 'Comment could not be rewritten')
+    } finally {
+      setRewriting(false)
+    }
+  }
+
+  if (variant === 'update') {
+    return (
+      <>
+      <QuietConversationComposer focused={focused} className="group/update-composer">
+        {mentionState && mentionState.items.length > 0 ? (
+          <div className="absolute bottom-full left-0 right-0 z-50 mb-2 px-1" onMouseDown={(event) => event.preventDefault()}>
+            <div className="max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
+              <MentionSuggestionsList
+                items={mentionState.items}
+                selectedIndex={mentionState.selectedIndex}
+                onSelect={(item) => {
+                  editor.chain().focus().insertContentAt({ from: mentionState.from, to: mentionState.to }, `@${item.handle} `).run()
+                  setMentionState(null)
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
+        <div className="flex items-center gap-2 px-3 pt-2">
+          {workspaceId ? <QuietComposerAITools disabled={!hasContent} pending={rewriting} onSelect={rewrite} /> : null}
+        </div>
+        <QuietComposerEditorSurface><EditorContent editor={editor} /></QuietComposerEditorSurface>
+        {uploadedFiles.length > 0 && onRemoveUploadedFile ? (
+          <div className="flex flex-wrap gap-1 px-4 pb-2">
+            {uploadedFiles.map((file) => (
+              <div key={file.id} className="flex min-w-0 items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2 py-1 text-xs">
+                <AttachmentIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="max-w-40 truncate text-muted-foreground">{file.name}</span>
+                <button type="button" aria-label={`Remove ${file.name}`} onClick={() => onRemoveUploadedFile(file.id)}><Cancel01Icon className="h-3 w-3" /></button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <QuietComposerToolbar
+          editor={editor}
+          emoji={enableEmojiPicker ? <EmojiPicker align="start" side="top" onEmojiSelect={insertEmoji} /> : undefined}
+          onAttach={onFileSelect}
+          onLink={openLinkModal}
+          trailing={onCancel ? <button type="button" onClick={onCancel} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button> : undefined}
+          onSubmit={() => void handleSubmit()}
+          submitLabel="Send"
+          submitDisabled={!canSubmit}
+          submitting={loading}
+        />
+        <LinkInsertModal
+          open={linkOpen}
+          onOpenChange={setLinkOpen}
+          workspaceId={workspaceId ?? ''}
+          initialLabel={linkInitial.label}
+          initialUrl={linkInitial.url}
+          onInsert={insertLink}
+          onRemove={editor.isActive('link') ? () => editor.chain().focus().extendMarkRange('link').unsetLink().run() : undefined}
+        />
+      </QuietConversationComposer>
+      <UpgradeRequiredDialog open={upgradeReason !== null} onOpenChange={(open) => { if (!open) setUpgradeReason(null) }} reason={upgradeReason} />
+      </>
+    )
+  }
+
   const wrapperClass =
-    variant === 'update'
-      ? 'group/update-composer relative bg-transparent pt-2 pb-1.5 [&_.ProseMirror]:min-h-14 [&_.ProseMirror]:px-0 [&_.ProseMirror]:py-2'
-      : variant === 'primary'
+    variant === 'primary'
       ? 'relative rounded-lg border border-border bg-muted/70 px-3 pt-2 pb-1.5 transition-[color,box-shadow,background-color] focus-within:bg-background focus-within:ring-1 focus-within:ring-ring/40'
       : variant === 'reply'
         ? 'relative rounded-md border border-border/60 bg-background px-2.5 pt-1.5 pb-1 transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
@@ -404,7 +528,6 @@ export function CommentEditor({
       )}
       <div className={cn(
         'flex items-center justify-between gap-2 px-1 pt-1.5 pb-0.5',
-        variant === 'update' && 'border-t border-border/40 px-0 pt-1.5 transition-colors group-focus-within/update-composer:border-foreground/70',
       )}>
         <div className="flex items-center gap-0.5">
           {onImageSelect && (
@@ -458,7 +581,7 @@ export function CommentEditor({
           )}
           <kbd className={cn(
             'hidden items-center gap-1 leading-none text-muted-foreground sm:inline-flex',
-            variant === 'update' ? 'font-sans text-xs' : 'font-mono text-[15px]',
+            'font-mono text-[15px]',
           )}>
             <span>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</span>
             <span>{'↵'}</span>

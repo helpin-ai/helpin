@@ -105,6 +105,7 @@ type CreateCRMDealRequest struct {
 	WorkspaceID      string                 `json:"workspace_id"`
 	Name             string                 `json:"name"`
 	ContactID        string                 `json:"contact_id"`
+	CompanyID        string                 `json:"company_id"`
 	PipelineID       string                 `json:"pipeline_id"`
 	StageID          string                 `json:"stage_id"`
 	Amount           *float64               `json:"amount"`
@@ -114,6 +115,22 @@ type CreateCRMDealRequest struct {
 	CommercialMotion *string                `json:"commercial_motion"`
 	Probability      *int                   `json:"probability"`
 	CustomProperties map[string]interface{} `json:"custom_properties"`
+}
+
+// SetCRMDealCustomerRequest changes the canonical customer for a deal. A
+// company customer may optionally include a primary contact; an independent
+// contact customer must not include a company.
+type SetCRMDealCustomerRequest struct {
+	WorkspaceID string `json:"workspace_id"`
+	ContactID   string `json:"contact_id"`
+	CompanyID   string `json:"company_id"`
+}
+
+// CRMDealCustomer is the resolved customer relationship for a deal.
+type CRMDealCustomer struct {
+	CustomerType     string `json:"customer_type"`
+	CustomerID       string `json:"customer_id"`
+	PrimaryContactID string `json:"primary_contact_id,omitempty"`
 }
 
 // UpdateCRMDealRequest is the payload for updating a deal.

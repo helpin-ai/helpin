@@ -9,7 +9,7 @@ import {
   TickDouble01Icon, SmileIcon, Briefcase01Icon, PlusSignIcon,
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
   CodeIcon, QuoteDownIcon, LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon,
-  StickyNote01Icon, PencilEdit01Icon, Delete01Icon, ArrowLeft02Icon, Search01Icon,
+  StickyNote01Icon, PencilEdit01Icon, Delete01Icon, ArrowLeft02Icon,
 } from '@/lib/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1770,9 +1771,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
                     ) : null}
                     {!isFiltering ? (
                       <div className="flex items-center gap-2">
-                        <div className="relative min-w-0 flex-1">
-                          <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                          <Input
+                        <div className="min-w-0 flex-1">
+                          <QuietSearchInput
                             ref={shortcutSearchInputRef}
                             value={manualShortcutQuery}
                             onChange={(event) => setManualShortcutQuery(event.target.value)}
@@ -1799,7 +1799,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
                               }
                             }}
                             placeholder="Search shortcuts"
-                            className="h-8 pl-8 text-sm"
                           />
                         </div>
                         {!(isFiltering || manualSearchActive) ? (

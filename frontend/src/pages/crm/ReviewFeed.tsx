@@ -10,19 +10,18 @@ import {
   DollarCircleIcon,
   InboxIcon,
   Mail01Icon,
-  Search01Icon,
   SparklesIcon,
 } from '@/lib/icons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useAcceptSuggestion, useDismissSuggestion, usePendingSuggestions } from '@/hooks/queries'
 import { SuggestionCard } from '@/components/crm/SuggestionCard'
 import { useTitle } from '@/hooks/useTitle'
 import { cn, timeAgo } from '@/lib/utils'
 import type { CRMSignalDismissalReason, CRMSuggestion, CRMSuggestionType } from '@/lib/crmTypes'
+import { QuietPageHeader, QuietSearchInput } from '@/components/design-system/quiet'
 
 type FilterTab = 'all' | CRMSuggestionType
 type SortMode = 'recommended' | 'newest' | 'oldest'
@@ -358,18 +357,21 @@ export function ReviewFeed() {
   }
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Review</h1>
-            <p className="text-sm text-muted-foreground">Review the evidence and preview the change before CRM records are updated.</p>
-          </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <QuietPageHeader
+        variant="shell"
+        title="Review"
+        description="Review the evidence and preview the change before CRM records are updated."
+        actions={(
           <Button variant="outline" size="sm" onClick={goToInsights} disabled={!wsSlug}>
             <SparklesIcon className="h-4 w-4" />
             Open insights
           </Button>
-        </div>
+        )}
+      />
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
 
         {isLoading || hasQueue ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -415,25 +417,23 @@ export function ReviewFeed() {
           <main className="min-w-0 space-y-3">
             <div className="rounded-lg border bg-card p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-64 flex-1">
-                  <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
+                <div className="min-w-64 flex-1">
+                  <QuietSearchInput
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Search suggestions..."
-                    className="h-8 pl-8 pr-8 text-xs"
-                  />
-                  {search ? (
+                    trailing={search ? (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="absolute right-0 top-0 h-8 w-8 text-muted-foreground"
+                      className="h-8 w-8 text-muted-foreground"
                       onClick={() => setSearch('')}
                     >
                       <Cancel01Icon className="h-3.5 w-3.5" />
                     </Button>
-                  ) : null}
+                    ) : null}
+                  />
                 </div>
                 <div className="flex rounded-lg border bg-background p-0.5">
                   {sortOptions.map((option) => (
@@ -524,6 +524,7 @@ export function ReviewFeed() {
           </aside>
         </div>
         )}
+        </div>
       </div>
     </div>
   )

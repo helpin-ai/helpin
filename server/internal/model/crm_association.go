@@ -11,6 +11,13 @@ const (
 	CRMObjectEpic                = "epic"
 	CRMObjectTask                = "task"
 	CRMObjectSupportConversation = "support_conversation"
+
+	// CRMAssociationLabelDealCustomer identifies the one account or independent
+	// contact that owns the commercial relationship for a deal.
+	CRMAssociationLabelDealCustomer = "deal_customer"
+	// CRMAssociationLabelDealPrimaryContact identifies the primary person on a
+	// company-backed deal. Other linked contacts remain unlabeled participants.
+	CRMAssociationLabelDealPrimaryContact = "deal_primary_contact"
 )
 
 // CRMAssociationEnriched extends CRMAssociation with the linked object's display info.

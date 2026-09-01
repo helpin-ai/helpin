@@ -181,7 +181,7 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 
 		// 2. Create or match CRM contact — always as lead with source=live_chat
 		contactID = s.matchOrCreateCRMContactIdentityTx(ctx, contactRepoTx, session.WorkspaceID, identity)
-		companyID, err := s.matchOrCreateCRMCompanyIdentityTx(ctx, companyRepoTx, session.WorkspaceID, identity)
+		companyID, companyMatchMethod, err := s.matchOrCreateCRMCompanyIdentityWithMethodTx(ctx, companyRepoTx, session.WorkspaceID, identity)
 		if err != nil {
 			return err
 		}
@@ -220,15 +220,16 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 			return err
 		}
 		link := model.CRMIdentityLink{
-			WorkspaceID:     session.WorkspaceID,
-			AnonymousID:     session.AnonymousID,
-			ExternalUserID:  optionalStringPtr(identity.ExternalUserID),
-			ContactID:       contactID,
-			CompanyID:       companyID,
-			IdentityMethod:  provenance.method,
-			IdentityTrust:   provenance.trust,
-			VerifiedAt:      provenance.verifiedAt,
-			VerifierVersion: provenance.verifierVersion,
+			WorkspaceID:        session.WorkspaceID,
+			AnonymousID:        session.AnonymousID,
+			ExternalUserID:     optionalStringPtr(identity.ExternalUserID),
+			ContactID:          contactID,
+			CompanyID:          companyID,
+			IdentityMethod:     provenance.method,
+			IdentityTrust:      provenance.trust,
+			CompanyMatchMethod: stringPtrOrNil(companyMatchMethod),
+			VerifiedAt:         provenance.verifiedAt,
+			VerifierVersion:    provenance.verifierVersion,
 		}
 		if err := tx.Create(&link).Error; err != nil {
 			return fmt.Errorf("record CRM identity link: %w", err)
@@ -292,7 +293,7 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 
 		// 1. Create or match CRM contact
 		contactID = s.matchOrCreateCRMContactIdentityTx(ctx, contactRepoTx, workspaceID, identity)
-		companyID, err := s.matchOrCreateCRMCompanyIdentityTx(ctx, companyRepoTx, workspaceID, identity)
+		companyID, companyMatchMethod, err := s.matchOrCreateCRMCompanyIdentityWithMethodTx(ctx, companyRepoTx, workspaceID, identity)
 		if err != nil {
 			return err
 		}
@@ -334,15 +335,16 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 			return err
 		}
 		link := model.CRMIdentityLink{
-			WorkspaceID:     workspaceID,
-			AnonymousID:     anonymousID,
-			ExternalUserID:  optionalStringPtr(identity.ExternalUserID),
-			ContactID:       contactID,
-			CompanyID:       companyID,
-			IdentityMethod:  provenance.method,
-			IdentityTrust:   provenance.trust,
-			VerifiedAt:      provenance.verifiedAt,
-			VerifierVersion: provenance.verifierVersion,
+			WorkspaceID:        workspaceID,
+			AnonymousID:        anonymousID,
+			ExternalUserID:     optionalStringPtr(identity.ExternalUserID),
+			ContactID:          contactID,
+			CompanyID:          companyID,
+			IdentityMethod:     provenance.method,
+			IdentityTrust:      provenance.trust,
+			CompanyMatchMethod: stringPtrOrNil(companyMatchMethod),
+			VerifiedAt:         provenance.verifiedAt,
+			VerifierVersion:    provenance.verifierVersion,
 		}
 		if err := tx.Create(&link).Error; err != nil {
 			return fmt.Errorf("record CRM identity link: %w", err)
@@ -1314,7 +1316,11 @@ func (s *SupportInboxService) ListWidgetHelpArticles(ctx context.Context, widget
 
 // SearchWidgetHelpArticles searches published help-center articles in the docs spaces
 // selected for the widget.
-func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widgetKey, query string, limit int) ([]model.WidgetHelpSearchResult, error) {
+// SearchWidgetHelpArticles searches widget-visible help articles. anonymousID is
+// the caller's durable browser identity when known; it is optional, and is
+// recorded on the resulting support event so that self-service searches stay
+// attributable to the visitor who made them.
+func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widgetKey, query string, limit int, anonymousID string) ([]model.WidgetHelpSearchResult, error) {
 	inst, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
 	if err != nil {
 		return nil, err
@@ -1374,6 +1380,7 @@ func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widg
 	s.recordSupportEvent(SupportEventInput{
 		WorkspaceID:  inst.WorkspaceID,
 		EventType:    model.SupportEventWidgetSearchPerformed,
+		AnonymousID:  NormalizeVisitorAnonymousID(anonymousID),
 		ActorType:    model.SupportEventActorCustomer,
 		Channel:      "widget",
 		SourceSignal: searchSourceSignal,

@@ -33,6 +33,7 @@ import { AvatarCropDialog } from '@/components/profile/AvatarCropDialog';
 import { AvatarPickerDialog } from '@/components/profile/AvatarPickerDialog';
 import { queryClient } from '@/lib/queryClient';
 import { queryKeys } from '@/lib/queryKeys';
+import { QuietPageHeader } from '@/components/design-system/quiet';
 
 type PendingAvatarFile = {
   file: File;
@@ -240,7 +241,7 @@ export default function Profile() {
         saving={uploadingAvatar}
       />
 
-      <h2 className="text-xl font-semibold">Profile</h2>
+      <QuietPageHeader title="Profile" />
 
       <section className="space-y-3">
         <Card>

@@ -48,15 +48,37 @@ func (h *CRMDealHandler) CreatePipeline(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.WorkspaceID == "" {
-		req.WorkspaceID = getWorkspaceID(r)
-	}
+	req.WorkspaceID = getWorkspaceID(r)
 	pipeline, err := h.dealService.CreatePipeline(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, pipeline)
+}
+
+// SetCustomer handles PUT /api/crm/deals/{id}/customer.
+func (h *CRMDealHandler) SetCustomer(w http.ResponseWriter, r *http.Request) {
+	var req model.SetCRMDealCustomerRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.WorkspaceID = getWorkspaceID(r)
+	if req.WorkspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	customer, err := h.dealService.SetCustomer(r.Context(), chi.URLParam(r, "id"), req, middleware.GetUserID(r.Context()))
+	if err != nil {
+		status := http.StatusBadRequest
+		if strings.Contains(err.Error(), "deal not found") {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, customer)
 }
 
 // GetPipeline handles GET /api/crm/pipelines/{id}.
@@ -136,9 +158,7 @@ func (h *CRMDealHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.WorkspaceID == "" {
-		req.WorkspaceID = getWorkspaceID(r)
-	}
+	req.WorkspaceID = getWorkspaceID(r)
 	deal, err := h.dealService.CreateWithActor(r.Context(), req, middleware.GetUserID(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

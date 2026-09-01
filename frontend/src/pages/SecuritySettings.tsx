@@ -34,6 +34,7 @@ import {
 } from '@/lib/icons';
 import { toast } from 'sonner';
 import type { Passkey, RecoveryCodesResponse, TwoFASetupResponse } from '@/lib/types';
+import { QuietPageHeader } from '@/components/design-system/quiet';
 
 type ManualSetupDetails = {
   accountName: string;
@@ -704,7 +705,7 @@ export default function SecuritySettings() {
         </DialogContent>
       </Dialog>
 
-      <h2 className="text-xl font-semibold">Security</h2>
+      <QuietPageHeader title="Security" />
 
       <Card>
         <CardHeader>

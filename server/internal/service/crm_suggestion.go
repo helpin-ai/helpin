@@ -16,6 +16,13 @@ type CRMSuggestionService struct {
 	suggestionRepo *repository.CRMSuggestionRepository
 	dealRepo       *repository.CRMDealRepository
 	assocRepo      *repository.CRMAssociationRepository
+	dealService    *CRMDealService
+}
+
+// SetDealService routes accepted create-deal suggestions through the customer invariant.
+func (s *CRMSuggestionService) SetDealService(dealService *CRMDealService) *CRMSuggestionService {
+	s.dealService = dealService
+	return s
 }
 
 // NewCRMSuggestionService creates a new CRMSuggestionService.
@@ -253,6 +260,7 @@ func (s *CRMSuggestionService) executeDealCreate(ctx context.Context, workspaceI
 	pipelineID, _ := suggestionContext["pipeline_id"].(string)
 	stageID, _ := suggestionContext["stage_id"].(string)
 	contactID, _ := suggestionContext["contact_id"].(string)
+	companyID, _ := suggestionContext["company_id"].(string)
 
 	if dealName == "" || pipelineID == "" || stageID == "" {
 		return nil, fmt.Errorf("missing required deal context fields")
@@ -271,41 +279,19 @@ func (s *CRMSuggestionService) executeDealCreate(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("contact not found in workspace")
 		}
 	}
-
-	displayID, err := s.dealRepo.GetNextDisplayID(ctx, workspaceID)
+	if contactID == "" && companyID == "" {
+		return nil, fmt.Errorf("missing deal customer context")
+	}
+	if s.dealService == nil {
+		return nil, fmt.Errorf("deal creation is not configured")
+	}
+	req := model.CreateCRMDealRequest{WorkspaceID: workspaceID, Name: dealName, PipelineID: pipelineID, StageID: stageID, ContactID: contactID, CompanyID: companyID}
+	if amount, ok := suggestionContext["amount"].(float64); ok {
+		req.Amount = &amount
+	}
+	deal, err := s.dealService.Create(ctx, req)
 	if err != nil {
 		return nil, err
-	}
-
-	deal := &model.CRMDeal{
-		WorkspaceID: workspaceID,
-		DisplayID:   displayID,
-		Name:        dealName,
-		PipelineID:  pipelineID,
-		StageID:     stageID,
-		Currency:    "USD",
-	}
-
-	if amount, ok := suggestionContext["amount"].(float64); ok {
-		deal.Amount = &amount
-	}
-
-	if err := s.dealRepo.Create(ctx, deal); err != nil {
-		return nil, err
-	}
-
-	// Create contact association
-	if contactID != "" {
-		assoc := &model.CRMAssociation{
-			WorkspaceID:    workspaceID,
-			FromObjectType: "deal",
-			FromObjectID:   deal.ID,
-			ToObjectType:   "contact",
-			ToObjectID:     contactID,
-		}
-		if err := s.assocRepo.Create(ctx, assoc); err != nil {
-			slog.Error("failed to create deal-contact association", "error", err, "deal_id", deal.ID, "contact_id", contactID)
-		}
 	}
 
 	slog.Info("executed deal_create suggestion", "deal_id", deal.ID, "deal_name", dealName)

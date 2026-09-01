@@ -7,7 +7,6 @@ import {
   DollarCircleIcon,
   File01Icon,
   Loading01Icon,
-  Search01Icon,
   UserGroupIcon,
 } from '@/lib/icons';
 
@@ -32,12 +31,11 @@ import type {
   SupportConversation,
 } from '@/lib/pmTypes';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
-import { Input } from '@/components/ui/input';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelatedItemTitleClassName, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import {
   Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -332,7 +330,7 @@ export function AssociationsPanel({
                   />
                 </QuickTooltip>
               )}
-              <span className="truncate font-medium text-foreground/75 dark:text-foreground">{item.title}</span>
+              <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
               {item.display_id && (
                 <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
                   {item.display_id}
@@ -379,7 +377,7 @@ export function AssociationsPanel({
                 onClick={() => handleNavigate(item)}
               >
                 <CRMIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate font-medium text-foreground/75 dark:text-foreground">{item.title}</span>
+                <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                 {(item.context_label || item.display_id) && (
                   <span className="ml-auto flex shrink-0 items-center gap-2">
                     {item.context_label && (
@@ -431,7 +429,7 @@ export function AssociationsPanel({
                   onClick={() => handleNavigate(item)}
                 >
                   <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium text-foreground/75 dark:text-foreground">{item.title}</span>
+                  <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                   {item.display_id && (
                     <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
                   )}
@@ -453,22 +451,18 @@ export function AssociationsPanel({
       )}
 
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
-        <DialogContent className="sm:max-w-xl">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">Link {pickerTitle}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={pickerPlaceholder}
-                className="pl-9"
-                autoFocus
-              />
-            </div>
-            <div className="-mx-1 max-h-80 overflow-y-auto px-1">
+            <QuietSearchInput
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={pickerPlaceholder}
+              autoFocus
+            />
+            <QuietRelationshipResults className="-mx-1 max-h-80 overflow-y-auto px-1">
               {searching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -479,10 +473,10 @@ export function AssociationsPanel({
                 <button
                   key={conversation.id}
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent')}
                   onClick={() => handleAddSupport(conversation.id)}
                 >
-                  <span className="min-w-0 flex-1">{truncateText(conversation.subject, 60)}</span>
+                  <span className="min-w-0 flex-1 truncate">{truncateText(conversation.subject, 60)}</span>
                   <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground">
                     C-{conversation.display_id}
                   </span>
@@ -493,14 +487,14 @@ export function AssociationsPanel({
                 <button
                   key={`${result.type}-${result.id}`}
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent')}
                   onClick={() => handleAddCRM(result.type as CRMObjectType, result.id)}
                 >
                   {(() => {
                     const CRMIcon = crmIconMap[result.type as keyof typeof crmIconMap] ?? Building03Icon;
                     return <CRMIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />;
                   })()}
-                  <span className="min-w-0 flex-1">{truncateText(result.name, 60)}</span>
+                  <span className="min-w-0 flex-1 truncate">{truncateText(result.name, 60)}</span>
                 </button>
               ))}
 
@@ -508,11 +502,11 @@ export function AssociationsPanel({
                 <button
                   key={doc.id}
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent focus-visible:bg-accent')}
                   onClick={() => handleAddDoc(doc.id)}
                 >
                   <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="min-w-0 flex-1">{truncateText(doc.name, 60)}</span>
+                  <span className="min-w-0 flex-1 truncate">{truncateText(doc.name, 60)}</span>
                 </button>
               ))}
 
@@ -527,9 +521,9 @@ export function AssociationsPanel({
               {!searching && pickerSection !== 'support' && query.trim().length < 2 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">Type at least 2 characters to search</p>
               )}
-            </div>
+            </QuietRelationshipResults>
           </div>
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
 
       <DocumentPreviewDialog

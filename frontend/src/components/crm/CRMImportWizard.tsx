@@ -16,7 +16,7 @@ type WizardStep = 'upload' | 'map' | 'preview' | 'importing' | 'results';
 
 const CONTACT_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'job_title', 'lifecycle_stage', 'lead_status', 'source'];
 const COMPANY_FIELDS = ['name', 'domain', 'industry', 'description'];
-const DEAL_FIELDS = ['name', 'pipeline_id', 'stage_id', 'amount', 'currency'];
+const DEAL_FIELDS = ['name', 'pipeline_id', 'stage_id', 'contact_email', 'company_domain', 'amount', 'currency'];
 
 interface CRMImportWizardProps {
   workspaceId: string;
