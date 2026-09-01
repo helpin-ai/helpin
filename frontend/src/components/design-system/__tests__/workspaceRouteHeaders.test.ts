@@ -5,6 +5,14 @@ import { describe, expect, it } from 'vitest';
 const source = (path: string) => readFileSync(resolve(__dirname, path), 'utf8');
 
 describe('workspace route header contract', () => {
+  it('keeps the workspace page surface opaque', () => {
+    const workspaceShellSource = source('../../../routes/_authenticated/w/$slug.tsx');
+
+    expect(workspaceShellSource).toContain("WORKSPACE_AUTH_VIEWPORT_CLASS_NAME, 'bg-background'");
+    expect(workspaceShellSource).not.toContain('bg-background/92');
+    expect(workspaceShellSource).not.toContain('radial-gradient');
+  });
+
   it.each([
     ['Settings page frame', '../../../pages/settings/SettingsPageFrame.tsx'],
     ['Profile', '../../../pages/Profile.tsx'],
