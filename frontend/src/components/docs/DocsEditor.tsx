@@ -1438,7 +1438,7 @@ export function DocsEditor({
     editable: !readOnly,
     editorProps: {
       attributes: {
-        class: 'docs-editor-prose prose prose-sm dark:prose-invert focus:outline-none min-h-[400px] px-6 pt-3 pb-8',
+        class: 'docs-editor-prose prose prose-sm dark:prose-invert focus:outline-none min-h-[400px] px-4 pt-3 pb-8 md:px-6',
       },
       handlePaste(_view, event) {
         const items = event.clipboardData?.items
@@ -2000,7 +2000,7 @@ img { max-width: 100%; }
             />
           </div>
         ) : (
-          <div className="docs-editor-content-frame mx-auto max-w-4xl">
+          <div className="docs-editor-content-frame">
             {showSearch && editor && (
               <SearchReplaceBar
                 editor={editor}
@@ -2014,7 +2014,7 @@ img { max-width: 100%; }
             )}
             {/* Title */}
             {title !== undefined && (
-              <div className="group/title px-6 pt-10 pb-2" data-docs-title-row>
+              <div className="group/title px-4 pt-10 pb-2 md:px-6" data-docs-title-row>
                 {slug && <SlugDisplay slug={slug} onSlugChange={onSlugChange} readOnly={readOnly} helperText={slugHelperText} />}
                 {onTitleChange && !readOnly ? (
                   <textarea
@@ -2049,7 +2049,7 @@ img { max-width: 100%; }
             )}
             <EditorContent editor={editor} />
             {!readOnly && mentionState && (
-              <div className="mx-6 mt-2 w-full max-w-sm rounded-lg border border-border/70 bg-popover p-1.5 text-popover-foreground shadow-lg">
+              <div className="mx-4 mt-2 w-full max-w-sm rounded-lg border border-border/70 bg-popover p-1.5 text-popover-foreground shadow-lg md:mx-6">
                 <MentionSuggestionsList
                   items={mentionState.items}
                   selectedIndex={mentionState.selectedIndex}
