@@ -239,11 +239,11 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="text-xs text-muted-foreground"
+                  className="text-muted-foreground"
                 >
-                  <FilterHorizontalIcon className="h-3 w-3" />
+                  <FilterHorizontalIcon className="h-4 w-4" />
                   {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
-                  <ArrowDown01Icon className="h-3 w-3 opacity-50" />
+                  <ArrowDown01Icon className="h-4 w-4 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">

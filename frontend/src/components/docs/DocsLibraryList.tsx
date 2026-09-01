@@ -51,10 +51,10 @@ export function DocsLibrarySortMenu({
           type="button"
           variant="outline"
           size="sm"
-          className="text-xs text-muted-foreground"
+          className="text-muted-foreground"
           aria-label={`Sort documents: ${selected.label}`}
         >
-          <ArrowUpDownIcon className="h-3.5 w-3.5" />
+          <ArrowUpDownIcon className="h-4 w-4" />
           <span className="hidden sm:inline">{selected.label}</span>
           <span className="sm:hidden">Sort</span>
         </Button>
