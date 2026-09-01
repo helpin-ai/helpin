@@ -354,7 +354,9 @@ export function AssociationsList({
                       ) : (
                         <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       )}
-                      <span className="truncate font-medium">{assoc.linked_object_name || assoc.linkedType}</span>
+                      <span className="truncate text-sm font-medium text-foreground/90">
+                        {assoc.linked_object_name || assoc.linkedType}
+                      </span>
                       {(assoc.context_label || assoc.linked_object_display_id) && (
                         <span className="ml-auto flex shrink-0 items-center gap-2">
                           {assoc.context_label && (

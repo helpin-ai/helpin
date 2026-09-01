@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const dealSource = readFileSync(resolve(__dirname, '../DealDetail.tsx'), 'utf8');
 const relationshipsSource = readFileSync(resolve(__dirname, '../../../components/crm/deal-detail/DealRelationships.tsx'), 'utf8');
+const associationsSource = readFileSync(resolve(__dirname, '../../../components/crm/AssociationsList.tsx'), 'utf8');
 const createSource = readFileSync(resolve(__dirname, '../../../components/crm/CreateDealDialog.tsx'), 'utf8');
 
 describe('CRM deal customer and Quiet detail composition', () => {
@@ -24,6 +25,7 @@ describe('CRM deal customer and Quiet detail composition', () => {
     expect(dealSource).toContain('text-[12px]');
     expect(relationshipsSource).toContain('text-xs font-semibold uppercase tracking-wide text-foreground/70');
     expect(relationshipsSource).toContain('truncate text-sm font-medium');
+    expect(associationsSource).toContain('truncate text-sm font-medium text-foreground/90');
   });
 
   it('separates the canonical customer from removable participants', () => {
