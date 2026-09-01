@@ -23,6 +23,7 @@ const COMPANY_GROUP_BY_OPTIONS: { value: CompanyGroupByOption; label: string }[]
 
 export function CompaniesPage() {
   useTitle('Companies');
+  const [tableToolbarContainer, setTableToolbarContainer] = useState<HTMLSpanElement | null>(null);
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const wsSlug = currentWorkspace?.slug ?? '';
@@ -95,6 +96,7 @@ export function CompaniesPage() {
               ))}
             </SelectContent>
           </Select>
+          <span ref={setTableToolbarContainer} className="contents" />
         </div>
       </header>
 
@@ -127,6 +129,7 @@ export function CompaniesPage() {
             onCreateClick={() => setShowCreate(true)}
             onCompanyUpdated={() => refetch()}
             onCompanyDeleted={() => refetch()}
+            toolbarContainer={tableToolbarContainer}
           />
         )}
       </div>

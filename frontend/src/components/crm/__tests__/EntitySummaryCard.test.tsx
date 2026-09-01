@@ -61,6 +61,11 @@ describe('EntitySummaryCard', () => {
     expect(entitySummarySource.match(/className=\{overviewSummaryCardClassName\}/g)).toHaveLength(3);
   });
 
+  it('uses the same summary prose typography in overview and Deal presentations', () => {
+    expect(entitySummarySource.match(/whitespace-pre-wrap text-sm leading-relaxed text-foreground\/90/g)).toHaveLength(2);
+    expect(entitySummarySource).not.toContain('whitespace-pre-wrap text-[14px] leading-[1.7]');
+  });
+
   it('generates a contact summary instead of refetching the empty read model', () => {
     act(() => root.render(<EntitySummaryCard workspaceId="workspace-1" contactId="contact-1" />));
 

@@ -1,4 +1,5 @@
 import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTableSettings } from '@/hooks/useTableSettings';
 import {
   useReactTable,
@@ -113,10 +114,10 @@ const columnHelper = createColumnHelper<CRMContact>();
 
 interface ContactsTableProps {
   contacts: CRMContact[];
-  totalCount?: number;
   workspaceId: string;
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
+  toolbarContainer?: HTMLElement | null;
   isLoading: boolean;
   hasActiveFilters?: boolean;
   hasNextPage?: boolean;
@@ -131,10 +132,10 @@ interface ContactsTableProps {
 
 export function ContactsTable({
   contacts,
-  totalCount,
   workspaceId,
   assignableMembers,
   ownerNameMap,
+  toolbarContainer,
   isLoading,
   hasActiveFilters,
   hasNextPage,
@@ -557,93 +558,97 @@ export function ContactsTable({
     [],
   );
 
+  const tableToolbar = (
+    <>
+      <BulkActionsBar
+        selectedIds={selectedIds}
+        workspaceId={workspaceId}
+        assignableMembers={assignableMembers}
+        onComplete={() => onContactUpdated?.()}
+        onClearSelection={() => setRowSelection({})}
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant={isReorderMode ? 'default' : 'outline'}
+        className="h-7 text-xs"
+        onClick={() => setIsReorderMode((current) => !current)}
+      >
+        <DragDropVerticalIcon className="mr-1 h-3.5 w-3.5" />
+        {isReorderMode ? 'Done' : 'Reorder'}
+      </Button>
+      <Select value={groupBy} onValueChange={(value) => startTransition(() => setGroupBy(value as GroupByOption))}>
+        <SelectTrigger className="h-7 w-auto min-w-[150px] max-w-[190px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:ring-0 focus-visible:border-transparent">
+          <span className="shrink-0 text-muted-foreground">Group by:</span>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {GROUP_BY_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <ColumnVisibilityPopover table={table} visibilityState={columnVisibility} />
+    </>
+  );
+  const toolbarPortal = toolbarContainer ? createPortal(tableToolbar, toolbarContainer) : null;
+
   if (isLoading) {
-    return <ContactsTableSkeleton />;
+    return <>{toolbarPortal}<ContactsTableSkeleton /></>;
   }
 
   if (deferredContacts.length === 0 && hasActiveFilters) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <Search01Icon className="h-8 w-8 text-muted-foreground/50" />
+      <>
+        {toolbarPortal}
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <Search01Icon className="h-8 w-8 text-muted-foreground/50" />
+          </div>
+          <h3 className="mt-4 text-base font-medium">No results found</h3>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Try adjusting your search or filters
+          </p>
+          {onClearFilters && (
+            <Button variant="outline" size="sm" className="mt-4" onClick={onClearFilters}>
+              Clear filters
+            </Button>
+          )}
         </div>
-        <h3 className="mt-4 text-base font-medium">No results found</h3>
-        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          Try adjusting your search or filters
-        </p>
-        {onClearFilters && (
-          <Button variant="outline" size="sm" className="mt-4" onClick={onClearFilters}>
-            Clear filters
-          </Button>
-        )}
-      </div>
+      </>
     );
   }
 
   if (deferredContacts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <UserGroupIcon className="h-8 w-8 text-muted-foreground/50" />
+      <>
+        {toolbarPortal}
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <UserGroupIcon className="h-8 w-8 text-muted-foreground/50" />
+          </div>
+          <h3 className="mt-4 text-base font-medium">No contacts yet</h3>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Add your first contact to start building relationships
+          </p>
+          {onCreateClick && (
+            <Button size="sm" className="mt-4" onClick={onCreateClick}>
+              <PlusSignIcon className="mr-1 h-4 w-4" />
+              Create Contact
+            </Button>
+          )}
         </div>
-        <h3 className="mt-4 text-base font-medium">No contacts yet</h3>
-        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          Add your first contact to start building relationships
-        </p>
-        {onCreateClick && (
-          <Button size="sm" className="mt-4" onClick={onCreateClick}>
-            <PlusSignIcon className="mr-1 h-4 w-4" />
-            Create Contact
-          </Button>
-        )}
-      </div>
+      </>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 px-1">
-        <span className="text-xs text-muted-foreground">
-          {totalCount != null && totalCount !== deferredContacts.length
-            ? `${deferredContacts.length} of ${totalCount}`
-            : deferredContacts.length}{' '}
-          {(totalCount ?? deferredContacts.length) === 1 ? 'contact' : 'contacts'}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          <BulkActionsBar
-            selectedIds={selectedIds}
-            workspaceId={workspaceId}
-            assignableMembers={assignableMembers}
-            onComplete={() => onContactUpdated?.()}
-            onClearSelection={() => setRowSelection({})}
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant={isReorderMode ? 'default' : 'outline'}
-            className="h-7 text-xs"
-            onClick={() => setIsReorderMode((current) => !current)}
-          >
-            <DragDropVerticalIcon className="mr-1 h-3.5 w-3.5" />
-            {isReorderMode ? 'Done' : 'Reorder'}
-          </Button>
-          <span className="text-xs text-muted-foreground">Group by:</span>
-          <Select size="sm" value={groupBy} onValueChange={(v) => startTransition(() => setGroupBy(v as GroupByOption))}>
-            <SelectTrigger className="h-7 w-[160px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {GROUP_BY_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <ColumnVisibilityPopover table={table} />
-        </div>
-      </div>
+      {toolbarPortal ?? (
+        <div className="flex items-center justify-end gap-2 px-1">{tableToolbar}</div>
+      )}
 
       {/* Table */}
       <div ref={parentRef} className={TABLE_CONTAINER}>
@@ -708,6 +713,7 @@ export function ContactsTable({
                     </>
                   ) : (
                     <MemoDataRow
+                      key={`${row.id}:${columnVisibilityVersion}`}
                       row={row}
                       isSelected={row.getIsSelected()}
                       columnSizing={columnSizing}

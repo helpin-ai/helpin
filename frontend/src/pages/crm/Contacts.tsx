@@ -1,7 +1,7 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Loading01Icon, Search01Icon, UserGroupIcon, Cancel01Icon, PlusSignIcon } from '@/lib/icons';
+import { Loading01Icon, UserGroupIcon, PlusSignIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { QuietPageHeader, QuietPrimaryAction, QuietSearchInput } from '@/components/design-system/quiet';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -15,7 +15,7 @@ import { BILLING_CHOOSE_PLAN_SEARCH } from '@/lib/billingNavigation';
 import { queryKeys } from '@/lib/queryKeys';
 import { crmContactService } from '@/lib/services/crmService';
 import { ContactsTable } from '@/components/crm/ContactsTable';
-import { ContactsFilterBar } from '@/components/crm/ContactsFilterBar';
+import { ContactsActiveFilterBar, ContactsFilterBar } from '@/components/crm/ContactsFilterBar';
 import { CRMDataEmptyState } from '@/components/crm/CRMDataEmptyState';
 import { useTitle } from '@/hooks/useTitle';
 import { toast } from 'sonner';
@@ -33,23 +33,10 @@ export function ContactsPage() {
   const queryClient = useQueryClient();
   const [seedConfirmOpen, setSeedConfirmOpen] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [tableToolbarContainer, setTableToolbarContainer] = useState<HTMLSpanElement | null>(null);
 
   const { search: searchParams, setParam, hasActiveFilters, clearFilters } = useContactsSearchParams();
   const showSeedButton = import.meta.env.DEV;
-
-  useEffect(() => {
-    if (searchParams.search) {
-      setShowSearch(true);
-    }
-  }, [searchParams.search]);
-
-  useEffect(() => {
-    if (showSearch) {
-      searchInputRef.current?.focus();
-    }
-  }, [showSearch]);
 
   const {
     data,
@@ -122,6 +109,7 @@ export function ContactsPage() {
       <QuietPageHeader
         variant="shell"
         title="Contacts"
+        context={!isLoading ? totalCount : undefined}
         actions={(
           <QuietPrimaryAction
             className="gap-1.5"
@@ -134,47 +122,19 @@ export function ContactsPage() {
       />
 
       <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
+        <QuietSearchInput
+          containerClassName="min-w-[180px] flex-1 sm:max-w-64"
+          placeholder="Search contacts..."
+          value={searchParams.search ?? ''}
+          onChange={(event) => setParam('search', event.target.value)}
+        />
         <ContactsFilterBar assignableMembers={assignableMembers} />
-        <div className="ml-auto flex items-center gap-1">
-          {showSearch ? (
-            <QuietSearchInput
-              containerClassName="w-64"
-              ref={searchInputRef}
-              placeholder="Search contacts..."
-              value={searchParams.search ?? ''}
-              onChange={(e) => setParam('search', e.target.value)}
-              trailing={(
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 text-muted-foreground"
-                  aria-label="Close search"
-                  onClick={() => {
-                    setParam('search', undefined);
-                    setShowSearch(false);
-                  }}
-                >
-                  <Cancel01Icon className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            />
-          ) : (
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              className="h-7 w-7"
-              onClick={() => setShowSearch(true)}
-            >
-              <Search01Icon className="h-3.5 w-3.5" />
-            </Button>
-          )}
+        <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1">
           {showSeedButton && (
             <Button
               size="sm"
               variant="outline"
-              className="h-7 text-xs"
+              className="hidden h-7 text-xs sm:inline-flex"
               onClick={() => setSeedConfirmOpen(true)}
               disabled={!wsId || isSeeding}
             >
@@ -186,8 +146,11 @@ export function ContactsPage() {
               Seed 500
             </Button>
           )}
+          <span ref={setTableToolbarContainer} className="contents" />
         </div>
       </header>
+
+      <ContactsActiveFilterBar assignableMembers={assignableMembers} />
 
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-hidden p-3">
@@ -210,10 +173,10 @@ export function ContactsPage() {
         ) : (
           <ContactsTable
             contacts={deferredContacts}
-            totalCount={totalCount}
             workspaceId={wsId}
             assignableMembers={assignableMembers}
             ownerNameMap={ownerNameMap}
+            toolbarContainer={tableToolbarContainer}
             isLoading={isLoading}
             hasActiveFilters={hasActiveFilters}
             hasNextPage={!!hasNextPage}
