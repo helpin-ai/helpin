@@ -90,10 +90,24 @@ export function fetchHelpArticle(host: string, widgetKey: string, articleKey: st
   return fetchHelpJSON(host, widgetKey, `/widget/support/help/articles/${encodeURIComponent(articleKey)}`);
 }
 
-export function fetchHelpSearchResults(host: string, widgetKey: string, query: string, limit = 8): Promise<HelpSearchResult[]> {
+/**
+ * Searches help articles. `anonymousId` is the visitor's durable browser id when
+ * the host SDK has one; it attributes the search to the visitor who made it so
+ * self-service questions stay traceable to an account.
+ */
+export function fetchHelpSearchResults(
+  host: string,
+  widgetKey: string,
+  query: string,
+  limit = 8,
+  anonymousId?: string,
+): Promise<HelpSearchResult[]> {
   const params = new URLSearchParams({
     q: query,
     limit: String(limit),
   });
+  if (anonymousId) {
+    params.set('anonymous_id', anonymousId);
+  }
   return fetchHelpJSON(host, widgetKey, `/widget/support/help/search?${params.toString()}`);
 }

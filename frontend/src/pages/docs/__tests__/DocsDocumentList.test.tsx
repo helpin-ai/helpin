@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const { useDocsDocuments } = vi.hoisted(() => ({
@@ -74,7 +76,21 @@ describe('DocsDocumentList', () => {
       { owner_id: 'member-1', include_archived: 'true' },
       { enabled: true },
     )
+    expect(container.querySelector('header')?.className).toContain('border-b')
 
     act(() => root.unmount())
+  })
+
+  it('keeps Docs Status and Sort controls on the standard small-button typography', () => {
+    const documentListSource = readFileSync(resolve(__dirname, '../DocsDocumentList.tsx'), 'utf8')
+    const documentsTableSource = readFileSync(resolve(__dirname, '../spaceDetail/DocumentsTable.tsx'), 'utf8')
+    const libraryListSource = readFileSync(resolve(__dirname, '../../../components/docs/DocsLibraryList.tsx'), 'utf8')
+
+    for (const source of [documentListSource, documentsTableSource, libraryListSource]) {
+      expect(source).not.toContain('className="text-xs text-muted-foreground"')
+    }
+    expect(documentListSource).toContain('<FilterHorizontalIcon className="h-4 w-4" />')
+    expect(documentsTableSource).toContain('<FilterHorizontalIcon className="h-4 w-4" />')
+    expect(libraryListSource).toContain('<ArrowUpDownIcon className="h-4 w-4" />')
   })
 })

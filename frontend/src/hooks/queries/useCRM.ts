@@ -28,6 +28,7 @@ import type {
   UpdateCRMCompanyRequest,
   CreateCRMDealRequest,
   UpdateCRMDealRequest,
+	SetCRMDealCustomerRequest,
   CreateCRMPipelineRequest,
   UpdateCRMPipelineRequest,
   CreateCRMAssociationRequest,
@@ -357,6 +358,19 @@ export function useUpdateDeal(wsId: string) {
   })
 }
 
+export function useSetDealCustomer(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...data }: SetCRMDealCustomerRequest & { id: string }) =>
+      unwrap(await crmDealService.setCustomer(wsId, id, data)),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.crm.dealAssociations(wsId, id) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.deals(wsId) })
+      qc.invalidateQueries({ queryKey: ['crm', wsId, 'companies'] })
+    },
+  })
+}
+
 export function useDeleteDeal(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -629,8 +643,8 @@ export function useEmailThread(wsId: string, threadId?: string) {
 export function useReplyToEmailThread(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ threadId, mode, body_html }: { threadId: string; mode: 'reply' | 'reply_all'; body_html: string }) =>
-      unwrap(await crmEmailService.replyToThread(wsId, threadId, { mode, body_html })),
+    mutationFn: async ({ threadId, mode, body_html, draft_id, attachment_ids }: { threadId: string; mode: 'reply' | 'reply_all'; body_html: string; draft_id?: string; attachment_ids?: string[] }) =>
+      unwrap(await crmEmailService.replyToThread(wsId, threadId, { mode, body_html, draft_id, attachment_ids })),
     onSuccess: (_, variables) => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.emailThreads(wsId) })
       qc.invalidateQueries({ queryKey: [...queryKeys.crm.emailThreads(wsId), variables.threadId] })

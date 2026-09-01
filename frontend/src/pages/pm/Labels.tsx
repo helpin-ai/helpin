@@ -1,11 +1,12 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Loading01Icon, MoreHorizontalIcon, PencilEdit01Icon, PlusSignIcon, Search01Icon, Tag01Icon, Delete01Icon } from '@/lib/icons';
+import { Loading01Icon, MoreHorizontalIcon, PencilEdit01Icon, PlusSignIcon, Tag01Icon, Delete01Icon } from '@/lib/icons';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useTitle } from '@/hooks/useTitle';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -350,15 +351,12 @@ export function LabelsPage() {
 
       {/* Filter bar */}
       <div className="flex items-center gap-3">
-        <div className="relative max-w-xs flex-1">
-          <Search01Icon className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Filter Labels by name"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 pl-8 text-sm"
-          />
-        </div>
+        <QuietSearchInput
+          containerClassName="max-w-xs flex-1"
+          placeholder="Filter Labels by name"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <div className="flex items-center gap-2">
           <Select value={scopeFilter} onValueChange={setScopeFilter}>
             <SelectTrigger className="h-8 w-[220px] text-sm">

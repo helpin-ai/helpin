@@ -3,10 +3,14 @@ import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
+import {
+  QuietPrimaryAction,
+  QuietStatusText,
+  QuietTextAction,
+  QuietUnderlineInput,
+} from '@/components/design-system/quiet';
 import { detectMeetingPlatform } from '@/lib/meetingPresentation';
-import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useCreateCRMMeeting, useCRMMeetingSettings } from '@/hooks/queries/useCRMMeetings';
@@ -98,60 +102,104 @@ export function CreateMeetingDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Add meeting</DialogTitle>
-            <DialogDescription>Paste a supported Google Meet, Zoom, Teams, or Webex URL.</DialogDescription>
+        <DialogContent variant="flush" className="sm:max-w-lg">
+          <DialogHeader className="border-b border-quiet-divider-strong px-6 py-5 pr-14">
+            <DialogTitle className="text-[20px] font-semibold leading-tight tracking-[-0.018em] text-quiet-text-primary">
+              Add meeting
+            </DialogTitle>
+            <DialogDescription className="text-sm leading-[1.6] text-quiet-text-tertiary">
+              Paste a Google Meet, Zoom, Teams, or Webex URL and choose when Helpin should join.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div>
             {!settingsEnabled && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-300">
-                Meeting notes are turned off. An admin must enable them before the notetaker can join.
+              <div className="border-b border-quiet-divider-strong px-6 py-4">
+                <QuietStatusText tone="blocker" className="text-quiet-accent">Meeting notes are off</QuietStatusText>
+                <p className="mt-1 text-sm leading-[1.6] text-quiet-text-tertiary">
+                  A workspace admin must enable meeting notes before Helpin can join immediately.
+                </p>
               </div>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="meeting-title">Title</Label>
-              <Input id="meeting-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Discovery call with Acme" autoFocus />
+            <div className="space-y-5 px-6 py-5">
+              <div>
+                <Label htmlFor="meeting-title" className="text-[12px] font-semibold uppercase tracking-[0.06em] text-quiet-muted">
+                  Meeting title
+                </Label>
+                <QuietUnderlineInput
+                  id="meeting-title"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="Discovery call with Acme"
+                  className="mt-1.5 w-full"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <Label htmlFor="meeting-url" className="text-[12px] font-semibold uppercase tracking-[0.06em] text-quiet-muted">
+                  Meeting URL
+                </Label>
+                <QuietUnderlineInput
+                  id="meeting-url"
+                  type="url"
+                  value={meetingUrl}
+                  onChange={(event) => setMeetingUrl(event.target.value)}
+                  placeholder="https://meet.google.com/abc-defg-hij"
+                  className="mt-1.5 w-full"
+                />
+                {detectedPlatform ? (
+                  <div className="mt-2 flex items-center gap-2 text-[11.5px] text-quiet-muted">
+                    <MeetingPlatformLabel platform={detectedPlatform} compact presentation="quiet" />
+                    <span aria-hidden="true" className="h-[10px] w-px bg-quiet-meta-separator" />
+                    <QuietStatusText tone="positive" className="text-quiet-positive">Link detected</QuietStatusText>
+                  </div>
+                ) : null}
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="meeting-url">Meeting URL</Label>
-              <Input id="meeting-url" type="url" value={meetingUrl} onChange={(event) => setMeetingUrl(event.target.value)} placeholder="https://meet.google.com/abc-defg-hij" />
-              {detectedPlatform && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <MeetingPlatformLabel platform={detectedPlatform} compact />
-                  <span>link detected</span>
+            <div className="border-y border-quiet-divider-strong">
+              <div className="flex items-center justify-between gap-5 px-6 py-4">
+                <div>
+                  <Label htmlFor="meeting-join-now" className="text-sm font-medium text-quiet-text-primary">Join now</Label>
+                  <p className="mt-0.5 text-[12.5px] leading-5 text-quiet-text-tertiary">
+                    Start capturing as soon as this meeting is created.
+                  </p>
                 </div>
-              )}
-            </div>
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <div>
-                <Label>Join now</Label>
-                <p className="text-xs text-muted-foreground">Start a capture attempt as soon as the meeting is created.</p>
+                <Switch id="meeting-join-now" checked={startNow} onCheckedChange={setStartNow} />
               </div>
-              <Switch checked={startNow} onCheckedChange={setStartNow} />
-            </div>
-            {!startNow && (
-              <div className="space-y-2">
-                <Label htmlFor="meeting-start">Scheduled start</Label>
-                <Input id="meeting-start" type="datetime-local" value={scheduledStart} onChange={(event) => setScheduledStart(event.target.value)} />
-                <p className="text-xs text-muted-foreground">Meetings added from your connected calendar can join automatically.</p>
+              {!startNow ? (
+                <div className="border-t border-quiet-divider-light px-6 py-4">
+                  <Label htmlFor="meeting-start" className="text-[12px] font-semibold uppercase tracking-[0.06em] text-quiet-muted">
+                    Scheduled start
+                  </Label>
+                  <QuietUnderlineInput
+                    id="meeting-start"
+                    type="datetime-local"
+                    value={scheduledStart}
+                    onChange={(event) => setScheduledStart(event.target.value)}
+                    className="mt-1.5 w-full"
+                  />
+                  <p className="mt-2 text-[12.5px] leading-5 text-quiet-text-tertiary">
+                    Calendar meetings can also be selected for automatic joining from the Meetings page.
+                  </p>
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between gap-5 border-t border-quiet-divider-light px-6 py-4">
+                <div>
+                  <Label htmlFor="meeting-save-recording" className="text-sm font-medium text-quiet-text-primary">Save meeting recording</Label>
+                  <p className="mt-0.5 text-[12.5px] leading-5 text-quiet-text-tertiary">
+                    Keep video and audio for private playback in Helpin.
+                  </p>
+                </div>
+                <Switch id="meeting-save-recording" checked={recordAudio} onCheckedChange={setRecordAudioOverride} />
               </div>
-            )}
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <div>
-                <Label>Save meeting recording</Label>
-                <p className="mt-1 text-xs text-muted-foreground">Keep video and audio for private playback in Helpin.</p>
-              </div>
-              <Switch checked={recordAudio} onCheckedChange={setRecordAudioOverride} />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => handleOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submit} disabled={createMeeting.isPending || !title.trim() || !meetingUrl.trim() || (startNow && !settingsEnabled)}>
+          <DialogFooter className="flex-row items-center justify-end gap-4 border-t border-quiet-divider-strong px-6 py-4">
+            <QuietTextAction onClick={() => handleOpenChange(false)}>
+              Close without adding
+            </QuietTextAction>
+            <QuietPrimaryAction onClick={submit} disabled={createMeeting.isPending || !title.trim() || !meetingUrl.trim() || (startNow && !settingsEnabled)}>
               {createMeeting.isPending ? 'Creating…' : startNow ? 'Create & join' : 'Schedule meeting'}
-            </Button>
+            </QuietPrimaryAction>
           </DialogFooter>
         </DialogContent>
       </Dialog>

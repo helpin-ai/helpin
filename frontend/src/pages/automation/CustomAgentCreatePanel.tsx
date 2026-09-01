@@ -3,6 +3,7 @@ import type { WorkspaceTeam } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentIconPicker } from '@/components/agents/AgentIconPicker';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { HelpCircleIcon } from '@/lib/icons';
 import { AGENT_MODEL_TIER_OPTIONS } from '@/lib/agentModelTier';
 import {
@@ -489,8 +490,7 @@ export function CustomAgentCreatePanel({
                         onWheelCapture={(event) => event.stopPropagation()}
                       >
                         <div className="border-b border-border p-3">
-                          <input
-                            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                          <QuietSearchInput
                             value={toolSearch}
                             onChange={(event) => setToolSearch(event.target.value)}
                             placeholder="Search tools..."

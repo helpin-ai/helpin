@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { PlusSignIcon, Search01Icon } from '@/lib/icons';
+import { PlusSignIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import {
   entityTypeLabel,
   searchDocsEntityItems,
@@ -117,16 +118,12 @@ export const DockReferencePicker = forwardRef<DockReferencePickerHandle, DockRef
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 rounded-md border px-2">
-            <Search01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={`Search ${entityTypeLabel(type).toLowerCase()}s…`}
-              className="h-8 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            />
-          </div>
+          <QuietSearchInput
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={`Search ${entityTypeLabel(type).toLowerCase()}s…`}
+          />
           <div className="mt-1 max-h-64 overflow-y-auto">
             {loading ? <p className="px-2 py-3 text-xs text-muted-foreground">Searching…</p> : null}
             {!loading && items.length === 0 ? (

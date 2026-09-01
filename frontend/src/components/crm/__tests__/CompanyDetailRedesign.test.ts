@@ -75,12 +75,12 @@ describe('Company detail divider redesign', () => {
     expect(emailTimelineSource).toContain('<PlusSignIcon className="h-3.5 w-3.5" /> Compose')
   })
 
-  it('links deals created from company context back to the company', () => {
-    expect(companyDetailSource).toContain('companyContext={{ id: companyId')
-    expect(createDealSource).toContain("from_object_type: 'deal'")
-    expect(createDealSource).toContain("to_object_type: 'company'")
-    expect(createDealSource).toContain('Deal created, but it could not be linked')
-  })
+	it('creates company-context deals with the company as the atomic customer', () => {
+		expect(companyDetailSource).toContain('companyContext={{ id: companyId')
+		expect(createDealSource).toContain("{ company_id: customer.id, contact_id: primaryContactId || undefined }")
+		expect(createDealSource).not.toContain("from_object_type: 'deal'")
+		expect(createDealSource).not.toContain('Deal created, but it could not be linked')
+	})
 
   it('keeps the new enrichment treatment opt-in', () => {
     expect(enrichmentSource).toContain("presentation?: 'default' | 'borderless'")
@@ -115,5 +115,18 @@ describe('Company detail divider redesign', () => {
     expect(companyTasksWorkspaceSource).toContain("stateType: 'backlog'")
     expect(companyTasksWorkspaceSource).toContain("stateType: 'done'")
     expect(companyTasksWorkspaceSource).not.toContain('rounded-md border border-border/60 bg-muted/20')
+  })
+
+  it('inherits the detail-page surface across task, email, and meeting tabs', () => {
+    expect(companyTasksWorkspaceSource).toContain(
+      "fullHeight ? 'flex-1 bg-transparent' : 'max-h-[470px] bg-background'",
+    )
+    expect(emailTimelineSource).toContain(
+      '@container/email flex h-full min-h-0 overflow-hidden bg-transparent',
+    )
+    expect(emailTimelineSource).toContain(
+      'border-t border-border/60 bg-transparent px-5',
+    )
+    expect(companyCollectionsSource.match(/flex min-h-0 flex-1 flex-col bg-transparent/g)).toHaveLength(2)
   })
 })

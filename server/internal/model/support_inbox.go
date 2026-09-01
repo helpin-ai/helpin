@@ -421,6 +421,14 @@ const (
 	IdentityTrustUntrusted     = "untrusted"
 	IdentityTrustProbabilistic = "probabilistic"
 	IdentityTrustVerified      = "verified"
+
+	// CompanyMatchMethodDeclared means the company was supplied by the
+	// customer's own identify call and is as trustworthy as that call.
+	CompanyMatchMethodDeclared = "declared"
+	// CompanyMatchMethodEmailDomain means the company was inferred from the
+	// visitor's email domain. This is probabilistic regardless of how strongly
+	// the person themselves was identified.
+	CompanyMatchMethodEmailDomain = "email_domain"
 )
 
 // WorkspaceEventProjectAlias maps a historical ClickHouse project to its workspace.
@@ -441,17 +449,24 @@ func (WorkspaceEventProjectAlias) TableName() string {
 
 // CRMIdentityLink records the provenance of a browser-to-CRM identity mutation.
 type CRMIdentityLink struct {
-	ID              string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	AnonymousID     string     `json:"anonymous_id" gorm:"not null;index"`
-	ExternalUserID  *string    `json:"external_user_id,omitempty" gorm:"index"`
-	ContactID       *string    `json:"contact_id,omitempty" gorm:"type:uuid;index"`
-	CompanyID       *string    `json:"company_id,omitempty" gorm:"type:uuid;index"`
-	IdentityMethod  string     `json:"identity_method" gorm:"not null"`
-	IdentityTrust   string     `json:"identity_trust" gorm:"not null"`
-	VerifiedAt      *time.Time `json:"verified_at,omitempty" gorm:"type:timestamptz"`
-	VerifierVersion *string    `json:"verifier_version,omitempty"`
-	CreatedAt       time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	ID             string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	AnonymousID    string  `json:"anonymous_id" gorm:"not null;index"`
+	ExternalUserID *string `json:"external_user_id,omitempty" gorm:"index"`
+	ContactID      *string `json:"contact_id,omitempty" gorm:"type:uuid;index"`
+	CompanyID      *string `json:"company_id,omitempty" gorm:"type:uuid;index"`
+	IdentityMethod string  `json:"identity_method" gorm:"not null"`
+	IdentityTrust  string  `json:"identity_trust" gorm:"not null"`
+	// CompanyMatchMethod records how CompanyID was resolved. IdentityMethod and
+	// IdentityTrust describe proof of the *person's* identity, which says
+	// nothing about how their account was attached: a HMAC-verified visitor may
+	// still have had their company inferred from an email domain. Consumers that
+	// act on company-scoped evidence must check this rather than assuming
+	// IdentityTrust covers it.
+	CompanyMatchMethod *string    `json:"company_match_method,omitempty"`
+	VerifiedAt         *time.Time `json:"verified_at,omitempty" gorm:"type:timestamptz"`
+	VerifierVersion    *string    `json:"verifier_version,omitempty"`
+	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
 }
 
 func (CRMIdentityLink) TableName() string { return "crm_identity_links" }

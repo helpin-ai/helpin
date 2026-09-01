@@ -19,7 +19,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { Cancel01Icon, Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
+import { Cancel01Icon, Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Delete01Icon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -351,15 +352,12 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
           <span className="text-sm text-muted-foreground">{members.length} {members.length === 1 ? 'member' : 'members'} in this workspace</span>
           <div className="flex items-center gap-3">
             {members.length > 10 && (
-              <div className="relative">
-                <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  className="h-9 w-60 pl-9"
-                  placeholder="Search members..."
-                />
-              </div>
+              <QuietSearchInput
+                containerClassName="w-60"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search members..."
+              />
             )}
             {editable && (
               <Button size="sm" onClick={openInviteDialog}>

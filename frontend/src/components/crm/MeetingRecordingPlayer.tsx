@@ -1,7 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { LinkSquare01Icon, Loading01Icon, PlayCircleIcon } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { QuietEmptyState, QuietSection, QuietTextAction } from '@/components/design-system/quiet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { crmMeetingService } from '@/lib/services/crmMeetingService';
 import type { CRMMeetingRecording } from '@/lib/crmMeetingTypes';
@@ -67,35 +66,60 @@ export const MeetingRecordingPlayer = forwardRef<MeetingRecordingPlayerHandle, M
 
     return (
       <div ref={containerRef} className="scroll-mt-4">
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base"><PlayCircleIcon className="h-4 w-4" />Meeting recording</CardTitle>
-            <CardDescription>{recording ? (recording.media_type === 'video' ? 'Video and audio captured by Helpin.' : 'Audio captured by Helpin.') : 'Private playback from Helpin storage.'}</CardDescription>
-            {recording && <CardAction><Button asChild variant="outline" size="sm" className="h-7 text-xs"><a href={recording.url} target="_blank" rel="noreferrer">Open recording <LinkSquare01Icon className="h-3.5 w-3.5" /></a></Button></CardAction>}
-          </CardHeader>
-          <CardContent>
-            {state.status === 'loading' ? (
-              <div className="space-y-3"><Skeleton className="aspect-video w-full rounded-lg" /><div className="flex items-center gap-2 text-xs text-muted-foreground"><Loading01Icon className="h-3.5 w-3.5 animate-spin" />Preparing secure playback…</div></div>
-            ) : state.status === 'error' ? (
-              <div className="flex min-h-36 flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 px-6 text-center">
-                <p className="text-sm font-medium">Recording could not be loaded</p>
-                <p className="mt-1 text-xs text-muted-foreground">{state.message}</p>
-                <Button className="mt-3" size="sm" variant="outline" onClick={() => setReloadKey((current) => current + 1)}>Try again</Button>
+        <QuietSection
+          title="Meeting recording"
+          icon={PlayCircleIcon}
+          action={recording ? (
+            <QuietTextAction asChild>
+              <a href={recording.url} target="_blank" rel="noreferrer">
+                Open recording <LinkSquare01Icon className="h-3.5 w-3.5" />
+              </a>
+            </QuietTextAction>
+          ) : undefined}
+          className="px-0 sm:px-0 lg:px-0"
+        >
+          <p className="mb-4 text-sm leading-[1.6] text-quiet-text-tertiary">
+            {recording
+              ? recording.media_type === 'video'
+                ? 'Private video and audio captured by Helpin.'
+                : 'Private audio captured by Helpin.'
+              : 'Preparing private playback from Helpin storage.'}
+          </p>
+          {state.status === 'loading' ? (
+            <div className="space-y-3">
+              <Skeleton className="aspect-video w-full rounded-none" />
+              <div className="flex items-center gap-2 text-[12.5px] text-quiet-text-tertiary">
+                <Loading01Icon className="h-3.5 w-3.5 animate-spin" />Preparing secure playback…
               </div>
-            ) : state.recording.media_type === 'video' ? (
-              <video ref={setMediaElement} src={state.recording.url} controls preload="metadata" playsInline onTimeUpdate={handleTimeUpdate} onError={() => setState({ status: 'error', message: 'The recording could not be played. Refresh the secure link and try again.' })} className="aspect-video w-full rounded-lg bg-black object-contain">
-                <track kind="captions" />
-                Meeting recording playback is not supported by this browser.
-              </video>
-            ) : state.recording.media_type === 'audio' ? (
-              <div className="flex min-h-32 items-center rounded-lg border bg-muted/20 px-5">
-                <audio ref={setMediaElement} src={state.recording.url} controls preload="metadata" onTimeUpdate={handleTimeUpdate} onError={() => setState({ status: 'error', message: 'The recording could not be played. Refresh the secure link and try again.' })} className="w-full">Meeting recording playback is not supported by this browser.</audio>
-              </div>
-            ) : (
-              <div className="flex min-h-32 items-center justify-center rounded-lg border bg-muted/20"><Button asChild variant="outline"><a href={state.recording.url} target="_blank" rel="noreferrer">Open recording <LinkSquare01Icon className="h-4 w-4" /></a></Button></div>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          ) : state.status === 'error' ? (
+            <QuietEmptyState
+              className="border-b-0"
+              title="Recording could not be loaded"
+              description={state.message}
+              action={(
+                <QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={() => setReloadKey((current) => current + 1)}>
+                  Try again
+                </QuietTextAction>
+              )}
+            />
+          ) : state.recording.media_type === 'video' ? (
+            <video ref={setMediaElement} src={state.recording.url} controls preload="metadata" playsInline onTimeUpdate={handleTimeUpdate} onError={() => setState({ status: 'error', message: 'The recording could not be played. Refresh the secure link and try again.' })} className="aspect-video w-full bg-black object-contain">
+              <track kind="captions" />
+              Meeting recording playback is not supported by this browser.
+            </video>
+          ) : state.recording.media_type === 'audio' ? (
+            <div className="flex min-h-28 items-center border-y border-quiet-divider-light py-5">
+              <audio ref={setMediaElement} src={state.recording.url} controls preload="metadata" onTimeUpdate={handleTimeUpdate} onError={() => setState({ status: 'error', message: 'The recording could not be played. Refresh the secure link and try again.' })} className="w-full">Meeting recording playback is not supported by this browser.</audio>
+            </div>
+          ) : (
+            <div className="border-y border-quiet-divider-light py-5">
+              <QuietTextAction asChild className="border-b border-quiet-field pb-0.5">
+                <a href={state.recording.url} target="_blank" rel="noreferrer">Open recording <LinkSquare01Icon className="h-4 w-4" /></a>
+              </QuietTextAction>
+            </div>
+          )}
+        </QuietSection>
       </div>
     );
   },

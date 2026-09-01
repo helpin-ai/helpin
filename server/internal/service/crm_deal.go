@@ -314,8 +314,9 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
-	if req.ContactID == "" {
-		return nil, fmt.Errorf("contact_id is required")
+	customer, err := s.resolveCustomer(ctx, req.WorkspaceID, req.ContactID, req.CompanyID)
+	if err != nil {
+		return nil, err
 	}
 	if req.PipelineID == "" || req.StageID == "" {
 		return nil, fmt.Errorf("pipeline_id and stage_id are required")
@@ -371,18 +372,7 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		Probability:      req.Probability,
 		CustomProperties: model.JSONB(req.CustomProperties),
 	}
-	if err := s.dealRepo.Create(ctx, deal); err != nil {
-		return nil, err
-	}
-
-	assoc := &model.CRMAssociation{
-		WorkspaceID:    req.WorkspaceID,
-		FromObjectType: model.CRMObjectDeal,
-		FromObjectID:   deal.ID,
-		ToObjectType:   model.CRMObjectContact,
-		ToObjectID:     req.ContactID,
-	}
-	if err := s.assocRepo.Create(ctx, assoc); err != nil {
+	if err := s.dealRepo.CreateWithCustomer(ctx, deal, customer); err != nil {
 		return nil, err
 	}
 
@@ -400,10 +390,97 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		SemanticKey: "crm_deal_created:" + deal.ID,
 		WorkspaceID: deal.WorkspaceID, Name: "crm_deal_created", Source: "api",
 		OccurredAt: deal.CreatedAt,
-		Attributes: map[string]any{"entity_id": deal.ID, "pipeline_id": deal.PipelineID, "stage_id": deal.StageID, "amount": deal.Amount, "currency": deal.Currency, "module": "crm"},
+		Attributes: map[string]any{"entity_id": deal.ID, "pipeline_id": deal.PipelineID, "stage_id": deal.StageID, "amount": deal.Amount, "currency": deal.Currency, "customer_type": customer.CustomerType, "customer_id": customer.CustomerID, "module": "crm"},
 	})
 	s.requestCompanySummaryRefresh(ctx, deal.WorkspaceID, deal.ID)
 	return created, nil
+}
+
+func (s *CRMDealService) resolveCustomer(ctx context.Context, workspaceID, contactID, companyID string) (model.CRMDealCustomer, error) {
+	contactID = strings.TrimSpace(contactID)
+	companyID = strings.TrimSpace(companyID)
+	if contactID == "" && companyID == "" {
+		return model.CRMDealCustomer{}, fmt.Errorf("contact_id or company_id is required")
+	}
+	if contactID != "" {
+		exists, err := s.dealRepo.ObjectExists(ctx, workspaceID, model.CRMObjectContact, contactID)
+		if err != nil {
+			return model.CRMDealCustomer{}, err
+		}
+		if !exists {
+			return model.CRMDealCustomer{}, fmt.Errorf("contact not found in workspace")
+		}
+	}
+	if companyID != "" {
+		exists, err := s.dealRepo.ObjectExists(ctx, workspaceID, model.CRMObjectCompany, companyID)
+		if err != nil {
+			return model.CRMDealCustomer{}, err
+		}
+		if !exists {
+			return model.CRMDealCustomer{}, fmt.Errorf("company not found in workspace")
+		}
+		return model.CRMDealCustomer{CustomerType: model.CRMObjectCompany, CustomerID: companyID, PrimaryContactID: contactID}, nil
+	}
+	primaryCompanyID, err := s.dealRepo.GetPrimaryCompanyIDForContact(ctx, workspaceID, contactID)
+	if err != nil {
+		return model.CRMDealCustomer{}, err
+	}
+	if primaryCompanyID != "" {
+		return model.CRMDealCustomer{CustomerType: model.CRMObjectCompany, CustomerID: primaryCompanyID, PrimaryContactID: contactID}, nil
+	}
+	return model.CRMDealCustomer{CustomerType: model.CRMObjectContact, CustomerID: contactID, PrimaryContactID: contactID}, nil
+}
+
+// GetCustomer returns the canonical customer relationship for a deal.
+func (s *CRMDealService) GetCustomer(ctx context.Context, workspaceID, dealID string) (*model.CRMDealCustomer, error) {
+	deal, err := s.dealRepo.GetByID(ctx, dealID)
+	if err != nil {
+		return nil, err
+	}
+	if deal == nil || deal.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("deal not found")
+	}
+	return s.dealRepo.GetCustomer(ctx, workspaceID, dealID)
+}
+
+// SetCustomer replaces the canonical customer while preserving unrelated participants.
+func (s *CRMDealService) SetCustomer(ctx context.Context, dealID string, req model.SetCRMDealCustomerRequest, actorID string) (*model.CRMDealCustomer, error) {
+	deal, err := s.dealRepo.GetByID(ctx, dealID)
+	if err != nil {
+		return nil, err
+	}
+	if deal == nil || deal.WorkspaceID != req.WorkspaceID {
+		return nil, fmt.Errorf("deal not found")
+	}
+	previous, err := s.dealRepo.GetCustomer(ctx, req.WorkspaceID, dealID)
+	if err != nil {
+		return nil, err
+	}
+	// Omitting contact_id while selecting a company means "keep the current
+	// primary person", not "silently remove the person". Primary contact removal
+	// remains an explicit association action.
+	if strings.TrimSpace(req.CompanyID) != "" && strings.TrimSpace(req.ContactID) == "" && previous != nil {
+		req.ContactID = previous.PrimaryContactID
+	}
+	customer, err := s.resolveCustomer(ctx, req.WorkspaceID, req.ContactID, req.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.dealRepo.ReplaceCustomer(ctx, req.WorkspaceID, dealID, customer); err != nil {
+		return nil, err
+	}
+	if s.activity != nil {
+		metadata := map[string]interface{}{"customer_type": customer.CustomerType, "customer_id": customer.CustomerID}
+		if previous != nil {
+			metadata["previous_customer_type"] = previous.CustomerType
+			metadata["previous_customer_id"] = previous.CustomerID
+		}
+		if err := s.activity.LogEvent(ctx, deal.WorkspaceID, "deal", deal.ID, optionalActor(actorID), "deal.customer_changed", "changed the customer for this deal", stringPtr("customer"), nil, &customer.CustomerID, metadata); err != nil {
+			slog.ErrorContext(ctx, "log deal customer change", "error", err, "deal_id", deal.ID)
+		}
+	}
+	s.requestCompanySummaryRefresh(ctx, deal.WorkspaceID, deal.ID)
+	return &customer, nil
 }
 
 // Update updates a deal.

@@ -7,7 +7,6 @@ import {
   ArchiveIcon,
   ArrowLeft02Icon,
   Calendar03Icon,
-  ArrowRight01Icon,
   AttachmentIcon,
   CheckListIcon,
   FavouriteIcon,
@@ -24,6 +23,17 @@ import {
   Layers01Icon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import {
+  QuietBreadcrumbs,
+  QuietDetailAction,
+  QuietDetailHeader,
+  QuietEmptyState,
+  QuietMetaLine,
+  QuietStatusBadge,
+  QuietTextAction,
+  QuietTitleInput,
+} from '@/components/design-system/quiet';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -53,7 +63,7 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type { ActivityLogEntry, AttachmentResponse, CommentWithAuthor, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, LinkEpicTasksResponse, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
 import { getEpicTaskCount } from '@/lib/pmTypes';
-import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
+import { getWorkflowStateTone, STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
@@ -808,113 +818,124 @@ export function EpicDetailPage() {
     </div>
   );
 
+  const handleArchiveToggle = async () => {
+    if (!workspaceId || !epic) return;
+    if (!epic.epic.archived) {
+      setArchiveConfirmOpen(true);
+      return;
+    }
+    setSaving(true);
+    const { data, error: err } = await pmEpicService.update(workspaceId, epic.epic.id, { archived: false });
+    if (err || !data) {
+      setSaveError(err ?? 'Failed to update');
+    } else {
+      setEpic(data);
+      setSaveError(null);
+    }
+    setSaving(false);
+  };
+
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          className="lg:px-10"
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'epics', label: 'Epics', icon: <Layers01Icon className="h-3.5 w-3.5 text-quiet-muted" />, onClick: goBack }]} onBack={goBack} backLabel="Back to epics" />}
+          title={<div className="h-6 w-64 max-w-full animate-pulse bg-quiet-icon-well" />}
+          meta={<div className="h-3 w-40 max-w-full animate-pulse bg-quiet-icon-well" />}
+        />
+        <div className="flex flex-1 items-center justify-center">
+          <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       </div>
     );
   }
 
   if (error || !epic || !form) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-muted-foreground">{error ?? 'Epic not found'}</p>
-        <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
-          Back to Epics
-        </Button>
+      <div className="flex h-full flex-col overflow-hidden">
+        <QuietDetailHeader
+          className="lg:px-10"
+          breadcrumbs={<QuietBreadcrumbs items={[{ id: 'epics', label: 'Epics', icon: <Layers01Icon className="h-3.5 w-3.5 text-quiet-muted" />, onClick: goBack }]} onBack={goBack} backLabel="Back to epics" />}
+          title="Epic"
+        />
+        <div className="flex-1 overflow-auto p-4 sm:p-6">
+          <QuietEmptyState
+            title={error ?? 'Epic not found'}
+            description="This epic may have been moved, archived, deleted, or is no longer available to you."
+            action={<QuietTextAction onClick={goBack}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to Epics</QuietTextAction>}
+          />
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex h-full flex-col">
-      {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
-          <ArrowLeft02Icon className="h-4 w-4" />
-        </Button>
-
-        <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-          <Layers01Icon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-          <button type="button" className="shrink-0 hover:text-foreground transition-colors cursor-pointer" onClick={goBack}>
-            Epics
-          </button>
-          <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-          <span className="truncate font-medium text-foreground">{form.name || 'Untitled'}</span>
-        </div>
-
-        <div className="ml-auto flex items-center gap-1">
-          <SaveIndicator saving={saving || taskTableSaving} error={saveError || taskTableSaveError} />
-          <FollowButton entityType="epic" entityId={epic.epic.id} />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 text-xs text-muted-foreground"
-            onClick={async () => {
-              if (!workspaceId || !epic) return;
-              if (!epic.epic.archived) {
-                setArchiveConfirmOpen(true);
-                return;
+      <QuietDetailHeader
+        className="lg:px-10"
+        breadcrumbs={<QuietBreadcrumbs items={[{ id: 'epics', label: 'Epics', icon: <Layers01Icon className="h-3.5 w-3.5 text-quiet-muted" />, onClick: goBack }]} onBack={goBack} backLabel="Back to epics" />}
+        title={(
+          <QuietTitleInput
+            type="text"
+            aria-label="Epic title"
+            presentation="header"
+            className="max-w-[42rem] border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary"
+            value={form.name}
+            onChange={(event) => updateField('name', event.target.value, { name: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.currentTarget.blur();
               }
-              setSaving(true);
-              const { data, error: err } = await pmEpicService.update(workspaceId, epic.epic.id, { archived: false });
-              if (err || !data) {
-                setSaveError(err ?? 'Failed to update');
-              } else {
-                setEpic(data);
-                setSaveError(null);
-              }
-              setSaving(false);
             }}
-          >
-            {epic.epic.archived ? <><ArchiveRestoreIcon className="h-3.5 w-3.5" /> Unarchive</> : <><ArchiveIcon className="h-3.5 w-3.5" /> Archive</>}
-          </Button>
-        </div>
-      </div>
+            placeholder="Untitled"
+          />
+        )}
+        meta={<QuietMetaLine items={[selectedTeam?.name ?? 'No team', `${tasks.length} task${tasks.length === 1 ? '' : 's'}`]} />}
+        status={(
+          <QuietStatusBadge className="lg:hidden" tone={epic.epic.archived ? 'neutral' : getWorkflowStateTone(currentEpicState?.state_type as StateType | undefined)} color={epic.epic.archived ? undefined : currentEpicState?.color}>
+            {epic.epic.archived ? 'Archived' : currentStateName || 'No state'}
+          </QuietStatusBadge>
+        )}
+        state={<SaveIndicator saving={saving || taskTableSaving} error={saveError || taskTableSaveError} presentation="quiet" />}
+        actions={(
+          <>
+            <FollowButton entityType="epic" entityId={epic.epic.id} presentation="detail-header" />
+            <QuietDetailAction
+              icon={epic.epic.archived ? <ArchiveRestoreIcon className="h-3.5 w-3.5" /> : <ArchiveIcon className="h-3.5 w-3.5" />}
+              label={epic.epic.archived ? 'Unarchive' : 'Archive'}
+              onClick={() => void handleArchiveToggle()}
+            />
+          </>
+        )}
+      />
 
       {/* ── Two-column layout ───────────────────────────────────── */}
       <div className="relative grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
         {/* ── Left column ────────────────────────────────────────── */}
         <div className="flex min-h-0 min-w-0 flex-col lg:overflow-hidden">
-          <div role="tablist" aria-label="Epic detail views" className="flex items-center gap-6 border-b border-border/60 px-6 lg:px-10">
+          <Tabs value={activeView} onValueChange={(value) => selectView(value as 'overview' | 'delivery')} className="gap-0">
+            <TabsList variant="quiet" aria-label="Epic detail views" className="w-full justify-start px-4 sm:px-6 lg:px-10">
             {(['overview', 'delivery'] as const).map((view) => (
-              <button
+              <TabsTrigger
                 key={view}
-                type="button"
-                role="tab"
-                aria-selected={activeView === view}
-                className={cn(
-                  '-mb-px flex items-center gap-2 border-b-2 px-0.5 py-3 text-sm font-medium capitalize transition-colors',
-                  activeView === view
-                    ? 'border-foreground text-foreground'
-                    : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-                onClick={() => selectView(view)}
+                value={view}
+                className="capitalize"
               >
                 {view}
-              </button>
+              </TabsTrigger>
             ))}
-          </div>
+            </TabsList>
+          </Tabs>
 
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden px-6 pt-5 lg:overflow-y-auto lg:px-10">
+          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden px-4 pt-5 sm:px-6 lg:overflow-y-auto lg:px-10">
           {activeView === 'overview' ? (
           <>
-          {/* Title */}
-          <input
-            type="text"
-            aria-label="Epic title"
-            value={form.name}
-            onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-            className="w-full border-b border-border/60 bg-transparent pb-2 text-2xl font-bold text-foreground transition-colors placeholder:text-muted-foreground/50 focus:border-foreground/70 focus:outline-none"
-            placeholder="Untitled"
-          />
-
           {/* Description */}
           <div
             className={cn(
-              'group/desc relative mt-4 rounded-lg pb-3 transition-[box-shadow,background-color]',
+              'group/desc relative rounded-lg pb-3 transition-[box-shadow,background-color]',
               descriptionDragging && 'bg-primary/5 ring-1 ring-primary/50',
             )}
             onDragEnter={handleDescriptionDragEnter}

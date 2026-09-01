@@ -4,9 +4,9 @@ import { DndContext, DragOverlay, MeasuringStrategy, PointerSensor, useDroppable
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
 
-import { Cancel01Icon, LayoutTable01Icon, LayoutTwoColumnIcon, Loading01Icon, Search01Icon } from '@/lib/icons';
+import { Cancel01Icon, LayoutTable01Icon, LayoutTwoColumnIcon, Loading01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { BoardDisplayMenu } from '@/components/pm/BoardDisplayMenu';
@@ -476,22 +476,29 @@ export function CRMTasksWorkspace({ workspaceId, objectType, objectId, onOpenTas
       externalFilters={userFilters}
       excludedKeys={[objectType === 'company' ? 'company_id' : 'contact_id']}
     >
-      <div className={cn('flex min-h-0 flex-col overflow-hidden bg-background', fullHeight ? 'flex-1' : 'max-h-[470px]')}>
+      <div
+        className={cn(
+          'flex min-h-0 flex-col overflow-hidden',
+          fullHeight ? 'flex-1 bg-transparent' : 'max-h-[470px] bg-background',
+        )}
+      >
         <div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2">
-          <div className="relative min-w-[150px] flex-1 sm:max-w-[220px]">
-            <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search customer tasks" className="h-7 pl-8 pr-7 text-xs" />
-            {searchInput && (
+          <QuietSearchInput
+            containerClassName="min-w-[150px] flex-1 sm:max-w-[220px]"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search customer tasks"
+            trailing={searchInput ? (
               <button
                 type="button"
                 aria-label="Clear task search"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={() => setSearchInput('')}
               >
                 <Cancel01Icon className="h-3.5 w-3.5" />
               </button>
-            )}
-          </div>
+            ) : null}
+          />
 
           <TaskFilterTrigger />
           <TaskOwnerAvatarFilterRow />

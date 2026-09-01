@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { QuietPageHeader, QuietPageViewport } from '@/components/design-system/quiet';
 import { cn } from '@/lib/utils';
 
 export function AutomationShell({
@@ -15,15 +16,11 @@ export function AutomationShell({
   className?: string;
 }) {
   return (
-    <div className={cn('space-y-5', className)}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold">{title}</h1>
-          {description && <p className="text-sm text-muted-foreground">{description}</p>}
-        </div>
-        {actions && <div className="shrink-0">{actions}</div>}
-      </div>
-      {children}
+    <div className="flex h-full min-h-0 flex-col">
+      <QuietPageHeader variant="shell" title={title} description={description} actions={actions} />
+      <QuietPageViewport className="min-h-0 flex-1">
+        <div className={cn('space-y-5', className)}>{children}</div>
+      </QuietPageViewport>
     </div>
   );
 }

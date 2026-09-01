@@ -11,7 +11,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useOrganizationStore } from '@/stores/organizationStore'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import { Sidebar } from '@/components/layout/Sidebar'
-import { Header } from '@/components/layout/Header'
+import { WorkspaceCommandSearch } from '@/components/layout/WorkspaceCommandSearch'
+import { WorkspaceMainContent } from '@/components/layout/WorkspaceSidebarToggle'
 import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
 import { GlobalEpicPanel } from '@/components/pm/GlobalEpicPanel'
 import { GlobalTaskPanel } from '@/components/pm/GlobalTaskPanel'
@@ -97,8 +98,8 @@ function WorkspaceLayout() {
               </div>
             </div>
             <div className="flex-1 p-6 space-y-4">
-              <Skeleton className="h-10 w-full max-w-xl" />
-              <Skeleton className="h-8 w-52" />
+              <Skeleton className="h-7 w-56" />
+              <Skeleton className="h-4 w-full max-w-xl" />
               <div className="grid grid-cols-3 gap-4">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <Skeleton key={i} className="h-32 w-full" />
@@ -147,13 +148,13 @@ function WorkspaceLayout() {
           <Sidebar />
           <SidebarInset className="relative min-w-0 overflow-hidden bg-transparent before:absolute before:top-3 before:left-0 before:bottom-3 before:z-10 before:w-px before:bg-border/70 before:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:before:bg-border/60">
             <PageContextProvider>
-              <RouteAwareHeader />
+              <WorkspaceCommandSearch />
               <WorkspaceBillingNotice billing={billing} slug={slug} isOwner={isOwner} />
               <div className="flex min-h-0 flex-1 overflow-hidden">
-                <main className="relative min-h-0 flex-1 overflow-hidden">
+                <WorkspaceMainContent>
                   <Outlet />
                   <RouteAwareAskAgentsDock />
-                </main>
+                </WorkspaceMainContent>
               </div>
               <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
               <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
@@ -221,13 +222,6 @@ function WorkspaceBillingNotice({
       </div>
     </div>
   )
-}
-
-/** Isolates useLocation subscription so WorkspaceLayout doesn't re-render on every navigation */
-function RouteAwareHeader() {
-  const location = useLocation()
-  if (isWorkspaceSupportRoute(location.pathname)) return null
-  return <Header />
 }
 
 function RouteAwareAskAgentsDock() {

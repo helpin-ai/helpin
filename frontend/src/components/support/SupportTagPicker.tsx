@@ -3,6 +3,7 @@ import { ArrowLeft02Icon, Cancel01Icon, Delete01Icon, Loading01Icon, PencilEdit0
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -276,9 +277,8 @@ function ManageTagsDialog({
           <div className="flex max-h-[520px] flex-col gap-4">
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <Input
+                <QuietSearchInput
                   autoFocus
-                  className="h-9 text-sm"
                   placeholder="Search tags..."
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}

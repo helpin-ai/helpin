@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -40,8 +41,12 @@ func (h *CRMAssociationHandler) Create(w http.ResponseWriter, r *http.Request) {
 // Delete handles DELETE /api/crm/associations/{id}.
 func (h *CRMAssociationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.assocService.Delete(r.Context(), id); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := h.assocService.DeleteScoped(r.Context(), getWorkspaceID(r), id); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, service.ErrDealCustomerAssociationProtected) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "association deleted"})

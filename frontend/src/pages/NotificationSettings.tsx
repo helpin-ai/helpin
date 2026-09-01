@@ -8,6 +8,7 @@ import {
   WorkspaceMuteNotificationsCard,
   WorkspaceNotificationCategoriesCard,
 } from '@/components/settings/NotificationPreferencesPanels';
+import { QuietPageHeader } from '@/components/design-system/quiet';
 
 const SETTINGS_CARD_CLASS = 'border-border/70 shadow-none';
 
@@ -65,12 +66,10 @@ export default function NotificationSettings() {
   return (
     <div className="space-y-8">
       <div className="space-y-5">
-        <div>
-          <h2 className="text-xl font-semibold">Notifications</h2>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Set your default delivery rules, then fine-tune what this workspace can send.
-          </p>
-        </div>
+        <QuietPageHeader
+          title="Notifications"
+          description="Set your default delivery rules, then fine-tune what this workspace can send."
+        />
 
         <div className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-3">
           <PageIntroItem

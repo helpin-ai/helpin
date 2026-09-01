@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { PlusSignIcon } from '@/lib/icons';
 import type { ToolCatalogEntry } from '@/lib/pmTypes';
@@ -73,8 +73,7 @@ export function ToolMultiSelectPopover({
         onWheelCapture={(event) => event.stopPropagation()}
       >
         <div className="border-b border-border p-3">
-          <Input
-            className="h-9 rounded-md border-input bg-background text-sm"
+          <QuietSearchInput
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search tools..."

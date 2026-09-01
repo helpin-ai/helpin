@@ -54,6 +54,28 @@ func TestGmailSyncClient_SendMessageBuildsSafeMIMEPayload(t *testing.T) {
 	}
 }
 
+func TestGmailSyncClient_SendMessageBuildsMultipartAttachments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil { t.Fatalf("read body: %v", err) }
+		var payload map[string]string
+		if err := json.Unmarshal(body, &payload); err != nil { t.Fatalf("decode payload: %v", err) }
+		raw, err := base64.URLEncoding.DecodeString(payload["raw"])
+		if err != nil { t.Fatalf("decode raw message: %v", err) }
+		message := string(raw)
+		if !containsAll(message, "Content-Type: multipart/mixed", "Content-Disposition: attachment; filename=report.txt", base64.StdEncoding.EncodeToString([]byte("quarterly report"))) {
+			t.Fatalf("attachment missing from MIME message: %q", message)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"sent-attachment","threadId":"thread-attachment"}`))
+	}))
+	defer server.Close()
+
+	client := &GmailSyncClient{httpClient: server.Client(), apiBaseURL: server.URL}
+	_, err := client.SendMessageWithAttachments(context.Background(), "token", "owner@example.com", []string{"buyer@example.com"}, nil, "Report", "<p>Attached</p>", []GmailAttachment{{FileName: "report.txt", ContentType: "text/plain", Data: []byte("quarterly report")}})
+	if err != nil { t.Fatalf("SendMessageWithAttachments: %v", err) }
+}
+
 func TestGmailSyncClient_SendThreadMessagePreservesGmailThreading(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)

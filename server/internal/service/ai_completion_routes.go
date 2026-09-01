@@ -84,6 +84,8 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		common(BillingFeatureCoverageGapAnalysis, 1800),
 		crm(BillingFeatureCRMSignalDetection, 4096),
 		common(BillingFeatureSupportReplyRewrite, 900),
+		common(BillingFeaturePMCommentRewrite, 900),
+		crm(BillingFeatureCRMEmailRewrite, 900),
 		crm(BillingFeatureDealAutomationInference, 2048),
 		{
 			FeatureKey: BillingFeatureMeetingIntelligence, Primary: crmPrimary,

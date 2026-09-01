@@ -49,6 +49,7 @@ import {
   type DocsLibrarySortField,
 } from '@/components/docs/DocsLibraryList'
 import { buildCollectionPathLabels } from '@/components/docs/docsCollectionTree'
+import { QuietPageHeader, QuietPageViewport } from '@/components/design-system/quiet'
 
 interface DocsDocumentListProps {
   title: string
@@ -165,17 +166,24 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
   const EmptyIcon = emptyIcon
 
   if (!workspace) {
-    return <p className="text-sm text-muted-foreground">Workspace not found.</p>
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <QuietPageHeader variant="shell" title={title} description={description} />
+        <QuietPageViewport className="min-h-0 flex-1">
+          <p className="text-sm text-muted-foreground">Workspace not found.</p>
+        </QuietPageViewport>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-4">
-      <header>
-        <h2 className="text-xl font-semibold">{title}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </header>
+    <div className="flex h-full min-h-0 flex-col">
+      <QuietPageHeader variant="shell" title={title} description={description} />
 
-      {isLoading || (filterMode === 'my' && isAccessLoading) ? (
+      <QuietPageViewport className="min-h-0 flex-1">
+        <div className="space-y-4">
+
+          {isLoading || (filterMode === 'my' && isAccessLoading) ? (
         <div className="space-y-2 py-4">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-10 animate-pulse rounded-md bg-muted/60" />
@@ -231,11 +239,11 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="text-xs text-muted-foreground"
+                  className="text-muted-foreground"
                 >
-                  <FilterHorizontalIcon className="h-3 w-3" />
+                  <FilterHorizontalIcon className="h-4 w-4" />
                   {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
-                  <ArrowDown01Icon className="h-3 w-3 opacity-50" />
+                  <ArrowDown01Icon className="h-4 w-4 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
@@ -344,7 +352,9 @@ export function DocsDocumentList({ title, description, filterMode }: DocsDocumen
             ))}
           </DocsLibraryList>
         </>
-      )}
+          )}
+        </div>
+      </QuietPageViewport>
 
       {movingDoc && (
         <MoveDocumentDialog

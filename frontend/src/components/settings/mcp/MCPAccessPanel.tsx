@@ -21,7 +21,7 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowDown01Icon, ArrowRight01Icon, BotIcon, Copy01Icon, Delete01Icon, Key01Icon, Loading01Icon, LockIcon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowRight01Icon, Copy01Icon, Delete01Icon, Key01Icon, Loading01Icon, LockIcon } from '@/lib/icons';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import {
   useCreateMCPServicePrincipal,
@@ -72,20 +72,7 @@ const SCOPE_LABELS: Record<string, string> = {
 };
 
 export function MCPAccessPanel({ workspaceId, workspaceName }: MCPAccessPanelProps) {
-  return (
-    <div className="space-y-4">
-      <div>
-        <div className="flex items-center gap-2">
-          <BotIcon className="h-5 w-5 text-muted-foreground" />
-          <h2 className="text-xl font-semibold">MCP access</h2>
-        </div>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Connect outside MCP clients to {workspaceName || 'this workspace'} and control what they can access.
-        </p>
-      </div>
-      <InboundMCPAccessPanel workspaceId={workspaceId} workspaceName={workspaceName} />
-    </div>
-  );
+  return <InboundMCPAccessPanel workspaceId={workspaceId} workspaceName={workspaceName} />;
 }
 
 function InboundMCPAccessPanel({ workspaceId, workspaceName }: MCPAccessPanelProps) {

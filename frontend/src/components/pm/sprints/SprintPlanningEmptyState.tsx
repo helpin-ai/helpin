@@ -1,14 +1,6 @@
-import { ChartColumnIcon, Calendar03Icon, CheckmarkCircle02Icon, PlusSignIcon, Timer01Icon } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ChartColumnIcon, Calendar03Icon, CheckmarkCircle02Icon, Timer01Icon } from '@/lib/icons';
 
-interface SprintPlanningEmptyStateProps {
-  canEdit: boolean;
-  canCreateSprint: boolean;
-  onCreateSprint: () => void;
-}
-
-export function SprintPlanningEmptyState({ canEdit, canCreateSprint, onCreateSprint }: SprintPlanningEmptyStateProps) {
+export function SprintPlanningEmptyState() {
   return (
     <div className="flex flex-col items-center justify-center px-4 py-16">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-5">
@@ -18,26 +10,7 @@ export function SprintPlanningEmptyState({ canEdit, canCreateSprint, onCreateSpr
       <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
         Sprints are time-boxed cycles that help your team plan, focus, and deliver work in a predictable rhythm.
       </p>
-      {canEdit && (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="mb-8 inline-flex">
-                <Button className="gap-2" onClick={onCreateSprint} disabled={!canCreateSprint}>
-                  <PlusSignIcon className="h-4 w-4" />
-                  Create Sprint
-                </Button>
-              </span>
-            </TooltipTrigger>
-            {!canCreateSprint && (
-              <TooltipContent side="top" className="max-w-[260px] text-xs">
-                Only team managers can create sprints. Ask your team manager for access.
-              </TooltipContent>
-            )}
-          </Tooltip>
-        </TooltipProvider>
-      )}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
+      <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
         {[
           { icon: Calendar03Icon, title: 'Set a cadence', desc: 'Define start and end dates for focused work cycles' },
           { icon: ChartColumnIcon, title: 'Track progress', desc: 'Monitor task and point completion in real time' },

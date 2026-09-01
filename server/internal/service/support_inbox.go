@@ -3409,6 +3409,100 @@ type resolvedWidgetCompany struct {
 	customProperties model.JSONB
 }
 
+// freeEmailProviderDomains are consumer mailbox providers whose domain says
+// nothing about which organization a person belongs to. A company is never
+// inferred from one of these.
+var freeEmailProviderDomains = map[string]bool{
+	"aol.com":           true,
+	"fastmail.com":      true,
+	"gmail.com":         true,
+	"googlemail.com":    true,
+	"gmx.com":           true,
+	"gmx.de":            true,
+	"hey.com":           true,
+	"hotmail.co.uk":     true,
+	"hotmail.com":       true,
+	"icloud.com":        true,
+	"live.com":          true,
+	"mail.com":          true,
+	"mail.ru":           true,
+	"me.com":            true,
+	"msn.com":           true,
+	"outlook.com":       true,
+	"pm.me":             true,
+	"proton.me":         true,
+	"protonmail.com":    true,
+	"qq.com":            true,
+	"yahoo.co.uk":       true,
+	"yahoo.com":         true,
+	"yandex.com":        true,
+	"yandex.ru":         true,
+	"zoho.com":          true,
+	"mailinator.com":    true,
+	"guerrillamail.com": true,
+	"10minutemail.com":  true,
+	"trashmail.com":     true,
+	"tempmail.com":      true,
+}
+
+// companyDomainFromEmail returns the organization domain implied by an email
+// address, or an empty string when the address carries no organizational
+// meaning (malformed, or a consumer mailbox provider).
+func companyDomainFromEmail(email string) string {
+	domain := emailDomain(email)
+	if domain == "" || freeEmailProviderDomains[domain] {
+		return ""
+	}
+	return domain
+}
+
+// matchCRMCompanyByEmailDomainTx links a visitor to an existing company using
+// their email domain. It deliberately matches only and never creates: a shared
+// domain is probabilistic evidence, not a declared company identity, so it must
+// not manufacture CRM records. Callers record the resulting link with
+// probabilistic identity trust, which leaves it below the signal activation
+// gate and therefore context-only until corroborated.
+func (s *SupportInboxService) matchCRMCompanyByEmailDomainTx(ctx context.Context, companyRepo *repository.CRMCompanyRepository, workspaceID, email string) (*string, error) {
+	domain := companyDomainFromEmail(email)
+	if domain == "" {
+		return nil, nil
+	}
+
+	company, err := companyRepo.GetByDomain(ctx, workspaceID, domain)
+	if err != nil {
+		return nil, fmt.Errorf("match company by email domain %q: %w", domain, err)
+	}
+	if company == nil {
+		return nil, nil
+	}
+
+	slog.InfoContext(ctx, "matched CRM company by email domain",
+		"workspace_id", workspaceID, "company_id", company.ID, "domain", domain)
+	return &company.ID, nil
+}
+
+// matchOrCreateCRMCompanyIdentity resolves the company for a widget identity and
+// reports how it was resolved. The match method is returned separately because
+// it is weaker than the person's identity trust whenever the company was
+// inferred rather than declared.
+func (s *SupportInboxService) matchOrCreateCRMCompanyIdentityWithMethodTx(ctx context.Context, companyRepo *repository.CRMCompanyRepository, workspaceID string, identity model.WidgetIdentityPayload) (*string, string, error) {
+	if resolveWidgetCompanyPayload(identity.Company) == nil {
+		// No declared company. Fall back to the visitor's email domain so that
+		// identified contacts still attach to the account they belong to.
+		companyID, err := s.matchCRMCompanyByEmailDomainTx(ctx, companyRepo, workspaceID, identity.Email)
+		if err != nil || companyID == nil {
+			return nil, "", err
+		}
+		return companyID, model.CompanyMatchMethodEmailDomain, nil
+	}
+
+	companyID, err := s.matchOrCreateCRMCompanyIdentityTx(ctx, companyRepo, workspaceID, identity)
+	if err != nil || companyID == nil {
+		return nil, "", err
+	}
+	return companyID, model.CompanyMatchMethodDeclared, nil
+}
+
 func (s *SupportInboxService) matchOrCreateCRMCompanyIdentityTx(ctx context.Context, companyRepo *repository.CRMCompanyRepository, workspaceID string, identity model.WidgetIdentityPayload) (*string, error) {
 	resolved := resolveWidgetCompanyPayload(identity.Company)
 	if resolved == nil {

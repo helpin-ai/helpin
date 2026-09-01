@@ -52,6 +52,10 @@ type HelpcenterAnswerCitation struct {
 type HelpcenterAnswerRequest struct {
 	Query     string `json:"query"`
 	SpaceSlug string `json:"space,omitempty"`
+	// AnonymousID is the asker's durable browser identity when the help center
+	// has one. It is optional and never treated as proof of identity; it only
+	// attributes the question to the browser that asked it.
+	AnonymousID string `json:"anonymous_id,omitempty"`
 }
 
 // HelpcenterAnswerResponse is the public ask response.

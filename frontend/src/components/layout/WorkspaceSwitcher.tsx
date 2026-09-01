@@ -8,7 +8,7 @@ import { useSupportUnreadByWorkspace } from '@/hooks/queries/useSupport';
 import type { Workspace } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Favicon } from '@/components/ui/favicon';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -203,11 +203,10 @@ export function WorkspaceSwitcher() {
             sideOffset={4}
           >
             <div className="px-2 pt-2 pb-1.5">
-              <Input
+              <QuietSearchInput
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Filter workspaces"
-                className="h-8"
               />
             </div>
             <div className="max-h-[320px] overflow-auto px-1 pb-1">

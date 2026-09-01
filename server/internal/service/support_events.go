@@ -4,14 +4,35 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
+// maxVisitorAnonymousIDLength bounds a client-supplied browser identifier before
+// it is persisted. The value is an opaque token, so anything longer is
+// malformed or hostile rather than a longer legitimate id.
+const maxVisitorAnonymousIDLength = 128
+
 type supportSignalStarter interface {
 	StartSignalDetection(ctx context.Context, sourceKey string, payloads []model.SignalSourcePayload) error
+}
+
+// NormalizeVisitorAnonymousID sanitizes an anonymous browser id supplied by an
+// unauthenticated caller. It returns nil when the value is absent or unusable,
+// so callers can assign the result directly to an optional event field.
+//
+// The value is never trusted as proof of identity — it only attributes an event
+// to the browser that claimed it. Trust is established separately by the widget
+// identify flow.
+func NormalizeVisitorAnonymousID(raw string) *string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || len(trimmed) > maxVisitorAnonymousIDLength {
+		return nil
+	}
+	return &trimmed
 }
 
 // SupportEventInput is the service-level input for recording a support event.

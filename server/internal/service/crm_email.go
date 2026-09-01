@@ -18,6 +18,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 	"github.com/helpin-ai/helpin/server/internal/sync"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	"go.temporal.io/api/serviceerror"
@@ -38,6 +39,14 @@ type gmailMailboxClient interface {
 type gmailThreadClient interface {
 	GetMessageDetail(ctx context.Context, accessToken, messageID string) (*sync.GmailMessage, error)
 	SendThreadMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string) (*sync.GmailSendResult, error)
+}
+
+type gmailAttachmentClient interface {
+	SendMessageWithAttachments(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string, attachments []sync.GmailAttachment) (*sync.GmailSendResult, error)
+}
+
+type gmailThreadAttachmentClient interface {
+	SendThreadMessageWithAttachments(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string, attachments []sync.GmailAttachment) (*sync.GmailSendResult, error)
 }
 
 type emailSyncWorkflowRunner interface {
@@ -129,6 +138,8 @@ type CRMEmailService struct {
 		RequestContactRefresh(ctx context.Context, workspaceID, contactID string) error
 		RequestDealRefresh(ctx context.Context, workspaceID, dealID string) error
 	}
+	attachmentRepo    *repository.CRMEmailAttachmentRepository
+	attachmentStorage *storage.S3Client
 }
 
 // NewCRMEmailService creates a new CRMEmailService.
@@ -615,6 +626,14 @@ func (s *CRMEmailService) RebuildAccountAssociations(ctx context.Context, worksp
 
 // SendEmail sends an email via Gmail API and stores the outbound message.
 func (s *CRMEmailService) SendEmail(ctx context.Context, workspaceID, accountID, userID string, _ bool, to, cc []string, subject, bodyHTML string) (*model.CRMEmailMessage, error) {
+	return s.sendEmail(ctx, workspaceID, accountID, userID, to, cc, subject, bodyHTML, "", nil)
+}
+
+func (s *CRMEmailService) SendEmailWithAttachments(ctx context.Context, workspaceID, accountID, userID string, to, cc []string, subject, bodyHTML, draftID string, attachmentIDs []string) (*model.CRMEmailMessage, error) {
+	return s.sendEmail(ctx, workspaceID, accountID, userID, to, cc, subject, bodyHTML, draftID, attachmentIDs)
+}
+
+func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID, userID string, to, cc []string, subject, bodyHTML, draftID string, attachmentIDs []string) (*model.CRMEmailMessage, error) {
 	if s.gmailSync == nil {
 		return nil, fmt.Errorf("Gmail sync not configured")
 	}
@@ -643,7 +662,20 @@ func (s *CRMEmailService) SendEmail(ctx context.Context, workspaceID, accountID,
 		return nil, fmt.Errorf("load email sync settings: %w", err)
 	}
 
-	sendResult, err := s.gmailSync.SendMessage(ctx, accessToken, account.EmailAddress, to, cc, subject, bodyHTML)
+	attachments, err := s.prepareAttachments(ctx, workspaceID, draftID, userID, attachmentIDs)
+	if err != nil {
+		return nil, err
+	}
+	var sendResult *sync.GmailSendResult
+	if len(attachments) > 0 {
+		client, ok := s.gmailSync.(gmailAttachmentClient)
+		if !ok {
+			return nil, fmt.Errorf("email attachments are not configured")
+		}
+		sendResult, err = client.SendMessageWithAttachments(ctx, accessToken, account.EmailAddress, to, cc, subject, bodyHTML, attachments)
+	} else {
+		sendResult, err = s.gmailSync.SendMessage(ctx, accessToken, account.EmailAddress, to, cc, subject, bodyHTML)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("send email: %w", err)
 	}
@@ -702,6 +734,14 @@ func (s *CRMEmailService) SendEmail(ctx context.Context, workspaceID, accountID,
 		slog.ErrorContext(ctx, "failed to store sent email", "error", err, "account_id", accountID)
 		// Don't fail the send — the email was already sent.
 		return message, nil
+	}
+	if len(attachmentIDs) > 0 {
+		if err := s.attachmentRepo.Link(ctx, workspaceID, draftID, userID, message.ID, attachmentIDs); err != nil {
+			slog.ErrorContext(ctx, "failed to link sent CRM email attachments", "error", err, "message_id", message.ID)
+		} else {
+			linked, _ := s.attachmentRepo.ListByMessageIDs(ctx, workspaceID, []string{message.ID})
+			message.Attachments = linked
+		}
 	}
 	if threadID != nil {
 		if err := s.emailRepo.IncrementThreadMessageCount(ctx, *threadID, now); err != nil {
@@ -798,6 +838,9 @@ func (s *CRMEmailService) GetThreadDetail(ctx context.Context, workspaceID, thre
 	if err != nil {
 		return nil, err
 	}
+	if err := s.hydrateAttachments(ctx, workspaceID, messages); err != nil {
+		return nil, err
+	}
 	participants, err := s.threadParticipants(ctx, workspaceID, messages)
 	if err != nil {
 		return nil, err
@@ -830,6 +873,14 @@ func (s *CRMEmailService) LinkThreadDeal(ctx context.Context, workspaceID, threa
 }
 
 func (s *CRMEmailService) ReplyToThread(ctx context.Context, workspaceID, threadID, userID, mode, bodyHTML string) (*model.CRMEmailMessage, error) {
+	return s.replyToThread(ctx, workspaceID, threadID, userID, mode, bodyHTML, "", nil)
+}
+
+func (s *CRMEmailService) ReplyToThreadWithAttachments(ctx context.Context, workspaceID, threadID, userID, mode, bodyHTML, draftID string, attachmentIDs []string) (*model.CRMEmailMessage, error) {
+	return s.replyToThread(ctx, workspaceID, threadID, userID, mode, bodyHTML, draftID, attachmentIDs)
+}
+
+func (s *CRMEmailService) replyToThread(ctx context.Context, workspaceID, threadID, userID, mode, bodyHTML, draftID string, attachmentIDs []string) (*model.CRMEmailMessage, error) {
 	thread, err := s.emailRepo.GetThreadByID(ctx, threadID)
 	if err != nil || thread == nil || thread.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("email thread not found")
@@ -873,7 +924,20 @@ func (s *CRMEmailService) ReplyToThread(ctx context.Context, workspaceID, thread
 		return nil, fmt.Errorf("thread has no reply recipient")
 	}
 	references := strings.TrimSpace(stringValue(latest.ReferencesHeader) + " " + stringValue(latest.RFCMessageID))
-	sendResult, err := threadClient.SendThreadMessage(ctx, accessToken, account.EmailAddress, to, cc, thread.Subject, bodyHTML, thread.ThreadExternalID, stringValue(latest.RFCMessageID), references)
+	attachments, err := s.prepareAttachments(ctx, workspaceID, draftID, userID, attachmentIDs)
+	if err != nil {
+		return nil, err
+	}
+	var sendResult *sync.GmailSendResult
+	if len(attachments) > 0 {
+		client, ok := s.gmailSync.(gmailThreadAttachmentClient)
+		if !ok {
+			return nil, fmt.Errorf("email attachments are not configured")
+		}
+		sendResult, err = client.SendThreadMessageWithAttachments(ctx, accessToken, account.EmailAddress, to, cc, thread.Subject, bodyHTML, thread.ThreadExternalID, stringValue(latest.RFCMessageID), references, attachments)
+	} else {
+		sendResult, err = threadClient.SendThreadMessage(ctx, accessToken, account.EmailAddress, to, cc, thread.Subject, bodyHTML, thread.ThreadExternalID, stringValue(latest.RFCMessageID), references)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("send thread reply: %w", err)
 	}
@@ -905,6 +969,13 @@ func (s *CRMEmailService) ReplyToThread(ctx context.Context, workspaceID, thread
 	}
 	if err := s.emailRepo.CreateMessage(ctx, message); err != nil {
 		return message, nil
+	}
+	if len(attachmentIDs) > 0 {
+		if err := s.attachmentRepo.Link(ctx, workspaceID, draftID, userID, message.ID, attachmentIDs); err != nil {
+			slog.ErrorContext(ctx, "failed to link CRM reply attachments", "error", err, "message_id", message.ID)
+		} else {
+			message.Attachments, _ = s.attachmentRepo.ListByMessageIDs(ctx, workspaceID, []string{message.ID})
+		}
 	}
 	if err := s.emailRepo.IncrementThreadMessageCount(ctx, thread.ID, now); err != nil {
 		slog.ErrorContext(ctx, "failed to increment replied thread", "error", err, "thread_id", thread.ID)

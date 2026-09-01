@@ -27,7 +27,9 @@ import {
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { AutomationShell } from '@/components/automation/AutomationShell';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
+import { QuietEmptyState, QuietIconAction, QuietPrimaryAction } from '@/components/design-system/quiet';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -6427,73 +6429,66 @@ export function AgentsPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-xl font-semibold">Agents</h1>
-          <p className="text-sm text-muted-foreground">
-            Built-in and custom agents for manual runs and automated flows.
-          </p>
-        </div>
-        {sortedAgents.length > 0 && (
-          <div className="flex items-center gap-2">
-            <div className="flex items-center rounded-md border border-border">
-              <button
-                type="button"
-                className={`p-1.5 ${viewMode === 'list' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+    <AutomationShell
+        title="Agents"
+        description="Built-in and custom agents for manual runs and automated flows."
+        actions={sortedAgents.length > 0 ? (
+          <>
+            <div className="flex items-center gap-1">
+              <QuietIconAction
+                aria-label="Show agents as a list"
+                aria-pressed={viewMode === 'list'}
+                className={viewMode === 'list' ? 'bg-quiet-hover text-quiet-text-primary' : undefined}
                 onClick={() => setViewMode('list')}
               >
                 <LayoutTable01Icon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                className={`p-1.5 ${viewMode === 'cards' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              </QuietIconAction>
+              <QuietIconAction
+                aria-label="Show agents as a grid"
+                aria-pressed={viewMode === 'cards'}
+                className={viewMode === 'cards' ? 'bg-quiet-hover text-quiet-text-primary' : undefined}
                 onClick={() => setViewMode('cards')}
               >
                 <LayoutGridIcon className="h-4 w-4" />
-              </button>
+              </QuietIconAction>
             </div>
             {canEdit && (
-              <Button size="sm" onClick={openCreateDialog}>
-                <PlusSignIcon className="mr-1.5 h-4 w-4" />
+              <QuietPrimaryAction className="gap-1.5" onClick={openCreateDialog}>
+                <PlusSignIcon className="h-4 w-4" />
                 New Custom Agent
-              </Button>
+              </QuietPrimaryAction>
             )}
-          </div>
-        )}
-      </div>
+          </>
+        ) : undefined}
+    >
 
       {loading && <p className="text-sm text-muted-foreground">Loading agents...</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {/* ---- Empty state with onboarding ---- */}
       {!loading && visibleAgents.length === 0 && !error && (
-        <div className="flex flex-col items-center justify-center py-16 px-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-500/10 mb-5">
-            <BotIcon className="h-7 w-7 text-violet-500" />
-          </div>
-          <h3 className="text-lg font-semibold mb-1.5">Create your first agent</h3>
-          <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-            AI-powered teammates that plan features, write code, review work, update docs, reply to customers, and manage deals — automatically or on demand.
-          </p>
-          {canEdit && (
-            <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
-              <Button className="gap-2" onClick={openCreateDialog}>
+        <QuietEmptyState
+          title="Create your first agent"
+          description="AI-powered teammates can plan features, write code, review work, update docs, reply to customers, and manage deals—automatically or on demand."
+          action={canEdit ? (
+              <QuietPrimaryAction className="gap-1.5" onClick={openCreateDialog}>
                 <PlusSignIcon className="h-4 w-4" />
                 New Custom Agent
-              </Button>
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
+              </QuietPrimaryAction>
+          ) : undefined}
+        >
+          <div className="max-w-[760px] border-t border-quiet-divider-light">
             {EMPTY_STATE_CARDS.map((card) => (
-              <div key={card.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
-                <card.icon className="h-5 w-5 text-muted-foreground mb-3" />
-                <p className="text-sm font-medium mb-1">{card.title}</p>
-                <p className="text-sm text-muted-foreground leading-relaxed">{card.desc}</p>
+              <div key={card.title} className="grid grid-cols-[20px_minmax(0,1fr)] gap-x-3 border-b border-quiet-divider-light py-3">
+                <card.icon className="mt-0.5 h-[15px] w-[15px] text-quiet-muted" />
+                <div>
+                  <p className="text-[13.5px] font-semibold tracking-[-0.008em] text-quiet-text-primary">{card.title}</p>
+                  <p className="mt-0.5 text-[12.5px] leading-5 text-quiet-text-tertiary">{card.desc}</p>
+                </div>
               </div>
             ))}
           </div>
-        </div>
+        </QuietEmptyState>
       )}
 
       {/* ---- Agent list / grid ---- */}
@@ -6915,6 +6910,6 @@ export function AgentsPage() {
         }}
         reason={upgradeDialogReason}
       />
-    </div>
+    </AutomationShell>
   );
 }

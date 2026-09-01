@@ -9,8 +9,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Loading01Icon, Search01Icon, Tick01Icon } from '@/lib/icons'
+import { QuietSearchInput } from '@/components/design-system/quiet'
+import { Loading01Icon, Tick01Icon } from '@/lib/icons'
 import type { LinkSprintTasksResponse, Task } from '@/lib/pmTypes'
 import { pmSprintService } from '@/lib/services/pmSprintService'
 import { pmTaskService } from '@/lib/services/pmTaskService'
@@ -215,10 +215,7 @@ export function LinkTasksToSprintDialog({
         ) : (
           <>
             <div className="border-b border-border/60 px-4 py-3">
-              <div className="relative">
-                <Search01Icon className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by task name or key" className="pl-9" autoFocus />
-              </div>
+              <QuietSearchInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by task name or key" autoFocus />
             </div>
             <div className="grid grid-cols-[24px_minmax(0,1fr)_110px_120px] gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               <span />

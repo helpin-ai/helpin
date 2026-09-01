@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowUpRight01Icon, LinkSquare01Icon, Link01Icon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
 import { Favicon } from '@/components/ui/favicon';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -154,7 +155,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={`Open ${link.title || getHostname(link.url)} in a new tab`}
-                      className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-foreground/75 transition-colors hover:text-foreground hover:underline hover:decoration-muted-foreground/60 hover:underline-offset-2 dark:text-foreground/80"
+                      className={`${quietRelatedItemTitleClassName} inline-flex max-w-full items-center gap-1 transition-colors hover:text-foreground hover:underline hover:decoration-muted-foreground/60 hover:underline-offset-2`}
                     >
                       <span className="min-w-0 truncate">{link.title || getHostname(link.url)}</span>
                       <ArrowUpRight01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
