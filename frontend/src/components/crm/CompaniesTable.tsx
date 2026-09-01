@@ -17,7 +17,6 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, Building03Icon, ArrowDown01Icon, ArrowRight01Icon, MoreVerticalIcon, LinkSquare01Icon, Loading01Icon, PlusSignIcon, Delete01Icon, UserAdd01Icon } from '@/lib/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { format, parseISO } from 'date-fns';
@@ -52,15 +51,9 @@ import type { CRMCompany } from '@/lib/crmTypes';
 import { shouldFetchNextContactPage } from '@/lib/contactInfiniteScroll';
 import type { AssignableMember } from '@/lib/types';
 
-type GroupByOption = 'none' | 'industry' | 'owner';
+export type CompanyGroupByOption = 'none' | 'industry' | 'owner';
 
-const GROUP_BY_OPTIONS: { value: GroupByOption; label: string }[] = [
-  { value: 'none', label: 'None' },
-  { value: 'industry', label: 'Industry' },
-  { value: 'owner', label: 'Owner' },
-];
-
-const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
+const GROUP_COLUMN_MAP: Record<CompanyGroupByOption, string | null> = {
   none: null,
   industry: 'industryName',
   owner: 'ownerName',
@@ -70,10 +63,10 @@ const columnHelper = createColumnHelper<CRMCompany>();
 
 interface CompaniesTableProps {
   companies: CRMCompany[];
-  totalCount?: number;
   workspaceId: string;
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
+  groupBy: CompanyGroupByOption;
   isLoading: boolean;
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
@@ -86,10 +79,10 @@ interface CompaniesTableProps {
 
 export function CompaniesTable({
   companies,
-  totalCount,
   workspaceId,
   assignableMembers,
   ownerNameMap,
+  groupBy,
   isLoading,
   hasNextPage,
   isFetchingNextPage,
@@ -100,7 +93,6 @@ export function CompaniesTable({
   onCompanyDeleted,
 }: CompaniesTableProps) {
   const [localCompanies, setLocalCompanies] = useState<CRMCompany[]>(companies);
-  const [groupBy, setGroupBy] = useState<GroupByOption>('none');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -356,29 +348,6 @@ export function CompaniesTable({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col gap-2">
-      {/* Group By control */}
-      <div className="flex items-center gap-2 px-1">
-        <span className="text-xs text-muted-foreground">Group by:</span>
-        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
-          <SelectTrigger className="h-7 w-[140px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {GROUP_BY_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-xs text-muted-foreground">
-          {totalCount != null && totalCount !== localCompanies.length
-            ? `${localCompanies.length} of ${totalCount}`
-            : localCompanies.length}{' '}
-          {(totalCount ?? localCompanies.length) === 1 ? 'company' : 'companies'}
-        </span>
-      </div>
-
       {/* Table */}
       <div ref={parentRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">

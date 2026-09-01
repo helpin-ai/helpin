@@ -2,14 +2,24 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { PlusSignIcon } from '@/lib/icons';
 import { QuietPageHeader, QuietPrimaryAction, QuietSearchInput } from '@/components/design-system/quiet';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useInfiniteCompanies } from '@/hooks/useInfiniteCompanies';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
-import { CompaniesTable } from '@/components/crm/CompaniesTable';
+import {
+  CompaniesTable,
+  type CompanyGroupByOption,
+} from '@/components/crm/CompaniesTable';
 import { CreateCompanyDialog } from '@/components/crm/CreateCompanyDialog';
 import { CRMDataEmptyState, CRMNoResultsState } from '@/components/crm/CRMDataEmptyState';
 import { useTitle } from '@/hooks/useTitle';
+
+const COMPANY_GROUP_BY_OPTIONS: { value: CompanyGroupByOption; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'industry', label: 'Industry' },
+  { value: 'owner', label: 'Owner' },
+];
 
 export function CompaniesPage() {
   useTitle('Companies');
@@ -18,6 +28,7 @@ export function CompaniesPage() {
   const wsSlug = currentWorkspace?.slug ?? '';
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [groupBy, setGroupBy] = useState<CompanyGroupByOption>('none');
   const [showCreate, setShowCreate] = useState(false);
 
   const {
@@ -54,6 +65,7 @@ export function CompaniesPage() {
       <QuietPageHeader
         variant="shell"
         title="Companies"
+        context={!isLoading ? totalCount : undefined}
         actions={(
           <QuietPrimaryAction className="gap-1.5" onClick={() => setShowCreate(true)}>
             <PlusSignIcon className="h-4 w-4" />
@@ -69,6 +81,21 @@ export function CompaniesPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <div className="ml-auto flex items-center">
+          <Select value={groupBy} onValueChange={(value) => setGroupBy(value as CompanyGroupByOption)}>
+            <SelectTrigger className="h-7 w-auto min-w-[130px] max-w-[160px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:ring-0 focus-visible:border-transparent">
+              <span className="shrink-0 text-muted-foreground">Group by:</span>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COMPANY_GROUP_BY_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </header>
 
       {/* Content */}
@@ -88,10 +115,10 @@ export function CompaniesPage() {
         ) : (
           <CompaniesTable
             companies={deferredCompanies}
-            totalCount={totalCount}
             workspaceId={wsId}
             assignableMembers={assignableMembers}
             ownerNameMap={ownerNameMap}
+            groupBy={groupBy}
             isLoading={isLoading}
             hasNextPage={!!hasNextPage}
             isFetchingNextPage={isFetchingNextPage}
