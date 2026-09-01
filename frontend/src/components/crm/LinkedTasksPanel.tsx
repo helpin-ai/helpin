@@ -3,10 +3,10 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { CheckListIcon, Link01Icon, Loading01Icon, PlusSignIcon, Search01Icon } from '@/lib/icons';
+import { CheckListIcon, Link01Icon, Loading01Icon, PlusSignIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { CRMTasksWorkspace } from '@/components/crm/CompanyTasksWorkspace';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
@@ -356,10 +356,7 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
             <DialogTitle className="text-sm">Link existing task</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input value={linkQuery} onChange={(event) => handleLinkQueryChange(event.target.value)} placeholder="Search tasks by name or key" className="pl-9" autoFocus />
-            </div>
+            <QuietSearchInput value={linkQuery} onChange={(event) => handleLinkQueryChange(event.target.value)} placeholder="Search tasks by name or key" autoFocus />
             <div className="max-h-64 space-y-1 overflow-y-auto">
               {linkSearching && (
                 <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">

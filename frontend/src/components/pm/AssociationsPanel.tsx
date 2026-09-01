@@ -7,7 +7,6 @@ import {
   DollarCircleIcon,
   File01Icon,
   Loading01Icon,
-  Search01Icon,
   UserGroupIcon,
 } from '@/lib/icons';
 
@@ -32,10 +31,9 @@ import type {
   SupportConversation,
 } from '@/lib/pmTypes';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
-import { Input } from '@/components/ui/input';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
-import { quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
+import { QuietSearchInput, quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
 import {
   Dialog,
   DialogContent,
@@ -459,16 +457,12 @@ export function AssociationsPanel({
             <DialogTitle className="text-sm">Link {pickerTitle}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={pickerPlaceholder}
-                className="pl-9"
-                autoFocus
-              />
-            </div>
+            <QuietSearchInput
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={pickerPlaceholder}
+              autoFocus
+            />
             <div className="-mx-1 max-h-80 overflow-y-auto px-1">
               {searching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">

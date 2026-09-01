@@ -39,6 +39,8 @@ describe('CRM deal customer and Quiet detail composition', () => {
   it('requires one searched customer during creation and makes company contact optional', () => {
     expect(createSource).toContain('Every deal belongs to one company or independent contact.');
     expect(createSource).toContain('Search contacts or companies');
+    expect(createSource).toContain('<QuietSearchInput');
+    expect(relationshipsSource).toContain('<QuietSearchInput');
     expect(createSource).toContain('No primary contact');
 		expect(createSource).toContain('!customer || !effectivePipelineId || !effectiveStageId');
   });

@@ -4,7 +4,7 @@ import { ArrowLeft01Icon, ArrowRight01Icon, Loading01Icon, PlayCircleIcon, Arrow
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { RecurringTemplateList } from '@/components/pm/RecurringTemplateList';
@@ -182,11 +182,11 @@ export function RecurringTemplatesSettings({ workspaceId, initialTeamId, editabl
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Input
+        <QuietSearchInput
+          containerClassName="w-[240px]"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search recurring templates"
-          className="h-8 w-[240px]"
         />
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="h-8 w-[180px]">

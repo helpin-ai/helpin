@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
-import { PlusSignIcon, Search01Icon, Settings02Icon } from '@/lib/icons';
+import { PlusSignIcon, Settings02Icon } from '@/lib/icons';
 import {
   QuietEmptyState,
   QuietIconAction,
@@ -10,10 +10,10 @@ import {
   QuietPageHeader,
   QuietPageViewport,
   QuietPrimaryAction,
+  QuietSearchInput,
   QuietSection,
   QuietStatusText,
   QuietTextAction,
-  QuietUnderlineInput,
 } from '@/components/design-system/quiet';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -161,16 +161,13 @@ export function MeetingsPage() {
 
         <QuietPageViewport className="min-h-0 flex-1">
         <div className="mb-6 flex items-center justify-between gap-4 border-b border-quiet-divider-strong pb-4">
-          <div className="relative w-full max-w-xs">
-            <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-quiet-muted" />
-            <QuietUnderlineInput
-              aria-label="Search meetings"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search meetings"
-              className="w-full pl-6"
-            />
-          </div>
+          <QuietSearchInput
+            containerClassName="w-full max-w-sm"
+            aria-label="Search meetings"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search meetings"
+          />
         </div>
 
         {settingsQuery.data?.settings.enabled === false && hasUpcoming && !meetingsQuery.isLoading ? (

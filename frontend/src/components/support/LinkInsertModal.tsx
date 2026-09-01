@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search01Icon, BookOpen01Icon, Loading01Icon } from '@/lib/icons';
+import { BookOpen01Icon, Loading01Icon } from '@/lib/icons';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { unwrap } from '@/lib/queryUtils';
 import { docsService } from '@/lib/services/docsService';
 import { queryKeys } from '@/lib/queryKeys';
@@ -153,15 +154,11 @@ export function LinkInsertModal({
           </TabsContent>
 
           <TabsContent value="kb" className="space-y-3 pt-4">
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search published articles..."
-                className="pl-8"
-              />
-            </div>
+            <QuietSearchInput
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search published articles..."
+            />
 
             <ScrollArea className="h-64 rounded-md border">
               {isLoadingArticles ? (

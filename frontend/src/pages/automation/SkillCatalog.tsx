@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowRight01Icon,
-  Search01Icon,
   Tick01Icon,
   PlusSignIcon,
   Upload01Icon,
@@ -12,7 +11,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { AutomationShell } from '@/components/automation/AutomationShell';
-import { QuietEmptyState, QuietPrimaryAction, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { QuietEmptyState, QuietPrimaryAction, QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
   Dialog,
@@ -735,16 +734,12 @@ export function SkillCatalogContent({
   return wrapContent(
     <div className="space-y-5">
       {/* Search */}
-      <div className="relative">
-        <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 text-quiet-muted" />
-        <QuietUnderlineInput
-          aria-label="Search skills"
-          placeholder="Search skills..."
-          className="w-full pl-6"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
+      <QuietSearchInput
+        aria-label="Search skills"
+        placeholder="Search skills..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
 
       {/* Skill list */}
       {grouped.length === 0 ? (

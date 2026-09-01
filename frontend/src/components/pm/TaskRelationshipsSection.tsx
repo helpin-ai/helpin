@@ -8,7 +8,6 @@ import {
   Loading01Icon,
   MoreHorizontalIcon,
   PlusSignIcon,
-  Search01Icon,
   Shield02Icon,
   Delete01Icon,
   Alert01Icon,
@@ -18,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
-import { quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
+import { QuietSearchInput, quietRelatedItemTitleClassName } from '@/components/design-system/quiet';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import {
   DropdownMenu,
@@ -28,7 +27,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -390,15 +388,11 @@ export function TaskRelationshipsSection({
           </>
         ) : null}
 
-        <div className="relative">
-          <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={popoverTab === 'tasks' ? 'Search Task Title or ID' : 'Search documents'}
-            className="pl-8"
-          />
-        </div>
+        <QuietSearchInput
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={popoverTab === 'tasks' ? 'Search Task Title or ID' : 'Search documents'}
+        />
 
         <div className="max-h-56 space-y-1 overflow-y-auto">
           {searching ? (

@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  QuietTextAction,
-  QuietUnderlineInput,
-} from '@/components/design-system/quiet';
-import { Building03Icon, Search01Icon, UserIcon } from '@/lib/icons';
+import { QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
+import { Building03Icon, UserIcon } from '@/lib/icons';
 import { useCreateAssociation, useDeleteAssociation, useSetDealCustomer } from '@/hooks/queries';
 import { crmSearchService } from '@/lib/services/crmService';
 import type { CRMAssociationEnriched, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
@@ -158,10 +155,19 @@ export function DealRelationships({
             <DialogTitle>{picker === 'customer' ? 'Choose deal customer' : 'Add participant'}</DialogTitle>
             <DialogDescription>{picker === 'customer' ? 'Changing the customer preserves other people as participants.' : 'Participants can contribute without changing the deal customer.'}</DialogDescription>
           </DialogHeader>
-          <div className="relative">
-            <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 text-quiet-muted" />
-			<QuietUnderlineInput autoFocus className="pl-6" value={query} onChange={(event) => { const value = event.target.value; setQuery(value); if (value.trim().length < 2) { setResults([]); setSearching(false); } }} placeholder={picker === 'customer' ? 'Search contacts or companies' : 'Search contacts'} />
-          </div>
+          <QuietSearchInput
+            autoFocus
+            value={query}
+            onChange={(event) => {
+              const value = event.target.value;
+              setQuery(value);
+              if (value.trim().length < 2) {
+                setResults([]);
+                setSearching(false);
+              }
+            }}
+            placeholder={picker === 'customer' ? 'Search contacts or companies' : 'Search contacts'}
+          />
           <div className="max-h-72 overflow-y-auto border-b border-quiet-divider-strong">
             {searching ? <p className="py-4 text-sm text-quiet-muted">Searching…</p> : null}
             {!searching && query.trim().length >= 2 && results.length === 0 ? <p className="py-4 text-sm text-quiet-muted">No matching records</p> : null}

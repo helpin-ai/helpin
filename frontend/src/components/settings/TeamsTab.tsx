@@ -43,7 +43,7 @@ import type { PMAutomation } from '@/lib/pmTypes';
 import { FIELD_VISIBILITY_FIELDS, FieldVisibilityForm } from './teams/FieldVisibilityForm';
 import { TeamRepoDefaultForm } from './teams/TeamRepoDefaultForm';
 import { StoredIcon } from '@/components/ui/icon-picker';
-import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
+import { QuietSearchInput, workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 
 /* ── Teams Tab ── */
 
@@ -864,11 +864,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 {teamEditable ? (
                   <>
                     <div className="px-4 pb-2">
-                      <Input
+                      <QuietSearchInput
                         placeholder="Search members..."
                         value={memberSearch}
                         onChange={(e) => setMemberSearch(e.target.value)}
-                        className="h-8 text-sm"
                       />
                     </div>
                     <div className="flex-1 overflow-y-auto max-h-[320px]">

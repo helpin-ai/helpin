@@ -10,20 +10,18 @@ import {
   DollarCircleIcon,
   InboxIcon,
   Mail01Icon,
-  Search01Icon,
   SparklesIcon,
 } from '@/lib/icons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useAcceptSuggestion, useDismissSuggestion, usePendingSuggestions } from '@/hooks/queries'
 import { SuggestionCard } from '@/components/crm/SuggestionCard'
 import { useTitle } from '@/hooks/useTitle'
 import { cn, timeAgo } from '@/lib/utils'
 import type { CRMSignalDismissalReason, CRMSuggestion, CRMSuggestionType } from '@/lib/crmTypes'
-import { QuietPageHeader } from '@/components/design-system/quiet'
+import { QuietPageHeader, QuietSearchInput } from '@/components/design-system/quiet'
 
 type FilterTab = 'all' | CRMSuggestionType
 type SortMode = 'recommended' | 'newest' | 'oldest'
@@ -419,25 +417,23 @@ export function ReviewFeed() {
           <main className="min-w-0 space-y-3">
             <div className="rounded-lg border bg-card p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-64 flex-1">
-                  <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
+                <div className="min-w-64 flex-1">
+                  <QuietSearchInput
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Search suggestions..."
-                    className="h-8 pl-8 pr-8 text-xs"
-                  />
-                  {search ? (
+                    trailing={search ? (
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="absolute right-0 top-0 h-8 w-8 text-muted-foreground"
+                      className="h-8 w-8 text-muted-foreground"
                       onClick={() => setSearch('')}
                     >
                       <Cancel01Icon className="h-3.5 w-3.5" />
                     </Button>
-                  ) : null}
+                    ) : null}
+                  />
                 </div>
                 <div className="flex rounded-lg border bg-background p-0.5">
                   {sortOptions.map((option) => (

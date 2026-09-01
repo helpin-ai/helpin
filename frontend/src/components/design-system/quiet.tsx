@@ -3,7 +3,7 @@ import type { ElementType, ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { ArrowLeft02Icon, ArrowRight01Icon } from '@/lib/icons';
+import { ArrowLeft02Icon, ArrowRight01Icon, Search01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
 export const workspaceSidebarSafeInsetClassName =
@@ -418,6 +418,30 @@ export const quietUnderlineControlClassName =
 
 export function QuietUnderlineInput({ className, ...props }: React.ComponentProps<typeof Input>) {
   return <Input variant="plain" className={cn(quietUnderlineControlClassName, className)} {...props} />;
+}
+
+export function QuietSearchInput({
+  className,
+  containerClassName,
+  trailing,
+  type = 'search',
+  ...props
+}: React.ComponentProps<typeof Input> & { containerClassName?: string; trailing?: ReactNode }) {
+  return (
+    <div className={cn('relative', containerClassName)}>
+      <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
+      <Input
+        type={type}
+        className={cn(
+          'h-9 w-full border-border/70 bg-muted/30 pl-9 text-sm placeholder:text-muted-foreground/70 focus-visible:bg-background',
+          trailing && 'pr-10',
+          className,
+        )}
+        {...props}
+      />
+      {trailing ? <div className="absolute right-1.5 top-1/2 -translate-y-1/2">{trailing}</div> : null}
+    </div>
+  );
 }
 
 export function QuietTitleInput({

@@ -31,7 +31,7 @@ import {
 } from '@/hooks/queries'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { QuietSearchInput } from '@/components/design-system/quiet'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog'
 import { DocsArrangeTree } from '@/components/docs/DocsArrangeTree'
@@ -590,17 +590,12 @@ export function DocsHome() {
           ) : null}
         />
         {!arrangeMode && (
-          <div className="relative">
-            <Search01Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Search documents..."
-              aria-label="Search all documents"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+          <QuietSearchInput
+            placeholder="Search documents..."
+            aria-label="Search all documents"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
         )}
       </div>
 

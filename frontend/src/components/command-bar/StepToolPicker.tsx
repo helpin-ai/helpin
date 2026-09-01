@@ -8,6 +8,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { cn } from '@/lib/utils';
 import type { CommandBarToolCatalogEntry, CommandBarToolCatalogResponse } from '@/lib/pmTypes';
@@ -214,13 +215,10 @@ export function StepToolPicker({
           </p>
         </div>
         <div className="border-b px-3 py-2">
-          <div className="relative">
-            <input
-              type="text"
+          <QuietSearchInput
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter tools..."
-              className="h-7 w-full rounded border border-border/60 bg-background px-2 pr-12 text-xs outline-none focus:border-ring"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Escape' && filter) {
@@ -228,18 +226,17 @@ export function StepToolPicker({
                   setFilter('');
                 }
               }}
+              trailing={filter ? (
+                <button
+                  type="button"
+                  onClick={() => setFilter('')}
+                  className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  title="Clear filter (Esc)"
+                >
+                  <Cancel01Icon className="h-2.5 w-2.5" />
+                </button>
+              ) : null}
             />
-            {filter ? (
-              <button
-                type="button"
-                onClick={() => setFilter('')}
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Clear filter (Esc)"
-              >
-                <Cancel01Icon className="h-2.5 w-2.5" />
-              </button>
-            ) : null}
-          </div>
           {filter ? (
             <p className="mt-1 text-[10px] text-muted-foreground">
               Showing {showCount} of {totalCount}

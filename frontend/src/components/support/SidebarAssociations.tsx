@@ -10,11 +10,10 @@ import {
   GitBranchIcon,
   Loading01Icon,
   PlusSignIcon,
-  Search01Icon,
   UserGroupIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -471,22 +470,18 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                 Create New Task
               </Button>
             )}
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={
-                  pickerSection === 'tasks'
-                    ? 'Search existing tasks...'
-                    : pickerSection === 'crm'
-                      ? 'Search contacts, companies, or deals...'
-                      : 'Search documents...'
-                }
-                className="pl-9"
-                autoFocus
-              />
-            </div>
+            <QuietSearchInput
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={
+                pickerSection === 'tasks'
+                  ? 'Search existing tasks...'
+                  : pickerSection === 'crm'
+                    ? 'Search contacts, companies, or deals...'
+                    : 'Search documents...'
+              }
+              autoFocus
+            />
             <div className="max-h-64 space-y-1 overflow-y-auto">
               {searching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">

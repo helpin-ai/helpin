@@ -1,5 +1,4 @@
-import { Search01Icon } from '@/lib/icons';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type SprintStatusFilter = 'all' | 'upcoming' | 'active' | 'completed' | 'archived';
@@ -27,16 +26,12 @@ export function SprintPlanningFilters({
 }: SprintPlanningFiltersProps) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-      <div className="relative w-full sm:w-[260px]">
-        <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          type="search"
+      <QuietSearchInput
+          containerClassName="w-full sm:w-[260px]"
           placeholder="Search sprints..."
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.target.value)}
-          className="h-9 pl-8 text-sm"
-        />
-      </div>
+      />
 
       <Select value={statusFilter} onValueChange={(v) => onStatusFilterChange(v as SprintStatusFilter)}>
         <SelectTrigger className="h-9 w-[150px]">

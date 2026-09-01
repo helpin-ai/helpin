@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Search01Icon, Cancel01Icon, ArrowLeft02Icon, ArrowRight02Icon, InboxIcon, FilterHorizontalIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import {
@@ -173,15 +174,13 @@ export function SupportSearchToolbar({
   return (
     <form onSubmit={onSubmit} className="ui-divider-bottom-fade flex flex-col gap-2 px-4 pb-2 pt-3 md:px-6">
       <div data-slot="support-search-primary-row" className="flex flex-col gap-2 lg:flex-row lg:items-center">
-        <div className="relative min-w-0 flex-1">
-          <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
+        <div className="min-w-0 flex-1">
+          <QuietSearchInput
             autoFocus
             value={draft.q ?? ''}
             maxLength={256}
             onChange={(event) => onDraftChange('q', event.target.value)}
             placeholder="Search conversations by email, #number, title, customer, or message"
-            className="h-10 pl-9"
           />
         </div>
         <div className="flex shrink-0 items-center gap-2">

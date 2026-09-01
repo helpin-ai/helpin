@@ -98,6 +98,7 @@ Primary tab labels use an explicit `14px` in every state. This is a deliberate e
 - Dark action: use Helpin's centralized `Button` at `size="sm"` and inherit its standard compact geometry (`h-8`, `px-3`, `text-sm`, `rounded-4xl`). Quiet styling controls the warm dark color and the one-to-two-primary-actions limit; it does not override button size, spacing, or curvature.
 - Detail-header action: use the centralized responsive action. Below `sm`, it is a 32px round icon control with an accessible label; from `sm` upward it returns to the appropriate text or dark-action presentation.
 - Underline control: borderless with a 1px field underline that darkens on hover and becomes 2px on focus.
+- Search control: use centralized `QuietSearchInput`, which retains the Skill Catalog's compact bordered field and leading icon. Search is not an underline control.
 
 ### Property rows
 
@@ -113,7 +114,7 @@ Sections are full-width and stacked. A section header contains an optional 15px 
 
 ### Inputs and editors
 
-Inputs are borderless and transparent. Use an adjacent underline or divider as the visible focus surface. Keep TipTap, form, select, popover, and dialog behavior in existing Helpin components; select their plain, divider, line, or borderless presentation when available.
+Form inputs are borderless and transparent. Use an adjacent underline or divider as the visible focus surface. Search fields are the deliberate exception: use `QuietSearchInput` so every product search inherits the Skill Catalog's recognizable compact bordered treatment. Keep TipTap, form, select, popover, and dialog behavior in existing Helpin components; select their plain, divider, line, or borderless presentation when available.
 
 ### Timeline and activity
 

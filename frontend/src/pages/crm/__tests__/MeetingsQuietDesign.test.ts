@@ -19,6 +19,8 @@ describe('CRM meetings Quiet Hairline composition', () => {
     expect(meetingsSource).toContain('<QuietEmptyState');
     expect(upcomingSource).toContain('<QuietSection');
     expect(upcomingSource).toContain('<QuietListRow');
+    expect(meetingsSource).toContain('<QuietSearchInput');
+    expect(meetingsSource).not.toContain('<QuietUnderlineInput');
   });
 
   it('uses an editable Quiet detail header, detail rail, and shared tabs for meeting detail', () => {

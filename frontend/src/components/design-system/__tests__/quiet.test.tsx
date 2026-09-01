@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietMetricBlock, QuietMetricGrid, QuietPageHeader, QuietPrimaryAction, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIdentityHeader, QuietMetricBlock, QuietMetricGrid, QuietPageHeader, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTitleInput, QuietTitleTextarea } from '../quiet';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -16,6 +16,21 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('text-sm');
     expect(markup).not.toContain('rounded-[7px]');
     expect(markup).not.toContain('px-4');
+  });
+
+  it('centralizes the Skill Catalog search treatment', () => {
+    const markup = renderToStaticMarkup(
+      <QuietSearchInput aria-label="Search records" trailing={<button type="button">Clear</button>} />,
+    );
+
+    expect(markup).toContain('type="search"');
+    expect(markup).toContain('h-9');
+    expect(markup).toContain('border-border/70');
+    expect(markup).toContain('bg-muted/30');
+    expect(markup).toContain('pl-9');
+    expect(markup).toContain('text-sm');
+    expect(markup).toContain('Clear');
+    expect(markup).not.toContain('border-quiet-field');
   });
 
   it('keeps entity title inputs at 26px on desktop', () => {

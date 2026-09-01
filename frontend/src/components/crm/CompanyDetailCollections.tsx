@@ -10,10 +10,9 @@ import {
   Loading01Icon,
   Message01Icon,
   PlusSignIcon,
-  Search01Icon,
   UserGroupIcon,
 } from '@/lib/icons';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -51,15 +50,12 @@ function CollectionHeader({
   return (
     <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-border/60 px-4 py-2 sm:px-6 lg:px-8">
       <h2 className="mr-2 text-sm font-semibold">{title}</h2>
-      <div className="relative min-w-44 flex-1 sm:max-w-64">
-        <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder={`Search ${title.toLowerCase()}`}
-          className="h-7 pl-8 text-xs"
-        />
-      </div>
+      <QuietSearchInput
+        containerClassName="min-w-44 flex-1 sm:max-w-64"
+        value={search}
+        onChange={(event) => onSearchChange(event.target.value)}
+        placeholder={`Search ${title.toLowerCase()}`}
+      />
       {children}
       <div className="ml-auto flex items-center gap-[18px]">{actions}</div>
     </div>
@@ -192,16 +188,12 @@ function EntityLinkDialog({
         <DialogHeader>
 			<DialogTitle>{type === 'deal' && targetType === 'company' ? 'Choose an existing deal' : `Link existing ${type === 'support_conversation' ? 'conversation' : type}`}</DialogTitle>
         </DialogHeader>
-        <div className="relative">
-          <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            autoFocus
-            value={query}
-            onChange={(event) => void runSearch(event.target.value)}
-            placeholder="Search existing records"
-            className="pl-9"
-          />
-        </div>
+        <QuietSearchInput
+          autoFocus
+          value={query}
+          onChange={(event) => void runSearch(event.target.value)}
+          placeholder="Search existing records"
+        />
         <div className="max-h-72 overflow-y-auto border-t border-border/60">
           {loading ? (
             <CollectionState icon={Loading01Icon} title="" detail="" loading />

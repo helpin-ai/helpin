@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   ArrowDown02Icon, ArrowLeft02Icon, ArrowTurnBackwardIcon, CheckListIcon,
   DollarCircleIcon, Forward01Icon, Link01Icon, Loading01Icon, Mail01Icon,
-  MailReply01Icon, PlusSignIcon, Search01Icon, SentIcon, Setting07Icon, Tick01Icon,
+  MailReply01Icon, PlusSignIcon, SentIcon, Setting07Icon, Tick01Icon,
 } from '@/lib/icons';
 import {
   useEmailAccounts, useEmailThread, useInfiniteEmailThreads, useLinkEmailThreadDeal,
@@ -21,7 +21,7 @@ import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { EmailBodyRenderer } from '@/components/support/EmailBodyRenderer';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { crmSearchService } from '@/lib/services/crmService';
 import { associationsService } from '@/lib/services/associationsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
@@ -223,8 +223,7 @@ export function EmailTimeline({
         focusThreadOnly && '!hidden',
       )}>
         <div className="flex items-center gap-2 border-b border-border/50 px-4 py-2.5">
-          <Search01Icon className="h-4 w-4 text-muted-foreground" />
-          <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search conversations…" className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground" />
+          <QuietSearchInput containerClassName="min-w-0 flex-1" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search conversations…" />
           {showComposeAction ? <Button size="sm" className="h-7 gap-1.5 px-2.5 text-xs" onClick={() => setComposeDraft({ to: defaultRecipient ? [defaultRecipient] : [] })} disabled={sendableAccounts.length === 0}><PlusSignIcon className="h-3.5 w-3.5" /> Compose</Button> : null}
         </div>
         <div className="flex items-center gap-4 border-b border-border/60 px-5 py-2.5 text-xs">
@@ -291,7 +290,7 @@ export function EmailTimeline({
 
       <CRMEmailComposerDialog workspaceId={workspaceId} accounts={sendableAccounts} open={Boolean(composeDraft)} draft={composeDraft ?? undefined} onOpenChange={(open) => !open && setComposeDraft(null)} />
       <CreateTaskModal open={taskOpen} onOpenChange={setTaskOpen} workspaceId={workspaceId} workflow={taskWorkflow ?? undefined} initialTeamId={taskTeamId} initialName={selected ? `Follow up: ${selected.subject}` : 'Email follow-up'} onCreate={createAndLinkTask} />
-      <Dialog open={dealOpen} onOpenChange={setDealOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Link deal to conversation</DialogTitle></DialogHeader><div className="relative"><Search01Icon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={dealQuery} onChange={(event) => setDealQuery(event.target.value)} placeholder="Search deals" className="pl-9" /></div><div className="max-h-64 overflow-y-auto border-t border-border/50 pt-2">{visibleDealResults.map((deal) => <button key={deal.id} type="button" className="flex w-full items-center gap-2 px-2 py-2 text-left text-sm hover:bg-muted/40" onClick={async () => { if (!selectedThreadId) return; await linkDeal.mutateAsync({ threadId: selectedThreadId, dealId: deal.id }); setDealOpen(false); setDealQuery(''); toast.success('Deal linked'); }}><DollarCircleIcon className="h-4 w-4 text-muted-foreground" /><span className="truncate">{deal.name}</span></button>)}{dealQuery.trim().length < 2 ? <p className="py-5 text-center text-xs text-muted-foreground">Type at least two characters</p> : visibleDealResults.length === 0 ? <p className="py-5 text-center text-xs text-muted-foreground">No deals found</p> : null}</div></DialogContent></Dialog>
+      <Dialog open={dealOpen} onOpenChange={setDealOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Link deal to conversation</DialogTitle></DialogHeader><QuietSearchInput value={dealQuery} onChange={(event) => setDealQuery(event.target.value)} placeholder="Search deals" /><div className="max-h-64 overflow-y-auto border-t border-border/50 pt-2">{visibleDealResults.map((deal) => <button key={deal.id} type="button" className="flex w-full items-center gap-2 px-2 py-2 text-left text-sm hover:bg-muted/40" onClick={async () => { if (!selectedThreadId) return; await linkDeal.mutateAsync({ threadId: selectedThreadId, dealId: deal.id }); setDealOpen(false); setDealQuery(''); toast.success('Deal linked'); }}><DollarCircleIcon className="h-4 w-4 text-muted-foreground" /><span className="truncate">{deal.name}</span></button>)}{dealQuery.trim().length < 2 ? <p className="py-5 text-center text-xs text-muted-foreground">Type at least two characters</p> : visibleDealResults.length === 0 ? <p className="py-5 text-center text-xs text-muted-foreground">No deals found</p> : null}</div></DialogContent></Dialog>
     </div>
   );
 }

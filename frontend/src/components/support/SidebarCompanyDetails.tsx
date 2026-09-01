@@ -3,7 +3,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ArrowReloadHorizontalIcon, Building03Icon, PlusSignIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
@@ -202,7 +202,7 @@ export function SidebarCompanyDetails({ workspaceId, conversationId }: SidebarCo
             </div>
             {searchOpen && (
               <div className="space-y-1">
-                <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search companies" className="h-8 text-xs" />
+                <QuietSearchInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search companies" />
                 {results.map((result) => <button key={result.id} type="button" className="block w-full rounded px-2 py-1.5 text-left text-xs hover:bg-accent" onClick={() => chooseCompany(result.id)}>{result.name}<span className="ml-1 text-muted-foreground">{result.detail}</span></button>)}
               </div>
             )}

@@ -1,8 +1,7 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { PlusSignIcon, Search01Icon } from '@/lib/icons';
-import { Input } from '@/components/ui/input';
-import { QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
+import { PlusSignIcon } from '@/lib/icons';
+import { QuietPageHeader, QuietPrimaryAction, QuietSearchInput } from '@/components/design-system/quiet';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useInfiniteCompanies } from '@/hooks/useInfiniteCompanies';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -64,15 +63,12 @@ export function CompaniesPage() {
       />
 
       <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
-        <div className="relative">
-          <Search01Icon className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search companies..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-7 w-48 pl-7 text-xs"
-          />
-        </div>
+        <QuietSearchInput
+          containerClassName="w-full sm:w-64"
+          placeholder="Search companies..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </header>
 
       {/* Content */}

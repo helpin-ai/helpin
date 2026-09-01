@@ -3,9 +3,9 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search01Icon, SmileIcon, Cancel01Icon } from '@/lib/icons';
+import { SmileIcon, Cancel01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { loadEmojiCatalog, type EmojiCatalog } from '@helpin-ai/widget-core';
 
@@ -131,25 +131,23 @@ export function EmojiPicker({ onEmojiSelect, align = 'start', side = 'top' }: Em
           </div>
         ) : emojiCatalog ? (
           <>
-            <div className="flex items-center gap-2 border-b p-2">
-              <Search01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <Input
+            <div className="border-b p-2">
+              <QuietSearchInput
                 ref={searchInputRef}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search emojis..."
-                className="h-8 border-0 bg-transparent p-0 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-              {search && (
+                trailing={search ? (
                 <button
                   type="button"
                   onClick={() => setSearch('')}
-                  className="shrink-0 rounded p-0.5 hover:bg-muted"
+                  className="rounded p-0.5 hover:bg-muted"
                   aria-label="Clear search"
                 >
                   <Cancel01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
-              )}
+                ) : null}
+              />
             </div>
 
             {search ? (

@@ -8,7 +8,6 @@ import {
   Cancel01Icon,
   MoreHorizontalIcon,
   PlusSignIcon,
-  Search01Icon,
   SourceCodeIcon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
@@ -17,8 +16,8 @@ import { AutomationShell } from '@/components/automation/AutomationShell';
 import {
   QuietEmptyState,
   QuietPrimaryAction,
+  QuietSearchInput,
   QuietTextAction,
-  QuietUnderlineInput,
   quietUnderlineControlClassName,
 } from '@/components/design-system/quiet';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
@@ -3279,16 +3278,12 @@ function FlowTemplateGallery({
           <DialogDescription>Pick a starting point, or build one from an empty trigger.</DialogDescription>
         </DialogHeader>
 
-        <div className="relative">
-          <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Search flow templates"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search templates..."
-            className="h-9 pl-9"
-          />
-        </div>
+        <QuietSearchInput
+          aria-label="Search flow templates"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search templates..."
+        />
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Tabs value={category} onValueChange={setCategory}>
@@ -4893,10 +4888,13 @@ export function AutomationFlowsPage({
               </TabsList>
             </Tabs>
             <div className="flex min-w-0 flex-col gap-2 xs:flex-row sm:justify-end">
-              <div className="relative min-w-0 sm:w-52">
-                <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-quiet-muted" />
-                <QuietUnderlineInput aria-label="Search flows" value={flowQuery} onChange={(event) => setFlowQuery(event.target.value)} placeholder="Search flows" className="w-full pl-6" />
-              </div>
+              <QuietSearchInput
+                containerClassName="min-w-0 sm:w-52"
+                aria-label="Search flows"
+                value={flowQuery}
+                onChange={(event) => setFlowQuery(event.target.value)}
+                placeholder="Search flows"
+              />
               <Select value={scopeFilter} onValueChange={(value) => setScopeFilter(value as typeof scopeFilter)}>
                 <SelectTrigger aria-label="Flow scope" className={cn(quietUnderlineControlClassName, 'w-full justify-between xs:w-36')}><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="workspace">Workspace-wide</SelectItem><SelectItem value="team">My team</SelectItem><SelectItem value="mine">Created by me</SelectItem></SelectContent>

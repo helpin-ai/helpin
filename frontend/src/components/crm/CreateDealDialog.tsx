@@ -4,8 +4,8 @@ import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { QuietPrimaryAction, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
-import { Building03Icon, Search01Icon, UserIcon } from '@/lib/icons';
+import { QuietPrimaryAction, QuietSearchInput, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { Building03Icon, UserIcon } from '@/lib/icons';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
 import { crmSearchService } from '@/lib/services/crmService';
@@ -166,10 +166,19 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, contactCo
               </div>
             ) : (
               <div>
-                <div className="relative">
-                  <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 text-quiet-muted" />
-				  <QuietUnderlineInput className="pl-6" value={customerQuery} onChange={(event) => { const value = event.target.value; setCustomerQuery(value); if (value.trim().length < 2) { setCustomerResults([]); setSearching(false); } }} placeholder="Search contacts or companies" autoFocus />
-                </div>
+                <QuietSearchInput
+                  value={customerQuery}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setCustomerQuery(value);
+                    if (value.trim().length < 2) {
+                      setCustomerResults([]);
+                      setSearching(false);
+                    }
+                  }}
+                  placeholder="Search contacts or companies"
+                  autoFocus
+                />
                 {customerQuery.trim().length >= 2 ? (
                   <div className="max-h-52 overflow-y-auto border-b border-quiet-divider-strong">
                     {searching ? <p className="py-3 text-sm text-quiet-muted">Searching…</p> : null}

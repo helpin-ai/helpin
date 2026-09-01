@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Camera01Icon, ArrowRight01Icon, GlobeIcon, Loading01Icon, Search01Icon, Delete01Icon } from '@/lib/icons';
+import { Camera01Icon, ArrowRight01Icon, GlobeIcon, Loading01Icon, Delete01Icon } from '@/lib/icons';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -410,16 +411,12 @@ export function GeneralTab({ workspaceId, editable }: {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[320px] p-0" align="start">
-                  <div className="p-2 border-b">
-                    <div className="flex items-center gap-2 px-2">
-                      <Search01Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <input
-                        className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  <div className="border-b p-2">
+                      <QuietSearchInput
                         placeholder="Search timezones..."
                         value={tzSearch}
                         onChange={(e) => setTzSearch(e.target.value)}
                       />
-                    </div>
                   </div>
                   <div className="max-h-[280px] overflow-y-auto p-1">
                     {filteredTimezones.length === 0 ? (

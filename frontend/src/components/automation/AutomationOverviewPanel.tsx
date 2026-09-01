@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { QuietEmptyState, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { QuietEmptyState, QuietSearchInput } from '@/components/design-system/quiet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAgents, useAutomationActivity, useAutomationOverview, useAutomationTriggerCatalog } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { ArrowRight01Icon, DashboardSpeed01Icon, SecurityCheckIcon, BotIcon, Search01Icon } from '@/lib/icons';
+import { ArrowRight01Icon, DashboardSpeed01Icon, SecurityCheckIcon, BotIcon } from '@/lib/icons';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import type {
@@ -441,17 +441,13 @@ export function TriggerCatalogList({
           </TabsList>
         </Tabs>
 
-        <div className="relative w-full sm:w-64">
-          <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-quiet-muted" />
-          <QuietUnderlineInput
-            type="search"
-            aria-label="Search triggers"
-            placeholder="Search triggers..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="w-full pl-6"
-          />
-        </div>
+        <QuietSearchInput
+          containerClassName="w-full sm:w-64"
+          aria-label="Search triggers"
+          placeholder="Search triggers..."
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
       </div>
 
       {selectedGroup ? (

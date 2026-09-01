@@ -14,8 +14,7 @@ import {
   SparklesIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
+import { QuietPageHeader, QuietPrimaryAction, QuietSearchInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -296,15 +295,12 @@ export function DealsPage() {
         )}
 
         {/* Search */}
-        <div className="relative">
-          <Search01Icon className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search deals..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-7 w-48 pl-7 text-xs"
-          />
-        </div>
+        <QuietSearchInput
+          containerClassName="w-full sm:w-64"
+          placeholder="Search deals..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
 
         <div className="ml-auto flex items-center gap-1">
           <DealDisplayMenu mode={view} />

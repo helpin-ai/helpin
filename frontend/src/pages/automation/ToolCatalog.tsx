@@ -6,7 +6,6 @@ import {
   FolderOpenIcon,
   GitBranchIcon,
   GlobeIcon,
-  Search01Icon,
   ChartIncreaseIcon,
   File01Icon,
   Tick01Icon,
@@ -19,7 +18,7 @@ import {
   BookOpen01Icon,
 } from '@/lib/icons';
 
-import { QuietEmptyState, QuietPageHeader, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { QuietEmptyState, QuietPageHeader, QuietSearchInput } from '@/components/design-system/quiet';
 import { useAutomationToolCatalog } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
 import type { AgentPresetKey, ToolCatalogEntry } from '@/lib/pmTypes';
@@ -278,16 +277,13 @@ export function ToolCatalogContent({
             description={`${catalog.tools.length} tools across ${catalog.categories.length} categories`}
           />
         )}
-        <div className={cn('relative w-full', embedded ? 'sm:max-w-sm' : 'sm:w-64')}>
-          <Search01Icon className="absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 text-quiet-muted" />
-          <QuietUnderlineInput
-            aria-label="Search tools"
-            placeholder="Search tools..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-6"
-          />
-        </div>
+        <QuietSearchInput
+          containerClassName={cn('w-full', embedded ? 'sm:max-w-sm' : 'sm:w-64')}
+          aria-label="Search tools"
+          placeholder="Search tools..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
       {/* Secondary filters stay as plain text; no pills at this hierarchy. */}

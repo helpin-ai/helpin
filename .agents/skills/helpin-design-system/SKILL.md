@@ -18,6 +18,7 @@ Build Helpin product surfaces in the Quiet Hairline language: a warm, document-l
 - Quiet Hairline is the visual authority. Generic frontend-design advice yields when it conflicts.
 - Existing Helpin components remain the authority for behavior, accessibility, routing, permissions, data flow, and domain logic.
 - Prefer the centralized Quiet components and established domain components over copying Tailwind class strings into pages.
+- Keep search visually distinct from data entry: use the centralized `QuietSearchInput` throughout product surfaces; it owns the Skill Catalog's compact bordered treatment and leading icon. Never use `QuietUnderlineInput` for search. Preserve behavior-owned `CommandInput`, editor search/replace, and content-preview search controls.
 - Use semantic Quiet tokens. Do not hard-code a near-match when a token exists.
 - Preserve visible keyboard focus with the system's warm 2px focus treatment. "No focus ring" means no default blue ring, not no focus indicator.
 - Preserve dark mode and current responsive application behavior.

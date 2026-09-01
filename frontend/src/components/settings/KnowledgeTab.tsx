@@ -34,6 +34,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -1182,7 +1183,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                         </SelectTrigger>
                         <SelectContent>
                           <div className="sticky top-0 z-10 border-b bg-popover p-2">
-                            <Input
+                            <QuietSearchInput
                               ref={docsArticleSearchInputRef}
                               value={docsArticleSearch}
                               onChange={(event) => {
@@ -1192,7 +1193,6 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                               onKeyDown={(event) => event.stopPropagation()}
                               onPointerDown={(event) => event.stopPropagation()}
                               placeholder="Search articles"
-                              className="h-8"
                             />
                           </div>
                           {filteredDocsArticles.length > 0 ? (

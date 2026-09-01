@@ -18,7 +18,7 @@ import {
 import { cn, getInitials } from '@/lib/utils'
 import { StoredIcon } from '@/components/ui/icon-picker'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { QuietSearchInput } from '@/components/design-system/quiet'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu,
@@ -528,7 +528,8 @@ export function DocsRailNav({
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" sideOffset={-52} className="w-72 gap-1 p-2 shadow-xl">
-            <Input
+            <QuietSearchInput
+              containerClassName="mb-1"
               autoFocus
               role="combobox"
               aria-controls="docs-space-options"
@@ -557,7 +558,6 @@ export function DocsRailNav({
                 }
               }}
               placeholder="Find a space…"
-              className="mb-1 h-8 border-0 bg-muted/70 text-sm shadow-none focus-visible:ring-1"
             />
             <div id="docs-space-options" role="listbox" aria-label="Documentation spaces" className="max-h-72 overflow-y-auto">
               {[

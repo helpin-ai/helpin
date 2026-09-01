@@ -3,8 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Loading01Icon, Search01Icon, UserGroupIcon, Cancel01Icon, PlusSignIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
+import { QuietPageHeader, QuietPrimaryAction, QuietSearchInput } from '@/components/design-system/quiet';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
@@ -138,28 +137,28 @@ export function ContactsPage() {
         <ContactsFilterBar assignableMembers={assignableMembers} />
         <div className="ml-auto flex items-center gap-1">
           {showSearch ? (
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                ref={searchInputRef}
-                placeholder="Search contacts..."
-                value={searchParams.search ?? ''}
-                onChange={(e) => setParam('search', e.target.value)}
-                className="h-7 w-52 pl-7 pr-7 text-xs"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="absolute right-0 top-0 h-7 w-7 text-muted-foreground"
-                onClick={() => {
-                  setParam('search', undefined);
-                  setShowSearch(false);
-                }}
-              >
-                <Cancel01Icon className="h-3.5 w-3.5" />
-              </Button>
-            </div>
+            <QuietSearchInput
+              containerClassName="w-64"
+              ref={searchInputRef}
+              placeholder="Search contacts..."
+              value={searchParams.search ?? ''}
+              onChange={(e) => setParam('search', e.target.value)}
+              trailing={(
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground"
+                  aria-label="Close search"
+                  onClick={() => {
+                    setParam('search', undefined);
+                    setShowSearch(false);
+                  }}
+                >
+                  <Cancel01Icon className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            />
           ) : (
             <Button
               type="button"

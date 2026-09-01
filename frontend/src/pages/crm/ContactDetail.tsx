@@ -20,14 +20,13 @@ import {
   Mail01Icon,
   MapPinIcon,
   PlusSignIcon,
-  Search01Icon,
   Tag01Icon,
   TelephoneIcon,
   UserIcon,
   ZapIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietPrimaryAction, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietPrimaryAction, QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -37,7 +36,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -1917,16 +1915,12 @@ export function ContactDetailPage({
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={companyQuery}
-                onChange={(e) => setCompanyQuery(e.target.value)}
-                placeholder={companyPickerMode === 'primary' ? 'Search companies to set as primary' : 'Search companies by name'}
-                className="pl-9"
-                autoFocus
-              />
-            </div>
+            <QuietSearchInput
+              value={companyQuery}
+              onChange={(e) => setCompanyQuery(e.target.value)}
+              placeholder={companyPickerMode === 'primary' ? 'Search companies to set as primary' : 'Search companies by name'}
+              autoFocus
+            />
             <div className="max-h-64 space-y-1 overflow-y-auto">
               {companySearching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
@@ -1964,16 +1958,12 @@ export function ContactDetailPage({
             <DialogTitle className="text-sm">Link deal</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={dealQuery}
-                onChange={(e) => setDealQuery(e.target.value)}
-                placeholder="Search deals by name"
-                className="pl-9"
-                autoFocus
-              />
-            </div>
+            <QuietSearchInput
+              value={dealQuery}
+              onChange={(e) => setDealQuery(e.target.value)}
+              placeholder="Search deals by name"
+              autoFocus
+            />
             <div className="max-h-64 space-y-1 overflow-y-auto">
               {dealSearching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
