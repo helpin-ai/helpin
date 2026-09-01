@@ -144,12 +144,14 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
     setLinkNewTabInput(linkNewTab ?? true);
   }, [alt, caption, linkUrl, linkNewTab]);
 
-  // On image load, compute aspect ratio and initial pixel size
+  // Image loading may initialize local display measurements, but it must not mutate the
+  // document. Persisting attributes here makes merely opening a document create a draft.
   const handleImageLoad = useCallback(() => {
     const img = imageRef.current;
     if (!img) return;
 
     const ar = img.naturalWidth / img.naturalHeight;
+    if (!Number.isFinite(ar) || ar <= 0) return;
     setAspectRatio(ar);
     aspectRatioRef.current = ar;
 
@@ -162,15 +164,8 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
 
       setCurrentWidth(`${initialWidth}px`);
       setCurrentHeight(`${initialHeight}px`);
-      updateAttributes({
-        width: `${initialWidth}px`,
-        height: `${initialHeight}px`,
-        aspectRatio: ar,
-      });
-    } else if (!storedAspectRatio) {
-      updateAttributes({ aspectRatio: ar });
     }
-  }, [width, storedAspectRatio, updateAttributes]);
+  }, [width]);
 
   // Resize handler
   const handleResize = useCallback((e: MouseEvent | TouchEvent) => {
@@ -192,6 +187,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
     updateAttributes({
       width: currentSizeRef.current.width,
       height: currentSizeRef.current.height,
+      aspectRatio: aspectRatioRef.current,
     });
   });
   handleResizeEndRef.current = () => {
@@ -199,6 +195,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
     updateAttributes({
       width: currentSizeRef.current.width,
       height: currentSizeRef.current.height,
+      aspectRatio: aspectRatioRef.current,
     });
   };
 
