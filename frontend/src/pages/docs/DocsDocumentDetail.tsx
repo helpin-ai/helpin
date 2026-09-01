@@ -1784,7 +1784,7 @@ export function DocsDocumentDetail({
       ) : (
       <div className="flex min-h-0 flex-none lg:flex-1">
         {/* Editor */}
-        <div ref={setEditorShellRef} className="docs-editor-standard-width relative flex w-full min-w-0 flex-none flex-col lg:w-auto lg:flex-1">
+        <div ref={setEditorShellRef} className="docs-editor-standard-width relative isolate flex w-full min-w-0 flex-none flex-col lg:w-auto lg:flex-1 xl:overflow-clip">
           {/* Right-side scrollspy outline minimap */}
           <DocsOutlineMinimap
             items={outlineItems}

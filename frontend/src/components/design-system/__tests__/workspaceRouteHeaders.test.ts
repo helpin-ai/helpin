@@ -105,6 +105,8 @@ describe('workspace route header contract', () => {
     expect(docsSource).toContain('pageScrollOnMobile');
     expect(docsSource).toContain('iconOnly');
     expect(docsSource).toContain('className="relative z-30"');
+    expect(docsSource).toContain('docs-editor-standard-width relative isolate');
+    expect(docsSource).toContain('lg:w-auto lg:flex-1 xl:overflow-clip');
     expect(docsSource).not.toContain('className="relative z-30 bg-background"');
     expect(docsSource.indexOf('headerPresencePeople.length > 0')).toBeGreaterThan(docsSource.indexOf('actions={('));
     expect(docsSource.indexOf('headerPresencePeople.length > 0')).toBeLessThan(docsSource.indexOf('label="Preview"'));
