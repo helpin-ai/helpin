@@ -827,6 +827,8 @@ interface DocsEditorProps {
   onEditorReady?: (editor: ReturnType<typeof useEditor> | null) => void
   /** When true, the centered doc column slides left (left margin shrinks) so the right-side gutter can host comment cards. Doc width is unchanged. */
   hasSideComments?: boolean
+  /** Controls the document canvas width. Authenticated detail pages use the standard max-w-7xl canvas; embeds keep the narrower reading measure. */
+  contentWidth?: 'reading' | 'standard'
   /** Lets the authenticated Docs page own mobile scrolling so its page header can scroll away. Desktop keeps the editor's contained scroller. */
   pageScrollOnMobile?: boolean
 }
@@ -860,6 +862,7 @@ export function DocsEditor({
   onSaveStatusChange,
   onEditorReady,
   hasSideComments = false,
+  contentWidth = 'reading',
   pageScrollOnMobile = false,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
@@ -1908,7 +1911,7 @@ img { max-width: 100%; }
           : pageScrollOnMobile
             ? 'min-h-0 flex-none overflow-visible lg:flex-1 lg:overflow-y-auto'
             : 'min-h-0 flex-1 overflow-y-auto'
-      } ${hasSideComments ? 'has-side-comments' : ''}`}>
+      } ${hasSideComments ? 'has-side-comments' : ''} ${contentWidth === 'standard' ? 'docs-editor-standard-width' : ''}`}>
         {generatingOverlay && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground mb-3" />
@@ -2013,7 +2016,7 @@ img { max-width: 100%; }
             />
           </div>
         ) : (
-          <div className="docs-editor-content-frame mx-auto max-w-4xl">
+          <div className="docs-editor-content-frame mx-auto">
             {showSearch && editor && (
               <SearchReplaceBar
                 editor={editor}

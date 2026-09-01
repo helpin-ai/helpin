@@ -1788,7 +1788,7 @@ export function DocsDocumentDetail({
       ) : (
       <div className="flex min-h-0 flex-none lg:flex-1">
         {/* Editor */}
-        <div ref={setEditorShellRef} className="relative flex w-full min-w-0 flex-none flex-col lg:w-auto lg:flex-1">
+        <div ref={setEditorShellRef} className="docs-editor-standard-width relative flex w-full min-w-0 flex-none flex-col lg:w-auto lg:flex-1">
           {/* Right-side scrollspy outline minimap */}
           <DocsOutlineMinimap
             items={outlineItems}
@@ -1845,6 +1845,7 @@ export function DocsDocumentDetail({
               onSaveStatusChange={handleEditorSaveStatusChange}
               onEditorReady={setEditorInstance}
               hasSideComments={hasVisibleInlineComments}
+              contentWidth="standard"
               pageScrollOnMobile
               commentAnchors={commentAnchors}
               onOpenComment={handleOpenComment}
@@ -1892,6 +1893,7 @@ export function DocsDocumentDetail({
               onSaveStatusChange={handleEditorSaveStatusChange}
               onEditorReady={setEditorInstance}
               hasSideComments={hasVisibleInlineComments}
+              contentWidth="standard"
               pageScrollOnMobile
             />
           )}

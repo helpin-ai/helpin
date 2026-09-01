@@ -18,7 +18,7 @@ const stableMocks = vi.hoisted(() => ({
     teams: [{ id: 'team-1', name: 'Engineering' }],
     hasTeams: true,
     isAdmin: false,
-    isLoading: false,
+    loading: false,
     findTeamName: (id?: string) => (id === 'team-1' ? 'Engineering' : undefined),
   },
 }))
@@ -102,7 +102,7 @@ describe('MyWorkPage', () => {
     stableMocks.accessibleTeams.teams = [{ id: 'team-1', name: 'Engineering' }]
     stableMocks.accessibleTeams.hasTeams = true
     stableMocks.accessibleTeams.isAdmin = false
-    stableMocks.accessibleTeams.isLoading = false
+    stableMocks.accessibleTeams.loading = false
     vi.mocked(pmTaskService.list).mockResolvedValue(taskListResponse([task]))
   })
 

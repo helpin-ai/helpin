@@ -75,7 +75,7 @@ export function MyWorkPage() {
   const { data: access, isLoading: accessLoading } = useWorkspaceAccess(workspaceId);
   const memberId = access?.membership?.id;
 
-  const { teams, hasTeams, isAdmin, findTeamName, isLoading: teamsLoading } = useAccessibleTeams(workspaceId);
+  const { teams, hasTeams, isAdmin, findTeamName, loading: teamsLoading } = useAccessibleTeams(workspaceId);
   const showTeam = teams.length > 1;
 
   const [mode, setMode] = useState<Mode>('assigned');
