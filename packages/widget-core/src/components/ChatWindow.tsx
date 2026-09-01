@@ -62,6 +62,8 @@ interface ChatWindowProps {
   transcriptEmail?: string;
   onRequestTranscript?: (email?: string) => Promise<{ success: boolean; message: string }>;
   widgetKey?: string;
+  /** Visitor's durable browser id, forwarded for search attribution. */
+  anonymousId?: string;
   host?: string;
   openArticleRequest?: {
     key: number;
@@ -109,6 +111,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   transcriptEmail,
   onRequestTranscript,
   widgetKey,
+  anonymousId,
   host,
   openArticleRequest,
   onImageClick,
@@ -490,6 +493,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             config={config}
             host={host}
             widgetKey={widgetKey}
+            anonymousId={anonymousId}
             onClose={onClose}
             onSelectSpace={handleOpenHelpSpace}
             onSelectCollection={handleOpenHelpCollection}

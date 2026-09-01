@@ -1,11 +1,10 @@
 import type { ReactNode } from 'react';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CategoryFilterChip } from '@/components/pm/CategoryFilterChip';
 import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopover';
-import { Search01Icon } from '@/lib/icons';
 
 export interface EpicFilterBarOption {
   value: string;
@@ -83,15 +82,12 @@ export function EpicFilterBar({
           <span className="text-[11px] font-medium text-muted-foreground/0">
             &nbsp;
           </span>
-          <div className="relative">
-            <Search01Icon className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search Epics…"
-              className="h-7 w-[220px] pl-7 text-xs"
-            />
-          </div>
+          <QuietSearchInput
+            containerClassName="w-[220px]"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search Epics…"
+          />
         </div>
 
         {categories.map((category) => (

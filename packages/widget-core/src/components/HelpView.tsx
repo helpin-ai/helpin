@@ -9,6 +9,8 @@ interface HelpViewProps {
   config: WidgetConfig;
   host?: string;
   widgetKey?: string;
+  /** Visitor's durable browser id, when the host SDK has one. */
+  anonymousId?: string;
   onSelectSpace: (spaceSlug: string) => void;
   onSelectCollection: (collectionSlug: string) => void;
   onSelectArticle?: (articleKey: string) => void;
@@ -19,6 +21,7 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
   config,
   host,
   widgetKey,
+  anonymousId,
   onSelectSpace,
   onSelectCollection,
   onSelectArticle,
@@ -55,7 +58,7 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
     setIsSearching(true);
     setSearchError(null);
 
-    fetchHelpSearchResults(host, widgetKey, normalizedDebouncedSearchQuery, 8)
+    fetchHelpSearchResults(host, widgetKey, normalizedDebouncedSearchQuery, 8, anonymousId)
       .then((results) => {
         if (!cancelled) {
           setSearchResults(results);
@@ -76,6 +79,10 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
     return () => {
       cancelled = true;
     };
+    // anonymousId is deliberately not a dependency: it only attributes the
+    // search, so identifying mid-session must not re-run it and record a
+    // duplicate search event.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host, normalizedDebouncedSearchQuery, showSearchResults, widgetKey]);
 
   return (

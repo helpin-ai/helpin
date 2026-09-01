@@ -17,7 +17,7 @@ func (s *InternalCommandService) registerCRMOperationalCommands() {
 		{Name: "crm.get_deal", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_deal"}, Tool: mustCommandToolMetadata("crm.get_deal"), Execute: s.executeCRMGetDeal},
 		{Name: "crm.list_companies", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_company", "crm_contact", "crm_deal"}, Tool: mustCommandToolMetadata("crm.list_companies"), Execute: s.executeCRMListCompanies},
 		{Name: "crm.list_pipelines", Module: "crm", SupportedTargetTypes: []string{"workspace", "crm_deal"}, Tool: mustCommandToolMetadata("crm.list_pipelines"), Execute: s.executeCRMListPipelines},
-		{Name: "crm.create_deal", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_contact"}, Tool: mustCommandToolMetadata("crm.create_deal"), Execute: s.executeCRMCreateDeal},
+		{Name: "crm.create_deal", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_contact", "crm_company"}, Tool: mustCommandToolMetadata("crm.create_deal"), Execute: s.executeCRMCreateDeal},
 		{Name: "crm.update_contact", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_contact"}, Tool: mustCommandToolMetadata("crm.update_contact"), Execute: s.executeCRMUpdateContact},
 		{Name: "crm.update_company", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_company"}, Tool: mustCommandToolMetadata("crm.update_company"), Execute: s.executeCRMUpdateCompany},
 		{Name: "crm.update_deal", Module: "crm", Mutating: true, SupportedTargetTypes: []string{"workspace", "crm_deal"}, Tool: mustCommandToolMetadata("crm.update_deal"), Execute: s.executeCRMUpdateDeal},
@@ -137,6 +137,7 @@ func (s *InternalCommandService) executeCRMListPipelines(ctx context.Context, me
 type crmDealCreateCommandInput struct {
 	Name          string   `json:"name"`
 	ContactID     string   `json:"contact_id"`
+	CompanyID     string   `json:"company_id"`
 	PipelineID    string   `json:"pipeline_id"`
 	StageID       string   `json:"stage_id"`
 	Amount        *float64 `json:"amount"`
@@ -158,12 +159,28 @@ func (s *InternalCommandService) executeCRMCreateDeal(ctx context.Context, meta 
 	if req.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	contactID, err := resolveCRMCommandID(meta, req.ContactID, "crm_contact", "contact_id")
-	if err != nil {
-		return nil, err
+	contactID := strings.TrimSpace(req.ContactID)
+	companyID := strings.TrimSpace(req.CompanyID)
+	if contactID == "" && companyID == "" {
+		switch meta.TargetType {
+		case "crm_contact":
+			contactID = meta.TargetID
+		case "crm_company":
+			companyID = meta.TargetID
+		}
 	}
-	if _, err := s.scopedCRMContact(ctx, meta.WorkspaceID, contactID); err != nil {
-		return nil, err
+	if contactID == "" && companyID == "" {
+		return nil, fmt.Errorf("contact_id or company_id is required")
+	}
+	if contactID != "" {
+		if _, err := s.scopedCRMContact(ctx, meta.WorkspaceID, contactID); err != nil {
+			return nil, err
+		}
+	}
+	if companyID != "" {
+		if _, err := s.scopedCRMCompany(ctx, meta.WorkspaceID, companyID); err != nil {
+			return nil, err
+		}
 	}
 	if req.Amount != nil && *req.Amount < 0 {
 		return nil, fmt.Errorf("amount must not be negative")
@@ -191,7 +208,7 @@ func (s *InternalCommandService) executeCRMCreateDeal(ctx context.Context, meta 
 		return nil, err
 	}
 	deal, err := s.crmDealService.Create(ctx, model.CreateCRMDealRequest{
-		WorkspaceID: meta.WorkspaceID, Name: req.Name, ContactID: contactID,
+		WorkspaceID: meta.WorkspaceID, Name: req.Name, ContactID: contactID, CompanyID: companyID,
 		PipelineID: pipeline.ID, StageID: stage.ID, Amount: req.Amount,
 		Currency: req.Currency, CloseDate: closeDate, OwnerMemberID: owner,
 		Probability: req.Probability,
@@ -200,7 +217,20 @@ func (s *InternalCommandService) executeCRMCreateDeal(ctx context.Context, meta 
 		return nil, err
 	}
 	result := compactCRMDeal(deal)
-	result["contact_id"] = contactID
+	if contactID != "" {
+		result["contact_id"] = contactID
+	}
+	customer, customerErr := s.crmDealService.GetCustomer(ctx, meta.WorkspaceID, deal.ID)
+	if customerErr != nil {
+		return nil, customerErr
+	}
+	if customer != nil {
+		result["customer_type"] = customer.CustomerType
+		result["customer_id"] = customer.CustomerID
+		if customer.PrimaryContactID != "" {
+			result["primary_contact_id"] = customer.PrimaryContactID
+		}
+	}
 	return mustJSON(result), nil
 }
 

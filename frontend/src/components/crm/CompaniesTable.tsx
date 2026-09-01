@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   useReactTable,
   getCoreRowModel,
@@ -13,11 +14,11 @@ import {
   type RowSelectionState,
   type SortingState,
   type ColumnSizingState,
+  type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, Building03Icon, ArrowDown01Icon, ArrowRight01Icon, MoreVerticalIcon, LinkSquare01Icon, Loading01Icon, PlusSignIcon, Delete01Icon, UserAdd01Icon } from '@/lib/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { format, parseISO } from 'date-fns';
@@ -51,16 +52,11 @@ import {
 import type { CRMCompany } from '@/lib/crmTypes';
 import { shouldFetchNextContactPage } from '@/lib/contactInfiniteScroll';
 import type { AssignableMember } from '@/lib/types';
+import { ColumnVisibilityPopover } from '@/components/crm/ColumnVisibilityPopover';
 
-type GroupByOption = 'none' | 'industry' | 'owner';
+export type CompanyGroupByOption = 'none' | 'industry' | 'owner';
 
-const GROUP_BY_OPTIONS: { value: GroupByOption; label: string }[] = [
-  { value: 'none', label: 'None' },
-  { value: 'industry', label: 'Industry' },
-  { value: 'owner', label: 'Owner' },
-];
-
-const GROUP_COLUMN_MAP: Record<GroupByOption, string | null> = {
+const GROUP_COLUMN_MAP: Record<CompanyGroupByOption, string | null> = {
   none: null,
   industry: 'industryName',
   owner: 'ownerName',
@@ -70,10 +66,10 @@ const columnHelper = createColumnHelper<CRMCompany>();
 
 interface CompaniesTableProps {
   companies: CRMCompany[];
-  totalCount?: number;
   workspaceId: string;
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
+  groupBy: CompanyGroupByOption;
   isLoading: boolean;
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
@@ -82,14 +78,15 @@ interface CompaniesTableProps {
   onCreateClick?: () => void;
   onCompanyUpdated?: () => void;
   onCompanyDeleted?: () => void;
+  toolbarContainer?: HTMLElement | null;
 }
 
 export function CompaniesTable({
   companies,
-  totalCount,
   workspaceId,
   assignableMembers,
   ownerNameMap,
+  groupBy,
   isLoading,
   hasNextPage,
   isFetchingNextPage,
@@ -98,14 +95,19 @@ export function CompaniesTable({
   onCreateClick,
   onCompanyUpdated,
   onCompanyDeleted,
+  toolbarContainer,
 }: CompaniesTableProps) {
   const [localCompanies, setLocalCompanies] = useState<CRMCompany[]>(companies);
-  const [groupBy, setGroupBy] = useState<GroupByOption>('none');
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
+  const columnVisibilityVersion = useMemo(
+    () => JSON.stringify(columnVisibility),
+    [columnVisibility],
+  );
   const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setLocalCompanies(companies); }, [companies]);
@@ -281,11 +283,13 @@ export function CompaniesTable({
       rowSelection,
       sorting,
       columnSizing,
+      columnVisibility,
     },
     onExpandedChange: setExpanded,
     onRowSelectionChange: setRowSelection,
     onSortingChange: setSorting,
     onColumnSizingChange: setColumnSizing,
+    onColumnVisibilityChange: setColumnVisibility,
     enableRowSelection: true,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
@@ -298,6 +302,12 @@ export function CompaniesTable({
   });
 
   const { rows } = table.getRowModel();
+  const toolbarPortal = toolbarContainer
+    ? createPortal(
+        <ColumnVisibilityPopover table={table} visibilityState={columnVisibility} />,
+        toolbarContainer,
+      )
+    : null;
 
   const estimateSize = useCallback(
     (index: number) => rows[index]?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT,
@@ -327,58 +337,42 @@ export function CompaniesTable({
 
   if (isLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-        <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
-        Loading companies...
-      </div>
+      <>
+        {toolbarPortal}
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+          <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
+          Loading companies...
+        </div>
+      </>
     );
   }
 
   if (companies.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <Building03Icon className="h-8 w-8 text-muted-foreground/50" />
+      <>
+        {toolbarPortal}
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <Building03Icon className="h-8 w-8 text-muted-foreground/50" />
+          </div>
+          <h3 className="mt-4 text-base font-medium">No companies yet</h3>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Add your first company to track organizations
+          </p>
+          {onCreateClick && (
+            <Button size="sm" className="mt-4" onClick={onCreateClick}>
+              <PlusSignIcon className="mr-1 h-4 w-4" />
+              Create Company
+            </Button>
+          )}
         </div>
-        <h3 className="mt-4 text-base font-medium">No companies yet</h3>
-        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          Add your first company to track organizations
-        </p>
-        {onCreateClick && (
-          <Button size="sm" className="mt-4" onClick={onCreateClick}>
-            <PlusSignIcon className="mr-1 h-4 w-4" />
-            Create Company
-          </Button>
-        )}
-      </div>
+      </>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col gap-2">
-      {/* Group By control */}
-      <div className="flex items-center gap-2 px-1">
-        <span className="text-xs text-muted-foreground">Group by:</span>
-        <Select value={groupBy} onValueChange={(v) => setGroupBy(v as GroupByOption)}>
-          <SelectTrigger className="h-7 w-[140px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {GROUP_BY_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-xs text-muted-foreground">
-          {totalCount != null && totalCount !== localCompanies.length
-            ? `${localCompanies.length} of ${totalCount}`
-            : localCompanies.length}{' '}
-          {(totalCount ?? localCompanies.length) === 1 ? 'company' : 'companies'}
-        </span>
-      </div>
-
+      {toolbarPortal}
       {/* Table */}
       <div ref={parentRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
@@ -460,9 +454,11 @@ export function CompaniesTable({
                     <MemoGroupHeaderRow row={row} />
                   ) : (
                     <MemoDataRow
+                      key={`${row.id}:${columnVisibilityVersion}`}
                       row={row}
                       columnSizing={columnSizing}
                       columnSizingVersion={columnSizingVersion}
+                      columnVisibilityVersion={columnVisibilityVersion}
                     />
                   )}
                 </div>
@@ -515,13 +511,15 @@ interface CompanyDataRowProps {
   row: Row<CRMCompany>;
   columnSizing: Record<string, number>;
   columnSizingVersion: string;
+  columnVisibilityVersion: string;
 }
 
 function areCompanyDataRowPropsEqual(prev: CompanyDataRowProps, next: CompanyDataRowProps): boolean {
   return (
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
-    prev.columnSizingVersion === next.columnSizingVersion
+    prev.columnSizingVersion === next.columnSizingVersion &&
+    prev.columnVisibilityVersion === next.columnVisibilityVersion
   );
 }
 
@@ -529,8 +527,10 @@ const MemoDataRow = memo(function DataRow({
   row,
   columnSizing,
   columnSizingVersion,
+  columnVisibilityVersion,
 }: CompanyDataRowProps) {
   void columnSizingVersion;
+  void columnVisibilityVersion;
   return (
     <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
       {row.getVisibleCells().map((cell) => {

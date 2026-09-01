@@ -6,6 +6,7 @@ import type {
   ReactionSummary,
   UpdateCommentRequest,
 } from '../pmTypes';
+import type { ConversationRewriteOperation } from '@/components/design-system/conversation-composer';
 
 const qs = (workspaceId: string) => `workspace_id=${encodeURIComponent(workspaceId)}`;
 
@@ -25,3 +26,9 @@ export const pmCommentService = {
   toggleReaction: (workspaceId: string, commentId: string, emoji: string) =>
     api.post<ReactionSummary[]>(`/pm/comments/${commentId}/reactions?${qs(workspaceId)}`, { emoji }),
 };
+
+export const rewritePMCommentDraft = (workspaceId: string, content: string, operation: ConversationRewriteOperation) =>
+  api.post<{ content: string; operation: ConversationRewriteOperation; provider: string; model: string }>(
+    `/pm/rewrite-draft?${qs(workspaceId)}`,
+    { content, operation },
+  );

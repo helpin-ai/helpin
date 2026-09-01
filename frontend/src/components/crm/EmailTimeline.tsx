@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { format, isThisMonth } from 'date-fns';
 import { toast } from 'sonner';
 import {
-  ArrowDown02Icon, ArrowLeft02Icon, ArrowTurnBackwardIcon, CheckListIcon,
+  ArrowDown02Icon, ArrowLeft02Icon, AttachmentIcon, CheckListIcon,
   DollarCircleIcon, Forward01Icon, Link01Icon, Loading01Icon, Mail01Icon,
-  MailReply01Icon, PlusSignIcon, Search01Icon, SentIcon, Setting07Icon, Tick01Icon,
+  MailReply01Icon, PlusSignIcon, SentIcon, Setting07Icon, Tick01Icon,
 } from '@/lib/icons';
 import {
   useEmailAccounts, useEmailThread, useInfiniteEmailThreads, useLinkEmailThreadDeal,
@@ -17,12 +17,13 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { CRMEmailComposerDialog, type EmailDraft } from './CRMEmailComposerDialog';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { TiptapEditor } from '@/components/ui/tiptap-editor';
+import { CRMEmailReplyComposer } from '@/components/crm/CRMEmailReplyComposer';
 import { EmailBodyRenderer } from '@/components/support/EmailBodyRenderer';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { crmSearchService } from '@/lib/services/crmService';
+import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
+import { crmEmailService, crmSearchService } from '@/lib/services/crmService';
+import { unwrap } from '@/lib/queryUtils';
 import { associationsService } from '@/lib/services/associationsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { cn } from '@/lib/utils';
@@ -108,7 +109,7 @@ function ThreadRow({ thread, selected, onSelect }: { thread: CRMEmailThread; sel
   );
 }
 
-function MessageBlock({ message }: { message: CRMEmailMessage }) {
+function MessageBlock({ message, workspaceId }: { message: CRMEmailMessage; workspaceId: string }) {
   const sender = message.from_name || addressName(message.from_address);
   const recipients = [...message.to_addresses, ...message.cc_addresses].map(addressName).join(', ');
   return (
@@ -122,6 +123,22 @@ function MessageBlock({ message }: { message: CRMEmailMessage }) {
         <div className="pm-rich-text mt-2 max-w-[680px]">
           {message.body_html ? <EmailBodyRenderer html={message.body_html} collapsedByDefault constrainHeight={false} /> : <p className="whitespace-pre-wrap break-words">{message.body_text || 'No message body'}</p>}
         </div>
+        {message.attachments?.length ? (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {message.attachments.map((attachment) => (
+              <button key={attachment.id} type="button" className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border/60 px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground" onClick={async () => {
+                const popup = window.open('', '_blank');
+                try {
+                  const result = unwrap(await crmEmailService.getAttachmentDownload(workspaceId, attachment.id));
+                  if (popup) popup.location.href = result.url;
+                  else window.location.assign(result.url);
+                } catch (error) { popup?.close(); toast.error(error instanceof Error ? error.message : 'Attachment could not be downloaded'); }
+              }}>
+                <AttachmentIcon className="h-3.5 w-3.5" /><span className="max-w-48 truncate">{attachment.file_name}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </article>
   );
@@ -180,10 +197,10 @@ export function EmailTimeline({
     setInternalThreadId(threadId); onSelectedThreadChange?.(threadId); setMobileReading(true); setReplyHTML('');
   };
   const openSettings = () => { if (currentWorkspace?.slug) window.location.href = `/w/${currentWorkspace.slug}/settings/crm-email`; };
-  const sendReply = async () => {
+  const sendReply = async (attachments?: { draftId: string; attachmentIds: string[] }) => {
     if (!selectedThreadId || !replyHTML.replace(/<[^>]+>/g, '').trim()) return;
-    try { await reply.mutateAsync({ threadId: selectedThreadId, mode: replyMode, body_html: replyHTML }); setReplyHTML(''); toast.success('Reply sent'); }
-    catch (error) { toast.error(error instanceof Error ? error.message : 'Reply could not be sent'); }
+    try { await reply.mutateAsync({ threadId: selectedThreadId, mode: replyMode, body_html: replyHTML, draft_id: attachments?.draftId, attachment_ids: attachments?.attachmentIds }); setReplyHTML(''); toast.success('Reply sent'); }
+    catch (error) { toast.error(error instanceof Error ? error.message : 'Reply could not be sent'); throw error; }
   };
   const openCreateTask = async () => {
     const team = teams[0];
@@ -216,15 +233,14 @@ export function EmailTimeline({
   }, [threads]);
 
   return (
-    <div className="@container/email flex h-full min-h-0 overflow-hidden bg-background">
+    <div className="@container/email flex h-full min-h-0 overflow-hidden bg-transparent">
       <section className={cn(
         'flex min-h-0 w-full shrink-0 flex-col border-r border-border/60 @[820px]/email:w-[clamp(320px,38%,456px)]',
         mobileReading && 'hidden @[820px]/email:flex',
         focusThreadOnly && '!hidden',
       )}>
         <div className="flex items-center gap-2 border-b border-border/50 px-4 py-2.5">
-          <Search01Icon className="h-4 w-4 text-muted-foreground" />
-          <input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search conversations…" className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground" />
+          <QuietSearchInput containerClassName="min-w-0 flex-1" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search conversations…" />
           {showComposeAction ? <Button size="sm" className="h-7 gap-1.5 px-2.5 text-xs" onClick={() => setComposeDraft({ to: defaultRecipient ? [defaultRecipient] : [] })} disabled={sendableAccounts.length === 0}><PlusSignIcon className="h-3.5 w-3.5" /> Compose</Button> : null}
         </div>
         <div className="flex items-center gap-4 border-b border-border/60 px-5 py-2.5 text-xs">
@@ -256,9 +272,9 @@ export function EmailTimeline({
                 </header>
                 <div className="flex flex-wrap items-start gap-x-5 gap-y-1.5 border-b border-border/50 px-5 py-2 sm:px-7 @[820px]/email:py-3"><span className="w-14 shrink-0 pt-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">People</span><div className="flex min-w-0 flex-1 flex-wrap gap-x-5 gap-y-1.5">{detail.participants.map((participant) => <div key={participant.email} className="flex min-w-0 items-center gap-2"><UserAvatar name={participantLabel(participant)} className="h-5 w-5" fallbackClassName="text-[8px]" /><span className="text-xs font-medium">{participantLabel(participant)}</span><span className="text-[10px] uppercase tracking-wide text-muted-foreground">{participant.role}</span>{participant.contact_id ? <Link01Icon className="h-3 w-3 text-teal-700 dark:text-teal-400" /> : <span className="max-w-44 truncate text-[11px] text-muted-foreground">{participant.email}</span>}</div>)}</div></div>
                 <div className="min-h-0 flex-1 overflow-y-auto">
-                  {detail.messages.map((message) => <MessageBlock key={message.id} message={message} />)}
+                  {detail.messages.map((message) => <MessageBlock key={message.id} message={message} workspaceId={workspaceId} />)}
                 </div>
-                <div id="crm-thread-reply" className="z-10 max-h-[48%] shrink-0 overflow-y-auto border-t border-border/60 bg-background px-5 py-2.5 sm:px-7 @[820px]/email:py-4">
+                <div id="crm-thread-reply" className="z-10 max-h-[48%] shrink-0 overflow-y-auto border-t border-border/60 bg-transparent px-5 py-2.5 sm:px-7 @[820px]/email:py-4">
                   {detail.thread.can_reply ? (
                     <div className="flex gap-3">
                       <UserAvatar name={detail.thread.mailbox_email} className="h-7 w-7 shrink-0" fallbackClassName="text-[9px]" />
@@ -269,17 +285,7 @@ export function EmailTimeline({
                           <button type="button" onClick={() => setComposeDraft({ title: 'Forward email', subject: `Fwd: ${detail.thread.subject}`, body: messageText(detail.messages[0]) })} className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"><Forward01Icon className="h-3 w-3" /> Forward</button>
                           <span className="ml-auto truncate text-[11px] text-muted-foreground">Sends from {detail.thread.mailbox_email}</span>
                         </div>
-                        <div className="relative">
-                          <TiptapEditor
-                            content={replyHTML}
-                            onChange={setReplyHTML}
-                            placeholder="Write a reply…"
-                            variant="divider"
-                            contentVariant="pm"
-                            className="border-t-2 border-border/60 focus-within:border-foreground/70 [&>div:first-child]:flex-nowrap [&>div:first-child]:overflow-x-auto [&>div:first-child]:[scrollbar-width:none] [&_.tiptap]:min-h-24 [&_.tiptap]:px-0 [&_.tiptap]:py-2.5 [&_.tiptap]:pr-28"
-                          />
-                          <Button size="sm" className="absolute bottom-1.5 right-0 h-8 gap-1.5" disabled={reply.isPending || !replyHTML.replace(/<[^>]+>/g, '').trim()} onClick={() => void sendReply()}>{reply.isPending ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <ArrowTurnBackwardIcon className="h-3.5 w-3.5" />}Send reply</Button>
-                        </div>
+                        <CRMEmailReplyComposer key={selectedThreadId} workspaceId={workspaceId} content={replyHTML} onChange={setReplyHTML} sending={reply.isPending} onSubmit={sendReply} />
                       </div>
                     </div>
                   ) : (
@@ -291,7 +297,36 @@ export function EmailTimeline({
 
       <CRMEmailComposerDialog workspaceId={workspaceId} accounts={sendableAccounts} open={Boolean(composeDraft)} draft={composeDraft ?? undefined} onOpenChange={(open) => !open && setComposeDraft(null)} />
       <CreateTaskModal open={taskOpen} onOpenChange={setTaskOpen} workspaceId={workspaceId} workflow={taskWorkflow ?? undefined} initialTeamId={taskTeamId} initialName={selected ? `Follow up: ${selected.subject}` : 'Email follow-up'} onCreate={createAndLinkTask} />
-      <Dialog open={dealOpen} onOpenChange={setDealOpen}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Link deal to conversation</DialogTitle></DialogHeader><div className="relative"><Search01Icon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={dealQuery} onChange={(event) => setDealQuery(event.target.value)} placeholder="Search deals" className="pl-9" /></div><div className="max-h-64 overflow-y-auto border-t border-border/50 pt-2">{visibleDealResults.map((deal) => <button key={deal.id} type="button" className="flex w-full items-center gap-2 px-2 py-2 text-left text-sm hover:bg-muted/40" onClick={async () => { if (!selectedThreadId) return; await linkDeal.mutateAsync({ threadId: selectedThreadId, dealId: deal.id }); setDealOpen(false); setDealQuery(''); toast.success('Deal linked'); }}><DollarCircleIcon className="h-4 w-4 text-muted-foreground" /><span className="truncate">{deal.name}</span></button>)}{dealQuery.trim().length < 2 ? <p className="py-5 text-center text-xs text-muted-foreground">Type at least two characters</p> : visibleDealResults.length === 0 ? <p className="py-5 text-center text-xs text-muted-foreground">No deals found</p> : null}</div></DialogContent></Dialog>
+      <Dialog open={dealOpen} onOpenChange={setDealOpen}>
+        <QuietRelationshipDialogContent>
+          <DialogHeader><DialogTitle>Link deal to conversation</DialogTitle></DialogHeader>
+          <QuietSearchInput value={dealQuery} onChange={(event) => setDealQuery(event.target.value)} placeholder="Search deals" />
+          <QuietRelationshipResults className="max-h-64 overflow-y-auto border-t border-border/50 pt-2">
+            {visibleDealResults.map((deal) => (
+              <button
+                key={deal.id}
+                type="button"
+                className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center gap-2 px-2 py-2 text-left text-sm hover:bg-muted/40')}
+                onClick={async () => {
+                  if (!selectedThreadId) return;
+                  await linkDeal.mutateAsync({ threadId: selectedThreadId, dealId: deal.id });
+                  setDealOpen(false);
+                  setDealQuery('');
+                  toast.success('Deal linked');
+                }}
+              >
+                <DollarCircleIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{deal.name}</span>
+              </button>
+            ))}
+            {dealQuery.trim().length < 2 ? (
+              <p className="py-5 text-center text-xs text-muted-foreground">Type at least two characters</p>
+            ) : visibleDealResults.length === 0 ? (
+              <p className="py-5 text-center text-xs text-muted-foreground">No deals found</p>
+            ) : null}
+          </QuietRelationshipResults>
+        </QuietRelationshipDialogContent>
+      </Dialog>
     </div>
   );
 }

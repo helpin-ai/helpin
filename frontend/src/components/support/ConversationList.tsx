@@ -38,6 +38,8 @@ import {
 import type { SupportInboxScope, SupportTag } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { SupportTagBadge } from './SupportTagPicker';
+import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
+import { workspaceSidebarSafeInsetClassName } from '@/components/design-system/quiet';
 
 const SkeletonRow = memo(function SkeletonRow() {
   return (
@@ -223,6 +225,8 @@ function TagFilterSelector({
 interface ConversationListProps {
   workspaceId: string;
   userId?: string;
+  autoSelectFirst?: boolean;
+  onConversationOpen?: (conversationId: string) => void;
   onOnboardingEmptyChange?: (isEmpty: boolean) => void;
   onWidgetSettingsClick?: () => void;
   onCreateConversationClick?: () => void;
@@ -233,6 +237,8 @@ interface ConversationListProps {
 export function ConversationList({
   workspaceId,
   userId,
+  autoSelectFirst = true,
+  onConversationOpen,
   onOnboardingEmptyChange,
   onWidgetSettingsClick,
   onCreateConversationClick,
@@ -269,13 +275,17 @@ export function ConversationList({
   const { data: supportTags = [] } = useSupportTags(workspaceId);
 
   const handleSelect = useCallback((id: string, unreadCount?: number) => {
-    selectConversation(id);
+    if (onConversationOpen) {
+      onConversationOpen(id);
+    } else {
+      selectConversation(id);
+    }
     if ((unreadCount ?? 0) > 0) {
       window.requestAnimationFrame(() => {
         window.setTimeout(() => markConversationRead.mutate(id), 0);
       });
     }
-  }, [markConversationRead, selectConversation]);
+  }, [markConversationRead, onConversationOpen, selectConversation]);
 
   const filters = useMemo(() => buildConversationListRequestFilters({
     navFilter,
@@ -387,10 +397,10 @@ export function ConversationList({
   }, [onOnboardingEmptyChange, shouldShowOnboardingEmptyState]);
 
   useEffect(() => {
-    if (selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
+    if (!autoSelectFirst || selectedConversationId || shouldShowListSkeleton || error || filteredConversations.length === 0) return;
     const firstConversation = filteredConversations[0];
-    handleSelect(firstConversation.id);
-  }, [error, filteredConversations, handleSelect, selectedConversationId, shouldShowListSkeleton]);
+    selectConversation(firstConversation.id);
+  }, [autoSelectFirst, error, filteredConversations, selectConversation, selectedConversationId, shouldShowListSkeleton]);
 
   useEffect(() => {
     if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
@@ -565,10 +575,13 @@ export function ConversationList({
   ]);
 
   return (
-    <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">
+    <div className="flex h-full w-full flex-col bg-background md:w-[300px] md:border-r dark:border-sidebar-border dark:bg-sidebar">
       {/* Filter toolbar */}
-      <div
-        className="relative z-10 flex items-center gap-1.5 border-b border-border/60 bg-background/85 px-2 py-1.5 supports-[backdrop-filter]:bg-background/75 dark:border-sidebar-border dark:bg-sidebar/90 dark:supports-[backdrop-filter]:bg-sidebar/80"
+      <SupportInboxPanelHeader
+        className={cn(
+          workspaceSidebarSafeInsetClassName,
+          'gap-1.5 bg-background/85 px-2 supports-[backdrop-filter]:bg-background/75 dark:bg-sidebar/90 dark:supports-[backdrop-filter]:bg-sidebar/80',
+        )}
         style={{ backdropFilter: 'blur(8px) saturate(160%)' }}
       >
         <TooltipProvider>
@@ -785,7 +798,7 @@ export function ConversationList({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
-      </div>
+      </SupportInboxPanelHeader>
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
         <DialogContent aria-describedby={undefined}>
           <DialogHeader>

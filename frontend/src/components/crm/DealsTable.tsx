@@ -308,6 +308,10 @@ export function DealsTable({
     if (!displayProps.created_at) vis['createdAt'] = false;
     return vis;
   }, [displayProps]);
+  const columnVisibilityVersion = useMemo(
+    () => JSON.stringify(columnVisibility),
+    [columnVisibility],
+  );
 
   const grouping: GroupingState = useMemo(() => {
     const colId = GROUP_COLUMN_MAP[groupBy];
@@ -486,9 +490,11 @@ export function DealsTable({
                     <MemoGroupHeaderRow row={row} stageMap={stageMap} groupBy={groupBy} />
                   ) : (
                     <MemoDataRow
+                      key={`${row.id}:${columnVisibilityVersion}`}
                       row={row}
                       columnSizing={columnSizing}
                       columnSizingVersion={columnSizingVersion}
+                      columnVisibilityVersion={columnVisibilityVersion}
                     />
                   )}
                 </div>
@@ -554,13 +560,15 @@ interface DealDataRowProps {
   row: Row<CRMDeal>;
   columnSizing: Record<string, number>;
   columnSizingVersion: string;
+  columnVisibilityVersion: string;
 }
 
 function areDealDataRowPropsEqual(prev: DealDataRowProps, next: DealDataRowProps): boolean {
   return (
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
-    prev.columnSizingVersion === next.columnSizingVersion
+    prev.columnSizingVersion === next.columnSizingVersion &&
+    prev.columnVisibilityVersion === next.columnVisibilityVersion
   );
 }
 
@@ -568,8 +576,10 @@ const MemoDataRow = memo(function DataRow({
   row,
   columnSizing,
   columnSizingVersion,
+  columnVisibilityVersion,
 }: DealDataRowProps) {
   void columnSizingVersion;
+  void columnVisibilityVersion;
   return (
     <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
       {row.getVisibleCells().map((cell) => {

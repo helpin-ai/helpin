@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { Cancel01Icon, FilterHorizontalIcon, PlusSignIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,12 +28,15 @@ import {
   type QueryFilterOperator,
   type QueryFilterRule,
 } from '@/lib/queryBuilder';
+import { cn } from '@/lib/utils';
 
 interface QueryBuilderPopoverProps {
   fields: QueryBuilderFieldDefinition[];
   value?: QueryFilterGroup;
   onApply: (group?: QueryFilterGroup) => void;
   triggerLabel?: string;
+  triggerVariant?: ComponentProps<typeof Button>['variant'];
+  triggerClassName?: string;
 }
 
 interface DraftRule extends QueryFilterRule {
@@ -166,6 +169,8 @@ export function QueryBuilderPopover({
   value,
   onApply,
   triggerLabel = 'Filter',
+  triggerVariant = 'outline',
+  triggerClassName,
 }: QueryBuilderPopoverProps) {
   const [open, setOpen] = useState(false);
   const [draftRules, setDraftRules] = useState<DraftRule[]>(() => toDraftRules(value?.rules, fields));
@@ -218,9 +223,9 @@ export function QueryBuilderPopover({
         <PopoverTrigger asChild>
           <Button
             type="button"
-            variant="outline"
+            variant={triggerVariant}
             size="sm"
-            className="h-6 gap-1.5 px-2 text-[11px]"
+            className={cn('h-6 gap-1.5 px-2 text-[11px]', triggerClassName)}
           >
             <FilterHorizontalIcon className="h-3 w-3" />
             {triggerLabel}

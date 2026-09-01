@@ -2142,6 +2142,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 	h.recordSupportEvent(service.SupportEventInput{
 		WorkspaceID:  cfg.WorkspaceID,
 		EventType:    model.SupportEventWidgetSearchPerformed,
+		AnonymousID:  service.NormalizeVisitorAnonymousID(r.URL.Query().Get("anonymous_id")),
 		ActorType:    model.SupportEventActorCustomer,
 		Channel:      "widget",
 		SourceSignal: searchSourceSignal,

@@ -35,17 +35,18 @@ describe('task detail optional section labels', () => {
     expect(panel).not.toContain('<TaskGitPanel');
   });
 
-  it('softens attached item titles only in light mode across tasks and epics', () => {
+  it('uses the shared related-item title typography across tasks and epics', () => {
+    const quiet = readFileSync(resolve(__dirname, '../../design-system/quiet.tsx'), 'utf8');
     const relationships = readFileSync(resolve(__dirname, '../TaskRelationshipsSection.tsx'), 'utf8');
     const associations = readFileSync(resolve(__dirname, '../AssociationsPanel.tsx'), 'utf8');
     const externalLinks = readFileSync(resolve(__dirname, '../ExternalLinks.tsx'), 'utf8');
     const taskPanel = readFileSync(resolve(__dirname, '../TaskDetailPanel.tsx'), 'utf8');
     const epicDetail = readFileSync(resolve(__dirname, '../../../pages/pm/EpicDetail.tsx'), 'utf8');
 
-    expect(relationships).toContain('font-medium text-foreground/75 dark:text-foreground');
-    expect(associations).toContain('font-medium text-foreground/75 dark:text-foreground');
-    expect(externalLinks).toContain('font-medium text-foreground/75');
-    expect(externalLinks).toContain('dark:text-foreground/80');
+    expect(quiet).toContain("'text-[12.5px] font-medium text-foreground/90'");
+    expect(relationships).toContain('quietRelatedItemTitleClassName');
+    expect(associations).toContain('quietRelatedItemTitleClassName');
+    expect(externalLinks).toContain('quietRelatedItemTitleClassName');
     expect(taskPanel).toContain('<AssociationsPanel');
     expect(epicDetail).toContain('<AssociationsPanel');
   });

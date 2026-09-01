@@ -305,6 +305,35 @@ describe('DocsEditor', () => {
     vi.useRealTimers()
   })
 
+  it('can suppress the editor title when page chrome owns it', async () => {
+    await act(async () => {
+      root.render(
+        <DocsEditor
+          title="Header-owned title"
+          showTitle={false}
+          onSave={vi.fn().mockResolvedValue(undefined)}
+        />,
+      )
+    })
+
+    expect(container.textContent).not.toContain('Header-owned title')
+    expect(container.querySelector('[data-docs-title-row]')).toBeNull()
+  })
+
+  it('supports the standard max-w-7xl document canvas used by detail pages', async () => {
+    await act(async () => {
+      root.render(
+        <DocsEditor
+          contentWidth="standard"
+          onSave={vi.fn().mockResolvedValue(undefined)}
+        />,
+      )
+    })
+
+    expect(container.querySelector('.docs-editor-wrapper')?.classList.contains('docs-editor-standard-width')).toBe(true)
+    expect(container.querySelector('.docs-editor-content-frame')).toBeTruthy()
+  })
+
   it('skips redundant autosave and manual save when content matches the last saved snapshot', async () => {
     const initialContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'alpha' }] }] }
     const changedContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'beta' }] }] }

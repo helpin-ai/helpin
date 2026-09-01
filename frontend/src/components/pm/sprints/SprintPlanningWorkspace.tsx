@@ -36,7 +36,6 @@ interface SprintPlanningWorkspaceProps {
   backlogOpen: boolean;
   onBacklogToggle: () => void;
   canEdit: boolean;
-  canCreateSprint: boolean;
   members: AssignableMember[];
   backlogTasks: SprintPlanningTaskPreview[];
   backlogTotal: number;
@@ -45,7 +44,6 @@ interface SprintPlanningWorkspaceProps {
   onLoadMoreBacklog: () => void;
   onOpenSprint: (sprintId: string) => void;
   onOpenTask: (taskId: string) => void;
-  onCreateSprint: () => void;
   onLinkTasks: (sprintId: string) => void;
   onCreateTask: (sprintId?: string) => void;
   onAssignTask: (task: SprintPlanningTaskPreview, sprintId: string | null) => void;
@@ -58,7 +56,6 @@ export function SprintPlanningWorkspace({
   backlogOpen,
   onBacklogToggle,
   canEdit,
-  canCreateSprint,
   members,
   backlogTasks,
   backlogTotal,
@@ -67,7 +64,6 @@ export function SprintPlanningWorkspace({
   onLoadMoreBacklog,
   onOpenSprint,
   onOpenTask,
-  onCreateSprint,
   onLinkTasks,
   onCreateTask,
   onAssignTask,
@@ -184,7 +180,7 @@ export function SprintPlanningWorkspace({
   );
 
   if (!workspace || !hasAnySprint) {
-    return <SprintPlanningEmptyState canEdit={canEdit} canCreateSprint={canCreateSprint} onCreateSprint={onCreateSprint} />;
+    return <SprintPlanningEmptyState />;
   }
 
   return (

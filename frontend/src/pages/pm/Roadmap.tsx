@@ -1,438 +1,789 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { isValid, parseISO } from 'date-fns';
+import { toast } from 'sonner';
+
 import {
-  Calendar03Icon,
   ArrowDown01Icon,
+  Calendar03Icon,
+  Layers01Icon,
   PlusSignIcon,
   Target01Icon,
-  ChartGanttIcon,
-  Layers01Icon,
 } from '@/lib/icons';
 import { useTitle } from '@/hooks/useTitle';
-import { Button } from '@/components/ui/button';
+import {
+  QuietEmptyState,
+  QuietPageHeader,
+  QuietPageViewport,
+  QuietPrimaryAction,
+  QuietSearchInput,
+  QuietSectionHeader,
+  QuietTextAction,
+} from '@/components/design-system/quiet';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Skeleton } from '@/components/ui/skeleton';
+import { InlineEpicDateControl, InlineEpicObjectivesControl } from '@/components/pm/InlineEpicPlanningFields';
+import {
+  PMFilterBar,
+  PMFilterTrigger,
+  type PMFilterDefinition,
+  type PMFilterValues,
+} from '@/components/pm/PMFilterControls';
+import { RoadmapTimeline } from '@/components/pm/RoadmapTimeline';
+import { getRoadmapEpicRange, roadmapEpicMatchesSearch } from '@/components/pm/roadmapUtils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
+import { pmEpicService } from '@/lib/services/pmEpicService';
+import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { pmRoadmapService } from '@/lib/services/pmRoadmapService';
-import { RoadmapTimeline } from '@/components/pm/RoadmapTimeline';
-import type { RoadmapData, RoadmapEpic } from '@/lib/pmTypes';
+import type { EpicWithStats, Objective, RoadmapData, RoadmapEpic, UpdateEpicRequest } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 
 type GroupBy = 'objective' | 'team' | 'epic';
 type Zoom = 'month' | 'quarter';
+type RoadmapFilterKey = 'objective' | 'team' | 'health' | 'completed';
 
-const HEALTH_CONFIG: Record<string, { label: string; dot: string }> = {
-  no_health: { label: 'No health', dot: 'bg-zinc-400' },
-  on_track: { label: 'On track', dot: 'bg-green-500' },
-  at_risk: { label: 'At risk', dot: 'bg-yellow-500' },
-  off_track: { label: 'Off track', dot: 'bg-red-500' },
+const PLANNING_PREVIEW_COUNT = 6;
+const EMPTY_EPICS: RoadmapEpic[] = [];
+const EMPTY_OBJECTIVES: Objective[] = [];
+
+const HEALTH_CONFIG: Record<string, { label: string; marker: string; text: string }> = {
+  no_health: { label: 'No health', marker: 'bg-quiet-empty', text: 'text-quiet-text-tertiary' },
+  on_track: { label: 'On track', marker: 'bg-quiet-positive', text: 'text-quiet-positive' },
+  at_risk: { label: 'At risk', marker: 'bg-quiet-accent', text: 'text-quiet-accent' },
+  off_track: { label: 'Off track', marker: 'bg-quiet-accent', text: 'text-quiet-accent' },
 };
+
+function parseValidDate(value?: string) {
+  if (!value) return undefined;
+  const parsed = parseISO(value);
+  return isValid(parsed) ? parsed : undefined;
+}
+
+function applyRoadmapEpicPatch(entry: RoadmapEpic, patch: UpdateEpicRequest): RoadmapEpic {
+  return {
+    ...entry,
+    epic: {
+      ...entry.epic,
+      ...(Object.prototype.hasOwnProperty.call(patch, 'planned_start_date')
+        ? { planned_start_date: patch.planned_start_date }
+        : {}),
+      ...(Object.prototype.hasOwnProperty.call(patch, 'deadline')
+        ? { deadline: patch.deadline }
+        : {}),
+    },
+  };
+}
+
+function buildObjectiveRefs(
+  objectives: Objective[],
+  current: EpicWithStats['objectives'],
+  objectiveIds: string[],
+): EpicWithStats['objectives'] {
+  const names = new Map<string, string>();
+  objectives.forEach((objective) => names.set(objective.id, objective.name));
+  current.forEach((objective) => names.set(objective.id, objective.name));
+  return objectiveIds.map((id) => ({ id, name: names.get(id) ?? 'Unknown objective' }));
+}
 
 export function RoadmapPage() {
   useTitle('Roadmap');
-  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
   const navigate = useNavigate();
-  const openCreate = useGlobalCreateStore((s) => s.openCreate);
+  const openCreate = useGlobalCreateStore((state) => state.openCreate);
 
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit } = usePermissions(access);
-
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const memberNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
   );
-
   const teamNameMap = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const t of teams) {
-      m.set(t.id, t.name);
-    }
-    return m;
+    const map = new Map<string, string>();
+    teams.forEach((team) => map.set(team.id, team.name));
+    return map;
   }, [teams]);
 
-  // View state
   const [groupBy, setGroupBy] = useState<GroupBy>('objective');
   const [zoom, setZoom] = useState<Zoom>('quarter');
   const [showCompleted, setShowCompleted] = useState(false);
-  const [filterTeamId, setFilterTeamId] = useState<string | undefined>();
-  const [filterObjectiveId, setFilterObjectiveId] = useState<string | undefined>();
-  const [filterHealth, setFilterHealth] = useState<string | undefined>();
+  const [filterTeamId, setFilterTeamId] = useState<string>();
+  const [filterObjectiveId, setFilterObjectiveId] = useState<string>();
+  const [filterHealth, setFilterHealth] = useState<string>();
+  const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+  const [showAllPlanning, setShowAllPlanning] = useState(false);
 
-  // Data
   const [data, setData] = useState<RoadmapData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [savingEpicIds, setSavingEpicIds] = useState<Set<string>>(new Set());
+  const requestVersion = useRef(0);
 
-  useEffect(() => {
+  const loadRoadmap = useCallback(async (showLoadingState = true) => {
     if (!workspaceId) return;
-    setLoading(true);
-    pmRoadmapService
-      .getData(workspaceId, {
-        team_id: filterTeamId,
-        objective_id: filterObjectiveId,
-        health: filterHealth,
-        show_completed: showCompleted,
-      })
-      .then((res) => {
-        if (res.data) setData(res.data);
-      })
-      .finally(() => setLoading(false));
-  }, [workspaceId, filterTeamId, filterObjectiveId, filterHealth, showCompleted]);
+    const version = ++requestVersion.current;
+    if (showLoadingState) setLoading(true);
+    setLoadError(null);
+    const result = await pmRoadmapService.getData(workspaceId, {
+      team_id: filterTeamId,
+      objective_id: filterObjectiveId,
+      health: filterHealth,
+      show_completed: showCompleted,
+    });
+    if (version !== requestVersion.current) return;
+    if (result.data) setData(result.data);
+    else setLoadError(result.error ?? 'Failed to load the roadmap');
+    setLoading(false);
+  }, [filterHealth, filterObjectiveId, filterTeamId, showCompleted, workspaceId]);
 
-  // Listen for epic creation events
   useEffect(() => {
-    const refresh = () => {
-      if (!workspaceId) return;
-      pmRoadmapService
-        .getData(workspaceId, {
-          team_id: filterTeamId,
-          objective_id: filterObjectiveId,
-          health: filterHealth,
-          show_completed: showCompleted,
-        })
-        .then((res) => {
-          if (res.data) setData(res.data);
-        });
-    };
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Route filters intentionally trigger a server refresh.
+    void loadRoadmap();
+  }, [loadRoadmap]);
+
+  useEffect(() => {
+    const refresh = () => void loadRoadmap(false);
     window.addEventListener('epic-created', refresh);
-    return () => window.removeEventListener('epic-created', refresh);
-  }, [workspaceId, filterTeamId, filterObjectiveId, filterHealth, showCompleted]);
+    window.addEventListener('epic-updated', refresh);
+    return () => {
+      window.removeEventListener('epic-created', refresh);
+      window.removeEventListener('epic-updated', refresh);
+    };
+  }, [loadRoadmap]);
 
-  const epics = data?.epics ?? [];
-  const objectives = data?.objectives ?? [];
+  const epics = data?.epics ?? EMPTY_EPICS;
+  const objectives = data?.objectives ?? EMPTY_OBJECTIVES;
+  const visibleEpics = useMemo(
+    () => epics.filter((entry) => roadmapEpicMatchesSearch(entry, deferredSearch, teamNameMap)),
+    [deferredSearch, epics, teamNameMap],
+  );
+  const planningEpics = useMemo(
+    () => visibleEpics.filter((entry) => !getRoadmapEpicRange(entry)),
+    [visibleEpics],
+  );
+  const markSaving = useCallback((epicId: string, saving: boolean) => {
+    setSavingEpicIds((current) => {
+      const next = new Set(current);
+      if (saving) next.add(epicId);
+      else next.delete(epicId);
+      return next;
+    });
+  }, []);
 
-  const unscheduled = useMemo(
-    () => epics.filter((e) => !e.epic.planned_start_date || !e.epic.deadline),
-    [epics],
+  const replaceEpic = useCallback((epicId: string, replacement: RoadmapEpic | null) => {
+    setData((current) => current
+      ? {
+          ...current,
+          epics: replacement
+            ? current.epics.map((entry) => (entry.epic.id === epicId ? replacement : entry))
+            : current.epics.filter((entry) => entry.epic.id !== epicId),
+        }
+      : current);
+  }, []);
+
+  const updateEpicField = useCallback(async (epicId: string, patch: UpdateEpicRequest) => {
+    const previous = data?.epics.find((entry) => entry.epic.id === epicId);
+    if (!previous || !workspaceId) return;
+
+    markSaving(epicId, true);
+    replaceEpic(epicId, applyRoadmapEpicPatch(previous, patch));
+    try {
+      const result = await pmEpicService.update(workspaceId, epicId, patch);
+      if (!result.data || result.error) throw new Error(result.error ?? 'Failed to update epic dates');
+      replaceEpic(epicId, result.data);
+    } catch (error) {
+      replaceEpic(epicId, previous);
+      toast.error(error instanceof Error ? error.message : 'Failed to update epic dates');
+    } finally {
+      markSaving(epicId, false);
+    }
+  }, [data?.epics, markSaving, replaceEpic, workspaceId]);
+
+  const updateEpicObjectives = useCallback(async (epicId: string, nextObjectiveIds: string[]) => {
+    const previous = data?.epics.find((entry) => entry.epic.id === epicId);
+    if (!previous || !workspaceId) return;
+
+    const currentObjectiveIds = previous.objectives.map((objective) => objective.id);
+    const currentSet = new Set(currentObjectiveIds);
+    const nextSet = new Set(nextObjectiveIds);
+    const toAdd = nextObjectiveIds.filter((id) => !currentSet.has(id));
+    const toRemove = currentObjectiveIds.filter((id) => !nextSet.has(id));
+    const optimistic = {
+      ...previous,
+      objectives: buildObjectiveRefs(objectives, previous.objectives, nextObjectiveIds),
+    };
+
+    markSaving(epicId, true);
+    replaceEpic(epicId, optimistic);
+    try {
+      const results = await Promise.all([
+        ...toAdd.map((objectiveId) => pmObjectiveService.addEpic(workspaceId, objectiveId, epicId)),
+        ...toRemove.map((objectiveId) => pmObjectiveService.removeEpic(workspaceId, objectiveId, epicId)),
+      ]);
+      const failed = results.find((result) => result.error);
+      if (failed) throw new Error(failed.error ?? 'Failed to update objectives');
+
+      if (filterObjectiveId && !nextSet.has(filterObjectiveId)) {
+        replaceEpic(epicId, null);
+      } else {
+        const refreshed = await pmEpicService.get(workspaceId, epicId);
+        if (refreshed.data) replaceEpic(epicId, refreshed.data);
+      }
+    } catch (error) {
+      replaceEpic(epicId, previous);
+      toast.error(error instanceof Error ? error.message : 'Failed to update objectives');
+      void loadRoadmap(false);
+    } finally {
+      markSaving(epicId, false);
+    }
+  }, [data?.epics, filterObjectiveId, loadRoadmap, markSaving, objectives, replaceEpic, workspaceId]);
+
+  const clearFilters = () => {
+    setFilterTeamId(undefined);
+    setFilterObjectiveId(undefined);
+    setFilterHealth(undefined);
+    setShowCompleted(false);
+    setSearch('');
+  };
+
+  const clearFieldFilters = () => {
+    setFilterTeamId(undefined);
+    setFilterObjectiveId(undefined);
+    setFilterHealth(undefined);
+    setShowCompleted(false);
+  };
+
+  if (!workspace) return <p className="text-sm text-quiet-text-tertiary">Workspace not found.</p>;
+
+  const hasActiveFilters = Boolean(
+    filterTeamId || filterObjectiveId || filterHealth || showCompleted || search.trim(),
+  );
+  const pageHeader = (
+    <QuietPageHeader
+      variant="shell"
+      title="Roadmap"
+      description="Plan epic timing and see how work supports each objective."
+      actions={canEdit ? (
+        <QuietPrimaryAction className="gap-1.5" onClick={() => openCreate('epic')}>
+          <PlusSignIcon className="h-4 w-4" />
+          Add epic
+        </QuietPrimaryAction>
+      ) : null}
+    />
   );
 
-  if (!workspace) {
-    return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
-  }
-
-  const hasActiveFilters = !!(filterTeamId || filterObjectiveId || filterHealth || showCompleted);
-
-  // ── Filtered empty state ───────────────────────────────────
-  // (shown inline within the main view, not as a full-page takeover)
-
-  // ── Onboarding empty state (only when no epics exist at all) ─
-  if (!loading && data !== null && epics.length === 0 && !hasActiveFilters) {
+  if (loading && data === null) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="flex flex-col items-center py-16 px-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-500/10 mb-5">
-            <ChartGanttIcon className="h-7 w-7 text-teal-500" />
-          </div>
-          <h3 className="text-base font-medium mb-1">Plan your roadmap</h3>
-          <p className="text-sm text-muted-foreground text-center max-w-md">
-            Link epics to objectives and set start & target dates to visualize
-            your initiatives on a timeline.
-          </p>
-          <div className="flex items-center gap-3 mt-6">
-            {canEdit && (
-              <Button size="sm" onClick={() => openCreate('epic')}>
-                <PlusSignIcon className="h-4 w-4 mr-1.5" />
-                Create an Epic
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate({ to: '/w/$slug/pm/epics', params: { slug } })}
-            >
-              <Layers01Icon className="h-4 w-4 mr-1.5" />
-              Browse Epics
-            </Button>
-          </div>
-          <div className="w-full max-w-4xl mt-10">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {[
-                { icon: Layers01Icon, title: 'Create epics', description: 'Group related tasks into epics — your key initiatives' },
-                { icon: Target01Icon, title: 'Link objectives', description: 'Connect epics to objectives for strategic alignment' },
-                { icon: Calendar03Icon, title: 'Set dates', description: 'Add start and target dates to place epics on the timeline' },
-              ].map(({ icon: Icon, title, description }) => (
-                <div key={title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
-                  <Icon className="h-5 w-5 text-muted-foreground mb-3" />
-                  <p className="text-sm font-medium mb-1">{title}</p>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      <div className="flex h-full min-h-0 flex-col">
+        {pageHeader}
+        <QuietPageViewport className="min-h-0 flex-1">
+          <RoadmapLoadingState />
+        </QuietPageViewport>
       </div>
     );
   }
 
-  if (loading) {
-    return null;
+  if (loadError && data === null) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {pageHeader}
+        <QuietPageViewport className="min-h-0 flex-1">
+          <QuietEmptyState
+            title="The roadmap could not be loaded"
+            description={loadError}
+            action={<QuietTextAction onClick={() => void loadRoadmap()}>Try again</QuietTextAction>}
+          />
+        </QuietPageViewport>
+      </div>
+    );
   }
 
-  // ── Main view ───────────────────────────────────────────────
+  if (epics.length === 0 && !hasActiveFilters) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {pageHeader}
+        <QuietPageViewport className="min-h-0 flex-1">
+          <QuietEmptyState
+            title="Plan your first initiative"
+            description="Create an epic, add its timing, and link it to an objective. Scheduled epics will appear here automatically."
+            action={(
+              <QuietTextAction onClick={() => navigate({ to: '/w/$slug/pm/epics', params: { slug } })}>
+                Browse epics
+              </QuietTextAction>
+            )}
+          >
+            <div className="max-w-[620px] border-t border-quiet-divider-strong">
+              <RoadmapSetupStep icon={Layers01Icon} title="Create epics" detail="Group related tasks into an initiative." />
+              <RoadmapSetupStep icon={Calendar03Icon} title="Set timing" detail="Add both a start and target date." />
+              <RoadmapSetupStep icon={Target01Icon} title="Link objectives" detail="Show how the initiative supports company goals." />
+            </div>
+          </QuietEmptyState>
+        </QuietPageViewport>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <header className="flex items-center justify-between mb-5 gap-4 flex-wrap">
-        <div>
-          <h2 className="text-lg font-semibold">Roadmap</h2>
-          <p className="text-sm text-muted-foreground">
-            Epics across objectives on a timeline.
-          </p>
+    <div className="flex h-full min-h-0 flex-col">
+      {pageHeader}
+      <QuietPageViewport className="min-h-0 flex-1 p-0 md:p-0" contentClassName="max-w-none">
+        <div aria-busy={loading}>
+          <RoadmapToolbar
+            search={search}
+            onSearchChange={setSearch}
+            groupBy={groupBy}
+            onGroupByChange={setGroupBy}
+            zoom={zoom}
+            onZoomChange={setZoom}
+            showCompleted={showCompleted}
+            onShowCompletedChange={setShowCompleted}
+            teams={teams}
+            objectives={objectives}
+            filterTeamId={filterTeamId}
+            onFilterTeamIdChange={setFilterTeamId}
+            filterObjectiveId={filterObjectiveId}
+            onFilterObjectiveIdChange={setFilterObjectiveId}
+            filterHealth={filterHealth}
+            onFilterHealthChange={setFilterHealth}
+            onClearFilters={clearFieldFilters}
+          />
+
+          {loadError ? (
+            <p className="border-b border-quiet-divider-strong px-4 py-2 text-[12.5px] text-quiet-accent sm:px-6 lg:px-8">
+              {loadError} The last loaded roadmap is still shown.
+            </p>
+          ) : null}
+
+          {visibleEpics.length === 0 ? (
+            <QuietEmptyState
+              className="border-t-0"
+              title="No epics match this view"
+              description="Adjust the search or filters to bring initiatives back into the roadmap."
+              action={<QuietTextAction onClick={clearFilters}>Clear filters</QuietTextAction>}
+            />
+          ) : (
+            <>
+              <section>
+                <RoadmapTimeline
+                  epics={visibleEpics}
+                  objectives={objectives}
+                  groupBy={groupBy}
+                  zoom={zoom}
+                  slug={slug}
+                  teamNameMap={teamNameMap}
+                  memberNameMap={memberNameMap}
+                />
+              </section>
+
+              {planningEpics.length > 0 ? (
+                <div className="mx-auto w-full max-w-7xl px-4 pb-8 pt-7 sm:px-6 lg:px-8">
+                  <PlanningQueue
+                    epics={planningEpics}
+                    objectives={objectives}
+                    slug={slug}
+                    teamNameMap={teamNameMap}
+                    canEdit={canEdit}
+                    savingEpicIds={savingEpicIds}
+                    showAll={showAllPlanning}
+                    onShowAllChange={setShowAllPlanning}
+                    onUpdateField={updateEpicField}
+                    onUpdateObjectives={updateEpicObjectives}
+                  />
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
-
-        {/* Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
-                Group: {groupBy === 'objective' ? 'Objective' : groupBy === 'team' ? 'Team' : 'Epic'}
-                <ArrowDown01Icon className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setGroupBy('epic')}>Epic</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setGroupBy('objective')}>Objective</DropdownMenuItem>
-              {teams.length > 1 && (
-                <DropdownMenuItem onClick={() => setGroupBy('team')}>Team</DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Zoom */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
-                Zoom: {zoom === 'month' ? 'Month' : 'Quarter'}
-                <ArrowDown01Icon className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setZoom('month')}>Month</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setZoom('quarter')}>Quarter</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Filters */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
-                Filters
-                {(filterTeamId || filterObjectiveId || filterHealth) && (
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px]">
-                    {[filterTeamId, filterObjectiveId, filterHealth].filter(Boolean).length}
-                  </span>
-                )}
-                <ArrowDown01Icon className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72 max-h-96">
-              {/* Objective filter */}
-              {objectives.length > 0 && (
-                <>
-                  <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground uppercase">Objective</div>
-                  <DropdownMenuCheckboxItem
-                    className="py-1 pl-2 pr-6 text-sm rounded-md"
-                    checked={!filterObjectiveId}
-                    onCheckedChange={() => setFilterObjectiveId(undefined)}
-                  >
-                    All objectives
-                  </DropdownMenuCheckboxItem>
-                  {objectives.map((obj) => (
-                    <DropdownMenuCheckboxItem
-                      key={obj.id}
-                      className="py-1 pl-2 pr-6 text-sm rounded-md"
-                      checked={filterObjectiveId === obj.id}
-                      onCheckedChange={() =>
-                        setFilterObjectiveId(filterObjectiveId === obj.id ? undefined : obj.id)
-                      }
-                    >
-                      <span className="truncate">{obj.name}</span>
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </>
-              )}
-
-              {/* Team filter */}
-              {teams.length > 1 && (
-                <>
-                  <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground uppercase mt-1">Team</div>
-                  <DropdownMenuCheckboxItem
-                    className="py-1 pl-2 pr-6 text-sm rounded-md"
-                    checked={!filterTeamId}
-                    onCheckedChange={() => setFilterTeamId(undefined)}
-                  >
-                    All teams
-                  </DropdownMenuCheckboxItem>
-                  {teams.map((team) => (
-                    <DropdownMenuCheckboxItem
-                      key={team.id}
-                      className="py-1 pl-2 pr-6 text-sm rounded-md"
-                      checked={filterTeamId === team.id}
-                      onCheckedChange={() =>
-                        setFilterTeamId(filterTeamId === team.id ? undefined : team.id)
-                      }
-                    >
-                      {team.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </>
-              )}
-
-              {/* Health filter */}
-              <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground uppercase mt-1">Health</div>
-              <DropdownMenuCheckboxItem
-                className="py-1 pl-2 pr-6 text-sm rounded-md"
-                checked={!filterHealth}
-                onCheckedChange={() => setFilterHealth(undefined)}
-              >
-                All
-              </DropdownMenuCheckboxItem>
-              {Object.entries(HEALTH_CONFIG).map(([key, { label, dot }]) => (
-                <DropdownMenuCheckboxItem
-                  key={key}
-                  className="py-1 pl-2 pr-6 text-sm rounded-md"
-                  checked={filterHealth === key}
-                  onCheckedChange={() =>
-                    setFilterHealth(filterHealth === key ? undefined : key)
-                  }
-                >
-                  <span className="flex items-center gap-1.5">
-                    <span className={`h-2 w-2 rounded-full ${dot}`} />
-                    {label}
-                  </span>
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Show completed toggle */}
-          <Button
-            variant={showCompleted ? 'secondary' : 'outline'}
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => setShowCompleted(!showCompleted)}
-          >
-            {showCompleted ? 'Showing completed' : 'Show completed'}
-          </Button>
-        </div>
-      </header>
-
-      {loading ? null : epics.length === 0 && hasActiveFilters ? (
-        <div className="flex flex-col items-center justify-center py-20 px-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted mb-3">
-            <ChartGanttIcon className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <p className="text-sm font-medium mb-1">No epics match your filters</p>
-          <p className="text-sm text-muted-foreground mb-4">Try adjusting or clearing your filters.</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setFilterTeamId(undefined);
-              setFilterObjectiveId(undefined);
-              setFilterHealth(undefined);
-              setShowCompleted(false);
-            }}
-          >
-            Clear filters
-          </Button>
-        </div>
-      ) : (
-        <RoadmapTimeline
-          epics={epics}
-          objectives={objectives}
-          groupBy={groupBy}
-          zoom={zoom}
-          slug={slug}
-          teamNameMap={teamNameMap}
-          memberNameMap={memberNameMap}
-        />
-      )}
-
-      {/* Unscheduled epics */}
-      {unscheduled.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2 px-1">
-            Unscheduled epics ({unscheduled.length})
-          </h3>
-          <p className="text-[11px] text-muted-foreground/60 mb-3 px-1">
-            Add start and target dates to place these on the timeline.
-          </p>
-          <div className="divide-y divide-border/40 rounded-lg border border-border">
-            {unscheduled.map((epic) => (
-              <UnscheduledEpicRow
-                key={epic.epic.id}
-                epic={epic}
-                slug={slug}
-                teamName={epic.epic.team_id ? teamNameMap.get(epic.epic.team_id) : undefined}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+      </QuietPageViewport>
     </div>
   );
 }
 
-// ── Unscheduled epic row ────────────────────────────────────────
-
-function UnscheduledEpicRow({
-  epic,
-  slug,
-  teamName,
+function RoadmapToolbar({
+  search,
+  onSearchChange,
+  groupBy,
+  onGroupByChange,
+  zoom,
+  onZoomChange,
+  showCompleted,
+  onShowCompletedChange,
+  teams,
+  objectives,
+  filterTeamId,
+  onFilterTeamIdChange,
+  filterObjectiveId,
+  onFilterObjectiveIdChange,
+  filterHealth,
+  onFilterHealthChange,
+  onClearFilters,
 }: {
-  epic: RoadmapEpic;
-  slug: string;
-  teamName?: string;
+  search: string;
+  onSearchChange: (value: string) => void;
+  groupBy: GroupBy;
+  onGroupByChange: (value: GroupBy) => void;
+  zoom: Zoom;
+  onZoomChange: (value: Zoom) => void;
+  showCompleted: boolean;
+  onShowCompletedChange: (value: boolean) => void;
+  teams: Array<{ id: string; name: string }>;
+  objectives: Objective[];
+  filterTeamId?: string;
+  onFilterTeamIdChange: (value?: string) => void;
+  filterObjectiveId?: string;
+  onFilterObjectiveIdChange: (value?: string) => void;
+  filterHealth?: string;
+  onFilterHealthChange: (value?: string) => void;
+  onClearFilters: () => void;
 }) {
-  const navigate = useNavigate();
-  const e = epic.epic;
-  const health = e.health || 'no_health';
-  const hc = HEALTH_CONFIG[health];
-  const totalTasks = getEpicTaskCount(epic.stats);
-  const pct =
-    totalTasks > 0
-      ? Math.round((getEpicDoneTaskCount(epic.stats) / totalTasks) * 100)
-      : 0;
+  const [visibleFilterKeys, setVisibleFilterKeys] = useState<Set<RoadmapFilterKey>>(() => {
+    const keys = new Set<RoadmapFilterKey>();
+    if (filterObjectiveId) keys.add('objective');
+    if (filterTeamId) keys.add('team');
+    if (filterHealth) keys.add('health');
+    if (showCompleted) keys.add('completed');
+    return keys;
+  });
+  const filterDefinitions = useMemo<PMFilterDefinition<RoadmapFilterKey>[]>(() => [
+    {
+      key: 'objective',
+      label: 'Objective',
+      options: objectives.map((objective) => ({ value: objective.id, label: objective.name })),
+      singleSelect: true,
+      searchableValues: true,
+    },
+    {
+      key: 'team',
+      label: 'Team',
+      options: teams.map((team) => ({ value: team.id, label: team.name })),
+      singleSelect: true,
+      searchableValues: true,
+    },
+    {
+      key: 'health',
+      label: 'Health',
+      options: Object.entries(HEALTH_CONFIG).map(([value, config]) => ({
+        value,
+        label: config.label,
+        icon: <span className={`h-[5px] w-[5px] shrink-0 rounded-full ${config.marker}`} />,
+      })),
+      singleSelect: true,
+    },
+    {
+      key: 'completed',
+      label: 'Completed epics',
+      options: [{ value: 'true', label: 'Included' }],
+      singleSelect: true,
+    },
+  ], [objectives, teams]);
+  const filterValues = useMemo<PMFilterValues<RoadmapFilterKey>>(() => ({
+    objective: filterObjectiveId ? [filterObjectiveId] : [],
+    team: filterTeamId ? [filterTeamId] : [],
+    health: filterHealth ? [filterHealth] : [],
+    completed: showCompleted ? ['true'] : [],
+  }), [filterHealth, filterObjectiveId, filterTeamId, showCompleted]);
+  const activeFilterCount = Object.values(filterValues).filter((values) => values && values.length > 0).length;
+
+  const clearFilterValue = (key: RoadmapFilterKey) => {
+    if (key === 'objective') onFilterObjectiveIdChange(undefined);
+    if (key === 'team') onFilterTeamIdChange(undefined);
+    if (key === 'health') onFilterHealthChange(undefined);
+    if (key === 'completed') onShowCompletedChange(false);
+  };
+
+  const handleAddFilter = (key: RoadmapFilterKey) => {
+    setVisibleFilterKeys((current) => new Set(current).add(key));
+  };
+
+  const handleToggleFilter = (key: RoadmapFilterKey, value: string) => {
+    const isSelected = filterValues[key]?.includes(value) ?? false;
+    if (key === 'objective') onFilterObjectiveIdChange(isSelected ? undefined : value);
+    if (key === 'team') onFilterTeamIdChange(isSelected ? undefined : value);
+    if (key === 'health') onFilterHealthChange(isSelected ? undefined : value);
+    if (key === 'completed') onShowCompletedChange(!isSelected);
+  };
+
+  const handleRemoveFilter = (key: RoadmapFilterKey) => {
+    clearFilterValue(key);
+    setVisibleFilterKeys((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  const handleClearFilters = () => {
+    setVisibleFilterKeys(new Set());
+    onClearFilters();
+  };
 
   return (
-    <button
-      type="button"
-      onClick={() => navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: e.id } })}
-      className="flex items-center gap-3 px-3 py-2.5 w-full text-left hover:bg-muted/30 transition-colors"
-    >
-      <span className="flex items-center gap-1.5 shrink-0">
-        <span className={`h-2 w-2 rounded-full ${hc?.dot}`} />
-      </span>
-      <span className="text-sm truncate flex-1 min-w-0">{e.name}</span>
-      {epic.objectives.length > 0 && (
-        <span className="text-[11px] text-muted-foreground truncate max-w-[120px] shrink-0 hidden sm:block">
-          {epic.objectives[0].name}
-        </span>
-      )}
-      {teamName && (
-        <span className="text-[11px] text-muted-foreground shrink-0 hidden md:block">
-          {teamName}
-        </span>
-      )}
-      <div className="flex items-center gap-1.5 shrink-0">
-        <div className="h-1.5 w-12 rounded-full bg-muted overflow-hidden">
-          <div className={`h-full rounded-full ${health === 'off_track' ? 'bg-red-500/70' : health === 'at_risk' ? 'bg-yellow-500/70' : health === 'on_track' ? 'bg-green-500/70' : 'bg-primary/60'}`} style={{ width: `${pct}%` }} />
+    <div>
+      <div className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
+        <QuietSearchInput
+          containerClassName="w-full sm:w-[220px]"
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search roadmap…"
+        />
+
+        <PMFilterTrigger
+          definitions={filterDefinitions}
+          values={filterValues}
+          visibleKeys={visibleFilterKeys}
+          activeCount={activeFilterCount}
+          onAdd={handleAddFilter}
+          onToggle={handleToggleFilter}
+        />
+
+        <div className="ml-auto flex items-center gap-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <QuietTextAction className="h-8 gap-1.5 px-1">
+                Group by {groupBy === 'objective' ? 'objective' : groupBy === 'team' ? 'team' : 'epic'}
+                <ArrowDown01Icon className="h-3 w-3 text-quiet-muted" />
+              </QuietTextAction>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onGroupByChange('epic')}>Epic</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onGroupByChange('objective')}>Objective</DropdownMenuItem>
+              {teams.length > 1 ? <DropdownMenuItem onSelect={() => onGroupByChange('team')}>Team</DropdownMenuItem> : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <QuietTextAction className="h-8 gap-1.5 px-1">
+                {zoom === 'month' ? 'Month' : 'Quarter'}
+                <ArrowDown01Icon className="h-3 w-3 text-quiet-muted" />
+              </QuietTextAction>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onZoomChange('month')}>Month</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onZoomChange('quarter')}>Quarter</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <span className="text-[11px] text-muted-foreground tabular-nums w-7 text-right">{pct}%</span>
       </div>
-    </button>
+
+      <PMFilterBar
+        definitions={filterDefinitions}
+        values={filterValues}
+        visibleKeys={visibleFilterKeys}
+        onToggle={handleToggleFilter}
+        onRemove={handleRemoveFilter}
+        onClearAll={handleClearFilters}
+      />
+    </div>
+  );
+}
+
+function PlanningQueue({
+  epics,
+  objectives,
+  slug,
+  teamNameMap,
+  canEdit,
+  savingEpicIds,
+  showAll,
+  onShowAllChange,
+  onUpdateField,
+  onUpdateObjectives,
+}: {
+  epics: RoadmapEpic[];
+  objectives: Objective[];
+  slug: string;
+  teamNameMap: Map<string, string>;
+  canEdit: boolean;
+  savingEpicIds: Set<string>;
+  showAll: boolean;
+  onShowAllChange: (value: boolean) => void;
+  onUpdateField: (epicId: string, patch: UpdateEpicRequest) => Promise<void>;
+  onUpdateObjectives: (epicId: string, objectiveIds: string[]) => Promise<void>;
+}) {
+  const navigate = useNavigate();
+  const visible = showAll ? epics : epics.slice(0, PLANNING_PREVIEW_COUNT);
+  const hasOverflow = epics.length > PLANNING_PREVIEW_COUNT;
+
+  return (
+    <section>
+      <QuietSectionHeader
+        title="Needs planning"
+        count={epics.length}
+        action={hasOverflow ? (
+          <QuietTextAction onClick={() => onShowAllChange(!showAll)}>
+            {showAll ? 'Show less' : `Show all ${epics.length}`}
+          </QuietTextAction>
+        ) : null}
+        className="mb-0.5"
+      />
+      <p className="mb-3 max-w-[680px] text-[12.5px] leading-5 text-quiet-text-tertiary">
+        Add the missing start and target dates to place these epics on the timeline. Objectives are optional.
+      </p>
+
+      <div className="border-y border-quiet-divider-strong">
+        <div className="hidden grid-cols-[minmax(220px,1.5fr)_minmax(180px,1fr)_120px_120px_minmax(150px,.8fr)] items-center gap-4 border-b border-quiet-divider-strong px-4 py-2 md:grid">
+          {['Epic', 'Objective', 'Start', 'Target', 'Team / progress'].map((label) => (
+            <span key={label} className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-quiet-muted">{label}</span>
+          ))}
+        </div>
+        {visible.map((entry) => {
+          const epic = entry.epic;
+          const health = HEALTH_CONFIG[epic.health || 'no_health'] ?? HEALTH_CONFIG.no_health;
+          const totalTasks = getEpicTaskCount(entry.stats);
+          const completedTasks = getEpicDoneTaskCount(entry.stats);
+          const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+          const start = parseValidDate(epic.planned_start_date);
+          const target = parseValidDate(epic.deadline);
+          const invalidRange = Boolean(start && target && target < start);
+          const saving = savingEpicIds.has(epic.id);
+          const teamName = epic.team_id ? teamNameMap.get(epic.team_id) : undefined;
+
+          return (
+            <div
+              key={epic.id}
+              className="relative grid grid-cols-2 gap-x-4 gap-y-3 border-b border-quiet-divider-light px-4 py-3 transition-colors last:border-b-0 hover:bg-quiet-row-hover md:grid-cols-[minmax(220px,1.5fr)_minmax(180px,1fr)_120px_120px_minmax(150px,.8fr)] md:items-center md:gap-y-0"
+            >
+              <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[3px] ${health.marker}`} />
+
+              <div className="col-span-2 min-w-0 md:col-span-1">
+                <button
+                  type="button"
+                  className="flex max-w-full min-w-0 items-center gap-2 text-left text-[13.5px] font-semibold tracking-[-0.008em] text-quiet-text-primary hover:text-quiet-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-primary"
+                  onClick={() => navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: epic.id } })}
+                >
+                  <Layers01Icon className="h-[15px] w-[15px] shrink-0 text-quiet-muted" />
+                  <span className="truncate">{epic.name}</span>
+                </button>
+                <p className="mt-0.5 truncate text-[11.5px] text-quiet-muted md:hidden">
+                  {teamName ?? 'No team'} · <span className={health.text}>{health.label}</span>
+                </p>
+              </div>
+
+              <div className="col-span-2 min-w-0 md:col-span-1">
+                <span className="mb-1 block text-[11.5px] font-semibold uppercase tracking-[0.06em] text-quiet-muted md:hidden">Objective</span>
+                <InlineEpicObjectivesControl
+                  entry={entry}
+                  allObjectives={objectives}
+                  onChange={onUpdateObjectives}
+                  disabled={!canEdit || saving}
+                />
+              </div>
+
+              <div className="min-w-0">
+                <span className="mb-1 block text-[11.5px] font-semibold uppercase tracking-[0.06em] text-quiet-muted md:hidden">Start</span>
+                <InlineEpicDateControl
+                  epicId={epic.id}
+                  value={epic.planned_start_date}
+                  emptyLabel="Add start"
+                  ariaLabel={`Set start date for ${epic.name}`}
+                  patchKey="planned_start_date"
+                  maxDate={target}
+                  onUpdate={onUpdateField}
+                  disabled={!canEdit || saving}
+                />
+              </div>
+
+              <div className="min-w-0">
+                <span className="mb-1 block text-[11.5px] font-semibold uppercase tracking-[0.06em] text-quiet-muted md:hidden">Target</span>
+                <InlineEpicDateControl
+                  epicId={epic.id}
+                  value={epic.deadline}
+                  emptyLabel="Add target"
+                  ariaLabel={`Set target date for ${epic.name}`}
+                  patchKey="deadline"
+                  minDate={start}
+                  onUpdate={onUpdateField}
+                  disabled={!canEdit || saving}
+                />
+              </div>
+
+              <div className="col-span-2 min-w-0 md:col-span-1">
+                <div className="flex min-w-0 items-center gap-1 text-[12.5px] text-quiet-text-tertiary">
+                  <span className="truncate">{teamName ?? 'No team'}</span>
+                  <span aria-hidden="true" className="text-quiet-muted">·</span>
+                  <span className={`shrink-0 ${health.text}`}>{health.label}</span>
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <div className="h-0.5 w-16 overflow-hidden bg-quiet-divider-strong">
+                    <div className="h-full bg-quiet-text-primary" style={{ width: `${progress}%` }} />
+                  </div>
+                  <span className="text-[11.5px] tabular-nums text-quiet-muted">
+                    {completedTasks}/{totalTasks} · {progress}%
+                  </span>
+                  {invalidRange ? <span className="text-[11.5px] text-quiet-accent">Check dates</span> : null}
+                  {saving ? <span className="text-[11.5px] text-quiet-muted">Saving…</span> : null}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function RoadmapSetupStep({
+  icon: Icon,
+  title,
+  detail,
+}: {
+  icon: typeof Layers01Icon;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex items-start gap-3 border-b border-quiet-divider-light py-3">
+      <Icon className="mt-0.5 h-[15px] w-[15px] shrink-0 text-quiet-muted" />
+      <span>
+        <span className="block text-sm font-medium text-quiet-text-primary">{title}</span>
+        <span className="mt-0.5 block text-[12.5px] text-quiet-text-tertiary">{detail}</span>
+      </span>
+    </div>
+  );
+}
+
+function RoadmapLoadingState() {
+  return (
+    <div aria-label="Loading roadmap" className="space-y-7">
+      <div className="flex flex-wrap items-center gap-3 border-b border-quiet-divider-strong pb-3">
+        <Skeleton className="h-9 w-[220px]" />
+        <Skeleton className="h-7 w-24" />
+        <Skeleton className="ml-auto h-7 w-32" />
+        <Skeleton className="h-7 w-20" />
+      </div>
+      <div>
+        <Skeleton className="mb-3 h-4 w-28" />
+        <div className="border-y border-quiet-divider-strong">
+          {[0, 1, 2].map((row) => (
+            <div key={row} className="grid grid-cols-[1.5fr_1fr_120px_120px_.8fr] gap-4 border-b border-quiet-divider-light px-4 py-3 last:border-b-0">
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <Skeleton className="mb-3 h-4 w-20" />
+        <Skeleton className="h-64 w-full rounded-none" />
+      </div>
+    </div>
   );
 }

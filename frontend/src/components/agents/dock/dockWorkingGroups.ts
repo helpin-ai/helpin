@@ -1,4 +1,5 @@
 import type { TranscriptSegment } from '@/components/agents/transcript';
+import { findLastMatchingIndex } from './findLastMatchingIndex';
 
 export interface DockWorkingGroupEntry {
   kind: 'working_group';
@@ -56,7 +57,7 @@ function completedRunTimeline(
 
   const flush = () => {
     if (interval.length === 0) return;
-    const finalAssistantIndex = interval.findLastIndex((segment) => (
+    const finalAssistantIndex = findLastMatchingIndex(interval, (segment) => (
       segment.kind === 'assistant' && !segment.streaming
     ));
     const work = finalAssistantIndex > 0 ? interval.slice(0, finalAssistantIndex) : [];

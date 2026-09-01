@@ -176,13 +176,15 @@ describe('EmailTimeline', () => {
     expect([...container.querySelectorAll('button')].some((button) => button.textContent?.trim() === 'Send reply')).toBe(false);
   });
 
-  it('keeps the shared PM divider editor in a bottom-pinned reply region', () => {
+  it('keeps the design-system conversation composer in a bottom-pinned reply region', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/crm/EmailTimeline.tsx'), 'utf8');
+    const composer = readFileSync(resolve(process.cwd(), 'src/components/crm/CRMEmailReplyComposer.tsx'), 'utf8');
 
     expect(source).toContain('id="crm-thread-reply"');
     expect(source).toContain('shrink-0 overflow-y-auto border-t');
-    expect(source).toContain('variant="divider"');
-    expect(source).toContain('contentVariant="pm"');
+    expect(source).toContain('<CRMEmailReplyComposer');
+    expect(composer).toContain('<QuietConversationComposer');
+    expect(composer).toContain('<QuietComposerToolbar');
   });
 
   it('uses the shared PM rich-text typography for thread subjects and message bodies', () => {

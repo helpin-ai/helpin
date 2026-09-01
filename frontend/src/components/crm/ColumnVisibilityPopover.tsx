@@ -1,15 +1,16 @@
-import type { Table } from '@tanstack/react-table';
+import type { Table, VisibilityState } from '@tanstack/react-table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ViewIcon } from '@/lib/icons';
+import { ColumnsThreeCogIcon } from '@/lib/icons';
 
 const NON_TOGGLEABLE = new Set(['select', 'actions']);
 
 interface ColumnVisibilityPopoverProps<T> {
   table: Table<T>;
+  visibilityState: VisibilityState;
 }
 
-export function ColumnVisibilityPopover<T>({ table }: ColumnVisibilityPopoverProps<T>) {
+export function ColumnVisibilityPopover<T>({ table, visibilityState }: ColumnVisibilityPopoverProps<T>) {
   const columns = table
     .getAllLeafColumns()
     .filter((col) => !NON_TOGGLEABLE.has(col.id));
@@ -21,7 +22,7 @@ export function ColumnVisibilityPopover<T>({ table }: ColumnVisibilityPopoverPro
           className="flex h-7 items-center gap-1 rounded-md border border-input bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted"
           title="Toggle columns"
         >
-          <ViewIcon className="h-3.5 w-3.5" />
+          <ColumnsThreeCogIcon className="h-4 w-4" />
           Columns
         </button>
       </PopoverTrigger>
@@ -41,7 +42,7 @@ export function ColumnVisibilityPopover<T>({ table }: ColumnVisibilityPopoverPro
                 className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted"
               >
                 <Checkbox
-                  checked={col.getIsVisible()}
+                  checked={visibilityState[col.id] !== false}
                   onCheckedChange={(checked) => col.toggleVisibility(!!checked)}
                 />
                 <span className="capitalize">{label}</span>

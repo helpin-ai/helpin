@@ -217,6 +217,139 @@ func (r *CRMDealRepository) Create(ctx context.Context, deal *model.CRMDeal) err
 	return nil
 }
 
+// ObjectExists reports whether a supported CRM customer object belongs to the workspace.
+func (r *CRMDealRepository) ObjectExists(ctx context.Context, workspaceID, objectType, objectID string) (bool, error) {
+	var table string
+	switch objectType {
+	case model.CRMObjectContact:
+		table = "crm_contacts"
+	case model.CRMObjectCompany:
+		table = "crm_companies"
+	default:
+		return false, fmt.Errorf("unsupported customer object type")
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).Table(table).
+		Where("workspace_id = ? AND id = ?", workspaceID, objectID).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check %s: %w", objectType, err)
+	}
+	return count > 0, nil
+}
+
+// GetPrimaryCompanyIDForContact returns the contact's explicitly primary company.
+func (r *CRMDealRepository) GetPrimaryCompanyIDForContact(ctx context.Context, workspaceID, contactID string) (string, error) {
+	var row struct{ CompanyID string }
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT CASE
+			WHEN from_object_type = 'company' THEN from_object_id
+			ELSE to_object_id
+		END AS company_id
+		FROM crm_associations
+		WHERE workspace_id = ? AND association_label = 'primary'
+		  AND ((from_object_type = 'contact' AND from_object_id = ? AND to_object_type = 'company')
+		    OR (to_object_type = 'contact' AND to_object_id = ? AND from_object_type = 'company'))
+		ORDER BY created_at ASC, id ASC
+		LIMIT 1`, workspaceID, contactID, contactID).Scan(&row).Error
+	if err != nil {
+		return "", fmt.Errorf("get contact primary company: %w", err)
+	}
+	return row.CompanyID, nil
+}
+
+// CreateWithCustomer creates a deal and its canonical customer relationships atomically.
+func (r *CRMDealRepository) CreateWithCustomer(ctx context.Context, deal *model.CRMDeal, customer model.CRMDealCustomer) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(deal).Error; err != nil {
+			return fmt.Errorf("create deal: %w", err)
+		}
+		if err := ensureDealAssociation(tx, deal.WorkspaceID, deal.ID, customer.CustomerType, customer.CustomerID, model.CRMAssociationLabelDealCustomer); err != nil {
+			return err
+		}
+		if customer.CustomerType == model.CRMObjectCompany && customer.PrimaryContactID != "" {
+			if err := ensureDealAssociation(tx, deal.WorkspaceID, deal.ID, model.CRMObjectContact, customer.PrimaryContactID, model.CRMAssociationLabelDealPrimaryContact); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// ReplaceCustomer atomically assigns the one canonical customer and optional primary contact.
+func (r *CRMDealRepository) ReplaceCustomer(ctx context.Context, workspaceID, dealID string, customer model.CRMDealCustomer) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&model.CRMDeal{}).Where("workspace_id = ? AND id = ?", workspaceID, dealID).Count(&count).Error; err != nil {
+			return fmt.Errorf("check deal: %w", err)
+		}
+		if count == 0 {
+			return fmt.Errorf("deal not found")
+		}
+		if err := tx.Model(&model.CRMAssociation{}).
+			Where("workspace_id = ? AND from_object_type = ? AND from_object_id = ? AND association_label IN ?", workspaceID, model.CRMObjectDeal, dealID, []string{model.CRMAssociationLabelDealCustomer, model.CRMAssociationLabelDealPrimaryContact}).
+			Update("association_label", nil).Error; err != nil {
+			return fmt.Errorf("clear deal customer labels: %w", err)
+		}
+		if err := ensureDealAssociation(tx, workspaceID, dealID, customer.CustomerType, customer.CustomerID, model.CRMAssociationLabelDealCustomer); err != nil {
+			return err
+		}
+		if customer.CustomerType == model.CRMObjectCompany && customer.PrimaryContactID != "" {
+			if err := ensureDealAssociation(tx, workspaceID, dealID, model.CRMObjectContact, customer.PrimaryContactID, model.CRMAssociationLabelDealPrimaryContact); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// GetCustomer returns the canonical customer relationships, if the deal has been resolved.
+func (r *CRMDealRepository) GetCustomer(ctx context.Context, workspaceID, dealID string) (*model.CRMDealCustomer, error) {
+	var associations []model.CRMAssociation
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND from_object_type = ? AND from_object_id = ? AND association_label IN ?", workspaceID, model.CRMObjectDeal, dealID, []string{model.CRMAssociationLabelDealCustomer, model.CRMAssociationLabelDealPrimaryContact}).
+		Order("created_at ASC, id ASC").Find(&associations).Error; err != nil {
+		return nil, fmt.Errorf("get deal customer: %w", err)
+	}
+	var customer model.CRMDealCustomer
+	for _, assoc := range associations {
+		if assoc.AssociationLabel == nil {
+			continue
+		}
+		switch *assoc.AssociationLabel {
+		case model.CRMAssociationLabelDealCustomer:
+			customer.CustomerType, customer.CustomerID = assoc.ToObjectType, assoc.ToObjectID
+		case model.CRMAssociationLabelDealPrimaryContact:
+			customer.PrimaryContactID = assoc.ToObjectID
+		}
+	}
+	if customer.CustomerID == "" {
+		return nil, nil
+	}
+	if customer.CustomerType == model.CRMObjectContact {
+		customer.PrimaryContactID = customer.CustomerID
+	}
+	return &customer, nil
+}
+
+func ensureDealAssociation(tx *gorm.DB, workspaceID, dealID, targetType, targetID, label string) error {
+	var assoc model.CRMAssociation
+	err := tx.Where("workspace_id = ? AND from_object_type = ? AND from_object_id = ? AND to_object_type = ? AND to_object_id = ?", workspaceID, model.CRMObjectDeal, dealID, targetType, targetID).First(&assoc).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		assoc = model.CRMAssociation{WorkspaceID: workspaceID, FromObjectType: model.CRMObjectDeal, FromObjectID: dealID, ToObjectType: targetType, ToObjectID: targetID, AssociationLabel: &label}
+		if err := tx.Create(&assoc).Error; err != nil {
+			return fmt.Errorf("create deal association: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("find deal association: %w", err)
+	}
+	if err := tx.Model(&assoc).Update("association_label", label).Error; err != nil {
+		return fmt.Errorf("label deal association: %w", err)
+	}
+	return nil
+}
+
 // Update updates a deal.
 func (r *CRMDealRepository) Update(ctx context.Context, deal *model.CRMDeal) error {
 	if err := r.db.WithContext(ctx).Save(deal).Error; err != nil {
@@ -227,10 +360,15 @@ func (r *CRMDealRepository) Update(ctx context.Context, deal *model.CRMDeal) err
 
 // Delete removes a deal.
 func (r *CRMDealRepository) Delete(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.CRMDeal{}).Error; err != nil {
-		return fmt.Errorf("delete deal: %w", err)
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("(from_object_type = ? AND from_object_id = ?) OR (to_object_type = ? AND to_object_id = ?)", model.CRMObjectDeal, id, model.CRMObjectDeal, id).Delete(&model.CRMAssociation{}).Error; err != nil {
+			return fmt.Errorf("delete deal associations: %w", err)
+		}
+		if err := tx.Where("id = ?", id).Delete(&model.CRMDeal{}).Error; err != nil {
+			return fmt.Errorf("delete deal: %w", err)
+		}
+		return nil
+	})
 }
 
 // SeedDefaultPipeline creates a default "Sales Pipeline" with HubSpot-standard stages

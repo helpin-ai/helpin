@@ -6,7 +6,6 @@ import {
   FolderOpenIcon,
   GitBranchIcon,
   GlobeIcon,
-  Search01Icon,
   ChartIncreaseIcon,
   File01Icon,
   Tick01Icon,
@@ -19,8 +18,7 @@ import {
   BookOpen01Icon,
 } from '@/lib/icons';
 
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { QuietEmptyState, QuietPageHeader, QuietSearchInput } from '@/components/design-system/quiet';
 import { useAutomationToolCatalog } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
 import type { AgentPresetKey, ToolCatalogEntry } from '@/lib/pmTypes';
@@ -60,7 +58,7 @@ function PresetBadge({ preset }: { preset: AgentPresetKey }) {
   const style = PRESET_STYLES[preset];
   if (!style) return null;
   return (
-    <span className={cn('inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium', style.className)}>
+    <span className="inline-flex items-center text-[11.5px] font-semibold uppercase tracking-[0.03em] text-quiet-text-tertiary">
       {style.label}
     </span>
   );
@@ -198,9 +196,7 @@ function CategorySection({
         {open ? <ArrowDown01Icon className="h-4 w-4 text-muted-foreground" /> : <ArrowRight01Icon className="h-4 w-4 text-muted-foreground" />}
         <Icon className="h-4 w-4 text-muted-foreground" />
         <span className="text-xs font-medium uppercase tracking-wide">{category}</span>
-        <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
-          {tools.length}
-        </Badge>
+        <span className="ml-1 text-[11.5px] font-normal tabular-nums text-quiet-muted">{tools.length}</span>
       </button>
 
       {open && (
@@ -261,52 +257,44 @@ export function ToolCatalogContent({
 
   if (loading) {
     return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-        Loading tool catalog...
-      </div>
+      <p className="border-y border-quiet-divider-strong py-8 text-sm text-quiet-text-tertiary">Loading tool catalog…</p>
     );
   }
 
   if (!catalog || catalog.tools.length === 0) {
     return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-        No tools available.
-      </div>
+      <QuietEmptyState title="No tools available" description="Tools will appear here when the workspace runtime makes them available to agents." />
     );
   }
 
   return (
     <div className={cn('space-y-6', !embedded && 'mx-auto max-w-5xl')}>
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         {!embedded && (
-          <div>
-            <h1 className="text-xl font-semibold">Tool Catalog</h1>
-            <p className="text-sm text-muted-foreground">
-              {catalog.tools.length} tools across {catalog.categories.length} categories
-            </p>
-          </div>
-        )}
-        <div className={cn('relative w-full', embedded ? 'sm:max-w-sm' : 'sm:w-64')}>
-          <Search01Icon className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search tools..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+          <QuietPageHeader
+            title="Tool Catalog"
+            description={`${catalog.tools.length} tools across ${catalog.categories.length} categories`}
           />
-        </div>
+        )}
+        <QuietSearchInput
+          containerClassName={cn('w-full', embedded ? 'sm:max-w-sm' : 'sm:w-64')}
+          aria-label="Search tools"
+          placeholder="Search tools..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
-      {/* Category filter pills */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* Secondary filters stay as plain text; no pills at this hierarchy. */}
+      <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-quiet-divider-light pb-3">
         <button
           type="button"
           className={cn(
-            'rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+            'text-[12.5px] transition-colors focus-visible:outline-none',
             activeCategory === null
-              ? 'border-primary/30 bg-primary/10 text-primary'
-              : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
+              ? 'font-semibold text-quiet-text-primary'
+              : 'font-normal text-quiet-text-tertiary hover:text-quiet-text-primary',
           )}
           onClick={() => setActiveCategory(null)}
         >
@@ -319,10 +307,10 @@ export function ToolCatalogContent({
               key={cat}
               type="button"
               className={cn(
-                'flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                'flex items-center gap-1 text-[12.5px] transition-colors focus-visible:outline-none',
                 activeCategory === cat
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
+                  ? 'font-semibold text-quiet-text-primary'
+                  : 'font-normal text-quiet-text-tertiary hover:text-quiet-text-primary',
               )}
               onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
             >
@@ -335,9 +323,7 @@ export function ToolCatalogContent({
 
       {/* Tool list */}
       {grouped.length === 0 ? (
-        <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-          No tools match your search.
-        </div>
+        <QuietEmptyState title="No tools match your search" description="Clear a category or try a broader search to browse the tool catalog." />
       ) : (
         <div>
           {grouped.map(({ category, tools }) => (

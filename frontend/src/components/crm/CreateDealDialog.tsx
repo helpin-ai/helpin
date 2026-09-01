@@ -1,15 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { QuietPrimaryAction, QuietSearchInput, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { Building03Icon, UserIcon } from '@/lib/icons';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useCreateAssociation, useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
+import { useCreateDeal, usePipelines, useContacts } from '@/hooks/queries';
+import { crmSearchService } from '@/lib/services/crmService';
 import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
-import type { CRMDeal } from '@/lib/crmTypes';
+import type { CRMDeal, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 
 interface CreateDealDialogProps {
@@ -20,6 +21,13 @@ interface CreateDealDialogProps {
   onDealCreated?: (deal: CRMDeal) => void;
 }
 
+interface SelectedCustomer {
+  id: string;
+  type: Extract<CRMObjectType, 'contact' | 'company'>;
+  name: string;
+  detail?: string;
+}
+
 const currencyOptions = ['USD', 'EUR', 'GBP', 'CAD', 'AUD'];
 
 export function CreateDealDialog({ open, onOpenChange, companyContext, contactContext, onDealCreated }: CreateDealDialogProps) {
@@ -28,12 +36,21 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, contactCo
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const createDeal = useCreateDeal(wsId);
-  const createAssociation = useCreateAssociation(wsId);
   const { data: pipelines } = usePipelines(wsId);
   const { data: contacts } = useContacts(wsId);
 
+  const contextualCustomer = useMemo<SelectedCustomer | null>(() => {
+    if (companyContext) return { id: companyContext.id, type: 'company', name: companyContext.name };
+    if (contactContext) return { id: contactContext.id, type: 'contact', name: contactContext.name };
+    return null;
+  }, [companyContext, contactContext]);
+
   const [name, setName] = useState('');
-  const [contactId, setContactId] = useState('');
+  const [customer, setCustomer] = useState<SelectedCustomer | null>(contextualCustomer);
+  const [customerQuery, setCustomerQuery] = useState('');
+  const [customerResults, setCustomerResults] = useState<CRMSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [primaryContactId, setPrimaryContactId] = useState('');
   const [pipelineId, setPipelineId] = useState('');
   const [stageId, setStageId] = useState('');
   const [amount, setAmount] = useState('');
@@ -41,47 +58,62 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, contactCo
   const [closeDate, setCloseDate] = useState('');
   const [probability, setProbability] = useState('');
 
-  const selectedContactId = contactContext?.id ?? contactId;
+	const effectivePipelineId = pipelineId || pipelines?.[0]?.id || '';
+	const selectedPipeline = pipelines?.find((pipeline) => pipeline.id === effectivePipelineId);
+	const stages = selectedPipeline?.stages ?? [];
+	const effectiveStageId = stageId || [...stages].sort((a, b) => a.position - b.position)[0]?.id || '';
 
-  const selectedPipeline = pipelines?.find((p) => p.id === pipelineId);
-  const stages = selectedPipeline?.stages ?? [];
-
-  // Auto-select first pipeline
-  if (pipelines && pipelines.length > 0 && !pipelineId) {
-    setPipelineId(pipelines[0].id);
-    if (pipelines[0].stages && pipelines[0].stages.length > 0) {
-      setStageId(pipelines[0].stages[0].id);
+	useEffect(() => {
+		if (!open || contextualCustomer || customer || customerQuery.trim().length < 2) {
+			return;
     }
-  }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      const response = await crmSearchService.search(wsId, customerQuery.trim());
+      if (cancelled) return;
+      setCustomerResults((response.data ?? []).filter((item) => item.type === 'contact' || item.type === 'company'));
+      setSearching(false);
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [contextualCustomer, customer, customerQuery, open, wsId]);
 
   const resetForm = () => {
     setName('');
-    setContactId(contactContext?.id ?? '');
+    setCustomer(contextualCustomer);
+    setCustomerQuery('');
+    setCustomerResults([]);
+    setPrimaryContactId('');
     setAmount('');
     setCurrency('USD');
     setCloseDate('');
     setProbability('');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !selectedContactId || !pipelineId || !stageId) return;
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+		if (!name.trim() || !customer || !effectivePipelineId || !effectiveStageId) return;
 
     let deal: CRMDeal;
     try {
       deal = await createDeal.mutateAsync({
         workspace_id: wsId,
         name: name.trim(),
-        contact_id: selectedContactId,
-        pipeline_id: pipelineId,
-        stage_id: stageId,
-        amount: amount ? parseFloat(amount) : undefined,
+        ...(customer.type === 'company'
+          ? { company_id: customer.id, contact_id: primaryContactId || undefined }
+          : { contact_id: customer.id }),
+			pipeline_id: effectivePipelineId,
+			stage_id: effectiveStageId,
+        amount: amount ? Number.parseFloat(amount) : undefined,
         currency,
         close_date: closeDate ? `${closeDate}T00:00:00Z` : undefined,
-        probability: probability ? parseInt(probability) : undefined,
+        probability: probability ? Number.parseInt(probability, 10) : undefined,
       });
-    } catch {
-      toast.error('Failed to create deal');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to create deal');
       return;
     }
 
@@ -89,28 +121,7 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, contactCo
       if (!currentWorkspace?.slug) return;
       openDealRoute(navigate as never, location, currentWorkspace.slug, deal.id);
     };
-
-    if (companyContext) {
-      try {
-        await createAssociation.mutateAsync({
-          workspace_id: wsId,
-          from_object_type: 'deal',
-          from_object_id: deal.id,
-          to_object_type: 'company',
-          to_object_id: companyContext.id,
-        });
-      } catch {
-        onOpenChange(false);
-        resetForm();
-        toast.warning(`Deal created, but it could not be linked to ${companyContext.name}.`, {
-          action: { label: 'Open deal', onClick: openDeal },
-        });
-        return;
-      }
-    }
-
     onDealCreated?.(deal);
-
     showEntityCreatedToast({
       entityLabel: 'Deal',
       title: deal.name,
@@ -123,91 +134,102 @@ export function CreateDealDialog({ open, onOpenChange, companyContext, contactCo
     resetForm();
   };
 
+  const selectCustomer = (result: CRMSearchResult) => {
+    if (result.type !== 'contact' && result.type !== 'company') return;
+    setCustomer({ id: result.id, type: result.type, name: result.name, detail: result.detail });
+    setCustomerQuery('');
+    setCustomerResults([]);
+    setPrimaryContactId('');
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Create Deal</DialogTitle>
-          <DialogDescription className="sr-only">
-            Create a deal linked to the selected CRM contact.
-          </DialogDescription>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader className="border-b border-quiet-divider-strong pb-3">
+          <DialogTitle className="text-[20px] font-semibold tracking-[-0.018em]">Create deal</DialogTitle>
+          <DialogDescription className="text-sm text-quiet-text-tertiary">Every deal belongs to one company or independent contact.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="dealName">Deal Name *</Label>
-            <Input id="dealName" value={name} onChange={(e) => setName(e.target.value)} required />
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-1">
+            <Label htmlFor="dealName" className="text-sm font-medium text-quiet-text-secondary">Deal name</Label>
+            <QuietUnderlineInput id="dealName" value={name} onChange={(event) => setName(event.target.value)} placeholder="Name the opportunity" required />
           </div>
-          <div className="space-y-2">
-            <Label>Contact *</Label>
-            <Select value={selectedContactId} onValueChange={setContactId} disabled={!!contactContext}>
-              <SelectTrigger><SelectValue placeholder="Select contact" /></SelectTrigger>
-              <SelectContent>
-                {contacts?.data?.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.first_name} {c.last_name}{c.email ? ` (${c.email})` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium text-quiet-text-secondary">Customer</Label>
+            {customer ? (
+              <div className="flex items-center gap-2 border-b border-quiet-field py-2 text-sm">
+                {customer.type === 'company' ? <Building03Icon className="h-4 w-4 text-quiet-muted" /> : <UserIcon className="h-4 w-4 text-quiet-muted" />}
+                <span className="min-w-0 flex-1 truncate font-medium text-quiet-text-primary">{customer.name}</span>
+                <span className="text-[11.5px] uppercase tracking-[0.03em] text-quiet-muted">{customer.type}</span>
+                {!contextualCustomer ? <QuietTextAction type="button" onClick={() => setCustomer(null)}>Change</QuietTextAction> : null}
+              </div>
+            ) : (
+              <div>
+                <QuietSearchInput
+                  value={customerQuery}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setCustomerQuery(value);
+                    if (value.trim().length < 2) {
+                      setCustomerResults([]);
+                      setSearching(false);
+                    }
+                  }}
+                  placeholder="Search contacts or companies"
+                  autoFocus
+                />
+                {customerQuery.trim().length >= 2 ? (
+                  <div className="max-h-52 overflow-y-auto border-b border-quiet-divider-strong">
+                    {searching ? <p className="py-3 text-sm text-quiet-muted">Searching…</p> : null}
+                    {!searching && customerResults.length === 0 ? <p className="py-3 text-sm text-quiet-muted">No matching customer</p> : null}
+                    {customerResults.map((result) => (
+                      <button key={`${result.type}:${result.id}`} type="button" onClick={() => selectCustomer(result)} className="flex w-full items-center gap-2 border-t border-quiet-divider-light py-2.5 text-left hover:bg-quiet-row-hover">
+                        {result.type === 'company' ? <Building03Icon className="h-4 w-4 text-quiet-muted" /> : <UserIcon className="h-4 w-4 text-quiet-muted" />}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-quiet-text-primary">{result.name}</span>
+                          <span className="block truncate text-[11.5px] text-quiet-muted">{result.detail}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
+            {customer?.type === 'contact' ? <p className="text-[11.5px] text-quiet-muted">If this contact has a primary company, that company becomes the customer.</p> : null}
           </div>
-          {pipelines && pipelines.length > 0 && (
-            <div className="space-y-2">
-              <Label>Pipeline</Label>
-              <Select value={pipelineId} onValueChange={(v) => { setPipelineId(v); setStageId(''); }}>
-                <SelectTrigger><SelectValue placeholder="Select pipeline" /></SelectTrigger>
+
+          {customer?.type === 'company' ? (
+            <div className="space-y-1">
+              <Label className="text-sm font-medium text-quiet-text-secondary">Primary contact <span className="font-normal text-quiet-muted">optional</span></Label>
+              <Select value={primaryContactId || '__none__'} onValueChange={(value) => setPrimaryContactId(value === '__none__' ? '' : value)}>
+                <SelectTrigger variant="underline" className="w-full px-0.5"><SelectValue placeholder="No primary contact" /></SelectTrigger>
                 <SelectContent>
-                  {pipelines.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
+                  <SelectItem value="__none__">No primary contact</SelectItem>
+                  {contacts?.data?.map((contact) => <SelectItem key={contact.id} value={contact.id}>{contact.first_name} {contact.last_name}{contact.email ? ` · ${contact.email}` : ''}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-          )}
-          {stages.length > 0 && (
-            <div className="space-y-2">
-              <Label>Stage</Label>
-              <Select value={stageId} onValueChange={setStageId}>
-                <SelectTrigger><SelectValue placeholder="Select stage" /></SelectTrigger>
-                <SelectContent>
-                  {stages.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <div className="grid grid-cols-[1fr_100px] gap-2">
-            <div className="space-y-2">
-              <Label htmlFor="dealAmount">Amount</Label>
-              <Input id="dealAmount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
-            </div>
-            <div className="space-y-2">
-              <Label>Currency</Label>
-              <Select value={currency} onValueChange={setCurrency}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {currencyOptions.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          ) : null}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+			<div className="space-y-1"><Label className="text-sm font-medium text-quiet-text-secondary">Pipeline</Label><Select value={effectivePipelineId} onValueChange={(value) => { setPipelineId(value); setStageId(''); }}><SelectTrigger variant="underline" className="w-full px-0.5"><SelectValue placeholder="Select pipeline" /></SelectTrigger><SelectContent>{pipelines?.map((pipeline) => <SelectItem key={pipeline.id} value={pipeline.id}>{pipeline.name}</SelectItem>)}</SelectContent></Select></div>
+			<div className="space-y-1"><Label className="text-sm font-medium text-quiet-text-secondary">Stage</Label><Select value={effectiveStageId} onValueChange={setStageId}><SelectTrigger variant="underline" className="w-full px-0.5"><SelectValue placeholder="Select stage" /></SelectTrigger><SelectContent>{stages.map((stage) => <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>)}</SelectContent></Select></div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="closeDate">Close Date</Label>
-              <Input id="closeDate" type="date" value={closeDate} onChange={(e) => setCloseDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="probability">Probability %</Label>
-              <Input id="probability" type="number" min="0" max="100" value={probability} onChange={(e) => setProbability(e.target.value)} placeholder="0" />
-            </div>
+
+          <div className="grid grid-cols-[minmax(0,1fr)_90px] gap-4">
+            <div className="space-y-1"><Label htmlFor="dealAmount" className="text-sm font-medium text-quiet-text-secondary">Amount</Label><QuietUnderlineInput id="dealAmount" type="number" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" /></div>
+            <div className="space-y-1"><Label className="text-sm font-medium text-quiet-text-secondary">Currency</Label><Select value={currency} onValueChange={setCurrency}><SelectTrigger variant="underline" className="w-full px-0.5"><SelectValue /></SelectTrigger><SelectContent>{currencyOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent></Select></div>
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={createDeal.isPending || createAssociation.isPending || !name.trim() || !selectedContactId || !pipelineId || !stageId}>
-              {createDeal.isPending || createAssociation.isPending ? 'Creating...' : 'Create'}
-            </Button>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1"><Label htmlFor="closeDate" className="text-sm font-medium text-quiet-text-secondary">Close date</Label><QuietUnderlineInput id="closeDate" type="date" value={closeDate} onChange={(event) => setCloseDate(event.target.value)} /></div>
+            <div className="space-y-1"><Label htmlFor="probability" className="text-sm font-medium text-quiet-text-secondary">Probability</Label><QuietUnderlineInput id="probability" type="number" min="0" max="100" value={probability} onChange={(event) => setProbability(event.target.value)} placeholder="Percent" /></div>
+          </div>
+
+          <DialogFooter className="border-t border-quiet-divider-strong pt-3">
+            <QuietTextAction type="button" onClick={() => onOpenChange(false)}>Cancel</QuietTextAction>
+			<QuietPrimaryAction type="submit" disabled={createDeal.isPending || !name.trim() || !customer || !effectivePipelineId || !effectiveStageId}>{createDeal.isPending ? 'Creating…' : 'Create deal'}</QuietPrimaryAction>
           </DialogFooter>
         </form>
       </DialogContent>

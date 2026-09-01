@@ -55,21 +55,24 @@ func (h *DocsHandler) PublicAnswerQuestion(w http.ResponseWriter, r *http.Reques
 	if response.Status != model.HelpcenterAnswerStatusAnswered && service.IsMeaningfulCoverageSearchQuery(req.Query) {
 		sourceSignal = "no_results"
 	}
-	if !response.Cached {
-		h.recordSupportEvent(service.SupportEventInput{
-			WorkspaceID:  cfg.WorkspaceID,
-			EventType:    model.SupportEventWidgetSearchPerformed,
-			ActorType:    model.SupportEventActorCustomer,
-			Channel:      "helpcenter",
-			SourceSignal: sourceSignal,
-			IssueSummary: req.Query,
-			Metadata: map[string]any{
-				"type":   "ai_answer",
-				"query":  req.Query,
-				"status": response.Status,
-			},
-		})
-	}
+	// Recorded on every ask, including cache hits. The answer cache is keyed on
+	// the question, so suppressing repeats here would discard exactly the
+	// evidence that a question is being asked often.
+	h.recordSupportEvent(service.SupportEventInput{
+		WorkspaceID:  cfg.WorkspaceID,
+		EventType:    model.SupportEventWidgetSearchPerformed,
+		AnonymousID:  service.NormalizeVisitorAnonymousID(req.AnonymousID),
+		ActorType:    model.SupportEventActorCustomer,
+		Channel:      "helpcenter",
+		SourceSignal: sourceSignal,
+		IssueSummary: req.Query,
+		Metadata: map[string]any{
+			"type":   "ai_answer",
+			"query":  req.Query,
+			"status": response.Status,
+			"cached": response.Cached,
+		},
+	})
 
 	w.Header().Set("X-Robots-Tag", "noindex")
 	w.Header().Set("Cache-Control", "no-store")

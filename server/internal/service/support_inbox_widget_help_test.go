@@ -354,7 +354,7 @@ func TestSupportInboxServiceSearchWidgetHelpArticles_UsesSelectedHelpSpaces(t *t
 	)
 	svc.SetDocsSearchRepository(repository.NewDocsSearchRepository(db))
 
-	results, err := svc.SearchWidgetHelpArticles(ctx, widgetKey, "reset", 8)
+	results, err := svc.SearchWidgetHelpArticles(ctx, widgetKey, "reset", 8, "")
 	if err != nil {
 		t.Fatalf("SearchWidgetHelpArticles: %v", err)
 	}
@@ -490,7 +490,7 @@ func TestSupportInboxServiceSearchWidgetHelpArticles_RecordsNoResultsEvent(t *te
 	svc.SetDocsSearchRepository(repository.NewDocsSearchRepository(db))
 	svc.SetSupportEventRecorder(recorder)
 
-	results, err := svc.SearchWidgetHelpArticles(ctx, widgetKey, "analytics reports", 8)
+	results, err := svc.SearchWidgetHelpArticles(ctx, widgetKey, "analytics reports", 8, "anon-visitor-1")
 	if err != nil {
 		t.Fatalf("SearchWidgetHelpArticles: %v", err)
 	}
@@ -515,6 +515,9 @@ func TestSupportInboxServiceSearchWidgetHelpArticles_RecordsNoResultsEvent(t *te
 	}
 	if event.Metadata["result_count"] != 0 {
 		t.Fatalf("event.metadata.result_count = %#v, want 0", event.Metadata["result_count"])
+	}
+	if event.AnonymousID == nil || *event.AnonymousID != "anon-visitor-1" {
+		t.Fatalf("event.anonymous_id = %v, want anon-visitor-1", event.AnonymousID)
 	}
 }
 

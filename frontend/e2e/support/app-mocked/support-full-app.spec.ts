@@ -190,3 +190,49 @@ test('real support route replaces stale presence from authoritative snapshots af
   await expect(page.getByRole('button', { name: /Charlie is typing…/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /Alice is typing…/ })).toHaveCount(0)
 })
+
+test('mobile support keeps Inbox mounted and opens conversations and Details as full-screen sheets', async ({ page, baseURL }) => {
+  test.setTimeout(60_000)
+  await installSupportAppMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`${baseURL}/w/${WORKSPACE_SLUG}/support`)
+  await page.waitForFunction(() => window.__supportE2E?.isReady === true)
+
+  const row = conversationRow(page)
+  await expect(row).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_SLUG}/support(?:\\?.*)?$`))
+  await expect(page.getByRole('button', { name: 'Return to Inbox' })).toHaveCount(0)
+
+  await row.click()
+
+  await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_SLUG}/support/${CONVERSATION_ID}`))
+  await expect(page.getByRole('button', { name: 'Return to Inbox' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Create task' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Resolve conversation' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Open conversation details' }).click()
+  await expect(page.getByRole('heading', { name: 'Details' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close conversation details' }).click()
+  await expect(page.getByRole('heading', { name: 'Details' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Return to Inbox' }).click()
+  await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_SLUG}/support(?:\\?.*)?$`))
+  await expect(row).toBeVisible()
+  await expect(row).toBeFocused()
+})
+
+test('mobile support direct links return to Inbox without relying on route history', async ({ page, baseURL }) => {
+  test.setTimeout(60_000)
+  await installSupportAppMocks(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`${baseURL}/w/${WORKSPACE_SLUG}/support/${CONVERSATION_ID}`)
+  await page.waitForFunction(() => window.__supportE2E?.isReady === true)
+  await expect(page.getByRole('button', { name: 'Return to Inbox' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Return to Inbox' }).click()
+
+  await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_SLUG}/support(?:\\?.*)?$`))
+  await expect(conversationRow(page)).toBeVisible()
+})

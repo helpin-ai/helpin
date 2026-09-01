@@ -31,6 +31,7 @@
       "@/lib/supportInboxRouting": ["../../frontend/src/lib/supportInboxRouting.ts"],
       "@/lib/favicon": ["../../frontend/src/lib/favicon.ts"],
       "@/lib/teamMemberAvatar": ["../../frontend/src/lib/teamMemberAvatar.ts"],
+      "@/lib/avatarColor": ["../../frontend/src/lib/avatarColor.ts"],
       "@/lib/pmTypes": ["../../frontend/src/lib/pmTypes.ts"],
       "@/stores/supportInboxStore": ["../../frontend/src/stores/supportInboxStore.ts"],
       "@/components/support/helpers": ["../../frontend/src/components/support/helpers.ts"],

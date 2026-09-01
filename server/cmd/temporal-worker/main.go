@@ -601,9 +601,9 @@ func main() {
 	// Deal management activities.
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
 	crmAutonomyRepo := repository.NewCRMAutonomyRepository(db)
-	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
+	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo).SetDealService(crmDealService)
 	dealMgmtActivities := temporalapp.NewDealManagementActivities(dealAutomationService)
-	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
+	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo).SetDealService(crmDealService)
 	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
 	recallMeetingProvider := meetingcapture.NewRecallProvider(meetingcapture.RecallConfig{
 		BaseURL:       cfg.RecallBaseURL,

@@ -12,14 +12,13 @@ import {
   Mail01Icon,
   Message01Icon,
   PlusSignIcon,
-  Search01Icon,
   Tag01Icon,
   TelephoneIcon,
   UserIcon,
 } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { CreateContactDialog } from '@/components/crm/CreateContactDialog';
 import { useContact, useContactAssociations, useContactSupportConversations, useUpdateContact } from '@/hooks/queries/useCRM';
@@ -378,15 +377,11 @@ function UnlinkedCustomerState({
         Create and link contact
       </Button>
       <div className="space-y-2">
-        <div className="relative">
-          <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search existing contacts"
-            className="h-9 pl-9 text-sm"
-          />
-        </div>
+        <QuietSearchInput
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="Search existing contacts"
+        />
         <div className="max-h-64 space-y-1 overflow-y-auto">
           {searching && (
             <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">

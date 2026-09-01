@@ -223,8 +223,11 @@ describe('MessageThread', () => {
     })
 
     expect(supportHooks.markConversationRead).toHaveBeenCalledWith('conv-1')
+    const thread = container.querySelector('[data-support-message-thread]')
+    expect(thread?.className).toContain('dark:bg-sidebar')
     const scrollArea = container.querySelector('[data-slot="scroll-area"]')
     expect(scrollArea?.className).toContain('min-w-0')
+    expect(scrollArea?.className).toContain('dark:bg-sidebar')
     expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!block')
     expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!w-full')
     expect(scrollArea?.className).toContain('[&>[data-slot=scroll-area-viewport]>div]:!min-w-0')
@@ -271,6 +274,65 @@ describe('MessageThread', () => {
     })
 
     expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent?.trim() === 'Run')).toBe(false)
+    act(() => root.unmount())
+  })
+
+  it('uses the compact Inbox-first header in the mobile sheet presentation', () => {
+    supportHooks.useConversation.mockReturnValue({
+      isFetched: true,
+      data: {
+        id: 'conv-1',
+        workspace_id: 'ws-1',
+        display_id: 42,
+        subject: 'A long billing question',
+        status: 'open',
+        priority: 'medium',
+        source: 'widget',
+        unread_count: 0,
+        created_at: '2026-06-03T09:00:00.000Z',
+        updated_at: '2026-06-03T10:01:00.000Z',
+      },
+    })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([]) })
+    const onBackToInbox = vi.fn()
+    const onOpenDetails = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const queryClient = createTestQueryClient()
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MessageThread
+            workspaceId="ws-1"
+            conversationId="conv-1"
+            presentation="mobile-sheet"
+            onBackToInbox={onBackToInbox}
+            onOpenDetails={onOpenDetails}
+          />
+        </QueryClientProvider>,
+      )
+      vi.runAllTimers()
+    })
+
+    const returnButton = container.querySelector<HTMLButtonElement>('[aria-label="Return to Inbox"]')
+    const detailsButton = container.querySelector<HTMLButtonElement>('[aria-label="Open conversation details"]')
+    expect(returnButton?.textContent?.trim()).toBe('')
+    expect(detailsButton?.textContent).toContain('#42')
+    expect(detailsButton?.textContent).toContain('A long billing question')
+    expect(container.querySelector('[aria-label="Create task"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="Resolve conversation"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
+    expect(container.textContent).not.toContain('Create Task')
+
+    act(() => {
+      returnButton?.click()
+      detailsButton?.click()
+    })
+    expect(onBackToInbox).toHaveBeenCalledOnce()
+    expect(onOpenDetails).toHaveBeenCalledOnce()
+
     act(() => root.unmount())
   })
 })

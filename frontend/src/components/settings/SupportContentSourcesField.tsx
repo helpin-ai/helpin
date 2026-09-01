@@ -11,7 +11,6 @@ import {
   PencilEdit01Icon,
   PlusSignIcon,
   ArrowReloadHorizontalIcon,
-  Search01Icon,
   Delete01Icon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
@@ -31,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -738,15 +738,11 @@ function ContentSourcePagesPanel({ workspaceId, contentSourceId }: { workspaceId
   return (
     <div>
       <div className="border-b border-border/70 px-6 py-3">
-        <div className="relative">
-          <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search pages by title or URL…"
-            className="pl-9"
-          />
-        </div>
+        <QuietSearchInput
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search pages by title or URL…"
+        />
         <p className="mt-2 text-xs text-muted-foreground">
           {search.trim()
             ? `${filteredPages.length} of ${pages.length} pages`

@@ -51,6 +51,7 @@ import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { getVisibleTaskListGroupOptions, type TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
 import { toast } from 'sonner';
 import {
   getAgentAutoRunStateChangeMessage,
@@ -79,16 +80,15 @@ const PM_BOARD_DND_MEASURING = {
 };
 
 function TaskDropPlaceholder({ columnId, index, height }: { columnId: string; index: number; height: number }) {
-  const { setNodeRef } = useDroppable({ id: getTaskDropPlaceholderId(columnId, index) });
+  const { setNodeRef } = useDroppable({ id: getTaskDropPlaceholderId(columnId, index),
+  });
 
-  return (
-    <div
+  return <div
       ref={setNodeRef}
       data-pm-board-drop-placeholder="true"
       style={{ height }}
       className="shrink-0 rounded-lg border border-dashed border-sky-500/40 bg-sky-500/10 shadow-inner dark:border-sky-400/35 dark:bg-sky-400/10"
-    />
-  );
+    />;
 }
 
 function renderTaskCardsWithPlaceholder({
@@ -96,14 +96,12 @@ function renderTaskCardsWithPlaceholder({
   tasks,
   placeholderIndex,
   placeholderHeight,
-  renderTask,
-}: {
+  renderTask }: {
   columnId: string;
   tasks: Task[];
   placeholderIndex: number | null;
   placeholderHeight: number;
-  renderTask: (task: Task) => ReactNode;
-}) {
+  renderTask: (task: Task) => ReactNode }) {
   const boundedIndex = placeholderIndex == null
     ? null
     : Math.max(0, Math.min(placeholderIndex, tasks.length));
@@ -116,8 +114,7 @@ function renderTaskCardsWithPlaceholder({
           columnId={columnId}
           index={index}
           height={placeholderHeight}
-        />,
-      );
+        />);
     }
     if (index < tasks.length) {
       rendered.push(renderTask(tasks[index]!));
@@ -202,32 +199,18 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
   if (collapsed) {
     return (
       <QuickTooltip label={`Expand ${column.state.name}`}>
-      <section
-        ref={setNodeRef}
-        className={cn(
-          'relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 transition-colors hover:bg-muted/50',
-          isOver && 'bg-accent ring-1 ring-inset ring-border',
-        )}
-        onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}
-      >
-        {column.state.color && (
-          <div className="absolute top-0 left-2 right-2 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
-        )}
-        <ExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
-        {automatedStateIds?.has(column.state.id) && (
-          <AutomatedStateIndicator compact />
-        )}
-        <span className="text-xs font-medium text-muted-foreground">{column.task_count}</span>
-        <div className="mt-3 flex flex-1 items-start">
-          <span
-            className="text-xs font-semibold whitespace-nowrap"
-            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-          >
-            {column.state.name}
-          </span>
-        </div>
-      </section>
+        <section ref={setNodeRef} className={cn('relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 transition-colors hover:bg-muted/50', isOver && 'bg-accent ring-1 ring-inset ring-border')} onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}>
+          {column.state.color && <div className="absolute top-0 left-2 right-2 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />}
+          <ExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
+          {automatedStateIds?.has(column.state.id) && <AutomatedStateIndicator compact />}
+          <span className="text-xs font-medium text-muted-foreground">{column.task_count}</span>
+          <div className="mt-3 flex flex-1 items-start">
+            <span className="text-xs font-semibold whitespace-nowrap" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
+              {column.state.name}
+            </span>
+          </div>
+        </section>
       </QuickTooltip>
     );
   }
@@ -235,9 +218,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
   return (
     <section className="flex h-full w-[300px] shrink-0 flex-col">
       <header className="group/header flex items-center justify-between px-3 pt-4 pb-3 relative">
-        {column.state.color && (
-          <div className="absolute top-0 left-3 right-3 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />
-        )}
+        {column.state.color && <div className="absolute top-0 left-3 right-3 h-[3px] rounded-b-full" style={{ backgroundColor: column.state.color }} />}
         <div className="min-w-0">
           {column.state.description ? (
             <div className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
@@ -271,12 +252,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         </div>
         <div className="flex items-center gap-0.5">
           <QuickTooltip label="Collapse column">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 opacity-0 transition-opacity group-hover/header:opacity-100"
-              onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}
-            >
+            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 transition-opacity group-hover/header:opacity-100" onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}>
               <CollapseIcon className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
@@ -294,44 +270,30 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={getPMBoardScrollContainerClassName({ variant: 'state', isOver })}
+          className={getPMBoardScrollContainerClassName({
+            variant: 'state',
+            isOver,
+          })}
         >
-          {groupedTasks.length > 0 ? (
-            groupedTasks.map((group) => (
-              <div key={group.key} className="space-y-2">
-                <div className="rounded-md bg-muted px-3 py-1 text-center text-xs font-semibold text-muted-foreground">
-                  {group.label}
+          {groupedTasks.length > 0
+            ? groupedTasks.map((group) => (
+                <div key={group.key} className="space-y-2">
+                  <div className="rounded-md bg-muted px-3 py-1 text-center text-xs font-semibold text-muted-foreground">{group.label}</div>
+                  {group.tasks.map((task) => (
+                    <TaskCard key={task.id} task={task} teamName={findTeamName(task.team_id)} />
+                  ))}
                 </div>
-                {group.tasks.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    teamName={findTeamName(task.team_id)}
-                  />
-                ))}
-              </div>
-            ))
-          ) : (
-            renderTaskCardsWithPlaceholder({
-              columnId: column.state.id,
-              tasks,
-              placeholderIndex: dropPlaceholderIndex,
-              placeholderHeight: dropPlaceholderHeight,
-              renderTask: (task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  teamName={findTeamName(task.team_id)}
-                />
-              ),
-            })
-          )}
+              ))
+            : renderTaskCardsWithPlaceholder({
+                columnId: column.state.id,
+                tasks,
+                placeholderIndex: dropPlaceholderIndex,
+                placeholderHeight: dropPlaceholderHeight,
+                renderTask: (task) => <TaskCard key={task.id} task={task} teamName={findTeamName(task.team_id)} />,
+              })}
 
           {column.has_more ? (
-            <div
-              ref={loadMoreRef}
-              className="flex h-8 items-center justify-center text-xs text-muted-foreground"
-            >
+            <div ref={loadMoreRef} className="flex h-8 items-center justify-center text-xs text-muted-foreground">
               {isLoadingMore ? (
                 <>
                   <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -343,11 +305,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             </div>
           ) : null}
 
-          <Button
-            variant="ghost"
-            className="w-full justify-center text-xs text-muted-foreground"
-            onClick={() => callbacksRef.current.onCreate(column.state.id)}
-          >
+          <Button variant="ghost" className="w-full justify-center text-xs text-muted-foreground" onClick={() => callbacksRef.current.onCreate(column.state.id)}>
             <PlusSignIcon className="h-3.5 w-3.5" />
             Add task
           </Button>
@@ -401,26 +359,12 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
   if (collapsed) {
     return (
       <QuickTooltip label={`Expand ${displayName}`}>
-        <section
-          ref={setNodeRef}
-          className={cn(
-            'relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-3 transition-colors hover:bg-muted/50',
-            isOver && 'bg-accent ring-1 ring-inset ring-border',
-          )}
-          onClick={() => callbacksRef.current.onToggleCollapse(colKey)}
-        >
+        <section ref={setNodeRef} className={cn('relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-3 transition-colors hover:bg-muted/50', isOver && 'bg-accent ring-1 ring-inset ring-border')} onClick={() => callbacksRef.current.onToggleCollapse(colKey)}>
           <ExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          {column.member ? (
-            <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} avatarStyle={column.member.avatar_style} avatarSeed={column.member.avatar_seed} avatarBackgroundMode={column.member.avatar_background_mode} avatarBackgroundColor={column.member.avatar_background_color} className="h-5 w-5 text-[10px]" />
-          ) : (
-            <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-          )}
+          {column.member ? <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} avatarStyle={column.member.avatar_style} avatarSeed={column.member.avatar_seed} avatarBackgroundMode={column.member.avatar_background_mode} avatarBackgroundColor={column.member.avatar_background_color} className="h-5 w-5 text-[10px]" /> : <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />}
           <span className="mt-2 text-xs font-medium text-muted-foreground">{column.task_count}</span>
           <div className="mt-3 flex flex-1 items-start">
-            <span
-              className="text-xs font-semibold whitespace-nowrap"
-              style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-            >
+            <span className="text-xs font-semibold whitespace-nowrap" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
               {displayName}
             </span>
           </div>
@@ -434,11 +378,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
       <header className="group/header flex items-center justify-between px-3 pt-4 pb-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
-            {column.member ? (
-              <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} avatarStyle={column.member.avatar_style} avatarSeed={column.member.avatar_seed} avatarBackgroundMode={column.member.avatar_background_mode} avatarBackgroundColor={column.member.avatar_background_color} className="h-5 w-5 text-[10px]" />
-            ) : (
-              <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            )}
+            {column.member ? <UserAvatar name={displayName} avatarUrl={column.member.avatar_url} avatarStyle={column.member.avatar_style} avatarSeed={column.member.avatar_seed} avatarBackgroundMode={column.member.avatar_background_mode} avatarBackgroundColor={column.member.avatar_background_color} className="h-5 w-5 text-[10px]" /> : <UserIcon className="h-4 w-4 shrink-0 text-muted-foreground" />}
             {displayName}
           </p>
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
@@ -476,38 +416,33 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={getPMBoardScrollContainerClassName({ variant: 'member', isOver })}
+          className={getPMBoardScrollContainerClassName({
+            variant: 'member',
+            isOver,
+          })}
         >
           {renderTaskCardsWithPlaceholder({
             columnId: colKey,
             tasks,
             placeholderIndex: dropPlaceholderIndex,
             placeholderHeight: dropPlaceholderHeight,
-            renderTask: (task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                teamName={findTeamName(task.team_id)}
-                showStateBadge
-              />
-            ),
+            renderTask: (task) => <TaskCard key={task.id} task={task} teamName={findTeamName(task.team_id)} showStateBadge />,
           })}
 
           {column.has_more ? (
             <div ref={loadMoreRef} className="flex h-8 items-center justify-center text-xs text-muted-foreground">
               {isLoadingMore ? (
-                <><Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />Loading more...</>
+                <>
+                  <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Loading more...
+                </>
               ) : (
                 <span>{column.task_count - column.tasks.length} remaining</span>
               )}
             </div>
           ) : null}
 
-          <Button
-            variant="ghost"
-            className="w-full justify-center text-xs text-muted-foreground"
-            onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}
-          >
+          <Button variant="ghost" className="w-full justify-center text-xs text-muted-foreground" onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}>
             <PlusSignIcon className="h-3.5 w-3.5" />
             Add task
           </Button>
@@ -518,25 +453,10 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
 });
 MemberColumn.displayName = 'MemberColumn';
 
-const DragOverlayCard = memo(function DragOverlayCard({
-  manager,
-  resolveTeamName,
-  groupBy,
-}: {
-  manager: DragPreviewManager;
-  resolveTeamName: (id?: string) => string | undefined;
-  groupBy: string;
-}) {
+const DragOverlayCard = memo(function DragOverlayCard({ manager, resolveTeamName, groupBy }: { manager: DragPreviewManager; resolveTeamName: (id?: string) => string | undefined; groupBy: string }) {
   const activeTask = useActiveTask(manager);
   if (!activeTask) return null;
-  return (
-    <TaskCard
-      task={activeTask}
-      isOverlay
-      teamName={resolveTeamName(activeTask.team_id)}
-      showStateBadge={groupBy === 'members'}
-    />
-  );
+  return <TaskCard task={activeTask} isOverlay teamName={resolveTeamName(activeTask.team_id)} showStateBadge={groupBy === 'members'} />;
 });
 DragOverlayCard.displayName = 'DragOverlayCard';
 
@@ -569,14 +489,12 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   const { data: sessionMembership } = useSession(workspaceId);
   const currentMemberId = sessionMembership?.id;
   const { teams, findTeamName } = useAccessibleTeams(workspaceId);
+  const teamLabel = teamId ? findTeamName(teamId) : null;
   const { data: allWorkflows } = useWorkflows(workspaceId);
   const { userMemberships } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const listFieldVis = useTeamFieldVisibilityForTeam(workspaceId, storeTeamId);
-  const ownerNameMap = useMemo(
-    () => buildAssignableMemberNameMap(assignableMembers),
-    [assignableMembers],
-  );
+  const ownerNameMap = useMemo(() => buildAssignableMemberNameMap(assignableMembers), [assignableMembers]);
   const showEmptyColumns = useBoardDisplayStore((s) => s.showEmptyColumns);
   const groupBy = useBoardDisplayStore((s) => s.groupBy);
   const setGroupBy = useBoardDisplayStore((s) => s.setGroupBy);
@@ -584,7 +502,9 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   const initialFiltersKey = useMemo(() => JSON.stringify(initialFilters ?? {}), [initialFilters]);
   const appliedInitialFiltersRef = useRef<string | null>(null);
 
-  useEffect(() => { initDisplay(workspaceId); }, [workspaceId, initDisplay]);
+  useEffect(() => {
+    initDisplay(workspaceId);
+  }, [workspaceId, initDisplay]);
 
   // Fetch automation rules to show bot icons on columns with direct agent-run automation.
   const { data: automationRules } = useAutomationRulesByWorkflow(workspaceId, workflow?.workflow.id);
@@ -592,11 +512,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
     const ids = new Set<string>();
     if (!automationRules) return ids;
     for (const rule of automationRules) {
-      if (
-        rule.enabled &&
-        rule.trigger_type === 'task.state_entered' &&
-        rule.action_type === 'start_agent_run'
-      ) {
+      if (rule.enabled && rule.trigger_type === 'task.state_entered' && rule.action_type === 'start_agent_run') {
         const stateId = rule.trigger_config?.state_id;
         if (stateId) ids.add(stateId);
       }
@@ -604,12 +520,24 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
     return ids;
   }, [automationRules]);
 
-  const notifyAgentAutoRunStateChange = useCallback((fromStateId: string | null | undefined, toStateId: string | null | undefined) => {
-    if (!shouldNotifyAgentAutoRunStateChange({ fromStateId, toStateId, automatedStateIds })) return;
-    if (!toStateId) return;
-    const stateName = columns.find((column) => column.state.id === toStateId)?.state.name ?? 'this state';
-    toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(toStateId) });
-  }, [automatedStateIds, columns]);
+  const notifyAgentAutoRunStateChange = useCallback(
+    (fromStateId: string | null | undefined, toStateId: string | null | undefined) => {
+      if (
+        !shouldNotifyAgentAutoRunStateChange({
+          fromStateId,
+          toStateId,
+          automatedStateIds,
+        })
+      )
+        return;
+      if (!toStateId) return;
+      const stateName = columns.find((column) => column.state.id === toStateId)?.state.name ?? 'this state';
+      toast.info(getAgentAutoRunStateChangeMessage(stateName), {
+        id: getAgentAutoRunStateChangeToastId(toStateId),
+      });
+    },
+    [automatedStateIds, columns],
+  );
 
   // Load member board when groupBy switches to 'members'
   const activeMemberIds = useMemo(() => assignableMembers.filter((m) => m.status === 'active').map((m) => m.id), [assignableMembers]);
@@ -639,14 +567,17 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   const { data: agents = [] } = useAgents(workspaceId);
 
   useEffect(() => {
-    pmLabelService.list(workspaceId).then((r) => { if (r.data) setRefLabels(r.data); });
-    pmEpicService.list(workspaceId).then((r) => { if (r.data) setRefEpics(r.data); });
-    pmSprintService.list(workspaceId).then((r) => { if (r.data) setRefSprints(r.data); });
+    pmLabelService.list(workspaceId).then((r) => {
+      if (r.data) setRefLabels(r.data);
+    });
+    pmEpicService.list(workspaceId).then((r) => {
+      if (r.data) setRefEpics(r.data);
+    });
+    pmSprintService.list(workspaceId).then((r) => {
+      if (r.data) setRefSprints(r.data);
+    });
   }, [workspaceId]);
-  const agentById = useMemo(
-    () => new Map(agents.map((agent) => [agent.id, agent])),
-    [agents],
-  );
+  const agentById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
 
   const dragManager = useRef(new DragPreviewManager()).current;
   const isDragging = useActiveTask(dragManager) !== null;
@@ -664,12 +595,19 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
     try {
       const saved = localStorage.getItem(VIEW_MODE_KEY);
       return saved === 'list' ? 'list' : 'board';
-    } catch { return 'board'; }
+    } catch {
+      return 'board';
+    }
   });
-  const setViewMode = useCallback((mode: 'board' | 'list') => {
-    setViewModeState(mode);
-    try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch {}
-  }, [VIEW_MODE_KEY]);
+  const setViewMode = useCallback(
+    (mode: 'board' | 'list') => {
+      setViewModeState(mode);
+      try {
+        localStorage.setItem(VIEW_MODE_KEY, mode);
+      } catch {}
+    },
+    [VIEW_MODE_KEY],
+  );
   const [listGroupBy, setListGroupBy] = useState<TaskListGroupByOption>('workflow_state');
 
   const COLLAPSED_KEY = `pm_kanban_collapsed_${workspaceId}`;
@@ -677,17 +615,24 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
     try {
       const saved = localStorage.getItem(COLLAPSED_KEY);
       return saved ? new Set(JSON.parse(saved) as string[]) : new Set();
-    } catch { return new Set(); }
+    } catch {
+      return new Set();
+    }
   });
-  const toggleCollapse = useCallback((stateId: string) => {
-    setCollapsedColumnsState((prev) => {
-      const next = new Set(prev);
-      if (next.has(stateId)) next.delete(stateId);
-      else next.add(stateId);
-      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next])); } catch {}
-      return next;
-    });
-  }, [COLLAPSED_KEY]);
+  const toggleCollapse = useCallback(
+    (stateId: string) => {
+      setCollapsedColumnsState((prev) => {
+        const next = new Set(prev);
+        if (next.has(stateId)) next.delete(stateId);
+        else next.add(stateId);
+        try {
+          localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+        } catch {}
+        return next;
+      });
+    },
+    [COLLAPSED_KEY],
+  );
 
   const listGroupOptions = useMemo(
     () =>
@@ -716,7 +661,9 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   }, [listFieldVis, teamId]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: PM_BOARD_DRAG_ACTIVATION_DISTANCE } }),
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: PM_BOARD_DRAG_ACTIVATION_DISTANCE },
+    }),
   );
 
   useEffect(() => {
@@ -753,16 +700,8 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   const openAgentRun = useCallback(
     (task: Task) => {
       if (!workspaceSlug) return;
-      const hasActiveRun = !!task.latest_run_id
-        && !!task.latest_run_status
-        && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
-      openTaskRoute(
-        navigate as never,
-        { pathname: window.location.pathname } as never,
-        workspaceSlug,
-        task.id,
-        hasActiveRun ? { run: task.latest_run_id! } : undefined,
-      );
+      const hasActiveRun = !!task.latest_run_id && !!task.latest_run_status && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
+      openTaskRoute(navigate as never, { pathname: window.location.pathname } as never, workspaceSlug, task.id, hasActiveRun ? { run: task.latest_run_id! } : undefined);
     },
     [navigate, workspaceSlug],
   );
@@ -778,11 +717,14 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
     setCreateStateId(stateId);
     setCreateOpen(true);
   }, []);
-  const handleCreateForMember = useCallback((memberId: string | null) => {
-    setCreateOwnerMemberId(memberId ?? undefined);
-    setCreateStateId(workflow?.states[0]?.id || '');
-    setCreateOpen(true);
-  }, [workflow]);
+  const handleCreateForMember = useCallback(
+    (memberId: string | null) => {
+      setCreateOwnerMemberId(memberId ?? undefined);
+      setCreateStateId(workflow?.states[0]?.id || '');
+      setCreateOpen(true);
+    },
+    [workflow],
+  );
 
   // Listen for global panel events to patch board state
   useEffect(() => {
@@ -818,7 +760,11 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         const updated = cols.map((col: TaskMemberColumn) => {
           const idx = col.tasks.findIndex((s) => s.id === taskId);
           if (idx < 0) return col;
-          return { ...col, tasks: col.tasks.filter((s) => s.id !== taskId), task_count: col.task_count - 1 };
+          return {
+            ...col,
+            tasks: col.tasks.filter((s) => s.id !== taskId),
+            task_count: col.task_count - 1,
+          };
         });
         usePMBoardStore.setState({ memberColumns: updated });
       } else {
@@ -839,14 +785,14 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
       const activeId = String(event.active.id);
       activeDragTraceID.current = traceID;
       dragManager.clearColumnOverrides();
-      dragManager.setDropPlaceholderRect(getDragStartTaskRect({
-        activeId,
-        activatorEvent: event.activatorEvent,
-        dndRect: event.active.rect.current.initial,
-      }));
-      const allTasks = groupBy === 'members'
-        ? memberColumns.flatMap((col) => col.tasks)
-        : columns.flatMap((column) => column.tasks);
+      dragManager.setDropPlaceholderRect(
+        getDragStartTaskRect({
+          activeId,
+          activatorEvent: event.activatorEvent,
+          dndRect: event.active.rect.current.initial,
+        }),
+      );
+      const allTasks = groupBy === 'members' ? memberColumns.flatMap((col) => col.tasks) : columns.flatMap((column) => column.tasks);
       const task = allTasks.find((item) => item.id === activeId);
       dragManager.setActiveTask(task ?? null);
       if (task) {
@@ -883,7 +829,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         }
       }
     },
-    [columns, memberColumns, groupBy, dragManager]
+    [columns, memberColumns, groupBy, dragManager],
   );
 
   const onDragOver = useCallback(
@@ -910,17 +856,19 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         const previousTarget = dragManager.getDropTarget();
         const r = active.rect.current.translated;
         const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
-        const target = fromKey ? resolveBoardDropTarget({
-          activeId,
-          fromColumnId: fromKey,
-          overId,
-          pointerBelowMid: belowMid,
-          previewTarget: previousTarget,
-          columns: memberColumns.map((col) => ({
-            id: col.member?.id ?? '__unassigned__',
-            tasks: col.tasks,
-          })),
-        }) : null;
+        const target = fromKey
+          ? resolveBoardDropTarget({
+              activeId,
+              fromColumnId: fromKey,
+              overId,
+              pointerBelowMid: belowMid,
+              previewTarget: previousTarget,
+              columns: memberColumns.map((col) => ({
+                id: col.member?.id ?? '__unassigned__',
+                tasks: col.tasks,
+              })),
+            })
+          : null;
         if (!fromKey || !target) {
           dragManager.clearColumnOverrides();
           return;
@@ -943,14 +891,17 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         // Skip no-op updates
         const currentFrom = dragManager.getColumnTasks(fromKey);
         const currentTo = dragManager.getColumnTasks(toKey);
-        if (!hasDragPreviewChanged({
-          currentFrom,
-          nextFrom: preview.fromTasks,
-          currentTo,
-          nextTo: preview.toTasks,
-          currentDropTarget: previousTarget,
-          nextDropTarget: preview.dropTarget,
-        })) return;
+        if (
+          !hasDragPreviewChanged({
+            currentFrom,
+            nextFrom: preview.fromTasks,
+            currentTo,
+            nextTo: preview.toTasks,
+            currentDropTarget: previousTarget,
+            nextDropTarget: preview.dropTarget,
+          })
+        )
+          return;
 
         dragManager.updatePreview(fromKey, toKey, preview.fromTasks, preview.toTasks, preview.dropTarget.toIndex);
       } else {
@@ -965,18 +916,20 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         const previousTarget = dragManager.getDropTarget();
         const r = active.rect.current.translated;
         const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
-        const target = fromStateId ? resolveBoardDropTarget({
-          activeId,
-          fromColumnId: fromStateId,
-          overId,
-          pointerBelowMid: belowMid,
-          previewTarget: previousTarget,
-          columns: columns.map((col) => ({
-            id: col.state.id,
-            stateType: col.state.state_type,
-            tasks: col.tasks,
-          })),
-        }) : null;
+        const target = fromStateId
+          ? resolveBoardDropTarget({
+              activeId,
+              fromColumnId: fromStateId,
+              overId,
+              pointerBelowMid: belowMid,
+              previewTarget: previousTarget,
+              columns: columns.map((col) => ({
+                id: col.state.id,
+                stateType: col.state.state_type,
+                tasks: col.tasks,
+              })),
+            })
+          : null;
         if (!fromStateId || !target) {
           dragManager.clearColumnOverrides();
           return;
@@ -997,14 +950,17 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         // Skip no-op updates
         const currentFrom = dragManager.getColumnTasks(fromStateId);
         const currentTo = dragManager.getColumnTasks(toStateId);
-        if (!hasDragPreviewChanged({
-          currentFrom,
-          nextFrom: preview.fromTasks,
-          currentTo,
-          nextTo: preview.toTasks,
-          currentDropTarget: previousTarget,
-          nextDropTarget: preview.dropTarget,
-        })) return;
+        if (
+          !hasDragPreviewChanged({
+            currentFrom,
+            nextFrom: preview.fromTasks,
+            currentTo,
+            nextTo: preview.toTasks,
+            currentDropTarget: previousTarget,
+            nextDropTarget: preview.dropTarget,
+          })
+        )
+          return;
 
         dragManager.updatePreview(fromStateId, toStateId, preview.fromTasks, preview.toTasks, preview.dropTarget.toIndex);
       }
@@ -1035,7 +991,10 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
             tasks: col.tasks,
           })),
         });
-        if (!fromKey) { clearDragPreview(); return; }
+        if (!fromKey) {
+          clearDragPreview();
+          return;
+        }
 
         const overColumn = memberColumns.find((col) => {
           const key = col.member?.id ?? '__unassigned__';
@@ -1059,18 +1018,25 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         const toIdx = finalTarget?.toIndex ?? 0;
 
         if (toKey) {
-          if (fromKey === toKey) { clearDragPreview(); return; }
+          if (fromKey === toKey) {
+            clearDragPreview();
+            return;
+          }
           const fromColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
           const toColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
-          if (!fromColumn || !toColumn) { clearDragPreview(); return; }
+          if (!fromColumn || !toColumn) {
+            clearDragPreview();
+            return;
+          }
           await commitDropBeforeClearingPreview({
-            commit: () => moveMemberTask({
-              workspaceId,
-              taskId: activeId,
-              fromMemberId: fromColumn.member?.id ?? null,
-              toMemberId: toColumn.member?.id ?? null,
-              toIndex: toIdx,
-            }),
+            commit: () =>
+              moveMemberTask({
+                workspaceId,
+                taskId: activeId,
+                fromMemberId: fromColumn.member?.id ?? null,
+                toMemberId: toColumn.member?.id ?? null,
+                toIndex: toIdx,
+              }),
             clearPreview: clearDragPreview,
           });
         } else {
@@ -1088,7 +1054,10 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
           tasks: col.tasks,
         })),
       });
-      if (!fromStateId) { clearDragPreview(); return; }
+      if (!fromStateId) {
+        clearDragPreview();
+        return;
+      }
       const debugTraceID = activeDragTraceID.current ?? createPMDnDTraceID();
 
       const overColumn = columns.find((col) => col.state.id === overId || col.tasks.some((s) => s.id === overId));
@@ -1116,7 +1085,10 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
       const toStateId = finalTarget.toColumnId;
       const toIndex = finalTarget.toIndex;
       const toColumn = columns.find((c) => c.state.id === toStateId);
-      if (!toColumn) { clearDragPreview(); return; }
+      if (!toColumn) {
+        clearDragPreview();
+        return;
+      }
 
       if (fromStateId !== toStateId) {
         await commitDropBeforeClearingPreview({
@@ -1139,17 +1111,27 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
           return;
         }
         const fromIndex = toColumn.tasks.findIndex((s) => s.id === activeId);
-        if (fromIndex < 0 || fromIndex === toIndex) { clearDragPreview(); return; }
+        if (fromIndex < 0 || fromIndex === toIndex) {
+          clearDragPreview();
+          return;
+        }
         await commitDropBeforeClearingPreview({
           commit: async () => {
-            const moved = await moveTask({ workspaceId, taskId: activeId, fromStateId, toStateId, toIndex, debugTraceID });
+            const moved = await moveTask({
+              workspaceId,
+              taskId: activeId,
+              fromStateId,
+              toStateId,
+              toIndex,
+              debugTraceID,
+            });
             if (moved) notifyAgentAutoRunStateChange(fromStateId, toStateId);
           },
           clearPreview: clearDragPreview,
         });
       }
     },
-    [columns, memberColumns, groupBy, moveTask, moveMemberTask, workspaceId, clearDragPreview, dragManager, notifyAgentAutoRunStateChange]
+    [columns, memberColumns, groupBy, moveTask, moveMemberTask, workspaceId, clearDragPreview, dragManager, notifyAgentAutoRunStateChange],
   );
 
   const handleCreate = useCallback(
@@ -1167,7 +1149,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
           }
         : undefined;
     },
-    [createTask]
+    [createTask],
   );
 
   const handleSeedTasks = useCallback(async () => {
@@ -1195,45 +1177,60 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
     }
   }, [workspaceId, isSeeding, loadBoard, groupBy, loadMemberBoard, showEmptyColumns, activeMemberIds]);
 
-  const handleTaskPatched = useCallback((task: Task) => {
-    if (groupBy === 'members') {
-      // Enrich with state info from workflow columns (read from store directly to avoid dep)
-      const stateColumns = usePMBoardStore.getState().columns;
-      const stateCol = stateColumns.find((c) => c.state.id === task.workflow_state_id);
-      if (stateCol) {
-        task = { ...task, state_name: stateCol.state.name, state_type: stateCol.state.state_type, state_color: stateCol.state.color };
+  const handleTaskPatched = useCallback(
+    (task: Task) => {
+      if (groupBy === 'members') {
+        // Enrich with state info from workflow columns (read from store directly to avoid dep)
+        const stateColumns = usePMBoardStore.getState().columns;
+        const stateCol = stateColumns.find((c) => c.state.id === task.workflow_state_id);
+        if (stateCol) {
+          task = {
+            ...task,
+            state_name: stateCol.state.name,
+            state_type: stateCol.state.state_type,
+            state_color: stateCol.state.color,
+          };
+        }
+        // Optimistically patch the task in member columns
+        const cols = usePMBoardStore.getState().memberColumns;
+        let previousStateId: string | undefined;
+        const updated = cols.map((col) => {
+          const idx = col.tasks.findIndex((s) => s.id === task.id);
+          if (idx < 0) return col;
+          previousStateId = col.tasks[idx]?.workflow_state_id;
+          const tasks = [...col.tasks];
+          tasks[idx] = { ...tasks[idx], ...task };
+          return { ...col, tasks };
+        });
+        usePMBoardStore.setState({ memberColumns: updated });
+        notifyAgentAutoRunStateChange(previousStateId, task.workflow_state_id);
+      } else {
+        const previousStateId = usePMBoardStore
+          .getState()
+          .columns.flatMap((column) => column.tasks)
+          .find((candidate) => candidate.id === task.id)?.workflow_state_id;
+        const patched = patchTask('updated', task.id, task);
+        if (!patched) {
+          refreshBoard();
+        }
+        notifyAgentAutoRunStateChange(previousStateId, task.workflow_state_id);
       }
-      // Optimistically patch the task in member columns
-      const cols = usePMBoardStore.getState().memberColumns;
-      let previousStateId: string | undefined;
-      const updated = cols.map((col) => {
-        const idx = col.tasks.findIndex((s) => s.id === task.id);
-        if (idx < 0) return col;
-        previousStateId = col.tasks[idx]?.workflow_state_id;
-        const tasks = [...col.tasks];
-        tasks[idx] = { ...tasks[idx], ...task };
-        return { ...col, tasks };
-      });
-      usePMBoardStore.setState({ memberColumns: updated });
-      notifyAgentAutoRunStateChange(previousStateId, task.workflow_state_id);
-    } else {
-      const previousStateId = usePMBoardStore
-        .getState()
-        .columns
-        .flatMap((column) => column.tasks)
-        .find((candidate) => candidate.id === task.id)?.workflow_state_id;
-      const patched = patchTask('updated', task.id, task);
-      if (!patched) {
-        refreshBoard();
-      }
-      notifyAgentAutoRunStateChange(previousStateId, task.workflow_state_id);
-    }
-  }, [patchTask, refreshBoard, groupBy, notifyAgentAutoRunStateChange]);
+    },
+    [patchTask, refreshBoard, groupBy, notifyAgentAutoRunStateChange],
+  );
 
   // Memoize context values to avoid re-rendering all consumers
-  const boardData = useMemo<import('./KanbanBoard.contexts').BoardDataContextValue>(() => ({
-    workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, findTeamName: resolveTeamName,
-  }), [workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, resolveTeamName]);
+  const boardData = useMemo<import('./KanbanBoard.contexts').BoardDataContextValue>(
+    () => ({
+      workspaceId,
+      ownerNameMap,
+      agentById,
+      assignableMembers,
+      automatedStateIds,
+      findTeamName: resolveTeamName,
+    }),
+    [workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, resolveTeamName],
+  );
 
   // Use a ref so the context value identity never changes — consumers never
   // re-render from callback identity shifts (e.g. ownerNameMap refetch).
@@ -1259,239 +1256,153 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   };
 
   return (
-    <TaskFilterProvider
-      workspaceId={workspaceId}
-      assignableMembers={assignableMembers}
-      activeTeamId={storeTeamId}
-      userMemberships={userMemberships}
-      labels={refLabels}
-      epics={refEpics}
-      sprints={refSprints}
-      onChange={setFilters}
-      externalFilters={filters}
-    >
-    <div className="flex h-full min-h-0 flex-col">
-      {currentUser && (
-        <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
-      )}
-      <header className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
-        <span ref={setBulkTriggerSlot} className="contents" />
-        <TaskFilterTrigger />
-        <TaskOwnerAvatarFilterRow />
+    <TaskFilterProvider workspaceId={workspaceId} assignableMembers={assignableMembers} activeTeamId={storeTeamId} userMemberships={userMemberships} labels={refLabels} epics={refEpics} sprints={refSprints} onChange={setFilters} externalFilters={filters}>
+      <div className="flex h-full min-h-0 flex-col">
+        <QuietPageHeader
+          variant="shell"
+          title="Tasks"
+          context={teamLabel}
+          actions={
+            <QuietPrimaryAction className="gap-1.5" disabled={!workflow} onClick={() => handleCreateForState(workflow?.states[0]?.id ?? '')}>
+              <PlusSignIcon className="h-4 w-4" />
+              Add task
+            </QuietPrimaryAction>
+          }
+        />
+        {currentUser && <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />}
+        <header className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
+          <span ref={setBulkTriggerSlot} className="contents" />
+          <TaskFilterTrigger />
+          <TaskOwnerAvatarFilterRow />
 
-        {/* Team selector — only shown when no team is pre-selected via URL */}
-        {!teamId && teams.length > 0 && (
-          <Select
-            value={storeTeamId ?? '__all__'}
-            onValueChange={(value) => setTeamFilter(value === '__all__' ? null : value)}
-          >
-            <SelectTrigger className="h-7 w-auto gap-1.5 text-xs px-2.5">
-              <span className="text-muted-foreground">Team:</span>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All teams</SelectItem>
-              {teams.map((t) => (
-                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <div className="ml-auto flex items-center gap-1 self-center">
-          <BoardToolbarSlot>
-            {viewMode === 'board' ? (
-              <div className="inline-flex h-7 items-center rounded-md border border-input bg-muted/40 p-0.5 text-xs">
-                <button
-                  className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'status' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                  onClick={() => setGroupBy('status')}
-                >
-                  By States
-                </button>
-                <button
-                  className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'members' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                  onClick={() => setGroupBy('members')}
-                >
-                  By Members
-                </button>
-              </div>
-            ) : (
-              <Select value={listGroupBy} onValueChange={(value) => setListGroupBy(value as TaskListGroupByOption)}>
-                <SelectTrigger className="h-7 w-auto min-w-[150px] max-w-[190px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:ring-0 focus-visible:border-transparent">
-                  <span className="shrink-0 text-muted-foreground">Group by:</span>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {listGroupOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </BoardToolbarSlot>
-          <BoardToolbarSlot className="gap-1">
-            {showSeedButton ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                onClick={() => setSeedConfirmOpen(true)}
-                disabled={!workspaceId || isSeeding}
-              >
-                {isSeeding ? (
-                  <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <StickyNote01Icon className="mr-1 h-3.5 w-3.5" />
-                )}
-                Seed 500
-              </Button>
-            ) : null}
-            <span className="inline-flex h-7 items-center gap-0.5 rounded-md border border-border/70 bg-muted/30 p-0.5">
-              <QuickTooltip label="Board view">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-pressed={viewMode === 'board'}
-                  className={`h-6 w-6 rounded-sm ${viewMode === 'board'
-                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
-                    : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  onClick={() => setViewMode('board')}
-                >
-                  <LayoutTwoColumnIcon className="h-3.5 w-3.5" />
-                </Button>
-              </QuickTooltip>
-              <QuickTooltip label="List view">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-pressed={viewMode === 'list'}
-                  className={`h-6 w-6 rounded-sm ${viewMode === 'list'
-                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
-                    : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                  onClick={() => setViewMode('list')}
-                >
-                  <LayoutTable01Icon className="h-3.5 w-3.5" />
-                </Button>
-              </QuickTooltip>
-            </span>
-          </BoardToolbarSlot>
-          <BoardToolbarSlot>
-            {viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}
-          </BoardToolbarSlot>
-        </div>
-
-      </header>
-
-      <TaskFilterBar />
-
-      {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      ) : null}
-
-      {loading ? (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
-          Loading board...
-        </div>
-      ) : null}
-
-      {!loading && viewMode === 'board' ? (
-        <BoardDataContext.Provider value={boardData}>
-        <BoardCallbacksContext.Provider value={boardCallbacksRef}>
-        <DragPreviewContext.Provider value={dragManager}>
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          measuring={PM_BOARD_DND_MEASURING}
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDragEnd={onDragEnd}
-          onDragCancel={clearDragPreview}
-        >
-          <div className="min-h-0 flex-1 overflow-x-auto">
-            <div className="flex h-full min-w-full gap-1.5 pb-2">
-              {groupBy === 'members' ? (
-                memberColumns.filter((col) => showEmptyColumns || isDragging || col.task_count > 0).map((col) => {
-                  const colKey = col.member?.id ?? '__unassigned__';
-                  return (
-                    <MemberColumn
-                      key={colKey}
-                      column={col}
-                      collapsed={collapsedColumns.has(colKey)}
-                      isLoadingMore={!!memberColumnLoading[colKey]}
-                    />
-                  );
-                })
+          {/* Team selector — only shown when no team is pre-selected via URL */}
+          {!teamId && teams.length > 0 && (
+            <Select value={storeTeamId ?? '__all__'} onValueChange={(value) => setTeamFilter(value === '__all__' ? null : value)}>
+              <SelectTrigger className="h-7 w-auto gap-1.5 text-xs px-2.5">
+                <span className="text-muted-foreground">Team:</span>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">All teams</SelectItem>
+                {teams.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <div className="ml-auto flex items-center gap-1 self-center">
+            <BoardToolbarSlot>
+              {viewMode === 'board' ? (
+                <div className="inline-flex h-7 items-center rounded-md border border-input bg-muted/40 p-0.5 text-xs">
+                  <button className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'status' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setGroupBy('status')}>
+                    By States
+                  </button>
+                  <button className={`rounded px-2 py-0.5 transition-colors ${groupBy === 'members' ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`} onClick={() => setGroupBy('members')}>
+                    By Members
+                  </button>
+                </div>
               ) : (
-                columns.filter((column) => showEmptyColumns || isDragging || column.task_count > 0).map((column) => (
-                  <Column
-                    key={column.state.id}
-                    column={column}
-                    collapsed={collapsedColumns.has(column.state.id)}
-                    isLoadingMore={!!columnLoading[column.state.id]}
-                  />
-                ))
+                <Select value={listGroupBy} onValueChange={(value) => setListGroupBy(value as TaskListGroupByOption)}>
+                  <SelectTrigger className="h-7 w-auto min-w-[150px] max-w-[190px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:ring-0 focus-visible:border-transparent">
+                    <span className="shrink-0 text-muted-foreground">Group by:</span>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {listGroupOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
-            </div>
+            </BoardToolbarSlot>
+            <BoardToolbarSlot className="gap-1">
+              {showSeedButton ? (
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSeedConfirmOpen(true)} disabled={!workspaceId || isSeeding}>
+                  {isSeeding ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : <StickyNote01Icon className="mr-1 h-3.5 w-3.5" />}
+                  Seed 500
+                </Button>
+              ) : null}
+              <span className="inline-flex h-7 items-center gap-0.5 rounded-md border border-border/70 bg-muted/30 p-0.5">
+                <QuickTooltip label="Board view">
+                  <Button variant="ghost" size="icon" aria-pressed={viewMode === 'board'} className={`h-6 w-6 rounded-sm ${viewMode === 'board'
+                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
+                    : 'text-muted-foreground hover:text-foreground'
+                  }`} onClick={() => setViewMode('board')}>
+                    <LayoutTwoColumnIcon className="h-3.5 w-3.5" />
+                  </Button>
+                </QuickTooltip>
+                <QuickTooltip label="List view">
+                  <Button variant="ghost" size="icon" aria-pressed={viewMode === 'list'} className={`h-6 w-6 rounded-sm ${viewMode === 'list'
+                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
+                    : 'text-muted-foreground hover:text-foreground'
+                  }`} onClick={() => setViewMode('list')}>
+                    <LayoutTable01Icon className="h-3.5 w-3.5" />
+                  </Button>
+                </QuickTooltip>
+              </span>
+            </BoardToolbarSlot>
+            <BoardToolbarSlot>{viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}</BoardToolbarSlot>
           </div>
+        </header>
 
-          <DragOverlay>
-            <DragOverlayCard manager={dragManager} resolveTeamName={resolveTeamName} groupBy={groupBy} />
-          </DragOverlay>
-        </DndContext>
-        </DragPreviewContext.Provider>
-        </BoardCallbacksContext.Provider>
-        </BoardDataContext.Provider>
-      ) : null}
+        <TaskFilterBar />
 
-      {!loading && viewMode === 'list' && workflow ? (
-        <TaskListView
-          workspaceId={workspaceId}
-          workflow={workflow}
-          workflows={allWorkflows}
-          teams={teams}
-          assignableMembers={assignableMembers}
-          epics={refEpics}
-          sprints={refSprints}
-          filters={filters}
-          teamId={storeTeamId}
-          onOpenTask={openTask}
-          groupBy={listGroupBy}
-          onGroupByChange={setListGroupBy}
-          showToolbar={false}
-          bulkTriggerContainer={bulkTriggerSlot}
+        {error ? <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div> : null}
+
+        {loading ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+            <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
+            Loading board...
+          </div>
+        ) : null}
+
+        {!loading && viewMode === 'board' ? (
+          <BoardDataContext.Provider value={boardData}>
+            <BoardCallbacksContext.Provider value={boardCallbacksRef}>
+              <DragPreviewContext.Provider value={dragManager}>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} measuring={PM_BOARD_DND_MEASURING} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={clearDragPreview}>
+                  <div className="min-h-0 flex-1 overflow-x-auto">
+                    <div className="flex h-full min-w-full gap-1.5 pb-2">
+                      {groupBy === 'members'
+                        ? memberColumns
+                            .filter((col) => showEmptyColumns || isDragging || col.task_count > 0)
+                            .map((col) => {
+                              const colKey = col.member?.id ?? '__unassigned__';
+                              return <MemberColumn key={colKey} column={col} collapsed={collapsedColumns.has(colKey)} isLoadingMore={!!memberColumnLoading[colKey]} />;
+                            })
+                        : columns.filter((column) => showEmptyColumns || isDragging || column.task_count > 0).map((column) => <Column key={column.state.id} column={column} collapsed={collapsedColumns.has(column.state.id)} isLoadingMore={!!columnLoading[column.state.id]} />)}
+                    </div>
+                  </div>
+
+                  <DragOverlay>
+                    <DragOverlayCard manager={dragManager} resolveTeamName={resolveTeamName} groupBy={groupBy} />
+                  </DragOverlay>
+                </DndContext>
+              </DragPreviewContext.Provider>
+            </BoardCallbacksContext.Provider>
+          </BoardDataContext.Provider>
+        ) : null}
+
+        {!loading && viewMode === 'list' && workflow ? <TaskListView workspaceId={workspaceId} workflow={workflow} workflows={allWorkflows} teams={teams} assignableMembers={assignableMembers} epics={refEpics} sprints={refSprints} filters={filters} teamId={storeTeamId} onOpenTask={openTask} groupBy={listGroupBy} onGroupByChange={setListGroupBy} showToolbar={false} bulkTriggerContainer={bulkTriggerSlot} /> : null}
+
+        {workflow ? <CreateTaskModal open={createOpen} onOpenChange={setCreateOpen} workspaceId={workspaceId} workflow={workflow} initialStateId={createStateId || workflow.states[0]?.id || ''} initialTeamId={storeTeamId ?? undefined} initialOwnerMemberId={createOwnerMemberId} onCreate={handleCreate} /> : null}
+
+        <ConfirmDialog
+          open={seedConfirmOpen}
+          onOpenChange={(open) => {
+            if (!isSeeding) setSeedConfirmOpen(open);
+          }}
+          title="Seed 500 test tasks"
+          description="This will create 500 synthetic tasks across the default workflow so you can test the board, grouping, and list performance."
+          confirmLabel={isSeeding ? 'Seeding...' : 'Seed tasks'}
+          variant="default"
+          onConfirm={handleSeedTasks}
         />
-      ) : null}
-
-      {workflow ? (
-        <CreateTaskModal
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          workspaceId={workspaceId}
-          workflow={workflow}
-          initialStateId={createStateId || workflow.states[0]?.id || ''}
-          initialTeamId={storeTeamId ?? undefined}
-          initialOwnerMemberId={createOwnerMemberId}
-          onCreate={handleCreate}
-        />
-      ) : null}
-
-      <ConfirmDialog
-        open={seedConfirmOpen}
-        onOpenChange={(open) => { if (!isSeeding) setSeedConfirmOpen(open); }}
-        title="Seed 500 test tasks"
-        description="This will create 500 synthetic tasks across the default workflow so you can test the board, grouping, and list performance."
-        confirmLabel={isSeeding ? 'Seeding...' : 'Seed tasks'}
-        variant="default"
-        onConfirm={handleSeedTasks}
-      />
-
-    </div>
+      </div>
     </TaskFilterProvider>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Search01Icon, UserGroupIcon, Building03Icon, DollarCircleIcon } from '@/lib/icons';
+import { UserGroupIcon, Building03Icon, DollarCircleIcon } from '@/lib/icons';
 import { Favicon } from '@/components/ui/favicon';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCRMSearch } from '@/hooks/queries/useCRM';
@@ -21,15 +21,11 @@ export function CRMSearchResults({ workspaceId, onSelectContact, onSelectCompany
 
   return (
     <div className="space-y-4">
-      <div className="relative">
-        <Search01Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search contacts, companies, deals..."
-          className="pl-9"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
+      <QuietSearchInput
+        placeholder="Search contacts, companies, deals..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
 
       {isLoading && query.length >= 2 && (
         <p className="text-sm text-muted-foreground">Searching...</p>

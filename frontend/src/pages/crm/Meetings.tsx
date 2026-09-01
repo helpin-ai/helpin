@@ -1,15 +1,25 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { format } from 'date-fns';
 import { toast } from 'sonner';
-import { Camera01Icon, PlusSignIcon, Search01Icon, Settings02Icon } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+
+import { PlusSignIcon, Settings02Icon } from '@/lib/icons';
+import {
+  QuietEmptyState,
+  QuietIconAction,
+  QuietListRow,
+  QuietPageHeader,
+  QuietPageViewport,
+  QuietPrimaryAction,
+  QuietSearchInput,
+  QuietSection,
+  QuietStatusText,
+  QuietTextAction,
+} from '@/components/design-system/quiet';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateMeetingDialog } from '@/components/crm/CreateMeetingDialog';
-import { MeetingPlatformIcon, MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
-import { MeetingStatusBadge } from '@/components/crm/MeetingStatusBadge';
+import { MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
+import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
 import { UpcomingCalendarMeetings } from '@/components/crm/UpcomingCalendarMeetings';
 import { useCRMMeetings, useCRMMeetingSettings, useUpcomingCalendarMeetings } from '@/hooks/queries/useCRMMeetings';
 import { useEmailAccounts } from '@/hooks/queries/useCRM';
@@ -18,26 +28,43 @@ import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { crmEmailService } from '@/lib/services/crmService';
+import { formatMeetingDate } from '@/lib/meetingPresentation';
 import type { CRMMeeting } from '@/lib/crmMeetingTypes';
 
 function MeetingRow({ meeting, onOpen }: { meeting: CRMMeeting; onOpen: () => void }) {
-  const occurredAt = meeting.scheduled_start_at ?? meeting.actual_start_at ?? meeting.created_at;
+  const occurredAt = meeting.actual_start_at ?? meeting.scheduled_start_at ?? meeting.created_at;
   const participantCount = meeting.participants?.length ?? 0;
+  const durationMinutes = meeting.duration_seconds ? Math.max(1, Math.round(meeting.duration_seconds / 60)) : null;
+  const detail = [
+    participantCount ? `${participantCount} participant${participantCount === 1 ? '' : 's'}` : 'Participants pending',
+    durationMinutes ? `${durationMinutes} min` : null,
+  ].filter(Boolean).join(' · ');
+  const active = ['joining', 'waiting', 'recording', 'finalizing', 'processing'].includes(meeting.status);
+
   return (
-    <button type="button" onClick={onOpen} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/30 md:grid-cols-[minmax(0,1fr)_180px_160px_120px]">
-      <div className="flex min-w-0 items-center gap-3">
-        <MeetingPlatformIcon platform={meeting.platform} className="md:hidden" />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{meeting.title}</p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {participantCount ? `${participantCount} participant${participantCount === 1 ? '' : 's'}` : 'Participants pending'}
-          </p>
+    <QuietListRow
+      onClick={onOpen}
+      actor={<MeetingPlatformLabel platform={meeting.platform} compact presentation="quiet" />}
+      meta={formatMeetingDate(occurredAt, 'MMM d, yyyy · p')}
+      title={meeting.title}
+      detail={detail}
+      trailing={<MeetingStatusText status={meeting.status} />}
+      state={meeting.status === 'failed' ? 'blocker' : active ? 'current' : 'none'}
+      className="py-[13px]"
+    />
+  );
+}
+function MeetingRowsLoading() {
+  return (
+    <div aria-label="Loading meetings">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="border-b border-quiet-divider-light py-3">
+          <Skeleton className="h-3 w-28 rounded-none" />
+          <Skeleton className="mt-2 h-4 w-2/3 rounded-none" />
+          <Skeleton className="mt-2 h-3 w-40 rounded-none" />
         </div>
-      </div>
-      <div className="hidden min-w-0 text-sm text-muted-foreground md:block"><MeetingPlatformLabel platform={meeting.platform} compact /></div>
-      <div className="hidden text-sm text-muted-foreground md:block">{format(new Date(occurredAt), 'MMM d, yyyy · p')}</div>
-      <MeetingStatusBadge status={meeting.status} className="justify-self-end" />
-    </button>
+      ))}
+    </div>
   );
 }
 
@@ -56,19 +83,34 @@ export function MeetingsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [connectingCalendar, setConnectingCalendar] = useState(false);
   const filters = useMemo(() => ({ search: search.trim() || undefined, per_page: 50 }), [search]);
-  const { data, isLoading } = useCRMMeetings(workspaceId, filters);
-  const { data: upcomingData, isLoading: upcomingLoading } = useUpcomingCalendarMeetings(workspaceId);
-  const { data: settingsData, isLoading: settingsLoading } = useCRMMeetingSettings(workspaceId);
-  const { data: emailAccounts = [], isLoading: accountsLoading } = useEmailAccounts(workspaceId, user?.id ? { member_id: user.id } : undefined);
+  const meetingsQuery = useCRMMeetings(workspaceId, filters);
+  const upcomingQuery = useUpcomingCalendarMeetings(workspaceId);
+  const settingsQuery = useCRMMeetingSettings(workspaceId);
+  const accountsQuery = useEmailAccounts(workspaceId, user?.id ? { member_id: user.id } : undefined);
   const normalizedSearch = search.trim().toLowerCase();
-  const upcomingCandidates = (upcomingData?.data ?? []).filter((candidate) => !normalizedSearch || candidate.event.title.toLowerCase().includes(normalizedSearch));
-  const historyMeetings = (data?.data ?? []).filter((meeting) => {
+  const upcomingCandidates = (upcomingQuery.data?.data ?? []).filter(
+    (candidate) => !normalizedSearch || candidate.event.title.toLowerCase().includes(normalizedSearch),
+  );
+  const historyMeetings = (meetingsQuery.data?.data ?? []).filter((meeting) => {
     if (!meeting.calendar_event_id || meeting.status !== 'scheduled' || !meeting.scheduled_start_at) return true;
     return new Date(meeting.scheduled_start_at).getTime() <= Date.now();
   });
   const hasUpcoming = upcomingCandidates.length > 0;
-  const calendarConnected = emailAccounts.some((account) => account.member_id === user?.id && account.provider === 'gmail' && account.status === 'connected' && account.is_active);
-  const meetingNotesEnabled = settingsData?.settings.enabled ?? true;
+  const calendarConnected = (accountsQuery.data ?? []).some(
+    (account) => account.member_id === user?.id
+      && account.provider === 'gmail'
+      && account.status === 'connected'
+      && account.is_active,
+  );
+  const meetingNotesEnabled = settingsQuery.data?.settings.enabled ?? true;
+  const upcomingUnavailable = upcomingQuery.isError || settingsQuery.isError || accountsQuery.isError;
+  const loadingSearch = meetingsQuery.isLoading || upcomingQuery.isLoading || settingsQuery.isLoading || accountsQuery.isLoading;
+  const noSearchResults = Boolean(normalizedSearch)
+    && !loadingSearch
+    && !upcomingUnavailable
+    && !meetingsQuery.isError
+    && !hasUpcoming
+    && historyMeetings.length === 0;
 
   const connectGoogleCalendar = async () => {
     setConnectingCalendar(true);
@@ -86,78 +128,173 @@ export function MeetingsPage() {
     }
   };
 
+  const openMeetingSettings = () => navigate({
+    to: '/w/$slug/settings/crm-meetings',
+    params: { slug: workspaceSlug },
+  });
+
   return (
-    <div className="flex h-full flex-col">
-      <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
-        <div className="relative">
-          <Search01Icon className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search meetings..." className="h-7 w-52 pl-7 text-xs" />
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          {canAdmin && (
-            <QuickTooltip label="Meeting settings">
-              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => navigate({ to: '/w/$slug/settings/crm-meetings', params: { slug: workspaceSlug } })}>
-                <Settings02Icon className="h-3.5 w-3.5" />
-              </Button>
-            </QuickTooltip>
+    <>
+      <div className="flex h-full min-h-0 flex-col">
+        <QuietPageHeader
+          variant="shell"
+          title="Meetings"
+          description="Choose the calls Helpin should join, then review the recording, transcript, decisions, and follow-up work in one place."
+          actions={(
+            <>
+              {canAdmin ? (
+                <QuickTooltip label="Meeting settings">
+                  <QuietIconAction aria-label="Meeting settings" onClick={openMeetingSettings}>
+                    <Settings02Icon className="h-[15px] w-[15px]" />
+                  </QuietIconAction>
+                </QuickTooltip>
+              ) : null}
+              {canEdit ? (
+                <QuietPrimaryAction className="gap-1.5" onClick={() => setShowCreate(true)}>
+                  <PlusSignIcon className="h-4 w-4" />
+                  Add meeting
+                </QuietPrimaryAction>
+              ) : null}
+            </>
           )}
-          {canEdit && <Button size="sm" className="ml-1 h-7 text-xs" onClick={() => setShowCreate(true)}><PlusSignIcon className="mr-1 h-3.5 w-3.5" /> Meeting</Button>}
-        </div>
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-auto p-3">
-        {settingsData?.settings.enabled === false && hasUpcoming && !isLoading && (
-          <div className="mb-3 flex items-center justify-between gap-4 rounded-lg border bg-muted/20 p-3">
-            <div>
-              <p className="text-sm font-medium">Enable meeting notes</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">Configure meeting capture to let the Helpin notetaker join calls.</p>
-            </div>
-            {canAdmin && <Button size="sm" className="h-7 text-xs" variant="outline" onClick={() => navigate({ to: '/w/$slug/settings/crm-meetings', params: { slug: workspaceSlug } })}>Configure</Button>}
-          </div>
-        )}
-
-        <UpcomingCalendarMeetings
-          workspaceId={workspaceId}
-          workspaceSlug={workspaceSlug}
-          candidates={upcomingCandidates}
-          canEdit={canEdit}
-          canManageSettings={canAdmin}
-          loading={upcomingLoading}
-          calendarConnected={calendarConnected}
-          calendarLoading={accountsLoading || settingsLoading}
-          connectingCalendar={connectingCalendar}
-          meetingNotesEnabled={meetingNotesEnabled}
-          searching={Boolean(normalizedSearch)}
-          onConnectCalendar={() => void connectGoogleCalendar()}
-          onConfigureSettings={() => navigate({ to: '/w/$slug/settings/crm-meetings', params: { slug: workspaceSlug } })}
-          onAddMeeting={() => setShowCreate(true)}
         />
 
-        {historyMeetings.length > 0 && <h2 className="mb-2 text-sm font-semibold">Meeting history</h2>}
-        {isLoading ? (
-          <div className="space-y-2">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-16 w-full" />)}</div>
-        ) : historyMeetings.length ? (
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-none">
-            <div className="hidden grid-cols-[minmax(0,1fr)_180px_160px_120px] gap-3 border-b bg-muted/20 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:grid">
-              <span>Meeting</span><span>Platform</span><span>Date</span><span className="text-right">Status</span>
-            </div>
-            {historyMeetings.map((meeting) => (
-              <MeetingRow key={meeting.id} meeting={meeting} onOpen={() => navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: workspaceSlug, meetingId: meeting.id } })} />
-            ))}
-          </div>
-        ) : normalizedSearch && !hasUpcoming && !upcomingLoading ? (
-          <div className="flex min-h-96 items-center justify-center p-6 text-center">
-            <div className="max-w-md">
-              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg border bg-muted/30"><Camera01Icon className="h-5 w-5 text-muted-foreground" /></div>
-              <h2 className="mt-4 text-base font-semibold">{search ? 'No matching meetings' : 'Your meeting notes live here'}</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{search ? 'Try a different title.' : 'Connect Gmail or add a meeting link to capture notes, decisions, and action items.'}</p>
-              {!search && canEdit && <Button className="mt-4" size="sm" onClick={() => setShowCreate(true)}><PlusSignIcon className="h-4 w-4" /> Add meeting</Button>}
-            </div>
-          </div>
+        <QuietPageViewport className="min-h-0 flex-1">
+        <div className="mb-6 flex items-center justify-between gap-4 border-b border-quiet-divider-strong pb-4">
+          <QuietSearchInput
+            containerClassName="w-full max-w-sm"
+            aria-label="Search meetings"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search meetings"
+          />
+        </div>
+
+        {settingsQuery.data?.settings.enabled === false && hasUpcoming && !meetingsQuery.isLoading ? (
+          <QuietSection
+            title="Meeting capture"
+            className="mb-6 border-t px-0 sm:px-0 lg:px-0"
+            action={canAdmin ? (
+              <QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={openMeetingSettings}>
+                Configure meeting notes
+              </QuietTextAction>
+            ) : undefined}
+          >
+            <QuietStatusText tone="blocker" className="text-quiet-accent">Meeting notes are off</QuietStatusText>
+            <p className="mt-1 max-w-[680px] text-sm leading-[1.6] text-quiet-text-tertiary">
+              Helpin cannot join selected calendar calls until a workspace admin enables meeting notes.
+            </p>
+          </QuietSection>
         ) : null}
+
+        {noSearchResults ? (
+          <QuietEmptyState
+            title="No meetings match this search"
+            description="Try a shorter meeting title or clear the search to see upcoming and recorded meetings."
+            action={(
+              <QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={() => setSearch('')}>
+                Clear search
+              </QuietTextAction>
+            )}
+          />
+        ) : (
+          <>
+            {upcomingUnavailable ? (
+              <QuietSection title="Upcoming" className="px-0 sm:px-0 lg:px-0">
+                <QuietEmptyState
+                  className="border-b-0"
+                  title="Upcoming meetings could not be loaded"
+                  description="Calendar and capture settings are temporarily unavailable. Your existing meeting choices have not changed."
+                  action={(
+                    <QuietTextAction
+                      className="border-b border-quiet-field pb-0.5"
+                      onClick={() => void Promise.all([
+                        upcomingQuery.refetch(),
+                        settingsQuery.refetch(),
+                        accountsQuery.refetch(),
+                      ])}
+                    >
+                      Try again
+                    </QuietTextAction>
+                  )}
+                />
+              </QuietSection>
+            ) : (
+              <UpcomingCalendarMeetings
+                workspaceId={workspaceId}
+                workspaceSlug={workspaceSlug}
+                candidates={upcomingCandidates}
+                canEdit={canEdit}
+                canManageSettings={canAdmin}
+                loading={upcomingQuery.isLoading}
+                calendarConnected={calendarConnected}
+                calendarLoading={accountsQuery.isLoading || settingsQuery.isLoading}
+                connectingCalendar={connectingCalendar}
+                meetingNotesEnabled={meetingNotesEnabled}
+                searching={Boolean(normalizedSearch)}
+                onConnectCalendar={() => void connectGoogleCalendar()}
+                onConfigureSettings={openMeetingSettings}
+                onAddMeeting={() => setShowCreate(true)}
+              />
+            )}
+
+            <QuietSection
+              title="Meeting history"
+              count={historyMeetings.length || undefined}
+              className="px-0 sm:px-0 lg:px-0"
+            >
+              {meetingsQuery.isLoading ? (
+                <MeetingRowsLoading />
+              ) : meetingsQuery.isError ? (
+                <QuietEmptyState
+                  className="border-b-0"
+                  title="Meeting history could not be loaded"
+                  description="Recorded meetings are temporarily unavailable. No meeting data has been changed."
+                  action={(
+                    <QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={() => void meetingsQuery.refetch()}>
+                      Try again
+                    </QuietTextAction>
+                  )}
+                />
+              ) : historyMeetings.length ? (
+                <div className="border-t border-quiet-divider-light">
+                  {historyMeetings.map((meeting) => (
+                    <MeetingRow
+                      key={meeting.id}
+                      meeting={meeting}
+                      onOpen={() => navigate({
+                        to: '/w/$slug/crm/meetings/$meetingId',
+                        params: { slug: workspaceSlug, meetingId: meeting.id },
+                      })}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <QuietEmptyState
+                  className="border-b-0"
+                  title="Meeting notes will collect here"
+                  description="After Helpin joins a call, its recording, transcript, decisions, and next steps will appear in this history."
+                  action={canEdit ? (
+                    <QuietTextAction className="border-b border-quiet-field pb-0.5" onClick={() => setShowCreate(true)}>
+                      Add a meeting manually
+                    </QuietTextAction>
+                  ) : undefined}
+                />
+              )}
+            </QuietSection>
+          </>
+        )}
+        </QuietPageViewport>
       </div>
 
-      {canEdit && <CreateMeetingDialog open={showCreate} onOpenChange={setShowCreate} workspaceId={workspaceId} workspaceSlug={workspaceSlug} />}
-    </div>
+      {canEdit ? (
+        <CreateMeetingDialog
+          open={showCreate}
+          onOpenChange={setShowCreate}
+          workspaceId={workspaceId}
+          workspaceSlug={workspaceSlug}
+        />
+      ) : null}
+    </>
   );
 }

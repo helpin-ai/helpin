@@ -17,7 +17,7 @@ import {
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft02Icon, Cancel01Icon, Copy01Icon, FilterHorizontalIcon, Loading01Icon, Search01Icon } from '@/lib/icons';
+import { ArrowLeft02Icon, Cancel01Icon, Copy01Icon, FilterHorizontalIcon, Loading01Icon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -27,7 +27,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { format, parseISO } from 'date-fns';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
@@ -2078,25 +2078,22 @@ export function TaskListView({
       {showToolbar ? (
         <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
           {showLocalTaskControls ? (
-            <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
+            <QuietSearchInput
+                containerClassName="min-w-[160px] flex-1 sm:max-w-[220px]"
                 value={taskSearchQuery}
                 onChange={(event) => setTaskSearchQuery(event.target.value)}
                 placeholder="Search"
-                className="h-8 pl-8 pr-8 text-ui"
-              />
-              {taskSearchQuery ? (
+                trailing={taskSearchQuery ? (
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   onClick={() => setTaskSearchQuery('')}
                   aria-label="Clear search"
                 >
                   <Cancel01Icon className="h-3.5 w-3.5" />
                 </button>
-              ) : null}
-            </div>
+                ) : null}
+            />
           ) : null}
           {showTaskCount ? (
             <span className="text-ui text-muted-foreground">

@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -8,8 +9,10 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/mail"
+	"net/textproto"
 	"net/url"
 	"strings"
 	"time"
@@ -43,6 +46,14 @@ type GmailMessage struct {
 	RFCMessageID     string
 	InReplyTo        string
 	ReferencesHeader string
+}
+
+// GmailAttachment is an outgoing MIME attachment. Data is kept in memory only
+// for the duration of the Gmail API request.
+type GmailAttachment struct {
+	FileName    string
+	ContentType string
+	Data        []byte
 }
 
 // GmailSendResult contains the identifiers returned by Gmail after sending.
@@ -227,15 +238,23 @@ func (c *GmailSyncClient) GetMessageDetail(ctx context.Context, accessToken, mes
 
 // SendMessage sends an email via Gmail API and returns the created message and thread IDs.
 func (c *GmailSyncClient) SendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string) (*GmailSendResult, error) {
-	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, "", "", "")
+	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, "", "", "", nil)
+}
+
+func (c *GmailSyncClient) SendMessageWithAttachments(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string, attachments []GmailAttachment) (*GmailSendResult, error) {
+	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, "", "", "", attachments)
 }
 
 // SendThreadMessage sends a reply into an existing Gmail thread.
 func (c *GmailSyncClient) SendThreadMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string) (*GmailSendResult, error) {
-	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, threadID, inReplyTo, references)
+	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, threadID, inReplyTo, references, nil)
 }
 
-func (c *GmailSyncClient) sendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string) (*GmailSendResult, error) {
+func (c *GmailSyncClient) SendThreadMessageWithAttachments(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string, attachments []GmailAttachment) (*GmailSendResult, error) {
+	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, threadID, inReplyTo, references, attachments)
+}
+
+func (c *GmailSyncClient) sendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string, attachments []GmailAttachment) (*GmailSendResult, error) {
 	fromHeader, err := safeMailHeaderAddress(from)
 	if err != nil {
 		return nil, fmt.Errorf("invalid from address: %w", err)
@@ -267,9 +286,54 @@ func (c *GmailSyncClient) sendMessage(ctx context.Context, accessToken, from str
 		b.WriteString("References: " + sanitizeMessageHeader(references) + "\r\n")
 	}
 	b.WriteString("MIME-Version: 1.0\r\n")
-	b.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
-	b.WriteString("\r\n")
-	b.WriteString(bodyHTML)
+	if len(attachments) == 0 {
+		b.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
+		b.WriteString("\r\n")
+		b.WriteString(bodyHTML)
+	} else {
+		var mimeBody bytes.Buffer
+		writer := multipart.NewWriter(&mimeBody)
+		b.WriteString("Content-Type: multipart/mixed; boundary=\"" + writer.Boundary() + "\"\r\n\r\n")
+		htmlHeader := textproto.MIMEHeader{}
+		htmlHeader.Set("Content-Type", "text/html; charset=UTF-8")
+		htmlHeader.Set("Content-Transfer-Encoding", "8bit")
+		htmlPart, partErr := writer.CreatePart(htmlHeader)
+		if partErr != nil {
+			return nil, fmt.Errorf("create HTML MIME part: %w", partErr)
+		}
+		if _, partErr = io.WriteString(htmlPart, bodyHTML); partErr != nil {
+			return nil, fmt.Errorf("write HTML MIME part: %w", partErr)
+		}
+		for _, attachment := range attachments {
+			contentType := strings.TrimSpace(attachment.ContentType)
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			params := map[string]string{"name": attachment.FileName}
+			header := textproto.MIMEHeader{}
+			header.Set("Content-Type", mime.FormatMediaType(contentType, params))
+			header.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": attachment.FileName}))
+			header.Set("Content-Transfer-Encoding", "base64")
+			part, partErr := writer.CreatePart(header)
+			if partErr != nil {
+				return nil, fmt.Errorf("create attachment MIME part: %w", partErr)
+			}
+			encodedAttachment := base64.StdEncoding.EncodeToString(attachment.Data)
+			for len(encodedAttachment) > 76 {
+				if _, partErr = io.WriteString(part, encodedAttachment[:76]+"\r\n"); partErr != nil {
+					return nil, partErr
+				}
+				encodedAttachment = encodedAttachment[76:]
+			}
+			if _, partErr = io.WriteString(part, encodedAttachment); partErr != nil {
+				return nil, partErr
+			}
+		}
+		if err := writer.Close(); err != nil {
+			return nil, fmt.Errorf("close MIME message: %w", err)
+		}
+		b.Write(mimeBody.Bytes())
+	}
 
 	// Base64url encode the message.
 	encoded := base64.URLEncoding.EncodeToString([]byte(b.String()))

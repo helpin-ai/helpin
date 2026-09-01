@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmailChipInput } from '@/components/ui/email-chip-input';
 import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -426,8 +427,7 @@ function NewConversationMessageEditor({
             </PopoverTrigger>
             <PopoverContent align="end" className="w-[360px] p-0">
               <div className="border-b p-2">
-                <Input
-                  className="h-8 text-sm"
+                <QuietSearchInput
                   placeholder="Search shortcuts..."
                   value={manualShortcutQuery}
                   onChange={(event) => setManualShortcutQuery(event.target.value)}

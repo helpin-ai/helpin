@@ -10,18 +10,22 @@ import {
   GitBranchIcon,
   Loading01Icon,
   PlusSignIcon,
-  Search01Icon,
   UserGroupIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import {
+  QuietRelationshipDialogContent,
+  QuietRelationshipResults,
+  QuietSearchInput,
+  quietRelatedItemTitleClassName,
+  quietRelationshipResultRowClassName,
+} from '@/components/design-system/quiet';
 import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
 import {
   Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -42,6 +46,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import type { CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { CreateTaskRequest, GroupedAssociations } from '@/lib/pmTypes';
+import { cn } from '@/lib/utils';
 
 interface SidebarAssociationsProps {
   workspaceId: string;
@@ -304,7 +309,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                       aria-hidden="true"
                     />
                   )}
-                  <span className="truncate font-medium">{item.title}</span>
+                  <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                   {item.display_id && (
                     <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
                       {item.display_id}
@@ -366,7 +371,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                     onClick={() => handleNavigateCRM(item.object_type as CRMObjectType, item.object_id)}
                   >
                     <CRMIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate font-medium">{item.title}</span>
+                    <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                     {(item.context_label || item.display_id) && (
                       <span className="ml-auto flex shrink-0 items-center gap-2">
                         {item.context_label && (
@@ -427,7 +432,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                   onClick={() => handleNavigateDoc(item.object_id)}
                 >
                   <File01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  <span className="truncate font-medium">{item.title}</span>
+                  <span className={cn('truncate', quietRelatedItemTitleClassName)}>{item.title}</span>
                   {item.display_id && (
                     <span className="ml-auto shrink-0 text-muted-foreground">{item.display_id}</span>
                   )}
@@ -450,7 +455,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
 
       {/* Link existing modal */}
       <Dialog open={!!pickerSection} onOpenChange={(open) => { if (!open) setPickerSection(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <QuietRelationshipDialogContent>
           <DialogHeader>
             <DialogTitle className="text-sm">
               Link {pickerSection === 'tasks' ? 'Task' : pickerSection === 'crm' ? 'CRM Record' : 'Document'}
@@ -471,23 +476,19 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                 Create New Task
               </Button>
             )}
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={
-                  pickerSection === 'tasks'
-                    ? 'Search existing tasks...'
-                    : pickerSection === 'crm'
-                      ? 'Search contacts, companies, or deals...'
-                      : 'Search documents...'
-                }
-                className="pl-9"
-                autoFocus
-              />
-            </div>
-            <div className="max-h-64 space-y-1 overflow-y-auto">
+            <QuietSearchInput
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={
+                pickerSection === 'tasks'
+                  ? 'Search existing tasks...'
+                  : pickerSection === 'crm'
+                    ? 'Search contacts, companies, or deals...'
+                    : 'Search documents...'
+              }
+              autoFocus
+            />
+            <QuietRelationshipResults className="max-h-64 space-y-1 overflow-y-auto">
               {searching && (
                 <div className="flex items-center gap-2 py-4 justify-center text-sm text-muted-foreground">
                   <Loading01Icon className="h-4 w-4 animate-spin" /> Searching...
@@ -497,12 +498,12 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                 <button
                   key={`${result.type}-${result.id}`}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
                   onClick={() => handleAddCRM(result.type, result.id)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Building03Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{result.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{result.name}</span>
                     {'display_id' in result.object && result.object.display_id && (
                       <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
                         #{result.object.display_id}
@@ -515,12 +516,12 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
                 <button
                   key={r.id}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent"
+                  className={cn(quietRelationshipResultRowClassName, 'w-full rounded-md border px-3 py-2 text-left text-sm transition hover:bg-accent')}
                   onClick={() => handleAdd(pickerSection!, r.id)}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     {pickerSection === 'tasks' ? <GitBranchIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <File01Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                    <span className="font-medium truncate">{r.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
                     {r.display_id && (
                       <Badge variant="outline" className="h-5 px-1.5 text-[10px] shrink-0">
                         #{r.display_id}
@@ -538,9 +539,9 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
               {!searching && query.trim().length < 2 && (
                 <p className="py-4 text-sm text-muted-foreground text-center">Type at least 2 characters to search</p>
               )}
-            </div>
+            </QuietRelationshipResults>
           </div>
-        </DialogContent>
+        </QuietRelationshipDialogContent>
       </Dialog>
 
       <DocumentPreviewDialog

@@ -10,25 +10,27 @@ import {
   Loading01Icon,
   Message01Icon,
   PlusSignIcon,
-  Search01Icon,
   UserGroupIcon,
 } from '@/lib/icons';
-import { Input } from '@/components/ui/input';
+import { QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { CreateContactDialog } from '@/components/crm/CreateContactDialog';
 import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { CreateMeetingDialog } from '@/components/crm/CreateMeetingDialog';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
-import { MeetingStatusBadge } from '@/components/crm/MeetingStatusBadge';
+import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
 import { useCompanyContacts, useCompanyDeals, useCompanySupportConversations, useContactSupportConversations, useDeals } from '@/hooks/queries';
 import { useCRMMeetings } from '@/hooks/queries/useCRMMeetings';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { associationsService } from '@/lib/services/associationsService';
-import { crmSearchService } from '@/lib/services/crmService';
+import { crmDealService, crmSearchService } from '@/lib/services/crmService';
+import { formatMeetingDate } from '@/lib/meetingPresentation';
 import { supportService } from '@/lib/services/supportService';
+import { cn } from '@/lib/utils';
 import type { CRMContact, CRMDeal, CRMObjectType, CRMSearchResult } from '@/lib/crmTypes';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
@@ -49,15 +51,12 @@ function CollectionHeader({
   return (
     <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-border/60 px-4 py-2 sm:px-6 lg:px-8">
       <h2 className="mr-2 text-sm font-semibold">{title}</h2>
-      <div className="relative min-w-44 flex-1 sm:max-w-64">
-        <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder={`Search ${title.toLowerCase()}`}
-          className="h-7 pl-8 text-xs"
-        />
-      </div>
+      <QuietSearchInput
+        containerClassName="min-w-44 flex-1 sm:max-w-64"
+        value={search}
+        onChange={(event) => onSearchChange(event.target.value)}
+        placeholder={`Search ${title.toLowerCase()}`}
+      />
       {children}
       <div className="ml-auto flex items-center gap-[18px]">{actions}</div>
     </div>
@@ -109,6 +108,7 @@ function EntityLinkDialog({
   const [loading, setLoading] = useState(false);
   const [crmResults, setCRMResults] = useState<CRMSearchResult[]>([]);
   const [supportResults, setSupportResults] = useState<SupportConversation[]>([]);
+	const [pendingDealCustomerId, setPendingDealCustomerId] = useState<string | null>(null);
 
   const runSearch = async (value: string) => {
     setQuery(value);
@@ -134,8 +134,11 @@ function EntityLinkDialog({
   };
 
   const link = async (id: string) => {
-    try {
-      if (type === 'support_conversation' && targetType === 'contact') {
+	try {
+		if (type === 'deal' && targetType === 'company') {
+			const response = await crmDealService.setCustomer(workspaceId, id, { workspace_id: workspaceId, company_id: targetId });
+			if (response.error) throw new Error(response.error);
+		} else if (type === 'support_conversation' && targetType === 'contact') {
         const response = await supportService.updateConversationCRMContact(workspaceId, id, {
           crm_contact_id: targetId,
         });
@@ -150,7 +153,7 @@ function EntityLinkDialog({
       });
       if (response.error) throw new Error(response.error);
       }
-      toast.success(`Linked to ${targetType}`);
+		toast.success(type === 'deal' && targetType === 'company' ? 'Deal customer updated' : `Linked to ${targetType}`);
       onOpenChange(false);
       setQuery('');
       onLinked();
@@ -172,23 +175,27 @@ function EntityLinkDialog({
           detail: item.detail,
         }));
 
-  return (
+	const requestLink = (id: string) => {
+		if (type === 'deal' && targetType === 'company') {
+			setPendingDealCustomerId(id);
+			return;
+		}
+		void link(id);
+	};
+
+  return (<>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <QuietRelationshipDialogContent>
         <DialogHeader>
-          <DialogTitle>Link existing {type === 'support_conversation' ? 'conversation' : type}</DialogTitle>
+			<DialogTitle>{type === 'deal' && targetType === 'company' ? 'Choose an existing deal' : `Link existing ${type === 'support_conversation' ? 'conversation' : type}`}</DialogTitle>
         </DialogHeader>
-        <div className="relative">
-          <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            autoFocus
-            value={query}
-            onChange={(event) => void runSearch(event.target.value)}
-            placeholder="Search existing records"
-            className="pl-9"
-          />
-        </div>
-        <div className="max-h-72 overflow-y-auto border-t border-border/60">
+        <QuietSearchInput
+          autoFocus
+          value={query}
+          onChange={(event) => void runSearch(event.target.value)}
+          placeholder="Search existing records"
+        />
+        <QuietRelationshipResults className="max-h-72 overflow-y-auto border-t border-border/60">
           {loading ? (
             <CollectionState icon={Loading01Icon} title="" detail="" loading />
           ) : results.length ? (
@@ -196,10 +203,10 @@ function EntityLinkDialog({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => void link(item.id)}
-                className="flex w-full items-center justify-between gap-3 border-b border-border/50 px-2 py-3 text-left hover:bg-muted/30"
+				onClick={() => requestLink(item.id)}
+				className={cn(quietRelationshipResultRowClassName, 'flex w-full items-center justify-between gap-3 border-b border-border/50 px-2 py-3 text-left hover:bg-muted/30')}
               >
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{item.name}</span>
                   <span className="block truncate text-xs text-muted-foreground">{item.detail}</span>
                 </span>
@@ -209,10 +216,23 @@ function EntityLinkDialog({
           ) : (
             <p className="px-2 py-8 text-center text-xs text-muted-foreground">Enter a search to find records.</p>
           )}
-        </div>
-      </DialogContent>
+        </QuietRelationshipResults>
+      </QuietRelationshipDialogContent>
     </Dialog>
-  );
+		<ConfirmDialog
+			open={!!pendingDealCustomerId}
+			onOpenChange={(nextOpen) => { if (!nextOpen) setPendingDealCustomerId(null); }}
+			title="Change deal customer"
+			description="This company will become the deal customer. The existing customer relationship will be replaced, while linked people remain participants."
+			confirmLabel="Change customer"
+			onConfirm={async () => {
+				if (!pendingDealCustomerId) return;
+				const dealId = pendingDealCustomerId;
+				setPendingDealCustomerId(null);
+				await link(dealId);
+			}}
+		/>
+	</>);
 }
 
 export function CompanyContactsView({
@@ -259,7 +279,7 @@ export function CompanyContactsView({
               onClick={() => setLinkOpen(true)}
             >
               <Link01Icon className="h-[15px] w-[15px]" />
-              Link existing
+			  Link existing
             </button>
             <button
               type="button"
@@ -368,8 +388,8 @@ export function CompanyDealsView({
               className={getOptionalSectionActionClass(linkOpen ? 'open' : 'available', 'borderless')}
               onClick={() => setLinkOpen(true)}
             >
-              <Link01Icon className="h-[15px] w-[15px]" />
-              Link existing
+			  <Link01Icon className="h-[15px] w-[15px]" />
+			  Assign existing
             </button>
             <button
               type="button"
@@ -471,7 +491,7 @@ export function CompanyMeetingsView({
   });
   const meetings = query.data?.data ?? [];
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col bg-transparent">
       <CollectionHeader
         title="Meetings"
         search={search}
@@ -513,9 +533,9 @@ export function CompanyMeetingsView({
                       : 'Participants pending'}
                   </span>
                 </span>
-                <MeetingPlatformLabel platform={meeting.platform} compact />
-                <span className="text-xs text-muted-foreground">{format(new Date(date), 'MMM d, yyyy · p')}</span>
-                <MeetingStatusBadge status={meeting.status} className="justify-self-end" />
+                <MeetingPlatformLabel platform={meeting.platform} compact presentation="quiet" />
+                <span className="text-xs text-muted-foreground">{formatMeetingDate(date, 'MMM d, yyyy · p')}</span>
+                <MeetingStatusText status={meeting.status} className="justify-self-end" />
               </button>
             );
           })
@@ -796,7 +816,7 @@ export function ContactMeetingsView({
   const meetings = query.data?.data ?? [];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col bg-transparent">
       <CollectionHeader
         title="Meetings"
         search={search}
@@ -838,9 +858,9 @@ export function ContactMeetingsView({
                       : 'Participants pending'}
                   </span>
                 </span>
-                <MeetingPlatformLabel platform={meeting.platform} compact />
-                <span className="text-xs text-muted-foreground">{format(new Date(date), 'MMM d, yyyy · p')}</span>
-                <MeetingStatusBadge status={meeting.status} className="justify-self-end" />
+                <MeetingPlatformLabel platform={meeting.platform} compact presentation="quiet" />
+                <span className="text-xs text-muted-foreground">{formatMeetingDate(date, 'MMM d, yyyy · p')}</span>
+                <MeetingStatusText status={meeting.status} className="justify-self-end" />
               </button>
             );
           })

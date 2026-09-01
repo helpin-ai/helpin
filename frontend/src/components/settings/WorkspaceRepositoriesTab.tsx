@@ -28,9 +28,8 @@ import {
   LinkSquare01Icon,
   Loading01Icon,
   LockIcon,
-  Search01Icon,
 } from '@/lib/icons';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
 type WorkspaceRepositoriesTabProps = {
@@ -239,13 +238,11 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
                   </Select>
                 </div>
                 {selectedRepoPickerIntegration?.provider === 'gitlab' ? (
-                  <div className="relative mt-3 max-w-sm">
-                    <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                    <Input
+                  <div className="mt-3 max-w-sm">
+                    <QuietSearchInput
                       value={repoSearchInput}
                       onChange={(e) => setRepoSearchInput(e.target.value)}
                       placeholder="Search GitLab projects by name"
-                      className="h-8 pl-8 text-xs"
                     />
                   </div>
                 ) : null}

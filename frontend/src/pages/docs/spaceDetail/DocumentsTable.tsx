@@ -12,14 +12,13 @@ import {
   FolderOpenIcon,
   MoreHorizontalIcon,
   PlusSignIcon,
-  Search01Icon,
   SentIcon,
   Tick01Icon,
 } from '@/lib/icons'
 import { DOC_STATUS_LABELS } from '@/lib/docsTypes'
 import type { DocsDocument, DocStatus } from '@/lib/docsTypes'
 import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposalBadge'
-import { Input } from '@/components/ui/input'
+import { QuietSearchInput } from '@/components/design-system/quiet'
 import { Button } from '@/components/ui/button'
 import {
   DocsLibraryList,
@@ -148,17 +147,13 @@ export function DocumentsTable({
       {showToolbar && (
         <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <div className="relative min-w-0 flex-1 sm:max-w-64">
-              <Search01Icon className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/60" />
-              <Input
-                type="text"
-                placeholder="Search..."
-                aria-label="Search documents in this space"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 pl-7 text-xs"
-              />
-            </div>
+            <QuietSearchInput
+              containerClassName="min-w-0 flex-1 sm:max-w-64"
+              placeholder="Search..."
+              aria-label="Search documents in this space"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
             <span className="text-xs text-muted-foreground shrink-0">
               {displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`}
             </span>
@@ -170,11 +165,11 @@ export function DocumentsTable({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="text-xs text-muted-foreground"
+                className="text-muted-foreground"
               >
-                <FilterHorizontalIcon className="h-3 w-3" />
+                <FilterHorizontalIcon className="h-4 w-4" />
                 {filterStatus ? DOC_STATUS_LABELS[filterStatus] : 'Status'}
-                <ArrowDown01Icon className="h-3 w-3 opacity-50" />
+                <ArrowDown01Icon className="h-4 w-4 opacity-50" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">

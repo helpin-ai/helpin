@@ -38,6 +38,6 @@ describe('TaskDetailPanel view tabs layout', () => {
     expect(rightRailStart).toBeGreaterThan(leftColumnStart);
     expect(source).toContain('border-t border-border/60 px-4 py-5 pb-16 sm:px-6');
     expect(source).toContain('lg:border-l lg:border-t-0');
-    expect(source).toContain('px-4 sm:px-6 lg:px-10');
+    expect(source).toContain('overflow-x-hidden px-4 pt-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:px-10');
   });
 });

@@ -295,6 +295,7 @@ func main() {
 			&model.SupportCredentialRotationAudit{},
 			&model.SupportWidgetSession{},
 			&model.SupportAttachment{},
+			&model.CRMEmailAttachment{},
 			&model.SupportEvent{},
 			&model.SupportCoverageTopic{},
 			&model.SupportCoverageGap{},
@@ -831,6 +832,7 @@ func main() {
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
 	crmImportRepo := repository.NewCRMImportRepository(db)
 	crmEmailRepo := repository.NewCRMEmailRepository(db)
+	crmEmailAttachmentRepo := repository.NewCRMEmailAttachmentRepository(db)
 	crmCalendarRepo := repository.NewCRMCalendarRepository(db)
 	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
@@ -1367,7 +1369,7 @@ func main() {
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
-	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo)
+	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo).SetDealService(crmDealService)
 
 	// Gmail OAuth + encryption setup.
 	gmailOAuth := oauth.NewGmailOAuthClient(cfg.GmailClientID, cfg.GmailClientSecret, cfg.GmailOAuthRedirectURL)
@@ -1396,6 +1398,20 @@ func main() {
 	pmActivityService.SetCompanySummaryRefresh(crmSummaryService)
 	pmTaskInsightsService := service.NewPMTaskInsightsService(pmTaskInsightsRepo, pmTaskRepo, pmCommentRepo, pmActivityRepo, agentRunRepo, agentRepo, taskGitLinkRepo, pmChecklistItemRepo, llmProvider)
 	crmEmailService := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
+	crmEmailService.SetAttachmentStorage(crmEmailAttachmentRepo, s3Client)
+	go func() {
+		cleanup := func() {
+			if err := crmEmailService.CleanupStaleAttachments(context.Background()); err != nil {
+				slog.Error("failed to clean stale CRM email attachments", "error", err)
+			}
+		}
+		cleanup()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			cleanup()
+		}
+	}()
 	crmCalendarService := service.NewCRMCalendarService(crmCalendarRepo).
 		SetCompanySummaryRefresh(crmSummaryService).
 		SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
@@ -1409,7 +1425,7 @@ func main() {
 	crmContactService.SetMotionSignalRefresher(crmSignalService)
 	crmCompanyService.SetMotionSignalRefresher(crmSignalService)
 	crmDealService.SetMotionSignalReconciler(crmSignalService)
-	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo)
+	crmSuggestionService := service.NewCRMSuggestionService(crmSuggestionRepo, crmDealRepo, crmAssociationRepo).SetDealService(crmDealService)
 	crmWritingProfileService := service.NewCRMWritingProfileService(crmWritingProfileRepo)
 	meetingProviderHTTPClient := &http.Client{Timeout: 45 * time.Second}
 	recallMeetingProvider := meetingcapture.NewRecallProvider(meetingcapture.RecallConfig{
@@ -1576,7 +1592,7 @@ func main() {
 		SetHealthScoreRefresh(crmSignalService)
 	crmSummaryService.SetIntelligenceDependencies(signalDetectionService, crmActivityRepo, supportMessageRepo)
 	crmActivityService.SetSignalDetection(crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation), crmSignalRepo)
-	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo)
+	dealAutomationService := service.NewDealAutomationService(llmProvider, crmDealRepo, crmSignalRepo, crmSuggestionRepo, crmContactRepo, crmAssociationRepo, crmAutonomyRepo).SetDealService(crmDealService)
 	_ = signalDetectionService // Used by Temporal workers
 
 	// AI Support Agent — wire SupportAIService with LLM provider and JetStream.

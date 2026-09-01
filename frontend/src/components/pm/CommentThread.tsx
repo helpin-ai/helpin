@@ -902,6 +902,7 @@ export function CommentThread({
           </button>
         </QuickTooltip>
         <CommentEditor
+          workspaceId={composerVariant === 'update' ? workspaceId : undefined}
           key={editingCommentId ?? 'edit'}
           onSubmit={(html) => { void saveEditComment(html); }}
           loading={editSaving}
@@ -1010,6 +1011,7 @@ export function CommentThread({
           </QuickTooltip>
         )}
         <CommentEditor
+          workspaceId={variant === 'update' ? workspaceId : undefined}
           key={editorKey}
           autoFocus={autoFocus}
           onSubmit={onSubmit}

@@ -9,7 +9,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Delete01Icon, PlusSignIcon, Search01Icon, PencilEdit01Icon } from '@/lib/icons';
+import { Delete01Icon, PlusSignIcon, PencilEdit01Icon } from '@/lib/icons';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { toast } from 'sonner';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -345,15 +346,12 @@ export function RedirectsTab({ workspaceId, editable }: { workspaceId: string; e
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <span className="text-sm text-muted-foreground">{total} {total === 1 ? 'redirect' : 'redirects'}</span>
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search01Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-9 w-60 pl-9"
-                placeholder="Search by old path..."
-              />
-            </div>
+            <QuietSearchInput
+              containerClassName="w-60"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by old path..."
+            />
             <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1); }}>
               <SelectTrigger className="h-9 w-40">
                 <SelectValue placeholder="Filter by type" />

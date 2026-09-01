@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { QuietEmptyState, QuietSearchInput } from '@/components/design-system/quiet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAgents, useAutomationActivity, useAutomationOverview, useAutomationTriggerCatalog } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { ArrowRight01Icon, DashboardSpeed01Icon, SecurityCheckIcon, BotIcon, Search01Icon } from '@/lib/icons';
+import { ArrowRight01Icon, DashboardSpeed01Icon, SecurityCheckIcon, BotIcon } from '@/lib/icons';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import type {
@@ -326,9 +327,9 @@ function TriggerUsageBadge({ item }: { item: AutomationTriggerCatalogEntry }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge variant="outline" className="shrink-0 cursor-help text-[10px]">
+          <span className="shrink-0 cursor-help text-[11.5px] text-quiet-text-tertiary">
             {triggerCountLabel(item)}
-          </Badge>
+          </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-64 text-xs leading-relaxed">
           {triggerCountTooltip(item)}
@@ -423,63 +424,58 @@ export function TriggerCatalogList({
     items: items.filter(group.filter),
   })), [items]);
 
+  const selectedGroup = groups.find((group) => group.id === activeTab) ?? groups[0];
+  const visibleItems = selectedGroup ? filterTriggerCatalog(selectedGroup.items, query) : [];
+
   return (
-    <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TriggerGroupDef['id'])} className="gap-4">
+    <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <TabsList variant="line" aria-label="Trigger category" className="max-w-full justify-start overflow-x-auto">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TriggerGroupDef['id'])} className="max-w-full gap-0 overflow-x-auto">
+          <TabsList variant="quiet" aria-label="Trigger category" className="border-b-0">
           {groups.map((group) => (
             <TabsTrigger key={group.id} value={group.id} title={group.helper}>
               {group.label}
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {group.items.length}
-              </span>
+              <span className="text-[12px] font-normal tabular-nums text-quiet-muted">{group.items.length}</span>
             </TabsTrigger>
           ))}
-        </TabsList>
+          </TabsList>
+        </Tabs>
 
-        <div className="relative w-full sm:w-64">
-          <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            aria-label="Search triggers"
-            placeholder="Search triggers..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
+        <QuietSearchInput
+          containerClassName="w-full sm:w-64"
+          aria-label="Search triggers"
+          placeholder="Search triggers..."
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
       </div>
 
-      {groups.map((group) => {
-        const visibleItems = filterTriggerCatalog(group.items, query);
-        return (
-          <TabsContent key={group.id} value={group.id} className="mt-0">
-            {visibleItems.length > 0 ? (
-              <div className="border-t border-border/60">
-                <div className={`hidden gap-4 border-b border-border/60 px-[14px] py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:grid ${TRIGGER_CATALOG_GRID_CLASS}`}>
-                  <div>Trigger</div>
-                  <div>Usage</div>
-                  <div className="text-right">Actions</div>
-                </div>
-                {visibleItems.map((item) => (
-                  <TriggerRow
-                    key={item.id}
-                    item={item}
-                    slug={slug}
-                    activityBasePath={activityBasePath}
-                    flowsBasePath={flowsBasePath}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="border-y border-border/60 px-4 py-10 text-center text-sm text-muted-foreground">
-                {query.trim() ? `No ${group.label.toLocaleLowerCase()} triggers match “${query.trim()}”.` : `No ${group.label.toLocaleLowerCase()} triggers yet.`}
-              </div>
-            )}
-          </TabsContent>
-        );
-      })}
-    </Tabs>
+      {selectedGroup ? (
+        visibleItems.length > 0 ? (
+          <div className="border-t border-quiet-divider-strong">
+            <div className={`hidden gap-4 border-b border-quiet-divider-light px-[14px] py-2 text-[11px] font-medium uppercase tracking-[0.06em] text-quiet-muted lg:grid ${TRIGGER_CATALOG_GRID_CLASS}`}>
+              <div>Trigger</div>
+              <div>Usage</div>
+              <div className="text-right">Actions</div>
+            </div>
+            {visibleItems.map((item) => (
+              <TriggerRow
+                key={item.id}
+                item={item}
+                slug={slug}
+                activityBasePath={activityBasePath}
+                flowsBasePath={flowsBasePath}
+              />
+            ))}
+          </div>
+        ) : (
+          <QuietEmptyState
+            title={query.trim() ? `No ${selectedGroup.label.toLocaleLowerCase()} triggers match “${query.trim()}”` : `No ${selectedGroup.label.toLocaleLowerCase()} triggers yet`}
+            description={query.trim() ? 'Try a broader search or choose another trigger category.' : 'Triggers will appear here when this event surface becomes available.'}
+          />
+        )
+      ) : null}
+    </div>
   );
 }
 
@@ -710,15 +706,10 @@ export function AutomationOverviewPanel({
   if ((needsOverview && overviewQuery.isError) || (showTriggerCatalog && triggerCatalogQuery.isError)) {
     const queryError = overviewQuery.error ?? triggerCatalogQuery.error;
     return (
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardContent className="flex flex-col gap-2 py-8">
-          <div className="flex items-center gap-2 text-sm font-medium text-destructive">
-            <DashboardSpeed01Icon className="h-4 w-4" />
-            Could not load automation data
-          </div>
-          <p className="text-sm text-muted-foreground">{queryError instanceof Error ? queryError.message : 'Unknown error'}</p>
-        </CardContent>
-      </Card>
+      <QuietEmptyState
+        title="Could not load automation data"
+        description={queryError instanceof Error ? queryError.message : 'The automation catalog is temporarily unavailable.'}
+      />
     );
   }
 

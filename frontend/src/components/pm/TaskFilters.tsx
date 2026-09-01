@@ -1,7 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Tick01Icon, FilterHorizontalIcon, Cancel01Icon, ArrowLeft02Icon, PlusSignIcon } from '@/lib/icons';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Tick01Icon, PlusSignIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Command,
@@ -23,6 +21,12 @@ import { UserAvatar } from './UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { filterAssignableMembersForTeam } from '@/components/pm/task-detail/taskFilterMembers';
 import { SaveViewDialog } from './SaveViewDialog';
+import {
+  PMFilterBar,
+  PMFilterTrigger,
+  type PMFilterDefinition,
+  type PMFilterOption,
+} from './PMFilterControls';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -45,19 +49,8 @@ type FilterKey =
 
 type FilterState = Partial<Record<FilterKey, string[]>>;
 
-interface FilterOption {
-  value: string;
-  label: string;
-  icon?: React.ReactNode;
-}
-
-interface FilterDefinition {
-  key: FilterKey;
-  label: string;
-  options: FilterOption[];
-  singleSelect?: boolean;
-  searchableValues?: boolean;
-}
+type FilterOption = PMFilterOption;
+type FilterDefinition = PMFilterDefinition<FilterKey>;
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -88,7 +81,6 @@ interface FilterContextValue {
   activeKeys: Set<FilterKey>;
   visibleKeys: Set<FilterKey>;
   activeCount: number;
-  visibleCount: number;
   handleAdd: (key: FilterKey) => void;
   handleToggle: (key: FilterKey, value: string) => void;
   handleRemove: (key: FilterKey) => void;
@@ -101,91 +93,6 @@ function useFilterContext() {
   const ctx = useContext(FilterContext);
   if (!ctx) throw new Error('useFilterContext must be used within TaskFilterProvider');
   return ctx;
-}
-
-// ── Sub-components ─────────────────────────────────────────────────
-
-function FilterValueSelect({
-  definition,
-  selected,
-  onToggle,
-}: {
-  definition: FilterDefinition;
-  selected: string[];
-  onToggle: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const selectedLabels = selected.map((value) =>
-    definition.options.find((opt) => opt.value === value)?.label ?? value,
-  );
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs hover:bg-accent transition-colors">
-          {selectedLabels.length === 0
-            ? 'Choose value'
-            : selectedLabels.length === 1
-            ? selectedLabels[0]
-            : `${selectedLabels.length} selected`}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className={`${definition.searchableValues ? 'w-80' : 'w-52'} p-0`} align="start">
-        <Command>
-          {definition.searchableValues ? (
-            <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} />
-          ) : null}
-          <CommandList>
-            <CommandEmpty>No results.</CommandEmpty>
-            <CommandGroup>
-              {definition.options.map((opt) => {
-                const isSelected = selected.includes(opt.value);
-                return (
-                  <CommandItem
-                    key={opt.value}
-                    value={opt.label}
-                    onSelect={() => onToggle(opt.value)}
-                  >
-                    <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                      {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
-                    </div>
-                    {opt.icon ? <span className="mr-1.5 shrink-0">{opt.icon}</span> : null}
-                    <span className="min-w-0 flex-1 truncate">{opt.label}</span>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function FilterPill({
-  definition,
-  selected,
-  onToggle,
-  onRemove,
-}: {
-  definition: FilterDefinition;
-  selected: string[];
-  onToggle: (value: string) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
-      <span className="font-medium text-muted-foreground">{definition.label}</span>
-      <span className="text-muted-foreground/60">is</span>
-      <FilterValueSelect definition={definition} selected={selected} onToggle={onToggle} />
-      <button
-        onClick={onRemove}
-        className="ml-0.5 rounded p-0.5 text-muted-foreground/60 hover:bg-accent hover:text-foreground transition-colors"
-      >
-        <Cancel01Icon className="h-3 w-3" />
-      </button>
-    </div>
-  );
 }
 
 // ── Provider ───────────────────────────────────────────────────────
@@ -420,7 +327,6 @@ export function TaskFilterProvider({
     activeKeys,
     visibleKeys,
     activeCount: activeKeys.size,
-    visibleCount: visibleKeys.size,
     handleAdd,
     handleToggle,
     handleRemove,
@@ -434,125 +340,15 @@ export function TaskFilterProvider({
 
 export function TaskFilterTrigger() {
   const { definitions, filterState, visibleKeys, activeCount, handleAdd, handleToggle } = useFilterContext();
-  const [open, setOpen] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<FilterKey | null>(null);
-  const available = definitions.filter((d) => !visibleKeys.has(d.key) && d.options.length > 0);
-  const selectedDefinition = selectedKey
-    ? definitions.find((definition) => definition.key === selectedKey)
-    : undefined;
-  const canChooseFilter = available.length > 0 || Boolean(selectedDefinition);
-
-  const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) {
-      setSelectedKey(null);
-    }
-  };
-
   return (
-    <>
-      {canChooseFilter ? (
-        <Popover open={open} onOpenChange={handleOpenChange}>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <FilterHorizontalIcon className="h-3.5 w-3.5" />
-                Filters
-              </span>
-              <Badge
-                variant="secondary"
-                className={`rounded-full px-1.5 py-0 text-[10px] transition-opacity ${activeCount > 0 ? 'opacity-100' : 'opacity-0'}`}
-              >
-                {activeCount || 0}
-              </Badge>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            className={`${selectedDefinition ? (selectedDefinition.searchableValues ? 'w-80' : 'w-52') : 'w-48'} p-0`}
-            align="start"
-          >
-            {selectedDefinition ? (
-              <Command>
-                <div className="flex items-center gap-1 border-b border-border/70 px-1.5 py-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    aria-label="Back to filter fields"
-                    onClick={() => setSelectedKey(null)}
-                  >
-                    <ArrowLeft02Icon className="h-3.5 w-3.5" />
-                  </Button>
-                  <span className="truncate text-xs font-medium">{selectedDefinition.label}</span>
-                </div>
-                {selectedDefinition.searchableValues ? (
-                  <CommandInput placeholder={`Search ${selectedDefinition.label.toLowerCase()}...`} />
-                ) : null}
-                <CommandList>
-                  <CommandEmpty>No results.</CommandEmpty>
-                  <CommandGroup>
-                    {selectedDefinition.options.map((option) => {
-                      const isSelected = filterState[selectedDefinition.key]?.includes(option.value) ?? false;
-                      return (
-                        <CommandItem
-                          key={option.value}
-                          value={option.label}
-                          onSelect={() => {
-                            handleToggle(selectedDefinition.key, option.value);
-                            if (selectedDefinition.singleSelect) {
-                              setOpen(false);
-                              setSelectedKey(null);
-                            }
-                          }}
-                        >
-                          <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                            {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
-                          </div>
-                          {option.icon ? <span className="mr-1.5 shrink-0">{option.icon}</span> : null}
-                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            ) : (
-              <Command>
-                <CommandInput placeholder="Filter by..." />
-                <CommandList>
-                  <CommandEmpty>No filters.</CommandEmpty>
-                  <CommandGroup>
-                    {available.map((def) => (
-                      <CommandItem
-                        key={def.key}
-                        value={def.label}
-                        onSelect={() => {
-                          handleAdd(def.key);
-                          setSelectedKey(def.key);
-                        }}
-                      >
-                        {def.label}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            )}
-          </PopoverContent>
-        </Popover>
-      ) : (
-        <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground" disabled>
-          <span className="inline-flex items-center gap-1">
-            <FilterHorizontalIcon className="h-3.5 w-3.5" />
-            Filters
-          </span>
-          <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
-            {activeCount}
-          </Badge>
-        </Button>
-      )}
-    </>
+    <PMFilterTrigger
+      definitions={definitions}
+      values={filterState}
+      visibleKeys={visibleKeys}
+      activeCount={activeCount}
+      onAdd={handleAdd}
+      onToggle={handleToggle}
+    />
   );
 }
 
@@ -577,36 +373,21 @@ function suggestViewName(
 }
 
 export function TaskFilterBar() {
-  const { workspaceId, filterState, definitions, visibleKeys, activeCount, visibleCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
+  const { workspaceId, filterState, definitions, visibleKeys, activeCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
   const { activeViewId, saveCurrentAsView } = usePMBoardStore();
   const [saveOpen, setSaveOpen] = useState(false);
 
   const canSaveAsView = !activeViewId || isDefaultView(activeViewId);
 
-  if (visibleCount === 0) return null;
-
   return (
-    <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-1.5 px-3 py-1.5">
-      {definitions
-        .filter((def) => visibleKeys.has(def.key))
-        .map((def) => (
-          <FilterPill
-            key={def.key}
-            definition={def}
-            selected={filterState[def.key] ?? []}
-            onToggle={(value) => handleToggle(def.key, value)}
-            onRemove={() => handleRemove(def.key)}
-          />
-        ))}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-6 px-2 text-[10px] text-muted-foreground"
-        onClick={handleClearAll}
-      >
-        Clear all
-      </Button>
-      {canSaveAsView && activeCount > 0 && (
+    <PMFilterBar
+      definitions={definitions}
+      values={filterState}
+      visibleKeys={visibleKeys}
+      onToggle={handleToggle}
+      onRemove={handleRemove}
+      onClearAll={handleClearAll}
+      trailing={canSaveAsView && activeCount > 0 ? (
         <>
           <button
             type="button"
@@ -626,8 +407,8 @@ export function TaskFilterBar() {
             }}
           />
         </>
-      )}
-    </div>
+      ) : null}
+    />
   );
 }
 
@@ -636,7 +417,10 @@ const OWNER_AVATAR_INLINE_CAP = 7;
 export function TaskOwnerAvatarFilterRow() {
   const { workspaceId, assignableMembers, activeTeamId, userMemberships, filterState, handleToggle } = useFilterContext();
   const { data: memberPresenceByUserId } = useWorkspaceMemberPresenceMap(workspaceId);
-  const ownerFilters = filterState.owner_member_ids ?? [];
+  const ownerFilters = useMemo(
+    () => filterState.owner_member_ids ?? [],
+    [filterState.owner_member_ids],
+  );
   const [overflowOpen, setOverflowOpen] = useState(false);
 
   const members = useMemo(

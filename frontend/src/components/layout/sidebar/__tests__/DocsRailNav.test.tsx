@@ -4,7 +4,6 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { useSearchCommandStore } from '@/stores/searchCommandStore'
 import { DocsRailNav } from '../DocsRailNav'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -92,7 +91,6 @@ describe('DocsRailNav', () => {
     location.pathname = '/w/acme/docs/documents/doc-1'
     location.search = {}
     localStorage.clear()
-    useSearchCommandStore.setState({ open: false })
   })
 
   afterEach(() => {
@@ -125,6 +123,10 @@ describe('DocsRailNav', () => {
     expect(container.textContent).toContain('All docs in space')
     expect(container.textContent).toContain('Getting started')
     expect(container.textContent).toContain('Welcome guide')
+    const spaceAvatar = container.querySelector('[data-slot="docs-space-avatar"]')
+    expect(spaceAvatar?.className).toContain('rounded-full')
+    expect(spaceAvatar?.className).toContain('bg-')
+    expect(spaceAvatar?.className).not.toContain('bg-foreground')
     expect(container.querySelector('[aria-current="page"]')?.textContent).toContain('Welcome guide')
     const documentRows = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-slot="docs-document-row"]'))
     const treeDocumentRow = documentRows.find((row) => !row.dataset.pinned)
@@ -186,7 +188,7 @@ describe('DocsRailNav', () => {
     container.remove()
   })
 
-  it('opens the shared command palette from the search footer', () => {
+  it('leaves global search to the shared sidebar footer', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -206,11 +208,7 @@ describe('DocsRailNav', () => {
       )
     })
 
-    const searchButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Search all spaces'),
-    )
-    act(() => searchButton?.click())
-    expect(useSearchCommandStore.getState().open).toBe(true)
+    expect(container.textContent).not.toContain('Search all spaces')
 
     act(() => root.unmount())
     container.remove()

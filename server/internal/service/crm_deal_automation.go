@@ -22,6 +22,13 @@ type DealAutomationService struct {
 	assocRepo      *repository.CRMAssociationRepository
 	autonomyRepo   *repository.CRMAutonomyRepository
 	entitlementSvc *EntitlementService
+	dealService    *CRMDealService
+}
+
+// SetDealService routes autonomous creation through the canonical customer workflow.
+func (s *DealAutomationService) SetDealService(dealService *CRMDealService) *DealAutomationService {
+	s.dealService = dealService
+	return s
 }
 
 // NewDealAutomationService creates a new deal automation service.
@@ -450,38 +457,10 @@ func (s *DealAutomationService) getContactDeals(ctx context.Context, workspaceID
 }
 
 func (s *DealAutomationService) autoCreateDeal(ctx context.Context, workspaceID, contactID, pipelineID, stageID string, inference DealCreationInference) (*model.CRMDeal, error) {
-	displayID, err := s.dealRepo.GetNextDisplayID(ctx, workspaceID)
-	if err != nil {
-		return nil, err
+	if s.dealService == nil {
+		return nil, fmt.Errorf("deal creation is not configured")
 	}
-
-	deal := &model.CRMDeal{
-		WorkspaceID: workspaceID,
-		DisplayID:   displayID,
-		Name:        inference.DealName,
-		PipelineID:  pipelineID,
-		StageID:     stageID,
-		Amount:      inference.EstimatedAmount,
-		Currency:    "USD",
-	}
-
-	if err := s.dealRepo.Create(ctx, deal); err != nil {
-		return nil, err
-	}
-
-	// Create association
-	assoc := &model.CRMAssociation{
-		WorkspaceID:    workspaceID,
-		FromObjectType: "deal",
-		FromObjectID:   deal.ID,
-		ToObjectType:   "contact",
-		ToObjectID:     contactID,
-	}
-	if err := s.assocRepo.Create(ctx, assoc); err != nil {
-		slog.Error("failed to create deal-contact association", "error", err, "deal_id", deal.ID, "contact_id", contactID)
-	}
-
-	return deal, nil
+	return s.dealService.Create(ctx, model.CreateCRMDealRequest{WorkspaceID: workspaceID, Name: inference.DealName, ContactID: contactID, PipelineID: pipelineID, StageID: stageID, Amount: inference.EstimatedAmount})
 }
 
 // DealProgressionInference is the LLM output for stage progression.

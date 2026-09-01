@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   useOrgBilling,
@@ -74,11 +74,11 @@ export default function OrganizationBilling() {
         {/* Plans & Subscriptions */}
         <TabsContent value="plans" className="space-y-4">
           {billing.workspaces.length > 12 && (
-            <Input
+            <QuietSearchInput
+              containerClassName="max-w-xs"
               placeholder="Search workspaces…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="max-w-xs"
             />
           )}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

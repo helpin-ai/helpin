@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { File01Icon, Link01Icon, PlusSignIcon, Search01Icon, Delete01Icon, Cancel01Icon } from '@/lib/icons'
+import { File01Icon, Link01Icon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons'
 import { toast } from 'sonner'
 import {
   useDocsLinks,
@@ -16,7 +16,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { Input } from '@/components/ui/input'
+import { QuietSearchInput } from '@/components/design-system/quiet'
 import type { DocsLink } from '@/lib/docsTypes'
 import type { SearchResult } from '@/lib/services/searchService'
 
@@ -128,23 +128,22 @@ export function DocumentLinksPanel({
 
           {showSearch && (
             <div className="space-y-2">
-              <div className="relative">
-                <Search01Icon className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  ref={inputRef}
-                  className="h-8 pl-8 pr-8 text-xs"
-                  placeholder="Search tasks by name..."
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-                <button
-                  type="button"
-                  onClick={() => { setShowSearch(false); setQuery('') }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <Cancel01Icon className="h-3.5 w-3.5" />
-                </button>
-              </div>
+              <QuietSearchInput
+                ref={inputRef}
+                placeholder="Search tasks by name..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                trailing={(
+                  <button
+                    type="button"
+                    aria-label="Close search"
+                    onClick={() => { setShowSearch(false); setQuery('') }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Cancel01Icon className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              />
 
               {/* Search results */}
               {query.length >= 2 && (

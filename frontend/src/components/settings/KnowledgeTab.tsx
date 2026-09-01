@@ -34,6 +34,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -56,40 +57,33 @@ function KnowledgePageIntro({
   onOpenDocs: () => void;
   onOpenAIAssistant: () => void;
 }) {
+  if (hasAnySource) return null;
+
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold">Knowledge</h2>
-        <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-          Manage the docs and websites that AI can search when answering questions or helping teammates.
-        </p>
-      </div>
-
-      {!hasAnySource ? (
-        <div className="rounded-xl border border-dashed border-border/80 bg-card px-6 py-8">
-          <div className="mx-auto max-w-xl text-center">
-            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <BookOpen01Icon className="h-5 w-5" />
-            </div>
-            <h3 className="text-base font-semibold">No knowledge sources yet</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Add a public docs space or website source to make workspace knowledge available to AI.
-            </p>
-            {workspaceSlug ? (
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <Button type="button" size="sm" onClick={onOpenDocs}>
-                  <PlusSignIcon className="h-4 w-4" />
-                  Open docs
-                </Button>
-                <Button type="button" variant="outline" size="sm" onClick={onOpenAIAssistant}>
-                  <Settings02Icon className="h-4 w-4" />
-                  AI Assistant
-                </Button>
-              </div>
-            ) : null}
+      <div className="rounded-xl border border-dashed border-border/80 bg-card px-6 py-8">
+        <div className="mx-auto max-w-xl text-center">
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <BookOpen01Icon className="h-5 w-5" />
           </div>
+          <h3 className="text-base font-semibold">No knowledge sources yet</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Add a public docs space or website source to make workspace knowledge available to AI.
+          </p>
+          {workspaceSlug ? (
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <Button type="button" size="sm" onClick={onOpenDocs}>
+                <PlusSignIcon className="h-4 w-4" />
+                Open docs
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={onOpenAIAssistant}>
+                <Settings02Icon className="h-4 w-4" />
+                AI Assistant
+              </Button>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -1189,7 +1183,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                         </SelectTrigger>
                         <SelectContent>
                           <div className="sticky top-0 z-10 border-b bg-popover p-2">
-                            <Input
+                            <QuietSearchInput
                               ref={docsArticleSearchInputRef}
                               value={docsArticleSearch}
                               onChange={(event) => {
@@ -1199,7 +1193,6 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                               onKeyDown={(event) => event.stopPropagation()}
                               onPointerDown={(event) => event.stopPropagation()}
                               placeholder="Search articles"
-                              className="h-8"
                             />
                           </div>
                           {filteredDocsArticles.length > 0 ? (
