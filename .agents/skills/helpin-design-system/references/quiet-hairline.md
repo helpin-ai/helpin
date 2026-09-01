@@ -70,7 +70,6 @@ Use Helpin's centralized `font-sans` stack. Do not introduce another font. Use o
 Use Helpin's existing authenticated route shell and responsive overflow behavior. The fixed backdrop/page-card prototype shell is not a production layout rule.
 
 - Route pages use the centralized Quiet viewport and page header.
-- The workspace application shell paints an opaque `bg-background` surface. Do not tint route pages by blending the surface over a decorative gradient.
 - Detail sheets/pages use the centralized detail layout, tabs, and rail.
 - CRM detail tabs inherit the detail page surface. Full-height Tasks, Emails, and Meetings views must remain transparent rather than painting an opaque `bg-background`; bounded embedded task views may retain their own surface.
 - Specialized editors and dense workflow toolbars may keep their own header composition, but must use the centralized workspace-sidebar safe inset so the collapsed navigation opener never covers controls.

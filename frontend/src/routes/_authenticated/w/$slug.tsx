@@ -86,8 +86,8 @@ function WorkspaceLayout() {
 
   if (loading) {
     return (
-      <div className={cn(WORKSPACE_AUTH_VIEWPORT_CLASS_NAME, 'bg-background')}>
-        <div className="h-full w-full overflow-hidden border border-border/70 bg-background">
+      <div className={cn(WORKSPACE_AUTH_VIEWPORT_CLASS_NAME, 'bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.9)_45%,rgba(187,210,229,0.55)_100%)]')}>
+        <div className="h-full w-full overflow-hidden border border-border/70 bg-background/90 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
           <div className="flex h-full">
             <div className="w-72 border-r p-4 space-y-4">
               <Skeleton className="h-7 w-48" />
@@ -139,8 +139,8 @@ function WorkspaceLayout() {
   }
 
   return (
-    <div className={cn(WORKSPACE_AUTH_VIEWPORT_CLASS_NAME, 'bg-background')}>
-      <div className="h-full w-full overflow-hidden bg-background">
+    <div className={cn(WORKSPACE_AUTH_VIEWPORT_CLASS_NAME, 'bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.92)_45%,rgba(187,210,229,0.55)_100%)]')}>
+      <div className="h-full w-full overflow-hidden bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
         <SidebarProvider
           className="!min-h-0 h-full"
           style={{ '--sidebar-width-icon': '3rem' } as CSSProperties}
