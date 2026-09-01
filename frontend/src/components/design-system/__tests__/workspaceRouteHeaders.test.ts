@@ -20,6 +20,20 @@ describe('workspace route header contract', () => {
   });
 
   it.each([
+    ['CRM Overview', '../../../pages/crm/Overview.tsx'],
+    ['CRM Signal inbox', '../../../pages/crm/Insights.tsx'],
+    ['CRM Review', '../../../pages/crm/ReviewFeed.tsx'],
+    ['CRM Contacts', '../../../pages/crm/Contacts.tsx'],
+    ['CRM Companies', '../../../pages/crm/Companies.tsx'],
+    ['CRM Deals', '../../../pages/crm/Deals.tsx'],
+    ['CRM Meetings', '../../../pages/crm/Meetings.tsx'],
+  ])('uses the compact shell header for %s', (_label, path) => {
+    const pageSource = source(path);
+    expect(pageSource).toContain('<QuietPageHeader');
+    expect(pageSource).toContain('variant="shell"');
+  });
+
+  it.each([
     ['Teams detail', '../../settings/TeamsTab.tsx'],
   ])('keeps the specialized %s toolbar clear of the collapsed sidebar opener', (_label, path) => {
     expect(source(path)).toContain('workspaceSidebarSafeInsetClassName');

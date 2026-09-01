@@ -11,8 +11,10 @@ const processingSource = readFileSync(resolve(__dirname, '../../../components/cr
 
 describe('CRM meetings Quiet Hairline composition', () => {
   it('uses centralized page, section, list, and empty-state primitives', () => {
-    expect(meetingsSource).toContain('<QuietPageViewport>');
+    expect(meetingsSource).toContain('<QuietPageViewport className="min-h-0 flex-1">');
     expect(meetingsSource).toContain('<QuietPageHeader');
+    expect(meetingsSource).toContain('variant="shell"');
+    expect(meetingsSource.indexOf('<QuietPageHeader')).toBeLessThan(meetingsSource.indexOf('<QuietPageViewport'));
     expect(meetingsSource).toContain('<QuietListRow');
     expect(meetingsSource).toContain('<QuietEmptyState');
     expect(upcomingSource).toContain('<QuietSection');

@@ -27,6 +27,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { cn, timeAgo } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CRMDealHealthScore, CRMSignalDismissalReason, CRMSuggestion } from '@/lib/crmTypes';
+import { QuietPageHeader } from '@/components/design-system/quiet';
 
 type Tone = 'neutral' | 'good' | 'warn' | 'danger' | 'accent';
 
@@ -355,14 +356,12 @@ export function InsightsPage() {
   };
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Signal inbox</h1>
-            <p className="text-sm text-muted-foreground">See what changed, why it matters, and what to do next.</p>
-          </div>
-          {suggestions.length > 0 ? (
+    <div className="flex h-full min-h-0 flex-col">
+      <QuietPageHeader
+        variant="shell"
+        title="Signal inbox"
+        description="See what changed, why it matters, and what to do next."
+        actions={suggestions.length > 0 ? (
             <Button variant="outline" size="sm" onClick={goToReview} disabled={!wsSlug}>
               <SparklesIcon className="h-4 w-4" />
               Review suggestions
@@ -372,8 +371,11 @@ export function InsightsPage() {
               <Mail01Icon className="h-4 w-4" />
               CRM email settings
             </Button>
-          )}
-        </div>
+        )}
+      />
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
 
         {!isLoadingIntelligence && !hasAnyIntelligence ? (
           <IntelligenceReadinessState
@@ -476,6 +478,7 @@ export function InsightsPage() {
             </div>
           </>
         )}
+        </div>
       </div>
     </div>
   );

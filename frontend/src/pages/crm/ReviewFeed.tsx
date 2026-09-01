@@ -23,6 +23,7 @@ import { SuggestionCard } from '@/components/crm/SuggestionCard'
 import { useTitle } from '@/hooks/useTitle'
 import { cn, timeAgo } from '@/lib/utils'
 import type { CRMSignalDismissalReason, CRMSuggestion, CRMSuggestionType } from '@/lib/crmTypes'
+import { QuietPageHeader } from '@/components/design-system/quiet'
 
 type FilterTab = 'all' | CRMSuggestionType
 type SortMode = 'recommended' | 'newest' | 'oldest'
@@ -358,18 +359,21 @@ export function ReviewFeed() {
   }
 
   return (
-    <div className="h-full overflow-auto">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Review</h1>
-            <p className="text-sm text-muted-foreground">Review the evidence and preview the change before CRM records are updated.</p>
-          </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <QuietPageHeader
+        variant="shell"
+        title="Review"
+        description="Review the evidence and preview the change before CRM records are updated."
+        actions={(
           <Button variant="outline" size="sm" onClick={goToInsights} disabled={!wsSlug}>
             <SparklesIcon className="h-4 w-4" />
             Open insights
           </Button>
-        </div>
+        )}
+      />
+
+      <div className="min-h-0 flex-1 overflow-auto">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
 
         {isLoading || hasQueue ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -524,6 +528,7 @@ export function ReviewFeed() {
           </aside>
         </div>
         )}
+        </div>
       </div>
     </div>
   )

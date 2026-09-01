@@ -54,7 +54,6 @@ function MeetingRow({ meeting, onOpen }: { meeting: CRMMeeting; onOpen: () => vo
     />
   );
 }
-
 function MeetingRowsLoading() {
   return (
     <div aria-label="Loading meetings">
@@ -136,9 +135,9 @@ export function MeetingsPage() {
 
   return (
     <>
-      <QuietPageViewport>
+      <div className="flex h-full min-h-0 flex-col">
         <QuietPageHeader
-          className="mb-6"
+          variant="shell"
           title="Meetings"
           description="Choose the calls Helpin should join, then review the recording, transcript, decisions, and follow-up work in one place."
           actions={(
@@ -160,6 +159,7 @@ export function MeetingsPage() {
           )}
         />
 
+        <QuietPageViewport className="min-h-0 flex-1">
         <div className="mb-6 flex items-center justify-between gap-4 border-b border-quiet-divider-strong pb-4">
           <div className="relative w-full max-w-xs">
             <Search01Icon className="pointer-events-none absolute left-0.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-quiet-muted" />
@@ -287,7 +287,8 @@ export function MeetingsPage() {
             </QuietSection>
           </>
         )}
-      </QuietPageViewport>
+        </QuietPageViewport>
+      </div>
 
       {canEdit ? (
         <CreateMeetingDialog
