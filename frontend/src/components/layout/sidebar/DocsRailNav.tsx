@@ -16,6 +16,7 @@ import {
   UserIcon,
 } from '@/lib/icons'
 import { cn, getInitials } from '@/lib/utils'
+import { getAvatarColor } from '@/lib/avatarColor'
 import { StoredIcon } from '@/components/ui/icon-picker'
 import { Button } from '@/components/ui/button'
 import { QuietSearchInput } from '@/components/design-system/quiet'
@@ -77,9 +78,11 @@ type DocsRailNavProps = {
 function SpaceMark({ space, size = 'md' }: { space: DocsSpace; size?: 'sm' | 'md' }) {
   return (
     <span
+      data-slot="docs-space-avatar"
       className={cn(
-        'flex shrink-0 items-center justify-center overflow-hidden bg-foreground font-semibold text-background',
-        size === 'md' ? 'h-7 w-7 rounded-lg text-xs' : 'h-6 w-6 rounded-md text-[11px]',
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold leading-none',
+        getAvatarColor(space.id),
+        size === 'md' ? 'h-7 w-7 text-xs' : 'h-6 w-6 text-[11px]',
       )}
     >
       <StoredIcon
