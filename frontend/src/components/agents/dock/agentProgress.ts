@@ -1,5 +1,5 @@
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
-import { isToolName } from '@/lib/toolNames';
+import { isRuntimeControlToolName } from '@/lib/toolNames';
 import type { AgentRun, CodingSessionStreamState, RunPlanArtifact } from '@/lib/pmTypes';
 
 export interface AgentLiveProgress {
@@ -75,7 +75,7 @@ export function resolveAgentLiveProgress({
   for (let index = segments.length - 1; index >= 0; index -= 1) {
     const segment = segments[index];
     if (segment.kind !== 'tool_call') continue;
-    if (isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
+    if (isRuntimeControlToolName(segment.tool_call.tool_name)) continue;
     if (segment.tool_call.status === 'running') {
       return { label: `${describeToolCall(segment.tool_call).primaryLabel}…`, startedAt, tone: 'working' };
     }

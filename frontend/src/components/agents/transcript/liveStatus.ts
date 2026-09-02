@@ -1,5 +1,5 @@
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
-import { isToolName } from '@/lib/toolNames';
+import { isRuntimeControlToolName } from '@/lib/toolNames';
 import type { CodingSessionStreamState } from '@/lib/pmTypes';
 
 /**
@@ -15,7 +15,7 @@ export function deriveLiveStatusLabel(
     for (let index = stream.live_turn_segments.length - 1; index >= 0; index -= 1) {
       const segment = stream.live_turn_segments[index];
       if (segment.kind !== 'tool_call') continue;
-      if (isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
+      if (isRuntimeControlToolName(segment.tool_call.tool_name)) continue;
       if (segment.tool_call.status !== 'running') break;
       return describeToolCall(segment.tool_call).primaryLabel;
     }

@@ -328,9 +328,10 @@ canonical aliases unless the test is specifically about runtime tool naming.
 The dock is the primary chat surface over the agent system. Each user has
 multiple dock chats per workspace; **each chat is an agent-runtime chat-mode
 run** of the `ask_agent` system preset (`turn_policy.mode =
-pause_after_assistant`). There is no in-app classifier or inline LLM tool loop
-anymore — the chat run itself answers read-only questions with product command
-tools and orchestrates durable work through the `agents.*` command tools.
+pause_after_assistant`, `turn_policy.completion_mode = explicit_finish`). There
+is no in-app classifier or inline LLM tool loop anymore — the chat run itself
+answers read-only questions with product command tools and orchestrates durable
+work through the `agents.*` command tools.
 
 Current reference: [ASK_AGENTS_BAR.md](./ASK_AGENTS_BAR.md).
 
@@ -338,6 +339,12 @@ Important boundaries:
 
 - the chat agent's tool surface is read-only product tools + `agents.*`
   orchestration tools, narrowed per user at run start
+- Agent Runtime owns the `finish_turn` control tool. A prose-only model stop is
+  corrected inside the same turn up to the configured bound; after exhaustion
+  the run fails explicitly instead of becoming an `awaiting_user_message`
+  pause. Helpin also sends this policy on dock-run resumes so pre-policy paused
+  runs upgrade in place. Other chat-mode hosts retain implicit completion unless
+  they opt in.
 - mutating `agents.*` launches require a server-verified `dock_plan_confirm`
   approval interaction (canonical action hash, single-use)
 - durable work still creates `agent_run` records, grouped by

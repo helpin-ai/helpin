@@ -1,5 +1,5 @@
 import { isStatusTranscriptMessage } from '@/components/pm/CodingSession/codingSessionPresentation';
-import { canonicalToolName, isToolName } from '@/lib/toolNames';
+import { canonicalToolName, isRuntimeControlToolName } from '@/lib/toolNames';
 import type {
   CodingSessionLiveReasoningMessage,
   CodingSessionLiveToolCall,
@@ -196,7 +196,7 @@ export function collectSegments(
     const message = stream.transcript_messages[messageIndex];
     for (let segmentIndex = 0; segmentIndex < (message.turn_segments?.length ?? 0); segmentIndex += 1) {
       const segment = message.turn_segments?.[segmentIndex];
-      if (segment?.kind !== 'tool_call' || isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
+      if (segment?.kind !== 'tool_call' || isRuntimeControlToolName(segment.tool_call.tool_name)) continue;
       const toolCallID = segment.tool_call.tool_call_id.trim();
       if (toolCallID) latestTimelineOwnerByToolID.set(toolCallID, `${messageIndex}:${segmentIndex}`);
     }
@@ -208,7 +208,7 @@ export function collectSegments(
     const message = stream.transcript_messages[messageIndex];
     for (let segmentIndex = 0; segmentIndex < (message.turn_segments?.length ?? 0); segmentIndex += 1) {
       const segment = message.turn_segments?.[segmentIndex];
-      if (segment?.kind !== 'tool_call' || isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
+      if (segment?.kind !== 'tool_call' || isRuntimeControlToolName(segment.tool_call.tool_name)) continue;
       const toolCallID = segment.tool_call.tool_call_id.trim();
       if (toolCallID && latestTimelineOwnerByToolID.get(toolCallID) !== `${messageIndex}:${segmentIndex}`) continue;
       if (toolCallID) persistedTimelineToolIDs.add(toolCallID);
@@ -227,7 +227,7 @@ export function collectSegments(
         }
         break;
       }
-      if (!include.has('tool') || isToolName(segment.tool_call.tool_name, 'update_plan')) continue;
+      if (!include.has('tool') || isRuntimeControlToolName(segment.tool_call.tool_name)) continue;
       break;
     }
   }
@@ -278,7 +278,7 @@ export function collectSegments(
               content,
             });
           }
-        } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
+        } else if (segment.kind === 'tool_call' && !isRuntimeControlToolName(segment.tool_call.tool_name)) {
           const toolCallID = segment.tool_call.tool_call_id.trim();
           if (toolCallID && latestTimelineOwnerByToolID.get(toolCallID) !== `${messageIndex}:${segmentIndex}`) continue;
           if (include.has('tool')) pushPersistedTool({ kind: 'tool', id: segment.segment_id, toolCall: segment.tool_call });
@@ -288,7 +288,7 @@ export function collectSegments(
       // recorded only on the message) still render once, deduped by content.
       if (include.has('tool')) {
         for (const toolCall of message.tool_calls ?? []) {
-          if (isToolName(toolCall.tool_name, 'update_plan')) continue;
+          if (isRuntimeControlToolName(toolCall.tool_name)) continue;
           const toolCallID = toolCall.tool_call_id.trim();
           if (toolCallID && persistedTimelineToolIDs.has(toolCallID)) continue;
           const semanticKey = toolCallSemanticKey(toolCall);
@@ -309,7 +309,7 @@ export function collectSegments(
     }
     if (include.has('tool')) {
       for (const toolCall of message.tool_calls ?? []) {
-        if (isToolName(toolCall.tool_name, 'update_plan')) continue;
+        if (isRuntimeControlToolName(toolCall.tool_name)) continue;
         const toolCallID = toolCall.tool_call_id.trim();
         if (toolCallID && persistedTimelineToolIDs.has(toolCallID)) continue;
         const semanticKey = toolCallSemanticKey(toolCall);
@@ -381,7 +381,7 @@ export function collectSegments(
           content,
           streaming: segment.segment_id === activeStreamingAssistantSegmentId,
         });
-      } else if (segment.kind === 'tool_call' && !isToolName(segment.tool_call.tool_name, 'update_plan')) {
+      } else if (segment.kind === 'tool_call' && !isRuntimeControlToolName(segment.tool_call.tool_name)) {
         if (!include.has('tool')) continue;
         const persisted = persistedToolSegments.find((candidate) => (
           !consumedPersistedIndexes.has(candidate.outIndex)

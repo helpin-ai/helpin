@@ -256,6 +256,52 @@ func TestResumeRunForAgentRuntimeRunSignalsRuntimeAndKeepsLocalSideEffects(t *te
 	}
 }
 
+func TestResumeDockAskRunSendsExplicitCompletionPolicy(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	mustExec(t, db, `CREATE TABLE dock_chats (
+		id text PRIMARY KEY,
+		workspace_id text NOT NULL,
+		next_message_sequence integer NOT NULL DEFAULT 0,
+		updated_at datetime
+	)`)
+	mustExec(t, db, `INSERT INTO dock_chats (id, workspace_id, next_message_sequence, updated_at) VALUES (?, ?, ?, ?)`, "chat-1", "ws-1", 0, time.Now().UTC())
+	mustExec(t, db, `ALTER TABLE agent_run_messages ADD COLUMN dock_chat_id text`)
+	mustExec(t, db, `ALTER TABLE agent_run_messages ADD COLUMN dock_chat_sequence integer`)
+	mustExec(t, db, `ALTER TABLE agent_run_messages ADD COLUMN client_message_id text`)
+	mustExec(t, db, `ALTER TABLE agent_run_messages ADD COLUMN delivery_status text NOT NULL DEFAULT 'sent'`)
+	agentRepo := repository.NewAgentRepository(db)
+	runRepo := repository.NewAgentRunRepository(db)
+	now := time.Now().UTC()
+	seedAgentRuntimeSignalAgent(t, db, now)
+	run := seedAgentRuntimeSignalRun(t, runRepo, model.AgentRunStatusPaused, model.AgentRunPauseReasonUserMessage, "not_required", now)
+	chatID := "chat-1"
+	run.DockChatID = &chatID
+	if err := db.Model(&model.AgentRun{}).Where("id = ?", run.ID).Update("dock_chat_id", chatID).Error; err != nil {
+		t.Fatalf("mark run as dock chat: %v", err)
+	}
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	svc := &AgentService{
+		agentRepo:          agentRepo,
+		runRepo:            runRepo,
+		runMessageRepo:     repository.NewAgentRunMessageRepository(db),
+		agentRuntimeClient: runtimeClient,
+	}
+
+	if _, err := svc.ResumeRun(context.Background(), "ws-1", run.ID, "user-1", model.ResumeAgentRunRequest{
+		Intent:  model.AgentRunResumeIntentReply,
+		Content: "continue",
+	}); err != nil {
+		t.Fatalf("resume Ask run: %v", err)
+	}
+	if len(runtimeClient.resumeCalls) != 1 {
+		t.Fatalf("expected one runtime resume call, got %d", len(runtimeClient.resumeCalls))
+	}
+	policy := runtimeClient.resumeCalls[0].req.TurnPolicy
+	if policy == nil || policy.Mode != agentRuntimeTurnPauseAfterAssist || policy.CompletionMode != agentRuntimeTurnCompletionExplicit || policy.MaxCompletionCorrections != askAgentCompletionCorrections {
+		t.Fatalf("Ask resume did not send the guarded turn policy: %#v", policy)
+	}
+}
+
 func TestResumeRunForAgentRuntimeRunRollsBackLocalStateWhenRuntimeSignalFails(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -921,6 +967,9 @@ func TestDelegatedSupportRunReplyForwardsHumanInput(t *testing.T) {
 	call := runtimeClient.resumeCalls[0]
 	if call.runID != "run_runtime_1" || call.req.Intent != model.AgentRunResumeIntentReply || call.req.Content != "the customer is on the enterprise plan" {
 		t.Fatalf("unexpected runtime resume request: %#v", call)
+	}
+	if call.req.TurnPolicy != nil {
+		t.Fatalf("support chat must not opt into Ask completion guard, got %#v", call.req.TurnPolicy)
 	}
 	messages, err := repository.NewAgentRunMessageRepository(db).ListByRun(context.Background(), "ws-1", run.ID)
 	if err != nil {
