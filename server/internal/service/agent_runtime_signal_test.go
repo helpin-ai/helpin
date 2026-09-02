@@ -922,6 +922,9 @@ func TestDelegatedSupportRunReplyForwardsHumanInput(t *testing.T) {
 	if call.runID != "run_runtime_1" || call.req.Intent != model.AgentRunResumeIntentReply || call.req.Content != "the customer is on the enterprise plan" {
 		t.Fatalf("unexpected runtime resume request: %#v", call)
 	}
+	if call.req.TurnPolicy != nil {
+		t.Fatalf("support chat must not opt into Ask completion guard, got %#v", call.req.TurnPolicy)
+	}
 	messages, err := repository.NewAgentRunMessageRepository(db).ListByRun(context.Background(), "ws-1", run.ID)
 	if err != nil {
 		t.Fatalf("list messages: %v", err)

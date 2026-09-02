@@ -21,3 +21,8 @@ export function isToolName(name: unknown, canonical: string): boolean {
   return canonicalToolName(name) === canonical;
 }
 
+/** Runtime bookkeeping calls should never appear as user work in transcripts. */
+export function isRuntimeControlToolName(name: unknown): boolean {
+  const canonical = canonicalToolName(name);
+  return canonical === 'update_plan' || canonical === 'finish_turn';
+}

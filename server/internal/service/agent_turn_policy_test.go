@@ -18,6 +18,8 @@ func TestRuntimeTurnPolicy(t *testing.T) {
 		idleSeconds     int
 		wantMode        string
 		wantIdleSeconds int
+		wantCompletion  string
+		wantCorrections int
 	}{
 		{
 			name:     "nil run completes on finish",
@@ -33,6 +35,8 @@ func TestRuntimeTurnPolicy(t *testing.T) {
 			mode:            model.InvocationModeInteractive,
 			wantMode:        agentRuntimeTurnPauseAfterAssist,
 			wantIdleSeconds: defaultDockChatIdleTimeoutSeconds,
+			wantCompletion:  agentRuntimeTurnCompletionExplicit,
+			wantCorrections: askAgentCompletionCorrections,
 		},
 		{
 			name:            "ask_agent chat loop regardless of invocation mode",
@@ -41,6 +45,8 @@ func TestRuntimeTurnPolicy(t *testing.T) {
 			mode:            model.InvocationModeAutonomous,
 			wantMode:        agentRuntimeTurnPauseAfterAssist,
 			wantIdleSeconds: defaultDockChatIdleTimeoutSeconds,
+			wantCompletion:  agentRuntimeTurnCompletionExplicit,
+			wantCorrections: askAgentCompletionCorrections,
 		},
 		{
 			name:            "ask_agent honors idle override",
@@ -50,6 +56,8 @@ func TestRuntimeTurnPolicy(t *testing.T) {
 			idleSeconds:     600,
 			wantMode:        agentRuntimeTurnPauseAfterAssist,
 			wantIdleSeconds: 600,
+			wantCompletion:  agentRuntimeTurnCompletionExplicit,
+			wantCorrections: askAgentCompletionCorrections,
 		},
 		{
 			name: "support chat trigger gets chat loop with 24h idle timeout",
@@ -104,6 +112,20 @@ func TestRuntimeTurnPolicy(t *testing.T) {
 			if got.IdleTimeoutSeconds != tt.wantIdleSeconds {
 				t.Errorf("runtimeTurnPolicy() idle = %d, want %d", got.IdleTimeoutSeconds, tt.wantIdleSeconds)
 			}
+			if got.CompletionMode != tt.wantCompletion || got.MaxCompletionCorrections != tt.wantCorrections {
+				t.Errorf("runtimeTurnPolicy() completion = %q/%d, want %q/%d", got.CompletionMode, got.MaxCompletionCorrections, tt.wantCompletion, tt.wantCorrections)
+			}
 		})
+	}
+}
+
+func TestRuntimeResumeTurnPolicyOnlyUpgradesDockChatRuns(t *testing.T) {
+	chatID := "chat-1"
+	policy := runtimeResumeTurnPolicy(&model.AgentRun{DockChatID: &chatID})
+	if policy == nil || policy.Mode != agentRuntimeTurnPauseAfterAssist || policy.CompletionMode != agentRuntimeTurnCompletionExplicit || policy.MaxCompletionCorrections != askAgentCompletionCorrections {
+		t.Fatalf("unexpected Ask resume policy: %#v", policy)
+	}
+	if got := runtimeResumeTurnPolicy(&model.AgentRun{TargetType: "support_conversation"}); got != nil {
+		t.Fatalf("support chat must preserve implicit completion on resume, got %#v", got)
 	}
 }
