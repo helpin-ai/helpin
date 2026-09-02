@@ -258,7 +258,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
-		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructions(effectiveSystemPrompt),
+		SystemPrompt:          effectiveSystemPrompt,
 		Skills:                runtimeSkillRefsFromHelpinAgent(agent),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),

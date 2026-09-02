@@ -1,11 +1,13 @@
 package agentcontract
 
 import (
-	"sort"
 	"strings"
 )
 
 const (
+	HelpinMCPServerName = "helpin"
+	HelpinMCPToolPrefix = "mcp__" + HelpinMCPServerName + "__"
+
 	ToolRequestUserInput        = "request_user_input"
 	ToolRequestApproval         = "request_approval"
 	ToolRequestReviewCheckpoint = "request_review_checkpoint"
@@ -34,15 +36,9 @@ const (
 	ToolSearchAvailableSkills = ToolFindSkills
 )
 
-// CanonicalToolName resolves runtime and legacy aliases to the persisted tool name.
-//
-// The legacy entries below are what let an agent row whose allowed_tools was
-// stored before a tool consolidation keep working: ResolveAgentProfile runs
-// stored names through NormalizeToolNames, so read_file becomes read_files and
-// ripgrep becomes repository_search without a data migration. Note this only
-// carries a tool forward when the old name maps onto the new one — a stored row
-// gains read_symbol or trace_symbol only if it already listed find_symbol or
-// find_callers/find_callees.
+// CanonicalToolName normalizes authored and client-provided names before they
+// are persisted. Provider discovery and execution accept only canonical names;
+// future renames require an explicit data migration instead of provider aliases.
 //
 // The frontend's canonicalToolName is intentionally NOT a mirror of this: it
 // strips the MCP prefix and stops, because it renders stored transcripts and
@@ -57,21 +53,8 @@ func CanonicalToolName(name string) string {
 	return trimmed
 }
 
-// LegacyToolAliases returns persisted historical aliases for a canonical tool.
-func LegacyToolAliases(canonical string) []string {
-	canonical = CanonicalToolName(canonical)
-	out := make([]string, 0)
-	for alias, target := range legacyToolAliases {
-		if target == canonical {
-			out = append(out, alias)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// legacyToolAliases is the single source for forward canonicalization and the
-// reverse alias list published through provider discovery.
+// legacyToolAliases is write-side hygiene for authored contracts and older
+// clients. Provider discovery and execution expose only canonical names.
 var legacyToolAliases = map[string]string{
 	ToolRequestHumanInput:     ToolRequestUserInput,
 	ToolRequestHumanApproval:  ToolRequestApproval,

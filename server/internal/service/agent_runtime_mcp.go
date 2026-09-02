@@ -40,7 +40,6 @@ func (s *AgentRuntimeHostService) ListProviderTools() (*AgentRuntimeToolCatalog,
 			InputSchema: schema,
 			Mutating:    definition.Mutating,
 			RiskLevel:   definition.RiskLevel(),
-			Aliases:     agentcontract.LegacyToolAliases(metadata.Alias),
 			// SupportedTargetTypes is deliberately not published. Helpin's
 			// field is context metadata, not an authorization boundary.
 		})
@@ -49,13 +48,13 @@ func (s *AgentRuntimeHostService) ListProviderTools() (*AgentRuntimeToolCatalog,
 	return &AgentRuntimeToolCatalog{Tools: tools}, nil
 }
 
-// CallProviderTool resolves a model-facing alias and executes its backing command.
+// CallProviderTool executes an exact model-facing tool name through its backing command.
 func (s *AgentRuntimeHostService) CallProviderTool(ctx context.Context, req agentruntime.ProviderToolCallRequest) (*agentruntime.ToolCallResult, error) {
 	if s == nil || s.commandService == nil {
 		return nil, fmt.Errorf("command service is not configured")
 	}
-	canonical := agentcontract.CanonicalToolName(req.ToolName)
-	commandName := s.providerCommands[canonical]
+	toolName := strings.TrimSpace(req.ToolName)
+	commandName := s.providerCommands[toolName]
 	if commandName == "" {
 		return &agentruntime.ToolCallResult{Content: []agentruntime.ContentItem{{Type: "text", Text: fmt.Sprintf("unknown Helpin tool: %s", strings.TrimSpace(req.ToolName))}}, IsError: true}, nil
 	}
@@ -102,12 +101,6 @@ func validateProviderCommandDefinitions(commands *InternalCommandService) error 
 			return fmt.Errorf("tool alias %q is shared by commands %q and %q", alias, existing, name)
 		}
 		seenAliases[alias] = name
-		for _, legacyAlias := range agentcontract.LegacyToolAliases(alias) {
-			if existing := seenAliases[legacyAlias]; existing != "" && existing != name {
-				return fmt.Errorf("legacy tool alias %q is shared by commands %q and %q", legacyAlias, existing, name)
-			}
-			seenAliases[legacyAlias] = name
-		}
 	}
 	return nil
 }
@@ -121,7 +114,7 @@ func providerCommandNames(commands *InternalCommandService) map[string]string {
 		if definition.Tool == nil {
 			continue
 		}
-		alias := agentcontract.CanonicalToolName(definition.Tool.Alias)
+		alias := strings.TrimSpace(definition.Tool.Alias)
 		if alias != "" {
 			byAlias[alias] = name
 		}

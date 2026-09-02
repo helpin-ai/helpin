@@ -1591,15 +1591,6 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
-		Name:                 "pm.update_story_state",
-		Module:               "pm",
-		Mutating:             true,
-		SupportedTargetTypes: []string{"task", "story"},
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "pm.update_task_state", input)
-		},
-	})
-	s.register(InternalCommandDefinition{
 		Name:                 "docs.write_document_content",
 		Module:               "docs",
 		Mutating:             true,

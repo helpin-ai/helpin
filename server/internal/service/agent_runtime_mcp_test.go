@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"slices"
 	"testing"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
@@ -29,9 +28,22 @@ func TestAgentRuntimeProviderCatalogIncludesAllCommandTools(t *testing.T) {
 	if _, ok := byName["create_collection"]; !ok {
 		t.Fatal("create_collection is missing from the provider catalog")
 	}
-	crmSignals, ok := byName["list_crm_signals"]
-	if !ok || !slices.Contains(crmSignals.Aliases, "list_buyer_signals") {
-		t.Fatalf("legacy CRM alias is missing: %#v", crmSignals)
+	if _, ok := byName["list_crm_signals"]; !ok {
+		t.Fatal("list_crm_signals is missing from the provider catalog")
+	}
+	if _, ok := byName["list_buyer_signals"]; ok {
+		t.Fatal("legacy aliases must not be published")
+	}
+}
+
+func TestAgentRuntimeProviderCallRejectsLegacyAlias(t *testing.T) {
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil), nil)
+	result, err := host.CallProviderTool(context.Background(), agentruntime.ProviderToolCallRequest{ToolName: "list_buyer_signals"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError {
+		t.Fatalf("legacy alias unexpectedly executed: %#v", result)
 	}
 }
 

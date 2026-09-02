@@ -114,7 +114,7 @@ func runtimeForCustomAgentCapabilities(targets, tools []string) string {
 	}
 	for _, tool := range tools {
 		switch strings.ToLower(strings.TrimSpace(tool)) {
-		case "shell", "bash", "apply_patch", "git", "read_file", "write_file", "edit_file":
+		case "shell", "bash", "apply_patch", "git", "write_file", "edit_file":
 			return "codex"
 		}
 	}
