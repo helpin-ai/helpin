@@ -231,6 +231,77 @@ export interface SupportCoverageGapListResponse {
   total: number
 }
 
+export interface CoverageFindingV2 {
+  id: string
+  customer_need: string
+  ai_answer: string
+  ai_failure: string
+  human_answer: string
+  fix_type: string
+  fix_target: string
+  rationale: string
+  suggested_change: string
+  confidence: number
+  conversation_id?: string | null
+  embedding_status: string
+  assignment_status: string
+}
+
+export interface CoverageTopicV2 {
+  id: string
+  title: string
+  customer_need: string
+  status: string
+  finding_count: number
+  conversation_count: number
+  customer_count: number
+  updated_at: string
+}
+
+export interface CoverageTopicDetailV2 {
+  topic: CoverageTopicV2
+  findings: CoverageFindingV2[]
+}
+
+export interface CoverageSignalV2 {
+  id: string
+  source_kind: string
+  normalized_query: string
+  meaningful_tokens: number
+  confidence: number
+  observed_at: string
+}
+
+export interface CoverageAnalysisAttemptV2 {
+  id: string
+  source_kind: string
+  source_id: string
+  status: string
+  stage: string
+  failure_class: string
+  failure_message: string
+  retry_budget_used: number
+  created_at: string
+}
+
+export interface CoverageBatchV2 {
+  id: string
+  status: string
+  candidate_count: number
+  succeeded_count: number
+  retryable_count: number
+  dead_letter_count: number
+  failure_class: string
+  failure_message: string
+  completed_at?: string | null
+}
+
+export interface CoveragePipelineHealthV2 {
+  latest_batch: CoverageBatchV2 | null
+  failures: CoverageAnalysisAttemptV2[]
+  healthy: boolean
+}
+
 export const V1_GAP_TYPE_LABELS: Record<SupportCoverageV1GapType, string> = {
   missing_article: 'Missing Article',
   weak_article: 'Weak Article',

@@ -374,3 +374,79 @@ func (r *CoverageV2Repository) RefreshTopicCounts(ctx context.Context, workspace
 		customer_count = (SELECT COUNT(DISTINCT f.customer_id) FROM coverage_topic_memberships m JOIN coverage_findings f ON f.workspace_id = m.workspace_id AND f.id = m.finding_id WHERE m.workspace_id = ? AND m.topic_id = ? AND m.valid_to IS NULL AND f.is_current AND f.customer_id IS NOT NULL),
 		updated_at = ? WHERE workspace_id = ? AND id = ?`, workspaceID, topicID, workspaceID, topicID, workspaceID, topicID, time.Now().UTC(), workspaceID, topicID).Error
 }
+
+func (r *CoverageV2Repository) ListTopics(ctx context.Context, workspaceID string, limit, offset int) ([]model.CoverageTopicV2, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	var topics []model.CoverageTopicV2
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status <> ?", workspaceID, model.CoverageTopicArchived).
+		Order("conversation_count DESC, customer_count DESC, updated_at DESC, id ASC").Limit(limit).Offset(max(0, offset)).Find(&topics).Error
+	return topics, err
+}
+
+func (r *CoverageV2Repository) GetTopic(ctx context.Context, workspaceID, topicID string) (*model.CoverageTopicV2, []model.CoverageFinding, error) {
+	var topic model.CoverageTopicV2
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, topicID).First(&topic).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	var findings []model.CoverageFinding
+	err := r.db.WithContext(ctx).Table("coverage_findings f").Select("f.*").
+		Joins("JOIN coverage_topic_memberships m ON m.workspace_id = f.workspace_id AND m.finding_id = f.id AND m.valid_to IS NULL").
+		Where("f.workspace_id = ? AND m.topic_id = ? AND f.is_current = ?", workspaceID, topicID, true).
+		Order("f.created_at DESC").Find(&findings).Error
+	return &topic, findings, err
+}
+
+func (r *CoverageV2Repository) ListUnreviewedSignals(ctx context.Context, workspaceID string, limit, offset int) ([]model.CoverageUnreviewedSignal, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	var signals []model.CoverageUnreviewedSignal
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status = ?", workspaceID, model.CoverageSignalUnreviewed).
+		Order("observed_at DESC, id ASC").Limit(limit).Offset(max(0, offset)).Find(&signals).Error
+	return signals, err
+}
+
+func (r *CoverageV2Repository) LatestBatch(ctx context.Context, workspaceID string) (*model.CoverageBatch, error) {
+	var batch model.CoverageBatch
+	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("created_at DESC").First(&batch).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &batch, err
+}
+
+func (r *CoverageV2Repository) ListFailedAttempts(ctx context.Context, workspaceID string, limit int) ([]model.CoverageAnalysisAttempt, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	var attempts []model.CoverageAnalysisAttempt
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status IN ?", workspaceID, []string{model.CoverageAttemptRetryable, model.CoverageAttemptDeadLetter, model.CoverageAttemptPausedConfiguration}).Order("created_at DESC").Limit(limit).Find(&attempts).Error
+	return attempts, err
+}
+
+func (r *CoverageV2Repository) ReplayAttempt(ctx context.Context, workspaceID, attemptID string) error {
+	result := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).
+		Where("workspace_id = ? AND id = ? AND status IN ?", workspaceID, attemptID, []string{model.CoverageAttemptDeadLetter, model.CoverageAttemptPausedConfiguration, model.CoverageAttemptRetryable}).
+		Updates(map[string]interface{}{"status": model.CoverageAttemptQueued, "retry_budget_used": 0, "failure_class": "", "failure_message": "", "retry_at": time.Now().UTC(), "lease_owner": "", "lease_expires_at": nil})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("replayable coverage attempt not found")
+	}
+	return nil
+}
+
+func (r *CoverageV2Repository) ListArchivedV1Gaps(ctx context.Context, workspaceID string, limit, offset int) ([]model.SupportCoverageGap, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	var gaps []model.SupportCoverageGap
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageGapStatusArchivedV1).Order("last_seen_at DESC").Limit(limit).Offset(max(0, offset)).Find(&gaps).Error
+	return gaps, err
+}

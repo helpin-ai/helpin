@@ -116,6 +116,10 @@ func coverageJoinEmbeddingParts(parts ...string) string {
 }
 
 func IsMeaningfulCoverageSearchQuery(query string) bool {
+	return MeaningfulCoverageSearchTokens(query) >= 1
+}
+
+func IsEligibleCoverageWidgetSignal(query string) bool {
 	return MeaningfulCoverageSearchTokens(query) >= 3
 }
 

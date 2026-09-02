@@ -8,11 +8,30 @@ import type {
   SupportCoverageSummary,
   SupportConversationCoverageState,
   SupportGapSuggestion,
+  CoveragePipelineHealthV2,
+  CoverageSignalV2,
+  CoverageTopicDetailV2,
+  CoverageTopicV2,
 } from '../supportCoverageTypes'
 
 const qs = (wsId: string) => `?workspace_id=${encodeURIComponent(wsId)}`
 
 export const supportCoverageService = {
+	listTopicsV2: (wsId: string) =>
+	  api.get<{ items: CoverageTopicV2[] }>(`/support/coverage/v2/topics${qs(wsId)}`),
+
+	getTopicV2: (wsId: string, topicId: string) =>
+	  api.get<CoverageTopicDetailV2>(`/support/coverage/v2/topics/${topicId}${qs(wsId)}`),
+
+	listSignalsV2: (wsId: string) =>
+	  api.get<{ items: CoverageSignalV2[] }>(`/support/coverage/v2/signals${qs(wsId)}`),
+
+	getPipelineHealthV2: (wsId: string) =>
+	  api.get<CoveragePipelineHealthV2>(`/support/coverage/v2/health${qs(wsId)}`),
+
+	replayAttemptV2: (wsId: string, attemptId: string) =>
+	  api.post<{ status: string }>(`/support/coverage/v2/attempts/${attemptId}/replay${qs(wsId)}`, {}),
+
   getSummary: (wsId: string) =>
     api.get<SupportCoverageSummary>(`/support/coverage/summary${qs(wsId)}`),
 

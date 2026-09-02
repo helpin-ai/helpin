@@ -2,7 +2,7 @@ package service
 
 import "testing"
 
-func TestMeaningfulCoverageSearchRequiresThreeNonStopwordTokens(t *testing.T) {
+func TestEligibleCoverageWidgetSignalRequiresThreeNonStopwordTokens(t *testing.T) {
 	tests := []struct {
 		query string
 		want  bool
@@ -14,8 +14,8 @@ func TestMeaningfulCoverageSearchRequiresThreeNonStopwordTokens(t *testing.T) {
 		{"how do I reset my account password", true},
 	}
 	for _, test := range tests {
-		if got := IsMeaningfulCoverageSearchQuery(test.query); got != test.want {
-			t.Errorf("IsMeaningfulCoverageSearchQuery(%q) = %v, want %v", test.query, got, test.want)
+		if got := IsEligibleCoverageWidgetSignal(test.query); got != test.want {
+			t.Errorf("IsEligibleCoverageWidgetSignal(%q) = %v, want %v", test.query, got, test.want)
 		}
 	}
 }

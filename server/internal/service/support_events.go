@@ -116,7 +116,8 @@ func (s *SupportEventService) RecordEvent(ctx context.Context, input SupportEven
 	}
 
 	isQualifiedWidgetSearch := event.EventType == model.SupportEventWidgetSearchPerformed && event.SourceSignal == "no_results"
-	if isQualifiedWidgetSearch && s.coverageV2Repo != nil {
+	routedWidgetSearchV2 := isQualifiedWidgetSearch && s.coverageV2Repo != nil
+	if routedWidgetSearchV2 {
 		sessionID := stringPointerValue(event.AnonymousID)
 		if sessionID == "" {
 			sessionID = stringPointerValue(event.WidgetSessionID)
@@ -135,7 +136,7 @@ func (s *SupportEventService) RecordEvent(ctx context.Context, input SupportEven
 	}
 	// Qualified searches enter the review queue and never become legacy open
 	// gaps merely because a visitor paused while typing.
-	if s.coverageSvc != nil && !isQualifiedWidgetSearch {
+	if s.coverageSvc != nil && !routedWidgetSearchV2 {
 		if err := s.coverageSvc.ProcessSupportEvent(ctx, event); err != nil {
 			s.logger.WarnContext(ctx, "coverage processing failed",
 				"event_type", event.EventType, "error", err)

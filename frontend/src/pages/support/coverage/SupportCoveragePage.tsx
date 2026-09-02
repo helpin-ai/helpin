@@ -36,6 +36,10 @@ import type {
   SupportCoverageGapListItem,
   SupportCoverageGapMergeSuggestion,
   SupportCoverageSummary,
+  CoveragePipelineHealthV2,
+  CoverageSignalV2,
+  CoverageTopicDetailV2,
+  CoverageTopicV2,
 } from '@/lib/supportCoverageTypes'
 import { GAP_STATUS_LABELS, GAP_KIND_COLORS } from '@/lib/supportCoverageTypes'
 import { cn, timeAgo } from '@/lib/utils'
@@ -76,6 +80,11 @@ export function SupportCoveragePage() {
   const [applying, setApplying] = useState(false)
   const [confirmSuggestionId, setConfirmSuggestionId] = useState<string | null>(null)
   const [startingDocsAgentGapId, setStartingDocsAgentGapId] = useState<string | null>(null)
+	const [coverageSurface, setCoverageSurface] = useState<'topics' | 'signals' | 'health'>('topics')
+	const [topicsV2, setTopicsV2] = useState<CoverageTopicV2[]>([])
+	const [signalsV2, setSignalsV2] = useState<CoverageSignalV2[]>([])
+	const [healthV2, setHealthV2] = useState<CoveragePipelineHealthV2 | null>(null)
+	const [selectedTopicV2, setSelectedTopicV2] = useState<CoverageTopicDetailV2 | null>(null)
 
   const { data: agents = [] } = useAgents(wsId)
   const { data: spaces } = useDocsSpaces(wsId)
@@ -175,7 +184,7 @@ export function SupportCoveragePage() {
       setLoading(true)
       setSelectedGapId(null)
       setSelectedGap(null)
-      const [summaryRes, gapsRes, latestClusterRes, mergeSuggestionRes] = await Promise.all([
+      const [summaryRes, gapsRes, latestClusterRes, mergeSuggestionRes, topicsV2Res, signalsV2Res, healthV2Res] = await Promise.all([
         supportCoverageService.getSummary(wsId),
         supportCoverageService.listGaps(wsId, listFilters(1)),
         supportCoverageService.getLatestClusterRebuild(wsId),
@@ -185,6 +194,9 @@ export function SupportCoveragePage() {
           per_page: '1',
           has_merge_suggestions: 'true',
         }),
+		supportCoverageService.listTopicsV2(wsId),
+		supportCoverageService.listSignalsV2(wsId),
+		supportCoverageService.getPipelineHealthV2(wsId),
       ])
       if (cancelled) return
       if (summaryRes.data) setSummary(summaryRes.data)
@@ -195,6 +207,9 @@ export function SupportCoveragePage() {
         setLoadedPage(1)
       }
       setMergeSuggestionCount(mergeSuggestionRes.data?.total ?? 0)
+	  setTopicsV2(topicsV2Res.data?.items ?? [])
+	  setSignalsV2(signalsV2Res.data?.items ?? [])
+	  setHealthV2(healthV2Res.data ?? null)
       setLoading(false)
     }
 
@@ -203,6 +218,20 @@ export function SupportCoveragePage() {
       cancelled = true
     }
   }, [wsId, listFilters])
+
+	const openTopicV2 = async (topicId: string) => {
+	  const { data, error } = await supportCoverageService.getTopicV2(wsId, topicId)
+	  if (error) { toast.error('Failed to load coverage topic'); return }
+	  setSelectedTopicV2(data ?? null)
+	}
+
+	const replayAttemptV2 = async (attemptId: string) => {
+	  const { error } = await supportCoverageService.replayAttemptV2(wsId, attemptId)
+	  if (error) { toast.error('Failed to queue retry'); return }
+	  toast.success('Coverage attempt queued for retry')
+	  const { data } = await supportCoverageService.getPipelineHealthV2(wsId)
+	  if (data) setHealthV2(data)
+	}
 
   const refreshGap = async (gapId: string) => {
     const [{ data }, suggestionsRes] = await Promise.all([
@@ -441,6 +470,56 @@ export function SupportCoveragePage() {
           )}
         </div>
       </header>
+
+	  <section className="space-y-3" aria-label="Coverage v2 surfaces">
+		<div className="flex rounded-lg border border-border/60 bg-muted/30 p-1">
+		  {(['topics', 'signals', 'health'] as const).map((surface) => (
+			<button key={surface} type="button" onClick={() => setCoverageSurface(surface)} className={cn('rounded-md px-3 py-1.5 text-xs font-medium capitalize', coverageSurface === surface ? 'bg-background shadow-sm' : 'text-muted-foreground')}>
+			  {surface === 'signals' ? `Unreviewed signals (${signalsV2.length})` : surface === 'health' ? 'Pipeline health' : `Topics (${topicsV2.length})`}
+			</button>
+		  ))}
+		</div>
+
+		{coverageSurface === 'topics' && (
+		  <div className="grid gap-3 md:grid-cols-2">
+			{topicsV2.map((topic) => (
+			  <button key={topic.id} type="button" onClick={() => void openTopicV2(topic.id)} className="rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/30">
+				<p className="font-medium">{topic.title}</p>
+				<p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{topic.customer_need}</p>
+				<p className="mt-3 text-xs text-muted-foreground">{topic.conversation_count} conversations · {topic.customer_count} customers · {topic.finding_count} findings</p>
+			  </button>
+			))}
+			{topicsV2.length === 0 && <p className="text-sm text-muted-foreground">No canonical topics yet. Qualified findings will appear after analysis.</p>}
+		  </div>
+		)}
+
+		{coverageSurface === 'signals' && (
+		  <div className="space-y-2">
+			{signalsV2.map((signal) => <div key={signal.id} className="rounded-lg border bg-card p-3"><p className="text-sm font-medium">{signal.normalized_query}</p><p className="mt-1 text-xs text-muted-foreground">{signal.source_kind.replace('_', ' ')} · {signal.meaningful_tokens} meaningful tokens · {timeAgo(signal.observed_at)}</p></div>)}
+			{signalsV2.length === 0 && <p className="text-sm text-muted-foreground">No unreviewed signals.</p>}
+		  </div>
+		)}
+
+		{coverageSurface === 'health' && (
+		  <div className="rounded-lg border bg-card p-4">
+			<p className="font-medium">{healthV2?.healthy ? 'Pipeline healthy' : 'Pipeline needs attention'}</p>
+			{healthV2?.latest_batch && <p className="mt-1 text-xs text-muted-foreground">Latest batch: {healthV2.latest_batch.status} · {healthV2.latest_batch.succeeded_count}/{healthV2.latest_batch.candidate_count} succeeded</p>}
+			<div className="mt-3 space-y-2">
+			  {healthV2?.failures.map((failure) => <div key={failure.id} className="flex items-start justify-between gap-3 rounded-md bg-muted/40 p-3"><div><p className="text-sm font-medium">{failure.failure_class || failure.stage}</p><p className="text-xs text-muted-foreground">{failure.failure_message || 'Waiting for retry'}</p></div>{canRebuildClusters && <Button size="sm" variant="outline" onClick={() => void replayAttemptV2(failure.id)}>Retry</Button>}</div>)}
+			</div>
+		  </div>
+		)}
+	  </section>
+
+	  {selectedTopicV2 && (
+		<Card>
+		  <CardHeader><CardTitle className="flex items-center justify-between text-base"><span>{selectedTopicV2.topic.title}</span><Button variant="ghost" size="sm" onClick={() => setSelectedTopicV2(null)}>Close</Button></CardTitle></CardHeader>
+		  <CardContent className="space-y-4">
+			{selectedTopicV2.findings.map((finding) => <div key={finding.id} className="grid gap-3 rounded-lg border p-4 md:grid-cols-2"><div><p className="text-xs font-medium uppercase text-muted-foreground">Customer need</p><p className="text-sm">{finding.customer_need}</p></div><div><p className="text-xs font-medium uppercase text-muted-foreground">AI answer / failure</p><p className="text-sm">{finding.ai_answer || finding.ai_failure}</p></div><div><p className="text-xs font-medium uppercase text-muted-foreground">Human answer</p><p className="text-sm">{finding.human_answer || 'No human answer observed'}</p></div><div><p className="text-xs font-medium uppercase text-muted-foreground">Recommended fix</p><p className="text-sm font-medium">{finding.fix_type.replaceAll('_', ' ')} · {finding.fix_target}</p><p className="text-sm text-muted-foreground">{finding.rationale}</p><p className="mt-1 text-sm">{finding.suggested_change}</p></div></div>)}
+			<p className="text-xs text-muted-foreground">Recommendations are Support AI analysis. Docs AI is used only after you explicitly start a draft or documentation action below.</p>
+		  </CardContent>
+		</Card>
+	  )}
 
       {summary && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

@@ -1374,7 +1374,7 @@ func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widg
 	}
 
 	searchSourceSignal := model.SupportCoverageSourceSelfService
-	if coverageSignal && len(results) == 0 && IsMeaningfulCoverageSearchQuery(query) {
+	if coverageSignal && len(results) == 0 && IsEligibleCoverageWidgetSignal(query) {
 		searchSourceSignal = "no_results"
 	}
 	s.recordSupportEvent(SupportEventInput{
