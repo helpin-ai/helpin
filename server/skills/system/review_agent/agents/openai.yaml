@@ -8,10 +8,10 @@ policy:
       transports:
         native_sdk:
           type: tool_call
-          tool_name: mcp__helpin__request_review_checkpoint
+          tool_name: request_review_checkpoint
         codex:
           type: tool_call
-          tool_name: mcp__helpin__request_review_checkpoint
+          tool_name: request_review_checkpoint
         opencode:
           type: fenced_json
           block_label: helpin-review
@@ -20,7 +20,7 @@ policy:
       transports:
         native_sdk:
           type: tool_call
-          tool_name: mcp__helpin__request_user_input
+          tool_name: request_user_input
         codex:
           type: runtime_bridge
         opencode:

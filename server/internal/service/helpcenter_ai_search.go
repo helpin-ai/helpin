@@ -45,7 +45,7 @@ const (
 	helpcenterAnswerDailyLimit = 300
 
 	defaultHelpcenterAnswerProvider = "openrouter"
-	defaultHelpcenterAnswerModel    = "deepseek/deepseek-v4-flash-0731"
+	defaultHelpcenterAnswerModel    = "z-ai/glm-5.3-flash:exacto"
 	// Cheap-tier fallbacks when only one provider key is configured.
 	fallbackOpenAIAnswerModel    = "gpt-5-mini"
 	fallbackAnthropicAnswerModel = "claude-haiku-4-5"

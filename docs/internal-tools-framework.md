@@ -19,7 +19,7 @@ Current model:
 1. tools are the main model-facing contract
 2. some business-mutation tools are backed by internal commands internally
 3. runtime-local tools stay tool-only
-4. Helpin product and interaction tools are exposed to model backends through MCP runtime names such as `mcp__helpin__create_task` and `mcp__helpin__request_user_input`
+4. Helpin product and interaction tools are exposed to model backends through MCP under bare canonical names such as `create_task` and `request_user_input`
 
 In practice, optimize for the tool contract first. Internal command backing is an implementation detail except for shared business mutations.
 
@@ -79,29 +79,29 @@ Use an agent-facing runtime tool when:
 
 The model-facing contract is the source of truth for prompts and skills. The internal command, if any, is backend reuse.
 
-### Canonical Alias vs Runtime MCP Name
+### Canonical Names and Legacy MCP Names
 
-Helpin product and interaction tools have two names:
+Helpin product and interaction tools have one current name and one accepted
+legacy representation:
 
-- canonical alias: prefix-free backend name such as `create_task`, `update_plan`, or `request_user_input`
-- runtime MCP name: model-facing MCP name such as `mcp__helpin__create_task`, `mcp__helpin__update_plan`, or `mcp__helpin__request_user_input`
+- canonical name: the model-facing and backend name, such as `create_task`, `update_plan`, or `request_user_input`
+- legacy MCP name: a stored compatibility form such as `mcp__helpin__create_task`
 
-Use canonical aliases for:
+Use canonical names for:
 
 - runtime profile allowlists
 - backend policy and authorization
 - tool catalog categories
 - artifact extraction and approved-preview application
 - test fixtures that are not specifically about provider tool names
-
-Use runtime MCP names in:
-
 - model-facing prompt snippets
 - staged skill markdown
 - provider tool definitions
 - docs that tell an agent which tool to call
 
-Runtime dispatch strips the `mcp__helpin__` prefix before policy checks and execution. Frontend transcript surfaces accept either form and display the prefix-free alias.
+Runtime dispatch strips the legacy `mcp__helpin__` prefix before policy checks
+and execution. Frontend transcript surfaces accept either form and display the
+canonical name. Do not create new prefixed data.
 
 Repo-local backend tools such as filesystem reads, patching, and shell execution may still be provided directly by a runtime. Helpin product and interaction tools should be available through the Helpin MCP bridge for both `native_sdk` and `codex`.
 
@@ -113,7 +113,7 @@ Adding a tool implementation is not enough to make it usable. Exposure is contro
 - `agent.allowed_tools` overrides, resolved by `ResolveAgentProfile`
 - `ExecutionContext.AllowedTools`, which is enforced by `ToolRegistry.ExecuteAllowed`
 - active skill and prompt selection, which can make the model see only the skills and policies active for the current turn
-- Helpin MCP discovery, which exposes available Helpin product/interaction tools with `mcp__helpin__*` runtime names
+- Helpin MCP discovery, which exposes available Helpin product/interaction tools with bare canonical names
 - tool catalog metadata in `server/internal/worker/tool_catalog.go` and `server/internal/commandtools/metadata.go`
 
 This means a tool can exist in the registry but still be unavailable to a specific agent run.
@@ -229,10 +229,10 @@ Runtime Tools
 |   +-- web search
 |
 +-- Interaction tools
-|   +-- request_user_input / mcp__helpin__request_user_input
-|   +-- request_approval / mcp__helpin__request_approval
-|   +-- request_review_checkpoint / mcp__helpin__request_review_checkpoint
-|   +-- preview / publish tools, for example mcp__helpin__publish_task_plan
+|   +-- request_user_input
+|   +-- request_approval
+|   +-- request_review_checkpoint
+|   +-- preview / publish tools, for example publish_task_plan
 |
 +-- Product tools
     +-- reads
@@ -376,15 +376,15 @@ Use `snake_case` action names for canonical aliases:
 - `update_task_state`
 - `request_user_input`
 
-For model-facing Helpin product or interaction tools, the runtime name is
-prefixed with the MCP server name:
+For model-facing Helpin product or interaction tools, use the same bare
+canonical name:
 
-- `mcp__helpin__list_documents`
-- `mcp__helpin__update_task_state`
-- `mcp__helpin__request_user_input`
+- `list_documents`
+- `update_task_state`
+- `request_user_input`
 
-Do not save the prefixed name in backend allowlists or policy constants unless
-the code is specifically testing runtime tool-name exposure.
+Do not save a prefixed name in backend allowlists, policies, prompts, or skill
+contracts unless the code is specifically testing legacy compatibility.
 
 ### Field names
 
@@ -549,7 +549,7 @@ Current examples:
 - canonical task creation input: `tasks`
 - accepted task-plan input alias: `proposed_tasks`
 - legacy aliases such as `request_human_input` and `request_human_approval` are decode/runtime compatibility only; do not use them in new prompt examples
-- prefixed runtime names such as `mcp__helpin__request_user_input` canonicalize to prefix-free aliases before execution
+- legacy prefixed names such as `mcp__helpin__request_user_input` canonicalize to bare names before execution
 
 ## Adding New Capabilities
 

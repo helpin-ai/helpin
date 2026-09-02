@@ -1,28 +1,18 @@
 package agentcontract
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
-func TestHelpinMCPRuntimeToolNamePrefixesHelpinTools(t *testing.T) {
-	for _, alias := range []string{
-		ToolUpdatePlan,
-		ToolRequestUserInput,
-		ToolPublishTaskPlan,
-		"list_tasks",
-		"read_file",
+func TestCanonicalToolNameUsesBareCanonicalNames(t *testing.T) {
+	for alias, want := range map[string]string{
+		ToolUpdatePlan:       ToolUpdatePlan,
+		ToolRequestUserInput: ToolRequestUserInput,
+		ToolPublishTaskPlan:  ToolPublishTaskPlan,
+		"list_tasks":         "list_tasks",
+		"read_file":          "read_files",
+		HelpinMCPToolPrefix + "create_collection": "create_collection",
 	} {
-		got := HelpinMCPRuntimeToolName(alias)
-		if alias == "read_file" {
-			if got != "read_files" {
-				t.Fatalf("expected local tool to stay unprefixed, got %q", got)
-			}
-			continue
-		}
-		want := HelpinMCPToolPrefix + alias
-		if got != want {
-			t.Fatalf("expected %q runtime name %q, got %q", alias, want, got)
+		if got := CanonicalToolName(alias); got != want {
+			t.Fatalf("runtime name for %q=%q, want %q", alias, got, want)
 		}
 	}
 }
@@ -40,17 +30,10 @@ func TestCanonicalToolNameStripsHelpinMCPPrefixAndLegacyAliases(t *testing.T) {
 	}
 }
 
-func TestRenderRuntimeToolNamesInInstructionsForCodexUsesLogicalNames(t *testing.T) {
-	rendered := RenderRuntimeToolNamesInInstructionsForRuntime(
-		"Publish with `mcp__helpin__publish_task_plan_doc`, then call `mcp__helpin__request_approval`.",
-		"codex",
-	)
-	for _, toolName := range []string{"`publish_task_plan_doc`", "`request_approval`"} {
-		if !strings.Contains(rendered, toolName) {
-			t.Fatalf("expected logical tool name %s, got %q", toolName, rendered)
+func TestCanonicalToolNameCoversEveryWriteSideMapping(t *testing.T) {
+	for alias, canonical := range legacyToolAliases {
+		if got := CanonicalToolName(alias); got != canonical {
+			t.Fatalf("canonical name for %q=%q, want %q", alias, got, canonical)
 		}
-	}
-	if strings.Contains(rendered, "mcp__helpin__") {
-		t.Fatalf("expected Codex prompt to remove MCP qualification, got %q", rendered)
 	}
 }

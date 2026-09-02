@@ -353,7 +353,7 @@ func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
 	if strings.Contains(*updated.SystemPrompt, "`publish_preview`") || strings.Contains(*updated.SystemPrompt, "`request_human_approval`") {
 		t.Fatalf("expected refreshed task planner prompt to remove legacy preview/approval tools, got %q", *updated.SystemPrompt)
 	}
-	if !strings.Contains(*updated.SystemPrompt, "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolPublishTaskPlanDoc)+"`") {
+	if !strings.Contains(*updated.SystemPrompt, "`"+agentcontract.CanonicalToolName(agentcontract.ToolPublishTaskPlanDoc)+"`") {
 		t.Fatalf("expected refreshed task planner prompt to include publish_task_plan_doc, got %q", *updated.SystemPrompt)
 	}
 	if updated.Name != "Scribe" {
@@ -436,8 +436,8 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 		t.Fatalf("expected review preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent), updated.PresetVersionKey)
 	}
 	if updated.SystemPrompt == nil ||
-		!strings.Contains(*updated.SystemPrompt, "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestUserInput)+"`") ||
-		!strings.Contains(*updated.SystemPrompt, "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestReviewCheckpoint)+"`") {
+		!strings.Contains(*updated.SystemPrompt, "`"+agentcontract.CanonicalToolName(agentcontract.ToolRequestUserInput)+"`") ||
+		!strings.Contains(*updated.SystemPrompt, "`"+agentcontract.CanonicalToolName(agentcontract.ToolRequestReviewCheckpoint)+"`") {
 		t.Fatalf("expected refreshed review prompt with interactive loop tools, got %+v", updated.SystemPrompt)
 	}
 	var tools []string
@@ -871,6 +871,51 @@ func TestEnsureBuiltInAgent_UpgradesLegacyScribeDefaultRouting(t *testing.T) {
 	}
 	if reconciled.Model == nil || *reconciled.Model != defaultScribeAgentModel {
 		t.Fatalf("expected reconciled model %s, got %+v", defaultScribeAgentModel, reconciled.Model)
+	}
+}
+
+func TestEnsureBuiltInAgent_UpgradesManagedDeepSeekFlashDefaultsToGLMExacto(t *testing.T) {
+	presetKeys := []string{
+		model.AgentPresetEpicPlanner,
+		model.AgentPresetDocumentationAgent,
+		model.AgentPresetAskAgent,
+		model.AgentPresetSupportAgent,
+	}
+	legacyModels := []string{
+		"deepseek/deepseek-v4-flash",
+		"deepseek/deepseek-v4-flash-0731",
+	}
+
+	for _, presetKey := range presetKeys {
+		for _, legacyModel := range legacyModels {
+			t.Run(presetKey+"/"+legacyModel, func(t *testing.T) {
+				db := newAgentServiceTestDB(t)
+				agentRepo := repository.NewAgentRepository(db)
+				svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+				systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", presetKey)
+				if err != nil {
+					t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+				}
+				legacyProvider := model.AgentModelProviderOpenRouter
+				systemAgent.Provider = &legacyProvider
+				systemAgent.Model = &legacyModel
+				if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+					t.Fatalf("persist legacy route: %v", err)
+				}
+
+				reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", presetKey)
+				if err != nil {
+					t.Fatalf("ensureBuiltInAgent reconcile returned error: %v", err)
+				}
+				if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
+					t.Fatalf("provider = %+v, want openrouter", reconciled.Provider)
+				}
+				if reconciled.Model == nil || *reconciled.Model != "z-ai/glm-5.3-flash:exacto" {
+					t.Fatalf("model = %+v, want GLM 5.3 Flash Exacto", reconciled.Model)
+				}
+			})
+		}
 	}
 }
 
@@ -1425,41 +1470,45 @@ func TestEnsureBuiltInAgent_PreservesWorkspacePresetVersionDuringReconcile(t *te
 	}
 	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "test-openrouter-key", "", false, "", "")
 
-	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetReviewAgent)
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
 	if err != nil {
 		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
 	}
 	if err := workspacePresetVersionRepo.Create(context.Background(), &model.WorkspaceAgentPresetVersion{
 		WorkspaceID:           "ws-test",
-		FamilyKey:             model.AgentPresetReviewAgent,
-		VersionKey:            "review_agent_workspace_checks",
+		FamilyKey:             model.AgentPresetEpicPlanner,
+		VersionKey:            "epic_planner_workspace_checks",
 		Label:                 "Workspace Checks",
-		RuntimeKind:           "codex",
-		Provider:              agentTestStringPtr(model.AgentModelProviderOpenAI),
-		Model:                 agentTestStringPtr("gpt-5.5"),
+		RuntimeKind:           "native_sdk",
+		ModelTier:             "small",
+		Provider:              agentTestStringPtr(model.AgentModelProviderOpenRouter),
+		Model:                 agentTestStringPtr("deepseek/deepseek-v4-flash-0731"),
 		SystemPrompt:          agentTestStringPtr("Run extra workspace review checks."),
 		InstructionSkills:     mustJSONStringSlice(nil),
 		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
 		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
 		ApprovalMode:          "never",
-		DefaultInvocationMode: model.InvocationModeAutonomous,
+		DefaultInvocationMode: model.InvocationModeInteractive,
 	}); err != nil {
 		t.Fatalf("create workspace preset version: %v", err)
 	}
 
-	versionKey := "review_agent_workspace_checks"
+	versionKey := "epic_planner_workspace_checks"
 	if _, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
 		PresetVersionKey: &versionKey,
 	}, "user-1"); err != nil {
 		t.Fatalf("pin workspace preset version: %v", err)
 	}
 
-	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetReviewAgent)
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetEpicPlanner)
 	if err != nil {
 		t.Fatalf("ensureBuiltInAgent during reconcile returned error: %v", err)
 	}
 	if reconciled.PresetVersionKey != versionKey {
 		t.Fatalf("expected workspace preset version %q to survive reconcile, got %q", versionKey, reconciled.PresetVersionKey)
+	}
+	if reconciled.Model == nil || *reconciled.Model != "deepseek/deepseek-v4-flash-0731" {
+		t.Fatalf("workspace preset model = %+v, want preserved DeepSeek route", reconciled.Model)
 	}
 }
 
