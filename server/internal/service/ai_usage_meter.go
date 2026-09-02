@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -137,44 +138,23 @@ type MeteredLLMProvider struct {
 	meter *AIUsageMeter
 }
 
-var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
-	BillingFeatureAIRouting:               {FeatureKey: BillingFeatureAIRouting, Label: "AI triage and routing", Category: "Support AI", FloorUnits: 2, Chargeable: true},
-	BillingFeatureCoverageGapAnalysis:     {FeatureKey: BillingFeatureCoverageGapAnalysis, Label: "Coverage gap analysis", Category: "Docs AI", FloorUnits: 2, Chargeable: true},
-	BillingFeatureCRMSignalDetection:      {FeatureKey: BillingFeatureCRMSignalDetection, Label: "CRM signal detection", Category: "CRM AI", FloorUnits: 3, Chargeable: true},
-	BillingFeatureSupportReplyRewrite:     {FeatureKey: BillingFeatureSupportReplyRewrite, Label: "Support reply rewrite", Category: "Support AI", FloorUnits: 4, Chargeable: true},
-	BillingFeaturePMCommentRewrite:        {FeatureKey: BillingFeaturePMCommentRewrite, Label: "Project comment rewrite", Category: "Project AI", FloorUnits: 4, Chargeable: true},
-	BillingFeatureCRMEmailRewrite:         {FeatureKey: BillingFeatureCRMEmailRewrite, Label: "CRM email rewrite", Category: "CRM AI", FloorUnits: 4, Chargeable: true},
-	BillingFeatureDealAutomationInference: {FeatureKey: BillingFeatureDealAutomationInference, Label: "Deal automation inference", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
-	BillingFeatureMeetingIntelligence:     {FeatureKey: BillingFeatureMeetingIntelligence, Label: "Meeting intelligence", Category: "CRM AI", FloorUnits: 8, Chargeable: true},
-	BillingFeatureCRMSummary:              {FeatureKey: BillingFeatureCRMSummary, Label: "CRM summary", Category: "CRM AI", FloorUnits: 6, Chargeable: true},
-	BillingFeatureTaskStandingBrief:       {FeatureKey: BillingFeatureTaskStandingBrief, Label: "Task standing brief", Category: "Project AI", FloorUnits: 6, Chargeable: true},
-	BillingFeatureSupportAIReply:          {FeatureKey: BillingFeatureSupportAIReply, Label: "Support reply draft", Category: "Support AI", FloorUnits: 8, Chargeable: true},
-	BillingFeatureSupportTaskDraft:        {FeatureKey: BillingFeatureSupportTaskDraft, Label: "Support task draft", Category: "Support AI", FloorUnits: 8, Chargeable: true},
-	BillingFeatureDocsGeneration:          {FeatureKey: BillingFeatureDocsGeneration, Label: "Document generation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
-	BillingFeatureDocsArticleTranslation:  {FeatureKey: BillingFeatureDocsArticleTranslation, Label: "Help article translation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
-	BillingFeatureDocsArticleGeneration:   {FeatureKey: BillingFeatureDocsArticleGeneration, Label: "Help article generation", Category: "Docs AI", FloorUnits: 20, Chargeable: true},
-	BillingFeatureDocsImportConversion:    {FeatureKey: BillingFeatureDocsImportConversion, Label: "Help article import formatting", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
-	BillingFeatureHelpcenterAnswer:        {FeatureKey: BillingFeatureHelpcenterAnswer, Label: "Help-center answer generation", Category: "Docs AI", FloorUnits: 2, Chargeable: true},
-	BillingFeatureCRMAction:               {FeatureKey: BillingFeatureCRMAction, Label: "CRM / deal action", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
-	BillingFeatureBuiltInLightAgentRun:    {FeatureKey: BillingFeatureBuiltInLightAgentRun, Label: "Built-in agent run", Category: "Agents", FloorUnits: 40, Chargeable: true},
-	BillingFeatureAskChat:                 {FeatureKey: BillingFeatureAskChat, Label: "Ask Chat", Category: "Agents", FloorUnits: 40, Chargeable: true},
-	BillingFeaturePlanningRun:             {FeatureKey: BillingFeaturePlanningRun, Label: "Planning run", Category: "Agents", FloorUnits: 80, Chargeable: true},
-	BillingFeatureScribeRun:               {FeatureKey: BillingFeatureScribeRun, Label: "Scribe task planning run", Category: "Agents", FloorUnits: 50, Chargeable: true},
-	BillingFeatureMiraRun:                 {FeatureKey: BillingFeatureMiraRun, Label: "Mira marketing run", Category: "Agents", FloorUnits: 50, Chargeable: true},
-	BillingFeatureQuillRun:                {FeatureKey: BillingFeatureQuillRun, Label: "Quill documentation run", Category: "Agents", FloorUnits: 60, Chargeable: true},
-	BillingFeatureCustomAgentRun:          {FeatureKey: BillingFeatureCustomAgentRun, Label: "Custom agent run", Category: "Agents", FloorUnits: 60, Chargeable: true},
-	BillingFeatureAtlasRun:                {FeatureKey: BillingFeatureAtlasRun, Label: "Atlas epic planning run", Category: "Agents", FloorUnits: 80, Chargeable: true},
-	BillingFeatureCodingRun:               {FeatureKey: BillingFeatureCodingRun, Label: "Coding / review run", Category: "Agents", FloorUnits: 100, Chargeable: true},
-	BillingFeatureForgeRun:                {FeatureKey: BillingFeatureForgeRun, Label: "Forge coding run", Category: "Agents", FloorUnits: 100, Chargeable: true},
-	BillingFeatureLensRun:                 {FeatureKey: BillingFeatureLensRun, Label: "Lens review run", Category: "Agents", FloorUnits: 100, Chargeable: true},
-	BillingFeatureCustomCodingReviewRun:   {FeatureKey: BillingFeatureCustomCodingReviewRun, Label: "Custom coding/review run", Category: "Agents", FloorUnits: 100, Chargeable: true},
-	BillingFeatureCustomAgentDraft:        {FeatureKey: BillingFeatureCustomAgentDraft, Label: "Custom agent draft", Category: "Setup", Chargeable: false},
-	BillingFeatureAutomationSetup:         {FeatureKey: BillingFeatureAutomationSetup, Label: "Automation setup", Category: "Setup", Chargeable: false},
-	BillingFeatureFlowSetup:               {FeatureKey: BillingFeatureFlowSetup, Label: "Flow setup", Category: "Setup", Chargeable: false},
-	BillingFeatureAgentPromptImprovement:  {FeatureKey: BillingFeatureAgentPromptImprovement, Label: "Agent prompt improvement", Category: "Setup", Chargeable: false},
-	BillingFeatureDataImportSetup:         {FeatureKey: BillingFeatureDataImportSetup, Label: "Data import setup", Category: "Setup", Chargeable: false},
-	BillingFeatureCompanyProductContext:   {FeatureKey: BillingFeatureCompanyProductContext, Label: "Company/product context generation", Category: "Setup", Chargeable: false},
-	BillingFeatureDockChatTitle:           {FeatureKey: BillingFeatureDockChatTitle, Label: "Dock chat title", Category: "Agents", Chargeable: false},
+var aiUsageFeatures = aiUsageFeaturesFromRegistry(aipolicy.DefaultRegistry())
+
+func aiUsageFeaturesFromRegistry(registry *aipolicy.Registry) map[string]AIUsageFeatureDefinition {
+	features := make(map[string]AIUsageFeatureDefinition)
+	for _, action := range registry.Actions() {
+		if _, exists := features[action.FeatureKey]; exists {
+			continue
+		}
+		features[action.FeatureKey] = AIUsageFeatureDefinition{
+			FeatureKey: action.FeatureKey,
+			Label:      action.Label,
+			Category:   string(action.Category),
+			FloorUnits: action.FloorUnits,
+			Chargeable: action.Chargeable,
+		}
+	}
+	return features
 }
 
 func NewAIUsageMeter(consumer aiUsageCreditConsumer) *AIUsageMeter {
