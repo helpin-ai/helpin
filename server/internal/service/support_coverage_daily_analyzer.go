@@ -267,12 +267,106 @@ func (s *SupportCoverageDailyAnalyzer) EnsureDailyAnalysis(ctx context.Context) 
 }
 
 func (s *SupportCoverageDailyAnalyzer) ListWorkspacesForDailyAnalysis(ctx context.Context) ([]string, error) {
-	if s == nil || s.conversationRepo == nil {
+	if s == nil {
 		return nil, nil
 	}
-	windowEnd := time.Now().UTC().Add(-coverageAnalysisSettleDelay)
-	windowStart := windowEnd.Add(-coverageAnalysisBootstrapWindow)
-	return s.conversationRepo.ListWorkspacesForCoverageAnalysisCandidates(ctx, windowStart, windowEnd, coverageAnalysisWorkspaceLimit)
+	var candidateWorkspaces []string
+	if s.conversationRepo != nil {
+		windowEnd := time.Now().UTC().Add(-coverageAnalysisSettleDelay)
+		windowStart := windowEnd.Add(-coverageAnalysisBootstrapWindow)
+		var err error
+		candidateWorkspaces, err = s.conversationRepo.ListWorkspacesForCoverageAnalysisCandidates(ctx, windowStart, windowEnd, coverageAnalysisWorkspaceLimit)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var queuedWorkspaces []string
+	if s.coverageV2Repo != nil {
+		var err error
+		queuedWorkspaces, err = s.coverageV2Repo.ListQueuedWorkspaces(ctx, coverageAnalysisWorkspaceLimit)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return mergeCoverageWorkspaceIDs(candidateWorkspaces, queuedWorkspaces, coverageAnalysisWorkspaceLimit), nil
+}
+
+func mergeCoverageWorkspaceIDs(primary, queued []string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	merged := make([]string, 0, min(limit, len(primary)+len(queued)))
+	seen := make(map[string]struct{}, len(primary)+len(queued))
+	for _, group := range [][]string{primary, queued} {
+		for _, workspaceID := range group {
+			workspaceID = strings.TrimSpace(workspaceID)
+			if workspaceID == "" {
+				continue
+			}
+			if _, exists := seen[workspaceID]; exists {
+				continue
+			}
+			seen[workspaceID] = struct{}{}
+			merged = append(merged, workspaceID)
+			if len(merged) == limit {
+				return merged
+			}
+		}
+	}
+	return merged
+}
+
+func (s *SupportCoverageDailyAnalyzer) reconcileQueuedCoverageAttempts(ctx context.Context, workspaceID string) error {
+	if s.coverageV2Repo == nil {
+		return nil
+	}
+	owner := fmt.Sprintf("coverage-reconcile:%s:%d", workspaceID, time.Now().UTC().UnixNano())
+	for {
+		attempts, err := s.coverageV2Repo.ClaimAttemptsForWorkspace(ctx, workspaceID, owner, time.Now().UTC(), 15*time.Minute, coverageAnalysisCandidatePageSize)
+		if err != nil {
+			return err
+		}
+		if len(attempts) == 0 {
+			return nil
+		}
+		var page sync.WaitGroup
+		semaphore := make(chan struct{}, coverageAnalysisConversationConcurrency)
+		for index := range attempts {
+			attempt := attempts[index]
+			page.Add(1)
+			go func() {
+				defer page.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+				if attempt.SourceKind != "conversation" {
+					s.markCoverageV2AttemptRetryable(ctx, &attempt, owner, model.CoverageFailureCandidateQuery, fmt.Errorf("unsupported coverage source kind %q", attempt.SourceKind))
+					return
+				}
+				conversation, loadErr := s.conversationRepo.GetByID(ctx, workspaceID, attempt.SourceID, "", model.RoleOwner)
+				if loadErr != nil {
+					s.markCoverageV2AttemptRetryable(ctx, &attempt, owner, model.CoverageFailureCandidateQuery, loadErr)
+					return
+				}
+				if conversation == nil {
+					s.completeCoverageV2Attempt(ctx, &attempt, owner)
+					return
+				}
+				if _, analyzeErr := s.runConversationCoverageAnalysis(ctx, workspaceID, attempt.BatchID, attempt.BatchID, *conversation, &attempt); analyzeErr != nil {
+					slog.WarnContext(ctx, "queued coverage analysis failed", "workspace_id", workspaceID, "attempt_id", attempt.ID, "failure_class", coverageAnalysisFailureClass(analyzeErr))
+				}
+			}()
+		}
+		page.Wait()
+		batchIDs := make(map[string]struct{}, len(attempts))
+		for _, attempt := range attempts {
+			batchIDs[attempt.BatchID] = struct{}{}
+		}
+		for batchID := range batchIDs {
+			if err := s.coverageV2Repo.RefreshBatchStatus(ctx, batchID); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time) error {
@@ -281,6 +375,9 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 	}
 	if strings.TrimSpace(workspaceID) == "" {
 		return fmt.Errorf("workspace_id is required")
+	}
+	if err := s.reconcileQueuedCoverageAttempts(ctx, workspaceID); err != nil {
+		return err
 	}
 	if windowEnd.IsZero() {
 		windowEnd = time.Now().UTC()
@@ -356,7 +453,7 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 				defer page.Done()
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
-				gapCreated, itemErr := s.runConversationCoverageAnalysis(ctx, workspaceID, run.ID, v2BatchID, conversation)
+				gapCreated, itemErr := s.runConversationCoverageAnalysis(ctx, workspaceID, run.ID, v2BatchID, conversation, nil)
 				if itemErr != nil {
 					itemErrorsMu.Lock()
 					itemErrors = append(itemErrors, fmt.Errorf("conversation %s: %w", conversation.ID, itemErr))
@@ -410,24 +507,32 @@ func (s *SupportCoverageDailyAnalyzer) markCoverageAnalysisRunFailed(ctx context
 	}
 }
 
-func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx context.Context, workspaceID, runID, v2BatchID string, conversation model.SupportConversation) (bool, error) {
+func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx context.Context, workspaceID, runID, v2BatchID string, conversation model.SupportConversation, claimedAttempt *model.CoverageAnalysisAttempt) (bool, error) {
+	v2Attempt := claimedAttempt
+	attemptOwner := runID
+	if claimedAttempt != nil {
+		attemptOwner = claimedAttempt.LeaseOwner
+	}
 	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
 	if err != nil {
+		s.markCoverageV2AttemptRetryable(ctx, v2Attempt, attemptOwner, model.CoverageFailurePersistence, err)
 		return false, err
 	}
 	traces, err := s.analysisRepo.ListRetrievalTracesByConversation(ctx, workspaceID, conversation.ID)
 	if err != nil {
+		s.markCoverageV2AttemptRetryable(ctx, v2Attempt, attemptOwner, model.CoverageFailurePersistence, err)
 		return false, err
 	}
 	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, traces)
 	if err != nil {
 		if errors.Is(err, errCoverageNoPublicSegment) {
+			s.completeCoverageV2Attempt(ctx, v2Attempt, attemptOwner)
 			return false, nil
 		}
+		s.markCoverageV2AttemptRetryable(ctx, v2Attempt, attemptOwner, model.CoverageFailureCandidateQuery, err)
 		return false, err
 	}
-	var v2Attempt *model.CoverageAnalysisAttempt
-	if s.coverageV2Repo != nil && v2BatchID != "" {
+	if v2Attempt == nil && s.coverageV2Repo != nil && v2BatchID != "" {
 		logicalWorkKey := aiUsageIdempotencyKey(workspaceID, "coverage_work", conversation.ID, input.SegmentID, input.TranscriptHash, coverageAnalyzerVersion, "v1")
 		v2Attempt, err = s.coverageV2Repo.StartAnalysisAttempt(ctx, v2BatchID, workspaceID, logicalWorkKey, "conversation", conversation.ID, input.SegmentID, input.TranscriptHash, coverageAnalyzerVersion, "v1", runID, 15*time.Minute)
 		if err != nil {
@@ -436,14 +541,19 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		if v2Attempt.Status == model.CoverageAttemptSucceeded {
 			return false, nil
 		}
+		if v2Attempt.Status == model.CoverageAttemptLeased && v2Attempt.LeaseOwner != runID {
+			return false, nil
+		}
 	}
-	alreadyAnalyzed, err := s.analysisRepo.AlreadyAnalyzedConversation(ctx, workspaceID, conversation.ID, input.TranscriptHash, coverageAnalyzerVersion)
-	if err != nil {
-		return false, err
-	}
-	if alreadyAnalyzed {
-		s.completeCoverageV2Attempt(ctx, v2Attempt, runID)
-		return false, nil
+	if claimedAttempt == nil {
+		alreadyAnalyzed, err := s.analysisRepo.AlreadyAnalyzedConversation(ctx, workspaceID, conversation.ID, input.TranscriptHash, coverageAnalyzerVersion)
+		if err != nil {
+			return false, err
+		}
+		if alreadyAnalyzed {
+			s.completeCoverageV2Attempt(ctx, v2Attempt, attemptOwner)
+			return false, nil
+		}
 	}
 
 	// Deterministic prefilter: skip obvious non-support conversations without LLM.
@@ -463,7 +573,7 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		}); err != nil {
 			return false, err
 		}
-		s.completeCoverageV2Attempt(ctx, v2Attempt, runID)
+		s.completeCoverageV2Attempt(ctx, v2Attempt, attemptOwner)
 		return false, nil
 	}
 
@@ -482,11 +592,7 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		})
 		if v2Attempt != nil {
 			failureClass := coverageAnalysisFailureClass(err)
-			retryBudget := v2Attempt.RetryBudgetUsed + 1
-			if failureClass == model.CoverageFailureConfiguration {
-				retryBudget = v2Attempt.RetryBudgetUsed
-			}
-			_ = s.coverageV2Repo.MarkRetryable(ctx, v2Attempt.ID, runID, failureClass, sanitizeAIActionFailure(err), time.Now().UTC().Add(time.Minute), retryBudget)
+			s.markCoverageV2AttemptRetryable(ctx, v2Attempt, attemptOwner, failureClass, err)
 		}
 		if recordErr != nil {
 			return false, recordErr
@@ -494,7 +600,7 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		return false, err
 	}
 	if result == nil {
-		s.completeCoverageV2Attempt(ctx, v2Attempt, runID)
+		s.completeCoverageV2Attempt(ctx, v2Attempt, attemptOwner)
 		return false, nil
 	}
 
@@ -599,11 +705,11 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 	}
 	if result.HasGap && v2Attempt != nil {
 		if err := s.persistCoverageV2Finding(ctx, v2Attempt, conversation, input, *result); err != nil {
-			_ = s.coverageV2Repo.MarkRetryable(ctx, v2Attempt.ID, runID, model.CoverageFailurePersistence, sanitizeAIActionFailure(err), time.Now().UTC().Add(time.Minute), v2Attempt.RetryBudgetUsed+1)
+			s.markCoverageV2AttemptRetryable(ctx, v2Attempt, attemptOwner, model.CoverageFailurePersistence, err)
 			return false, err
 		}
 	}
-	s.completeCoverageV2Attempt(ctx, v2Attempt, runID)
+	s.completeCoverageV2Attempt(ctx, v2Attempt, attemptOwner)
 	return result.HasGap, nil
 }
 
@@ -985,6 +1091,29 @@ func (s *SupportCoverageDailyAnalyzer) completeCoverageV2Attempt(ctx context.Con
 	}
 	if err := s.coverageV2Repo.CompleteAttempt(ctx, attempt.ID, owner, time.Now().UTC()); err != nil {
 		slog.WarnContext(ctx, "failed to complete coverage v2 attempt", "attempt_id", attempt.ID, "error", err)
+	}
+}
+
+func (s *SupportCoverageDailyAnalyzer) markCoverageV2AttemptRetryable(ctx context.Context, attempt *model.CoverageAnalysisAttempt, owner, failureClass string, attemptErr error) {
+	if s == nil || s.coverageV2Repo == nil || attempt == nil || attempt.Status == model.CoverageAttemptSucceeded {
+		return
+	}
+	next, transitionErr := TransitionCoverageAttempt(CoverageAttemptState{
+		Status:          model.CoverageAttemptLeased,
+		RetryBudgetUsed: attempt.RetryBudgetUsed,
+		FailureClass:    attempt.FailureClass,
+	}, CoverageAttemptEvent{Kind: CoverageEventFailure, FailureClass: failureClass, MaxRetries: 3})
+	if transitionErr != nil {
+		slog.WarnContext(ctx, "failed to transition coverage v2 attempt", "attempt_id", attempt.ID, "error", transitionErr)
+		return
+	}
+	var retryAt *time.Time
+	if next.Status == model.CoverageAttemptRetryable {
+		at := time.Now().UTC().Add(time.Minute)
+		retryAt = &at
+	}
+	if err := s.coverageV2Repo.FailAttempt(ctx, attempt.ID, owner, next.Status, failureClass, sanitizeAIActionFailure(attemptErr), retryAt, next.RetryBudgetUsed); err != nil && !errors.Is(err, repository.ErrCoverageLeaseLost) {
+		slog.WarnContext(ctx, "failed to mark coverage v2 attempt retryable", "attempt_id", attempt.ID, "error", err)
 	}
 }
 

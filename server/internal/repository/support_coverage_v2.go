@@ -2,6 +2,9 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,6 +15,26 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+type CoverageRebuildSearch struct {
+	SourceID         string
+	SessionID        string
+	Query            string
+	MeaningfulTokens int
+	ObservedAt       time.Time
+}
+
+type CoverageRebuildPreview struct {
+	LegacyGapCount  int
+	EvidenceCount   int
+	ConversationIDs []string
+	Searches        []CoverageRebuildSearch
+}
+
+type CoverageRebuildApplyResult struct {
+	AuditID         string
+	QueuedWorkCount int
+}
 
 var ErrCoverageLeaseLost = errors.New("coverage work lease is no longer owned")
 
@@ -70,6 +93,60 @@ func (r *CoverageV2Repository) CompleteBatch(ctx context.Context, id, status str
 	}
 	if result.RowsAffected != 1 {
 		return fmt.Errorf("coverage batch %q not found", id)
+	}
+	return nil
+}
+
+// RefreshBatchStatus derives batch health from its immutable attempt history.
+func (r *CoverageV2Repository) RefreshBatchStatus(ctx context.Context, batchID string) error {
+	if strings.TrimSpace(batchID) == "" {
+		return fmt.Errorf("batch_id is required")
+	}
+	type statusCount struct {
+		Status string
+		Count  int
+	}
+	var counts []statusCount
+	if err := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).
+		Select("status, COUNT(*) AS count").Where("batch_id = ?", batchID).Group("status").Scan(&counts).Error; err != nil {
+		return err
+	}
+	total, succeeded, retryable, deadLetter, queued := 0, 0, 0, 0, 0
+	for _, count := range counts {
+		total += count.Count
+		switch count.Status {
+		case model.CoverageAttemptSucceeded:
+			succeeded += count.Count
+		case model.CoverageAttemptDeadLetter:
+			deadLetter += count.Count
+		case model.CoverageAttemptQueued:
+			queued += count.Count
+		case model.CoverageAttemptRetryable, model.CoverageAttemptPausedConfiguration:
+			retryable += count.Count
+		}
+	}
+	status := model.CoverageBatchRunning
+	if total > 0 && queued == total {
+		status = model.CoverageBatchQueued
+	} else if total > 0 && succeeded+deadLetter == total {
+		status = model.CoverageBatchSucceeded
+		if deadLetter > 0 {
+			status = model.CoverageBatchPartialFailed
+		}
+	}
+	updates := map[string]interface{}{
+		"status": status, "candidate_count": total, "succeeded_count": succeeded,
+		"retryable_count": retryable, "dead_letter_count": deadLetter, "updated_at": time.Now().UTC(),
+	}
+	if status == model.CoverageBatchSucceeded || status == model.CoverageBatchPartialFailed {
+		updates["completed_at"] = time.Now().UTC()
+	}
+	result := r.db.WithContext(ctx).Model(&model.CoverageBatch{}).Where("id = ?", batchID).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("coverage batch %q not found", batchID)
 	}
 	return nil
 }
@@ -152,6 +229,17 @@ func (r *CoverageV2Repository) EnqueueAttempt(ctx context.Context, attempt *mode
 // ClaimAttempts atomically leases bounded eligible work. PostgreSQL workers
 // use SKIP LOCKED so one slow item never blocks other workers.
 func (r *CoverageV2Repository) ClaimAttempts(ctx context.Context, owner string, now time.Time, leaseDuration time.Duration, limit int) ([]model.CoverageAnalysisAttempt, error) {
+	return r.claimAttempts(ctx, "", owner, now, leaseDuration, limit)
+}
+
+func (r *CoverageV2Repository) ClaimAttemptsForWorkspace(ctx context.Context, workspaceID, owner string, now time.Time, leaseDuration time.Duration, limit int) ([]model.CoverageAnalysisAttempt, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	return r.claimAttempts(ctx, workspaceID, owner, now, leaseDuration, limit)
+}
+
+func (r *CoverageV2Repository) claimAttempts(ctx context.Context, workspaceID, owner string, now time.Time, leaseDuration time.Duration, limit int) ([]model.CoverageAnalysisAttempt, error) {
 	if r == nil || r.db == nil || strings.TrimSpace(owner) == "" || leaseDuration <= 0 {
 		return nil, fmt.Errorf("coverage repository, owner, and positive lease duration are required")
 	}
@@ -166,6 +254,9 @@ func (r *CoverageV2Repository) ClaimAttempts(ctx context.Context, owner string, 
 		query := tx.Where("((status IN ? AND (retry_at IS NULL OR retry_at <= ?)) OR (status = ? AND lease_expires_at <= ?))",
 			[]string{model.CoverageAttemptQueued, model.CoverageAttemptRetryable}, now, model.CoverageAttemptLeased, now).
 			Order("created_at ASC, id ASC").Limit(limit)
+		if workspaceID != "" {
+			query = query.Where("workspace_id = ?", workspaceID)
+		}
 		if tx.Dialector.Name() == "postgres" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
 		}
@@ -196,6 +287,17 @@ func (r *CoverageV2Repository) ClaimAttempts(ctx context.Context, owner string, 
 	return claimed, nil
 }
 
+func (r *CoverageV2Repository) ListQueuedWorkspaces(ctx context.Context, limit int) ([]string, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+	var workspaceIDs []string
+	err := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).Distinct("workspace_id").
+		Where("status IN ? AND (retry_at IS NULL OR retry_at <= ?)", []string{model.CoverageAttemptQueued, model.CoverageAttemptRetryable}, time.Now().UTC()).
+		Order("workspace_id").Limit(limit).Pluck("workspace_id", &workspaceIDs).Error
+	return workspaceIDs, err
+}
+
 func (r *CoverageV2Repository) CompleteAttempt(ctx context.Context, id, owner string, completedAt time.Time) error {
 	result := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).
 		Where("id = ? AND status = ? AND lease_owner = ? AND lease_expires_at > ?", id, model.CoverageAttemptLeased, owner, completedAt).
@@ -204,11 +306,18 @@ func (r *CoverageV2Repository) CompleteAttempt(ctx context.Context, id, owner st
 }
 
 func (r *CoverageV2Repository) MarkRetryable(ctx context.Context, id, owner, failureClass, failureMessage string, retryAt time.Time, retryBudgetUsed int) error {
-	now := time.Now().UTC()
 	status := model.CoverageAttemptRetryable
 	if failureClass == model.CoverageFailureConfiguration {
 		status = model.CoverageAttemptPausedConfiguration
 	}
+	return r.FailAttempt(ctx, id, owner, status, failureClass, failureMessage, &retryAt, retryBudgetUsed)
+}
+
+func (r *CoverageV2Repository) FailAttempt(ctx context.Context, id, owner, status, failureClass, failureMessage string, retryAt *time.Time, retryBudgetUsed int) error {
+	if status != model.CoverageAttemptRetryable && status != model.CoverageAttemptDeadLetter && status != model.CoverageAttemptPausedConfiguration {
+		return fmt.Errorf("unsupported coverage failure status %q", status)
+	}
+	now := time.Now().UTC()
 	result := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).
 		Where("id = ? AND status = ? AND lease_owner = ? AND lease_expires_at > ?", id, model.CoverageAttemptLeased, owner, now).
 		Updates(map[string]interface{}{"status": status, "lease_owner": "", "lease_expires_at": nil, "retry_at": retryAt, "retry_budget_used": retryBudgetUsed, "failure_class": failureClass, "failure_message": failureMessage})
@@ -449,4 +558,134 @@ func (r *CoverageV2Repository) ListArchivedV1Gaps(ctx context.Context, workspace
 	var gaps []model.SupportCoverageGap
 	err := r.db.WithContext(ctx).Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageGapStatusArchivedV1).Order("last_seen_at DESC").Limit(limit).Offset(max(0, offset)).Find(&gaps).Error
 	return gaps, err
+}
+
+func (r *CoverageV2Repository) PreviewRebuild(ctx context.Context, workspaceID string) (*CoverageRebuildPreview, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	preview := &CoverageRebuildPreview{}
+	var legacyGapCount int64
+	if err := r.db.WithContext(ctx).Model(&model.SupportCoverageGap{}).Where("workspace_id = ? AND status <> ?", workspaceID, model.SupportCoverageGapStatusArchivedV1).Count(&legacyGapCount).Error; err != nil {
+		return nil, err
+	}
+	preview.LegacyGapCount = int(legacyGapCount)
+	var evidenceCount int64
+	if err := r.db.WithContext(ctx).Model(&model.SupportGapEvidence{}).Where("workspace_id = ?", workspaceID).Count(&evidenceCount).Error; err != nil {
+		return nil, err
+	}
+	preview.EvidenceCount = int(evidenceCount)
+	if err := r.db.WithContext(ctx).Model(&model.SupportGapEvidence{}).Distinct("conversation_id").Where("workspace_id = ? AND conversation_id IS NOT NULL", workspaceID).Order("conversation_id").Pluck("conversation_id", &preview.ConversationIDs).Error; err != nil {
+		return nil, err
+	}
+	type searchRow struct {
+		ID, WidgetSessionID, Excerpt string
+		CreatedAt                    time.Time
+	}
+	var rows []searchRow
+	if err := r.db.WithContext(ctx).Model(&model.SupportGapEvidence{}).Select("id, COALESCE(widget_session_id, '') AS widget_session_id, excerpt, created_at").Where("workspace_id = ? AND conversation_id IS NULL AND evidence_type = ?", workspaceID, model.SupportEventWidgetSearchPerformed).Order("created_at, id").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		preview.Searches = append(preview.Searches, CoverageRebuildSearch{SourceID: row.ID, SessionID: row.WidgetSessionID, Query: row.Excerpt, ObservedAt: row.CreatedAt})
+	}
+	return preview, nil
+}
+
+func (r *CoverageV2Repository) ApplyRebuild(ctx context.Context, workspaceID, analyzerVersion, policyVersion string, preview *CoverageRebuildPreview, qualified []CoverageRebuildSearch) (*CoverageRebuildApplyResult, error) {
+	if workspaceID == "" || preview == nil {
+		return nil, fmt.Errorf("workspace and rebuild preview are required")
+	}
+	result := &CoverageRebuildApplyResult{}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing model.CoverageRebuildAudit
+		if err := tx.Where("workspace_id = ? AND status = ?", workspaceID, "applied").Order("created_at DESC").First(&existing).Error; err == nil {
+			result.AuditID, result.QueuedWorkCount = existing.ID, existing.QueuedWorkCount
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var gaps []model.SupportCoverageGap
+		if err := tx.Select("id", "status").Where("workspace_id = ? AND status <> ?", workspaceID, model.SupportCoverageGapStatusArchivedV1).Find(&gaps).Error; err != nil {
+			return err
+		}
+		snapshot := make(map[string]string, len(gaps))
+		for _, gap := range gaps {
+			snapshot[gap.ID] = gap.Status
+		}
+		snapshotJSON, err := json.Marshal(snapshot)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC()
+		audit := &model.CoverageRebuildAudit{ID: uuid.NewString(), WorkspaceID: workspaceID, Status: "applied", AnalyzerVersion: analyzerVersion, PolicyVersion: policyVersion, LegacyGapCount: len(gaps), EvidenceCount: preview.EvidenceCount, ConversationCount: len(preview.ConversationIDs), SearchCount: len(preview.Searches), QueuedWorkCount: len(preview.ConversationIDs), QualifiedSearchCount: len(qualified), LegacyStatusSnapshot: snapshotJSON, CreatedAt: now}
+		if err := tx.Create(audit).Error; err != nil {
+			return err
+		}
+		if len(gaps) > 0 {
+			if err := tx.Model(&model.SupportCoverageGap{}).Where("workspace_id = ? AND status <> ?", workspaceID, model.SupportCoverageGapStatusArchivedV1).Update("status", model.SupportCoverageGapStatusArchivedV1).Error; err != nil {
+				return err
+			}
+		}
+		batch := &model.CoverageBatch{ID: uuid.NewString(), WorkspaceID: workspaceID, WindowStart: now.Add(-time.Nanosecond), WindowEnd: now, AnalyzerVersion: analyzerVersion, PolicyVersion: policyVersion, Status: model.CoverageBatchQueued, CandidateCount: len(preview.ConversationIDs), Metadata: []byte(`{"source":"v1_rebuild"}`)}
+		if err := tx.Create(batch).Error; err != nil {
+			return err
+		}
+		for _, conversationID := range preview.ConversationIDs {
+			workKey := coverageRebuildHash(workspaceID + ":conversation:" + conversationID + ":" + analyzerVersion + ":" + policyVersion)
+			attempt := &model.CoverageAnalysisAttempt{ID: uuid.NewString(), WorkspaceID: workspaceID, BatchID: batch.ID, LogicalWorkKey: workKey, SourceKind: "conversation", SourceID: conversationID, ContentHash: "rebuild_pending", AnalyzerVersion: analyzerVersion, PolicyVersion: policyVersion, Attempt: 1, Status: model.CoverageAttemptQueued, Stage: model.CoverageFailureCandidateQuery, CorrelationID: audit.ID, Metadata: []byte(`{"source":"v1_rebuild"}`)}
+			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}, {Name: "logical_work_key"}, {Name: "attempt"}}, DoNothing: true}).Create(attempt).Error; err != nil {
+				return err
+			}
+		}
+		for _, search := range qualified {
+			signal := &model.CoverageUnreviewedSignal{ID: uuid.NewString(), WorkspaceID: workspaceID, SourceKind: "widget_search", SourceID: search.SourceID, SessionID: search.SessionID, NormalizedQuery: strings.ToLower(strings.Join(strings.Fields(search.Query), " ")), SignalKey: coverageRebuildHash(workspaceID + ":" + search.SessionID + ":" + strings.ToLower(strings.Join(strings.Fields(search.Query), " "))), MeaningfulTokens: search.MeaningfulTokens, Status: model.CoverageSignalUnreviewed, ObservedAt: search.ObservedAt, Metadata: []byte(`{"source":"v1_rebuild"}`)}
+			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}, {Name: "signal_key"}}, DoNothing: true}).Create(signal).Error; err != nil {
+				return err
+			}
+		}
+		result.AuditID, result.QueuedWorkCount = audit.ID, len(preview.ConversationIDs)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("apply coverage rebuild: %w", err)
+	}
+	return result, nil
+}
+
+func (r *CoverageV2Repository) RollbackRebuild(ctx context.Context, workspaceID, auditID string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var audit model.CoverageRebuildAudit
+		if err := tx.Where("workspace_id = ? AND id = ? AND status = ?", workspaceID, auditID, "applied").First(&audit).Error; err != nil {
+			return err
+		}
+		var snapshot map[string]string
+		if err := json.Unmarshal(audit.LegacyStatusSnapshot, &snapshot); err != nil {
+			return err
+		}
+		for gapID, status := range snapshot {
+			if err := tx.Model(&model.SupportCoverageGap{}).Where("workspace_id = ? AND id = ? AND status = ?", workspaceID, gapID, model.SupportCoverageGapStatusArchivedV1).Update("status", status).Error; err != nil {
+				return err
+			}
+		}
+		now := time.Now().UTC()
+		return tx.Model(&model.CoverageRebuildAudit{}).Where("id = ?", audit.ID).Updates(map[string]interface{}{"status": "rolled_back", "rolled_back_at": now}).Error
+	})
+}
+
+func (r *CoverageV2Repository) ResumeRebuild(ctx context.Context, workspaceID, auditID string) (*CoverageRebuildApplyResult, error) {
+	var audit model.CoverageRebuildAudit
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ? AND status = ?", workspaceID, auditID, "applied").First(&audit).Error; err != nil {
+		return nil, err
+	}
+	var queued int64
+	if err := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).Where("workspace_id = ? AND correlation_id = ? AND status IN ?", workspaceID, auditID, []string{model.CoverageAttemptQueued, model.CoverageAttemptRetryable, model.CoverageAttemptPausedConfiguration}).Count(&queued).Error; err != nil {
+		return nil, err
+	}
+	return &CoverageRebuildApplyResult{AuditID: audit.ID, QueuedWorkCount: int(queued)}, nil
+}
+
+func coverageRebuildHash(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
 }

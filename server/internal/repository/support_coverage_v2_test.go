@@ -38,6 +38,124 @@ func TestCoverageV2ClaimIsOwnerCheckedAndLeaseIsReclaimable(t *testing.T) {
 	}
 }
 
+func TestCoverageV2ClaimsAndListsOnlyRunnableWorkspaceWork(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "workspace_claim")
+	repo := NewCoverageV2Repository(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	fixtures := []model.CoverageAnalysisAttempt{
+		{WorkspaceID: "ws-1", BatchID: "batch-1", LogicalWorkKey: "work-1", SourceKind: "conversation", SourceID: "conversation-1", ContentHash: "hash-1", AnalyzerVersion: "v4", PolicyVersion: "v1", Attempt: 1},
+		{WorkspaceID: "ws-2", BatchID: "batch-2", LogicalWorkKey: "work-2", SourceKind: "conversation", SourceID: "conversation-2", ContentHash: "hash-2", AnalyzerVersion: "v4", PolicyVersion: "v1", Attempt: 1},
+		{WorkspaceID: "ws-paused", BatchID: "batch-3", LogicalWorkKey: "work-3", SourceKind: "conversation", SourceID: "conversation-3", ContentHash: "hash-3", AnalyzerVersion: "v4", PolicyVersion: "v1", Attempt: 1, Status: model.CoverageAttemptPausedConfiguration},
+	}
+	for index := range fixtures {
+		if err := repo.EnqueueAttempt(ctx, &fixtures[index]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	workspaces, err := repo.ListQueuedWorkspaces(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaces) != 2 || workspaces[0] != "ws-1" || workspaces[1] != "ws-2" {
+		t.Fatalf("runnable workspaces = %#v", workspaces)
+	}
+	claimed, err := repo.ClaimAttemptsForWorkspace(ctx, "ws-1", "worker-1", now, time.Minute, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed) != 1 || claimed[0].WorkspaceID != "ws-1" {
+		t.Fatalf("workspace-scoped claims = %#v", claimed)
+	}
+}
+
+func TestCoverageV2RefreshBatchStatusReflectsRetryAndCompletion(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "batch_health")
+	repo := NewCoverageV2Repository(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	batch, err := repo.CreateBatch(ctx, &model.CoverageBatch{WorkspaceID: "ws-1", WindowStart: now.Add(-time.Hour), WindowEnd: now, AnalyzerVersion: "v4", PolicyVersion: "v1", Status: model.CoverageBatchQueued})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= 2; index++ {
+		attempt := &model.CoverageAnalysisAttempt{WorkspaceID: "ws-1", BatchID: batch.ID, LogicalWorkKey: fmt.Sprintf("work-%d", index), SourceKind: "conversation", SourceID: fmt.Sprintf("conversation-%d", index), ContentHash: "hash", AnalyzerVersion: "v4", PolicyVersion: "v1", Attempt: 1}
+		if err := repo.EnqueueAttempt(ctx, attempt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claimed, err := repo.ClaimAttemptsForWorkspace(ctx, "ws-1", "worker", now, time.Minute, 10)
+	if err != nil || len(claimed) != 2 {
+		t.Fatalf("claim = %#v, %v", claimed, err)
+	}
+	if err := repo.CompleteAttempt(ctx, claimed[0].ID, "worker", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkRetryable(ctx, claimed[1].ID, "worker", model.CoverageFailureLLMProvider, "temporary", now.Add(time.Minute), 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RefreshBatchStatus(ctx, batch.ID); err != nil {
+		t.Fatal(err)
+	}
+	var refreshed model.CoverageBatch
+	if err := db.First(&refreshed, "id = ?", batch.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Status != model.CoverageBatchRunning || refreshed.SucceededCount != 1 || refreshed.RetryableCount != 1 {
+		t.Fatalf("refreshed batch = %+v", refreshed)
+	}
+}
+
+func TestCoverageV2RebuildApplyIsScopedIdempotentAndReversible(t *testing.T) {
+	db := setupCoverageV2TestDB(t, "rebuild")
+	repo := NewCoverageV2Repository(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	for _, row := range []struct{ id, workspaceID, status string }{{"gap-1", "ws-1", "open"}, {"gap-2", "ws-1", "done"}, {"gap-other", "ws-2", "open"}} {
+		if err := db.Exec("INSERT INTO support_coverage_gaps (id, workspace_id, status, last_seen_at) VALUES (?, ?, ?, ?)", row.id, row.workspaceID, row.status, now).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	conversationID := "conversation-1"
+	if err := db.Exec("INSERT INTO support_gap_evidence (id, gap_id, workspace_id, evidence_type, conversation_id, excerpt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", "evidence-1", "gap-1", "ws-1", "conversation", conversationID, "customer question", now).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO support_gap_evidence (id, gap_id, workspace_id, evidence_type, widget_session_id, excerpt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", "search-1", "gap-2", "ws-1", model.SupportEventWidgetSearchPerformed, "session-1", "reset account password", now).Error; err != nil {
+		t.Fatal(err)
+	}
+	preview, err := repo.PreviewRebuild(ctx, "ws-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.LegacyGapCount != 2 || preview.EvidenceCount != 2 || len(preview.ConversationIDs) != 1 || len(preview.Searches) != 1 {
+		t.Fatalf("preview = %+v", preview)
+	}
+	preview.Searches[0].MeaningfulTokens = 3
+	applied, err := repo.ApplyRebuild(ctx, "ws-1", "v4", "v1", preview, preview.Searches)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var archived, untouched int64
+	db.Table("support_coverage_gaps").Where("workspace_id = ? AND status = ?", "ws-1", model.SupportCoverageGapStatusArchivedV1).Count(&archived)
+	db.Table("support_coverage_gaps").Where("workspace_id = ? AND status = ?", "ws-2", model.SupportCoverageGapStatusOpen).Count(&untouched)
+	if archived != 2 || untouched != 1 {
+		t.Fatalf("archived/untouched = %d/%d", archived, untouched)
+	}
+	again, err := repo.ApplyRebuild(ctx, "ws-1", "v4", "v1", preview, preview.Searches)
+	if err != nil || again.AuditID != applied.AuditID {
+		t.Fatalf("idempotent apply = %+v, %v", again, err)
+	}
+	if err := repo.RollbackRebuild(ctx, "ws-1", applied.AuditID); err != nil {
+		t.Fatal(err)
+	}
+	var open, done int64
+	db.Table("support_coverage_gaps").Where("workspace_id = ? AND status = ?", "ws-1", model.SupportCoverageGapStatusOpen).Count(&open)
+	db.Table("support_coverage_gaps").Where("workspace_id = ? AND status = ?", "ws-1", model.SupportCoverageGapStatusDone).Count(&done)
+	if open != 1 || done != 1 {
+		t.Fatalf("restored open/done = %d/%d", open, done)
+	}
+}
+
 func TestCoverageV2CurrentFindingAndMembershipAreVersioned(t *testing.T) {
 	db := setupCoverageV2TestDB(t, "versioning")
 	repo := NewCoverageV2Repository(db)
@@ -115,11 +233,14 @@ func setupCoverageV2TestDB(t *testing.T, name string) *gorm.DB {
 		t.Fatal(err)
 	}
 	statements := []string{
+		`CREATE TABLE support_coverage_gaps (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT NOT NULL, last_seen_at DATETIME NOT NULL, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+		`CREATE TABLE support_gap_evidence (id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL, evidence_type TEXT NOT NULL, conversation_id TEXT, message_id TEXT, widget_session_id TEXT, excerpt TEXT NOT NULL DEFAULT '', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE coverage_batches (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, window_start DATETIME NOT NULL, window_end DATETIME NOT NULL, analyzer_version TEXT NOT NULL, policy_version TEXT NOT NULL, status TEXT NOT NULL, cursor TEXT NOT NULL DEFAULT '', lease_owner TEXT NOT NULL DEFAULT '', lease_expires_at DATETIME, candidate_count INTEGER NOT NULL DEFAULT 0, succeeded_count INTEGER NOT NULL DEFAULT 0, retryable_count INTEGER NOT NULL DEFAULT 0, dead_letter_count INTEGER NOT NULL DEFAULT 0, failure_class TEXT NOT NULL DEFAULT '', failure_message TEXT NOT NULL DEFAULT '', correlation_id TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL DEFAULT '{}', started_at DATETIME, completed_at DATETIME, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(workspace_id, window_start, window_end, analyzer_version, policy_version))`,
 		`CREATE TABLE coverage_analysis_attempts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, batch_id TEXT NOT NULL, logical_work_key TEXT NOT NULL, source_kind TEXT NOT NULL, source_id TEXT NOT NULL, segment_id TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL, analyzer_version TEXT NOT NULL, policy_version TEXT NOT NULL, attempt INTEGER NOT NULL, status TEXT NOT NULL, stage TEXT NOT NULL, lease_owner TEXT NOT NULL DEFAULT '', lease_expires_at DATETIME, retry_at DATETIME, retry_budget_used INTEGER NOT NULL DEFAULT 0, failure_class TEXT NOT NULL DEFAULT '', failure_message TEXT NOT NULL DEFAULT '', ai_execution_id TEXT, correlation_id TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL DEFAULT '{}', started_at DATETIME, completed_at DATETIME, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(workspace_id, logical_work_key, attempt))`,
 		`CREATE TABLE coverage_findings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, logical_work_key TEXT NOT NULL, analysis_attempt_id TEXT NOT NULL, source_kind TEXT NOT NULL, source_id TEXT NOT NULL, conversation_id TEXT, customer_id TEXT, customer_need TEXT NOT NULL, ai_answer TEXT NOT NULL DEFAULT '', ai_failure TEXT NOT NULL DEFAULT '', human_answer TEXT NOT NULL DEFAULT '', fix_type TEXT NOT NULL, fix_target TEXT NOT NULL, rationale TEXT NOT NULL, suggested_change TEXT NOT NULL, confidence REAL NOT NULL, is_current INTEGER NOT NULL DEFAULT 1, embedding_status TEXT NOT NULL DEFAULT 'pending', assignment_status TEXT NOT NULL DEFAULT 'pending', embedding TEXT, embedding_provider TEXT NOT NULL DEFAULT '', embedding_model TEXT NOT NULL DEFAULT '', embedding_version TEXT NOT NULL DEFAULT '', embedding_dimensions INTEGER NOT NULL DEFAULT 0, metadata TEXT NOT NULL DEFAULT '{}', superseded_at DATETIME, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE coverage_topic_memberships (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, finding_id TEXT NOT NULL, topic_id TEXT NOT NULL, decision_source TEXT NOT NULL, confidence REAL NOT NULL, policy_version TEXT NOT NULL, assignment_attempt_id TEXT, actor_id TEXT, valid_from DATETIME NOT NULL, valid_to DATETIME, metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE coverage_unreviewed_signals (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, source_kind TEXT NOT NULL, source_id TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '', normalized_query TEXT NOT NULL, signal_key TEXT NOT NULL, meaningful_tokens INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0, finding_id TEXT, topic_id TEXT, reviewed_by TEXT, reviewed_at DATETIME, metadata TEXT NOT NULL DEFAULT '{}', observed_at DATETIME NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(workspace_id, signal_key))`,
+		`CREATE TABLE coverage_rebuild_audits (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, status TEXT NOT NULL, analyzer_version TEXT NOT NULL, policy_version TEXT NOT NULL, legacy_gap_count INTEGER NOT NULL DEFAULT 0, evidence_count INTEGER NOT NULL DEFAULT 0, conversation_count INTEGER NOT NULL DEFAULT 0, search_count INTEGER NOT NULL DEFAULT 0, queued_work_count INTEGER NOT NULL DEFAULT 0, qualified_search_count INTEGER NOT NULL DEFAULT 0, legacy_status_snapshot TEXT NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, rolled_back_at DATETIME)`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

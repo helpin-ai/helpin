@@ -14,6 +14,7 @@ func TestCoverageV2TableNames(t *testing.T) {
 		{(CoverageTopicMembership{}).TableName(), "coverage_topic_memberships"},
 		{(CoverageAssignmentAttempt{}).TableName(), "coverage_assignment_attempts"},
 		{(CoverageUnreviewedSignal{}).TableName(), "coverage_unreviewed_signals"},
+		{(CoverageRebuildAudit{}).TableName(), "coverage_rebuild_audits"},
 	}
 	for _, test := range tests {
 		if test.got != test.want {

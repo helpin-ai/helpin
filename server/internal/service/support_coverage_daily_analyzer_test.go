@@ -17,6 +17,14 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestMergeCoverageWorkspaceIDsPreservesCandidateFairnessAndAddsQueuedWork(t *testing.T) {
+	got := mergeCoverageWorkspaceIDs([]string{"ws-recent", "ws-both"}, []string{"ws-both", "ws-rebuild", ""}, 3)
+	want := []string{"ws-recent", "ws-both", "ws-rebuild"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("merged workspaces = %#v, want %#v", got, want)
+	}
+}
+
 func TestCoverageConversationAnalysisInputExcludesInternalAndParsesAIMetadata(t *testing.T) {
 	flowState := model.SupportConversationFlowStateAssignedToHuman
 	conversation := model.SupportConversation{
@@ -601,7 +609,7 @@ func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutp
 		Subject:     "Billing update",
 		Status:      model.SupportConversationStatusOpen,
 		UpdatedAt:   base,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("runConversationCoverageAnalysis: %v", err)
 	}

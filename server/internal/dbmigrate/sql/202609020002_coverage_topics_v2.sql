@@ -216,6 +216,26 @@ CREATE TABLE IF NOT EXISTS coverage_unreviewed_signals (
 CREATE INDEX IF NOT EXISTS idx_coverage_signals_review
   ON coverage_unreviewed_signals (workspace_id, status, observed_at DESC);
 
+CREATE TABLE IF NOT EXISTS coverage_rebuild_audits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id uuid NOT NULL,
+  status text NOT NULL CHECK (status IN ('applied', 'rolled_back')),
+  analyzer_version text NOT NULL,
+  policy_version text NOT NULL,
+  legacy_gap_count int NOT NULL DEFAULT 0,
+  evidence_count int NOT NULL DEFAULT 0,
+  conversation_count int NOT NULL DEFAULT 0,
+  search_count int NOT NULL DEFAULT 0,
+  queued_work_count int NOT NULL DEFAULT 0,
+  qualified_search_count int NOT NULL DEFAULT 0,
+  legacy_status_snapshot jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  rolled_back_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS idx_coverage_rebuild_audits_workspace_created
+  ON coverage_rebuild_audits (workspace_id, created_at DESC);
+
 ALTER TABLE support_coverage_gaps
   DROP CONSTRAINT IF EXISTS support_coverage_gaps_status_check;
 ALTER TABLE support_coverage_gaps

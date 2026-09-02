@@ -315,6 +315,7 @@ func main() {
 			&model.CoverageAssignmentAttempt{},
 			&model.CoverageTopicMembership{},
 			&model.CoverageUnreviewedSignal{},
+			&model.CoverageRebuildAudit{},
 			&model.SupportAIRetrievalTrace{},
 			&model.SupportCoverageRecommendation{},
 			&model.SupportCoverageClusterRebuildRun{},

@@ -254,3 +254,22 @@ type CoverageUnreviewedSignal struct {
 }
 
 func (CoverageUnreviewedSignal) TableName() string { return "coverage_unreviewed_signals" }
+
+type CoverageRebuildAudit struct {
+	ID                   string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID          string          `json:"workspace_id" gorm:"type:uuid;not null"`
+	Status               string          `json:"status" gorm:"not null"`
+	AnalyzerVersion      string          `json:"analyzer_version" gorm:"not null"`
+	PolicyVersion        string          `json:"policy_version" gorm:"not null"`
+	LegacyGapCount       int             `json:"legacy_gap_count" gorm:"not null;default:0"`
+	EvidenceCount        int             `json:"evidence_count" gorm:"not null;default:0"`
+	ConversationCount    int             `json:"conversation_count" gorm:"not null;default:0"`
+	SearchCount          int             `json:"search_count" gorm:"not null;default:0"`
+	QueuedWorkCount      int             `json:"queued_work_count" gorm:"not null;default:0"`
+	QualifiedSearchCount int             `json:"qualified_search_count" gorm:"not null;default:0"`
+	LegacyStatusSnapshot json.RawMessage `json:"legacy_status_snapshot" gorm:"type:jsonb;not null"`
+	CreatedAt            time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	RolledBackAt         *time.Time      `json:"rolled_back_at"`
+}
+
+func (CoverageRebuildAudit) TableName() string { return "coverage_rebuild_audits" }
