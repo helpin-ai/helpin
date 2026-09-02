@@ -86,6 +86,26 @@ func CanonicalToolName(name string) string {
 	}
 }
 
+// LegacyToolAliases returns persisted historical aliases for a canonical tool.
+func LegacyToolAliases(canonical string) []string {
+	canonical = CanonicalToolName(canonical)
+	aliases := []string{
+		ToolRequestHumanInput, ToolRequestHumanApproval,
+		"add_story_comment", "list_story_checklist", "update_story_state",
+		"run_semgrep", "run_trivy", "run_gitleaks", "checkout_repository",
+		"read_file", "read_file_range", "search_files", "ripgrep", "grep",
+		"list_buyer_signals", "find_symbol", "find_callers", "find_callees",
+		"list_available_skills", "search_available_skills", "web_search_brave", "web_search_exa",
+	}
+	out := make([]string, 0)
+	for _, alias := range aliases {
+		if alias != canonical && CanonicalToolName(alias) == canonical {
+			out = append(out, alias)
+		}
+	}
+	return out
+}
+
 // NormalizeToolNames canonicalizes and de-duplicates tool names.
 func NormalizeToolNames(names []string) []string {
 	if len(names) == 0 {

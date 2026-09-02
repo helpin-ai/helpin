@@ -15,16 +15,7 @@ const (
 
 func HelpinMCPRuntimeToolName(alias string) string {
 	canonical := CanonicalToolName(alias)
-	if canonical == "" {
-		return ""
-	}
-	if IsHelpinMCPRuntimeToolName(canonical) {
-		return canonical
-	}
-	if !IsHelpinMCPToolAlias(canonical) {
-		return canonical
-	}
-	return HelpinMCPToolPrefix + canonical
+	return canonical
 }
 
 func IsHelpinMCPRuntimeToolName(name string) bool {
@@ -84,26 +75,16 @@ func HelpinMCPToolAliases() []string {
 }
 
 func RenderRuntimeToolNamesInInstructions(instructions string) string {
-	rendered := strings.TrimSpace(instructions)
-	if rendered == "" {
-		return ""
-	}
-	for _, alias := range HelpinMCPToolAliases() {
-		runtimeName := HelpinMCPRuntimeToolName(alias)
-		if runtimeName == "" || runtimeName == alias {
-			continue
-		}
-		rendered = strings.ReplaceAll(rendered, "`"+alias+"`", "`"+runtimeName+"`")
-	}
-	return rendered
+	return renderCanonicalRuntimeToolNames(instructions)
 }
 
 var backtickedMCPRuntimeToolPattern = regexp.MustCompile("`mcp__[a-zA-Z0-9_-]+__[a-zA-Z0-9_-]+`")
 
-func RenderRuntimeToolNamesInInstructionsForRuntime(instructions, runtimeKind string) string {
-	if strings.TrimSpace(runtimeKind) != "codex" {
-		return RenderRuntimeToolNamesInInstructions(instructions)
-	}
+func RenderRuntimeToolNamesInInstructionsForRuntime(instructions, _ string) string {
+	return renderCanonicalRuntimeToolNames(instructions)
+}
+
+func renderCanonicalRuntimeToolNames(instructions string) string {
 	rendered := strings.TrimSpace(instructions)
 	return backtickedMCPRuntimeToolPattern.ReplaceAllStringFunc(rendered, func(token string) string {
 		qualified := strings.Trim(token, "`")

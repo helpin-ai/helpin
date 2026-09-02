@@ -5,24 +5,17 @@ import (
 	"testing"
 )
 
-func TestHelpinMCPRuntimeToolNamePrefixesHelpinTools(t *testing.T) {
-	for _, alias := range []string{
-		ToolUpdatePlan,
-		ToolRequestUserInput,
-		ToolPublishTaskPlan,
-		"list_tasks",
-		"read_file",
+func TestHelpinMCPRuntimeToolNameUsesBareCanonicalNames(t *testing.T) {
+	for alias, want := range map[string]string{
+		ToolUpdatePlan:       ToolUpdatePlan,
+		ToolRequestUserInput: ToolRequestUserInput,
+		ToolPublishTaskPlan:  ToolPublishTaskPlan,
+		"list_tasks":         "list_tasks",
+		"read_file":          "read_files",
+		HelpinMCPToolPrefix + "create_collection": "create_collection",
 	} {
-		got := HelpinMCPRuntimeToolName(alias)
-		if alias == "read_file" {
-			if got != "read_files" {
-				t.Fatalf("expected local tool to stay unprefixed, got %q", got)
-			}
-			continue
-		}
-		want := HelpinMCPToolPrefix + alias
-		if got != want {
-			t.Fatalf("expected %q runtime name %q, got %q", alias, want, got)
+		if got := HelpinMCPRuntimeToolName(alias); got != want {
+			t.Fatalf("runtime name for %q=%q, want %q", alias, got, want)
 		}
 	}
 }
@@ -52,5 +45,15 @@ func TestRenderRuntimeToolNamesInInstructionsForCodexUsesLogicalNames(t *testing
 	}
 	if strings.Contains(rendered, "mcp__helpin__") {
 		t.Fatalf("expected Codex prompt to remove MCP qualification, got %q", rendered)
+	}
+}
+
+func TestRenderRuntimeToolNamesInInstructionsForNativeUsesLogicalNames(t *testing.T) {
+	rendered := RenderRuntimeToolNamesInInstructionsForRuntime(
+		"Create it with `mcp__helpin__create_collection`.",
+		"native_sdk",
+	)
+	if rendered != "Create it with `create_collection`." {
+		t.Fatalf("unexpected native instructions: %q", rendered)
 	}
 }
