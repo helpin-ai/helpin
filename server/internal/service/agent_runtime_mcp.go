@@ -55,13 +55,7 @@ func (s *AgentRuntimeHostService) CallProviderTool(ctx context.Context, req agen
 		return nil, fmt.Errorf("command service is not configured")
 	}
 	canonical := agentcontract.CanonicalToolName(req.ToolName)
-	var commandName string
-	for _, definition := range s.commandService.ToolDefinitions() {
-		if definition.Tool != nil && strings.TrimSpace(definition.Tool.Alias) == canonical {
-			commandName = definition.Name
-			break
-		}
-	}
+	commandName := s.providerCommands[canonical]
 	if commandName == "" {
 		return &agentruntime.ToolCallResult{Content: []agentruntime.ContentItem{{Type: "text", Text: fmt.Sprintf("unknown Helpin tool: %s", strings.TrimSpace(req.ToolName))}}, IsError: true}, nil
 	}
@@ -92,6 +86,15 @@ func validateProviderCommandDefinitions(commands *InternalCommandService) error 
 		if definition.Execute == nil {
 			return fmt.Errorf("tool %q has no executable command", alias)
 		}
+		if strings.HasPrefix(alias, "mcp__") || agentcontract.CanonicalToolName(alias) != alias {
+			return fmt.Errorf("tool alias %q is not a bare canonical name", alias)
+		}
+		if definition.Tool.InputSchema == nil {
+			return fmt.Errorf("tool %q has no input schema", alias)
+		}
+		if _, err := json.Marshal(definition.Tool.InputSchema); err != nil {
+			return fmt.Errorf("tool %q has an invalid input schema: %w", alias, err)
+		}
 		if commandName := strings.TrimSpace(definition.Tool.CommandName); commandName != "" && commandName != name {
 			return fmt.Errorf("tool %q points to command %q instead of %q", alias, commandName, name)
 		}
@@ -107,4 +110,21 @@ func validateProviderCommandDefinitions(commands *InternalCommandService) error 
 		}
 	}
 	return nil
+}
+
+func providerCommandNames(commands *InternalCommandService) map[string]string {
+	byAlias := map[string]string{}
+	if commands == nil || validateProviderCommandDefinitions(commands) != nil {
+		return byAlias
+	}
+	for name, definition := range commands.definitions {
+		if definition.Tool == nil {
+			continue
+		}
+		alias := agentcontract.CanonicalToolName(definition.Tool.Alias)
+		if alias != "" {
+			byAlias[alias] = name
+		}
+	}
+	return byAlias
 }

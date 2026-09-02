@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestHelpinMCPRuntimeToolNameUsesBareCanonicalNames(t *testing.T) {
+func TestCanonicalToolNameUsesBareCanonicalNames(t *testing.T) {
 	for alias, want := range map[string]string{
 		ToolUpdatePlan:       ToolUpdatePlan,
 		ToolRequestUserInput: ToolRequestUserInput,
@@ -14,7 +14,7 @@ func TestHelpinMCPRuntimeToolNameUsesBareCanonicalNames(t *testing.T) {
 		"read_file":          "read_files",
 		HelpinMCPToolPrefix + "create_collection": "create_collection",
 	} {
-		if got := HelpinMCPRuntimeToolName(alias); got != want {
+		if got := CanonicalToolName(alias); got != want {
 			t.Fatalf("runtime name for %q=%q, want %q", alias, got, want)
 		}
 	}
@@ -33,10 +33,9 @@ func TestCanonicalToolNameStripsHelpinMCPPrefixAndLegacyAliases(t *testing.T) {
 	}
 }
 
-func TestRenderRuntimeToolNamesInInstructionsForCodexUsesLogicalNames(t *testing.T) {
-	rendered := RenderRuntimeToolNamesInInstructionsForRuntime(
+func TestRenderRuntimeToolNamesInInstructionsUsesLogicalNames(t *testing.T) {
+	rendered := RenderRuntimeToolNamesInInstructions(
 		"Publish with `mcp__helpin__publish_task_plan_doc`, then call `mcp__helpin__request_approval`.",
-		"codex",
 	)
 	for _, toolName := range []string{"`publish_task_plan_doc`", "`request_approval`"} {
 		if !strings.Contains(rendered, toolName) {
@@ -48,12 +47,22 @@ func TestRenderRuntimeToolNamesInInstructionsForCodexUsesLogicalNames(t *testing
 	}
 }
 
-func TestRenderRuntimeToolNamesInInstructionsForNativeUsesLogicalNames(t *testing.T) {
-	rendered := RenderRuntimeToolNamesInInstructionsForRuntime(
+func TestRenderRuntimeToolNamesInInstructionsCanonicalizesLegacyNames(t *testing.T) {
+	rendered := RenderRuntimeToolNamesInInstructions(
 		"Create it with `mcp__helpin__create_collection`.",
-		"native_sdk",
 	)
 	if rendered != "Create it with `create_collection`." {
 		t.Fatalf("unexpected native instructions: %q", rendered)
+	}
+}
+
+func TestLegacyToolAliasesRoundTripEveryCanonicalMapping(t *testing.T) {
+	for alias, canonical := range legacyToolAliases {
+		if got := CanonicalToolName(alias); got != canonical {
+			t.Fatalf("canonical name for %q=%q, want %q", alias, got, canonical)
+		}
+		if !containsString(LegacyToolAliases(canonical), alias) {
+			t.Fatalf("reverse aliases for %q omit %q", canonical, alias)
+		}
 	}
 }

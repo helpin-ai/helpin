@@ -1,6 +1,9 @@
 package agentcontract
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 const (
 	ToolRequestUserInput        = "request_user_input"
@@ -48,62 +51,50 @@ const (
 func CanonicalToolName(name string) string {
 	trimmed := strings.TrimSpace(name)
 	trimmed = strings.TrimPrefix(trimmed, HelpinMCPToolPrefix)
-	switch trimmed {
-	case ToolRequestHumanInput:
-		return ToolRequestUserInput
-	case ToolRequestHumanApproval:
-		return ToolRequestApproval
-	case "add_story_comment":
-		return "add_task_comment"
-	case "list_story_checklist":
-		return "list_task_checklist"
-	case "update_story_state":
-		return "update_task_state"
-	case "run_semgrep":
-		return ToolScanSemgrep
-	case "run_trivy":
-		return ToolScanTrivy
-	case "run_gitleaks":
-		return ToolScanGitleaks
-	case "checkout_repository":
-		return "checkout_repositories"
-	case "read_file", "read_file_range":
-		return "read_files"
-	case "search_files", "ripgrep", "grep":
-		return "repository_search"
-	case "list_buyer_signals":
-		return "list_crm_signals"
-	case "find_symbol":
-		return "read_symbol"
-	case "find_callers", "find_callees":
-		return "trace_symbol"
-	case "list_available_skills", "search_available_skills":
-		return ToolFindSkills
-	case "web_search_brave", "web_search_exa":
-		return "web_search"
-	default:
-		return trimmed
+	if canonical := legacyToolAliases[trimmed]; canonical != "" {
+		return canonical
 	}
+	return trimmed
 }
 
 // LegacyToolAliases returns persisted historical aliases for a canonical tool.
 func LegacyToolAliases(canonical string) []string {
 	canonical = CanonicalToolName(canonical)
-	aliases := []string{
-		ToolRequestHumanInput, ToolRequestHumanApproval,
-		"add_story_comment", "list_story_checklist", "update_story_state",
-		"run_semgrep", "run_trivy", "run_gitleaks", "checkout_repository",
-		"read_file", "read_file_range", "search_files", "ripgrep", "grep",
-		"list_buyer_signals", "find_symbol", "find_callers", "find_callees",
-		"list_available_skills", "search_available_skills", "web_search_brave", "web_search_exa",
-	}
 	out := make([]string, 0)
-	for _, alias := range aliases {
-		if alias != canonical && CanonicalToolName(alias) == canonical {
+	for alias, target := range legacyToolAliases {
+		if target == canonical {
 			out = append(out, alias)
 		}
 	}
+	sort.Strings(out)
 	return out
+}
+
+// legacyToolAliases is the single source for forward canonicalization and the
+// reverse alias list published through provider discovery.
+var legacyToolAliases = map[string]string{
+	ToolRequestHumanInput:     ToolRequestUserInput,
+	ToolRequestHumanApproval:  ToolRequestApproval,
+	"add_story_comment":       "add_task_comment",
+	"list_story_checklist":    "list_task_checklist",
+	"update_story_state":      "update_task_state",
+	"run_semgrep":             ToolScanSemgrep,
+	"run_trivy":               ToolScanTrivy,
+	"run_gitleaks":            ToolScanGitleaks,
+	"checkout_repository":     "checkout_repositories",
+	"read_file":               "read_files",
+	"read_file_range":         "read_files",
+	"search_files":            "repository_search",
+	"ripgrep":                 "repository_search",
+	"grep":                    "repository_search",
+	"list_buyer_signals":      "list_crm_signals",
+	"find_symbol":             "read_symbol",
+	"find_callers":            "trace_symbol",
+	"find_callees":            "trace_symbol",
+	"list_available_skills":   ToolFindSkills,
+	"search_available_skills": ToolFindSkills,
+	"web_search_brave":        "web_search",
+	"web_search_exa":          "web_search",
 }
 
 // NormalizeToolNames canonicalizes and de-duplicates tool names.

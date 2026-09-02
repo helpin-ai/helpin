@@ -71,6 +71,11 @@ actor authorization, and command execution.
 
 ## Compatibility rollout
 
+Publish the `agent-runtime-go` contract commit first, then update both
+downstream `go.mod` files to that released version and run their CI from clean
+checkouts without the local `go.work`. The downstream branches must not merge
+or release while they still rely on the workspace-only SDK override.
+
 Release 1 configures both `command_provider` and the Helpin MCP provider:
 
 ```yaml

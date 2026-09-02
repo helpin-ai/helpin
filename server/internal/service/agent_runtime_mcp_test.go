@@ -8,6 +8,7 @@ import (
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -70,5 +71,51 @@ func TestProviderCatalogValidationChecksUnfilteredToolBlocks(t *testing.T) {
 	})
 	if err := validateProviderCommandDefinitions(commands); err == nil {
 		t.Fatal("expected an empty alias in a non-exposed tool block to fail validation")
+	}
+}
+
+func TestProviderCatalogValidationRejectsInvalidModelContracts(t *testing.T) {
+	executor := func(context.Context, model.InternalCommandContext, json.RawMessage) (json.RawMessage, error) {
+		return nil, nil
+	}
+	tests := map[string]*commandtools.RuntimeToolMetadata{
+		"missing schema": {CommandName: "test.invalid_tool", Alias: "invalid_tool"},
+		"invalid schema": {CommandName: "test.invalid_tool", Alias: "invalid_tool", InputSchema: map[string]any{"type": "object", "invalid": make(chan int)}},
+		"legacy alias":   {CommandName: "test.invalid_tool", Alias: "add_story_comment", InputSchema: map[string]any{"type": "object"}},
+		"prefixed alias": {CommandName: "test.invalid_tool", Alias: "mcp__helpin__invalid_tool", InputSchema: map[string]any{"type": "object"}},
+	}
+	for name, metadata := range tests {
+		t.Run(name, func(t *testing.T) {
+			commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+			commands.register(InternalCommandDefinition{Name: "test.invalid_tool", Tool: metadata, Execute: executor})
+			if err := validateProviderCommandDefinitions(commands); err == nil {
+				t.Fatal("expected invalid model contract to fail validation")
+			}
+		})
+	}
+}
+
+func TestBuiltInPresetHelpinToolsResolveAgainstProviderCatalog(t *testing.T) {
+	commands := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, commands, nil)
+	catalog, err := host.ListProviderTools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	providerNames := make(map[string]bool, len(catalog.Tools))
+	for _, tool := range catalog.Tools {
+		providerNames[tool.Name] = true
+	}
+	helpinOwned := map[string]bool{}
+	for _, metadata := range commandtools.AllRuntimeToolMetadata() {
+		helpinOwned[agentcontract.CanonicalToolName(metadata.Alias)] = true
+	}
+	for _, preset := range agentPresetDefinitions() {
+		for _, allowed := range preset.AllowedTools {
+			canonical := agentcontract.CanonicalToolName(allowed)
+			if helpinOwned[canonical] && !providerNames[canonical] {
+				t.Errorf("preset %q allows Helpin tool %q, but the provider catalog does not expose it", preset.Key, canonical)
+			}
+		}
 	}
 }

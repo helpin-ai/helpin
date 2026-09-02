@@ -160,26 +160,26 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			parts = append(parts, "- If repository inspection needs a workspace lease, use target context when it identifies a repo; otherwise call list_repositories, ask when the choice is ambiguous, then call checkout_repositories with repository_id or exact repo_full_name. Use the repository selector for later multi-repo reads.")
 		}
 		if hasRepoAccess {
-			parts = append(parts, fmt.Sprintf("- When you know a declaration's name, use `%s`; it locates a unique declaration and reads its exact range, or returns candidates when ambiguous.", RuntimeToolNameForPrompt("read_symbol")))
+			parts = append(parts, fmt.Sprintf("- When you know a declaration's name, use `%s`; it locates a unique declaration and reads its exact range, or returns candidates when ambiguous.", CanonicalToolName("read_symbol")))
 			parts = append(parts, fmt.Sprintf("- Otherwise locate relevant code with `%s`, `%s`, or `%s` before reading files.",
-				RuntimeToolNameForPrompt("list_directory"),
-				RuntimeToolNameForPrompt("repository_search"),
-				RuntimeToolNameForPrompt("list_symbols"),
+				CanonicalToolName("list_directory"),
+				CanonicalToolName("repository_search"),
+				CanonicalToolName("list_symbols"),
 			))
 			parts = append(parts, fmt.Sprintf("- Use `%s` for one to four known files or line windows. For structured source, use `%s` before paging through a file when you do not know the declaration name. When a read returns has_more, continue exactly from next_start_line; do not restart the same range or increase limit_lines. Do not use reads for broad exploration.",
-				RuntimeToolNameForPrompt("read_files"),
-				RuntimeToolNameForPrompt("list_symbols"),
+				CanonicalToolName("read_files"),
+				CanonicalToolName("list_symbols"),
 			))
 			if hasFileMutationTools {
 				parts = append(parts, fmt.Sprintf("- Before changing or deleting a declaration, call `%s` to see what depends on it.",
-					RuntimeToolNameForPrompt("trace_symbol"),
+					CanonicalToolName("trace_symbol"),
 				))
 				parts = append(parts, fmt.Sprintf("- Prefer `%s` for focused in-place changes and `%s` for coordinated multi-file edits.",
-					RuntimeToolNameForPrompt("edit_file"),
-					RuntimeToolNameForPrompt("apply_patch"),
+					CanonicalToolName("edit_file"),
+					CanonicalToolName("apply_patch"),
 				))
 				parts = append(parts, fmt.Sprintf("- Use `%s` for new files or full rewrites only after you have read the current file state.",
-					RuntimeToolNameForPrompt("write_file"),
+					CanonicalToolName("write_file"),
 				))
 				parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
 			} else if story != nil || epic != nil {
@@ -187,11 +187,11 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			}
 			if story != nil || epic != nil {
 				parts = append(parts, fmt.Sprintf("- When available, keep a short working execution checklist with `%s` instead of repeating plan status in prose. Do not use `%s` as a substitute for `%s`, `%s`, or `%s`.",
-					RuntimeToolNameForPrompt(ToolUpdatePlan),
-					RuntimeToolNameForPrompt(ToolUpdatePlan),
-					RuntimeToolNameForPrompt(ToolPublishPRDDraft),
-					RuntimeToolNameForPrompt(ToolPublishTaskPlan),
-					RuntimeToolNameForPrompt(ToolPublishTaskPlanDoc),
+					CanonicalToolName(ToolUpdatePlan),
+					CanonicalToolName(ToolUpdatePlan),
+					CanonicalToolName(ToolPublishPRDDraft),
+					CanonicalToolName(ToolPublishTaskPlan),
+					CanonicalToolName(ToolPublishTaskPlanDoc),
 				))
 			}
 		}
@@ -209,8 +209,8 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 		parts = append(parts, "- This is a planning-doc run, not an implementation run.")
 		parts = append(parts, "- Draft or refine the canonical task planning document in chat first, then request approval.")
 		parts = append(parts, fmt.Sprintf("- After approval, call `%s` with `{}` to create or load and attach the canonical task planning document, then call `%s` with the returned `document_id` and the full approved markdown.",
-			RuntimeToolNameForPrompt("ensure_task_plan_doc"),
-			RuntimeToolNameForPrompt("write_document_content"),
+			CanonicalToolName("ensure_task_plan_doc"),
+			CanonicalToolName("write_document_content"),
 		))
 		parts = append(parts, "- Do not claim the planning document was persisted and do not finish the run until both product tool calls succeed.")
 	}
