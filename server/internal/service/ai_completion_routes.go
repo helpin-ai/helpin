@@ -11,8 +11,8 @@ import (
 const defaultAICompletionServiceTier = "standard"
 
 var (
-	deepSeekV4FlashRoute = AICompletionRoute{
-		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731",
+	glm53FlashExactoRoute = AICompletionRoute{
+		Provider: "openrouter", Model: "z-ai/glm-5.3-flash:exacto",
 		ServiceTier: defaultAICompletionServiceTier,
 	}
 	openRouterLunaRoute = AICompletionRoute{
@@ -64,12 +64,12 @@ func DefaultAICompletionRouteRegistry() AICompletionRouteRegistry {
 // NewAICompletionRouteRegistry applies deployment-owned CRM route overrides
 // without changing routes for other product features.
 func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompletionRouteRegistry {
-	crmPrimary := completionRouteWithDefault(crmConfig.Primary, deepSeekV4FlashRoute)
+	crmPrimary := completionRouteWithDefault(crmConfig.Primary, glm53FlashExactoRoute)
 	crmFallback := completionRouteWithDefault(crmConfig.Fallback, openRouterLunaRoute)
 	crmMeetingFallback := completionRouteWithDefault(crmConfig.MeetingFallback, openRouterGeminiFlashRoute)
 	common := func(featureKey string, maximumOutput int) AICompletionRoutePolicy {
 		return AICompletionRoutePolicy{
-			FeatureKey: featureKey, Primary: deepSeekV4FlashRoute,
+			FeatureKey: featureKey, Primary: glm53FlashExactoRoute,
 			Fallbacks: []AICompletionRoute{openRouterLunaRoute}, MaximumOutputTokens: maximumOutput,
 		}
 	}
@@ -94,12 +94,12 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		crm(BillingFeatureCRMSummary, 1400),
 		common(BillingFeatureTaskStandingBrief, 4096),
 		{
-			FeatureKey: BillingFeatureSupportAIReply, Primary: deepSeekV4FlashRoute,
+			FeatureKey: BillingFeatureSupportAIReply, Primary: glm53FlashExactoRoute,
 			Fallbacks: []AICompletionRoute{openRouterLunaRoute}, PreferRequestRoute: true,
 			MaximumOutputTokens: 1024,
 		},
 		{
-			FeatureKey: BillingFeatureSupportTaskDraft, Primary: deepSeekV4FlashRoute,
+			FeatureKey: BillingFeatureSupportTaskDraft, Primary: glm53FlashExactoRoute,
 			Fallbacks: []AICompletionRoute{openRouterLunaRoute}, PreferRequestRoute: true,
 			MaximumOutputTokens: 1200,
 		},

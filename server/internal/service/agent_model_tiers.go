@@ -12,7 +12,7 @@ import (
 
 var selectableAgentTierRoutes = map[aiusage.Tier]AICompletionRoute{
 	aiusage.TierSmall: {
-		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: defaultAICompletionServiceTier,
+		Provider: "openrouter", Model: "z-ai/glm-5.3-flash:exacto", ServiceTier: defaultAICompletionServiceTier,
 	},
 	aiusage.TierMedium: {
 		Provider: "openrouter", Model: "google/gemini-3.7-flash", ServiceTier: defaultAICompletionServiceTier,
@@ -114,7 +114,7 @@ func runtimeForCustomAgentCapabilities(targets, tools []string) string {
 	}
 	for _, tool := range tools {
 		switch strings.ToLower(strings.TrimSpace(tool)) {
-		case "shell", "bash", "apply_patch", "git", "read_file", "write_file", "edit_file":
+		case "shell", "bash", "apply_patch", "git", "write_file", "edit_file":
 			return "codex"
 		}
 	}

@@ -258,7 +258,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
-		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructionsForRuntime(effectiveSystemPrompt, agent.RuntimeKind),
+		SystemPrompt:          effectiveSystemPrompt,
 		Skills:                runtimeSkillRefsFromHelpinAgent(agent),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
@@ -1189,6 +1189,20 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		if (presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetSupportAgent) &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
 			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
+		// Product-managed flash defaults moved from DeepSeek to GLM 5.3 Flash
+		// Exacto. Migrate only the product default version and preserve workspace
+		// preset versions and other explicit routing choices.
+		if (presetKey == model.AgentPresetEpicPlanner ||
+			presetKey == model.AgentPresetDocumentationAgent ||
+			presetKey == model.AgentPresetAskAgent ||
+			presetKey == model.AgentPresetSupportAgent) &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenRouter &&
+			isLegacyDeepSeekFlashModel(derefString(existing.Model)) {
 			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true

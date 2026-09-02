@@ -134,13 +134,24 @@ func (h *AgentRuntimeHostHandler) ResolveRepositorySpec(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *AgentRuntimeHostHandler) ExecuteCommand(w http.ResponseWriter, r *http.Request) {
-	var req agentruntime.CommandExecutionRequest
+// ListProviderTools serves Helpin's internal MCP tool catalog.
+func (h *AgentRuntimeHostHandler) ListProviderTools(w http.ResponseWriter, _ *http.Request) {
+	catalog, err := h.host.ListProviderTools()
+	if err != nil {
+		writeAgentRuntimeHostError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
+}
+
+// CallProviderTool executes one Helpin internal MCP tool.
+func (h *AgentRuntimeHostHandler) CallProviderTool(w http.ResponseWriter, r *http.Request) {
+	var req agentruntime.ProviderToolCallRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	resp, err := h.host.ExecuteCommand(r.Context(), req)
+	resp, err := h.host.CallProviderTool(r.Context(), req)
 	if err != nil {
 		writeAgentRuntimeHostError(w, err)
 		return

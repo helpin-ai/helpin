@@ -280,24 +280,21 @@ skills plus Helpin MCP tools. The same planner contract is available through
 ## Tool contract
 
 Helpin product and interaction tools are exposed to model backends through the
-run-scoped Helpin MCP bridge. Model-facing Helpin MCP tool names use Codex-style
-server prefixes:
+Helpin MCP provider. Model-facing names are bare canonical aliases:
 
 ```text
-mcp__helpin__update_plan
-mcp__helpin__request_user_input
-mcp__helpin__request_approval
-mcp__helpin__publish_prd_draft
-mcp__helpin__publish_task_plan
-mcp__helpin__publish_task_plan_doc
-mcp__helpin__list_tasks
+update_plan
+request_user_input
+request_approval
+publish_prd_draft
+publish_task_plan
+publish_task_plan_doc
+list_tasks
 ```
 
-The backend keeps canonical tool aliases without the prefix (`update_plan`,
-`request_user_input`, `publish_task_plan`, and so on) for policy, validation,
-artifact application, and storage. Runtime code canonicalizes tool calls by
-stripping `mcp__helpin__` before dispatch. Frontend run surfaces do the inverse
-for display: they accept either form but hide the prefix in user-facing labels.
+The same canonical names are used for policy, validation, artifact application,
+storage, and model definitions. Runtime code still strips the legacy
+`mcp__helpin__` prefix when reading stored or in-flight compatibility data.
 
 Repo-local execution tools such as file reads, patching, and shell commands may
 still be provided directly by a backend where appropriate. Helpin product tools
@@ -318,10 +315,9 @@ the browser bundle only for authenticated pages, UI interactions, or visual
 capture. Browser output is compact and screenshots return asset metadata rather
 than inline image bytes.
 
-When writing prompts, skill markdown, or planner guidance, use the runtime-facing
-tool name from the prompt renderer, for example `mcp__helpin__update_plan`, not
-the bare alias. When writing backend tests, policies, or artifact decoders, use
-canonical aliases unless the test is specifically about runtime tool naming.
+When writing prompts, skill markdown, planner guidance, backend tests, policies,
+or artifact decoders, use the bare canonical tool name, for example
+`update_plan`. Use the prefixed form only in tests for legacy compatibility.
 
 ## The Dock (Ask Agents)
 
@@ -602,7 +598,7 @@ can consume.
 - treat `agent_run` as the only durable execution primitive
 - treat `runtime_kind` as backend selection, not product behavior selection
 - express planner/review/support behavior through prompts, skills, tools, targets, and artifact contracts
-- expose Helpin product tools to model backends through MCP with `mcp__helpin__*` runtime names
+- expose Helpin product tools to model backends through MCP with bare canonical names
 - keep canonical backend tool aliases prefix-free for validation, policy, and persistence
 
 ## Current known limitations

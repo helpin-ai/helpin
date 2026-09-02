@@ -53,11 +53,11 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	if !strings.Contains(string(payload), "prd_task_plan_approval") {
 		t.Fatalf("expected staged skill markdown to contain skill key, got %q", string(payload))
 	}
-	if !strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolRequestApproval)+"`") {
+	if !strings.Contains(string(payload), "`"+agentcontract.CanonicalToolName(agentcontract.ToolRequestApproval)+"`") {
 		t.Fatalf("expected staged skill markdown to use runtime approval tool name, got %q", string(payload))
 	}
-	if strings.Contains(string(payload), "`"+agentcontract.ToolRequestApproval+"`") {
-		t.Fatalf("expected staged skill markdown not to expose bare approval tool name, got %q", string(payload))
+	if strings.Contains(string(payload), agentcontract.HelpinMCPToolPrefix) {
+		t.Fatalf("expected staged skill markdown to avoid the legacy Helpin prefix, got %q", string(payload))
 	}
 }
 
@@ -271,8 +271,8 @@ func TestStageIntoStagesSecurityTriageBuiltInSkillPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read staged security triage SKILL.md: %v", err)
 	}
-	if !strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt("scan_gitleaks")+"`") ||
-		!strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt("ensure_task_label")+"`") {
+	if !strings.Contains(string(payload), "`"+agentcontract.CanonicalToolName("scan_gitleaks")+"`") ||
+		!strings.Contains(string(payload), "`"+agentcontract.CanonicalToolName("ensure_task_label")+"`") {
 		t.Fatalf("expected staged security triage skill to contain scanner and label tools, got %q", string(payload))
 	}
 	if _, err := os.Stat(filepath.Join(destRoot, "01-security_triage", "semgrep", "helpin-security.yml")); err != nil {
@@ -333,10 +333,10 @@ func TestStageIntoStagesWorkspaceSkillArchive(t *testing.T) {
 	if !strings.Contains(string(payload), definition.Description) {
 		t.Fatalf("expected staged workspace skill markdown to contain description, got %q", string(payload))
 	}
-	if !strings.Contains(string(payload), "`"+agentcontract.RuntimeToolNameForPrompt(agentcontract.ToolUpdatePlan)+"`") {
+	if !strings.Contains(string(payload), "`"+agentcontract.CanonicalToolName(agentcontract.ToolUpdatePlan)+"`") {
 		t.Fatalf("expected staged workspace skill markdown to use runtime update_plan tool name, got %q", string(payload))
 	}
-	if strings.Contains(string(payload), "`"+agentcontract.ToolUpdatePlan+"`") {
-		t.Fatalf("expected staged workspace skill markdown not to expose bare update_plan tool name, got %q", string(payload))
+	if strings.Contains(string(payload), agentcontract.HelpinMCPToolPrefix) {
+		t.Fatalf("expected staged workspace skill markdown to avoid the legacy Helpin prefix, got %q", string(payload))
 	}
 }
