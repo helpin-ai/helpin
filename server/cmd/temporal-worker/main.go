@@ -311,12 +311,21 @@ func main() {
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageV2Repo := repository.NewCoverageV2Repository(db)
+	coverageV2Mode := strings.TrimSpace(os.Getenv("SUPPORT_COVERAGE_V2_MODE"))
+	if coverageV2Mode == "" {
+		coverageV2Mode = string(service.CoverageRolloutDisabled)
+	}
+	supportCoverageRolloutPolicy, err := service.NewCoverageRolloutPolicy(coverageV2Mode, os.Getenv("SUPPORT_COVERAGE_V2_WORKSPACE_MODES"))
+	if err != nil {
+		log.Fatalf("invalid coverage v2 rollout policy: %v", err)
+	}
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
 	supportCoverageEnrichmentService := service.NewSupportCoverageEnrichmentService(db, llmProvider)
 	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel)
 	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
 		SetCoverageRepositories(supportCoverageRepo, supportCoverageAnalysisRepo).
 		SetCoverageV2Repository(supportCoverageV2Repo).
+		SetCoverageRolloutPolicy(supportCoverageRolloutPolicy).
 		SetEmbeddingProvider(coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel).
 		SetConversationRepositories(conversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).

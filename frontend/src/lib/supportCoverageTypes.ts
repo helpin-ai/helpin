@@ -300,6 +300,14 @@ export interface CoveragePipelineHealthV2 {
   latest_batch: CoverageBatchV2 | null
   failures: CoverageAnalysisAttemptV2[]
   healthy: boolean
+  rollout: {
+    requested_mode: 'disabled' | 'shadow' | 'v2_read' | 'v2_write'
+    capture_enabled: boolean
+    assignment_enabled: boolean
+    read_v2_enabled: boolean
+    write_v2_enabled: boolean
+    pause_reasons?: string[]
+  }
 }
 
 export const V1_GAP_TYPE_LABELS: Record<SupportCoverageV1GapType, string> = {

@@ -85,6 +85,7 @@ export function SupportCoveragePage() {
 	const [signalsV2, setSignalsV2] = useState<CoverageSignalV2[]>([])
 	const [healthV2, setHealthV2] = useState<CoveragePipelineHealthV2 | null>(null)
 	const [selectedTopicV2, setSelectedTopicV2] = useState<CoverageTopicDetailV2 | null>(null)
+	const [signalTopicSelections, setSignalTopicSelections] = useState<Record<string, string>>({})
 
   const { data: agents = [] } = useAgents(wsId)
   const { data: spaces } = useDocsSpaces(wsId)
@@ -184,7 +185,7 @@ export function SupportCoveragePage() {
       setLoading(true)
       setSelectedGapId(null)
       setSelectedGap(null)
-      const [summaryRes, gapsRes, latestClusterRes, mergeSuggestionRes, topicsV2Res, signalsV2Res, healthV2Res] = await Promise.all([
+      const [summaryRes, gapsRes, latestClusterRes, mergeSuggestionRes, healthV2Res] = await Promise.all([
         supportCoverageService.getSummary(wsId),
         supportCoverageService.listGaps(wsId, listFilters(1)),
         supportCoverageService.getLatestClusterRebuild(wsId),
@@ -194,11 +195,20 @@ export function SupportCoveragePage() {
           per_page: '1',
           has_merge_suggestions: 'true',
         }),
-		supportCoverageService.listTopicsV2(wsId),
-		supportCoverageService.listSignalsV2(wsId),
 		supportCoverageService.getPipelineHealthV2(wsId),
       ])
       if (cancelled) return
+	  let topicsV2: CoverageTopicV2[] = []
+	  let signalsV2: CoverageSignalV2[] = []
+	  if (healthV2Res.data?.rollout.read_v2_enabled) {
+		const [topicsRes, signalsRes] = await Promise.all([
+		  supportCoverageService.listTopicsV2(wsId),
+		  supportCoverageService.listSignalsV2(wsId),
+		])
+		if (cancelled) return
+		topicsV2 = topicsRes.data?.items ?? []
+		signalsV2 = signalsRes.data?.items ?? []
+	  }
       if (summaryRes.data) setSummary(summaryRes.data)
       setLatestClusterRun(latestClusterRes.data ?? null)
       if (gapsRes.data) {
@@ -207,9 +217,10 @@ export function SupportCoveragePage() {
         setLoadedPage(1)
       }
       setMergeSuggestionCount(mergeSuggestionRes.data?.total ?? 0)
-	  setTopicsV2(topicsV2Res.data?.items ?? [])
-	  setSignalsV2(signalsV2Res.data?.items ?? [])
+	  setTopicsV2(topicsV2)
+	  setSignalsV2(signalsV2)
 	  setHealthV2(healthV2Res.data ?? null)
+	  if (!healthV2Res.data?.rollout.read_v2_enabled) setCoverageSurface('health')
       setLoading(false)
     }
 
@@ -223,6 +234,21 @@ export function SupportCoveragePage() {
 	  const { data, error } = await supportCoverageService.getTopicV2(wsId, topicId)
 	  if (error) { toast.error('Failed to load coverage topic'); return }
 	  setSelectedTopicV2(data ?? null)
+	}
+
+	const reviewSignalV2 = async (signalId: string) => {
+	  const topicId = signalTopicSelections[signalId]
+	  if (!topicId) return
+	  const { error } = await supportCoverageService.reviewSignalV2(wsId, signalId, topicId)
+	  if (error) { toast.error('Failed to attach signal'); return }
+	  setSignalsV2((current) => current.filter((signal) => signal.id !== signalId))
+	  toast.success('Signal attached to topic')
+	}
+
+	const dismissSignalV2 = async (signalId: string) => {
+	  const { error } = await supportCoverageService.dismissSignalV2(wsId, signalId)
+	  if (error) { toast.error('Failed to dismiss signal'); return }
+	  setSignalsV2((current) => current.filter((signal) => signal.id !== signalId))
 	}
 
 	const replayAttemptV2 = async (attemptId: string) => {
@@ -471,9 +497,9 @@ export function SupportCoveragePage() {
         </div>
       </header>
 
-	  <section className="space-y-3" aria-label="Coverage v2 surfaces">
+	  {(healthV2?.rollout.read_v2_enabled || isAdmin) && <section className="space-y-3" aria-label="Coverage v2 surfaces">
 		<div className="flex rounded-lg border border-border/60 bg-muted/30 p-1">
-		  {(['topics', 'signals', 'health'] as const).map((surface) => (
+		  {(healthV2?.rollout.read_v2_enabled ? (['topics', 'signals', 'health'] as const) : (['health'] as const)).map((surface) => (
 			<button key={surface} type="button" onClick={() => setCoverageSurface(surface)} className={cn('rounded-md px-3 py-1.5 text-xs font-medium capitalize', coverageSurface === surface ? 'bg-background shadow-sm' : 'text-muted-foreground')}>
 			  {surface === 'signals' ? `Unreviewed signals (${signalsV2.length})` : surface === 'health' ? 'Pipeline health' : `Topics (${topicsV2.length})`}
 			</button>
@@ -495,7 +521,7 @@ export function SupportCoveragePage() {
 
 		{coverageSurface === 'signals' && (
 		  <div className="space-y-2">
-			{signalsV2.map((signal) => <div key={signal.id} className="rounded-lg border bg-card p-3"><p className="text-sm font-medium">{signal.normalized_query}</p><p className="mt-1 text-xs text-muted-foreground">{signal.source_kind.replace('_', ' ')} · {signal.meaningful_tokens} meaningful tokens · {timeAgo(signal.observed_at)}</p></div>)}
+			{signalsV2.map((signal) => <div key={signal.id} className="rounded-lg border bg-card p-3"><p className="text-sm font-medium">{signal.normalized_query}</p><p className="mt-1 text-xs text-muted-foreground">{signal.source_kind.replace('_', ' ')} · {signal.meaningful_tokens} meaningful tokens · {timeAgo(signal.observed_at)}</p>{canReviewMergeSuggestions && <div className="mt-3 flex gap-2"><select aria-label={`Topic for ${signal.normalized_query}`} value={signalTopicSelections[signal.id] ?? ''} onChange={(event) => setSignalTopicSelections((current) => ({ ...current, [signal.id]: event.target.value }))} className="min-w-0 flex-1 rounded-md border bg-background px-2 text-xs"><option value="">Select a topic</option>{topicsV2.map((topic) => <option key={topic.id} value={topic.id}>{topic.title}</option>)}</select><Button size="sm" variant="outline" disabled={!signalTopicSelections[signal.id]} onClick={() => void reviewSignalV2(signal.id)}>Attach</Button><Button size="sm" variant="ghost" onClick={() => void dismissSignalV2(signal.id)}>Dismiss</Button></div>}</div>)}
 			{signalsV2.length === 0 && <p className="text-sm text-muted-foreground">No unreviewed signals.</p>}
 		  </div>
 		)}
@@ -509,7 +535,7 @@ export function SupportCoveragePage() {
 			</div>
 		  </div>
 		)}
-	  </section>
+	  </section>}
 
 	  {selectedTopicV2 && (
 		<Card>

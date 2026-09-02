@@ -26,6 +26,12 @@ export const supportCoverageService = {
 	listSignalsV2: (wsId: string) =>
 	  api.get<{ items: CoverageSignalV2[] }>(`/support/coverage/v2/signals${qs(wsId)}`),
 
+	reviewSignalV2: (wsId: string, signalId: string, topicId: string) =>
+	  api.post<{ status: string }>(`/support/coverage/v2/signals/${signalId}/review${qs(wsId)}`, { topic_id: topicId }),
+
+	dismissSignalV2: (wsId: string, signalId: string) =>
+	  api.post<{ status: string }>(`/support/coverage/v2/signals/${signalId}/dismiss${qs(wsId)}`, {}),
+
 	getPipelineHealthV2: (wsId: string) =>
 	  api.get<CoveragePipelineHealthV2>(`/support/coverage/v2/health${qs(wsId)}`),
 

@@ -978,6 +978,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/v2/topics", h.SupportCoverage.ListTopicsV2)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/v2/topics/{topicId}", h.SupportCoverage.GetTopicV2)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/v2/signals", h.SupportCoverage.ListSignalsV2)
+						r.With(requirePerm(authorization.PermSupportEdit)).Post("/v2/signals/{signalId}/review", h.SupportCoverage.ReviewSignalV2)
+						r.With(requirePerm(authorization.PermSupportEdit)).Post("/v2/signals/{signalId}/dismiss", h.SupportCoverage.DismissSignalV2)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/v2/health", h.SupportCoverage.PipelineHealthV2)
 						r.With(requirePerm(authorization.PermSettingsManage)).Post("/v2/attempts/{attemptId}/replay", h.SupportCoverage.ReplayAttemptV2)
 						r.With(requirePerm(authorization.PermSettingsManage)).Get("/v2/legacy", h.SupportCoverage.ListArchivedV1)

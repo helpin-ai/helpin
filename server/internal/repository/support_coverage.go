@@ -1149,6 +1149,19 @@ func (r *SupportCoverageRepository) GetConversationCoverageState(ctx context.Con
 			state.DocsIssueValue = &val
 		}
 	}
+	if r.db.Migrator().HasTable("coverage_findings") && r.db.Migrator().HasTable("coverage_topic_memberships") {
+		var current struct {
+			TopicID *string
+		}
+		if err := r.db.WithContext(ctx).Table("coverage_findings f").
+			Select("m.topic_id").
+			Joins("JOIN coverage_topic_memberships m ON m.workspace_id = f.workspace_id AND m.finding_id = f.id AND m.valid_to IS NULL").
+			Where("f.workspace_id = ? AND f.conversation_id = ? AND f.is_current = ?", workspaceID, conversationID, true).
+			Order("f.created_at DESC").Limit(1).Scan(&current).Error; err != nil {
+			return nil, fmt.Errorf("get canonical conversation coverage topic: %w", err)
+		}
+		state.CanonicalTopicID = current.TopicID
+	}
 
 	return state, nil
 }

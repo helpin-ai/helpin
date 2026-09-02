@@ -64,6 +64,7 @@ type SupportEventService struct {
 	eventRepo        *repository.SupportEventRepository
 	coverageSvc      *SupportCoverageService
 	coverageV2Repo   *repository.CoverageV2Repository
+	rolloutPolicy    *CoverageRolloutPolicy
 	summaryRefresh   CompanySummaryRefreshRequester
 	messageRepo      *repository.SupportMessageRepository
 	conversationRepo *repository.SupportConversationRepository
@@ -74,6 +75,13 @@ type SupportEventService struct {
 func (s *SupportEventService) SetCoverageV2Repository(repo *repository.CoverageV2Repository) *SupportEventService {
 	if s != nil {
 		s.coverageV2Repo = repo
+	}
+	return s
+}
+
+func (s *SupportEventService) SetCoverageRolloutPolicy(policy *CoverageRolloutPolicy) *SupportEventService {
+	if s != nil {
+		s.rolloutPolicy = policy
 	}
 	return s
 }
@@ -116,7 +124,7 @@ func (s *SupportEventService) RecordEvent(ctx context.Context, input SupportEven
 	}
 
 	isQualifiedWidgetSearch := event.EventType == model.SupportEventWidgetSearchPerformed && event.SourceSignal == "no_results"
-	routedWidgetSearchV2 := isQualifiedWidgetSearch && s.coverageV2Repo != nil
+	routedWidgetSearchV2 := isQualifiedWidgetSearch && s.coverageV2Repo != nil && (s.rolloutPolicy == nil || s.rolloutPolicy.CaptureEnabled(event.WorkspaceID))
 	if routedWidgetSearchV2 {
 		sessionID := stringPointerValue(event.AnonymousID)
 		if sessionID == "" {

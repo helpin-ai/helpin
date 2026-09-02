@@ -36,6 +36,13 @@ type CoverageRebuildApplyResult struct {
 	QueuedWorkCount int
 }
 
+type CoverageRolloutStats struct {
+	AttemptCount                      int64
+	TerminalFailureCount              int64
+	DuplicateIdempotencyViolations    int64
+	CrossWorkspaceInvariantViolations int64
+}
+
 var ErrCoverageLeaseLost = errors.New("coverage work lease is no longer owned")
 
 type CoverageV2Repository struct{ db *gorm.DB }
@@ -439,6 +446,40 @@ func (r *CoverageV2Repository) UpdateFindingAssignmentStatus(ctx context.Context
 	return r.db.WithContext(ctx).Model(&model.CoverageFinding{}).Where("workspace_id = ? AND id = ? AND is_current = ?", workspaceID, findingID, true).Update("assignment_status", status).Error
 }
 
+func (r *CoverageV2Repository) ClaimFindingsForAssignment(ctx context.Context, workspaceID string, limit int) ([]model.CoverageFinding, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	var claimed []model.CoverageFinding
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query := tx.Where("workspace_id = ? AND is_current = ? AND assignment_status IN ?", workspaceID, true, []string{"pending", "retryable"}).Order("created_at, id").Limit(limit)
+		if tx.Dialector.Name() == "postgres" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+		}
+		var candidates []model.CoverageFinding
+		if err := query.Find(&candidates).Error; err != nil {
+			return err
+		}
+		for _, candidate := range candidates {
+			result := tx.Model(&model.CoverageFinding{}).
+				Where("workspace_id = ? AND id = ? AND is_current = ? AND assignment_status IN ?", workspaceID, candidate.ID, true, []string{"pending", "retryable"}).
+				Update("assignment_status", "assigning")
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 1 {
+				candidate.AssignmentStatus = "assigning"
+				claimed = append(claimed, candidate)
+			}
+		}
+		return nil
+	})
+	return claimed, err
+}
+
 func (r *CoverageV2Repository) UpsertUnreviewedSignal(ctx context.Context, signal *model.CoverageUnreviewedSignal) error {
 	if signal == nil || signal.WorkspaceID == "" || signal.SignalKey == "" {
 		return fmt.Errorf("valid unreviewed signal is required")
@@ -520,6 +561,66 @@ func (r *CoverageV2Repository) ListUnreviewedSignals(ctx context.Context, worksp
 	return signals, err
 }
 
+func (r *CoverageV2Repository) ReviewSignal(ctx context.Context, workspaceID, signalID, topicID, actorID string) error {
+	if workspaceID == "" || signalID == "" || topicID == "" || actorID == "" {
+		return fmt.Errorf("workspace, signal, topic, and actor are required")
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var signal model.CoverageUnreviewedSignal
+		if err := tx.Where("workspace_id = ? AND id = ? AND status = ?", workspaceID, signalID, model.CoverageSignalUnreviewed).First(&signal).Error; err != nil {
+			return err
+		}
+		var topicCount int64
+		if err := tx.Model(&model.CoverageTopicV2{}).Where("workspace_id = ? AND id = ?", workspaceID, topicID).Count(&topicCount).Error; err != nil || topicCount != 1 {
+			return fmt.Errorf("coverage topic not found in workspace")
+		}
+		now := time.Now().UTC()
+		oldTopicID := ""
+		if signal.FindingID != nil {
+			var current model.CoverageTopicMembership
+			if err := tx.Where("workspace_id = ? AND finding_id = ? AND valid_to IS NULL", workspaceID, *signal.FindingID).First(&current).Error; err == nil {
+				oldTopicID = current.TopicID
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err := tx.Model(&model.CoverageTopicMembership{}).Where("workspace_id = ? AND finding_id = ? AND valid_to IS NULL", workspaceID, *signal.FindingID).Update("valid_to", now).Error; err != nil {
+				return err
+			}
+			membership := &model.CoverageTopicMembership{ID: uuid.NewString(), WorkspaceID: workspaceID, FindingID: *signal.FindingID, TopicID: topicID, DecisionSource: model.CoverageMembershipManual, Confidence: 1, PolicyVersion: "v1", ActorID: &actorID, ValidFrom: now, Metadata: []byte("{}")}
+			if err := tx.Create(membership).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&model.CoverageUnreviewedSignal{}).Where("workspace_id = ? AND id = ? AND status = ?", workspaceID, signalID, model.CoverageSignalUnreviewed).
+			Updates(map[string]interface{}{"status": model.CoverageSignalAttached, "topic_id": topicID, "reviewed_by": actorID, "reviewed_at": now}).Error; err != nil {
+			return err
+		}
+		txRepo := NewCoverageV2Repository(tx)
+		if err := txRepo.RefreshTopicCounts(ctx, workspaceID, topicID); err != nil {
+			return err
+		}
+		if oldTopicID != "" && oldTopicID != topicID {
+			if err := txRepo.RefreshTopicCounts(ctx, workspaceID, oldTopicID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (r *CoverageV2Repository) DismissSignal(ctx context.Context, workspaceID, signalID, actorID string) error {
+	result := r.db.WithContext(ctx).Model(&model.CoverageUnreviewedSignal{}).
+		Where("workspace_id = ? AND id = ? AND status = ?", workspaceID, signalID, model.CoverageSignalUnreviewed).
+		Updates(map[string]interface{}{"status": model.CoverageSignalDismissed, "reviewed_by": actorID, "reviewed_at": time.Now().UTC()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("unreviewed coverage signal not found")
+	}
+	return nil
+}
+
 func (r *CoverageV2Repository) LatestBatch(ctx context.Context, workspaceID string) (*model.CoverageBatch, error) {
 	var batch model.CoverageBatch
 	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("created_at DESC").First(&batch).Error
@@ -527,6 +628,37 @@ func (r *CoverageV2Repository) LatestBatch(ctx context.Context, workspaceID stri
 		return nil, nil
 	}
 	return &batch, err
+}
+
+func (r *CoverageV2Repository) CoverageRolloutStats(ctx context.Context, workspaceID string, since time.Time) (CoverageRolloutStats, error) {
+	var stats CoverageRolloutStats
+	attempts := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).Where("workspace_id = ? AND created_at >= ?", workspaceID, since)
+	if err := attempts.Count(&stats.AttemptCount).Error; err != nil {
+		return stats, err
+	}
+	if err := attempts.Where("status = ?", model.CoverageAttemptDeadLetter).Count(&stats.TerminalFailureCount).Error; err != nil {
+		return stats, err
+	}
+	duplicateSuccesses := r.db.WithContext(ctx).Model(&model.CoverageAnalysisAttempt{}).
+		Select("logical_work_key").Where("workspace_id = ? AND status = ?", workspaceID, model.CoverageAttemptSucceeded).
+		Group("logical_work_key").Having("COUNT(*) > 1")
+	if err := r.db.WithContext(ctx).Table("(?) AS duplicate_successes", duplicateSuccesses).Count(&stats.DuplicateIdempotencyViolations).Error; err != nil {
+		return stats, err
+	}
+	var findingViolations, membershipViolations int64
+	if err := r.db.WithContext(ctx).Table("coverage_findings f").
+		Joins("JOIN coverage_analysis_attempts a ON a.id = f.analysis_attempt_id").
+		Where("f.workspace_id <> a.workspace_id").Count(&findingViolations).Error; err != nil {
+		return stats, err
+	}
+	if err := r.db.WithContext(ctx).Table("coverage_topic_memberships m").
+		Joins("JOIN coverage_findings f ON f.id = m.finding_id").
+		Joins("JOIN coverage_topics t ON t.id = m.topic_id").
+		Where("m.workspace_id <> f.workspace_id OR m.workspace_id <> t.workspace_id").Count(&membershipViolations).Error; err != nil {
+		return stats, err
+	}
+	stats.CrossWorkspaceInvariantViolations = findingViolations + membershipViolations
+	return stats, nil
 }
 
 func (r *CoverageV2Repository) ListFailedAttempts(ctx context.Context, workspaceID string, limit int) ([]model.CoverageAnalysisAttempt, error) {

@@ -1640,6 +1640,14 @@ func main() {
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageV2Repo := repository.NewCoverageV2Repository(db)
+	coverageV2Mode := strings.TrimSpace(os.Getenv("SUPPORT_COVERAGE_V2_MODE"))
+	if coverageV2Mode == "" {
+		coverageV2Mode = string(service.CoverageRolloutDisabled)
+	}
+	supportCoverageRolloutPolicy, err := service.NewCoverageRolloutPolicy(coverageV2Mode, os.Getenv("SUPPORT_COVERAGE_V2_WORKSPACE_MODES"))
+	if err != nil {
+		fatalWithSentry("invalid coverage v2 rollout policy", err)
+	}
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
 	commandService.SetSupportCoverageService(supportCoverageService)
 	agentRuntimeHostService.SetSupportCoverageService(supportCoverageService)
@@ -1654,6 +1662,7 @@ func main() {
 	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
 		SetCoverageRepositories(supportCoverageRepo, supportCoverageAnalysisRepo).
 		SetCoverageV2Repository(supportCoverageV2Repo).
+		SetCoverageRolloutPolicy(supportCoverageRolloutPolicy).
 		SetEmbeddingProvider(coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel).
 		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
@@ -1661,6 +1670,7 @@ func main() {
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
 		SetCoverageV2Repository(supportCoverageV2Repo).
+		SetCoverageRolloutPolicy(supportCoverageRolloutPolicy).
 		SetCompanySummaryRefresh(crmSummaryService).
 		SetSignalDetection(supportMessageRepo, supportConversationRepo, crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation))
 	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)
@@ -1994,7 +2004,7 @@ func main() {
 			supportEventService,
 			service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, llmProvider),
 			supportCoverageClusterRebuildService,
-		).SetCoverageV2Service(service.NewSupportCoverageV2Service(supportCoverageV2Repo)),
+		).SetCoverageV2Service(service.NewSupportCoverageV2Service(supportCoverageV2Repo).SetRolloutPolicy(supportCoverageRolloutPolicy)),
 		TLSAsk: handler.NewTLSAskHandler(tlsAskService),
 	}
 

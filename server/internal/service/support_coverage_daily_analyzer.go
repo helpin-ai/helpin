@@ -184,6 +184,7 @@ type SupportCoverageDailyAnalyzer struct {
 	docsSpaceRepo     *repository.DocsSpaceRepository
 	contentSourceRepo *repository.SupportContentSourceRepository
 	temporalClient    tclient.Client
+	rolloutPolicy     *CoverageRolloutPolicy
 }
 
 func NewSupportCoverageDailyAnalyzer(llmProvider llm.Provider, providerName, modelName string) *SupportCoverageDailyAnalyzer {
@@ -208,6 +209,13 @@ func (s *SupportCoverageDailyAnalyzer) SetCoverageV2Repository(repo *repository.
 		return nil
 	}
 	s.coverageV2Repo = repo
+	return s
+}
+
+func (s *SupportCoverageDailyAnalyzer) SetCoverageRolloutPolicy(policy *CoverageRolloutPolicy) *SupportCoverageDailyAnalyzer {
+	if s != nil {
+		s.rolloutPolicy = policy
+	}
 	return s
 }
 
@@ -288,7 +296,17 @@ func (s *SupportCoverageDailyAnalyzer) ListWorkspacesForDailyAnalysis(ctx contex
 			return nil, err
 		}
 	}
-	return mergeCoverageWorkspaceIDs(candidateWorkspaces, queuedWorkspaces, coverageAnalysisWorkspaceLimit), nil
+	merged := mergeCoverageWorkspaceIDs(candidateWorkspaces, queuedWorkspaces, coverageAnalysisWorkspaceLimit)
+	if s.rolloutPolicy == nil {
+		return merged, nil
+	}
+	filtered := make([]string, 0, len(merged))
+	for _, workspaceID := range merged {
+		if s.rolloutPolicy.CaptureEnabled(workspaceID) {
+			filtered = append(filtered, workspaceID)
+		}
+	}
+	return filtered, nil
 }
 
 func mergeCoverageWorkspaceIDs(primary, queued []string, limit int) []string {
@@ -369,6 +387,39 @@ func (s *SupportCoverageDailyAnalyzer) reconcileQueuedCoverageAttempts(ctx conte
 	}
 }
 
+func (s *SupportCoverageDailyAnalyzer) coverageAssignmentEnabled(ctx context.Context, workspaceID string) bool {
+	if s.rolloutPolicy == nil {
+		return true
+	}
+	stats, err := s.coverageV2Repo.CoverageRolloutStats(ctx, workspaceID, time.Now().UTC().Add(-24*time.Hour))
+	if err != nil {
+		slog.WarnContext(ctx, "coverage rollout guardrail evaluation deferred assignment", "workspace_id", workspaceID, "error", err)
+		return false
+	}
+	return s.rolloutPolicy.Evaluate(workspaceID, CoverageRolloutMetrics{
+		AttemptCount: int(stats.AttemptCount), TerminalFailureCount: int(stats.TerminalFailureCount),
+		DuplicateIdempotencyViolations: int(stats.DuplicateIdempotencyViolations), CrossWorkspaceInvariantViolations: int(stats.CrossWorkspaceInvariantViolations),
+	}).AssignmentEnabled
+}
+
+func (s *SupportCoverageDailyAnalyzer) reconcileCoverageAssignments(ctx context.Context, workspaceID string) error {
+	if s.coverageV2Repo == nil || !s.coverageAssignmentEnabled(ctx, workspaceID) {
+		return nil
+	}
+	findings, err := s.coverageV2Repo.ClaimFindingsForAssignment(ctx, workspaceID, coverageAnalysisCandidatePageSize)
+	if err != nil {
+		return err
+	}
+	for index := range findings {
+		finding := &findings[index]
+		if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding); err != nil {
+			_ = s.coverageV2Repo.UpdateFindingAssignmentStatus(ctx, workspaceID, finding.ID, "retryable")
+			slog.WarnContext(ctx, "coverage topic assignment retry deferred", "workspace_id", workspaceID, "finding_id", finding.ID, "error", err)
+		}
+	}
+	return nil
+}
+
 func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time) error {
 	if s == nil || s.analysisRepo == nil || s.coverageRepo == nil || s.conversationRepo == nil || s.messageRepo == nil {
 		return fmt.Errorf("coverage daily analyzer dependencies are not configured")
@@ -376,7 +427,13 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 	if strings.TrimSpace(workspaceID) == "" {
 		return fmt.Errorf("workspace_id is required")
 	}
+	if s.rolloutPolicy != nil && !s.rolloutPolicy.CaptureEnabled(workspaceID) {
+		return nil
+	}
 	if err := s.reconcileQueuedCoverageAttempts(ctx, workspaceID); err != nil {
+		return err
+	}
+	if err := s.reconcileCoverageAssignments(ctx, workspaceID); err != nil {
 		return err
 	}
 	if windowEnd.IsZero() {
@@ -1134,6 +1191,9 @@ func (s *SupportCoverageDailyAnalyzer) persistCoverageV2Finding(ctx context.Cont
 	}
 	if err := s.coverageV2Repo.ReplaceCurrentFinding(ctx, finding); err != nil {
 		return err
+	}
+	if !s.coverageAssignmentEnabled(ctx, finding.WorkspaceID) {
+		return nil
 	}
 	// The durable finding is committed first. Assignment is independently
 	// retryable and must never erase or roll back the analysis result.
