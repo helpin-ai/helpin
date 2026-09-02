@@ -642,7 +642,7 @@ func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutp
 	}
 }
 
-func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesGapEvidenceRecommendationsAndSuggestion(t *testing.T) {
+func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesActionableRecommendationsWithoutDrafts(t *testing.T) {
 	db := setupCoverageFindingUpsertTestDB(t)
 	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	coverageRepo := repository.NewSupportCoverageRepository(db)
@@ -732,16 +732,14 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesGapEvidenceRecommendat
 	if len(recommendations) != 2 {
 		t.Fatalf("expected two recommendations, got %+v", recommendations)
 	}
-	if recommendations[0].SuggestionID == nil || *recommendations[0].SuggestionID == "" {
-		t.Fatalf("expected docs recommendation to link a suggestion: %+v", recommendations[0])
+	for _, recommendation := range recommendations {
+		if recommendation.SuggestionID != nil {
+			t.Fatalf("scheduled recommendation must not create/link a docs draft: %+v", recommendation)
+		}
 	}
-
-	var suggestion model.SupportGapSuggestion
-	if err := db.First(&suggestion, "id = ?", *recommendations[0].SuggestionID).Error; err != nil {
-		t.Fatalf("load suggestion: %v", err)
-	}
-	if !suggestion.IsActive || suggestion.TargetDocumentID == nil || *suggestion.TargetDocumentID != "doc-1" {
-		t.Fatalf("unexpected suggestion: %+v", suggestion)
+	var suggestionCount int64
+	if err := db.Model(&model.SupportGapSuggestion{}).Count(&suggestionCount).Error; err != nil || suggestionCount != 0 {
+		t.Fatalf("scheduled suggestion count = %d, %v; want 0", suggestionCount, err)
 	}
 
 	var analysis model.SupportCoverageConversationAnalysis

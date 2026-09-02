@@ -1728,29 +1728,52 @@ func (r *SupportConversationRepository) CountByParams(ctx context.Context, param
 	return int(total), int(unread), nil
 }
 
+const CoverageAnalysisCandidatePageMax = 200
+
+type CoverageAnalysisCandidateCursor struct {
+	UpdatedAt time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+}
+
 func (r *SupportConversationRepository) ListCoverageAnalysisCandidates(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, limit int) ([]model.SupportConversation, error) {
+	conversations, _, err := r.ListCoverageAnalysisCandidatesPage(ctx, workspaceID, windowStart, windowEnd, nil, limit)
+	return conversations, err
+}
+
+func (r *SupportConversationRepository) ListCoverageAnalysisCandidatesPage(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, cursor *CoverageAnalysisCandidateCursor, limit int) ([]model.SupportConversation, *CoverageAnalysisCandidateCursor, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, nil, fmt.Errorf("workspace_id is required")
 	}
-	if limit <= 0 || limit > 500 {
-		limit = 200
+	if limit <= 0 {
+		limit = CoverageAnalysisCandidatePageMax
+	}
+	if limit > CoverageAnalysisCandidatePageMax {
+		return nil, nil, fmt.Errorf("coverage candidate page limit %d exceeds maximum %d", limit, CoverageAnalysisCandidatePageMax)
 	}
 
 	var conversations []model.SupportConversation
-	err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Where("workspace_id = ?", workspaceID).
 		Where("status <> ?", model.SupportConversationStatusSpam).
 		Where(`(
 			(updated_at >= ? AND updated_at < ?)
 			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
-		)`, windowStart, windowEnd, windowStart, windowEnd).
+		)`, windowStart, windowEnd, windowStart, windowEnd)
+	if cursor != nil {
+		query = query.Where("(updated_at > ?) OR (updated_at = ? AND id > ?)", cursor.UpdatedAt, cursor.UpdatedAt, cursor.ID)
+	}
+	err := query.
 		Order("updated_at ASC, id ASC").
 		Limit(limit).
 		Find(&conversations).Error
 	if err != nil {
-		return nil, fmt.Errorf("list coverage analysis candidates: %w", err)
+		return nil, nil, fmt.Errorf("list coverage analysis candidates: %w", err)
 	}
-	return conversations, nil
+	if len(conversations) == 0 || len(conversations) < limit {
+		return conversations, nil, nil
+	}
+	last := conversations[len(conversations)-1]
+	return conversations, &CoverageAnalysisCandidateCursor{UpdatedAt: last.UpdatedAt, ID: last.ID}, nil
 }
 
 func (r *SupportConversationRepository) ListWorkspacesForCoverageAnalysisCandidates(ctx context.Context, windowStart, windowEnd time.Time, limit int) ([]string, error) {

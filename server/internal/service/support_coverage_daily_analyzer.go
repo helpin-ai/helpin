@@ -21,7 +21,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"go.temporal.io/api/serviceerror"
 	tclient "go.temporal.io/sdk/client"
-	"golang.org/x/sync/errgroup"
 )
 
 var errCoverageNoPublicSegment = errors.New("coverage conversation has no public segment")
@@ -30,13 +29,14 @@ const (
 	coverageAnalysisMaxMessages             = 80
 	coverageAnalysisMaxMessageChars         = 2000
 	coverageAnalyzerVersion                 = "v4"
-	coverageAnalysisWorkflowID              = "coverage-daily-analysis"
-	coverageAnalysisCronSchedule            = "30 4 * * *"
+	coverageAnalysisWorkflowID              = "coverage-analysis-v2"
+	coverageAnalysisCronSchedule            = "0 */3 * * *"
 	coverageAnalysisOverlap                 = 2 * time.Hour
 	coverageAnalysisSettleDelay             = 10 * time.Minute
 	coverageAnalysisBootstrapWindow         = 30 * 24 * time.Hour
 	coverageAnalysisWorkspaceLimit          = 1000
 	coverageAnalysisConversationConcurrency = 4
+	coverageAnalysisCandidatePageSize       = 25
 	// Coverage knowledge matching uses reciprocal-rank fusion scores, not
 	// cosine scores. A top lexical-only hit is ~0.016 and a top lexical+vector
 	// hit is ~0.033, so keep this floor on that scale.
@@ -311,33 +311,47 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 		return err
 	}
 
-	conversations, err := s.conversationRepo.ListCoverageAnalysisCandidates(ctx, workspaceID, cursorStart, cursorEnd, coverageAnalysisWorkspaceLimit)
-	if err != nil {
-		s.markCoverageAnalysisRunFailed(ctx, run.ID, err)
-		return err
-	}
+	conversationCount := 0
 	gapCount := 0
 	var gapCountMu sync.Mutex
-	group, groupCtx := errgroup.WithContext(ctx)
-	group.SetLimit(coverageAnalysisConversationConcurrency)
-	for _, conversation := range conversations {
-		conversation := conversation
-		group.Go(func() error {
-			gapCreated, err := s.runConversationCoverageAnalysis(groupCtx, workspaceID, run.ID, conversation)
-			if err != nil {
-				return err
-			}
-			if gapCreated {
-				gapCountMu.Lock()
-				gapCount++
-				gapCountMu.Unlock()
-			}
-			return nil
-		})
-	}
-	if err := group.Wait(); err != nil {
-		s.markCoverageAnalysisRunFailed(ctx, run.ID, err)
-		return err
+	var itemErrors []error
+	var itemErrorsMu sync.Mutex
+	var candidateCursor *repository.CoverageAnalysisCandidateCursor
+	for {
+		conversations, nextCursor, pageErr := s.conversationRepo.ListCoverageAnalysisCandidatesPage(ctx, workspaceID, cursorStart, cursorEnd, candidateCursor, coverageAnalysisCandidatePageSize)
+		if pageErr != nil {
+			s.markCoverageAnalysisRunFailed(ctx, run.ID, pageErr)
+			return pageErr
+		}
+		conversationCount += len(conversations)
+		var page sync.WaitGroup
+		semaphore := make(chan struct{}, coverageAnalysisConversationConcurrency)
+		for _, conversation := range conversations {
+			conversation := conversation
+			page.Add(1)
+			go func() {
+				defer page.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+				gapCreated, itemErr := s.runConversationCoverageAnalysis(ctx, workspaceID, run.ID, conversation)
+				if itemErr != nil {
+					itemErrorsMu.Lock()
+					itemErrors = append(itemErrors, fmt.Errorf("conversation %s: %w", conversation.ID, itemErr))
+					itemErrorsMu.Unlock()
+					return
+				}
+				if gapCreated {
+					gapCountMu.Lock()
+					gapCount++
+					gapCountMu.Unlock()
+				}
+			}()
+		}
+		page.Wait()
+		if nextCursor == nil {
+			break
+		}
+		candidateCursor = nextCursor
 	}
 	materialized, err := s.materializeRunFindings(ctx, workspaceID, run.ID)
 	if err != nil {
@@ -347,7 +361,12 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 	if materialized != nil && gapCount == 0 {
 		gapCount = materialized.FindingsScanned
 	}
-	return s.analysisRepo.CompleteRun(ctx, run.ID, len(conversations), gapCount)
+	if len(itemErrors) > 0 {
+		joined := errors.Join(itemErrors...)
+		s.markCoverageAnalysisRunFailed(ctx, run.ID, joined)
+		return joined
+	}
+	return s.analysisRepo.CompleteRun(ctx, run.ID, conversationCount, gapCount)
 }
 
 func (s *SupportCoverageDailyAnalyzer) markCoverageAnalysisRunFailed(ctx context.Context, runID string, runErr error) {
@@ -1186,67 +1205,10 @@ func (s *SupportCoverageDailyAnalyzer) recommendationRowsForFinding(ctx context.
 					return nil, fmt.Errorf("link recommendation article: %w", err)
 				}
 			}
-			if input.HasHumanReply {
-				suggestion, err := s.createDocsSuggestionForFix(ctx, input, gapID, fix, metadata, now)
-				if err != nil {
-					return nil, err
-				}
-				row.SuggestionID = &suggestion.ID
-			}
 		}
 		rows = append(rows, row)
 	}
 	return rows, nil
-}
-
-func (s *SupportCoverageDailyAnalyzer) createDocsSuggestionForFix(ctx context.Context, input CoverageFindingUpsertInput, gapID string, fix CoverageRecommendedFix, metadata json.RawMessage, now time.Time) (*model.SupportGapSuggestion, error) {
-	if err := s.coverageRepo.SupersedeActiveSuggestions(ctx, gapID, now); err != nil {
-		return nil, err
-	}
-	suggestionType := model.SupportCoverageSuggestionCreateArticle
-	if fix.Type == model.SupportCoverageFixUpdateArticle {
-		suggestionType = model.SupportCoverageSuggestionUpdateArticle
-	}
-	usagePayload, err := json.Marshal(struct {
-		Result CoverageConversationAnalysisResult `json:"result"`
-		Fix    CoverageRecommendedFix             `json:"fix"`
-	}{Result: input.Result, Fix: fix})
-	if err != nil {
-		return nil, fmt.Errorf("marshal coverage suggestion usage payload: %w", err)
-	}
-	title, content, err := s.GenerateKnowledgeSuggestion(WithAIUsageMetering(ctx, AIUsageMeteringContext{
-		WorkspaceID:    input.WorkspaceID,
-		FeatureKey:     BillingFeatureDocsArticleGeneration,
-		IdempotencyKey: aiUsagePayloadIdempotencyKey(usagePayload, input.WorkspaceID, BillingFeatureDocsArticleGeneration, "coverage_suggestion", input.ConversationID, gapID, fix.Type, fix.TargetID),
-		Metadata: map[string]interface{}{
-			"conversation_id": input.ConversationID,
-			"gap_id":          gapID,
-			"fix_type":        fix.Type,
-			"target_id":       fix.TargetID,
-		},
-	}), input.Result, fix)
-	if err != nil {
-		return nil, err
-	}
-	suggestion := &model.SupportGapSuggestion{
-		GapID:            gapID,
-		WorkspaceID:      input.WorkspaceID,
-		SuggestionType:   suggestionType,
-		Status:           model.SupportCoverageSuggestionStatusDraft,
-		Title:            title,
-		Content:          content,
-		EvidenceSummary:  coverageTruncate(firstNonEmptyCoverageString(input.Result.HumanResolution, input.Result.DecisionReason, input.Result.CustomerNeed), 500),
-		TargetDocumentID: emptyToNil(fix.TargetID),
-		IsActive:         true,
-		Metadata:         metadata,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-	}
-	created, err := s.coverageRepo.CreateSuggestion(ctx, suggestion)
-	if err != nil {
-		return nil, err
-	}
-	return created, nil
 }
 
 func CoverageTranscriptHash(messages []model.SupportMessage) string {
