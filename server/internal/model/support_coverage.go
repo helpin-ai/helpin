@@ -58,9 +58,10 @@ const (
 // ─── Gap statuses ──────────────────────────────────────────────────────────
 
 const (
-	SupportCoverageGapStatusOpen     = "open"
-	SupportCoverageGapStatusDone     = "done"
-	SupportCoverageGapStatusRejected = "rejected"
+	SupportCoverageGapStatusOpen       = "open"
+	SupportCoverageGapStatusDone       = "done"
+	SupportCoverageGapStatusRejected   = "rejected"
+	SupportCoverageGapStatusArchivedV1 = "archived_v1"
 
 	// Deprecated: kept for one release while old callers migrate to open/done/rejected.
 	SupportCoverageGapStatusDrafted = "drafted"
