@@ -62,6 +62,29 @@ func TestCatalogResolvesAskMediaReaderRoute(t *testing.T) {
 	}
 }
 
+func TestCatalogResolvesGLM53FlashExactoRoute(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+
+	resolved, err := catalog.Resolve(
+		"openrouter",
+		"z-ai/glm-5.3-flash:exacto",
+		"z-ai/glm-5.3-flash:exacto",
+		"standard",
+	)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.CanonicalModel != "glm-5.3-flash" || resolved.Route != "z-ai/glm-5.3-flash:exacto" {
+		t.Fatalf("Resolve() = %#v, want GLM 5.3 Flash Exacto", resolved)
+	}
+	if resolved.Tier != TierSmall || resolved.ContextWindow != 1_048_576 || resolved.MaximumOutput != 131_072 {
+		t.Fatalf("Resolve() pricing identity = %#v", resolved)
+	}
+}
+
 func TestCatalogResolvesClaudeSonnet5Route(t *testing.T) {
 	catalog, err := LoadCatalog()
 	if err != nil {
@@ -116,8 +139,8 @@ func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
 	}
 
 	pricing := catalog.PublicSnapshot()
-	if pricing.PricingVersion != "2026-08-19" {
-		t.Errorf("pricing version = %q, want 2026-08-19", pricing.PricingVersion)
+	if pricing.PricingVersion != "2026-09-02" {
+		t.Errorf("pricing version = %q, want 2026-09-02", pricing.PricingVersion)
 	}
 
 	wantAllowances := map[string]int64{

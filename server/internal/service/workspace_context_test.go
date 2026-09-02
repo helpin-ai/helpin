@@ -54,8 +54,8 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionReturnsOpenRouterFailu
 	if len(llmProvider.requests) != 1 {
 		t.Fatalf("LLM requests = %d, want one OpenRouter attempt", len(llmProvider.requests))
 	}
-	if got := llmProvider.requests[0]; got.Provider != "openrouter" || got.Model != "deepseek/deepseek-v4-flash-0731" {
-		t.Fatalf("route = %q/%q, want openrouter/deepseek/deepseek-v4-flash-0731", got.Provider, got.Model)
+	if got := llmProvider.requests[0]; got.Provider != "openrouter" || got.Model != "z-ai/glm-5.3-flash:exacto" {
+		t.Fatalf("route = %q/%q, want openrouter/z-ai/glm-5.3-flash:exacto", got.Provider, got.Model)
 	}
 }
 
@@ -92,8 +92,8 @@ func TestWorkspaceServiceGenerateCompanyProductDescriptionUsesDirectWebsiteFetch
 	if len(llmProvider.lastRequest.Messages) != 1 || !strings.Contains(llmProvider.lastRequest.Messages[0].Content, "support answers") {
 		t.Fatalf("LLM prompt did not include fetched website text: %#v", llmProvider.lastRequest.Messages)
 	}
-	if llmProvider.lastRequest.Provider != "openrouter" || llmProvider.lastRequest.Model != "deepseek/deepseek-v4-flash-0731" {
-		t.Fatalf("LLM route = %q/%q, want openrouter/deepseek/deepseek-v4-flash-0731", llmProvider.lastRequest.Provider, llmProvider.lastRequest.Model)
+	if llmProvider.lastRequest.Provider != "openrouter" || llmProvider.lastRequest.Model != "z-ai/glm-5.3-flash:exacto" {
+		t.Fatalf("LLM route = %q/%q, want openrouter/z-ai/glm-5.3-flash:exacto", llmProvider.lastRequest.Provider, llmProvider.lastRequest.Model)
 	}
 	promptText := strings.ToLower(llmProvider.lastRequest.SystemPrompt + "\n" + llmProvider.lastRequest.Messages[0].Content)
 	if strings.Contains(promptText, "markdown") {

@@ -12,7 +12,7 @@ import (
 
 var selectableAgentTierRoutes = map[aiusage.Tier]AICompletionRoute{
 	aiusage.TierSmall: {
-		Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: defaultAICompletionServiceTier,
+		Provider: "openrouter", Model: "z-ai/glm-5.3-flash:exacto", ServiceTier: defaultAICompletionServiceTier,
 	},
 	aiusage.TierMedium: {
 		Provider: "openrouter", Model: "google/gemini-3.7-flash", ServiceTier: defaultAICompletionServiceTier,

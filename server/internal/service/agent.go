@@ -1193,6 +1193,20 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
+		// Product-managed flash defaults moved from DeepSeek to GLM 5.3 Flash
+		// Exacto. Migrate only the product default version and preserve workspace
+		// preset versions and other explicit routing choices.
+		if (presetKey == model.AgentPresetEpicPlanner ||
+			presetKey == model.AgentPresetDocumentationAgent ||
+			presetKey == model.AgentPresetAskAgent ||
+			presetKey == model.AgentPresetSupportAgent) &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenRouter &&
+			isLegacyDeepSeekFlashModel(derefString(existing.Model)) {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
 		// Scribe's product default moved from DeepSeek on OpenRouter to Codex on
 		// OpenAI. Only migrate the default preset when it still uses the previous
 		// product default, preserving custom routing choices.

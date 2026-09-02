@@ -14,7 +14,7 @@ func TestAgentModelTierResolverResolvesSelectableTiers(t *testing.T) {
 	}
 	resolver := NewAgentModelTierResolver(catalog, func(provider string) bool { return provider == "openrouter" })
 	want := map[aiusage.Tier]string{
-		aiusage.TierSmall:    "deepseek/deepseek-v4-flash-0731",
+		aiusage.TierSmall:    "z-ai/glm-5.3-flash:exacto",
 		aiusage.TierMedium:   "google/gemini-3.7-flash",
 		aiusage.TierLarge:    "openai/gpt-5.6-terra",
 		aiusage.TierFlagship: "anthropic/claude-sonnet-5",

@@ -120,7 +120,7 @@ func TestAICompletionRouteRegistryAppliesCRMOverridesOnlyToCRMFeatures(t *testin
 		t.Fatalf("CRM fallback = %#v", summary.Fallbacks)
 	}
 	nonCRM, _ := registry.Policy(BillingFeatureAIRouting, "")
-	if nonCRM.Primary.Model != "deepseek/deepseek-v4-flash-0731" || nonCRM.Primary.OpenRouterProvider != "" {
+	if nonCRM.Primary.Model != "z-ai/glm-5.3-flash:exacto" || nonCRM.Primary.OpenRouterProvider != "" {
 		t.Fatalf("non-CRM route changed = %#v", nonCRM.Primary)
 	}
 

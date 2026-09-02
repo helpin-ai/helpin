@@ -501,7 +501,7 @@ reviewed defaults are:
 
 | Route | Provider and model |
 |---|---|
-| CRM primary | `openrouter` / `deepseek/deepseek-v4-flash-0731` |
+| CRM primary | `openrouter` / `z-ai/glm-5.3-flash:exacto` |
 | CRM fallback | `openrouter` / `openai/gpt-5.6-luna` |
 | Meeting fallback | `openrouter` / `google/gemini-3.7-flash` |
 

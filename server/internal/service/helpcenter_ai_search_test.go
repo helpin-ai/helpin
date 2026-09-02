@@ -203,7 +203,7 @@ func TestResolveHelpcenterAnswerRouting(t *testing.T) {
 			openai:       true,
 			anthropic:    true,
 			wantProvider: "openrouter",
-			wantModel:    "deepseek/deepseek-v4-flash-0731",
+			wantModel:    "z-ai/glm-5.3-flash:exacto",
 		},
 		{
 			name:         "openai key next",
