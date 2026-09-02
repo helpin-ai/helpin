@@ -85,6 +85,19 @@ export const HelpView: FunctionComponent<HelpViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host, normalizedDebouncedSearchQuery, showSearchResults, widgetKey]);
 
+  useEffect(() => {
+	if (!canBrowseDocs || normalizedSearchQuery.length < 2 || !host || !widgetKey) return;
+	const timeout = window.setTimeout(() => {
+	  void fetchHelpSearchResults(host, widgetKey, normalizedSearchQuery, 8, anonymousId, true).catch(() => {
+		// Coverage telemetry is best-effort and must not disturb search UX.
+	  });
+	}, 2000);
+	return () => window.clearTimeout(timeout);
+	// anonymousId attributes the stable browser session but must not restart
+	// the idle clock if identification completes while the visitor is typing.
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canBrowseDocs, host, normalizedSearchQuery, widgetKey]);
+
   return (
     <div className="helpin-help-view helpin-view-enter">
       <div className="helpin-help-header">

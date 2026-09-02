@@ -310,11 +310,13 @@ func main() {
 		SetCompanyEvidenceRepositories(repository.NewCRMCompanyTimelineRepository(db), storyRepo, conversationRepo)
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	supportCoverageV2Repo := repository.NewCoverageV2Repository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
 	supportCoverageEnrichmentService := service.NewSupportCoverageEnrichmentService(db, llmProvider)
 	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel)
 	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
 		SetCoverageRepositories(supportCoverageRepo, supportCoverageAnalysisRepo).
+		SetCoverageV2Repository(supportCoverageV2Repo).
 		SetEmbeddingProvider(coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel).
 		SetConversationRepositories(conversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).

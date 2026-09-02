@@ -24,6 +24,7 @@ import (
 )
 
 var errCoverageNoPublicSegment = errors.New("coverage conversation has no public segment")
+var errCoverageLLMContract = errors.New("coverage analyzer response violates the actionable finding contract")
 
 const (
 	coverageAnalysisMaxMessages             = 80
@@ -176,6 +177,7 @@ type SupportCoverageDailyAnalyzer struct {
 	embeddingModel    string
 	coverageRepo      *repository.SupportCoverageRepository
 	analysisRepo      *repository.SupportCoverageAnalysisRepository
+	coverageV2Repo    *repository.CoverageV2Repository
 	conversationRepo  *repository.SupportConversationRepository
 	messageRepo       *repository.SupportMessageRepository
 	knowledgeMatcher  *CoverageKnowledgeMatcher
@@ -198,6 +200,14 @@ func (s *SupportCoverageDailyAnalyzer) SetCoverageRepositories(coverageRepo *rep
 	}
 	s.coverageRepo = coverageRepo
 	s.analysisRepo = analysisRepo
+	return s
+}
+
+func (s *SupportCoverageDailyAnalyzer) SetCoverageV2Repository(repo *repository.CoverageV2Repository) *SupportCoverageDailyAnalyzer {
+	if s == nil {
+		return nil
+	}
+	s.coverageV2Repo = repo
 	return s
 }
 
@@ -310,6 +320,19 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 	if err != nil {
 		return err
 	}
+	v2BatchID := ""
+	if s.coverageV2Repo != nil {
+		batch, batchErr := s.coverageV2Repo.CreateBatch(ctx, &model.CoverageBatch{
+			WorkspaceID: workspaceID, WindowStart: cursorStart, WindowEnd: cursorEnd,
+			AnalyzerVersion: coverageAnalyzerVersion, PolicyVersion: "v1", Status: model.CoverageBatchRunning,
+			CorrelationID: run.ID,
+		})
+		if batchErr != nil {
+			s.markCoverageAnalysisRunFailed(ctx, run.ID, batchErr)
+			return batchErr
+		}
+		v2BatchID = batch.ID
+	}
 
 	conversationCount := 0
 	gapCount := 0
@@ -333,7 +356,7 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 				defer page.Done()
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
-				gapCreated, itemErr := s.runConversationCoverageAnalysis(ctx, workspaceID, run.ID, conversation)
+				gapCreated, itemErr := s.runConversationCoverageAnalysis(ctx, workspaceID, run.ID, v2BatchID, conversation)
 				if itemErr != nil {
 					itemErrorsMu.Lock()
 					itemErrors = append(itemErrors, fmt.Errorf("conversation %s: %w", conversation.ID, itemErr))
@@ -364,9 +387,18 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 	if len(itemErrors) > 0 {
 		joined := errors.Join(itemErrors...)
 		s.markCoverageAnalysisRunFailed(ctx, run.ID, joined)
+		if s.coverageV2Repo != nil && v2BatchID != "" {
+			_ = s.coverageV2Repo.CompleteBatch(ctx, v2BatchID, model.CoverageBatchPartialFailed, conversationCount, conversationCount-len(itemErrors), len(itemErrors), 0, model.CoverageFailurePersistence, sanitizeAIActionFailure(joined))
+		}
 		return joined
 	}
-	return s.analysisRepo.CompleteRun(ctx, run.ID, conversationCount, gapCount)
+	if err := s.analysisRepo.CompleteRun(ctx, run.ID, conversationCount, gapCount); err != nil {
+		return err
+	}
+	if s.coverageV2Repo != nil && v2BatchID != "" {
+		return s.coverageV2Repo.CompleteBatch(ctx, v2BatchID, model.CoverageBatchSucceeded, conversationCount, conversationCount, 0, 0, "", "")
+	}
+	return nil
 }
 
 func (s *SupportCoverageDailyAnalyzer) markCoverageAnalysisRunFailed(ctx context.Context, runID string, runErr error) {
@@ -378,7 +410,7 @@ func (s *SupportCoverageDailyAnalyzer) markCoverageAnalysisRunFailed(ctx context
 	}
 }
 
-func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx context.Context, workspaceID, runID string, conversation model.SupportConversation) (bool, error) {
+func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx context.Context, workspaceID, runID, v2BatchID string, conversation model.SupportConversation) (bool, error) {
 	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
 	if err != nil {
 		return false, err
@@ -394,11 +426,23 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		}
 		return false, err
 	}
+	var v2Attempt *model.CoverageAnalysisAttempt
+	if s.coverageV2Repo != nil && v2BatchID != "" {
+		logicalWorkKey := aiUsageIdempotencyKey(workspaceID, "coverage_work", conversation.ID, input.SegmentID, input.TranscriptHash, coverageAnalyzerVersion, "v1")
+		v2Attempt, err = s.coverageV2Repo.StartAnalysisAttempt(ctx, v2BatchID, workspaceID, logicalWorkKey, "conversation", conversation.ID, input.SegmentID, input.TranscriptHash, coverageAnalyzerVersion, "v1", runID, 15*time.Minute)
+		if err != nil {
+			return false, err
+		}
+		if v2Attempt.Status == model.CoverageAttemptSucceeded {
+			return false, nil
+		}
+	}
 	alreadyAnalyzed, err := s.analysisRepo.AlreadyAnalyzedConversation(ctx, workspaceID, conversation.ID, input.TranscriptHash, coverageAnalyzerVersion)
 	if err != nil {
 		return false, err
 	}
 	if alreadyAnalyzed {
+		s.completeCoverageV2Attempt(ctx, v2Attempt, runID)
 		return false, nil
 	}
 
@@ -419,6 +463,7 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		}); err != nil {
 			return false, err
 		}
+		s.completeCoverageV2Attempt(ctx, v2Attempt, runID)
 		return false, nil
 	}
 
@@ -435,9 +480,21 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 			ErrorMessage:    &analysisErr,
 			RawOutput:       []byte("{}"),
 		})
-		return false, recordErr
+		if v2Attempt != nil {
+			failureClass := coverageAnalysisFailureClass(err)
+			retryBudget := v2Attempt.RetryBudgetUsed + 1
+			if failureClass == model.CoverageFailureConfiguration {
+				retryBudget = v2Attempt.RetryBudgetUsed
+			}
+			_ = s.coverageV2Repo.MarkRetryable(ctx, v2Attempt.ID, runID, failureClass, sanitizeAIActionFailure(err), time.Now().UTC().Add(time.Minute), retryBudget)
+		}
+		if recordErr != nil {
+			return false, recordErr
+		}
+		return false, err
 	}
 	if result == nil {
+		s.completeCoverageV2Attempt(ctx, v2Attempt, runID)
 		return false, nil
 	}
 
@@ -540,7 +597,24 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 	if err := s.analysisRepo.RecordConversationAnalysis(ctx, analysis); err != nil {
 		return false, err
 	}
+	if result.HasGap && v2Attempt != nil {
+		if err := s.persistCoverageV2Finding(ctx, v2Attempt, conversation, input, *result); err != nil {
+			_ = s.coverageV2Repo.MarkRetryable(ctx, v2Attempt.ID, runID, model.CoverageFailurePersistence, sanitizeAIActionFailure(err), time.Now().UTC().Add(time.Minute), v2Attempt.RetryBudgetUsed+1)
+			return false, err
+		}
+	}
+	s.completeCoverageV2Attempt(ctx, v2Attempt, runID)
 	return result.HasGap, nil
+}
+
+func coverageAnalysisFailureClass(err error) string {
+	if errors.Is(err, errCoverageLLMContract) {
+		return model.CoverageFailureLLMContract
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "not configured") {
+		return model.CoverageFailureConfiguration
+	}
+	return model.CoverageFailureLLMProvider
 }
 
 func BuildCoverageConversationAnalysisInput(conversation model.SupportConversation, messages []model.SupportMessage, traces []model.SupportAIRetrievalTrace) (CoverageConversationAnalysisInput, error) {
@@ -871,11 +945,87 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 		return nil, nil, fmt.Errorf("parse coverage conversation analyzer response: %w", err)
 	}
 	normalizeCoverageConversationAnalysisResult(&result)
+	if err := validateActionableCoverageResult(result); err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
+	}
 	raw, err := json.Marshal(result)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal normalized analyzer result: %w", err)
 	}
 	return &result, raw, nil
+}
+
+func validateActionableCoverageResult(result CoverageConversationAnalysisResult) error {
+	if !result.HasGap {
+		return nil
+	}
+	if result.CustomerNeed == "" {
+		return fmt.Errorf("customer_need is required")
+	}
+	if result.AIFailure == "" {
+		return fmt.Errorf("ai_failure is required")
+	}
+	if result.Confidence <= 0 || result.Confidence > 1 {
+		return fmt.Errorf("confidence must be between zero and one")
+	}
+	if len(result.RecommendedFixes) == 0 {
+		return fmt.Errorf("at least one recommended fix is required")
+	}
+	for index, fix := range result.RecommendedFixes {
+		if fix.Type == "" || firstNonEmptyCoverageString(fix.TargetTitle, fix.TargetID, fix.TargetURL, fix.TargetType) == "" || fix.Rationale == "" || fix.SuggestedChange == "" {
+			return fmt.Errorf("recommended_fixes[%d] requires type, target, rationale, and suggested_change", index)
+		}
+	}
+	return nil
+}
+
+func (s *SupportCoverageDailyAnalyzer) completeCoverageV2Attempt(ctx context.Context, attempt *model.CoverageAnalysisAttempt, owner string) {
+	if s == nil || s.coverageV2Repo == nil || attempt == nil || attempt.Status == model.CoverageAttemptSucceeded {
+		return
+	}
+	if err := s.coverageV2Repo.CompleteAttempt(ctx, attempt.ID, owner, time.Now().UTC()); err != nil {
+		slog.WarnContext(ctx, "failed to complete coverage v2 attempt", "attempt_id", attempt.ID, "error", err)
+	}
+}
+
+func (s *SupportCoverageDailyAnalyzer) persistCoverageV2Finding(ctx context.Context, attempt *model.CoverageAnalysisAttempt, conversation model.SupportConversation, input CoverageConversationAnalysisInput, result CoverageConversationAnalysisResult) error {
+	if s == nil || s.coverageV2Repo == nil || attempt == nil {
+		return nil
+	}
+	fix := result.RecommendedFixes[0]
+	aiAnswer, humanAnswer := coverageTranscriptAnswers(input.Messages)
+	finding := &model.CoverageFinding{
+		WorkspaceID: attempt.WorkspaceID, LogicalWorkKey: attempt.LogicalWorkKey, AnalysisAttemptID: attempt.ID,
+		SourceKind: attempt.SourceKind, SourceID: attempt.SourceID, ConversationID: &conversation.ID,
+		CustomerID: conversation.CRMContactID, CustomerNeed: result.CustomerNeed, AIAnswer: aiAnswer,
+		AIFailure: result.AIFailure, HumanAnswer: firstNonEmptyCoverageString(humanAnswer, result.HumanResolution),
+		FixType: fix.Type, FixTarget: firstNonEmptyCoverageString(fix.TargetTitle, fix.TargetID, fix.TargetURL, fix.TargetType),
+		Rationale: fix.Rationale, SuggestedChange: fix.SuggestedChange, Confidence: result.Confidence,
+		EmbeddingStatus: "pending", AssignmentStatus: "pending", Metadata: []byte("{}"),
+	}
+	if err := s.coverageV2Repo.ReplaceCurrentFinding(ctx, finding); err != nil {
+		return err
+	}
+	// The durable finding is committed first. Assignment is independently
+	// retryable and must never erase or roll back the analysis result.
+	if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding); err != nil {
+		_ = s.coverageV2Repo.UpdateFindingAssignmentStatus(ctx, finding.WorkspaceID, finding.ID, "retryable")
+		slog.WarnContext(ctx, "coverage topic assignment deferred", "finding_id", finding.ID, "error", err)
+	}
+	return nil
+}
+
+func coverageTranscriptAnswers(messages []CoverageConversationMessage) (string, string) {
+	var aiAnswer, humanAnswer string
+	for _, message := range messages {
+		switch strings.ToLower(strings.TrimSpace(message.SenderType)) {
+		case "ai":
+			aiAnswer = strings.TrimSpace(message.Content)
+		case "user", "agent", "human", "teammate":
+			humanAnswer = strings.TrimSpace(message.Content)
+		}
+	}
+	return aiAnswer, humanAnswer
 }
 
 func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.Context, result CoverageConversationAnalysisResult, candidates []CoverageKnowledgeCandidate) (*CoverageFixBundleDecision, error) {

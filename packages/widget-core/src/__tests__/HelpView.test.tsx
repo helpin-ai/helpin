@@ -320,4 +320,25 @@ describe('HelpView', () => {
       fetchMock.mock.calls.filter(([input]) => String(input).includes('/widget/support/help/search')),
     ).toHaveLength(1);
   });
+
+  it('emits a coverage-qualified search only after two seconds idle', async () => {
+	vi.useFakeTimers();
+	const fetchMock = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 }));
+	vi.stubGlobal('fetch', fetchMock);
+	const { getByPlaceholderText } = render(
+	  <HelpView
+		config={configWithOneHelpSpace}
+		host="https://client.helpin.ai"
+		widgetKey="wk_123"
+		anonymousId="anon-1"
+		onSelectSpace={() => {}}
+		onSelectCollection={() => {}}
+	  />,
+	);
+	fireEvent.input(getByPlaceholderText('Search help articles...'), { target: { value: 'reset account password' } });
+	await act(async () => { vi.advanceTimersByTime(1999); });
+	expect(fetchMock.mock.calls.some(([input]) => String(input).includes('coverage_signal=1'))).toBe(false);
+	await act(async () => { vi.advanceTimersByTime(1); await Promise.resolve(); });
+	expect(fetchMock.mock.calls.some(([input]) => String(input).includes('coverage_signal=1'))).toBe(true);
+  });
 });

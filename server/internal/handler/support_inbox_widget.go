@@ -375,8 +375,9 @@ func (h *SupportInboxWidgetHandler) SearchHelpArticles(w http.ResponseWriter, r 
 	}
 
 	anonymousID := r.URL.Query().Get("anonymous_id")
+	coverageSignal := r.URL.Query().Get("coverage_signal") == "1"
 
-	results, err := h.supportService.SearchWidgetHelpArticles(r.Context(), widgetKey, query, limit, anonymousID)
+	results, err := h.supportService.SearchWidgetHelpArticles(r.Context(), widgetKey, query, limit, anonymousID, coverageSignal)
 	if err != nil {
 		if err.Error() == "widget not found" {
 			writeError(w, http.StatusNotFound, err.Error())

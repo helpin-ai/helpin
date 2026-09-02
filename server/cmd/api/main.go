@@ -1638,6 +1638,7 @@ func main() {
 	supportEventRepo := repository.NewSupportEventRepository(db)
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	supportCoverageV2Repo := repository.NewCoverageV2Repository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
 	commandService.SetSupportCoverageService(supportCoverageService)
 	agentRuntimeHostService.SetSupportCoverageService(supportCoverageService)
@@ -1651,12 +1652,14 @@ func main() {
 	supportCoverageClusterRebuildService := service.NewSupportCoverageClusterRebuildService(supportCoverageRepo, coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel)
 	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
 		SetCoverageRepositories(supportCoverageRepo, supportCoverageAnalysisRepo).
+		SetCoverageV2Repository(supportCoverageV2Repo).
 		SetEmbeddingProvider(coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel).
 		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
+		SetCoverageV2Repository(supportCoverageV2Repo).
 		SetCompanySummaryRefresh(crmSummaryService).
 		SetSignalDetection(supportMessageRepo, supportConversationRepo, crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation))
 	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)

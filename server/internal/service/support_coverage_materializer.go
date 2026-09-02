@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -263,7 +264,7 @@ func coverageAnalysisTargetDocumentID(analysis model.SupportCoverageConversation
 func (s *SupportCoverageDailyAnalyzer) embedMaterializationFindings(ctx context.Context, analyses []model.SupportCoverageConversationAnalysis, result *CoverageMaterializationResult) ([]coverageMaterializedFinding, error) {
 	if s.embeddingProvider == nil {
 		result.MissingEmbeddings = len(analyses)
-		return nil, fmt.Errorf("coverage embedding provider is not configured")
+		return degradedCoverageMaterializationFindings(analyses), nil
 	}
 	modelName := coverageEmbeddingModel(s.embeddingModel)
 	inputs := make([]string, 0, len(analyses))
@@ -283,11 +284,13 @@ func (s *SupportCoverageDailyAnalyzer) embedMaterializationFindings(ctx context.
 	})
 	if err != nil {
 		result.MissingEmbeddings = len(analyses)
-		return nil, fmt.Errorf("create coverage finding embeddings: %w", err)
+		slog.WarnContext(ctx, "coverage embeddings deferred; continuing with lexical grouping", "error", err, "finding_count", len(analyses))
+		return degradedCoverageMaterializationFindings(analyses), nil
 	}
 	if len(resp.Vectors) != len(analyses) {
 		result.MissingEmbeddings = len(analyses)
-		return nil, fmt.Errorf("coverage finding embedding count mismatch: got %d want %d", len(resp.Vectors), len(analyses))
+		slog.WarnContext(ctx, "coverage embeddings deferred after response mismatch", "got", len(resp.Vectors), "want", len(analyses))
+		return degradedCoverageMaterializationFindings(analyses), nil
 	}
 	findings := make([]coverageMaterializedFinding, 0, len(analyses))
 	now := time.Now()
@@ -314,6 +317,14 @@ func (s *SupportCoverageDailyAnalyzer) embedMaterializationFindings(ctx context.
 		result.EmbeddingsCreated++
 	}
 	return findings, nil
+}
+
+func degradedCoverageMaterializationFindings(analyses []model.SupportCoverageConversationAnalysis) []coverageMaterializedFinding {
+	findings := make([]coverageMaterializedFinding, 0, len(analyses))
+	for _, analysis := range analyses {
+		findings = append(findings, coverageMaterializedFinding{Analysis: analysis, Text: coverageFindingEmbeddingText(analysis)})
+	}
+	return findings
 }
 
 func coverageMaterializationGroups(findings []coverageMaterializedFinding) [][]coverageMaterializedFinding {

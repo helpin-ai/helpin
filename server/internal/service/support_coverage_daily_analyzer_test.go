@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -257,6 +258,15 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationRejectsMalformedJSON(t 
 	})
 	if err == nil {
 		t.Fatal("expected malformed JSON error")
+	}
+}
+
+func TestSupportCoverageDailyAnalyzer_AnalyzeConversationRejectsPartialRecommendationContract(t *testing.T) {
+	provider := &scriptedSupportPlannerLLM{responses: []llm.ChatResponse{{Content: `{"is_support_query":true,"conversation_type":"support_query","has_gap":true,"customer_need":"Reset password","ai_failure":"Missing steps","recommended_fixes":[{"type":"update_article"}],"confidence":0.9}`}}}
+	analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5")
+	_, _, err := analyzer.AnalyzeConversation(context.Background(), CoverageConversationAnalysisInput{WorkspaceID: "ws-1", ConversationID: "conversation-1", TranscriptHash: "hash-1"})
+	if !errors.Is(err, errCoverageLLMContract) {
+		t.Fatalf("AnalyzeConversation error = %v, want llm contract failure", err)
 	}
 }
 
@@ -585,7 +595,7 @@ func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutp
 		t.Fatalf("seed message: %v", err)
 	}
 
-	created, err := analyzer.runConversationCoverageAnalysis(ctx, "ws-1", "run-1", model.SupportConversation{
+	created, err := analyzer.runConversationCoverageAnalysis(ctx, "ws-1", "run-1", "", model.SupportConversation{
 		ID:          "conversation-no-human",
 		WorkspaceID: "ws-1",
 		Subject:     "Billing update",

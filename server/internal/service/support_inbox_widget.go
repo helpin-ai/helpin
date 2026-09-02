@@ -1320,7 +1320,7 @@ func (s *SupportInboxService) ListWidgetHelpArticles(ctx context.Context, widget
 // the caller's durable browser identity when known; it is optional, and is
 // recorded on the resulting support event so that self-service searches stay
 // attributable to the visitor who made them.
-func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widgetKey, query string, limit int, anonymousID string) ([]model.WidgetHelpSearchResult, error) {
+func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widgetKey, query string, limit int, anonymousID string, coverageSignal bool) ([]model.WidgetHelpSearchResult, error) {
 	inst, allowedSpaces, err := s.getAllowedWidgetHelpSpaces(ctx, widgetKey)
 	if err != nil {
 		return nil, err
@@ -1374,7 +1374,7 @@ func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widg
 	}
 
 	searchSourceSignal := model.SupportCoverageSourceSelfService
-	if len(results) == 0 && IsMeaningfulCoverageSearchQuery(query) {
+	if coverageSignal && len(results) == 0 && IsMeaningfulCoverageSearchQuery(query) {
 		searchSourceSignal = "no_results"
 	}
 	s.recordSupportEvent(SupportEventInput{
@@ -1386,9 +1386,10 @@ func (s *SupportInboxService) SearchWidgetHelpArticles(ctx context.Context, widg
 		SourceSignal: searchSourceSignal,
 		IssueSummary: query,
 		Metadata: map[string]any{
-			"query":        query,
-			"result_count": len(results),
-			"surface":      "widget_help",
+			"query":                    query,
+			"result_count":             len(results),
+			"surface":                  "widget_help",
+			"coverage_signal_eligible": coverageSignal,
 		},
 	})
 
