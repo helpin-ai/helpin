@@ -165,9 +165,10 @@ func (s *DockChatService) notifyPlanSettled(ctx context.Context, plan *model.Com
 	}
 	resumeID := dockChildResultResumePrefix + plan.ID
 	if _, err := runtimeClient.ResumeRun(ctx, strings.TrimSpace(*chatRun.ExternalRuntimeID), AgentRuntimeResumeRunRequest{
-		Intent:   "reply",
-		Content:  block,
-		ResumeID: resumeID,
+		Intent:     "reply",
+		Content:    block,
+		ResumeID:   resumeID,
+		TurnPolicy: runtimeResumeTurnPolicy(chatRun),
 	}); err != nil {
 		// "run is not paused" and similar races resolve on the next sweep.
 		return err

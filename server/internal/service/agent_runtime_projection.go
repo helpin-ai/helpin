@@ -1697,7 +1697,8 @@ func (s *AgentRuntimeProjectionService) applyCodexAuthStateChanged(ctx context.C
 			return false, fmt.Errorf("agent runtime client is not configured")
 		}
 		if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
-			Intent: model.AgentRunResumeIntentAuthCompleted,
+			Intent:     model.AgentRunResumeIntentAuthCompleted,
+			TurnPolicy: runtimeResumeTurnPolicy(run),
 		}); err != nil {
 			return false, err
 		}
